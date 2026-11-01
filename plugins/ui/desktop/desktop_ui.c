@@ -295,7 +295,7 @@ typedef struct desk {
     uint32_t qdrag_paints;                           /* frames that drew the lifted row and the insertion line */
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     struct {                 /* I258: the Queue page album groups, rebuilt when the queue changes */
-        uint32_t hash, count, headers, valid;
+        uint32_t hash, count, headers, valid, text_gen, pending; /* I906e: pending = a group lookup was still on the engine read */
         uint32_t* before;    /* count + 1 slots: group headers above entry i, so entry i sits on row i + before[i] */
         uint32_t* name;      /* count slots: 1 + pool offset of the header text drawn above entry i, 0 for none */
         char* pool;
@@ -401,7 +401,7 @@ typedef struct desk {
     song_ref sm_ref;         /* the song it was opened on */
     song_row sm_rows[SM_ROWS]; /* the song rows drawn in the main region this frame: the one registry every page feeds */
     sel_engine_library_item sm_pls[8]; /* the song menu's Add to Playlist step: all playlists, not the sidebar's filtered list */
-    uint32_t sm_pl_n;
+    uint32_t sm_pl_n, sm_want, sm_inflight, sm_posts, sm_takes; /* I906e: the Add to Playlist list is read on the engine's items slot, shared with the sidebar's (one at a time) */
     uint32_t sm_n, sm_opens, sm_picks, sm_pl_adds;
     sel_uim_selset sel; /* I632d: the one selection of the list on screen (src/uimodel/select.c) */
     uint32_t sel_clicks, sel_keys, pls_ver, sel_cur;
@@ -1145,6 +1145,7 @@ static void draw_sidebar(desk* d);
 static int32_t side_lib_at(const desk* d, int32_t x, int32_t y);
 static int32_t side_lib_max_q16(const desk* d);
 static void side_lib_reload(desk* d);
+static void sm_lib_want(desk* d);
 static uint32_t lib_touch_calls(desk* d);
 static int32_t side_chip_at(desk* d, int32_t x, int32_t y);
 static int32_t side_tools_at(const desk* d, int32_t x, int32_t y);
@@ -2950,7 +2951,7 @@ static sel_gui_rect dlg_button_rect(const desk* d, uint32_t i) {
 static void dlg_open_remove(desk* d, const char* path) {
     snprintf(d->dlg_path, sizeof d->dlg_path, "%s", path);
     char title[256];
-    if (!sel_engine_song_title(d->engine, path, title, sizeof title)) {
+    if (sel_engine_song_text(d->engine, SEL_SONG_TEXT_TITLE, path, title, sizeof title) != 1) { /* I906e: cached; a miss falls back to the file name */
         snprintf(title, sizeof title, "%s", path_base(path));
     }
     sel_uim_remove_text(title, d->dlg_text, sizeof d->dlg_text);
@@ -2960,7 +2961,7 @@ static void dlg_open_remove(desk* d, const char* path) {
 
 static void dlg_open_clear(desk* d) {
     uint32_t n = sel_engine_state(d->engine)->library_songs;
-    uint32_t pl = sel_engine_library_playlists(d->engine);
+    uint32_t pl = sel_engine_state(d->engine)->library_playlists; /* I906e: counted on the engine's posted read */
     d->dlg_playlists = pl;
     sel_uim_clear_text(n, pl, d->dlg_text, sizeof d->dlg_text);
     d->dlg_open = DLG_CLEAR;
@@ -3325,7 +3326,8 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 d->on_saves++;
                 desk_toast(d, "Saved to Library");
             } else if (k == 3) {
-                d->sm_pl_n = sel_engine_library_items(d->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0u, d->sm_pls, 8u, NULL); /* I631: every saved playlist, unfiltered by the sidebar chip, filter field or sort */
+                d->sm_pl_n = 0u;
+                sm_lib_want(d); /* I906e, I631: every saved playlist, unfiltered by the sidebar chip, filter field or sort; read off the UI thread */
                 d->sm_step = 1;
                 keep = 1;
             } else {
@@ -3353,7 +3355,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 {
                     /* I442: the toast names the song, not only the action. */
                     char title[128], text[160];
-                    if (!sel_engine_song_title(d->engine, d->sm_ref.path, title, sizeof title)) {
+                    if (sel_engine_song_text(d->engine, SEL_SONG_TEXT_TITLE, d->sm_ref.path, title, sizeof title) != 1) {
                         snprintf(title, sizeof title, "%s", path_base(d->sm_ref.path));
                     }
                     snprintf(text, sizeof text, "%s: %s", done[k], title);
@@ -4148,14 +4150,18 @@ static uint32_t queue_hash(const sel_state* st) {
 
 /* Rebuilds the album groups when the queue changed. A queue holding a playlist divider (.prg) keeps its dividers as the
  * only groups. Otherwise consecutive songs of one album share a header; a song without an album falls back to its
- * source, one the library does not know gets no header. The engine answers (sel_engine_song_group); the UI reads no
+ * source, one the library does not know gets no header. The engine answers (sel_engine_queue_groups); the UI reads no
  * database. */
 static void queue_groups_sync(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     uint32_t h = queue_hash(st), i, n = st->queue_count, run = 0, cur = 0;
     int dividers = 0;
     char grp[160];
-    if (d->qg.valid && d->qg.hash == h && d->qg.count == n) {
+    uint32_t tg = sel_engine_song_text_generation(d->engine);
+    int pending = 0;
+    const char* gpool = NULL;
+    const uint32_t* gname = NULL;
+    if (d->qg.valid && d->qg.hash == h && d->qg.count == n && (d->qg.text_gen == tg || !d->qg.pending)) {
         return;
     }
     if (d->qg.before == NULL || d->qg.count < n) { /* grow (never shrinks) */
@@ -4173,12 +4179,15 @@ static void queue_groups_sync(desk* d) {
     for (i = 0; i < n; i++) {
         dividers |= (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u;
     }
+    if (!dividers && n > 0u) {
+        pending = sel_engine_queue_groups(d->engine, h, &gpool, &gname) < 0; /* I906e: one posted read of the whole queue; resolved off the UI thread */
+    }
     for (i = 0; i < n; i++) {
         d->qg.before[i] = d->qg.headers;
         d->qg.name[i] = 0;
         grp[0] = '\0';
-        if (!dividers && (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) == 0u) {
-            sel_engine_song_group(d->engine, st->queue_text + st->queue[i].path_offset, grp, sizeof grp);
+        if (!dividers && !pending && gname != NULL && gname[i] != 0u && (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) == 0u) {
+            snprintf(grp, sizeof grp, "%s", gpool + gname[i] - 1u);
         }
         if (grp[0] == '\0') {
             run = 0;
@@ -4212,6 +4221,8 @@ static void queue_groups_sync(desk* d) {
     d->qg.before[n] = d->qg.headers;
     d->qg.hash = h;
     d->qg.count = n;
+    d->qg.text_gen = tg;
+    d->qg.pending = pending;
     d->qg.valid = 1;
 }
 
@@ -5746,7 +5757,7 @@ static int pl_create(desk* d, uint32_t folder) {
 /* I646, I609: Create Playlist from the sidebar (the empty-state button and the header plus): create and open, like Spotify, the
  * new playlist opens once the engine has made it. The one path; the action itself is pl_create. */
 static int side_create_playlist(desk* d) {
-    d->side_open_n = sel_engine_library_playlists(d->engine) + 1u; /* I678b: playlists only, the list holds more kinds */
+    d->side_open_n = sel_engine_state(d->engine)->library_playlists + 1u; /* I678b: playlists only, the list holds more kinds */
     d->side_open_tries = 0u;
     desk_page_goto(d, SEL_UIM_PG_COLLECTION);
     d->repaint = 1;
@@ -6079,12 +6090,18 @@ static void si_composer_load(desk* d, const sel_state* st) {
     char m[SEL_COMPOSER_MAX + 224];
     const char* p = m;
     size_t k;
+    int got;
     if (st->song.path == NULL || strcmp(d->si_composer_ref, st->song.path) == 0) {
+        return;
+    }
+    got = sel_engine_song_text(d->engine, SEL_SONG_TEXT_META, st->song.path, m, sizeof m); /* I906e: cached; -1 pending, asked again next frame */
+    if (got < 0) {
+        d->si_composer_key[0] = '\0';
         return;
     }
     snprintf(d->si_composer_ref, sizeof d->si_composer_ref, "%s", st->song.path);
     d->si_composer_key[0] = '\0';
-    if (sel_engine_song_meta(d->engine, st->song.path, m, sizeof m)) {
+    if (got == 1) {
         for (k = 0; k < 3u; k++) {
             p += strlen(p) + 1u;
         }
@@ -7508,7 +7525,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u open_fail_toasts=%u open_fail_text=\"%s\" toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
-                              "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x\n"
+                              "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x pl_posts=%u pl_takes=%u\n"
                               "dialog quits=%d open=%d opens=%u confirms=%u cancels=%u songs=%u playlists=%u cancel=%d,%d,%d,%d confirm=%d,%d,%d,%d clear=%d,%d,%d,%d\n",
                               d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
                               (unsigned)d->cmdline_opens, (unsigned)d->cmdline_runs, (unsigned)d->overlay_sends_ok, (unsigned)d->toasts,
@@ -7517,7 +7534,7 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)st->queue_count, d->cmd.status[0] != '\0' ? d->cmd.status : "-", d->sm_open, d->sm_open ? song_menu_count(d) : 0,
                               (unsigned)d->sm_opens, (unsigned)d->sm_picks, (unsigned)d->sm_pl_adds, (unsigned)d->sm_n,
                               (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) & 0xFFFFFFu),
-                              (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu),
+                              (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu), (unsigned)d->sm_posts, (unsigned)d->sm_takes,
                               d->quit_req, d->dlg_open, (unsigned)d->dlg_opens, (unsigned)d->dlg_confirms, (unsigned)d->dlg_cancels,
                               (unsigned)st->library_songs, (unsigned)d->dlg_playlists, dlg_button_rect(d, 0u).x, dlg_button_rect(d, 0u).y,
                               dlg_button_rect(d, 0u).w, dlg_button_rect(d, 0u).h, dlg_button_rect(d, 1u).x,
@@ -10384,8 +10401,8 @@ static int side_lib_take(desk* d) {
  * while the read is in flight leaves side_stale set, so the list is read again after the take. */
 static void side_lib_reload(desk* d) {
     lsort_prefs_load(d); /* read once, at the first reload */
-    if (d->side_inflight) {
-        return;
+    if (d->side_inflight || d->sm_inflight || sel_engine_library_items_busy(d->engine)) {
+        return; /* side_stale stays set: the follow turn reads again once the shared items slot is free (I906e) */
     }
     d->side_post_mask = side_lib_want(d);
     if (!sel_engine_library_items_post(d->engine, d->side_post_mask, SIDE_LIB_MAX)) {
@@ -10401,8 +10418,45 @@ static void side_lib_reload(desk* d) {
     (void)side_lib_take(d); /* a build without threads has the answer already */
 }
 
+/* I906e: the Add to Playlist list. The engine has one items slot (sidebar and this menu share it), so a post waits until the slot is free
+ * and each result is taken by the side that posted it: side_inflight and sm_inflight are never both set, and side_lib_reload does not
+ * post while sm_inflight, so neither side can take the other's answer. */
+static void sm_lib_take(desk* d) {
+    uint32_t m = 0u, got = 0u;
+
+    if (!d->sm_inflight || !sel_engine_library_items_take(d->engine, &m, d->sm_pls, 8u, &got, NULL)) {
+        return;
+    }
+    d->sm_inflight = 0u;
+    d->sm_takes++;
+    d->sm_pl_n = got;
+    d->side_stale = 1u; /* a sidebar reload that waited for the slot */
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    d->repaint = 1;
+}
+
+static void sm_lib_want(desk* d) {
+    d->sm_want = 1u;
+    if (d->sm_inflight || d->side_inflight || sel_engine_library_items_busy(d->engine)) {
+        return; /* posted by desk_side_follow when the slot frees */
+    }
+    if (!sel_engine_library_items_post(d->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 8u)) {
+        d->sm_want = 0u; /* no library */
+        return;
+    }
+    d->sm_want = 0u;
+    d->sm_inflight = 1u;
+    d->sm_posts++;
+    sm_lib_take(d); /* a build without threads has the answer already */
+}
+
 /* Each turn of the loop: a finished read is applied and the window redrawn. Counts the frames that were drawn while a read was in flight. */
 static void desk_side_follow(desk* d) {
+    if (d->sm_inflight) {
+        sm_lib_take(d);
+    } else if (d->sm_want && !d->side_inflight) {
+        sm_lib_want(d);
+    }
     if (!d->side_inflight) {
         return;
     }
@@ -11646,8 +11700,23 @@ static void desk_nap(void) {
 static void desk_side_settle(desk* d) {
     unsigned round;
 
-    for (round = 0u; round < 8u && !d->live && (d->side_inflight || d->side_stale); round++) {
+    for (round = 0u; round < 8u && !d->live && (d->side_inflight || d->side_stale || d->sm_inflight || d->sm_want); round++) {
         unsigned spins = 0u;
+
+        while ((d->sm_inflight || d->sm_want) && spins++ < 60000u) { /* I906e: the Add to Playlist list */
+            if (d->sm_inflight) {
+                sm_lib_take(d);
+            } else if (!d->side_inflight) {
+                sm_lib_want(d);
+            } else {
+                (void)side_lib_take(d);
+            }
+            if (!d->sm_inflight && !d->sm_want) {
+                break;
+            }
+            desk_nap();
+        }
+        spins = 0u;
 
         if (!d->side_inflight) {
             side_lib_reload(d);

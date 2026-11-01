@@ -301,6 +301,7 @@ typedef struct sel_lib_read {
 
 enum { SEL_RD_QUERY_MAX = 512, SEL_RD_FOLDERS_MAX = 4096 };
 static void art_changed(sel_engine* e);
+static void txt_changed(sel_engine* e);
 static void lib_read_post(sel_engine* e, sel_lib_read* r, void (*run)(sel_engine* e));
 static int lib_read_idle(const sel_lib_read* r);
 
@@ -313,6 +314,22 @@ typedef struct sel_art_ent {
     uint32_t album;                /* albums.id, 0 when the song has none */
     char artist[SEL_VIEW_ARTIST_MAX];
 } sel_art_ent;
+
+/* I906e: title, album group and metadata of a song path for the desktop UI, from this cache and never from a library call on the pump.
+ * A miss is queued; the rd_txt read resolves the batch and the pump merges it and moves txt_generation so the UI asks again. */
+enum { SEL_TXT_CACHE = 4096, SEL_TXT_BATCH = 64, SEL_TXT_BLK = 16384, SEL_TXT_MAX = SEL_COMPOSER_MAX + 224 };
+typedef struct sel_txt_ent {
+    uint64_t key; /* 0: free */
+    uint8_t found;
+    char text[SEL_TXT_MAX];
+} sel_txt_ent;
+typedef struct sel_txt {
+    sel_txt_ent cache[SEL_TXT_CACHE], res[SEL_TXT_BATCH];
+    uint64_t want_key[SEL_TXT_BATCH], job_key[SEL_TXT_BATCH];
+    uint8_t want_kind[SEL_TXT_BATCH], job_kind[SEL_TXT_BATCH];
+    char want[SEL_TXT_BLK], job[SEL_TXT_BLK];
+    uint32_t head, epoch, job_epoch, want_n, job_n, want_len;
+} sel_txt;
 
 struct sel_engine {
     const sel_host* host;
@@ -615,13 +632,26 @@ struct sel_engine {
     uint32_t panel_reads;                      /* panel reads that landed and were published (I906d sentinel) */
     /* I906d: view artwork ids on rd_art. art_want is filled by the view callback on the pump, copied to art_job when the read is posted. */
     sel_lib_read rd_art;
+    sel_lib_read rd_txt;
+    sel_txt* txt;
+    uint32_t txt_generation, txt_reads;
+    /* I906e: the Queue page album groups are a function of the whole queue, read in one posted read keyed by the queue hash the UI computes.
+     * grp_snap is the queue's paths at post time (an empty string for a divider), grp_job_* the read's answer, grp_* the published one. */
+    sel_lib_read rd_grp;
+    char* grp_snap;
+    uint32_t grp_snap_n, grp_job_key, grp_job_epoch, grp_epoch, grp_reads, grp_key, grp_n, grp_valid;
+    char* grp_job_pool;
+    size_t grp_job_pool_n, grp_job_pool_cap;
+    uint32_t* grp_job_name;
+    char* grp_pool;
+    uint32_t* grp_name;
     sel_art_ent art_cache[SEL_ART_CACHE], art_res[SEL_ART_BATCH];
     uint32_t art_head, art_epoch, art_job_epoch, art_want_n, art_job_n, art_want_len, art_want_more, art_reads;
     uint64_t art_want_key[SEL_ART_BATCH], art_job_key[SEL_ART_BATCH];
     /* I936: the catalogue song count (COUNT over songs, seconds on a large cold db) is read on rd_total, never on the pump. rdt_at is
      * library_changes + 1 when the read was posted; an answer for an older library state is published and the next pump asks again. */
     sel_lib_read rd_total;
-    uint32_t rdt_total, rdt_at, total_reads;
+    uint32_t rdt_total, rdt_at, total_reads, rdt_playlists;
     int rdt_rc;
     char art_want[SEL_ART_BLK], art_job[SEL_ART_BLK];
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
@@ -2116,6 +2146,8 @@ static void panel_post(sel_engine* e) {
 static void total_run(sel_engine* e) {
     e->rdt_total = 0u;
     e->rdt_rc = sel_library_song_total(e->lib, &e->rdt_total);
+    e->rdt_playlists = 0u;
+    if (sel_library_folder_counts(e->lib, NULL, NULL, &e->rdt_playlists, NULL) != SEL_FOLDER_OK) e->rdt_playlists = 0u; /* I906e: the Clear dialog and New Playlist count */
 }
 
 /* The pump takes the finished panel; an answer for a song that is no longer open (or whose panel was invalidated) is dropped. */
@@ -6506,6 +6538,7 @@ static void art_changed(sel_engine* e) {
     e->art_epoch++;
     e->art_head = 0u;
     memset(e->art_cache, 0, sizeof e->art_cache);
+    txt_changed(e);
 }
 
 /* Row callback of the view (DUI-P4-4): the artwork id of a queue path, albums.id of its songs row's album, through the
@@ -6606,6 +6639,224 @@ static void art_publish(sel_engine* e) {
         e->art_cache[e->art_head++ % (uint32_t)SEL_ART_CACHE] = e->art_res[i];
     }
     e->art_generation++; /* the view reads the ids again; every one of the batch is now a cache hit */
+}
+
+/* I906e: the song text cache. Key = FNV-1a of the path, seeded by the kind. */
+static uint64_t txt_key(uint32_t kind, const char* ref) {
+    uint64_t h = art_key(ref) ^ ((uint64_t)(kind + 1u) * 0x9E3779B97F4A7C15ull);
+
+    return h != 0u ? h : 1u;
+}
+
+static sel_txt_ent* txt_find(sel_txt* t, uint64_t key) {
+    uint32_t i;
+
+    for (i = 0; i < (uint32_t)SEL_TXT_CACHE; i++) {
+        if (t->cache[i].key == key) return &t->cache[i];
+    }
+    return NULL;
+}
+
+static void txt_changed(sel_engine* e) {
+    e->grp_epoch++;
+    e->grp_valid = 0u;
+    if (e->txt == NULL) return;
+    e->txt->epoch++;
+    e->txt->head = 0u;
+    memset(e->txt->cache, 0, sizeof e->txt->cache);
+    e->txt_generation++;
+}
+
+int sel_engine_song_text(sel_engine* e, uint32_t kind, const char* ref, char* out, size_t cap) {
+    uint64_t key;
+    sel_txt* t;
+    sel_txt_ent* c;
+    size_t len;
+    uint32_t i;
+
+    if (out != NULL && cap > 0u) out[0] = '\0';
+    if (e == NULL || e->lib == NULL || ref == NULL || kind >= (uint32_t)SEL_SONG_TEXT_KINDS) return 0;
+    if (e->txt == NULL) {
+        e->txt = (sel_txt*)calloc(1u, sizeof *e->txt);
+        if (e->txt == NULL) return 0;
+    }
+    t = e->txt;
+    key = txt_key(kind, ref);
+    c = txt_find(t, key);
+    if (c != NULL) {
+        if (c->found && out != NULL && cap > 0u) {
+            size_t n = SEL_TXT_MAX < cap ? (size_t)SEL_TXT_MAX : cap;
+
+            memcpy(out, c->text, n);
+            out[n - 1u] = '\0';
+        }
+        return c->found ? 1 : 0;
+    }
+    len = strlen(ref) + 1u;
+    for (i = 0; i < t->want_n; i++) {
+        if (t->want_key[i] == key) return -1;
+    }
+    if (t->want_n < (uint32_t)SEL_TXT_BATCH && t->want_len + len <= (size_t)SEL_TXT_BLK) {
+        memcpy(t->want + t->want_len, ref, len);
+        t->want_len += (uint32_t)len;
+        t->want_kind[t->want_n] = (uint8_t)kind;
+        t->want_key[t->want_n++] = key;
+    }
+    return -1;
+}
+
+uint32_t sel_engine_song_text_generation(const sel_engine* e) {
+    return e->txt_generation;
+}
+
+/* Read thread: resolves the queued batch. */
+static void txt_run(sel_engine* e) {
+    sel_txt* t = e->txt;
+    const char* p = t->job;
+    uint32_t i;
+
+    for (i = 0; i < t->job_n; i++) {
+        sel_txt_ent* r = &t->res[i];
+        char buf[SEL_TXT_MAX];
+        int ok = 0;
+
+        buf[0] = '\0';
+        if (t->job_kind[i] == (uint8_t)SEL_SONG_TEXT_TITLE) ok = sel_library_song_title(e->lib, p, buf, 256u);
+        else ok = sel_library_song_meta(e->lib, p, buf, sizeof buf);
+        memset(r, 0, sizeof *r);
+        r->key = t->job_key[i];
+        r->found = (uint8_t)(ok != 0);
+        if (ok) memcpy(r->text, buf, sizeof r->text);
+        p += strlen(p) + 1u;
+    }
+}
+
+static void txt_post(sel_engine* e) {
+    sel_txt* t = e->txt;
+    uint32_t i;
+    size_t off = 0u, out = 0u;
+
+    if (t == NULL || e->lib == NULL || t->want_n == 0u || !lib_read_idle(&e->rd_txt)) return;
+    t->job_n = 0u;
+    t->job_epoch = t->epoch;
+    for (i = 0; i < t->want_n; i++) {
+        const char* p = t->want + off;
+        size_t len = strlen(p) + 1u;
+
+        if (txt_find(t, t->want_key[i]) == NULL) {
+            memcpy(t->job + out, p, len);
+            out += len;
+            t->job_kind[t->job_n] = t->want_kind[i];
+            t->job_key[t->job_n++] = t->want_key[i];
+        }
+        off += len;
+    }
+    t->want_n = 0u;
+    t->want_len = 0u;
+    if (t->job_n == 0u) return;
+    lib_read_post(e, &e->rd_txt, txt_run);
+}
+
+static void txt_publish(sel_engine* e) {
+    sel_txt* t = e->txt;
+    uint32_t i;
+
+    e->txt_reads++;
+    if (t == NULL || t->job_epoch != t->epoch) return;
+    for (i = 0; i < t->job_n; i++) {
+        t->cache[t->head++ % (uint32_t)SEL_TXT_CACHE] = t->res[i];
+    }
+    e->txt_generation++;
+}
+
+/* I906e: the Queue page groups. Read thread: the album, else the source, of every snapshot path. */
+static void grp_run(sel_engine* e) {
+    const char* p = e->grp_snap;
+    uint32_t i;
+    char buf[160];
+
+    e->grp_job_pool_n = 0u;
+    for (i = 0; i < e->grp_snap_n; i++) {
+        size_t need;
+
+        e->grp_job_name[i] = 0u;
+        buf[0] = '\0';
+        if (*p != '\0' && sel_library_song_group(e->lib, p, buf, sizeof buf) && buf[0] != '\0') {
+            need = strlen(buf) + 1u;
+            if (e->grp_job_pool_n + need > e->grp_job_pool_cap) {
+                size_t nc = e->grp_job_pool_cap != 0u ? e->grp_job_pool_cap * 2u : 4096u;
+                char* np;
+
+                while (nc < e->grp_job_pool_n + need) nc *= 2u;
+                np = (char*)realloc(e->grp_job_pool, nc);
+                if (np == NULL) break;
+                e->grp_job_pool = np;
+                e->grp_job_pool_cap = nc;
+            }
+            memcpy(e->grp_job_pool + e->grp_job_pool_n, buf, need);
+            e->grp_job_name[i] = (uint32_t)e->grp_job_pool_n + 1u;
+            e->grp_job_pool_n += need;
+        }
+        p += strlen(p) + 1u;
+    }
+}
+
+static void grp_post(sel_engine* e, uint32_t key) {
+    size_t total = 0u, off = 0u;
+    uint32_t i, n = e->queue.count;
+    char* snap;
+
+    for (i = 0; i < n; i++) total += strlen(sel_queue_path(&e->queue, i)) + 1u;
+    snap = (char*)malloc(total + 1u);
+    free(e->grp_job_name);
+    e->grp_job_name = (uint32_t*)malloc(((size_t)n + 1u) * sizeof *e->grp_job_name);
+    if (snap == NULL || e->grp_job_name == NULL) {
+        free(snap);
+        free(e->grp_job_name);
+        e->grp_job_name = NULL;
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        const char* path = (e->queue.entries[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u ? "" : sel_queue_path(&e->queue, i);
+        size_t len = strlen(path) + 1u;
+
+        memcpy(snap + off, path, len);
+        off += len;
+    }
+    free(e->grp_snap);
+    e->grp_snap = snap;
+    e->grp_snap_n = n;
+    e->grp_job_key = key;
+    e->grp_job_epoch = e->grp_epoch;
+    lib_read_post(e, &e->rd_grp, grp_run);
+}
+
+static void grp_publish(sel_engine* e) {
+    e->grp_reads++;
+    e->txt_generation++; /* the UI asks again, a stale answer included */
+    if (e->grp_job_epoch != e->grp_epoch) return;
+    free(e->grp_pool);
+    free(e->grp_name);
+    e->grp_pool = e->grp_job_pool;
+    e->grp_name = e->grp_job_name;
+    e->grp_job_pool = NULL;
+    e->grp_job_name = NULL;
+    e->grp_job_pool_n = 0u;
+    e->grp_job_pool_cap = 0u;
+    e->grp_n = e->grp_snap_n;
+    e->grp_key = e->grp_job_key;
+    e->grp_valid = 1u;
+}
+
+int sel_engine_queue_groups(sel_engine* e, uint32_t key, const char** pool, const uint32_t** name) {
+    if (e == NULL || e->lib == NULL) return 0;
+    if (e->grp_valid && e->grp_key == key && e->grp_n == e->queue.count) {
+        if (pool != NULL) *pool = e->grp_pool != NULL ? e->grp_pool : "";
+        if (name != NULL) *name = e->grp_name;
+        return 1;
+    }
+    if (lib_read_idle(&e->rd_grp)) grp_post(e, key);
+    return -1;
 }
 
 static void view_src(const sel_engine* e, sel_view_src* s) {
@@ -6843,8 +7094,18 @@ static void lib_reads_collect(sel_engine* e) {
         e->total_reads++;
         e->songs_counted_at = e->rdt_at;
         e->state.library_songs = e->rdt_rc == SEL_FOLDER_OK ? e->rdt_total : 0u;
+        e->state.library_playlists = e->rdt_playlists;
     }
     art_post(e);
+    if (lib_read_take(&e->rd_txt)) {
+        e->lib_reads_applied++;
+        txt_publish(e);
+    }
+    txt_post(e);
+    if (lib_read_take(&e->rd_grp)) {
+        e->lib_reads_applied++;
+        grp_publish(e);
+    }
     if (lib_read_take(&e->rd_stats)) {
         e->lib_reads_applied++;
         if (e->rd_stats_want) {
@@ -6912,12 +7173,6 @@ const char* sel_engine_view_cursor_key(sel_engine* e) {
  * is looked up by its entry id in the list the view shows, a browse file row is joined by sel_browse_join (the one place
  * the platform's path rules live). 0 for a directory, node, heading or home row, or when the path does not fit. A UI that
  * paints song rows (the desktop song menu, I371) asks for each row it registers. */
-uint32_t sel_engine_library_playlists(sel_engine* e) {
-    uint32_t playlists = 0;
-    if (e->lib == NULL || sel_library_folder_counts(e->lib, NULL, NULL, &playlists, NULL) != SEL_FOLDER_OK) return 0u;
-    return playlists;
-}
-
 typedef struct source_name_ctx {
     const char* id;
     char* out;
@@ -7898,6 +8153,15 @@ void sel_engine_destroy(sel_engine* e) {
         e->rdc_next_touch_n = 0u;
         lib_read_end(&e->rd_panel);
         lib_read_end(&e->rd_art);
+        lib_read_end(&e->rd_txt);
+        lib_read_end(&e->rd_grp);
+        free(e->grp_snap);
+        free(e->grp_job_pool);
+        free(e->grp_job_name);
+        free(e->grp_pool);
+        free(e->grp_name);
+        free(e->txt);
+        e->txt = NULL;
         lib_read_end(&e->rd_total);
         composer_release(e->host, &e->rdc_blk);
         composer_release(e->host, &e->rd_fmt_blk);
@@ -8183,7 +8447,7 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
+    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
@@ -8512,6 +8776,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->panel_reads = e->panel_reads;
     out->art_reads = e->art_reads;
     out->total_reads = e->total_reads;
+    out->text_reads = e->txt_reads;
+    out->group_reads = e->grp_reads;
     out->stats_queries = e->stats_queries;
     out->lyric_fetches = e->lyr_fetches;
     out->library_searches = e->searches;
