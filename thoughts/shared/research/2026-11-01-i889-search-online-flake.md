@@ -1,7 +1,7 @@
 ---
 date: 2026-11-01
 topic: I889 dui-search-online flake, first investigation
-status: open
+status: fixed
 ---
 # I889: dui-search-online flake, first investigation (Sonnet agent, no fix)
 
@@ -27,3 +27,9 @@ Why is the pass 4 song count still 0 when `sel_engine_reads_pending` reads 0? Po
 - Engine exposes "SOURCES fully answered, including the counted retry" (for example a settled flag the UI can read).
 - Replay holds on it in both replay points, besides `on_state == 1u`, with the existing 20000-nap bound.
 - Also hold on drawn rows before a row click (`on_state == 2u` until `on_drawn > 0`) for the :93 case.
+
+## Root cause and fix (second agent, Opus)
+- Passes 2, 3 and 5 (:70, :93, :128) are one failure: the replay clicked the scope chip before the first SOURCES answer drew the chips, so the search ran in scope `-`, no online row existed, and the row or radio click hit nothing (red logs show `online scope=- searches=0` at :93 and :128 too). No separate row-drawn race was seen.
+- Pass 4 (:116): when the first SOURCES answer met a busy library, its rows went out with count 0 and `cmd_SOURCES` set `sources_retry`; `lib_reads_collect` then resent the full answer. The desktop handler (`desk_on_event`, SOURCES branch) appended every row of an answer that arrived with no request out (`src_wait == 0`): with 16 rows held, `d->src_n < 16` failed and the resend was dropped; with 15 held, only its first row landed at index 15. So `sel_engine_reads_pending` read 0 (the resend had run) while the held count stayed 0.
+- Fix: the engine exposes `sel_engine_sources_pending` (the counted resend is still to come); the desktop holds a scripted turn (`desk_wait_turn`, 20000-nap bound) and the replay's next line while a SOURCES request is out or that resend is pending (`desk_src_pending`); a SOURCES row with no request out replaces the held row of its key (`src_slot`) instead of appending.
+- Proof: red 4 of 6 before the fix under 6 `yes` loops; green 10 of 10 after under the same load.

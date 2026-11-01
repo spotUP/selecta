@@ -344,6 +344,7 @@ typedef struct desk {
     char scope[24];          /* I406a: the search source in force: "" the library, else the id of an online source (SOURCE_SEARCH); the pref search.last_source */
     int scope_read;          /* 1 once the pref was read */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
+    uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
@@ -11266,6 +11267,23 @@ static void desk_side_step(desk* d) {
 
 /* A headless turn that waits for a worker thread (scan, I787 sidebar read) gives it the core for 1 ms instead of spinning. Amiga has
  * no such thread (the work ran on the caller's task), so there is nothing to wait for. */
+/* I889: the row a SOURCES row of `key` lands in. Within one answer every key is new and appends; the engine's counted resend
+ * of an answer that met a busy library (cmd_SOURCES, lib_reads_collect) arrives with no request out and refreshes each row in
+ * place, so its counts replace the held zeros instead of landing past the held rows or being dropped once 16 are held. */
+static uint32_t src_slot(const desk* d, const char* key) {
+    uint32_t i;
+
+    for (i = 0; i < d->src_n && i < sizeof d->src / sizeof d->src[0]; i++) {
+        if (strncmp(d->src[i].key, key, sizeof d->src[i].key - 1u) == 0) return i; /* the held key is cut at its field */
+    }
+    return d->src_n;
+}
+
+/* I889: a SOURCES request is out, or its answer still waits for the engine's counted resend. */
+static int desk_src_pending(const desk* d) {
+    return d->src_wait || (d->engine != NULL && sel_engine_sources_pending(d->engine));
+}
+
 static void desk_nap(void) {
 #if defined(__unix__) || defined(__APPLE__)
     struct timespec ts;
@@ -13294,7 +13312,7 @@ static int desk_replay_input(desk* d) {
             desk_advance(d, n);
         }
         line = nl != NULL ? nl + 1 : NULL;
-        if (!d->live && d->on_state == 1u) { /* I406a: an online search is out; the script's next line waits for its answer (the turn holds meanwhile) */
+        if (!d->live && (d->on_state == 1u || desk_src_pending(d))) { /* I889: and a SOURCES answer; I406a: an online search is out; the script's next line waits for its answer (the turn holds meanwhile) */
             pointer_sent = 1;
         }
         if (pointer_sent && line != NULL && *line != '\0') { /* the engine answers on the shell's next pump: resume then */
@@ -14171,8 +14189,9 @@ static void desk_on_event(void* state, const sel_message* evt) {
             d->src_n = 0;
         }
         int changed = 1;
-        if (d->src_n < sizeof d->src / sizeof d->src[0]) {
-            uint32_t n = d->src_n++;
+        uint32_t n = src_slot(d, (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)""));
+        if (n < sizeof d->src / sizeof d->src[0]) {
+            if (n == d->src_n) d->src_n++;
             unsigned char before[sizeof d->src[0]]; /* the row held from the last SOURCES answer: an identical answer paints nothing new */
             memcpy(before, &d->src[n], sizeof before);
             snprintf(d->src[n].key, sizeof d->src[n].key, "%s", (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)""));
@@ -14417,6 +14436,13 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     }
     if (!d->live && (d->scan_pending || desk_scan_active(d))) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
                                         * progress) until its LIBRARY_RESULT arrives, so the script's next line sees the finished scan */
+        desk_nap();
+        d->turn_why[2]++;
+        return 1;
+    }
+    if (!d->live && desk_src_pending(d) && d->src_waits < 20000u) { /* I889: a scripted run's next line (a chip or row click, a dump) sees the
+                                        * final SOURCES answer: the first one, and the counted resend of one that met a busy library */
+        d->src_waits++;
         desk_nap();
         d->turn_why[2]++;
         return 1;

@@ -362,6 +362,9 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx);
 
 /* I829: 1 while a posted library read (home, search, folders) or a retried SOURCES reply is still in flight. */
 int sel_engine_reads_pending(const sel_engine* e);
+/* I889: 1 while the last SOURCES answer went out without some per-source counts (the library was busy) and its counted resend
+ * is still to come. A front end that read the rows of that answer has not yet read the final ones. */
+int sel_engine_sources_pending(const sel_engine* e);
 /* I829: pumps until every posted library read has landed and been applied (or timeout_ms passes), returning the events delivered.
  * For synchronous front ends (CLI, text UI, test drivers) that need the answer of a command now; the desktop pump never calls it. */
 uint32_t sel_engine_pump_reads(sel_engine* e, sel_event_sink sink, void* ctx, unsigned timeout_ms);

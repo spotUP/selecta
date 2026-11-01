@@ -7727,6 +7727,10 @@ static void hw_clock(sel_engine* e) {
     }
 }
 
+int sel_engine_sources_pending(const sel_engine* e) {
+    return e->sources_retry;
+}
+
 int sel_engine_reads_pending(const sel_engine* e) {
     return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
