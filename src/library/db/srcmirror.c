@@ -87,16 +87,21 @@ void sel_library_source_mirror_open(sel_library* lib) {
 void sel_library_source_mirror_refresh(sel_library* lib) {
     sel_src_mirror* m = &lib->src_mir;
     int songs = lib->mir_dirty_songs || lib->mir_index != lib->has_index;
+    unsigned seq0;
 
     if (songs && lib->has_index && sel_spsc_count(&lib->requests) > 0) songs = 0;
-    __atomic_add_fetch(&m->seq, 1u, __ATOMIC_ACQ_REL); /* odd: a reader copying now retries */
+    /* Only this worker writes seq, so a load plus a store bumps it: the 68k gcc has no libatomic and __atomic_add_fetch does not
+     * link there (src/core/count.h). The fence keeps the rewrite below after the odd value. */
+    seq0 = __atomic_load_n(&m->seq, __ATOMIC_RELAXED);
+    __atomic_store_n(&m->seq, seq0 + 1u, __ATOMIC_RELAXED); /* odd: a reader copying now retries */
+    __atomic_thread_fence(__ATOMIC_RELEASE);
     if (songs) {
         mirror_load_songs(lib, m);
         lib->mir_dirty_songs = 0u;
         lib->mir_index = lib->has_index;
     }
     mirror_load_sync(lib, m); /* a handful of rows: re-read every time, meta is WITHOUT ROWID and has no change signal */
-    __atomic_add_fetch(&m->seq, 1u, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&m->seq, seq0 + 2u, __ATOMIC_RELEASE);
 }
 
 static void mirror_copy(sel_library* lib, sel_src_mirror* out) {
