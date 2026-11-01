@@ -11495,6 +11495,29 @@ static int hover_region_of(const desk* d, sel_gui_rect box) {
     return rect_inside(box, region_rect(d, "main")) ? HR_MAIN : HR_NONE;
 }
 
+/* I909: the regions (bit 1 << HR_*) a hover box needs repainted. A box of the open song menu belongs to the window-level overlay, not
+ * to one region: its panel and shadow lie over every region it overlaps, and an overlay pass alone would draw the shadow over the
+ * shadow of the last pass (the menu darkens at each item the pointer crosses). So every region under the panel is repainted first. */
+static unsigned hover_region_mask(const desk* d, sel_gui_rect box) {
+    int r = hover_region_of(d, box);
+    if (box.w > 0 && d->sm_open) {
+        sel_gui_rect first = song_menu_item_rect(d, 0), panel = rect_of(first.x, first.y, first.w, first.h * song_menu_n(d));
+        if (rect_inside(box, panel)) {
+            static const char* const names[] = { "sidebar", "main", "detail", "player" };
+            static const int ids[] = { HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
+            unsigned m = 0u;
+            size_t k;
+            for (k = 0; k < sizeof ids / sizeof ids[0]; k++) {
+                if (sel_gui_rect_intersects(panel, region_rect(d, names[k]))) {
+                    m |= 1u << ids[k];
+                }
+            }
+            return m;
+        }
+    }
+    return r == HR_NONE ? 0u : 1u << r;
+}
+
 /* Repaints a layout region so the fill or ink of a control in it follows its fade (DUI-P3-8). The main region of a
  * Home-mode page is painted by the callers' own draw_home. */
 static void hover_paint_region(desk* d, int region) {
@@ -11511,10 +11534,12 @@ static void hover_paint_region(desk* d, int region) {
 
 /* Repaints the regions of the hovered control and of the one the pointer just left, each once, and no other region. */
 static void hover_repaint(desk* d) {
-    int a = hover_region_of(d, d->hover_box), b = hover_region_of(d, d->hover_prev);
-    hover_paint_region(d, a);
-    if (b != a) {
-        hover_paint_region(d, b);
+    unsigned mask = hover_region_mask(d, d->hover_box) | hover_region_mask(d, d->hover_prev);
+    int r;
+    for (r = HR_SIDEBAR; r <= HR_PLAYER; r++) {
+        if ((mask & (1u << r)) != 0u) {
+            hover_paint_region(d, r);
+        }
     }
     desk_draw_window_overlays(d);
 }
@@ -11522,7 +11547,7 @@ static void hover_repaint(desk* d) {
 /* True when a running tween repaints the main region: a hovered control or tile in it, one the pointer left, or the view or
  * list cross-fade. A fade confined to another region leaves the main region (and its dirty rectangle) alone. */
 static int hover_main_painted(const desk* d) {
-    return d->hover_tile > 0 || hover_region_of(d, d->hover_box) == HR_MAIN || hover_region_of(d, d->hover_prev) == HR_MAIN ||
+    return d->hover_tile > 0 || ((hover_region_mask(d, d->hover_box) | hover_region_mask(d, d->hover_prev)) & (1u << HR_MAIN)) != 0u ||
            sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536) < 65536 || nav_animating(d);
 }
 
