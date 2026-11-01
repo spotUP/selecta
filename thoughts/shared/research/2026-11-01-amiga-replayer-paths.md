@@ -292,3 +292,117 @@ Consequence for D3: option (b) is no longer "large work from scratch" for AHX, A
 - **DeliTracker Custom on the Amiga: AHI redirect in v1.** A virtual-Paula wrapper captures the module's `$dff0xx` writes into `sel_voices` (MMU write trap on 68030+, design by Opus); a 68020 without an MMU stays Paula only.
 - **Per-format output choice (Johan 2026-11-01): "it should be user selectable per format on the amiga. ahi/paula."** On the Amiga, every format whose owner can drive both outputs (nuade tick players, the ported D3 players, Custom through the virtual-Paula wrapper, amplifier Eagleplayers) gets a user setting AHI or Paula, per format. The default follows the system output. A format whose owner is Paula only shows the setting disabled with the reason. No such per-format pref exists in Selecta today (grep of src, include, apps); it is new work, row I887.
 - **Goal (Johan 2026-11-01): "the goal is to get all formats on the amiga to output trough both ahi and paula".** No format stays Paula only or AHI only; the I887 setting is never disabled in the end state. This supersedes the "Paula only for v1" option of D3 and widens the virtual-Paula wrapper from Custom to every Paula-poking player that has no tick-player port (Hippo own players, the 27 "no" Eagleplayers, Quartet ST, ChipTracker, TCB, CustomMade). The reverse direction needs work too: AHI-only owners (xmaplay060 on 020-040, PS3M on AHI) need a Paula route through `sel_mixer`'s paula14 output. Order of preference per format: (1) tick player (nuade or a D3 port), both outputs for free; (2) native player with its own Paula and AHI paths; (3) virtual-Paula wrapper for the rest. Open design point for the I888 design: how the wrapper reaches AHI on a 68020 without an MMU (per-player `$dff0xx` patching like HippoPlayer's `quadscopePoke`, or a 68k interpreter).
+
+## 10. Dual output for every format (I888)
+
+Goal (Johan 2026-11-01, 9.7): every format on the Amiga plays through both AHI and Paula, user selectable per format (I887). Preference per format: (1) tick player (nuade or a D3 port), both outputs for free through `sel_voices` / `sel_mixer`; (2) native player with its own Paula and AHI paths; (3) virtual-Paula wrapper for the rest. This section answers the four I888 questions. Code references are from `main` at 3f57f6d9.
+
+### 10.1 What "Paula" and "AHI" mean per replayer kind
+
+The engine already decides the path from the replayer kind (`include/selecta/engine.h:390-393`, `sel_engine_route`, `src/engine/engine.c:1573-1615` `follow_route`): VOICE kind with `voice_count <= voice_max` goes DIRECT to the output's voice sink (Paula hardware voices, `plugins/shared/paula/paula_voices.c`); every other song goes to `sel_mixer` and, on a voice-only output, the engine swaps to a PCM output via `pcm_output_for` (`ahi` when the machine lists it, else `paula14`; I532). So per kind:
+
+| Kind | Paula | AHI |
+|---|---|---|
+| VOICE, 4 voices (nuade, D3 ports, amplifier EPs, wrapped pokers) | DIRECT: hardware voices | MIXER: `sel_mixer` then `ahi` (A1), later the AHI channel sink (A2, 7.2) |
+| VOICE > 4 voices, RENDER (xmaplay060 render mode, PS3M render, openmpt, ym) | MIXER then `paula14` (14-bit PCM through Paula) | MIXER then `ahi` |
+| HW (KPlayer, Hippo own asm players, EP host, Custom) | HANDOVER: the player pokes Paula itself | only through a second owner of the format, or the virtual-Paula wrapper (10.3), which turns it into VOICE kind |
+
+Consequence: "Paula" for a software-mixed format (XM, IT, S3M, OctaMED 5-8 channels) is `paula14`, not four hardware voices. That is the only Paula route those formats can have.
+
+### 10.2 Format x route table
+
+Route key: **T** = tick player (VOICE kind), both outputs from the routing above. **N** = native player(s) with both paths (one owner per output, or a render mode into `paula14`). **W** = virtual-Paula wrapper for AHI, the unchanged binary for Paula. Cost: **S** under 2 days, **M** 2-5 days, **L** over 5 days.
+
+| Format (songs) | Route | Paula owner | AHI owner | Work | Cost |
+|---|---|---|---|---|---|
+| Protracker MOD (80788), Soundtracker (1945) | N | KPlayer (HW) | nuade `protracker4` (T) | router picks owner by output (I888b) | S |
+| FT2 XM (44293) | N | 060: xmaplay060 Paula code; 020-040: xmaplay060 render mode into `paula14` | xmaplay060 own AHI | render-to-buffer entry in the I868 port of `xmaplay060.s` (RENDER kind) | M |
+| IT (25572), S3M (11188), FT1 (2038), MTM (790) | N | PS3M own Paula mixing (HippoPlayer's non-AHI path, `.renderPS3M`, puu016.s:28718) or render into `paula14` | PS3M AHI | expose both modes in the I868 PS3M port | M |
+| IFF-SMUS / Sonix (10396) | T | nuade `sonix` | nuade `sonix` (fallback: UADE SonixMusicDriver amplifier on the EP host, N6) | none beyond I888a/b | S |
+| OctaMED MMD0-3 (5134), DigiBooster 1 (168) and Pro (845) | T | libopenmpt loader into a tick player (D3); Hippo `p_med` stays as HW alternative | same tick player | D3 port | L |
+| AHX/THX (1390) | T | hvl_replay port; Hippo `thx.asm` stays as HW alternative | hvl tick player | D3 port, 2272 lines C | M |
+| TFMX all (736; 9 EP entries) | T | libtfmxaudiodecoder port; Hippo `tfmx.asm` HW alternative | same | D3 port, GPL plugin | L |
+| Musicline (817) | T | musicline_playback port (licence first, N9) | same | D3 port | L |
+| Art of Noise 4V/8V (211) | T | aon_player port | same | D3 port | M |
+| PreTracker (64) | T | pretracker port | same | D3 port | M |
+| MaxTrax (82) | T | maxtrax transpiled C port (licence first) | same | D3 port, 10.9k lines | L |
+| Hippel ST (21; 2 EP entries) | T | hippelst port (licence first) | same | D3 port | M |
+| Rob Hubbard 2 | T | nuade `robhubbard`/`robhubbardst` (variant coverage UNVERIFIED; fallback W) | same | check, else W table | S |
+| YM-2149 | T (RENDER) | `ym` plugin into `paula14` | `ym` into `ahi` | none | S |
+| ADPCM_mono | T | trivial C RENDER | same | small C | S |
+| Every nuade-covered EP format (63 "partial" + 7 "yes" entries, section 6) | T | nuade player | nuade player; amplifier EPs also via N6 | none beyond I888a/b; M1 gates the CPU tier | S |
+| DeliTracker Custom (747) | W | the module itself on the EP host (HW) | wrapper: per-module patch table on 68020, MMU trap on 68030+ | wrapper core once, then tables | L once, S per batch |
+| Quartet ST (859) | W | EP `quartet st` (HW) | wrapper, patch table for the binary | table | S |
+| ChipTracker (45), StoneTracker (64), TCB Tracker (24), CustomMade (10) | W | EP binary (HW) | wrapper, one table per binary | table each | S each |
+| DeliMIDI | n/a | MIDI out, no audio | - | - | - |
+
+**Counts.** Over the 97 Eagleplayer entries of section 6: T 90 (all 70 yes/partial, plus 20 of the 27 "no": AHX, ADPCM, AoN x2, DIGI-Booster, Hippel ST x2, Musicline, PreTracker, TFMX x8, YM, MaxTrax, Rob Hubbard 2), W 6 (custom, CustomMade, ChipTracker, StoneTracker, Quartet ST, TCB), n/a 1 (DeliMIDI). The section 8 rows outside the EP lists: N 7 (MOD, Soundtracker, XM, IT, S3M, FT1, MTM), T 2 (OctaMED, DigiBooster Pro). W is about 1750 songs (Quartet ST 859, Custom 747, the rest 143); everything else reaches both outputs without a 68k trap.
+
+### 10.3 Virtual-Paula wrapper
+
+**Where it plugs in.** The wrapper is a replayer-side layer, not an output: it turns Paula register writes into `sel_voices` calls (`include/selecta/voices.h`: `play`, `queue`, `stop`, `set_period`, `set_volume`), so the song is VOICE kind and the existing routing (10.1) sends it to `sel_mixer` then `ahi` (or, later, the AHI channel sink A2). It wraps the I869 Eagleplayer host (the port of HippoPlayer's DeliTracker host, puu016.s:53982-55800, row N3), which also runs Custom modules. When the per-format choice is Paula, the wrapper is not used: the unchanged binary runs as HW kind with HANDOVER, exactly as today.
+
+**Core (portable C, host-testable).** A shadow register file for AUD0-3 (`LCH/LCL`, `LEN`, `PER`, `VOL`, `DAT`) plus `DMACON`, `INTENA`, `INTREQ`, `ADKCON`, with Paula semantics:
+- `DMACON` write with bit 15 set and a channel bit rising: latch LC/LEN, `play()` a `sel_sample` built over that chip address (S8, length = LEN*2, the sample memory is read live, so no copy), then raise the channel's audio interrupt request (Paula raises AUDx IRQ when it latches).
+- `LC`/`LEN` written while the channel's DMA runs: the next latch, so `queue()` a sample at the new address (loop / repeat part, the common "set repeat after start" idiom).
+- `PER`/`VOL` writes: `set_period` / `set_volume` (Q16 = vol * 1024), applied in write order.
+- `DMACON` clear of a channel bit: `stop()`.
+- `INTENA`/`INTREQ` audio bits (7-10): kept virtual; never reach the real chip. When a voice reaches its sample end the backend calls a new end hook (below), the core sets the virtual `INTREQ` bit and, if the virtual `INTENA` bit is set, calls the player's audio interrupt handler, which the wrapper captured by patching `exec.SetIntVector` / `AddIntServer` for `INTB_AUD0-3` while the player's init runs.
+- `ADKCON` modulation bits (AM/FM between channels): logged, played unmodulated; a player that sets them is flagged in its table (none known; UNVERIFIED).
+- Non-audio registers (`VHPOSR`, `DMACONR`, `INTREQR`, colours, CIA): pass through to the real hardware, so DMA-wait loops still work and only cost time.
+
+New API piece: `sel_voices` has no sample-end notification. Add an append-only `set_end_hook(voices, voice, fn, ctx)` (append rule in `voices.h:44`), implemented in `sel_mixer`'s voice backend (`src/mixer/mixer.c`, `src/engine/voices.c`) and, for completeness, the Paula sink. With AHI the hook fires at mixer-block granularity (up to one block late; UNVERIFIED whether any W player cares); with the later A2 sink it comes from AHI's `SoundFunc`, which AHI calls exactly at sound boundaries.
+
+**Capture on a 68020 without MMU: patch tables plus line-A traps, no interpreter.**
+1. Offline, on the Mac, a trace tool runs the player binary (or the Custom module) on `musashi-host` (`~/Code/DEViLBOX/musashi-host/src/amiga_host.c`, 572 lines, the same machine `eagle_runner.c` and `stonetracker-wasm/src/st_machine.c` use) through whole songs and logs every access to `$DFF000-$DFF1FF`: PC as hunk + offset, register, size, instruction form. Dynamic tracing catches base-register (`lea $dff000,a6` then `move.w d0,$a8(a6)`) and computed addresses that a byte scan for `$00DFF0xx` misses. The tool emits a patch table (`.vpt`) keyed by binary hash, or by module md5 for Custom (Modland's 747 Custom songs are a closed set).
+2. On the Amiga, after `LoadSeg` and before the player's init, the wrapper applies the table: at each traced site it replaces the opcode word with a line-A word (`$Axxx`, index into the site table); instruction length is unchanged, the extension words stay. A site that writes an AUDx data register through an absolute long address is instead retargeted (the 32-bit operand rewritten to the shadow file), so the hot LC/LEN/PER/VOL writes cost nothing extra. Then `CacheClearU()` (68020 instruction cache).
+3. The line-A handler (vector at VBR + `$28`) looks up the site, decodes the original instruction from the table (only the forms the tracer accepted: `move`, `clr`, `or`/`and` to the custom base; anything else rejects the binary at trace time), performs the access on the shadow core or, for non-audio registers, on the real chip, and returns past the instruction.
+4. Verification is offline too: the Mac run of the patched binary on musashi-host, with the line-A handler emulated, must give the same voice event stream as the unpatched binary's Paula register log. A table ships only when that matches over every traced song.
+
+Cost on a 14 MHz 68020: a 4-channel tick writes about 20-40 custom registers; with absolute AUDx writes retargeted, roughly 5-20 trap per tick remain (DMACON, INTENA, INTREQ, base-relative writes). At about 150-250 cycles per line-A trap plus lookup, that is about 2-5k cycles per tick, 0.1-0.25 M cycles per second at 50 Hz, about 1-2% of the CPU (UNVERIFIED; measure on the rig with the trap counter). The `sel_mixer` cost on the AHI side (7.2 A1) dominates, as for every VOICE player.
+
+Limit: a binary or module with no table (an unknown Custom file) cannot be redirected on a 68020 without an MMU; there the I887 setting shows Paula only, with the reason "no patch table for this module".
+
+**Rejected for 68020: a 68k interpreter.** Musashi (C) on a 68k host costs roughly 50-150 host cycles per emulated instruction (UNVERIFIED); a player tick of 2-10k instructions becomes 0.1-1.5 M cycles per tick, 5-75 M cycles per second at 50 Hz, which is more than the whole 14 MHz 68020 at the low end. Musashi stays the Mac path (UADE plugin, 9.7) and the offline trace tool above.
+
+**Capture on 68030/040/060 with an MMU: write trap, no table needed.** While the wrapper runs the player (its tick, its init, and its audio interrupt handler), the page holding `$DFF000` is marked invalid through `mmu.library` (Thor Richter; ships as a third-party plugin dependency under D6); the access fault handler decodes the faulting access, feeds the same core, passes non-audio registers through, and resumes. Outside the player's call the page is valid again (two ATC flushes per tick). Other interrupts that touch custom registers during the window fault too and are passed through (cost only). Cost: 20-40 faults per tick at about 300-600 cycles each on a 25 MHz 68030, about 0.3-1.2 M cycles per second, 1-5% (UNVERIFIED). Patch tables still win where they exist (cheaper, no `mmu.library`), so the MMU path is the fallback for modules without a table. 68EC020/EC030/EC040 count as "no MMU".
+
+**Existing code it reuses.** `sel_voices` and `sel_mixer` (VOICE path), `follow_route` / `pcm_output_for` (output swap), the I869 EP host and its ENPP table (N6 amplifier glue calls the same core, so amplifier players and pokers share one Paula-to-voices translation), HippoPlayer's `Hippelcoso_ahi5.s` (`setdma`, the DMACON emulation, :542) as the behavioural reference, and musashi-host for tracing. HippoPlayer's `pf_quadscopePoke` (36 players, puu016.s:1743) feeds only scope data (`ns_start/ns_length/ns_period/ns_tempvol`, :465-470) and lacks the repeat LC/LEN and DMA order, so it is not a sound source.
+
+### 10.4 Per-format setting: storage and router (I887)
+
+Reuse, no new mechanism:
+- **Storage:** one prefs row `SEL_PREF(AMIGA_FORMAT_OUTPUT, "amiga.format_output", "", SEL_PREF_PLAIN)` in `include/selecta/prefs.def`, value `"Protracker=paula,Fasttracker 2=ahi"`. Keys are Modland format names, the same names `SEL_RP_FORMATS` and `src/library/formats_table.c` use. A missing key means "follow the system output" (today's behaviour). Saved in `prefs.conf` by `sel_prefs_save` like every other pref; set from the UI through the existing prefs set command.
+- **Parser:** the engine already parses `"k=v,k=v"` for `rp.config` (`rp_list_find`, `src/engine/engine.c:1912`). Move it to a shared helper that writes into a caller buffer and use it for both; no second parser.
+- **Format of a song:** the library's format column when the song comes from the library, else `sel_format_by_ext` (`src/library/source.h:66`) on the extension or the Amiga prefix (the same prefix rule `sel_registry_claims_name` uses).
+- **Router:** two existing functions take the wanted output. `find_replayer` (`engine.c:1803`) keeps its priority order but skips a candidate whose kind cannot serve the wanted output (10.1: AHI needs VOICE or RENDER; Paula takes any kind). This is how MOD picks KPlayer on Paula and nuade `protracker4` on AHI. In `start_subsong` (`engine.c:1615`) a wanted AHI passes `has_sink = 0` to `sel_engine_route` so a 4-voice song goes to the mixer, and `pcm_output_for` (`engine.c:1532`) takes the wanted output first in its `k_pcm` order (Paula wanted: `paula14`; AHI wanted: `ahi`). `switch_output` and `home_output` stay as they are.
+- **Sentinel:** a `format_output_applied` counter in the engine stats (`include/selecta/engine.h:506`, next to `rp_config_applied`), bumped when the pref changed the owner or the output.
+- **UI:** MUI/AGA/RTG settings page lists the formats the machine's registry claims, each with System / Paula / AHI. A format with no candidate for one output shows that choice disabled with the reason (end state: none, see I888q).
+
+### 10.5 Ordered rows (ledger-ready)
+
+| ID | Scope | Reachability test (entry point, sentinel) | Depends |
+|---|---|---|---|
+| I888a | Pref `amiga.format_output`; shared k=v helper replacing `rp_list_find`; song format name (library column, else `sel_format_by_ext`/prefix); `format_output_applied` stat | `tests/engine/pcm_route_test.c` new arg `pref`: AUDIO `paula,ahi`, RENDER song, pref `Protracker=paula`: switch callback gets `paula14`, not `ahi`; stat == 1; rp.config test still passes | - |
+| I888b | Router: `find_replayer` filters by wanted output; `has_sink = 0` for AHI; `pcm_output_for` order from the want | `pcm_route_test` arg `owner`: two fake replayers claim Protracker (HW pri 2, VOICE pri 1): pref ahi opens the VOICE one (open-call count) on `ahi`; pref paula opens the HW one and the handover callback runs | I888a |
+| I888c | MUI/AGA/RTG settings rows per format (System/Paula/AHI, disabled with reason), written through the prefs set command | uimodel test: selecting AHI for Protracker sets the pref string; rig check at batch end (Amiga) | I888a |
+| I888d | `sel_voices` append-only `set_end_hook`; mixer voice backend and Paula sink call it at sample end; ABI golden updated | voices_test output: one-shot sample fires the hook once, looping sample once per wrap; `tests/abi/sel_voices.*` golden | - |
+| I888e | Virtual-Paula core in C (shadow regs, DMACON latch to `play`, LC/LEN rewrite to `queue`, PER/VOL, virtual INTENA/INTREQ, audio IRQ from the end hook) | host test: a recorded Paula register log of a real song in, voice event stream out, compared with musashi-host's Paula state per tick | I888d |
+| I888f | Mac trace tool on musashi-host: run binary + module, log `$DFF000-$DFF1FF` accesses by hunk/offset, reject unsupported forms and self-modifying code, write `.vpt` | run on the HippoPlayer `chiptracker` binary with a real song: table non-empty, every site classified; verify mode (patched vs unpatched event stream) equal | I888e |
+| I888g | Amiga trap layer: apply `.vpt` after LoadSeg, line-A handler at VBR+$28, absolute AUDx retarget, `CacheClearU` | rig (Amiga, 68020 no MMU config): ChipTracker on AHI, `vp_traps` per tick sentinel > 0, CPU per tick logged | I888e, I888f, N3 |
+| I888h | Wrapper in the EP host plugin: VOICE kind when AHI is wanted and a table (or MMU) is available, else HW; capture `SetIntVector`/`AddIntServer` audio handlers; ENPP amplifier calls (N6) go through the same core | top level: Selecta on the rig with pref `ChipTracker=ahi` plays the song on `ahi`, `format_output_applied` 1, `vp_events` > 0; same song with `paula` runs HW (handover count) | I888b, I888g |
+| I888i | Patch tables for the EP set: Quartet ST, ChipTracker, StoneTracker, TCB, CustomMade (Rob Hubbard 2 if nuade misses it) | per table: I888f verify mode equal over every Modland song of the format; one rig song per table on AHI at batch end | I888f |
+| I888j | Patch tables for DeliTracker Custom, keyed by module md5, in batches of ~100 modules | verify mode per module; batch report of rejected modules (they stay Paula only on 68020) | I888f |
+| I888k | MMU path (030+): `mmu.library` dependency, page invalid during player calls, fault handler into the core; used when no table exists | rig 030 and 060 configs: an unknown Custom module plays on AHI, `vp_faults` per tick sentinel, CPU logged | I888h |
+| I888l | MOD/Soundtracker both ways: KPlayer on Paula, nuade `protracker4` on AHI | rig: one real MOD with pref paula then ahi; owner name in status | I888b |
+| I888m | PS3M family (IT/S3M/FT1/MTM) Paula route: PS3M's own Paula mixing or render into `paula14`, chosen by the want (part of the I868 PS3M port) | rig: one IT with pref paula plays with output `paula14` (or PS3M Paula mode), one with ahi | I888b, I868 PS3M |
+| I888n | xmaplay060 render mode for 020-040 Paula (RENDER kind into `paula14`) | rig 020 config: one XM with pref paula plays through `paula14` | I888b, I868 xmaplay060 |
+| I888o | D3 tick-player ports as separate rows if not in the ledger: AHX (M), AoN (M), PreTracker (M), Hippel ST (M), TFMX (L), Musicline (L), MaxTrax (L), OctaMED + DigiBooster via libopenmpt loaders (L) | per port: Mac render vs reference; rig song on both outputs | N9 licences, I885 |
+| I888p | YM and ADPCM_mono on both outputs (RENDER into `paula14` / `ahi`) | rig: one YM with pref paula, one with ahi | I888b |
+| I888q | Coverage invariant: host test walks every format the registry claims (plus the W tables) and fails on any format with no owner for Paula or for AHI; the known-gap list in the test shrinks to empty as rows land | host test counts from the registry, not a grep | I888b |
+
+### 10.6 Open questions for Johan
+
+1. Unknown DeliTracker Custom module on a 68020 without MMU: show Paula only with the reason (recommended; tables cover the Modland set) or accept an interpreter that cannot keep up on that CPU.
+2. Ship `mmu.library` with Selecta for the 030+ fallback (recommended; freely distributable, needed only for modules without a table) or keep 030+ on tables only.
+3. "Paula" for software-mixed formats (XM, IT, S3M, OctaMED 5-8 channels, YM) means 14-bit `paula14` output: confirm this satisfies the goal.
