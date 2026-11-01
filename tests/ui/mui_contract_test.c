@@ -2378,7 +2378,7 @@ static void test_player_bar(void) {
     }
     ord = strstr(grp, "mui_player_transport_at(k)");
     CHECK(ord != NULL && ord < end, "the transport row is not built in the Mac order of the map layer");
-    CHECK(strstr(grp, "mui_aapanel(MUI_AA_PANEL_RAISED, MUI_PLAYER_ART_PX)") != NULL, "no art frame in the player bar");
+    CHECK(strstr(grp, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL, "no art frame in the player bar");
     CHECK(strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_LEFT") != NULL && strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_CENTRE") != NULL &&
               strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_RIGHT") != NULL,
           "the three columns do not take the map-layer weights");
@@ -2475,6 +2475,46 @@ static void test_compact_rail(void) {
     CHECK(grp != NULL && strstr(grp, "s->side_rail = mui_screen_compact();") != NULL && strstr(grp, "if (s != NULL && !m.rail) {") != NULL &&
               strstr(grp, "s->side_dyn = mui_sidebar_dyn(&m);") != NULL && strstr(grp, "MUIA_Group_Spacing, MUI_RAIL_SPACING") != NULL,
           "mui_sidebar_group builds the rail without side_dyn");
+}
+
+static void test_compact_player(void) {
+    mui_player_band_t c, tall, reg;
+    mui_menu_item items[256];
+    uint32_t i, n, found = 0, builds = mui_player_band_compact_builds();
+    static const char* const want[] = {"next_album", "prev_album", "pitch_up", "pitch_down", "tempo_up", "tempo_down"};
+    char* src = ui_source();
+    const char* cg = strstr(src, "static Object* mui_player_group(");
+    const char* end = cg != NULL ? strstr(cg, "\n}\n") : NULL;
+    char* body = NULL;
+    mui_player_band(&c, mui_layout_compact(640, 256, SEL_UIM_TIER_BITMAP), mui_pixel_aspect_q8(22, 44));
+    mui_player_band(&tall, 1, 256);
+    mui_player_band(&reg, mui_layout_compact(800, 600, SEL_UIM_TIER_BITMAP), 256);
+    CHECK(mui_player_band_compact_builds() == builds + 2u, "compact player sentinel %u (want %u)", (unsigned)mui_player_band_compact_builds(), (unsigned)(builds + 2u));
+    CHECK(c.compact == 1 && c.band_n == 1 && c.extras == 0 && c.right_rows == 1 && c.art_w == 56u && c.art_h == 28u && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
+          "compact band: art %ux%u height %u extras %d", (unsigned)c.art_w, (unsigned)c.art_h, (unsigned)c.height, (int)c.extras);
+    CHECK(tall.art_h == 56u, "square pixels give a square art, got %u", (unsigned)tall.art_h);
+    CHECK(reg.compact == 0 && reg.extras == 1 && reg.right_rows == 3 && reg.art_h == 56u, "regular band unchanged");
+    n = mui_menu_build(items, 256);
+    for (i = 0; i < sizeof want / sizeof want[0]; i++) {
+        uint32_t k;
+        for (k = 0; k < n && k < 256u; k++) {
+            if (items[k].id != NULL && strcmp(items[k].id, want[i]) == 0) {
+                found++;
+                break;
+            }
+        }
+    }
+    CHECK(found == 6u, "album and speed menu entries found %u of 6", (unsigned)found);
+    if (cg != NULL && end != NULL) {
+        body = malloc((size_t)(end - cg) + 1u);
+        memcpy(body, cg, (size_t)(end - cg));
+        body[end - cg] = 0;
+    }
+    CHECK(body != NULL && strstr(body, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8)") != NULL &&
+              strstr(body, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL &&
+              strstr(body, "if (band.extras) {\n        DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());") != NULL,
+          "player group takes the band model, the aspect source and builds extras only when the band has them");
+    free(body);
 }
 
 static void test_viz_chooser(void) {
@@ -2931,6 +2971,8 @@ int main(int argc, char** argv) {
         test_player_bar();
     } else if (strcmp(argv[1], "viz-chooser") == 0) {
         test_viz_chooser();
+    } else if (strcmp(argv[1], "compact-player") == 0) {
+        test_compact_player();
     } else if (strcmp(argv[1], "compact-rail") == 0) {
         test_compact_rail();
     } else if (strcmp(argv[1], "sidebar-icons") == 0) {
