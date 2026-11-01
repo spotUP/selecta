@@ -6529,7 +6529,16 @@ static int viz_tick(desk* d) {
     } else {
         viz_draw_area(d, d->np_viz, d->viz_sel);
     }
-    desk_draw_window_overlays(d); /* I918: a modal dialog keeps the visualizer running, so it is redrawn over each frame (it draws in front) */
+    /* I918: a modal dialog keeps the visualizer running, so it is redrawn over each frame (it draws in front). The pass is
+     * clipped to the pixels this frame repainted: the dialog shadow is a blend, and blended again on pixels that were not
+     * repainted it would darken the surroundings a little more every frame. */
+    if (where != VIZ_VISUAL) {
+        sel_gui_clip_push(d->canvas, where == VIZ_PAGE ? d->viz_pane[0] : d->np_viz);
+    }
+    desk_draw_window_overlays(d);
+    if (where != VIZ_VISUAL) {
+        sel_gui_clip_pop(d->canvas);
+    }
     d->dirty_pixels = desk_flush(d); /* a visualizer frame is counted in viz_frames, not in frames: frames count state changes */
     d->dirty_total += d->dirty_pixels;
     return 1;
