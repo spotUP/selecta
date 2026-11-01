@@ -121,6 +121,7 @@ Hardware modes (SIDBlaster, ZorroSID, USBSID-Pico, Trinity) cannot be proven on 
 - `code/LICENSE.md` is MIT, Copyright 2017 Kari-Pekka Koljonen. It covers HippoPlayer's own code, not necessarily the vendored library.
 - Known from outside the tree, UNVERIFIED here: reSID is GPL-2 (Dag Lem). Selecta already ships GPL-2 libsidplayfp (`third_party/libsidplayfp`), so GPL code in the package is not a new category, but the original PlaySID code by Sundell and Birk has no stated licence, and redistribution rights are unclear.
 - Hippo's own distribution ships `dist/playsid.library`, so shipping is practised upstream, but that is not a licence.
+- Update (Johan 2026-11-01): Johan has permission from the playsid.library author, and the current version is maintained by a friend of his. That clears the PlaySID code (Sundell and Birk, and the current maintainer). It does not cover reSID by Dag Lem, which stays GPL-2: a bundled copy needs the GPL-2 notice and source offer, as libsidplayfp already does. The permission is not yet written down in the repo; store the statement (mail or message) under `thoughts/shared/licences/` before any bundling.
 - Conclusion: may NOT be assumed shippable. Safe default that meets the row: Selecta does not bundle it, it opens `LIBS:playsid.library` if the user installed it, and falls back otherwise. Bundling needs the upstream licence read (koobo repo plus the author's statement) and Johan's decision.
 
 ## 5. Open questions
