@@ -307,10 +307,131 @@ static double dist2(double px, double py, const seg* s) {
     return dx * dx + dy * dy;
 }
 
-/* w x h mask of the 24-grid artwork; w != h squeezes it (I949e2: the 16x8 body for tall pixels, drawn square by 2x tall pixels). */
+/* I970: grid fit for the non-square (tall pixel) sets. Axis-aligned strokes (horizontal, vertical, dots) have their
+ * centre snapped to an output pixel centre per axis, inward from the nearer edge so the icon stays symmetric, and are
+ * exactly one output pixel thick per axis; every other stroke keeps the source width but at least half a pixel each
+ * side. Without this a 1 px stroke of the 16x8 set straddles a row boundary and bakes as two dim rows. */
+typedef struct fseg {
+    double x0, y0, x1, y1; /* output pixel space */
+    double hx, hy;         /* half stroke per axis, output pixels */
+} fseg;
+
+static double fit_axis(double v, double n) { /* v in output pixels, n the axis length in output pixels */
+    return v < n / 2 ? floor(v) + 0.5 : ceil(v) - 0.5;
+}
+
+static int near_eq(double a, double b) {
+    return fabs(a - b) < 1e-6;
+}
+
+static int is_dot(const seg* s) {
+    return fabs(s->x1 - s->x0) < 0.05 && fabs(s->y1 - s->y0) < 0.05;
+}
+
+static int is_axis(const seg* s) {
+    return is_dot(s) || near_eq(s->x0, s->x1) || near_eq(s->y0, s->y1);
+}
+
+/* Coordinates (24-grid units) that belong to an axis-aligned stroke, per axis; value-keyed so a curve ending on a fitted
+ * line moves with it. */
+static int fit_has(const double* list, int n, double v) {
+    int i;
+    for (i = 0; i < n; i++) {
+        if (near_eq(list[i], v)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int fit_segments(int w, int h, fseg* out) {
+    static double fx[2 * MAXSEG], fy[2 * MAXSEG];
+    int nfx = 0, nfy = 0, i;
+    double kx = w / 24.0, ky = h / 24.0, src = 1.0 * (w < 20 ? 1.1 : 1.0);
+    for (i = 0; i < g_nseg; i++) {
+        const seg* s = &g_seg[i];
+        if (is_axis(s)) { /* both ends of an axis-aligned stroke are fitted on both axes */
+            fx[nfx++] = s->x0;
+            fx[nfx++] = s->x1;
+            fy[nfy++] = s->y0;
+            fy[nfy++] = s->y1;
+        }
+    }
+    for (i = 0; i < g_nseg; i++) {
+        const seg* s = &g_seg[i];
+        fseg* o = &out[i];
+        int axis = is_axis(s);
+        o->x0 = s->x0 * kx;
+        o->y0 = s->y0 * ky;
+        o->x1 = s->x1 * kx;
+        o->y1 = s->y1 * ky;
+        if (fit_has(fx, nfx, s->x0)) {
+            o->x0 = fit_axis(o->x0, w);
+        }
+        if (fit_has(fx, nfx, s->x1)) {
+            o->x1 = fit_axis(o->x1, w);
+        }
+        if (fit_has(fy, nfy, s->y0)) {
+            o->y0 = fit_axis(o->y0, h);
+        }
+        if (fit_has(fy, nfy, s->y1)) {
+            o->y1 = fit_axis(o->y1, h);
+        }
+        if (is_dot(s)) { /* a dot is one pixel: both ends on the same centre */
+            o->x1 = o->x0;
+            o->y1 = o->y0;
+        }
+        o->hx = axis ? 0.5 : src * kx > 0.5 ? src * kx : 0.5;
+        o->hy = axis ? 0.5 : src * ky > 0.5 ? src * ky : 0.5;
+    }
+    return g_nseg;
+}
+
+static double fdist2(double px, double py, const fseg* s) { /* distance in the stroke's own half-width units, squared */
+    double ax = s->x0 / s->hx, ay = s->y0 / s->hy, bx = (s->x1 - s->x0) / s->hx, by = (s->y1 - s->y0) / s->hy;
+    double l2 = bx * bx + by * by, t = 0, dx, dy;
+    px /= s->hx;
+    py /= s->hy;
+    if (l2 > 0) {
+        t = ((px - ax) * bx + (py - ay) * by) / l2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+    }
+    dx = ax + t * bx - px;
+    dy = ay + t * by - py;
+    return dx * dx + dy * dy;
+}
+
+static void raster_fit(int w, int h, unsigned char* out) {
+    static fseg fs[MAXSEG];
+    int n = fit_segments(w, h, fs), x, y, sx, sy, i;
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            int hit = 0;
+            for (sy = 0; sy < 4; sy++) {
+                for (sx = 0; sx < 4; sx++) {
+                    double px = x + (sx + 0.5) / 4, py = y + (sy + 0.5) / 4;
+                    for (i = 0; i < n; i++) {
+                        if (fdist2(px, py, &fs[i]) <= 1.0) {
+                            hit++;
+                            break;
+                        }
+                    }
+                }
+            }
+            out[y * w + x] = (unsigned char)(hit * 255 / 16);
+        }
+    }
+}
+
+/* w x h mask of the 24-grid artwork; w != h squeezes it (I949e2: the 16x8 body for tall pixels, drawn square by 2x tall pixels)
+ * and is grid fitted (I970). Square sets keep the plain supersampler. */
 static void raster_wh(int w, int h, unsigned char* out) {
     double kx = w / 24.0, ky = h / 24.0, half = 1.0 * (w < 20 ? 1.1 : 1.0); /* half stroke in 24-grid units; thicker at 16 */
     int x, y, sx, sy, i;
+    if (w != h) {
+        raster_fit(w, h, out);
+        return;
+    }
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
             int hit = 0;
