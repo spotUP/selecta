@@ -418,7 +418,11 @@ static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
     ctl_ctx* c = ctx;
     char out[SEL_CTL_REPLY_MAX - 8u]; /* room for "OK\n" and "\n." around the result lines */
     int rc;
+    const sel_host* ph = sel_engine_plugin_host(c->engine);
+    uint32_t t0 = ph->clock_ms(ph), dt;
     sel_ctl_exec_fwd(c->engine, line, out, sizeof out, &rc, ctl_fwd, c);
+    dt = ph->clock_ms(ph) - t0; /* I906d: a control command runs on the UI thread too; a library wait inside it counts as pump time */
+    if (dt > g_pump_ms_max) g_pump_ms_max = dt;
     if (rc != 0) {
         snprintf(reply, cap, "ERROR %s", out);
     } else if (out[0] != '\0') {
@@ -998,6 +1002,7 @@ int main(int argc, char** argv)
     printf("splash_frames=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_SPLASH_FRAMES, 0));
     printf("meta_panel panel_loads=%u meta_panel_rows=%u\n", (unsigned)est.panel_loads,
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_META_PANEL_ROWS, 0));
+    printf("view_reads panel_reads=%u art_reads=%u\n", (unsigned)est.panel_reads, (unsigned)est.art_reads); /* I906d sentinels */
 
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);

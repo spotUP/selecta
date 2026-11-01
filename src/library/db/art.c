@@ -132,6 +132,7 @@ static int art_artist(sqlite3* db, const sel_art_op* op) {
 void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* reply) {
     int v = 0;
 
+    if (op->op == SEL_ART_FIND || op->op == SEL_ART_ARTIST) sel_library_test_slow("SELECTA_LIB_ART_SLOW_MS"); /* I906d test knob: view art ids on a busy worker */
     if (op->op == SEL_ART_FIND && op->ref != NULL) {
         v = art_find(lib->db, op);
     } else if (op->op == SEL_ART_ARTIST) {

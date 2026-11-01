@@ -479,6 +479,8 @@ typedef struct sel_engine_stats {
     uint32_t lib_reads_applied;   /* I829: posted library reads (home, search, folders) whose answer the pump applied */
     uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
+    uint32_t panel_reads;         /* panel reads that landed and were published (I906d sentinel) */
+    uint32_t art_reads;           /* view artwork id batches that landed (I906d sentinel) */
     uint32_t lyric_fetches;       /* DEViLBOX lyrics requests queued, none for a song with a .lrc or a message (I193 sentinel) */
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
     uint32_t import_runs;         /* PLAYLIST_IMPORT files parsed and appended (I652c sentinel) */

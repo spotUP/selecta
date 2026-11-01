@@ -18,6 +18,20 @@
 
 #define SEL_SMART_MAX 8u
 
+/* Test knob (I910, I906d): the env var names a delay in ms the worker sleeps before the query it guards, so a dui test can keep the worker
+ * busy the way a real scan does. Absent on Amiga and unset in production. */
+#if !defined(__amigaos__) && !defined(AMIGA)
+#include <stdlib.h>
+#include <unistd.h>
+static inline void sel_library_test_slow(const char* var) {
+    const char* slow = getenv(var);
+
+    if (slow != NULL && atoi(slow) > 0) usleep((useconds_t)atoi(slow) * 1000u);
+}
+#else
+#define sel_library_test_slow(var) ((void)0)
+#endif
+
 /* I406b: pinned search hits waiting for the job thread (pin.c). Buffers are sized like the engine's search_hit. */
 enum { SEL_PIN_MAX = 32, SEL_PIN_PATH = 256, SEL_PIN_TEXT = 160, SEL_PIN_ARTIST = 96, SEL_PIN_FORMAT = 32, SEL_PIN_SOURCE = 24 };
 typedef struct sel_pin_slot {
