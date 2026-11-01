@@ -2527,6 +2527,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(songs_bulk_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-songs-bulk COMMAND songs_bulk_test "$<TARGET_FILE:gen_testmod>")
   set_tests_properties(engine-songs-bulk PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "songs_bulk_ok")
+  # I912: VIEW_SOURCE query with more results than the queue capacity must not overrun qmeta_off.
+  add_executable(query_meta_cap_test engine/query_meta_cap_test.c)
+  target_include_directories(query_meta_cap_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(query_meta_cap_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-query-meta-cap COMMAND query_meta_cap_test)
+  set_tests_properties(engine-query-meta-cap PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "query_meta_cap_ok")
   # I691c2: the library must not link the GUI (layering).
   add_test(NAME library-no-gui-link COMMAND ${CMAKE_COMMAND} -DLIBRARY_CMAKE=${PROJECT_SOURCE_DIR}/src/library/CMakeLists.txt -P ${CMAKE_CURRENT_SOURCE_DIR}/library/no_gui_link.cmake)
   set_tests_properties(library-no-gui-link PROPERTIES PASS_REGULAR_EXPRESSION "no_gui_link_ok")

@@ -6432,13 +6432,17 @@ static void view_sync(sel_engine* e) {
 }
 
 /* Copies the last result's metadata with an offset per row, so the query view shows
- * title, artist, format and duration instead of keys. Rows past the buffer have none. */
+ * title, artist, format and duration instead of keys. Rows past the buffer have none.
+ * I912: a result is bounded by its text bytes, not by rows, so a big catalogue returns more rows than
+ * qmeta_off holds (queue capacity). The query view holds at most that many rows (qview has the same
+ * capacity), so the snapshot stops there too. */
 static void snapshot_meta(sel_engine* e) {
     uint32_t i, at = 0;
+    uint32_t rows = e->res_count < e->qview.capacity ? e->res_count : e->qview.capacity;
 
     memcpy(e->qmeta, e->res_meta, e->res_meta_used);
-    e->qmeta_rows = e->res_count;
-    for (i = 0; i < e->res_count; i++) {
+    e->qmeta_rows = rows;
+    for (i = 0; i < rows; i++) {
         uint32_t f, start = at;
         for (f = 0; f < 5u && at < e->res_meta_used; f++) {
             at += (uint32_t)strlen(e->qmeta + at) + 1u;
