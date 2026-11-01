@@ -260,6 +260,9 @@ typedef struct sel_slot {
     uint32_t dbl_state;   /* 0 key not read yet, 1 key valid, 2 unreadable (stream, archive member, missing) */
     uint32_t dbl_sub;     /* subsong + 1 that dbl_ms answers, 0 = not looked up */
     uint32_t dbl_ms;      /* database length of that subsong, 0 = none */
+    uint32_t cat_sub;     /* I434f: subsong + 1 that cat_ms answers (catalogue lengths_ms sticker), 0 = not looked up */
+    uint32_t cat_ms;      /* catalogue length of that subsong, 0 = none */
+    uint32_t cat_retry;   /* subsong + 1 whose sticker read met a busy library; lib_reads_collect asks again, 0 = none */
     sel_mixer mixer;
     sel_scheduler sched;
     uint32_t frames_left; /* frames of the current tick still to mix */
@@ -1598,25 +1601,61 @@ static void follow_route(sel_engine* e, uint32_t route) {
 }
 
 /* Fresh mixer and scheduler, then the replayer's start. */
-/* I434f: the catalogue length of `subsong` (0-based) in ms: entry `subsong` of the song's `lengths_ms` sticker, which the
- * HVSC sync wrote from Songlengths.md5 (plugins/sources/hvsc). 0 when there is no library, sticker or entry. */
+/* I434f: the catalogue length of the slot's current subsong (0-based) in ms: entry `subsong` of the song's `lengths_ms` sticker,
+ * which the HVSC sync wrote from Songlengths.md5 (plugins/sources/hvsc). The read never waits (I829): a busy library leaves
+ * cat_retry set and lib_reads_collect asks again. 0 when there is no library, sticker or entry. */
 uint32_t sel_engine_catalogue_lengths; /* sentinel: lookups that found a length (tests/engine/playsid_test.c) */
-static uint32_t catalogue_length_ms(sel_engine* e, const sel_slot* sl, uint32_t subsong) {
+static void catalogue_length_read(sel_engine* e, sel_slot* sl) {
     char key[SEL_DEFERRED_PATH_MAX + 8], v[SEL_STICKER_VALUE_MAX];
     const char* p = v;
-    uint32_t ms;
-    if (e->lib == NULL || sl->path == NULL || !sel_song_key_of(sl->path, key, sizeof key) ||
-        !sel_library_sticker_get(e->lib, key, "lengths_ms", v, sizeof v)) {
-        return 0;
+    uint32_t sub = sl->subsong, d0, ms = 0;
+    int was, got;
+    if (sl->cat_sub == sub + 1u) return;
+    sl->cat_retry = 0;
+    if (e->lib == NULL || sl->path == NULL || !sel_song_key_of(sl->path, key, sizeof key)) {
+        sl->cat_sub = sub + 1u;
+        sl->cat_ms = 0;
+        return;
     }
-    while (subsong-- > 0u) {
-        p = strchr(p, ',');
-        if (p == NULL) return 0;
-        p++;
+    d0 = sel_library_deferred();
+    was = sel_library_nowait(1);
+    got = sel_library_sticker_get(e->lib, key, "lengths_ms", v, sizeof v);
+    sel_library_nowait(was);
+    if (sel_library_deferred() != d0) { /* busy library: no answer yet, the pump asks again */
+        sl->cat_retry = sub + 1u;
+        return;
     }
-    ms = (uint32_t)strtoul(p, NULL, 10);
+    if (got) {
+        while (sub-- > 0u && p != NULL) {
+            p = strchr(p, ',');
+            if (p != NULL) p++;
+        }
+        if (p != NULL) ms = (uint32_t)strtoul(p, NULL, 10);
+    }
     if (ms != 0u) sel_engine_catalogue_lengths++;
+    sl->cat_sub = sl->subsong + 1u;
+    sl->cat_ms = ms;
+}
+
+static uint32_t songlen_db_ms(sel_engine* e, sel_slot* sl);
+
+/* I434f: THE song length (ms, 0 = unknown) of the slot's current subsong; the display duration and the hardware replayer's
+ * end (rp_hw_length) both come from here. Order: what the player itself published (exact for the tune), then the user's
+ * songlengths.bin (I605: an explicit local file), then the catalogue sticker (a synced default that may lag the file). */
+static uint32_t song_length_ms(sel_engine* e, sel_slot* sl) {
+    uint32_t ms = 0u;
+    if (sl->rp_state != NULL && sl->rp_metadata != NULL) ms = (uint32_t)sel_tag_find(sl->rp_metadata(sl->rp_state), SEL_META_DURATION_MS, 0);
+    if (ms == 0u) ms = songlen_db_ms(e, sl);
+    if (ms == 0u && sl->cat_sub == sl->subsong + 1u) ms = sl->cat_ms;
     return ms;
+}
+
+/* Hardware kind: tell the replayer the song length once the catalogue read has landed. Called after rp_start and again when a
+ * deferred read arrives (the replayer then ends the tune on its next poll when the clock is already past the length). */
+static void hw_length_apply(sel_engine* e, sel_slot* sl) {
+    if (sl->rp_hw_length == NULL) return;
+    catalogue_length_read(e, sl);
+    if (sl->cat_retry == 0u) sl->rp_hw_length(sl->rp_state, song_length_ms(e, sl));
 }
 
 static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
@@ -1645,7 +1684,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
         rc = sl->rp_start(sl->rp_state, subsong, e->rate, NULL);
         if (rc) {
             e->hw_starts++;
-            if (sl->rp_hw_length != NULL) sl->rp_hw_length(sl->rp_state, catalogue_length_ms(e, sl, subsong));
+            hw_length_apply(e, sl);
         } else {
             handover_for(e, sl, SEL_ROUTE_MIXER); /* the hardware stays free: give the output back */
         }
@@ -2354,6 +2393,9 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->dbl_state = 0;
     sl->dbl_sub = 0;
     sl->dbl_ms = 0;
+    sl->cat_sub = 0;
+    sl->cat_ms = 0;
+    sl->cat_retry = 0;
     sl->path = e->host->mem_alloc(e->host, strlen(path) + 1u, SEL_MEM_FAST);
     if (sl->path != NULL) {
         memcpy(sl->path, path, strlen(path) + 1u);
@@ -6476,6 +6518,9 @@ static void lib_reads_collect(sel_engine* e) {
         }
     }
     if (e->sources_retry && !sel_library_busy(e->lib)) cmd_SOURCES(e, NULL);
+    if (e->cur != SEL_SLOT_NONE && e->slot[e->cur].cat_retry == e->slot[e->cur].subsong + 1u && !sel_library_busy(e->lib)) {
+        hw_length_apply(e, &e->slot[e->cur]); /* I434f: the catalogue length that start_subsong could not wait for */
+    }
     if (lib_read_take(&e->rd_folders)) {
         e->lib_reads_applied++;
         e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
@@ -7704,8 +7749,7 @@ static void refresh_snapshot(sel_engine* e) {
         if (song->meta != NULL) {
             song->meta = sel_meta_utf8(song->meta, e->state_meta, SEL_META_UTF8_TAGS, e->state_text, sizeof e->state_text);
         }
-        song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
-        if (song->duration_ms == 0u) song->duration_ms = songlen_db_ms(e, &e->slot[e->cur]);
+        song->duration_ms = song_length_ms(e, &e->slot[e->cur]);
         song->path = sl->path;
         if (sl->path != NULL && strncmp(sl->path, e->lyr_for, sizeof e->lyr_for) != 0) {
             snprintf(e->lyr_for, sizeof e->lyr_for, "%s", sl->path);

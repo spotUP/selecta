@@ -17,6 +17,8 @@
 #include <selecta/machine.h>
 
 #include "db/db.h"
+#include "db/db_internal.h"
+#include <pthread.h>
 #include "song_key.h"
 
 #include <selecta/format_label.h>
@@ -124,6 +126,17 @@ static void tick(void) {
     sel_engine_pump(eng, NULL, NULL);
 }
 
+/* Plays the library worker mid-job: owns the call lock until released, so any synchronous library request would block. */
+static volatile int g_held, g_release;
+static void* lock_holder(void* arg) {
+    sel_library* lib = arg;
+    pthread_mutex_lock(&lib->call_lock);
+    g_held = 1;
+    while (!g_release) usleep(1000);
+    pthread_mutex_unlock(&lib->call_lock);
+    return NULL;
+}
+
 static void catalogue_length_test(const char* dir) {
     sel_host host = *sel_host_default();
     sel_engine_config cfg;
@@ -159,6 +172,7 @@ static void catalogue_length_test(const char* dir) {
     run("PLAY"); /* default subsong 2: the second entry, 5000 ms */
     CHECK(sel_engine_catalogue_lengths == cat0 + 1u); /* sentinel: the engine looked the length up */
     CHECK(g_owner != NULL && g_owner->length_ms == 5000u);
+    CHECK(sel_engine_state(eng)->song.duration_ms == 5000u); /* I434f (a): the display duration is the same value as the HW end */
     g_clock = 1000u + 4000u;
     tick();
     CHECK(sel_playsid_ends == ends0 && sel_engine_state(eng)->play == SEL_PLAYING); /* 1 s early: still playing */
@@ -171,6 +185,7 @@ static void catalogue_length_test(const char* dir) {
     run("PLAY");
     run("SUBSONG 0");
     CHECK(g_owner != NULL && g_owner->length_ms == 3000u);
+    CHECK(sel_engine_state(eng)->song.duration_ms == 3000u);
     run("PAUSE");
     g_clock = 20000u + 10000u;
     tick();
@@ -192,6 +207,56 @@ static void catalogue_length_test(const char* dir) {
     tick();
     CHECK(sel_playsid_ends == ends0 + 2u && sel_engine_state(eng)->play == SEL_PLAYING);
     run("STOP");
+    /* I434f (b): the library is busy (its worker owns the call lock) while the tune starts. start_subsong must not wait:
+     * the length is unknown at first, then the pump's retry applies it and the tune ends at it. */
+    {
+        pthread_t th;
+        char pc[1200];
+        uint32_t d0, c0;
+        int was;
+        snprintf(pc, sizeof pc, "%s/len_c.sid", dbdir);
+        write_psid(pc, 2, 1, 0x2ul);
+        CHECK(sel_song_key_of(pc, key, sizeof key));
+        CHECK(sel_library_sticker_set(lib, key, "lengths_ms", "3500,4000"));
+        run("PREF_SET library.smart_downloads \"off\""); /* smart_sync's own library wait is a separate one (I906), not under test */
+        run("QUEUE_CLEAR");
+        snprintf(line, sizeof line, "QUEUE_ADD %s", pc);
+        run(line);
+        g_clock = 200000u;
+        snprintf(line, sizeof line, "OPEN %s", pc);
+        run(line); /* library free: the length is read at once */
+        run("PLAY");
+        tick();
+        tick();
+        CHECK(g_owner != NULL && g_owner->length_ms == 3500u && sel_engine_state(eng)->song.duration_ms == 3500u);
+        g_held = 0;
+        g_release = 0;
+        pthread_create(&th, NULL, lock_holder, lib);
+        while (!g_held) usleep(1000);
+        d0 = sel_library_deferred();
+        c0 = sel_engine_catalogue_lengths;
+        /* Opening a song still makes other synchronous library calls (read_song best_source: I906 removes them), so the UI thread's
+         * no-wait mode (I829) stands in for the busy library around the command; the sticker read must then defer and retry. */
+        was = sel_library_nowait(1);
+        run("SUBSONG 1");
+        sel_library_nowait(was);
+        tick(); /* the old slot is handed back, the deferred song starts */
+        CHECK(sel_library_deferred() != d0); /* the read was deferred, not waited on */
+        CHECK(g_owner != NULL && g_owner->length_ms == 0u && sel_engine_state(eng)->song.duration_ms == 0u);
+        tick();
+        CHECK(g_owner->length_ms == 0u && sel_engine_catalogue_lengths == c0); /* still busy: nothing applied yet */
+        g_release = 1;
+        pthread_join(th, NULL);
+        g_clock = 200000u + 6000u; /* already past the length when it arrives */
+        ends0 = sel_playsid_ends;
+        tick();
+        CHECK(sel_engine_catalogue_lengths == c0 + 1u); /* sentinel: the retry found the length */
+        CHECK(g_owner != NULL && g_owner->length_ms == 4000u);
+        CHECK(sel_engine_state(eng)->song.duration_ms == 4000u);
+        tick();
+        CHECK(sel_playsid_ends == ends0 + 1u && sel_engine_state(eng)->play == SEL_STOPPED); /* ended on the poll after */
+        remove(pc);
+    }
     sel_engine_destroy(eng);
     eng = NULL;
     sel_library_close(lib);
