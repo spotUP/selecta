@@ -7,6 +7,7 @@
 #include <selecta/library_item.h>
 #include <selecta/format_label.h>
 #include <selecta/platform.h>
+#include <selecta/source.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
 
@@ -530,7 +531,7 @@ typedef struct desk {
     uint32_t flow_rec_n;
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slices B, C; I678i retired files, history, sources) */
-    struct { char key[24], kind[12], name[40], path[96]; int enabled, searchable, syncable; uint32_t count; int64_t synced; int64_t snooze; int due; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
+    struct { char key[24], kind[12], name[40], path[96]; int enabled, searchable, syncable; uint32_t count; int64_t synced; int64_t snooze; int due; } src[SEL_SOURCE_MAX]; /* the SOURCES rows of the Sources tab (I265) */
     uint32_t src_n;          /* rows held in src */
     uint32_t nag_off;        /* bit k set: the sync offer (I527) has dialog row k unchecked; all start checked */
     uint32_t sync_pending;   /* bit i set: a LIBRARY_SYNC for source row i is queued or running; cleared by its outcome (I582) */
@@ -8008,9 +8009,9 @@ static int src_syncable(const desk* d, uint32_t i) {
 
 /* Sends the switch-off list with source `flip` toggled and the `force_off` sources off (Never, I602), then asks SOURCES for the stored state. */
 static int src_off_send(desk* d, uint32_t flip, uint32_t force_off) {
-    sel_uim_source m[32];
+    sel_uim_source m[SEL_SOURCE_MAX];
     char line[256];
-    uint32_t k, n = d->src_n < 32u ? d->src_n : 32u;
+    uint32_t k, n = d->src_n < SEL_SOURCE_MAX ? d->src_n : SEL_SOURCE_MAX;
     for (k = 0; k < n; k++) {
         m[k].key = d->src[k].key;
         m[k].path = d->src[k].path;

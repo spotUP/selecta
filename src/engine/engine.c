@@ -573,7 +573,7 @@ struct sel_engine {
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
-    sel_tag src_tags[16][12];                  /* one SOURCES row per registered source (registry holds 16) */
+    sel_tag src_tags[SEL_SOURCE_MAX][12];      /* one SOURCES row per registered source (the registry holds SEL_SOURCE_MAX) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -4605,7 +4605,7 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     sel_message r;
     int songs, enabled;
     int64_t synced, snoozed, notice;
-    if (f->n >= 16u) return;
+    if (f->n >= SEL_SOURCE_MAX) return;
     t = e->src_tags[f->n++];
     songs = e->lib != NULL ? sel_library_source_songs(e->lib, id) : 0;
     t[0].tag = SEL_SRC_KEY;

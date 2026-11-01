@@ -10,10 +10,16 @@
 
 static const sel_source* g_sources[SEL_SOURCE_MAX];
 static uint32_t g_count;
+static const sel_host* g_reg_host;
+static void reject(const char* id, const char* why);
 
 int sel_source_register(const sel_source* src) {
     if (src == NULL || src->id == NULL || src->id[0] == '\0' || strlen(src->id) >= SEL_SOURCE_ID_MAX ||
-        strchr(src->id, ':') != NULL || g_count >= SEL_SOURCE_MAX || sel_source_find(src->id) != NULL) {
+        strchr(src->id, ':') != NULL || sel_source_find(src->id) != NULL) {
+        return 0;
+    }
+    if (g_count >= SEL_SOURCE_MAX) { /* I738: never a silent drop */
+        reject(src->id, "source registry is full");
         return 0;
     }
     g_sources[g_count++] = src;
@@ -52,7 +58,6 @@ uint32_t sel_source_each(sel_source_each_fn fn, void* ctx) {
  * the registry links the engine core, which links the library, so a direct call would close a link cycle. */
 static uint32_t (*g_reg_count)(void);
 static const sel_tag* (*g_reg_get)(uint32_t);
-static const sel_host* g_reg_host;
 
 void sel_source_set_plugins(uint32_t (*count)(void), const sel_tag* (*get)(uint32_t), const sel_host* host) {
     g_reg_count = count;
