@@ -168,3 +168,8 @@ Rig check text for I434j5 (Amiga, rig 2, `rig.py start --ram 256 --purpose "<ses
 4. Same on the desktop UI on RTG, and on the MUI UI (MUI 3.8, palette screen): `mui_viz.frames` rises.
 5. Frame time: note the UI frame time or idle CPU with the view on versus the Oscilloscope at the same size on the 68020 profile; must stay within the section 3 budget.
 6. Not a SID (a .mod): the view shows greyed labels, no movement, no crash.
+
+## 5. Decisions (Johan, 2026-11-01)
+
+1. Selector: SID PatternScope is its own entry in the visualiser selector (no automatic switch inside the later I890 PatternScope).
+2. Mac/host SID playback (libsidplayfp) also feeds `SEL_RP_VIZ_SID`, in a later row I434j6 after I434j5.
