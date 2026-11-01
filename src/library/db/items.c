@@ -497,6 +497,13 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
     *found = 0;
     *id = 0;
     if (op->row == NULL || op->key == NULL) return SQLITE_MISUSE;
+#if !defined(__amigaos__) && !defined(AMIGA)
+    {   /* I910 test knob: a slow collection query for the dui test that proves COLLECTION_OPEN does not hold the pump */
+        const char* slow = getenv("SELECTA_LIB_COLLECTION_SLOW_MS");
+
+        if (slow != NULL && atoi(slow) > 0) usleep((useconds_t)atoi(slow) * 1000u);
+    }
+#endif
     if (sql == NULL) { /* a shelf the kind does not have is an empty list */
         *found = 1;
         return SQLITE_OK;

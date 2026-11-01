@@ -572,6 +572,14 @@ struct sel_engine {
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
+    /* I910: COLLECTION_OPEN posts the page build to a read slot (design 2026-11-01-ui-thread-library-waits.md section 4). The thread builds
+     * into rdc_pg / rdc_blk from rdc_kind / rdc_key; the pump publishes them as e->coll when the read lands. rdc_next_* is the newest ask. */
+    sel_lib_read rd_coll;
+    sel_collection_page rdc_pg;
+    sel_collection_page* coll_target;         /* the page drill_query counts its rows into: only the read thread sets it */
+    char* rdc_blk;
+    uint32_t rdc_kind, rdc_next_kind, coll_serial;
+    char rdc_key[128], rdc_next_key[128];
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[SEL_SOURCE_MAX][12];      /* one SOURCES row per registered source (the registry holds SEL_SOURCE_MAX) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
@@ -5776,9 +5784,9 @@ static int drill_query(sel_engine* e, const char* source, uint32_t level, const 
                        sel_collection_row_fn fn, void* ctx) {
     int n = sel_library_source_drill(e->lib, source, level, a, b, skip, (uint32_t)SEL_DRILL_WINDOW, fn, ctx);
     if (n >= 0) {
-        e->collection_queries++;
-        e->drill_rows += (uint32_t)n;
-        e->coll.drill_rows += (uint32_t)n;
+        __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&e->drill_rows, (uint32_t)n, __ATOMIC_RELAXED);
+        e->coll_target->drill_rows += (uint32_t)n;
     }
     return n;
 }
@@ -5812,7 +5820,7 @@ static void drill_count_row(void* ctx, const char* const* f) {
 
 /* key = source [US kind [US a [US b]]] [RS skip]. Builds the level into b and pg->drill. */
 static void drill_build(sel_engine* e, const char* key, coll_build* b) {
-    sel_collection_page* pg = &e->coll;
+    sel_collection_page* pg = e->coll_target;
     char buf[sizeof pg->key];
     char* part[4] = {NULL, NULL, NULL, NULL};
     char* c;
@@ -5887,25 +5895,27 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
     }
 }
 
-static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
-    sel_collection_page* pg = &e->coll;
+/* Runs on the read thread (or inline without threads): builds the page rdc_kind / rdc_key name into rdc_pg and rdc_blk. */
+static void coll_build_run(sel_engine* e) {
+    sel_collection_page* pg = &e->rdc_pg;
+    uint32_t kind = e->rdc_kind;
+    const char* key = e->rdc_key;
     coll_build b;
     uint32_t sh;
-    uint32_t serial = pg->serial + 1u;
     sel_engine_collection_row head;
     coll_shelf_sink hk;
 
     memset(&b, 0, sizeof b);
     b.rows.host = e->host;
     memset(pg, 0, sizeof *pg);
-    pg->serial = serial;
+    e->coll_target = pg;
     pg->kind = kind;
     snprintf(pg->key, sizeof pg->key, "%s", key);
     for (sh = 0; sh < (uint32_t)SEL_COLLECTION_SHELVES; sh++) {
         coll_shelf_sink k;
         memset(&k, 0, sizeof k);
         k.out = pg->shelf[sh];
-        if (sel_library_collection(e->lib, kind, key, sh + 1u, coll_shelf_row, &k) >= 0) e->collection_queries++;
+        if (sel_library_collection(e->lib, kind, key, sh + 1u, coll_shelf_row, &k) >= 0) __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
         pg->shelf_n[sh] = k.n;
         pg->shelf_total[sh] = k.total;
     }
@@ -5913,7 +5923,7 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
     hk.out = &head;
     hk.n = hk.total = 0u;
     if (kind == (uint32_t)SEL_LIB_ITEM_ALBUM) {
-        if (sel_library_collection(e->lib, kind, key, SEL_COLL_HEAD, coll_shelf_row, &hk) >= 0) e->collection_queries++;
+        if (sel_library_collection(e->lib, kind, key, SEL_COLL_HEAD, coll_shelf_row, &hk) >= 0) __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
         snprintf(pg->title, sizeof pg->title, "%s", head.name);
         snprintf(pg->sub, sizeof pg->sub, "%s", head.artist);
         pg->year = head.year;
@@ -5932,14 +5942,32 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
         drill_build(e, key, &b);
         snprintf(pg->title, sizeof pg->title, "%s", pg->key);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
-        if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) e->collection_queries++;
+        if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
-        e->collection_queries++;
+        __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
     }
-    composer_release(e->host, &e->coll_rows);
-    e->coll_rows = composer_take(&b.rows);
-    pg->rows = e->coll_rows;
+    composer_release(e->host, &e->rdc_blk);
+    e->rdc_blk = composer_take(&b.rows);
+    pg->rows = e->rdc_blk;
     pg->songs = b.n;
+}
+
+/* The pump takes the finished page: it becomes state.collection with the next serial. */
+static void coll_publish(sel_engine* e) {
+    e->coll = e->rdc_pg;
+    e->coll.serial = ++e->coll_serial;
+    composer_release(e->host, &e->coll_rows);
+    e->coll_rows = e->rdc_blk;
+    e->rdc_blk = NULL;
+    e->coll.rows = e->coll_rows;
+}
+
+static void coll_post(sel_engine* e) {
+    if (lib_read_idle(&e->rd_coll)) {
+        e->rdc_kind = e->rdc_next_kind;
+        snprintf(e->rdc_key, sizeof e->rdc_key, "%s", e->rdc_next_key);
+    }
+    lib_read_post(e, &e->rd_coll, coll_build_run);
 }
 
 /* I678e: a collection page was opened. The engine records which one and feeds Recents exactly as LIBRARY_TOUCH does, so every UI shares the
@@ -5966,7 +5994,11 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     if (!restore) e->collection_opens++;
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
-    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) coll_build_page(e, kind, e->collection_key);
+    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+        e->rdc_next_kind = kind; /* I910: the page is built by a posted read, never on this thread */
+        snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
+        coll_post(e);
+    }
 }
 
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
@@ -6591,6 +6623,11 @@ static void lib_reads_collect(sel_engine* e) {
     if (e->sources_retry && !sel_library_busy(e->lib)) cmd_SOURCES(e, NULL);
     if (e->cur != SEL_SLOT_NONE && e->slot[e->cur].cat_retry == e->slot[e->cur].subsong + 1u && !sel_library_busy(e->lib)) {
         hw_length_apply(e, &e->slot[e->cur]); /* I434f: the catalogue length that start_subsong could not wait for */
+    }
+    if (lib_read_take(&e->rd_coll)) {
+        e->lib_reads_applied++;
+        coll_publish(e);
+        if (e->rd_coll.again) coll_post(e);
     }
     if (lib_read_take(&e->rd_stats)) {
         e->lib_reads_applied++;
@@ -7636,6 +7673,8 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_formats);
         lib_read_end(&e->rd_composers);
         lib_read_end(&e->rd_stats);
+        lib_read_end(&e->rd_coll);
+        composer_release(e->host, &e->rdc_blk);
         composer_release(e->host, &e->rd_fmt_blk);
         composer_release(e->host, &e->rd_comp_blk);
         composer_release(e->host, &e->rd_comp_page_blk);
@@ -7927,8 +7966,8 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) ||
-           e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
+    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) ||
+           e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
 

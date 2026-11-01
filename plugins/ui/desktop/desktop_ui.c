@@ -468,7 +468,7 @@ typedef struct desk {
     uint32_t lib_tools_draws, lib_tools_clicks, lib_sort_keys; /* I611: Library page tools row draws and clicks, Sort key presses */
     uint32_t lf_open, lf_edit, lf_len; /* I611: the filter field is shown, has the keyboard, and holds this many characters */
     char lf_text[64];
-    uint32_t side_sorts, side_sort_picks, side_view_picks, side_menu_opens, side_filter_keys, side_chip_cycles, side_marks, col_flat_draws; /* I678k: K presses that stepped the chip, kind marks drawn; */ /* I611: sort passes run, menu picks, menu opens, typed filter keys */
+    uint32_t side_sorts, side_sort_picks, side_view_picks, side_menu_opens, side_filter_keys, side_chip_cycles, side_marks, col_flat_draws, pls_list_draws; /* I678k: K presses that stepped the chip, kind marks drawn; */ /* I611: sort passes run, menu picks, menu opens, typed filter keys */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_open enters it through desk_page_apply, before the --exec lines */
     desk_page view_pg;
@@ -5680,6 +5680,7 @@ static void draw_playlists(desk* d) {
         sel_gui_dirty_add(d->canvas, mn);
         return;
     }
+    d->pls_list_draws++; /* I910: frames of the Playlists list page, the flash a routed collection page must never show */
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Playlists", 1, 32, text);
     for (i = 0; i < PL_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
@@ -7087,6 +7088,7 @@ static const char* library_dump_build(desk* d) {
             }
         }
     }
+    o = dump_put(d, o, "pllist draws=%u\n", (unsigned)d->pls_list_draws);
     if (d->page == SEL_UIM_PG_COLLECTION) { /* I678k: the header art width and the flat draws, printed with no collection open (the 320 wide tier has no sidebar to open one) */
         o = dump_put(d, o, "colhdr art_px=%d flat=%u\n", (int)col_header_art_px(d), (unsigned)d->col_flat_draws);
     }
@@ -9662,11 +9664,12 @@ static int desk_page_walk(desk* d, int dir) {
     if (e.page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
         d->shelf_open = e.id;
     }
-    moved = desk_page_goto(d, desk_page_of(e.page));
+    desk_page_apply(d, desk_page_of(e.page)); /* I910: the page's target is set before the first frame of it is drawn */
     desk_route_enter(d, &e, 1);
     if (e.page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
         d->pls_scroll = (uint32_t)e.scroll; /* the page is where it was left */
     }
+    moved = desk_present(d);
     d->pg_walk = 0;
     return moved;
 }
@@ -9684,8 +9687,9 @@ static int desk_route(desk* d, sel_route_target target, uint32_t item_kind, uint
     if (e.page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
         d->shelf_open = e.id;
     }
-    desk_page_goto(d, desk_page_of(e.page));
+    desk_page_apply(d, desk_page_of(e.page)); /* I910: apply, fill, then present; a frame drawn between apply and fill shows the Playlists list */
     desk_route_enter(d, &e, 0);
+    desk_present(d);
     d->pg_walk = 0;
     return 1;
 }
