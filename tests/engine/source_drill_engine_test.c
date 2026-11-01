@@ -140,7 +140,28 @@ int main(void) {
         CHECK(rows == 1 && ok == 1);
     }
 
+    /* I935: an open taken while the collection read is in flight waits for the next post; quit right after must still write its Recents
+     * touch. The source root read over 60 000 songs is in flight when the album open is taken in the same pump. */
+    {
+        static char pool_a[512], pool_b[512];
+        char line[400];
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"modland\"", (unsigned)SEL_LIB_ITEM_SOURCE);
+        CHECK(sel_engine_send_line(e, line, pool_a, sizeof pool_a) == 0);
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"Quit Album\"", (unsigned)SEL_LIB_ITEM_ALBUM);
+        CHECK(sel_engine_send_line(e, line, pool_b, sizeof pool_b) == 0);
+        (void)sel_engine_pump(e, quiet, NULL);
+    }
     sel_engine_destroy(e);
+    {
+        sqlite3_stmt* q = NULL;
+        int rows = -1;
+        if (sqlite3_prepare_v2(lib->db, "SELECT count(*) FROM opened WHERE kind = 4 AND id = 'Quit Album';", -1, &q, NULL) == SQLITE_OK &&
+            sqlite3_step(q) == SQLITE_ROW) {
+            rows = sqlite3_column_int(q, 0);
+        }
+        sqlite3_finalize(q);
+        CHECK(rows == 1);
+    }
     sel_library_close(lib);
     snprintf(sql, sizeof sql, "rm -rf %s", dir);
     if (system(sql) != 0) g_fail++;

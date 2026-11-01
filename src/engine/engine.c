@@ -7873,6 +7873,12 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_composers);
         lib_read_end(&e->rd_stats);
         lib_read_end(&e->rd_coll);
+        /* I935: opens taken while the collection read was in flight wait in rdc_next_touch for the next post; at quit there is no next
+         * post, so their Recents touches are written here (the library closes after the engine). */
+        for (i = 0; e->lib != NULL && i < e->rdc_next_touch_n; i++) {
+            (void)sel_library_touch(e->lib, e->rdc_next_touch[i].kind, e->rdc_next_touch[i].key, e->rdc_next_touch[i].when);
+        }
+        e->rdc_next_touch_n = 0u;
         lib_read_end(&e->rd_panel);
         lib_read_end(&e->rd_art);
         composer_release(e->host, &e->rdc_blk);
