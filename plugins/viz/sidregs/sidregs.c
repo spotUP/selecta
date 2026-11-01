@@ -98,7 +98,7 @@ static uint32_t label_at(const grid* g, int32_t col, int32_t row, int32_t scale,
 static uint32_t labels(const grid* g, uint32_t chip, uint32_t px) {
     int32_t scale = g->rh / 7 > 1 ? g->rh / 7 : 1;
     uint32_t v, i, n = 0;
-    if (g->rh < 6 || g->cw < 3) {
+    if (g->rh < VS_GLYPH_H + 1 || g->cw < 3) { /* I918: a glyph needs its rows plus a blank row; at rh 6 the text touched the cells and was unreadable */
         return 0;
     }
     for (v = 0; v < 3; v++) {

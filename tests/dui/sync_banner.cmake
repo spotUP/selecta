@@ -110,6 +110,20 @@ foreach(b nagpanel nagsync naglater nagnever)
     message(FATAL_ERROR "the dialog has no '${b}' rectangle:\n${o0}")
   endif()
 endforeach()
+# I918: every row checkbox lies inside the dialog panel at any source count (the 3rd and 4th column used to be drawn past the
+# panel and the window edge, because the column width assumed two columns).
+string(REGEX MATCH "nagpanel (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n" _np "${o0}")
+set(np_x ${CMAKE_MATCH_1})
+math(EXPR np_r "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3}")
+string(REGEX MATCHALL "nagrow [0-9]+ [^\n]*\n" _rows "${o0}")
+list(LENGTH _rows n_rows)
+foreach(rl ${_rows})
+  string(REGEX MATCH "\\|[01] (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)" _b "${rl}")
+  math(EXPR b_r "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3}")
+  if(CMAKE_MATCH_1 LESS np_x OR b_r GREATER np_r)
+    message(FATAL_ERROR "I918: dialog row '${rl}' lies outside the panel ${np_x}..${np_r} (${n_rows} rows)")
+  endif()
+endforeach()
 # 0. (I602) The dialog fits the AGA layout, 640x512 INDEX8, with every source due (two columns): panel and the three buttons lie
 # inside the canvas, the buttons inside the panel and not on top of each other. SDL_VIDEODRIVER dummy, memory back end.
 unset(ENV{SELECTA_SDL_TEST_TIMED})

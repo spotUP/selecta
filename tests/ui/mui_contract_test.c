@@ -2115,6 +2115,12 @@ static void test_libfilter(void) {
         CHECK(mui_sidebar_builds() == sbuilds + 3u, "the sidebar model did not run");
         CHECK(sel_uim_lfilter_chips_single(1, 10, 1000) == 1 && sel_uim_lfilter_chips_single(0, 10, 1000) == 0 && sel_uim_lfilter_chips_single(0, 1001, 1000) == 1,
               "shared chips-or-label decision");
+        {
+            const int32_t vw[4] = {100, 60, 80, 90}; /* I918: 330 wide plus 3 gaps of 4 */
+            CHECK(sel_uim_viz_tabs_fit(vw, 4u, 4, 342) == 1 && sel_uim_viz_tabs_fit(vw, 4u, 4, 341) == 0 && sel_uim_viz_tabs_fit(vw, 1u, 4, 100) == 1 &&
+                      sel_uim_viz_tabs_fit(vw, 0u, 4, 100) == 0,
+                  "I918 viz tabs fit: exact fit tabs, one pixel short chooser, one label, none");
+        }
         CHECK(mui_sidebar_chips_single(0, 100u) == 1 && mui_sidebar_chips_single(0, 2000u) == 0 && mui_sidebar_chips_single(1, 2000u) == 1, "MUI width decision");
     }
     CHECK(src != NULL, "read mui_ui.c");

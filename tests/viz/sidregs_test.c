@@ -136,6 +136,21 @@ static void surface(void) {
     free(f);
 }
 
+/* I918: labels need a glyph height plus one blank row per cell; below that they are an unreadable smear and are left out. */
+static void label_threshold(void) {
+    shot t;
+    sel_viz_frame* f = frame_make(1u);
+    shot_make(&t, 320, 48); /* rh 6 */
+    draw(f, &t);
+    CHECK(count_in(&t, 0, 0, 320, 48, ACCENT) == 0u, "labels drawn at 6 px rows: %u", (unsigned)count_in(&t, 0, 0, 320, 48, ACCENT));
+    free(t.px);
+    shot_make(&t, 320, 56); /* rh 7 */
+    draw(f, &t);
+    CHECK(count_in(&t, 0, 0, 320, 56, ACCENT) > 50u, "labels missing at 7 px rows");
+    free(t.px);
+    free(f);
+}
+
 static void zero_chips(void) {
     shot t;
     sel_viz_frame* f = frame_make(0u);
@@ -208,6 +223,7 @@ int main(int argc, char** argv) {
     }
     if (strcmp(mode, "all") == 0 || strcmp(mode, "surface") == 0) {
         surface();
+        label_threshold();
         zero_chips();
         three_chips();
         strip();

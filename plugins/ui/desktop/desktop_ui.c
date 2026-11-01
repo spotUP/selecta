@@ -2929,12 +2929,19 @@ enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, 
 
 static const char* path_base(const char* p);
 
+/* I918: the number of columns the sync offer needs for n source rows, NAG_COL_ROWS rows per column. The panel width and the
+ * row rects both come from this one count, so a row never lands past the panel. */
+static uint32_t nagdlg_cols(uint32_t n) {
+    return n == 0u ? 1u : (n + (uint32_t)NAG_COL_ROWS - 1u) / (uint32_t)NAG_COL_ROWS;
+}
+
 static sel_gui_rect dlg_panel_rect(const desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t w = lpx(d, 440), h = lpx(d, 168);
-    if (d->dlg_open == DLG_SYNC) { /* I602: a column of NAG_COL_ROWS source rows, a second column beside it past that */
+    if (d->dlg_open == DLG_SYNC) { /* I602: a column of NAG_COL_ROWS source rows, another column beside it for each NAG_COL_ROWS more */
         uint32_t rows = d->nagdlg_n < (uint32_t)NAG_COL_ROWS ? d->nagdlg_n : (uint32_t)NAG_COL_ROWS;
-        w = lpx(d, d->nagdlg_n > (uint32_t)NAG_COL_ROWS ? 560 : 440);
+        uint32_t cols = nagdlg_cols(d->nagdlg_n);
+        w = lpx(d, cols > 1u ? 40 + 260 * (int32_t)cols : 440);
         w = w < mn.w - 2 * lpx(d, 16) ? w : mn.w - 2 * lpx(d, 16);
         h = lpx(d, 20 + 28 + 12 + NAG_ROW_H * (int32_t)rows + 16 + 32 + 20);
     }
@@ -3013,7 +3020,7 @@ static sel_gui_rect nagdlg_button_rect(const desk* d, uint32_t i) {
 
 static sel_gui_rect nagdlg_row_rect(const desk* d, uint32_t k) {
     sel_gui_rect p = dlg_panel_rect(d);
-    int32_t m = lpx(d, 20), cw = (p.w - 2 * m) / (d->nagdlg_n > (uint32_t)NAG_COL_ROWS ? 2 : 1);
+    int32_t m = lpx(d, 20), cw = (p.w - 2 * m) / (int32_t)nagdlg_cols(d->nagdlg_n);
     return rect_of(p.x + m + (int32_t)(k / NAG_COL_ROWS) * cw, p.y + lpx(d, 20 + 28 + 12) + (int32_t)(k % NAG_COL_ROWS) * lpx(d, NAG_ROW_H), cw, lpx(d, NAG_ROW_H));
 }
 
@@ -6388,24 +6395,55 @@ static void draw_visual(desk* d) {
     d->viz_visual_draws++;
 }
 
-/* The visualizer switch: one segment per plugin found, the selected one in the accent colour. Slot is 0 for the strip in
- * Now Playing and 1 for the Visualizer page; the rects the segments took are what a click is tested against. */
+/* The visualizer chooser (I918). Slot is 0 for the strip in Now Playing and 1 for the Visualizer page; the rects the buttons took
+ * are what a click is tested against. When every full plugin name fits r (the shared sel_uim_viz_tabs_fit rule) the names are
+ * tabs, the selected one in the accent colour, packed at their own width against the right edge of r. Otherwise one control:
+ * a chevron at each end of r and the name of the selected plugin between them (the "< label >" control of the library filter);
+ * the chevrons are registered as the previous and the next plugin, so a click runs the same action row as a tab does. */
 static void viz_switch_draw(desk* d, uint32_t slot, sel_gui_rect r) {
     uint32_t k;
-    int32_t gap = lpx(d, 4), w;
+    int32_t gap = lpx(d, 4), pad = lpx(d, 10), w[VIZ_MAX], total;
+    const sel_gui_atlas* at = desk_font(d, 1, 12);
     for (k = 0; k < VIZ_MAX; k++) {
         d->viz_btn[slot][k] = rect_of(0, 0, 0, 0);
     }
     if (d->viz_n == 0u || r.w <= 0 || r.h <= 0) {
         return;
     }
-    w = (r.w - ((int32_t)d->viz_n - 1) * gap) / (int32_t)d->viz_n;
     for (k = 0; k < d->viz_n; k++) {
-        sel_gui_rect b = rect_of(r.x + (int32_t)k * (w + gap), r.y, w, r.h);
-        int on = k == d->viz_sel;
-        d->viz_btn[slot][k] = b;
-        draw_button(d, b, ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]), d->viz_name[k], 12,
-                    ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+        w[k] = (at != NULL ? sel_gui_text_width(at, d->viz_name[k], strlen(d->viz_name[k])) : 40) + 2 * pad;
+    }
+    total = sel_uim_lfilter_chips_total(w, d->viz_n, gap);
+    if (sel_uim_viz_tabs_fit(w, d->viz_n, gap, r.w)) {
+        int32_t x = r.x + r.w - total;
+        for (k = 0; k < d->viz_n; k++) {
+            sel_gui_rect b = rect_of(x, r.y, w[k], r.h);
+            int on = k == d->viz_sel;
+            d->viz_btn[slot][k] = b;
+            draw_button(d, b, ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]), d->viz_name[k], 12,
+                        ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+            x += w[k] + gap;
+        }
+    } else {
+        uint32_t prev = (d->viz_sel + d->viz_n - 1u) % d->viz_n, next = (d->viz_sel + 1u) % d->viz_n;
+        sel_gui_rect lc = rect_of(r.x, r.y, r.h, r.h), rc = rect_of(r.x + r.w - r.h, r.y, r.h, r.h);
+        sel_gui_rect mid = rect_of(r.x + r.h + gap, r.y, r.w - 2 * (r.h + gap), r.h);
+        for (k = 0; k < 2u; k++) {
+            sel_gui_rect cv = k == 0u ? lc : rc;
+            hover_reg(d, cv);
+            sel_gui_round_rect(d->canvas, cv, cv.h / 2, hover_fill_of(d, cv, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED])));
+            sel_gui_icon_draw(d->canvas, &d->icons, k == 0u ? SEL_GUI_ICON_CHEVRON_LEFT : SEL_GUI_ICON_CHEVRON_RIGHT,
+                              rect_of(cv.x + cv.w / 4, cv.y + cv.h / 4, cv.w / 2, cv.h / 2), cv.w / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+        if (mid.w > 0) {
+            draw_button(d, mid, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), d->viz_name[d->viz_sel], 12, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        }
+        if (prev == next) { /* two plugins: either chevron picks the other one */
+            d->viz_btn[slot][prev] = rect_of(r.x, r.y, r.w, r.h);
+        } else {
+            d->viz_btn[slot][prev] = lc;
+            d->viz_btn[slot][next] = rc;
+        }
     }
     sel_gui_dirty_add(d->canvas, r);
 }
@@ -6435,38 +6473,33 @@ static int viz_switch_click(desk* d, int32_t hit) {
     return 1;
 }
 
-/* The Visualizer page: one pane per plugin, then the signal path. */
+/* The Visualizer page: the selected plugin fills the page above the signal path (I918). Only the pane's own pixels are redrawn
+ * per frame; the name sits in the chooser, painted once with the page, so a frame never repaints a label (I942). */
 static void viz_panes_draw(desk* d) {
-    uint32_t k;
-    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
-    for (k = 0; k < d->viz_n; k++) {
-        sel_gui_rect p = d->viz_pane[k];
-        draw_text(d, rect_of(p.x, p.y - lpx(d, 20), p.w, lpx(d, 18)), d->viz_name[k], 1, 12, text);
-        viz_draw_area(d, p, k);
-    }
+    viz_draw_area(d, d->viz_pane[0], d->viz_sel);
 }
 
 static void draw_vizpage(desk* d) {
     sel_gui_rect mn = draw_panel(d, "main");
-    int32_t mg = lpx(d, HOME_MARGIN), top = mn.y + lpx(d, page_y(d, 64)), gap = lpx(d, 28);
-    int32_t ph = (mn.h - lpx(d, page_y(d, 64)) - lpx(d, 40) - (int32_t)VIZ_MAX * gap) / (int32_t)VIZ_MAX;
-    uint32_t k;
+    int32_t mg = lpx(d, HOME_MARGIN), top = mn.y + lpx(d, page_y(d, 64));
+    int32_t ph = mn.h - lpx(d, page_y(d, 64)) - lpx(d, 40) - lpx(d, 12);
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Visualizer", 1, 32,
               ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-    /* I599: the switch ends left of the history arrows, which share its row (the arrows now sit on the search field row) */
+    /* I599: the chooser ends left of the history arrows, which share its row; I918: it starts right of the page title, so it takes
+     * the room the title leaves instead of a fixed width */
     {
-        int32_t sr = mn.x + mn.w - mg;
+        int32_t sr = mn.x + mn.w - mg, sl;
+        const sel_gui_atlas* tat = desk_font(d, 1, 32);
+        sl = mn.x + mg + (tat != NULL ? sel_gui_text_width(tat, "Visualizer", 10u) : lpx(d, 160)) + lpx(d, 24);
         if (nav_arrows_shown(d, mn) && sr > nav_arrow_rect(d, mn, 0).x - lpx(d, 8)) {
             sr = nav_arrow_rect(d, mn, 0).x - lpx(d, 8);
         }
-        viz_switch_draw(d, 1u, rect_of(sr - lpx(d, 360), mn.y + lpx(d, 22), lpx(d, 360), lpx(d, 28)));
+        viz_switch_draw(d, 1u, rect_of(sl, mn.y + lpx(d, 22), sr - sl, lpx(d, 28)));
     }
-    for (k = 0; k < VIZ_MAX; k++) {
-        d->viz_pane[k] = rect_of(mn.x + mg, top + gap + (int32_t)k * (ph + gap), mn.w - 2 * mg, ph);
-    }
+    d->viz_pane[0] = rect_of(mn.x + mg, top, mn.w - 2 * mg, ph);
     viz_panes_draw(d);
-    d->viz_panes = d->viz_n;
+    d->viz_panes = 1u;
     viz_sigpath_draw(d, rect_of(mn.x + mg, mn.y + mn.h - lpx(d, 36), mn.w - 2 * mg, lpx(d, 24)));
     sel_gui_clip_pop(d->canvas);
     sel_gui_dirty_add(d->canvas, mn);
@@ -6496,6 +6529,7 @@ static int viz_tick(desk* d) {
     } else {
         viz_draw_area(d, d->np_viz, d->viz_sel);
     }
+    desk_draw_window_overlays(d); /* I918: a modal dialog keeps the visualizer running, so it is redrawn over each frame (it draws in front) */
     d->dirty_pixels = desk_flush(d); /* a visualizer frame is counted in viz_frames, not in frames: frames count state changes */
     d->dirty_total += d->dirty_pixels;
     return 1;
