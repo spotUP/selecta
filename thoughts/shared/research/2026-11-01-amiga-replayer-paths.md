@@ -401,8 +401,9 @@ Reuse, no new mechanism:
 | I888p | YM and ADPCM_mono on both outputs (RENDER into `paula14` / `ahi`) | rig: one YM with pref paula, one with ahi | I888b |
 | I888q | Coverage invariant: host test walks every format the registry claims (plus the W tables) and fails on any format with no owner for Paula or for AHI; the known-gap list in the test shrinks to empty as rows land | host test counts from the registry, not a grep | I888b |
 
-### 10.6 Open questions for Johan
+### 10.6 Answers (Johan 2026-11-01)
 
-1. Unknown DeliTracker Custom module on a 68020 without MMU: show Paula only with the reason (recommended; tables cover the Modland set) or accept an interpreter that cannot keep up on that CPU.
-2. Ship `mmu.library` with Selecta for the 030+ fallback (recommended; freely distributable, needed only for modules without a table) or keep 030+ on tables only.
-3. "Paula" for software-mixed formats (XM, IT, S3M, OctaMED 5-8 channels, YM) means 14-bit `paula14` output: confirm this satisfies the goal.
+1. Unknown DeliTracker Custom module on a 68020 without MMU: no module stays unknown. Prescan every Custom module in the Modland set on the Mac (I888f trace tool) and cache its patch table; the set is small. A module with no table after the prescan is a bug in the prescan, not a Paula-only case. Row I888j covers the full set, not batches with rejects left over.
+2. Ship `mmu.library` with Selecta for the 030+ fallback: yes. Record its origin and licence per D6 before the first release that bundles it (row I888k).
+3. "Paula" for software-mixed formats (XM, IT, S3M, OctaMED 5-8 channels, YM) means 14-bit `paula14` output: confirmed.
+4. XM on the Amiga stays on HippoPlayer's XM player (`xmaplay060.s`, 8bitbubsy's FT2 port) for both outputs: its own AHI on 020+, its Paula code on 060, its render mode into `paula14` on 020-040 (row I888n). Johan: "far superior", "it supports ahi as well". Never route Amiga XM through nuade or libopenmpt.
