@@ -404,6 +404,8 @@ typedef struct desk {
     uint32_t sm_pl_n, sm_want, sm_inflight, sm_posts, sm_takes; /* I906e: the Add to Playlist list is read on the engine's items slot, shared with the sidebar's (one at a time) */
     uint32_t sm_n, sm_opens, sm_picks, sm_pl_adds;
     sel_uim_selset sel; /* I632d: the one selection of the list on screen (src/uimodel/select.c) */
+    size_t brf_cap; /* I948a: the answer buffer size the read was posted with */
+    uint32_t brf_inflight, brf_want, brf_ver, brf_posts, brf_takes; /* I948a: posted song_briefs read: in flight, wanted, page version it was posted for, posts, takes */
     uint32_t sel_clicks, sel_keys, pls_ver, sel_cur;
     int32_t menu_x, menu_y;  /* canvas pixels, top left of the menu */
     uint32_t hovers, clicks, double_clicks, drags, sorts, menus, row_plays;
@@ -4536,6 +4538,76 @@ static void pls_reload(desk* d) {
     sel_engine_lib_nowait(was);
 }
 
+/* I948a: the posted song_briefs read of the open page. pls_briefs_want posts it when the slot is free (the page version it was posted for
+ * is brf_ver); pls_briefs_follow takes it on a later turn, applies it when the page has not been rebuilt since, and redraws only then. */
+static void col_rebuild(desk* d);
+static void col_cover_refresh(desk* d);
+
+static void pls_briefs_want(desk* d) {
+    size_t len = 0;
+    uint32_t songs = 0;
+    const char* k;
+
+    if (!d->brf_want || d->brf_inflight || d->pls_buf == NULL || sel_engine_song_briefs_busy(d->engine)) {
+        return; /* brf_want stays set: pls_briefs_follow posts when the slot frees */
+    }
+    for (k = d->pls_buf; *k != '\0'; k += strlen(k) + 1u) {
+        len = (size_t)(k - d->pls_buf) + strlen(k) + 1u;
+        songs++;
+    }
+    d->brf_cap = (size_t)songs * 448u + 16u;
+    d->brf_want = 0u;
+    if (len == 0u || !sel_engine_song_briefs_post(d->engine, d->pls_buf, len, d->brf_cap)) {
+        return;
+    }
+    d->brf_inflight = 1u;
+    d->brf_ver = d->pls_ver;
+    d->brf_posts++;
+}
+
+static void pls_briefs_follow(desk* d) {
+    if (d->brf_inflight) {
+        size_t bcap = d->brf_cap;
+        char* briefs = (char*)malloc(bcap);
+        uint32_t got = 0, i, j = 0;
+        int ok = 0;
+        const char* r;
+
+        if (briefs == NULL) {
+            return;
+        }
+        if (!sel_engine_song_briefs_take(d->engine, briefs, bcap, &got, &ok)) {
+            free(briefs);
+            return;
+        }
+        d->brf_inflight = 0u;
+        d->brf_takes++;
+        if (ok && d->brf_ver == d->pls_ver && d->pls_title != NULL) {
+            r = briefs;
+            for (i = 0; i < d->pls_n && j < got; i++, j++) {
+                const char* art = r + strlen(r) + 1u;
+                const char* alb = art + strlen(art) + 1u;
+                const char* aid = alb + strlen(alb) + 1u;
+                if (r[0] != '\0') {
+                    snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", r);
+                }
+                snprintf(d->pls_meta[i].artist, sizeof d->pls_meta[i].artist, "%s", art); /* I678h3: the links route on these, never on UI name matching */
+                snprintf(d->pls_meta[i].album, sizeof d->pls_meta[i].album, "%s", alb);
+                d->pls_meta[i].album_id = (uint32_t)strtoul(aid, NULL, 10);
+                r = aid + strlen(aid) + 1u;
+            }
+            col_rebuild(d);
+            col_cover_refresh(d);
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            d->repaint = 1;
+        } /* an old page's answer is dropped: its reload set brf_want for the current page; a read that did not run leaves the file names */
+        free(briefs);
+    }
+    if (d->brf_want) {
+        pls_briefs_want(d);
+    }
+}
+
 static void pls_reload_run(desk* d) {
     enum { CAP = 262144 };
     char* buf = (char*)malloc(CAP);
@@ -4632,34 +4704,13 @@ static void pls_reload_run(desk* d) {
         return;
     }
     d->pls_buf = buf;
-    {   /* I782: titles, artists, albums and album ids of every song in ONE request (was two blocked round trips per song) */
-        uint32_t got = 0, j = 0;
-        size_t bcap = (size_t)n * 448u + 16u;
-        char* briefs = (char*)malloc(bcap);
-        const char* r = briefs;
-        int have = briefs != NULL && n > 0u && sel_engine_song_briefs(d->engine, buf, briefs, bcap, &got);
-        if (n > 0u && !have) {
-            d->pls_stale = 1u; /* busy library: the rows show file names now and fill in next frame */
-        }
+    {   /* I782: the rows show file names now; I948a: the titles, artists, albums and album ids of every song come in ONE posted read */
         for (i = 0, k = buf; i < n && *k != '\0'; i++, k += strlen(k) + 1u) {
             d->pls_off[i] = (uint32_t)(k - buf);
-            if (have && j < got && r[0] != '\0') {
-                snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", r);
-            } else {
-                snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
-            }
-            if (have && j < got) { /* I678h3: artist, album, album id; the links route on these, never on UI name matching */
-                const char* art = r + strlen(r) + 1u;
-                const char* alb = art + strlen(art) + 1u;
-                const char* aid = alb + strlen(alb) + 1u;
-                snprintf(d->pls_meta[i].artist, sizeof d->pls_meta[i].artist, "%s", art);
-                snprintf(d->pls_meta[i].album, sizeof d->pls_meta[i].album, "%s", alb);
-                d->pls_meta[i].album_id = (uint32_t)strtoul(aid, NULL, 10);
-                r = aid + strlen(aid) + 1u;
-                j++;
-            }
+            snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
         }
-        free(briefs);
+        d->brf_want = n > 0u ? 1u : 0u;
+        pls_briefs_want(d);
     }
     d->pls_n = i;
     {   /* I691d (Q3): the page's cover is the majority family of its songs, like an album's */
@@ -7418,6 +7469,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "srcpaint gen=%u painted=%u\n", (unsigned)d->src_gen, (unsigned)d->src_painted);
         o = dump_put(d, o, "sidelib_async posts=%u takes=%u inflight=%u flight_frames=%u\n", (unsigned)d->side_posts, (unsigned)d->side_takes,
                      (unsigned)d->side_inflight, (unsigned)d->side_flight_frames);
+        o = dump_put(d, o, "briefs_async posts=%u takes=%u inflight=%u\n", (unsigned)d->brf_posts, (unsigned)d->brf_takes, (unsigned)d->brf_inflight);
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d item_calls=%u lib_touch_calls=%u\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d), (unsigned)d->side_item_calls,
                      (unsigned)lib_touch_calls(d));
@@ -10496,6 +10548,7 @@ static void sm_lib_want(desk* d) {
 
 /* Each turn of the loop: a finished read is applied and the window redrawn. Counts the frames that were drawn while a read was in flight. */
 static void desk_side_follow(desk* d) {
+    pls_briefs_follow(d);
     if (d->sm_inflight) {
         sm_lib_take(d);
     } else if (d->sm_want && !d->side_inflight) {
@@ -11746,8 +11799,17 @@ static void desk_nap(void) {
 static void desk_side_settle(desk* d) {
     unsigned round;
 
-    for (round = 0u; round < 8u && !d->live && (d->side_inflight || d->side_stale || d->sm_inflight || d->sm_want); round++) {
+    for (round = 0u; round < 8u && !d->live && (d->side_inflight || d->side_stale || d->sm_inflight || d->sm_want || d->brf_inflight || d->brf_want || d->pls_stale); round++) {
         unsigned spins = 0u;
+
+        while ((d->brf_inflight || d->brf_want) && spins++ < 60000u) { /* I948a: the page's song_briefs read */
+            pls_briefs_follow(d);
+            if (!d->brf_inflight && !d->brf_want) {
+                break;
+            }
+            desk_nap();
+        }
+        spins = 0u;
 
         while ((d->sm_inflight || d->sm_want) && spins++ < 60000u) { /* I906e: the Add to Playlist list */
             if (d->sm_inflight) {
