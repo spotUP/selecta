@@ -6031,44 +6031,57 @@ static void cmd_PLAYLIST_CREATE(sel_engine* e, const sel_message* m) {
 /* STREAM_ADD url (I725a): saves a stream URL (a .pls / .m3u playlist URL stays as typed and is resolved when it plays)
  * in the saved playlist named "Streams", created on first use; a URL already in it is not added twice. The saved list
  * is an ordinary playlist, so it shows in Your Library, plays through PLAYLIST_PLAY and survives a restart. */
-static void cmd_STREAM_ADD(sel_engine* e, const sel_message* m) {
+/* I951: the "Streams" lookup, the create and the add run on the writer thread (wq_stream_add_run); the command thread only validates and queues.
+ * op->rc: SEL_FOLDER_OK, a folder error, or STREAM_ADD_NOMEM. */
+enum { STREAM_ADD_NOMEM = 1000 };
+
+static void wq_stream_add_run(sel_library* lib, sel_wq_op* op) {
     static const char list_name[] = "Streams";
-    const char* url = m->args[0].v.s;
     sel_library_item* items;
     uint32_t id = 0, n, i;
-    int rc;
-    if (!folder_ready(e, "STREAM_ADD")) return;
-    if (!sel_stream_is_url(url)) {
-        sel_engine_report_error(e, "range", "STREAM_ADD");
-        return;
-    }
-    items = (sel_library_item*)e->host->mem_alloc(e->host, 256u * sizeof *items, SEL_MEM_FAST);
+    items = (sel_library_item*)malloc(256u * sizeof *items);
     if (items == NULL) {
-        sel_engine_report_error(e, "out_of_memory", "STREAM_ADD");
+        op->rc = STREAM_ADD_NOMEM;
         return;
     }
-    n = (uint32_t)sel_library_items(e->lib, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0u, items, 256u, NULL);
+    n = (uint32_t)sel_library_items(lib, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0u, items, 256u, NULL);
     for (i = 0; i < n; i++) {
         if (strcmp(items[i].name, list_name) == 0) {
             id = (uint32_t)strtoul(items[i].key, NULL, 10);
             break;
         }
     }
-    e->host->mem_free(e->host, items);
-    if (id == 0u) {
-        rc = sel_library_playlist_add(e->lib, list_name, 0u, "", &id);
-        if (rc != SEL_FOLDER_OK) {
-            folder_report(e, rc, "STREAM_ADD");
-            return;
-        }
+    free(items);
+    op->rc = SEL_FOLDER_OK;
+    if (id == 0u) op->rc = sel_library_playlist_add(lib, list_name, 0u, "", &id);
+    if (op->rc == SEL_FOLDER_OK) op->rc = sel_library_playlist_add_song(lib, id, op->s[0]);
+}
+
+static void wq_stream_add_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc == STREAM_ADD_NOMEM) {
+        sel_engine_report_error(e, "out_of_memory", "STREAM_ADD");
+    } else if (op->rc != SEL_FOLDER_OK) {
+        folder_report(e, op->rc, "STREAM_ADD");
+    } else {
+        e->stream_adds++;
+        folders_reload_posted(e);
     }
-    rc = sel_library_playlist_add_song(e->lib, id, url);
-    if (rc != SEL_FOLDER_OK) {
-        folder_report(e, rc, "STREAM_ADD");
+}
+
+static void cmd_STREAM_ADD(sel_engine* e, const sel_message* m) {
+    const char* url = m->args[0].v.s;
+    sel_wq_op* op;
+    if (!folder_ready(e, "STREAM_ADD")) return;
+    if (!sel_stream_is_url(url)) {
+        sel_engine_report_error(e, "range", "STREAM_ADD");
         return;
     }
-    e->stream_adds++;
-    folders_reload(e);
+    op = wq_new(e, wq_stream_add_run, wq_stream_add_done, url, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "STREAM_ADD");
+        return;
+    }
+    wq_submit(e);
 }
 
 /* PLAYLIST_ADD_SONG id path (I241): appends one song to a saved playlist. */
@@ -6100,12 +6113,41 @@ static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
 /* PLAYLIST_IMPORT id path (I652c): parses an .m3u/.pls file with the playlist codecs and appends each song to saved playlist
  * `id` in file order, as PLAYLIST_ADD_SONG does. A local entry whose file does not exist is counted, not added; dividers are
  * skipped. The result is import_added / import_missing in the engine state and one log line. */
+/* I951: the parse and the file probes stay on the command thread (no library call); the appends run on the writer thread. The resolved
+ * paths travel NUL separated in op->res; u1 = playlist id, u2 = missing, n1 = added (the count that landed). */
+static void wq_playlist_import_run(sel_library* lib, sel_wq_op* op) {
+    const char* p;
+    for (p = (const char*)op->res; *p != '\0'; p += strlen(p) + 1u) {
+        op->rc = sel_library_playlist_add_song(lib, op->u1, p);
+        if (op->rc != SEL_FOLDER_OK) return;
+        op->n1++;
+    }
+    op->rc = SEL_FOLDER_OK;
+}
+
+static void wq_playlist_import_done(sel_engine* e, sel_wq_op* op) {
+    char msg[64];
+    if (op->rc != SEL_FOLDER_OK) {
+        folder_report(e, op->rc, "PLAYLIST_IMPORT");
+        playlist_fail(e, SEL_PLFAIL_OTHER);
+        return;
+    }
+    e->import_runs++;
+    e->import_added = (uint32_t)op->n1;
+    e->import_missing = op->u2;
+    snprintf(msg, sizeof msg, "%u added, %u missing", (unsigned)op->n1, (unsigned)op->u2);
+    emit_log(e, "playlist_import", msg);
+    folders_reload_posted(e);
+}
+
 static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
     const char* path = m->args[1].v.s;
-    uint32_t id = (uint32_t)m->args[0].v.u, i, added = 0, missing = 0;
-    char full[SEL_DEFERRED_PATH_MAX], msg[64];
+    uint32_t id = (uint32_t)m->args[0].v.u, i, missing = 0;
+    char full[SEL_DEFERRED_PATH_MAX];
+    char* list = NULL;
+    size_t used = 0, cap = 0;
     sel_playlist pl;
-    int rc;
+    sel_wq_op* op;
     if (!folder_ready(e, "PLAYLIST_IMPORT")) return;
     if (!playlist_file_parse(e, path, &pl, "PLAYLIST_IMPORT")) {
         playlist_fail(e, SEL_PLFAIL_UNREADABLE);
@@ -6114,6 +6156,7 @@ static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
     for (i = 0; i < pl.count; i++) {
         const sel_pl_entry* pe = &pl.entries[i];
         FILE* probe;
+        size_t len;
         if (pe->kind == SEL_PL_DIVIDER) continue;
         if (!playlist_resolve(full, sizeof full, path, sel_playlist_str(&pl, pe->key))) {
             missing++;
@@ -6127,20 +6170,44 @@ static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
             }
             fclose(probe);
         }
-        rc = sel_library_playlist_add_song(e->lib, id, full);
-        if (rc != SEL_FOLDER_OK) {
-            folder_report(e, rc, "PLAYLIST_IMPORT");
-            playlist_fail(e, SEL_PLFAIL_OTHER);
-            return;
+        len = strlen(full) + 1u;
+        if (used + len + 1u > cap) {
+            char* grown;
+            cap = (used + len + 1u) * 2u;
+            grown = (char*)realloc(list, cap);
+            if (grown == NULL) {
+                free(list);
+                sel_engine_report_error(e, "no_memory", "PLAYLIST_IMPORT");
+                playlist_fail(e, SEL_PLFAIL_OTHER);
+                return;
+            }
+            list = grown;
         }
-        added++;
+        memcpy(list + used, full, len);
+        used += len;
+        list[used] = '\0';
     }
-    e->import_runs++;
-    e->import_added = added;
-    e->import_missing = missing;
-    snprintf(msg, sizeof msg, "%u added, %u missing", (unsigned)added, (unsigned)missing);
-    emit_log(e, "playlist_import", msg);
-    folders_reload(e);
+    op = wq_new(e, wq_playlist_import_run, wq_playlist_import_done, NULL, NULL, NULL);
+    if (op != NULL) {
+        op->res = e->host->mem_alloc(e->host, used + 1u, SEL_MEM_FAST);
+        if (op->res == NULL) {
+            e->host->mem_free(e->host, op->buf); /* the op was not submitted: wq_op_free will not see it */
+            op->buf = NULL;
+            op = NULL;
+        }
+    }
+    if (op == NULL) {
+        free(list);
+        sel_engine_report_error(e, "library_busy", "PLAYLIST_IMPORT");
+        playlist_fail(e, SEL_PLFAIL_OTHER);
+        return;
+    }
+    if (used > 0u) memcpy(op->res, list, used);
+    ((char*)op->res)[used] = '\0';
+    free(list);
+    op->u1 = id;
+    op->u2 = missing;
+    wq_submit(e);
 }
 
 /* PLAYLIST_ADD_FOLDER id dir (I652d): scans `dir` recursively with the library's folder scan (the modules it recognises also
@@ -6243,12 +6310,26 @@ static void cmd_PLAYLIST_RENAME(sel_engine* e, const sel_message* m) {
 }
 
 /* I678c: the item page of Your Library row (kind, key) was opened; Recents orders by the newer of this and the last play, in every UI. */
-static void cmd_LIBRARY_TOUCH(sel_engine* e, const sel_message* m) {
-    int rc;
-    if (!folder_ready(e, "LIBRARY_TOUCH")) return;
-    rc = sel_library_touch(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s, (int64_t)time(NULL));
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "LIBRARY_TOUCH");
+static void wq_touch_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_touch(lib, op->u1, op->s[0], op->n1);
+}
+
+static void wq_touch_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) folder_report(e, op->rc, "LIBRARY_TOUCH");
     else e->lib_touch_calls++;
+}
+
+static void cmd_LIBRARY_TOUCH(sel_engine* e, const sel_message* m) {
+    sel_wq_op* op;
+    if (!folder_ready(e, "LIBRARY_TOUCH")) return;
+    op = wq_new(e, wq_touch_run, wq_touch_done, m->args[1].v.s, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "LIBRARY_TOUCH");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    op->n1 = (int64_t)time(NULL);
+    wq_submit(e);
 }
 
 /* ---- I678f: the page COLLECTION_OPEN builds for an album, artist or composer (design doc section 7/8) ---- */
@@ -6571,12 +6652,25 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     if (e->rdc_next_page || e->rdc_next_touch_n > 0u) coll_post(e);
 }
 
+static void wq_playlist_del_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_playlist_del(lib, op->u1);
+}
+
+static void wq_playlist_del_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) folder_report(e, op->rc, "PLAYLIST_DEL");
+    else folders_reload_posted(e);
+}
+
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
-    int rc;
+    sel_wq_op* op;
     if (!folder_ready(e, "PLAYLIST_DEL")) return;
-    rc = sel_library_playlist_del(e->lib, (uint32_t)m->args[0].v.u);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_DEL");
-    else folders_reload(e);
+    op = wq_new(e, wq_playlist_del_run, wq_playlist_del_done, NULL, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "PLAYLIST_DEL");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    wq_submit(e);
 }
 
 /* DUI-P4-18: the catalogue changed under every listing; the pages reload on the new serial (I348). */
@@ -6587,29 +6681,55 @@ static void library_catalogue_changed(sel_engine* e) {
 }
 
 /* DUI-P4-18: Remove from Library. The song leaves the catalogue; its audio file is never touched. */
-static void cmd_LIBRARY_REMOVE(sel_engine* e, const sel_message* m) {
+static void wq_library_remove_run(sel_library* lib, sel_wq_op* op) {
     uint32_t removed = 0;
-    int rc;
-    if (!folder_ready(e, "LIBRARY_REMOVE")) return;
-    rc = sel_library_song_remove(e->lib, m->args[0].v.s, &removed);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "LIBRARY_REMOVE");
+    op->rc = sel_library_song_remove(lib, op->s[0], &removed);
+}
+
+static void wq_library_remove_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) folder_report(e, op->rc, "LIBRARY_REMOVE");
     else library_catalogue_changed(e);
 }
 
-/* DUI-P4-18 (Q16): Clear Library. Playback stops and the queue empties (its entries point into the catalogue being
- * dropped); playlists, ratings and notes go with the songs, settings stay. */
-static void cmd_LIBRARY_CLEAR(sel_engine* e, const sel_message* m) {
-    uint32_t removed = 0;
-    int rc;
-    if (!folder_ready(e, "LIBRARY_CLEAR")) return;
-    rc = sel_library_clear(e->lib, &removed);
-    if (rc != SEL_FOLDER_OK) {
-        folder_report(e, rc, "LIBRARY_CLEAR");
+static void cmd_LIBRARY_REMOVE(sel_engine* e, const sel_message* m) {
+    sel_wq_op* op;
+    if (!folder_ready(e, "LIBRARY_REMOVE")) return;
+    op = wq_new(e, wq_library_remove_run, wq_library_remove_done, m->args[0].v.s, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "LIBRARY_REMOVE");
         return;
     }
-    cmd_STOP(e, m);
-    cmd_QUEUE_CLEAR(e, m);
+    wq_submit(e);
+}
+
+/* DUI-P4-18 (Q16): Clear Library. Playback stops and the queue empties (its entries point into the catalogue being
+ * dropped); playlists, ratings and notes go with the songs, settings stay. I951: the clear runs on the writer thread; the stop and the
+ * queue clear follow in the done callback, once the catalogue is really gone. */
+static void wq_library_clear_run(sel_library* lib, sel_wq_op* op) {
+    uint32_t removed = 0;
+    op->rc = sel_library_clear(lib, &removed);
+}
+
+static void wq_library_clear_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) {
+        folder_report(e, op->rc, "LIBRARY_CLEAR");
+        return;
+    }
+    cmd_STOP(e, NULL);
+    cmd_QUEUE_CLEAR(e, NULL);
     library_catalogue_changed(e);
+}
+
+static void cmd_LIBRARY_CLEAR(sel_engine* e, const sel_message* m) {
+    sel_wq_op* op;
+    (void)m;
+    if (!folder_ready(e, "LIBRARY_CLEAR")) return;
+    op = wq_new(e, wq_library_clear_run, wq_library_clear_done, NULL, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "LIBRARY_CLEAR");
+        return;
+    }
+    wq_submit(e);
 }
 
 /* Copies a source's stats list into the engine's record: the list itself, and the legacy named fields the CLI and
@@ -8233,22 +8353,140 @@ static void cmd_SONGS_PLAY(sel_engine* e, const sel_message* m) {
     songs_sel_free(&s);
 }
 
+/* I951: the batch appends run on the writer thread. The selected paths travel NUL separated in op->res (pn of them); u1 = playlist id,
+ * n1 = appended. The list is already resolved, so the songs_sel is freed on the command thread. */
+static void wq_songs_playlist_add_run(sel_library* lib, sel_wq_op* op) {
+    const char* p = (const char*)op->res;
+    uint32_t i;
+    op->rc = SEL_FOLDER_OK;
+    for (i = 0; i < op->u2; i++, p += strlen(p) + 1u) {
+        op->rc = sel_library_playlist_add_song(lib, op->u1, p);
+        if (op->rc != SEL_FOLDER_OK) return;
+        op->n1++;
+    }
+}
+
+static void wq_songs_playlist_add_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) folder_report(e, op->rc, "SONGS_PLAYLIST_ADD");
+    if (op->n1 > 0) folders_reload_posted(e);
+    songs_done(e, "SONGS_PLAYLIST_ADD", (uint32_t)op->n1);
+}
+
+/* Copies `n` strings of a songs_sel into a NUL separated host buffer owned by the op; 0 when it cannot be had. */
+static int songs_wq_paths(sel_engine* e, sel_wq_op* op, const char* const* list, uint32_t n) {
+    size_t total = 1u;
+    uint32_t i;
+    char* w;
+    for (i = 0; i < n; i++) total += strlen(list[i]) + 1u;
+    op->res = e->host->mem_alloc(e->host, total, SEL_MEM_FAST);
+    if (op->res == NULL) return 0;
+    for (w = (char*)op->res, i = 0; i < n; i++) {
+        size_t len = strlen(list[i]) + 1u;
+        memcpy(w, list[i], len);
+        w += len;
+    }
+    *w = '\0';
+    return 1;
+}
+
+static void wq_songs_discard(sel_engine* e, sel_wq_op* op) {
+    e->host->mem_free(e->host, op->buf); /* the op was not submitted: wq_op_free will not see it */
+    op->buf = NULL;
+}
+
 static void cmd_SONGS_PLAYLIST_ADD(sel_engine* e, const sel_message* m) {
     songs_sel s;
-    uint32_t i, done = 0;
+    sel_wq_op* op;
     if (!folder_ready(e, "SONGS_PLAYLIST_ADD")) return;
     if (!songs_open(e, "SONGS_PLAYLIST_ADD", m->args[1].v.s, m->args[2].v.u, m->args[3].v.s, &s)) return;
-    for (i = 0; i < s.pn; i++) {
-        int rc = sel_library_playlist_add_song(e->lib, m->args[0].v.u, s.plist[i]);
-        if (rc != SEL_FOLDER_OK) {
-            folder_report(e, rc, "SONGS_PLAYLIST_ADD");
-            break;
-        }
-        done++;
+    op = wq_new(e, wq_songs_playlist_add_run, wq_songs_playlist_add_done, NULL, NULL, NULL);
+    if (op != NULL && s.pn > 0u && !songs_wq_paths(e, op, s.plist, s.pn)) {
+        wq_songs_discard(e, op);
+        op = NULL;
     }
-    if (done > 0u) folders_reload(e);
-    songs_done(e, "SONGS_PLAYLIST_ADD", done);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "SONGS_PLAYLIST_ADD");
+        songs_done(e, "SONGS_PLAYLIST_ADD", 0u);
+    } else if (s.pn == 0u) { /* nothing to write: finish as the old loop did */
+        wq_songs_discard(e, op);
+        songs_done(e, "SONGS_PLAYLIST_ADD", 0u);
+    } else {
+        op->u1 = (uint32_t)m->args[0].v.u;
+        op->u2 = s.pn;
+        wq_submit(e);
+    }
     songs_sel_free(&s);
+}
+
+/* I951: playlist removal (u1 = playlist, u2 = count, res = row indices high to low) and library removal (res = paths, u2 = count) run
+ * on the writer thread; n1 = removed. */
+static void wq_songs_remove_pl_run(sel_library* lib, sel_wq_op* op) {
+    const uint32_t* idx = (const uint32_t*)op->res;
+    uint32_t i;
+    op->rc = SEL_FOLDER_OK;
+    for (i = 0; i < op->u2; i++) {
+        op->rc = sel_library_playlist_remove_song(lib, op->u1, idx[i]);
+        if (op->rc != SEL_FOLDER_OK) return;
+        op->n1++;
+    }
+}
+
+static void wq_songs_remove_pl_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) folder_report(e, op->rc, "SONGS_REMOVE");
+    if (op->n1 > 0) folders_reload_posted(e);
+    songs_done(e, "SONGS_REMOVE", (uint32_t)op->n1);
+}
+
+static void wq_songs_remove_lib_run(sel_library* lib, sel_wq_op* op) {
+    const char* p = (const char*)op->res;
+    uint32_t i;
+    op->rc = SEL_FOLDER_OK;
+    for (i = 0; i < op->u2; i++, p += strlen(p) + 1u) {
+        uint32_t removed = 0;
+        op->rc = sel_library_song_remove(lib, p, &removed);
+        if (op->rc != SEL_FOLDER_OK) return;
+        op->n1++;
+    }
+}
+
+static void wq_songs_remove_lib_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) folder_report(e, op->rc, "SONGS_REMOVE");
+    if (op->n1 > 0) library_catalogue_changed(e);
+    songs_done(e, "SONGS_REMOVE", (uint32_t)op->n1);
+}
+
+/* Queues a SONGS_REMOVE write; 1 when it was submitted (songs_done then comes from the done callback), 0 when the caller finishes now. */
+static int songs_remove_queue(sel_engine* e, const songs_sel* s, int playlist) {
+    sel_wq_op* op;
+    uint32_t i, count = playlist ? s->n : s->pn;
+    if (count == 0u) return 0;
+    op = wq_new(e, playlist ? wq_songs_remove_pl_run : wq_songs_remove_lib_run, playlist ? wq_songs_remove_pl_done : wq_songs_remove_lib_done,
+                NULL, NULL, NULL);
+    if (op != NULL) {
+        int ok;
+        if (playlist) {
+            uint32_t* idx = (uint32_t*)e->host->mem_alloc(e->host, count * sizeof *idx, SEL_MEM_FAST);
+            ok = idx != NULL;
+            if (ok) {
+                for (i = 0; i < count; i++) idx[i] = s->idx[count - 1u - i]; /* high to low: the lower indices stay valid */
+                op->res = idx;
+            }
+        } else {
+            ok = songs_wq_paths(e, op, s->plist, count);
+        }
+        if (!ok) {
+            wq_songs_discard(e, op);
+            op = NULL;
+        }
+    }
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "SONGS_REMOVE");
+        return 0;
+    }
+    op->u1 = s->plid;
+    op->u2 = count;
+    wq_submit(e);
+    return 1;
 }
 
 static void cmd_SONGS_REMOVE(sel_engine* e, const sel_message* m) {
@@ -8268,29 +8506,11 @@ static void cmd_SONGS_REMOVE(sel_engine* e, const sel_message* m) {
             if (done > 0u) emit_queue_changed(e);
             free(ids);
         }
-    } else if (s.kind == SONGS_PLAYLIST) {
-        if (folder_ready(e, "SONGS_REMOVE")) {
-            for (i = s.n; i > 0u; i--) { /* high to low: the lower indices stay valid */
-                int rc = sel_library_playlist_remove_song(e->lib, s.plid, s.idx[i - 1u]);
-                if (rc != SEL_FOLDER_OK) {
-                    folder_report(e, rc, "SONGS_REMOVE");
-                    break;
-                }
-                done++;
-            }
-            if (done > 0u) folders_reload(e);
-        }
     } else if (folder_ready(e, "SONGS_REMOVE")) {
-        for (i = 0; i < s.pn; i++) {
-            uint32_t removed = 0;
-            int rc = sel_library_song_remove(e->lib, s.plist[i], &removed);
-            if (rc != SEL_FOLDER_OK) {
-                folder_report(e, rc, "SONGS_REMOVE");
-                break;
-            }
-            done++;
+        if (songs_remove_queue(e, &s, s.kind == SONGS_PLAYLIST)) { /* songs_done follows from the writer's done callback */
+            songs_sel_free(&s);
+            return;
         }
-        if (done > 0u) library_catalogue_changed(e);
     }
     songs_done(e, "SONGS_REMOVE", done);
     songs_sel_free(&s);

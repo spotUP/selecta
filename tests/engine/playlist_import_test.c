@@ -31,7 +31,7 @@ static void run(sel_engine* eng, const char* line) {
         return;
     }
     sel_engine_send(eng, &m);
-    sel_engine_pump(eng, NULL, NULL);
+    sel_engine_pump_reads(eng, NULL, NULL, 60000u); /* I951: waits for the queued library write to be answered */
 }
 
 static sel_engine_stats imp_stats(sel_engine* e) {
