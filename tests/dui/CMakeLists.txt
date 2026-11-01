@@ -162,6 +162,8 @@ if(NOT SEL_AMIGA)
     endif()
     set_tests_properties(${tname} PROPERTIES LABELS ${tlabel} TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()
+  # I906e: eight live SDL runs (six moved sites plus setup scans) take about 105 s; the shared 120 s leaves no margin.
+  set_tests_properties(dui-direct-calls-async PROPERTIES TIMEOUT 300)
 endif()
 
 # dui-settings (I799a): the Settings entry in the top bar, one drawn row per shared pref row, an enum click written to prefs.conf.
