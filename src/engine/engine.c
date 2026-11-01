@@ -613,6 +613,7 @@ struct sel_engine {
     sel_engine_handover_fn handover; /* app hook that closes and reopens the output (I219), or NULL */
     void* handover_ctx;
     uint32_t handed_over;         /* 1: the output is closed, a HW-kind replayer owns the hardware */
+    uint32_t hw_stepped;          /* 1: the app steps a handed-over song itself (sel_engine_hw_step), hw_clock stands down */
     uint32_t hw_clock_ms;         /* host clock_ms of the last self-clocked render while handed over */
     uint32_t hw_handovers;        /* stats: output handed over (I219) */
     uint32_t hw_starts;           /* stats: HW RP_START successes (I219) */
@@ -7880,11 +7881,22 @@ static void refresh_snapshot(sel_engine* e) {
 
 /* While the output is handed over to a HW-kind replayer no output pulls sel_engine_render, so the pump runs it
  * by the wall clock (I219): swaps, song time, end policy and the queue advance as with an output. */
-static void hw_clock(sel_engine* e) {
+static void hw_render(sel_engine* e, uint32_t frames) {
     int16_t scratch[256u * 2u];
-    uint32_t now = e->host->clock_ms(e->host); /* monotonic: local time is whole seconds on the host and jumps at midnight (I219d) */
-    uint32_t ms = now - e->hw_clock_ms;
-    uint32_t frames;
+    while (frames > 0u) {
+        uint32_t n = frames < 256u ? frames : 256u;
+        sel_engine_render(e, scratch, n);
+        frames -= n;
+    }
+}
+
+static void hw_clock(sel_engine* e) {
+    uint32_t now, ms, frames;
+    if (e->hw_stepped) {
+        return;
+    }
+    now = e->host->clock_ms(e->host); /* monotonic: local time is whole seconds on the host and jumps at midnight (I219d) */
+    ms = now - e->hw_clock_ms;
     if (ms > 1000u) {
         ms = 1000u;
     }
@@ -7893,10 +7905,16 @@ static void hw_clock(sel_engine* e) {
         return;
     }
     e->hw_clock_ms = now;
-    while (frames > 0u) {
-        uint32_t n = frames < 256u ? frames : 256u;
-        sel_engine_render(e, scratch, n);
-        frames -= n;
+    hw_render(e, frames);
+}
+
+void sel_engine_set_hw_stepped(sel_engine* e, int stepped) {
+    e->hw_stepped = stepped != 0;
+}
+
+void sel_engine_hw_step(sel_engine* e, uint32_t frames) {
+    if (e->handed_over) {
+        hw_render(e, frames);
     }
 }
 

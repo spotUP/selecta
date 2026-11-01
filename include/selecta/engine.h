@@ -417,6 +417,11 @@ typedef int (*sel_engine_output_switch_fn)(void* ctx, const char* id);
 void sel_engine_set_output_switch(sel_engine* e, sel_engine_output_switch_fn fn, void* ctx);
 /* 1 while the output is handed over to a HW-kind replayer. */
 uint32_t sel_engine_handed_over(const sel_engine* e);
+/* A clockless run (null or wav output, scripted time) has no wall time: its shell calls sel_engine_set_hw_stepped(e, 1) once, then
+ * sel_engine_hw_step(e, frames) each turn with the frames an output would have pulled, so a handed-over song advances with the
+ * script's time like a normal one. While stepped, sel_engine_pump no longer renders by the wall clock. */
+void sel_engine_set_hw_stepped(sel_engine* e, int stepped);
+void sel_engine_hw_step(sel_engine* e, uint32_t frames);
 /* Where the song started last went: 1 = the output's voice sink, 0 = the mixer. */
 uint32_t sel_engine_routed_direct(const sel_engine* e);
 

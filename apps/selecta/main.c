@@ -601,6 +601,7 @@ int main(int argc, char** argv)
     so.out = out;
     so.paced = sel_tag_find(oh, SEL_OUT_UNPACED, 0) == 0;
     sel_engine_set_handover(e, shell_handover, &so);
+    sel_engine_set_hw_stepped(e, clockless); /* scripted time steps a handed-over song (no wall clock in a clockless run) */
     sel_engine_set_output_switch(e, shell_switch_output, &so);
 
     memset(&args, 0, sizeof args);
@@ -796,6 +797,8 @@ int main(int argc, char** argv)
             g_pumping = 1;
             so.pump(so.out, so.rate * SHELL_TURN_MS / 1000u);
             g_pumping = 0;
+        } else if (clockless) {
+            sel_engine_hw_step(e, so.rate * SHELL_TURN_MS / 1000u); /* handed over: the script's time reaches the HW song like a pulled one */
         }
         pump_turn(e, clockless, sink, ctx);
         sel_int_session_poll(isess);
