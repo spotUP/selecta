@@ -487,6 +487,7 @@ static const sel_source g_ccmixter = {
     "Creative Commons remixes and samples streamed from ccMixter; each upload shows its own licence.",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, cc_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     SITE_HOME, cc_play_url,
+    NULL, /* search (I406) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
