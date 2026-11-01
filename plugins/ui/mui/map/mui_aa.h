@@ -66,6 +66,15 @@ int mui_aa_ramp_pens(int kind, const uint32_t* token, uint32_t fg, uint32_t bg, 
 int mui_aa_ramp_slot(int kind, int coverage);
 /* Font pixel size for the screen: 13 up to 600 rows, 15 up to 800, 17 above, 0 (bitmap topaz 8) at 256 rows or less. */
 int mui_aa_font_px(int screen_rows, int screen_cols);
+/* I972: bitmap font for the own screen, from a mui_aa_font_px size, so MUI's stock objects and the PLAIN text backend (no
+ * ttengine or no Inter: text drawn in _font(obj), the screen font) grow with the tier like the antialiased text. Stock
+ * Workbench 3.x helvetica (9 11 13 15 18 24) at the largest size not above font_px + 1. Returns 0 for font_px 0 (the 256-row
+ * tier keeps the Workbench font, topaz 8) and fills nothing. */
+typedef struct mui_aa_screen_font_t {
+    const char* name; /* diskfont name, e.g. "helvetica.font" */
+    int ysize;
+} mui_aa_screen_font_t;
+int mui_aa_screen_font(int font_px, mui_aa_screen_font_t* out);
 int mui_aa_tier(int screen_rows);
 /* Control heights and paddings of one tier table for a font size from mui_aa_font_px. */
 void mui_aa_metrics(int font_px, mui_aa_metrics_t* out);

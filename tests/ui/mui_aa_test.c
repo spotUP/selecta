@@ -1049,9 +1049,30 @@ static void test_tight_pad(void) {
     mui_aa_set_screen_aspect(256);
 }
 
+/* I972: on RTG 800x600 the text stayed 8 px: the own screen kept the Workbench font, and MUI's stock objects and the PLAIN
+ * backend (rig 2 has no ttengine) draw in it. The screen font follows mui_aa_font_px, and mui_screen_open passes it as SA_Font. */
+static void test_screen_font(void) {
+    mui_aa_screen_font_t f = {NULL, 0};
+    char* ui;
+    CHECK(mui_aa_screen_font(mui_aa_font_px(256, 640), &f) == 0, "256 rows keep the Workbench font");
+    CHECK(mui_aa_screen_font(mui_aa_font_px(600, 800), &f) == 1 && f.ysize == 13 && strcmp(f.name, "helvetica.font") == 0,
+          "800x600: helvetica 13, got %d", f.ysize);
+    CHECK(mui_aa_screen_font(mui_aa_font_px(480, 640), &f) == 1 && f.ysize == 13, "640x480: 13, got %d", f.ysize);
+    CHECK(mui_aa_screen_font(mui_aa_font_px(768, 1024), &f) == 1 && f.ysize == 15, "1024x768: 15, got %d", f.ysize);
+    CHECK(mui_aa_screen_font(mui_aa_font_px(1024, 1280), &f) == 1 && f.ysize == 18, "1280x1024: 18, got %d", f.ysize);
+    CHECK(mui_aa_screen_font(4, &f) == 1 && f.ysize == 9, "smallest stock size is the floor, got %d", f.ysize);
+    ui = slurp(UI_SOURCE);
+    CHECK(ui != NULL && strstr(ui, "mui_aa_screen_font(mui_aa_font_px(") != NULL && strstr(ui, "SA_Font : TAG_IGNORE, (ULONG)font") != NULL &&
+              strstr(ui, "OpenDiskFont(") != NULL,
+          "mui_screen_open opens the tier font and passes it to OpenScreenTags");
+    free(ui);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
-    if (!strcmp(t, "tight-pad")) {
+    if (!strcmp(t, "screen-font")) {
+        test_screen_font();
+    } else if (!strcmp(t, "tight-pad")) {
         test_tight_pad();
     } else if (!strcmp(t, "icon-ratio")) {
         test_icon_ratio();

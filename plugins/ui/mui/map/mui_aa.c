@@ -170,6 +170,20 @@ int mui_aa_font_px(int screen_rows, int screen_cols) {
     return screen_rows <= 256 ? 0 : screen_rows <= 600 ? 13 : screen_rows <= 800 ? 15 : 17;
 }
 
+int mui_aa_screen_font(int font_px, mui_aa_screen_font_t* out) {
+    static const int sizes[] = {24, 18, 15, 13, 11, 9};
+    unsigned i = 0;
+    if (font_px <= 0 || out == NULL) {
+        return 0;
+    }
+    while (i + 1 < sizeof sizes / sizeof sizes[0] && sizes[i] > font_px + 1) {
+        i++;
+    }
+    out->name = "helvetica.font";
+    out->ysize = sizes[i];
+    return 1;
+}
+
 int mui_aa_tier(int screen_rows) {
     return screen_rows <= 256 ? MUI_AA_TIER_S : screen_rows <= 600 ? MUI_AA_TIER_M : screen_rows <= 800 ? MUI_AA_TIER_L : MUI_AA_TIER_XL;
 }
