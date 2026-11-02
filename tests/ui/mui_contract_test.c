@@ -1985,6 +1985,13 @@ static void test_icon_buttons(void) {
     want++;
     CHECK(mui_icon_resolved() - before == want, "icon lookups %u want %u", (unsigned)(mui_icon_resolved() - before), (unsigned)want);
     CHECK(mui_icon_id("no such button") < 0 && mui_icon_body(-1, 18) == NULL, "unknown key has no icon");
+    { /* I973j: the player bar passes gui_icons.h names ("volume-2", "minus", "plus") to icon-only buttons; an unmapped key draws the caption */
+        static const char* const bar_keys[] = {"volume-2", "minus", "plus"};
+        size_t q;
+        for (q = 0; q < sizeof bar_keys / sizeof bar_keys[0]; q++) {
+            CHECK(mui_icon_id(bar_keys[q]) >= 0 && mui_icon_body(mui_icon_id(bar_keys[q]), 18) != NULL, "player bar icon key %s has no icon", bar_keys[q]);
+        }
+    }
     {
         const uint8_t* body = mui_icon_body(mui_icon_id("play"), 18);
         size_t k, bytes = (size_t)18 * (((18 + 15) / 16) * 2) * 2, ink = 0;

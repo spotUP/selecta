@@ -30,6 +30,8 @@ static const struct {
     {"Settings", SEL_GUI_ICON_LAYOUT_GRID}, {"Open Playlist", SEL_GUI_ICON_LIST}, {"Rename Playlist", SEL_GUI_ICON_CHECK},
     {"Delete Playlist", SEL_GUI_ICON_X}, {"Clear Library", SEL_GUI_ICON_X},
     {"New Playlist", SEL_GUI_ICON_PLUS}, {"check", SEL_GUI_ICON_CHECK}, {"close", SEL_GUI_ICON_X},
+    /* I973j: player bar speaker and subsong buttons pass the gui_icons.h file names directly */
+    {"volume-2", SEL_GUI_ICON_VOLUME_2}, {"minus", SEL_GUI_ICON_MINUS}, {"plus", SEL_GUI_ICON_PLUS},
     /* breadcrumb */
     {"crumb", SEL_GUI_ICON_CHEVRON_RIGHT},
 };
