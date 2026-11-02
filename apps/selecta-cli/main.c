@@ -691,6 +691,9 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             continue;
         }
         if (strcmp(line, "@ratings") == 0 || strcmp(line, "@ratings_wait") == 0) {
+            /* I990: a RATE is written on the write queue (I906f) and its push starts from the done callback on the pump;
+             * a RATE sent with @timed has not been pumped yet, so drain the queue before waiting for the push. */
+            sel_engine_pump_reads(e, print_event, NULL, 60000u);
             sel_library_rating_wait(lib); /* test hook: the DEViLBOX push thread (I173c) is idle after this */
             if (line[8] != '\0') {
                 continue;

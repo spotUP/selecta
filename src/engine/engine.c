@@ -3251,6 +3251,9 @@ static void smart_sync(sel_engine* e, int allowed) {
         }
         return;
     }
+    if (e->cur == SEL_SLOT_NONE) {
+        return; /* I990: Playing but the song is still being opened (I980b defers the OPEN): its foreground fetch comes first and preempts smart downloads */
+    }
     key = (e->queue.version * 31u + e->q_playing) * 31u + e->prefs.generation + 1u;
     if (key != e->sm_key) {
         char rules[512];
