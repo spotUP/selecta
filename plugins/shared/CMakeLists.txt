@@ -21,26 +21,33 @@ target_include_directories(selecta_shared_archive PRIVATE "${PROJECT_SOURCE_DIR}
 target_link_libraries(selecta_shared_archive PUBLIC selecta_archive)
 
 # I892c1: RAOP (AirPlay 1) sender, pure part: ALAC escape-frame packer, AES-128-CBC packet encrypt, RSA-OAEP key wrap, SDP
-# ANNOUNCE builder. No sockets or OS calls. Crypto from third_party/mbedtls, which the build tree adds only off the Amiga
-# (src/library/CMakeLists.txt, SEL_NO_TLS); the Amiga RAOP plugin (I895) decides how mbedtls reaches the 68k build.
+# ANNOUNCE builder. No sockets or OS calls. Crypto from third_party/mbedtls, which src/library/CMakeLists.txt adds off the
+# Amiga (SEL_NO_TLS); on the Amiga it is added here, for the RAOP code only (I1004, I895 decides how the plugin ships it).
+if(SEL_AMIGA AND NOT TARGET selecta_mbedtls)
+  add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/mbedtls ${CMAKE_BINARY_DIR}/third_party/mbedtls)
+endif()
+# Socket shims (RULES 4a): the POSIX backend on the host, the bsdsocket backend on the Amiga. The Amiga backends hold no
+# socket code, they call src/core/amiga/net.c (one socket layer); selecta_library supplies it at link time.
+if(SEL_AMIGA)
+  set(SEL_RAOP_SOCK raop/raop_sock_amiga.c)
+  set(SEL_UPNP_SOCK upnp/upnp_sock_amiga.c)
+else()
+  set(SEL_RAOP_SOCK raop/raop_sock_posix.c)
+  set(SEL_UPNP_SOCK upnp/upnp_sock_posix.c)
+endif()
 if(TARGET selecta_mbedtls)
   add_library(selecta_shared_raop STATIC raop/raop.c)
   target_include_directories(selecta_shared_raop PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(selecta_shared_raop PUBLIC selecta_mbedtls)
-  # I892c2: RTSP session and RTP sender over the socket shim (raop_sock.h). The POSIX backend is the only one now; the
-  # Amiga bsdsocket backend arrives with I895.
-  if(NOT SEL_AMIGA)
-    add_library(selecta_shared_raop_net STATIC raop/raop_session.c raop/raop_sock_posix.c)
-    target_link_libraries(selecta_shared_raop_net PUBLIC selecta_shared_raop)
-  endif()
+  # I892c2: RTSP session and RTP sender over the socket shim (raop_sock.h).
+  add_library(selecta_shared_raop_net STATIC raop/raop_session.c ${SEL_RAOP_SOCK})
+  target_include_directories(selecta_shared_raop_net PRIVATE "${PROJECT_SOURCE_DIR}/src/core/amiga")
+  target_link_libraries(selecta_shared_raop_net PUBLIC selecta_shared_raop)
 endif()
 
-# I894a1: UPnP / DLNA media server discovery (SSDP + device description). All sockets go through upnp/upnp_sock.h; the
-# POSIX backend is linked here; the Amiga bsdsocket backend is I1004, which removes this guard. The HTTP fetch is
-# src/library/net/http.c, so the user of this library links selecta_library as well.
-if(NOT SEL_AMIGA)
-  add_library(selecta_shared_upnp STATIC upnp/upnp.c upnp/upnp_sock_posix.c)
-  target_include_directories(selecta_shared_upnp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-  target_include_directories(selecta_shared_upnp PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
-  target_link_libraries(selecta_shared_upnp PUBLIC selecta_shared_source)
-endif()
+# I894a1: UPnP / DLNA media server discovery (SSDP + device description). All sockets go through upnp/upnp_sock.h. The
+# HTTP fetch is src/library/net/http.c, so the user of this library links selecta_library as well.
+add_library(selecta_shared_upnp STATIC upnp/upnp.c ${SEL_UPNP_SOCK})
+target_include_directories(selecta_shared_upnp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(selecta_shared_upnp PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library" "${PROJECT_SOURCE_DIR}/src/core/amiga")
+target_link_libraries(selecta_shared_upnp PUBLIC selecta_shared_source)
