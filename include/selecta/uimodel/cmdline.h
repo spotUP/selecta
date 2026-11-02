@@ -15,7 +15,7 @@ extern "C" {
 
 #define TXT_CMD_LINE 192u
 #define TXT_CMD_HISTORY 100u
-#define TXT_CMD_STATUS 192u
+#define TXT_CMD_STATUS 384u
 
 typedef enum txt_cmd_result {
     TXT_CMD_EDITING = 0, /* the line stays open */
