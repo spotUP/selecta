@@ -637,7 +637,7 @@ if(NOT SEL_AMIGA)
   set(SEL_M68K_CC "$ENV{HOME}/opt/amiga/bin/m68k-amigaos-gcc" CACHE FILEPATH "m68k cross compiler for mui-sdk-probe")
   add_test(NAME mui-sdk-probe COMMAND "${CMAKE_COMMAND}" "-DCC=${SEL_M68K_CC}" "-DMUI_INCLUDE=${SEL_MUI_INCLUDE}"
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-sdk-probe" -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_sdk_probe.cmake")
-  set_tests_properties(mui-sdk-probe PROPERTIES LABELS mui)
+  set_tests_properties(mui-sdk-probe PROPERTIES LABELS "mui;m68k-gcc")
 endif()
 
 # T19: the M1.1 reachability test. The real shell and text UI, driven by a key
@@ -1348,6 +1348,12 @@ if(NOT SEL_AMIGA)
 
   # Rig tests (T56, T58 priority read-back, T59, T60), label rig: skipped (never passed) while the rig is down.
   set(SEL_RIG_DIR "$ENV{HOME}/Code/UP-Term/vtcon/tools/rig")
+  # One place for the properties of every rig row: label rig, one rig at a time, and Skipped (never Passed, never Failed)
+  # while run_rig.cmake reports no rig (UPTERM_RIG unset, or the rig down).
+  function(sel_rig_test_props name)
+    set_tests_properties(${name} PROPERTIES LABELS rig RESOURCE_LOCK rig
+      SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  endfunction()
   foreach(rt T56:rig-selecta-upterm T58:rig-task-priority T59:rig-ahi-render T60:rig-nofpu-voice-budget)
     string(REPLACE ":" ";" parts "${rt}")
     list(GET parts 0 tag)
@@ -1358,8 +1364,7 @@ if(NOT SEL_AMIGA)
         "-DSELECTA_CLI=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-cli"
         "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/${name}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-    set_tests_properties(${name} PROPERTIES LABELS rig RESOURCE_LOCK rig
-      SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+    sel_rig_test_props(${name})
   endforeach()
   # I450 / M4-P5-1: RTG first light with a real library, on rig 2 (uaegfx), through Selecta --ui desktop --backend rtg.
   add_test(NAME rig-m4-rtg-first-light
@@ -1369,8 +1374,7 @@ if(NOT SEL_AMIGA)
       "-DGENRE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/m3/genre"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-rtg-first-light"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-rtg-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-rtg-first-light)
   # I508 / MUI-P1-3, MUI-P1-5: the MUI window opens on rig 2 through Selecta --ui mui (every Amiga build tree carries the
   # MUI plugin; SEL_MUI_BUILD names the one to run, default build/amiga).
   set(SEL_MUI_BUILD "${PROJECT_SOURCE_DIR}/build/amiga" CACHE PATH "Amiga build tree whose Selecta rig-m4-mui-open runs")
@@ -1382,8 +1386,7 @@ if(NOT SEL_AMIGA)
       "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}" "-DSONG=${SEL_MUI_SONG}"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-open"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-mui-open PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-mui-open)
   # I571 / MUI-P3-8: View > Style on the MUI window: the menu lists the planar styles, each pick reaches the engine
   # (view_style in the exit stats). Run as UPTERM_RIG=<n> ctest -R rig-m4-mui-styles.
   add_test(NAME rig-m4-mui-styles
@@ -1391,16 +1394,14 @@ if(NOT SEL_AMIGA)
       "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-styles"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-mui-styles PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-mui-styles)
   # MUI-P3-2 / P3-3 / P3-4 / I558: Tree and Drilldown styles and the columns of the MUI List on a real song (SEL_MUI_SONG).
   add_test(NAME rig-m4-mui-list
     COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUILIST "-DRIG_DIR=${SEL_RIG_DIR}"
       "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DSONG=${SEL_MUI_SONG}"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-list"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-mui-list PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-mui-list)
   # I684 / MUI-P5-3 / MUI-P5-5: the Now Playing visualizer renders into the MUI window (vizframes > 0 in the ui_p4 exit stats).
   # Run as UPTERM_RIG=<n> ctest -R rig-m4-mui-viz; needs SEL_MUI_SONG.
   add_test(NAME rig-m4-mui-viz
@@ -1408,8 +1409,7 @@ if(NOT SEL_AMIGA)
       "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DSONG=${SEL_MUI_SONG}"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-viz"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-mui-viz PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-mui-viz)
   # MUI-P5-6: an icon dragged from a Workbench drawer window onto the MUI window (AppWindow drop) and Edit > Copy Song Title
   # (clipboard.device). Needs a rig started with --no-dopus (plain Workbench) and SEL_MUI_SONG.
   add_test(NAME rig-m4-mui-drop
@@ -1417,8 +1417,7 @@ if(NOT SEL_AMIGA)
       "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}" "-DSONG=${SEL_MUI_SONG}"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-drop"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-mui-drop PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-mui-drop)
   # MUI-P1-6 / M4-P11-2: MUI absent (SYS:MUI/Libs renamed, restored on every path): the Selecta requester with Continue,
   # then the text UI runs and Selecta exits 0. Needs the same Amiga build tree as rig-m4-mui-open.
   add_test(NAME rig-m4-mui-nomui
@@ -1426,8 +1425,7 @@ if(NOT SEL_AMIGA)
       "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m2/quit.keys"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-nomui"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-mui-nomui PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-mui-nomui)
   # muimaster.library keeps one open count of its own once any MUI object has been created in a boot (a standalone
   # OpenLibrary/MUI_NewObject/MUI_DisposeObject/CloseLibrary program leaves lib_OpenCnt=1 too, so Selecta does not leak),
   # and the library can no longer be expunged. The missing-MUI test must therefore run before rig-m4-mui-open in a boot.
@@ -1441,8 +1439,7 @@ if(NOT SEL_AMIGA)
         "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
         "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-${t}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-    set_tests_properties(rig-m4-mui-${t} PROPERTIES LABELS rig RESOURCE_LOCK rig
-      SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+    sel_rig_test_props(rig-m4-mui-${t})
   endforeach()
   # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
   # SEL_AGA_BUILD, default build/amiga-aga).
@@ -1455,8 +1452,7 @@ if(NOT SEL_AMIGA)
       "-DGENRE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/m3/genre"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-aga-first-light"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-aga-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-m4-aga-first-light)
   # I623: a Ctrl-C that a bsdsocket wait swallows must survive the net layer, so Selecta quits on Break.
   add_test(NAME rig-i623-net-break
     COMMAND "${CMAKE_COMMAND}" -DTAG=I623NET "-DRIG_DIR=${SEL_RIG_DIR}"
@@ -1464,8 +1460,7 @@ if(NOT SEL_AMIGA)
       "-DNET_BREAK=${SEL_MUI_BUILD}/src/library/selecta-net-break"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-i623-net-break"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-i623-net-break PROPERTIES LABELS rig RESOURCE_LOCK rig
-    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  sel_rig_test_props(rig-i623-net-break)
 endif()
 # I122/I123/I126: paula14 split tables, chip double buffer through a recording bus, routing of PCM outputs.
 set(SEL_P14_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/paula14")

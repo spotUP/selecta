@@ -3,7 +3,7 @@
 # wasabi's client of the same wasabid. A test script cannot call MCP tools, so this driver uses the MCP's
 # sibling: `ami.py` (ping | exec | put | get | type | key), the rig's own CLI over the same wasabid socket.
 #
-# Rig down: prints `SKIPPED rig not running` and exits 0; the ctest entries carry
+# Rig down or UPTERM_RIG unset: prints `SKIPPED rig not running` and exits 0; the ctest entries carry
 #   SKIP_REGULAR_EXPRESSION "SKIPPED rig not running" so ctest reports Skipped, never Passed.
 # Rig up: runs the scenario for TAG; a missing binary or sentinel is a red failure.
 #
@@ -11,7 +11,10 @@
 # The rig number comes from the caller (`UPTERM_RIG=<n> ctest -R rig-...`), never from a default: rig.py and ami.py read
 # UPTERM_RIG, and a silent default once ran a rig 8 batch on rig 2 (I568).
 if("$ENV{UPTERM_RIG}" STREQUAL "")
-  message(FATAL_ERROR "RED[${TAG}]: UPTERM_RIG is not set: name the rig, e.g. UPTERM_RIG=8 ctest -R rig-m4-mui-open")
+  # No rig named: nothing to run on (CI, a plain local ctest). Reported as Skipped through the rows'
+  # SKIP_REGULAR_EXPRESSION; it is never a default rig.
+  message(STATUS "SKIPPED rig not running (${TAG}: UPTERM_RIG is not set; name the rig, e.g. UPTERM_RIG=8 ctest -R rig-m4-mui-open)")
+  return()
 endif()
 message(STATUS "rig ${TAG}: UPTERM_RIG=$ENV{UPTERM_RIG}")
 find_program(PYTHON3 python3)
