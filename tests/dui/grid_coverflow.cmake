@@ -26,10 +26,12 @@ endforeach()
 
 # Runs the desktop with VIEW_STYLE ${style} and the key script ${script}; sets <tag>_out and <tag>_hash.
 set(CANVAS 1280x800)
+# I989f: the tree lists the queue by format with 4.it first (57243cf4, I819 labels), and a style change keeps the cursor on the same
+# song (anchor_to_song), so the cover flow opened centred on listing index 3. VIEW_CURSOR 0 puts the cursor on album 0 in the target style.
 function(flow_run tag style script)
   file(REMOVE_RECURSE "${WORK}/cfg")
   # --view library enters the page in the first turn and the page sets its own source: the test's source follows it (I266).
-  file(WRITE "${WORK}/${tag}.txt" "exec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE ${style}\nexec COMPOSERS_SHOW\nwait 100\n${script}")
+  file(WRITE "${WORK}/${tag}.txt" "exec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE ${style}\nexec VIEW_CURSOR 0\nexec COMPOSERS_SHOW\nwait 100\n${script}")
   dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas ${CANVAS} --clock fixed --stats ${queue}
     --input "${WORK}/${tag}.txt")
   set(out "${o}\n${o_err}")
