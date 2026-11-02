@@ -2578,6 +2578,7 @@ if(NOT SEL_AMIGA)
   add_executable(library_ui_follow_reads_test engine/library_ui_follow_reads_test.c)
   target_include_directories(library_ui_follow_reads_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_ui_follow_reads_test PRIVATE selecta_library selecta_registry selecta_core)
+  target_compile_definitions(library_ui_follow_reads_test PRIVATE SELECTA_TEST_MOD="${PROJECT_SOURCE_DIR}/tests/m3/genre/down.mod")
   add_test(NAME engine-library-follow-reads COMMAND library_ui_follow_reads_test)
   set_tests_properties(engine-library-follow-reads PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_ui_follow_reads_ok")
   # I906a: the debug UI-wait guard prints and counts a watched thread's blocking library request.
