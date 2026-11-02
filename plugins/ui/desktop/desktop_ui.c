@@ -347,6 +347,8 @@ typedef struct desk {
     uint32_t lib_tabs_drawn, library_remaps, browse_folders_opens, browse_source_opens; /* I678i: tab-row tabs drawn, --view library remaps, Browse Folders opened from its tile */
     int32_t browse_y_q16;    /* I711: Browse page scroll offset in logical pixels, Q16, as queue_q16 */
     uint32_t browse_wheels;  /* I711 sentinel: wheel notches the Browse page scroll path took */
+    int32_t search_q16;      /* the Search page's list results scroll offset in logical pixels, Q16, as browse_y_q16 */
+    uint32_t search_wheels;  /* sentinel: wheel notches the Search page scroll path took */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
     int32_t set_y_q16;       /* I799a: Settings scroll offset in logical pixels, Q16 */
@@ -1162,6 +1164,7 @@ static sel_gui_rect draw_panel(desk* d, const char* name) {
  * clock, the remaining time and the progress bar and nothing else. */
 static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap);
 static void draw_home(desk* d);
+static int32_t search_max_q16(desk* d);
 static void draw_topbar(desk* d);
 static void select_sync(desk* d);
 static int select_key(desk* d, const sel_gui_input* ev);
@@ -7265,6 +7268,7 @@ static const char* library_dump_build(desk* d) {
                      (int)d->sm_rows[j].r.h, d->sm_rows[j].ref.path);
     }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
+    o = dump_put(d, o, "search scroll y=%d max=%d wheels=%u\n", d->search_q16, search_max_q16(d), (unsigned)d->search_wheels);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
@@ -8665,6 +8669,7 @@ static void online_scope_pick(desk* d, uint32_t k) {
     d->on_state = 0u;
     d->on_n = 0u;
     d->search_on = 0;
+    d->search_q16 = 0; /* another scope's results open at the top */
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     if (d->qlen > 0u) {
@@ -8749,7 +8754,7 @@ static void online_draw_chips(desk* d, sel_gui_rect mn) {
 /* The online results as a Spotify-style list: a 48 px row per hit, the title in the text colour over the muted artist and format. */
 static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
     const online_radio_entry* rad = online_radio_of(d);
-    int32_t mg = lpx(d, HOME_MARGIN), rh = lpx(d, 48), ic = lpx(d, 20);
+    int32_t mg = lpx(d, HOME_MARGIN), rh = lpx(d, 48), ic = lpx(d, 20), top = y, bottom = mn.y + mn.h;
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t k;
     char sub[80];
@@ -8758,13 +8763,14 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
     for (k = 0; k < d->on_n; k++) {
         d->on_row[k].drawn = 0;
     }
-    if (rad != NULL && y + rh < mn.y + mn.h) {
+    y -= lpx_q16(d, d->search_q16); /* the hits scroll inside the body under the chips */
+    if (rad != NULL && y + rh > top && y < bottom) {
         d->on_radio_rect = rect_of(mn.x + mg, y, mn.w - 2 * mg, rh);
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(mn.x + mg, y + (rh - ic) / 2, ic, ic), ic, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         draw_text(d, rect_of(mn.x + mg + lpx(d, 36), y, mn.w - 2 * mg - lpx(d, 36), rh / 2 + lpx(d, 4)), rad->label, 1, 14, text);
         draw_text(d, rect_of(mn.x + mg + lpx(d, 36), y + rh / 2, mn.w - 2 * mg - lpx(d, 36), rh / 2), "Live radio", 0, 12, muted);
-        y += rh;
     }
+    y += rad != NULL ? rh : 0;
     if (d->on_state == 1u && d->on_n == 0u) {
         draw_empty_state(d, mn, y, "Searching");
         return;
@@ -8776,13 +8782,15 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
     if (d->on_state == 0u) {
         draw_empty_state(d, mn, y, "Type to search this source");
     }
-    for (k = 0; k < d->on_n && y + rh < mn.y + mn.h; k++) {
-        d->on_row[k].rect = rect_of(mn.x + mg, y, mn.w - 2 * mg, rh);
+    for (k = 0; k < d->on_n && y < bottom; k++, y += rh) {
+        if (y + rh <= top) { /* scrolled above the body */
+            continue;
+        }
+        d->on_row[k].rect = sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top));
         d->on_row[k].drawn = 1;
         draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, rh / 2 + lpx(d, 4)), d->on_row[k].title, 1, 14, text);
         snprintf(sub, sizeof sub, "%s%s%s", d->on_row[k].artist, d->on_row[k].artist[0] != '\0' && d->on_row[k].format[0] != '\0' ? "  -  " : "", d->on_row[k].format);
         draw_text(d, rect_of(mn.x + mg, y + rh / 2, mn.w - 2 * mg, rh / 2), sub, 0, 12, muted);
-        y += rh;
         d->on_drawn++;
     }
 }
@@ -8825,6 +8833,7 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
 static void desk_search_fire(desk* d) {
     char line[160];
     d->search_pending = 0;
+    d->search_q16 = 0; /* new results open at the top */
     online_scope_load(d);
     if (d->qlen == 0u) {
         d->search_on = 0;
@@ -8973,6 +8982,47 @@ static int browse_click(desk* d, int32_t x, int32_t y) {
     return 0;
 }
 
+/* The Search page's results body: from under the facet chips to the bottom of main. The list and online results scroll
+ * inside it by search_q16; the field and the chips above stay put. */
+static int32_t search_body_y(desk* d, sel_gui_rect mn) {
+    return mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16) + lpx(d, HOME_CHIP_H + 16);
+}
+
+/* The height in pixels of the results the list layouts draw: the online hits (radio entry, then 48 px rows) or the engine's
+ * groups (a 32 px heading, then 32 px rows, for the shown facet). Grid and Cover Flow follow the cursor instead (0). One walk
+ * the draw and the wheel share, so the scroll bound is the drawn height. */
+static int32_t search_content_h(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
+    uint32_t k, group = 0;
+    int32_t h = 0;
+    int show = 0;
+    if (d->scope[0] != '\0') {
+        return (online_radio_of(d) != NULL ? lpx(d, 48) : 0) + (int32_t)d->on_n * lpx(d, 48);
+    }
+    if (v == NULL || d->browse_filter || v->style == (uint32_t)SEL_VIEW_STYLE_GRID || v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW) {
+        return 0;
+    }
+    for (k = 0; k < v->row_n; k++) {
+        const sel_view_row* r = &v->rows[k];
+        if (r->kind == SEL_ROW_HEADING) {
+            const char* t = r->text != NULL ? r->text : "";
+            group = strncmp(t, "Songs", 5) == 0 ? 1u : strncmp(t, "Albums", 6) == 0 ? 2u : 3u;
+            show = d->search_facet == 0u || d->search_facet == group;
+            h += show ? lpx(d, 32) : 0;
+        } else if (show) {
+            h += lpx(d, SEARCH_ROW_H);
+        }
+    }
+    return h;
+}
+
+static int32_t search_max_q16(desk* d) {
+    sel_gui_rect mn = panel_rect(d, "main");
+    int32_t over = search_content_h(d) + lpx(d, 16) - (mn.y + mn.h - search_body_y(d, mn));
+    return over > 0 ? px_to_logical_ceil(d, over) << 16 : 0;
+}
+
 static void draw_search(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main");
@@ -8997,7 +9047,14 @@ static void draw_search(desk* d) {
         draw_chip(d, cr, search_facet_name[k], k == d->search_facet, SEL_GUI_TOKEN_SURFACE);
     }
     online_draw_chips(d, mn);
-    y = mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16) + lpx(d, HOME_CHIP_H + 16);
+    y = search_body_y(d, mn);
+    {
+        int32_t max_q16 = search_max_q16(d);
+        if (d->search_q16 > max_q16) { /* fewer results or a resize can shorten the overflow */
+            d->search_q16 = max_q16;
+        }
+    }
+    sel_gui_clip_push(d->canvas, rect_of(mn.x, y, mn.w, mn.y + mn.h - y));
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
     if (d->scope[0] != '\0') { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
@@ -9044,7 +9101,9 @@ static void draw_search(desk* d) {
         d->search_drawn = n;
     } else if (v != NULL) { /* the engine's groups: a heading row (type and count) starts each, its entries follow */
         uint32_t group = 0, drawn_all = 0;
+        int32_t top = y, bottom = mn.y + mn.h, rh = lpx(d, SEARCH_ROW_H);
         int show = 0;
+        y -= lpx_q16(d, d->search_q16); /* the groups scroll inside the body under the chips; rows outside it are skipped */
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
             const char* t = r->text != NULL ? r->text : "";
@@ -9053,12 +9112,14 @@ static void draw_search(desk* d) {
                 group = strncmp(t, "Songs", 5) == 0 ? 1u : strncmp(t, "Albums", 6) == 0 ? 2u : 3u;
                 show = d->search_facet == 0u || d->search_facet == group;
                 d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
-                if (show && y + lpx(d, 32) < mn.y + mn.h) {
+                if (show && y + lpx(d, 32) > top && y < bottom) {
                     draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, 28)), t, 1, 18, text);
-                    y += lpx(d, 32);
                     drawn_all++;
                 }
-            } else if (show && y + lpx(d, SEARCH_ROW_H) < mn.y + mn.h) {
+                y += show ? lpx(d, 32) : 0;
+            } else if (show && (y + rh <= top || y >= bottom)) {
+                y += rh;
+            } else if (show) {
                 if (d->kb_list && v->window_start + k == v->cursor) { /* the keyboard focus row (I498) */
                     sel_gui_fill_rect(d->canvas, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
                 }
@@ -9067,7 +9128,8 @@ static void draw_search(desk* d) {
                     draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), t, pl, 14, pl ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
                 }
                 if (group == 1u && !r->album && r->key != NULL) {
-                    song_row_set_list(d, song_row_reg(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), r->key, 0, 0, 0), SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
+                    song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),
+                                      SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
                 }
                 y += lpx(d, SEARCH_ROW_H);
                 drawn_all++;
@@ -9078,6 +9140,7 @@ static void draw_search(desk* d) {
     } else if (!d->search_on) { /* no query yet: a muted hint under the chips */
         draw_empty_state(d, mn, y, "Type to search songs, albums and artists");
     }
+    sel_gui_clip_pop(d->canvas); /* the results body */
     d->search_draws++;
     d->search_rows = shown;
     sel_gui_clip_pop(d->canvas);
@@ -9996,6 +10059,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
             if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
                 int changed = d->search_facet != i;
                 d->search_facet = i;
+                d->search_q16 = changed ? 0 : d->search_q16; /* another facet's groups open at the top */
                 d->repaint = 1;
                 d->uim.dirty |= SEL_UIM_DIRTY_ALL;
                 return changed;
@@ -13455,6 +13519,14 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             draw_home(d);
             return 1;
         }
+        if (d->page == SEL_UIM_PG_SEARCH && search_max_q16(d) > 0) { /* the list results scroll when they overflow the body under the chips */
+            int32_t max_q16 = search_max_q16(d);
+            int64_t v = (int64_t)d->search_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            d->search_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            d->search_wheels++;
+            draw_home(d);
+            return 1;
+        }
         if (d->page == SEL_UIM_PG_BROWSE) { /* I711: the Browse tiles scroll when they overflow the panel, as the Queue page does */
             int32_t max_q16 = browse_max_q16(d);
             int64_t v = (int64_t)d->browse_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
@@ -13895,6 +13967,7 @@ static int desk_replay_input(desk* d) {
             pointer_sent = d->sends != sent && (lib_grid_on(sel_engine_state(d->engine)) || (d->page == SEL_UIM_PG_HOME && home_shelf_mode(sel_engine_state(d->engine)))); /* I617: a Home row move too */
         } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_WAIT) {
             desk_advance(d, ev.ms);
+            pointer_sent = d->sends != sent; /* a timer that fired in the wait (the search debounce) sent a line: resume on its answer */
         } else if (sel_gui_input_parse(line, &ev) &&
                    (ev.kind == SEL_GUI_IN_CLICK || ev.kind == SEL_GUI_IN_MOVE || ev.kind == SEL_GUI_IN_DRAG)) {
             opened |= desk_route_input(d, &ev);
