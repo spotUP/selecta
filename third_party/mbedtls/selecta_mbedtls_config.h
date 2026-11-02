@@ -24,3 +24,12 @@
 #undef MBEDTLS_PSA_ITS_FILE_C
 /* No self test output. */
 #undef MBEDTLS_SELF_TEST
+
+/* Amiga (I1004): no /dev/urandom or Win32 entropy source. The RAOP code takes its RNG from the caller (raop_rng_fn) and
+ * links only aes, base64 and rsa out of this static library, so the platform entropy poll is declared absent; the TLS
+ * client, which would need entropy, is I899 and brings its own mbedtls_hardware_poll. */
+#if defined(__amigaos__)
+#define MBEDTLS_NO_PLATFORM_ENTROPY
+#define MBEDTLS_ENTROPY_HARDWARE_ALT
+#define MBEDTLS_PLATFORM_MS_TIME_ALT
+#endif

@@ -3,6 +3,7 @@
  * wait goes through WaitSelect with a timeout. The library is opened on first use,
  * so a machine without a TCP/IP stack reports SEL_NET_E_CONNECT instead of failing
  * at startup. Runtime untested (no stack under vamos); it compiles and links. */
+#include "net_udp.h"
 #include "../../library/net/net.h"
 
 #include <dos/dos.h>
@@ -99,14 +100,28 @@ static long wait_sock(long s, int mode, unsigned ms) {
     return r;
 }
 
+/* Dotted quad to a host-order (= network order on the 68k) address. 1 on success. */
+static int parse_ip4(const char* text, unsigned long* ip) {
+    unsigned q[4];
+    char tail;
+    if (sscanf(text, "%u.%u.%u.%u%c", &q[0], &q[1], &q[2], &q[3], &tail) != 4 || q[0] > 255 || q[1] > 255 ||
+        q[2] > 255 || q[3] > 255) {
+        return 0;
+    }
+    *ip = (q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3];
+    return 1;
+}
+
+static void format_ip4(unsigned long ip, char* out, size_t cap) {
+    snprintf(out, cap, "%lu.%lu.%lu.%lu", (ip >> 24) & 255u, (ip >> 16) & 255u, (ip >> 8) & 255u, ip & 255u);
+}
+
 int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
     char addr[256];
     const char* target = host;
     unsigned tport = port;
     struct sockaddr_in sa;
     unsigned long ip = 0;
-    unsigned q[4];
-    char tail;
     long s, nb = 1;
     int slot;
 
@@ -127,10 +142,7 @@ int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
     if (slot == SEL_NET_MAX_CONN) {
         return SEL_NET_E_TABLE;
     }
-    if (sscanf(target, "%u.%u.%u.%u%c", &q[0], &q[1], &q[2], &q[3], &tail) == 4 && q[0] < 256 && q[1] < 256 &&
-        q[2] < 256 && q[3] < 256) {
-        ip = /* 68k is big-endian: host order equals network order */
-        (q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3];
+    if (parse_ip4(target, &ip)) {
     } else {
         struct hostent* he = gethostbyname((STRPTR)target);
         if (he == NULL || he->h_addrtype != AF_INET || he->h_length != 4) {
@@ -231,4 +243,110 @@ void sel_net_close(int h) {
         CloseSocket(g_sock[h]);
         g_sock[h] = -1;
     }
+}
+
+/* ---- UDP and address helpers for the UPnP and RAOP socket shims (I1004). Same handle table, same stack opening. ---- */
+
+static int udp_slot(long s) {
+    int slot;
+    for (slot = 0; slot < SEL_NET_MAX_CONN && g_sock[slot] >= 0; slot++) {
+    }
+    if (slot == SEL_NET_MAX_CONN) {
+        CloseSocket(s);
+        return SEL_NET_E_TABLE;
+    }
+    g_sock[slot] = s;
+    return slot;
+}
+
+int sel_net_udp_open(void) {
+    long s;
+    if (!stack_ready()) {
+        return SEL_NET_E_CONNECT;
+    }
+    s = socket(AF_INET, SOCK_DGRAM, 0);
+    return s < 0 ? SEL_NET_E_CONNECT : udp_slot(s);
+}
+
+int sel_net_udp_bind(unsigned* port) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    int h = sel_net_udp_open();
+    if (h < 0) {
+        return h;
+    }
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = INADDR_ANY;
+    if (bind(g_sock[h], (struct sockaddr*)&sa, sizeof sa) != 0 || getsockname(g_sock[h], (struct sockaddr*)&sa, &sl) != 0) {
+        sel_net_close(h);
+        return SEL_NET_E_IO;
+    }
+    *port = ntohs(sa.sin_port);
+    return h;
+}
+
+int sel_net_udp_send(int h, const char* ip, unsigned port, const void* data, size_t len) {
+    struct sockaddr_in sa;
+    unsigned long addr;
+    if (h < 0 || h >= SEL_NET_MAX_CONN || g_sock[h] < 0 || !parse_ip4(ip, &addr)) {
+        return SEL_NET_E_IO;
+    }
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons((unsigned short)port);
+    sa.sin_addr.s_addr = addr;
+    return sendto(g_sock[h], (UBYTE*)data, (long)len, 0, (struct sockaddr*)&sa, sizeof sa) == (long)len ? 0 : SEL_NET_E_IO;
+}
+
+int sel_net_udp_recv(int h, void* buf, size_t cap, unsigned timeout_ms, char* from, size_t from_cap, unsigned* from_port) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    long n, w;
+    if (h < 0 || h >= SEL_NET_MAX_CONN || g_sock[h] < 0) {
+        return SEL_NET_E_IO;
+    }
+    w = wait_sock(g_sock[h], 0, timeout_ms);
+    if (w == 0) {
+        return SEL_NET_E_TIMEOUT;
+    }
+    if (w < 0) {
+        return SEL_NET_E_IO;
+    }
+    n = recvfrom(g_sock[h], (UBYTE*)buf, (long)cap, 0, (struct sockaddr*)&sa, &sl);
+    if (n < 0) {
+        return SEL_NET_E_IO;
+    }
+    if (from != NULL && from_cap > 0) {
+        format_ip4((unsigned long)sa.sin_addr.s_addr, from, from_cap);
+    }
+    if (from_port != NULL) {
+        *from_port = ntohs(sa.sin_port);
+    }
+    return (int)n;
+}
+
+int sel_net_udp_multicast(int h, const char* group, unsigned ttl) {
+    struct ip_mreq mr;
+    unsigned long addr;
+    UBYTE t = (UBYTE)ttl;
+    if (h < 0 || h >= SEL_NET_MAX_CONN || g_sock[h] < 0 || !parse_ip4(group, &addr)) {
+        return SEL_NET_E_IO;
+    }
+    (void)setsockopt(g_sock[h], IPPROTO_IP, IP_MULTICAST_TTL, (char*)&t, sizeof t);
+    memset(&mr, 0, sizeof mr);
+    mr.imr_multiaddr.s_addr = addr;
+    mr.imr_interface.s_addr = INADDR_ANY;
+    /* Sending to the group needs only the TTL. Membership (NOTIFY datagrams) is best effort: an older stack may refuse. */
+    return setsockopt(g_sock[h], IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mr, sizeof mr) == 0 ? 0 : SEL_NET_E_IO;
+}
+
+int sel_net_local_ip(int h, char* out, size_t cap) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    if (h < 0 || h >= SEL_NET_MAX_CONN || g_sock[h] < 0 || getsockname(g_sock[h], (struct sockaddr*)&sa, &sl) != 0) {
+        return SEL_NET_E_IO;
+    }
+    format_ip4((unsigned long)sa.sin_addr.s_addr, out, cap);
+    return 0;
 }
