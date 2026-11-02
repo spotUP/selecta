@@ -73,7 +73,7 @@ endif()
 # 3. Icon-sidebar layout: covers only, still clickable.
 dui_run(n1 ${common} --canvas 899x700 --input "${WORK}/idle.txt")
 sl_parse(n1 "${n1}")
-expect_eq("narrow rows (viewport clips the sixth)" "${n1_rows}" "5")
+expect_eq("narrow rows (I972b: the sidebar runs full height from the window top, so the viewport holds the sixth row)" "${n1_rows}" "6")
 sl_centre(c2 "${n1}" 4)
 file(WRITE "${WORK}/click2.txt" "click ${c2}\nwait 100\n")
 dui_run(n2 ${common} --canvas 899x700 --input "${WORK}/click2.txt")
