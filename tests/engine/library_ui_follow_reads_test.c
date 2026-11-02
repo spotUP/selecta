@@ -788,6 +788,130 @@ int main(int argc, char** argv) {
         sel_library_watch(1);
         CHECK(stored == 77);
     }
+    /* I906f2g: VOTE writes the local sticker "vote" as a queued write (the readable-file check and the 32-character token sit before it). Sentinel:
+     * stats.lib_writes_done rises with it and the sticker is absent while the call lock is held, read back as "5" after the release. */
+    {
+        sel_engine_stats vt_before, vt_after;
+        char path[512], line[600], key[600], got[16] = "";
+        uint32_t opened0;
+        int16_t buf[441u * 2u];
+        FILE* f;
+
+        snprintf(path, sizeof path, "%s/vote.lvl", dir);
+        f = fopen(path, "wb");
+        CHECK(f != NULL);
+        if (f != NULL) {
+            fputs("vote-file", f);
+            fclose(f);
+        }
+        snprintf(line, sizeof line, "OPEN \"%s\"", path);
+        sel_engine_stats_get(e, &vt_before);
+        opened0 = vt_before.songs_opened;
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        do {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_render(e, buf, 441u);
+            sel_engine_stats_get(e, &vt_before);
+            if (vt_before.songs_opened > opened0) break;
+            usleep(2000);
+        } while (ms_since(&t0) < 5000);
+        CHECK(vt_before.songs_opened > opened0);
+        for (clock_gettime(CLOCK_MONOTONIC, &t0); ms_since(&t0) < 400;) { /* let the follow-ups of the song start (panel, history) land before the lock is held */
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_render(e, buf, 441u);
+            usleep(2000);
+        }
+        sel_engine_stats_get(e, &vt_before);
+        /* The first VOTE creates the vote token (a prefs write, which changes the prefs generation and so makes the pump's smart_sync
+         * request the library: a separate wait, not the vote). Settle it with the lock free, then vote again under the held lock. */
+        CHECK(sel_engine_send_line(e, "VOTE 5", pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            if (ms_since(&t0) > 800) break;
+            usleep(2000);
+        }
+        sel_engine_stats_get(e, &vt_before);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        CHECK(sel_engine_send_line(e, "VOTE 0", pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        sel_engine_pump(e, sink, NULL);
+        pump_ms = ms_since(&t0);
+        w1 = sel_library_watched_waits();
+        sel_engine_stats_get(e, &vt_after);
+        printf("i906f2g vote: pump %ld ms, waits %u\n", pump_ms, (unsigned)(w1 - w0));
+        CHECK(pump_ms < PUMP_BUDGET_MS);
+        CHECK(w1 == w0);
+        CHECK(vt_after.lib_writes_done == vt_before.lib_writes_done); /* queued behind the held lock */
+        pthread_join(th, NULL);
+        snprintf(key, sizeof key, "local:%s", path);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &vt_after);
+            if (vt_after.lib_writes_done > vt_before.lib_writes_done) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        CHECK(vt_after.lib_writes_done >= vt_before.lib_writes_done + 1u); /* the sticker went through the write queue (a vote count may add one) */
+        sel_library_watch(0);
+        CHECK(sel_library_sticker_get(lib, key, "vote", got, sizeof got) != 0 && strcmp(got, "0") == 0);
+        sel_library_watch(1);
+    }
+    /* I906f2g: ANALYSE stores the gain through the write queue. Sentinel: stats.analyse_jobs and lib_writes_done move only after the release;
+     * the gain is read back from the loudness table. The render of the private engine is CPU work, not a library wait: watched waits stay 0. */
+    {
+        sel_engine_stats an_before, an_after;
+        char path[512], line[600], key[600];
+        int32_t gain = 0;
+        FILE* f;
+
+        snprintf(path, sizeof path, "%s/level.lvl", dir);
+        f = fopen(path, "wb");
+        CHECK(f != NULL);
+        if (f != NULL) {
+            fputs("x", f);
+            fclose(f);
+        }
+        snprintf(key, sizeof key, "local:%s", path);
+        for (clock_gettime(CLOCK_MONOTONIC, &t0); ms_since(&t0) < 400;) { /* the vote service answer and the song follow-ups land first */
+            sel_engine_pump(e, sink, NULL);
+            usleep(2000);
+        }
+        sel_engine_stats_get(e, &an_before);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        snprintf(line, sizeof line, "ANALYSE \"%s\"", path);
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        sel_engine_pump(e, sink, NULL);
+        w1 = sel_library_watched_waits();
+        sel_engine_stats_get(e, &an_after);
+        CHECK(w1 == w0);
+        CHECK(an_after.analyse_jobs == an_before.analyse_jobs);
+        CHECK(an_after.lib_writes_done == an_before.lib_writes_done); /* queued behind the held lock */
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &an_after);
+            if (an_after.analyse_jobs > an_before.analyse_jobs) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f2g analyse: analyse_jobs +%u, lib_writes_done +%u, gain_cdb %d\n", (unsigned)(an_after.analyse_jobs - an_before.analyse_jobs),
+               (unsigned)(an_after.lib_writes_done - an_before.lib_writes_done), (int)an_after.analyse_gain_cdb);
+        CHECK(an_after.analyse_jobs == an_before.analyse_jobs + 1u);
+        CHECK(an_after.lib_writes_done == an_before.lib_writes_done + 1u);
+        sel_library_watch(0);
+        CHECK(sel_library_loudness_get(lib, key, &gain) != 0 && gain == an_after.analyse_gain_cdb);
+        sel_library_watch(1);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);
