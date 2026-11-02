@@ -397,7 +397,10 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
         if (kind == SEL_LIB_ITEM_LOCAL) return SONG_COLS " WHERE s.source='local' ORDER BY s.id";
         if (kind == SEL_LIB_ITEM_SOURCE) return SONG_COLS " WHERE s.source=?1 ORDER BY s.id";
         if (kind == SEL_LIB_ITEM_PLAYLIST) { /* I994d3a: the entries in position order, the same columns as every song page */
-            return SONG_COLS " JOIN playlist_entries pe ON pe.key=s.key WHERE pe.playlist_id=CAST(?1 AS INTEGER) ORDER BY pe.pos";
+            /* I994d4: LEFT JOIN: an entry whose song is not (yet) a library row stays on the page, as the old key read showed it */
+            return "SELECT pe.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),"
+                   "(SELECT COUNT(*) FROM history h WHERE h.key=pe.key AND h.skipped=0),IFNULL(s.added,0),IFNULL(s.duration_ms,0)"
+                   " FROM playlist_entries pe LEFT JOIN songs s ON s.key=pe.key WHERE pe.playlist_id=CAST(?1 AS INTEGER) ORDER BY pe.pos";
         }
         return NULL;
     case SEL_COLL_ALBUMS: return kind == SEL_LIB_ITEM_ARTIST ? ALBUM_COLS " WHERE a.artist=?1" NEWEST : NULL;
