@@ -169,6 +169,8 @@ static void test_text_fit(void) {
     char out[64];
     mui_aa_text_fit("abcdef", 60, adv10, NULL, out, (int)sizeof out);
     CHECK(strcmp(out, "abcdef") == 0, "text that fits stays whole: '%s'", out);
+    mui_aa_text_fit("that_meme_again.mod", 400, adv10, NULL, out, (int)sizeof out); /* I564: "_" is no hotkey mark in the AA classes */
+    CHECK(strcmp(out, "that_meme_again.mod") == 0, "underscores in a file name stay: '%s'", out);
     mui_aa_text_fit("abcdefgh", 60, adv10, NULL, out, (int)sizeof out);
     CHECK(strcmp(out, "abc...") == 0, "cut at 60 px keeps 3 chars and dots: '%s'", out);
     mui_aa_text_fit("abcdefgh", 65, adv10, NULL, out, (int)sizeof out);

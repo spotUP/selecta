@@ -72,6 +72,14 @@ golden(coverflow "${flow0_hash}")
 expect("${flow0_out}" "flow draws [1-9][0-9]* centre 0\n" "cover flow sentinel")
 expect("${flow0_out}" "grid draws 0 tiles 0 cols 0\n" "the cover flow run must not draw the grid")
 
+# I991: the Browse Folders tabs light the style the list draws. In Cover Flow neither Tree nor Columns is lit (lib_mode used to keep Tree
+# lit); in the Tree style tab 0 is lit and tab 1 is not.
+expect("${flow0_out}" "tab_active 0 0\n" "the Tree tab is not lit in Cover Flow")
+expect("${flow0_out}" "tab_active 1 0\n" "the Columns tab is not lit in Cover Flow")
+flow_run(treerun tree "wait 600\n")
+expect("${treerun_out}" "tab_active 0 1\n" "the Tree tab is lit in the Tree style")
+expect("${treerun_out}" "tab_active 1 0\n" "the Columns tab is not lit in the Tree style")
+
 # 3: Right moves the centre by exactly 1; the glide has ended after the wait, so the frame is deterministic.
 flow_run(flow1 coverflow "key right\nwait 600\n")
 expect("${flow1_out}" "flow draws [1-9][0-9]* centre 1\n" "Right in cover flow moves the centre by 1")
