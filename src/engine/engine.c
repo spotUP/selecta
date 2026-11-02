@@ -7103,6 +7103,75 @@ static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* 
     pg->order = ord;
 }
 
+/* I994d3: the playlist page (design section 11.6): keys from sel_library_playlist_keys in position order, titles from the song briefs in
+ * one request, plays 0, the playlist name as the page title. Runs on the read thread; rows and meta go through the same coll_build the
+ * song list pages use, so the order build and the republish are shared. */
+static void coll_playlist_rows(sel_engine* e, const char* key, coll_build* b, char* title, size_t title_cap) {
+    uint32_t id = (uint32_t)strtoul(key, NULL, 10);
+    char* keys = (char*)e->host->mem_alloc(e->host, PLAYLIST_KEYS_CAP, SEL_MEM_FAST);
+    char* briefs = (char*)e->host->mem_alloc(e->host, PLAYLIST_KEYS_CAP, SEL_MEM_FAST);
+    char* tree = (char*)e->host->mem_alloc(e->host, sizeof e->rd_fold_text, SEL_MEM_FAST);
+    uint32_t n = 0, done = 0;
+    const char* k;
+    const char* f;
+
+    if (tree != NULL) {
+        uint32_t lines = 0;
+        tree[0] = '\0';
+        if (sel_library_folder_tree(e->lib, tree, (uint32_t)sizeof e->rd_fold_text, &lines) == SEL_FOLDER_OK) {
+            const char* l = tree;
+            while (*l != '\0') {
+                const char* t = l;
+                const char* eol;
+                unsigned long lid;
+                char* end;
+                while (*t == ' ') t++;
+                eol = strchr(t, '\n');
+                if (t[0] == 'P' && t[1] == ' ') {
+                    lid = strtoul(t + 2, &end, 10);
+                    if (end != t + 2 && lid == (unsigned long)id && *end == ' ') {
+                        size_t len = eol != NULL ? (size_t)(eol - (end + 1)) : strlen(end + 1);
+                        if (len >= title_cap) len = title_cap - 1u;
+                        memcpy(title, end + 1, len);
+                        title[len] = '\0';
+                        break;
+                    }
+                }
+                if (eol == NULL) break;
+                l = eol + 1;
+            }
+        }
+        e->host->mem_free(e->host, tree);
+    }
+    if (keys != NULL && briefs != NULL && sel_library_playlist_keys(e->lib, id, keys, PLAYLIST_KEYS_CAP, &n) == SEL_FOLDER_OK) {
+        SEL_COUNT_ADD(&e->collection_queries, 1u);
+        if (sel_library_song_briefs(e->lib, keys, briefs, PLAYLIST_KEYS_CAP, &done)) {
+            f = briefs;
+            for (k = keys; *k != '\0' && done > 0u; k += strlen(k) + 1u, done--) {
+                const char* cols[8];
+                const char* t = f;
+                const char* title_s = t;
+                const char* artist_s = t += strlen(t) + 1u;
+                const char* album_s = t += strlen(t) + 1u;
+                t += strlen(t) + 1u; /* album id: the page does not use it */
+                t += strlen(t) + 1u;
+                f = t;
+                cols[0] = k;
+                cols[1] = title_s;
+                cols[2] = artist_s;
+                cols[3] = album_s;
+                cols[4] = "0";
+                cols[5] = "";
+                cols[6] = "0";
+                cols[7] = "0";
+                coll_song_row(b, cols);
+            }
+        }
+    }
+    if (keys != NULL) e->host->mem_free(e->host, keys);
+    if (briefs != NULL) e->host->mem_free(e->host, briefs);
+}
+
 /* Runs on the read thread (or inline without threads): builds the page rdc_kind / rdc_key name into rdc_pg and rdc_blk. */
 static void coll_build_run(sel_engine* e) {
     sel_collection_page* pg = &e->rdc_pg;
@@ -7165,6 +7234,8 @@ static void coll_build_run(sel_engine* e) {
         if (us != NULL) *us = '\0';
         src = sel_source_find(id);
         snprintf(pg->title, sizeof pg->title, "%s", src != NULL && src->name != NULL ? src->name : id);
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+        coll_playlist_rows(e, key, &b, pg->title, sizeof pg->title);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
         if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
@@ -7273,7 +7344,7 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     }
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
-    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS) {
         e->rdc_next_kind = kind; /* I910: the page is built by a posted read, never on this thread */
         snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
         e->rdc_next_page = 1;
@@ -8426,6 +8497,12 @@ static void lib_reads_collect(sel_engine* e) {
         e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
         view_reread(e, SEL_VIEW_FOLDERS);
         if (e->rd_folders.again) lib_read_post(e, &e->rd_folders, folders_read_run);
+        if (e->collection_kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && e->coll.kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) { /* I994d3: the open playlist page follows the playlist */
+            e->rdc_next_kind = e->collection_kind;
+            snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
+            e->rdc_next_page = 1;
+            coll_post(e);
+        }
     }
 }
 
