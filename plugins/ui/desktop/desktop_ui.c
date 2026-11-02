@@ -349,6 +349,8 @@ typedef struct desk {
     int32_t browse_y_q16;    /* I711: Browse page scroll offset in logical pixels, Q16, as queue_q16 */
     uint32_t browse_wheels;  /* I711 sentinel: wheel notches the Browse page scroll path took */
     int32_t search_q16;      /* the Search page's list results scroll offset in logical pixels, Q16, as browse_y_q16 */
+    int32_t search_restore_q16; /* I1012: the scroll a Back or Forward to the Search page puts back once its results are sent again */
+    int search_restore;      /* I1012: 1 while search_restore_q16 waits for the search to fire, 2 while it waits for the results to be tall enough */
     uint32_t search_wheels;  /* sentinel: wheel notches the Search page scroll path took */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
@@ -8815,7 +8817,8 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
 static void desk_search_fire(desk* d) {
     char line[160];
     d->search_pending = 0;
-    d->search_q16 = 0; /* new results open at the top */
+    d->search_q16 = 0; /* new results open at the top; a Search page restored by Back or Forward gets its offset once the results are tall enough (I1012) */
+    d->search_restore = d->search_restore == 1 ? 2 : 0;
     online_scope_load(d);
     if (d->qlen == 0u) {
         d->search_on = 0;
@@ -9032,6 +9035,10 @@ static void draw_search(desk* d) {
     y = search_body_y(d, mn);
     {
         int32_t max_q16 = search_max_q16(d);
+        if (d->search_restore == 2 && max_q16 >= d->search_restore_q16) { /* the results are back: put the offset the page was left at (I1012) */
+            d->search_q16 = d->search_restore_q16;
+            d->search_restore = 0;
+        }
         if (d->search_q16 > max_q16) { /* fewer results or a resize can shorten the overflow */
             d->search_q16 = max_q16;
         }
@@ -9833,7 +9840,31 @@ static uint32_t route_page_of(desk_page pg) { return sel_uim_page_route((uint32_
 static desk_page desk_page_of(uint32_t rp) { return (desk_page)sel_uim_page_of_route(rp); }
 
 /* The scroll the current page keeps while it is left (Home keeps its own across visits, so only a collection page needs it). */
-static int32_t desk_rt_scroll(const desk* d) { return d->page == SEL_UIM_PG_COLLECTION ? (int32_t)d->pls_scroll : 0; }
+static int32_t desk_rt_scroll(const desk* d) { return d->page == SEL_UIM_PG_COLLECTION ? (int32_t)d->pls_scroll : d->page == SEL_UIM_PG_SEARCH ? d->search_q16 : 0; }
+
+/* The leaving page keeps its scroll in the history entry; the Search page also keeps what it shows: query, scope, facet (I1012). */
+static void desk_rt_leave(desk* d) {
+    sel_route_hist_scroll(&d->rh, desk_rt_scroll(d));
+    if (d->page == SEL_UIM_PG_SEARCH) {
+        sel_route_hist_keep(&d->rh, d->query, d->scope, d->search_facet);
+    }
+}
+
+/* Back or Forward onto a Search entry: the query, scope and facet it kept are put back before the page loads, and its scroll waits
+ * for the results to be sent again (the search fires after the debounce and would open them at the top). */
+static void desk_rt_search_restore(desk* d, const sel_route_entry* e) {
+    snprintf(d->query, sizeof d->query, "%s", e->name);
+    d->qlen = strlen(d->query);
+    d->search_facet = e->aux < 4u ? e->aux : 0u;
+    if (strcmp(d->scope, e->sub) != 0) {
+        char line[64];
+        snprintf(d->scope, sizeof d->scope, "%s", e->sub);
+        snprintf(line, sizeof line, "PREF_SET search.last_source \"%s\"", d->scope);
+        desk_send(d, line);
+    }
+    d->search_restore_q16 = e->scroll;
+    d->search_restore = d->qlen > 0u && e->scroll > 0 ? 1 : 0;
+}
 
 /* Appends an entry to the history (I266, I678h): the first one seeds it with the page the window is on, the leaving page keeps its
  * scroll, the forward entries are dropped, the oldest falls off at the bound, an entry equal to the current one is not repeated. */
@@ -9842,7 +9873,7 @@ static void desk_rt_push(desk* d, const sel_route_entry* to) {
     memset(&cur, 0, sizeof cur);
     cur.page = route_page_of(d->page);
     sel_route_hist_seed(&d->rh, &cur);
-    sel_route_hist_scroll(&d->rh, desk_rt_scroll(d));
+    desk_rt_leave(d);
     sel_route_hist_push(&d->rh, to);
 }
 
@@ -9979,12 +10010,15 @@ static int desk_page_walk(desk* d, int dir) {
     if (!sel_route_hist_can(&d->rh, dir)) {
         return 0;
     }
-    sel_route_hist_scroll(&d->rh, desk_rt_scroll(d));
+    desk_rt_leave(d);
     w = sel_route_hist_walk(&d->rh, dir);
     e = *w;
     d->pg_walk = 1;
     if (e.page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
         d->shelf_open = e.id;
+    }
+    if (e.page == (uint32_t)SEL_ROUTE_PAGE_SEARCH) {
+        desk_rt_search_restore(d, &e);
     }
     desk_page_apply(d, desk_page_of(e.page)); /* I910: the page's target is set before the first frame of it is drawn */
     desk_route_enter(d, &e, 1);
@@ -13508,6 +13542,7 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
         }
         if (d->page == SEL_UIM_PG_SEARCH && search_max_q16(d) > 0) { /* the list results scroll when they overflow the body under the chips */
             int32_t max_q16 = search_max_q16(d);
+            d->search_restore = 0; /* the user scrolls: a waiting restore is dropped */
             int64_t v = (int64_t)d->search_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
             d->search_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
             d->search_wheels++;
