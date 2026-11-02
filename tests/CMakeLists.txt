@@ -2620,6 +2620,12 @@ if(NOT SEL_AMIGA)
   add_executable(play_context_lists_test engine/play_context_lists_test.c)
   target_include_directories(play_context_lists_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(play_context_lists_test PRIVATE selecta_library selecta_registry selecta_core)
+  # I994d1: the collection page order through the engine (collection_orders sentinel, shown index, stale serial).
+  add_executable(collection_view_test engine/collection_view_test.c)
+  target_include_directories(collection_view_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(collection_view_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-collection-view COMMAND collection_view_test)
+  set_tests_properties(engine-collection-view PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "collection_view_ok")
   add_test(NAME engine-play-context-lists COMMAND play_context_lists_test)
   set_tests_properties(engine-play-context-lists PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "play_context_lists_ok")
   # I632b: the SONGS_* bulk verbs (songs_runs sentinel): order, one history step, one QUEUE_CHANGED, stale version, playlist add/remove.

@@ -24,6 +24,7 @@
 
 #include "mixer.h"
 #include "claims.h"
+#include "collorder.h"
 #include "stage.h"
 #include "loudness_gain.h"
 #include "dsp_chain.h"
@@ -674,12 +675,19 @@ struct sel_engine {
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
+    char* coll_titles;                        /* I994d1: per-row sort fields of the page (title, artist, album, added, duration_ms: 5 strings a row), for re-orders */
+    uint32_t* coll_ord;                       /* I994d1: the page order block (shown position -> stored row), heap; the page's `order` points here */
+    uint32_t collection_orders;               /* I994d1 sentinel: page orders built */
+    uint32_t coll_sort, coll_desc;            /* I994d1: the engine-global collection view the next build uses (SEL_COLL_SORT_*, 0/1) */
+    char coll_filter[64];
     /* I910: COLLECTION_OPEN posts the page build to a read slot (design 2026-11-01-ui-thread-library-waits.md section 4). The thread builds
      * into rdc_pg / rdc_blk from rdc_kind / rdc_key; the pump publishes them as e->coll when the read lands. rdc_next_* is the newest ask. */
     sel_lib_read rd_coll;
     sel_collection_page rdc_pg;
     sel_collection_page* coll_target;         /* the page drill_query counts its rows into: only the read thread sets it */
     char* rdc_blk;
+    char* rdc_titles;
+    uint32_t* rdc_ord;
     uint32_t rdc_kind, rdc_next_kind, coll_serial;
     char rdc_key[128], rdc_next_key[128];
     int rdc_page, rdc_next_page;              /* the read builds a page (0: a playlist open, the read only touches) */
@@ -6855,15 +6863,22 @@ static void cmd_LIBRARY_TOUCH(sel_engine* e, const sel_message* m) {
 /* ---- I678f: the page COLLECTION_OPEN builds for an album, artist or composer (design doc section 7/8) ---- */
 typedef struct coll_build {
     composer_fill rows;
+    composer_fill meta; /* I994d1: title, artist, album, added, duration_ms of every row, for the order build */
     uint32_t n;
 } coll_build;
 
-static void coll_song_row(void* ctx, const char* const* f) { /* key, name, artist, album, plays */
+static void coll_song_row(void* ctx, const char* const* f) { /* key, name, artist, album, plays, format, added, duration_ms */
     coll_build* b = (coll_build*)ctx;
-    const char* parts[2];
+    const char* parts[5];
     parts[0] = f[0];
     parts[1] = f[4];
     composer_put(&b->rows, parts, 2);
+    parts[0] = f[1];
+    parts[1] = f[2];
+    parts[2] = f[3];
+    parts[3] = f[6];
+    parts[4] = f[7];
+    composer_put(&b->meta, parts, 5);
     b->n++;
 }
 
@@ -7047,6 +7062,45 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
     }
 }
 
+/* I994d1: builds pg's order from the rows (e->rdc_blk) and sort fields (e->rdc_titles) under the engine's collection view. The records
+ * are a temporary array of pointers into both blocks; the order block stays with the page. A host without memory leaves the order NULL
+ * (identity, every row shown). */
+static void coll_order_make(sel_engine* e, sel_collection_page* pg) {
+    sel_coll_rec* rec = (sel_coll_rec*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *rec, SEL_MEM_FAST);
+    uint32_t* ord = (uint32_t*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *ord, SEL_MEM_FAST);
+    const char* r = e->rdc_blk;
+    const char* m = e->rdc_titles;
+    uint32_t i;
+    if (rec == NULL || ord == NULL) {
+        if (rec != NULL) e->host->mem_free(e->host, rec);
+        if (ord != NULL) e->host->mem_free(e->host, ord);
+        return;
+    }
+    for (i = 0; i < pg->songs; i++) {
+        rec[i].key = r;
+        r += strlen(r) + 1u;
+        r += strlen(r) + 1u;
+        rec[i].title = m;
+        m += strlen(m) + 1u;
+        rec[i].artist = m;
+        m += strlen(m) + 1u;
+        rec[i].album = m;
+        m += strlen(m) + 1u;
+        rec[i].added = strtoll(m, NULL, 10);
+        m += strlen(m) + 1u;
+        rec[i].duration_ms = strtoll(m, NULL, 10);
+        m += strlen(m) + 1u;
+    }
+    pg->sort = e->coll_sort;
+    pg->descending = e->coll_desc;
+    snprintf(pg->filter, sizeof pg->filter, "%s", e->coll_filter);
+    pg->shown = sel_coll_order_build(rec, pg->songs, pg->sort, pg->descending, pg->filter, ord);
+    SEL_COUNT_ADD(&e->collection_orders, 1u);
+    e->host->mem_free(e->host, rec);
+    e->rdc_ord = ord;
+    pg->order = ord;
+}
+
 /* Runs on the read thread (or inline without threads): builds the page rdc_kind / rdc_key name into rdc_pg and rdc_blk. */
 static void coll_build_run(sel_engine* e) {
     sel_collection_page* pg = &e->rdc_pg;
@@ -7060,6 +7114,7 @@ static void coll_build_run(sel_engine* e) {
     if (!e->rdc_page) return;
     memset(&b, 0, sizeof b);
     b.rows.host = e->host;
+    b.meta.host = e->host;
     memset(pg, 0, sizeof *pg);
     e->coll_target = pg;
     pg->kind = kind;
@@ -7110,6 +7165,15 @@ static void coll_build_run(sel_engine* e) {
     e->rdc_blk = composer_take(&b.rows);
     pg->rows = e->rdc_blk;
     pg->songs = b.n;
+    composer_release(e->host, &e->rdc_titles);
+    if (e->rdc_ord != NULL) e->host->mem_free(e->host, e->rdc_ord);
+    e->rdc_ord = NULL;
+    pg->order = NULL;
+    pg->shown = b.n;
+    if (b.meta.buf != NULL) { /* a song list page: build its order (I994d1; drill and composer pages have no sort keys and stay identity) */
+        e->rdc_titles = b.meta.buf;
+        coll_order_make(e, pg);
+    }
 }
 
 /* The pump takes the finished page: it becomes state.collection with the next serial. */
@@ -7121,6 +7185,13 @@ static void coll_publish(sel_engine* e) {
     e->coll_rows = e->rdc_blk;
     e->rdc_blk = NULL;
     e->coll.rows = e->coll_rows;
+    composer_release(e->host, &e->coll_titles); /* I994d1: the order and its sort fields move with the page */
+    if (e->coll_ord != NULL) e->host->mem_free(e->host, e->coll_ord);
+    e->coll_titles = e->rdc_titles;
+    e->coll_ord = e->rdc_ord;
+    e->rdc_titles = NULL;
+    e->rdc_ord = NULL;
+    e->coll.order = e->coll_ord;
 }
 
 static void coll_post(sel_engine* e) {
@@ -8760,6 +8831,19 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
                 if (stride == 2u) s->key_at[i] = r; /* a drill group page lists groups, not songs: those rows stay NULL */
                 for (c = 0; c < stride; c++) r += strlen(r) + 1u;
             }
+            if (pg->order != NULL) { /* I994d1: the list is the shown rows in shown order, so start and every range index are shown positions */
+                const char** shown = (const char**)calloc((size_t)pg->shown + 1u, sizeof *shown);
+                if (shown == NULL) {
+                    sel_engine_report_error(e, "no_memory", verb);
+                    songs_sel_free(s);
+                    songs_unstage(e);
+                    return 0;
+                }
+                for (i = 0; i < pg->shown; i++) shown[i] = s->key_at[pg->order[i]];
+                free((void*)s->key_at);
+                s->key_at = shown;
+                s->count = pg->shown;
+            }
             e->songs_collection_opens++;
         } else {
             s->kind = SONGS_HITS;
@@ -9710,6 +9794,8 @@ void sel_engine_destroy(sel_engine* e) {
         e->txt = NULL;
         lib_read_end(&e->rd_total);
         composer_release(e->host, &e->rdc_blk);
+        composer_release(e->host, &e->rdc_titles);
+        if (e->rdc_ord != NULL) e->host->mem_free(e->host, e->rdc_ord);
         composer_release(e->host, &e->rd_fmt_blk);
         composer_release(e->host, &e->rd_comp_blk);
         composer_release(e->host, &e->rd_comp_page_blk);
@@ -9730,6 +9816,8 @@ void sel_engine_destroy(sel_engine* e) {
         composer_release(e->host, &e->composers);
         composer_release(e->host, &e->composer_page);
         composer_release(e->host, &e->coll_rows);
+        composer_release(e->host, &e->coll_titles);
+        if (e->coll_ord != NULL) e->host->mem_free(e->host, e->coll_ord);
         composer_release(e->host, &e->formats);
         if (e->order) {
             e->host->mem_free(e->host, e->order);
@@ -10300,6 +10388,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->lib_touch_calls = e->lib_touch_calls;
     out->collection_opens = e->collection_opens;
     out->collection_queries = e->collection_queries;
+    out->collection_orders = e->collection_orders;
     out->drill_rows = e->drill_rows;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
