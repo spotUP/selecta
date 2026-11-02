@@ -27,4 +27,10 @@ if(TARGET selecta_mbedtls)
   add_library(selecta_shared_raop STATIC raop/raop.c)
   target_include_directories(selecta_shared_raop PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(selecta_shared_raop PUBLIC selecta_mbedtls)
+  # I892c2: RTSP session and RTP sender over the socket shim (raop_sock.h). The POSIX backend is the only one now; the
+  # Amiga bsdsocket backend arrives with I895.
+  if(NOT SEL_AMIGA)
+    add_library(selecta_shared_raop_net STATIC raop/raop_session.c raop/raop_sock_posix.c)
+    target_link_libraries(selecta_shared_raop_net PUBLIC selecta_shared_raop)
+  endif()
 endif()

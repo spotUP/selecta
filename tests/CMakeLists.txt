@@ -1021,6 +1021,17 @@ if(TARGET selecta_shared_raop)
   set_tests_properties(raop-pure PROPERTIES PASS_REGULAR_EXPRESSION "raop_pure_ok")
 endif()
 
+# I892c2: raop_server.py (fixture receiver) starts raop_stream_test as the sender and compares the decrypted PCM.
+find_program(SEL_PYTHON python3)
+if(TARGET selecta_shared_raop_net AND SEL_PYTHON)
+  add_executable(raop_stream_test library/raop_stream_test.c)
+  target_link_libraries(raop_stream_test PRIVATE selecta_shared_raop_net)
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/raop_stream")
+  add_test(NAME raop-stream COMMAND "${SEL_PYTHON}" -I "${CMAKE_CURRENT_SOURCE_DIR}/net/raop_server.py"
+    $<TARGET_FILE:raop_stream_test> "${CMAKE_CURRENT_BINARY_DIR}/raop_stream")
+  set_tests_properties(raop-stream PROPERTIES TIMEOUT 90 PASS_REGULAR_EXPRESSION "raop_stream_ok")
+endif()
+
 # I218d: Latin-1 <-> UTF-8 at the OS boundary.
 add_executable(latin1_test library/latin1_test.c)
 target_link_libraries(latin1_test PRIVATE selecta_shared_source)
