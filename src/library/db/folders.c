@@ -482,7 +482,17 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
     case SEL_USER_SONG_META:
         sel_library_test_slow("SELECTA_LIB_TEXT_SLOW_MS"); /* I906e test knob: title, group and metadata reads on a busy worker */
         if (op->op == SEL_USER_SONG_TITLE) return song_title(db, op, rows);
-        if (op->op == SEL_USER_SONG_GROUP) return song_group(db, op, rows);
+        if (op->op == SEL_USER_SONG_GROUP) {
+            /* I906e test knob: the first group read only. A 4200 entry queue is 4200 reads, so a per-read delay would never finish; once
+             * is enough to show whether the caller (the posted queue read or the UI thread) is the one that waits. */
+            static int group_slow_done;
+
+            if (!group_slow_done) {
+                group_slow_done = 1;
+                sel_library_test_slow("SELECTA_LIB_GROUP_SLOW_MS");
+            }
+            return song_group(db, op, rows);
+        }
         return song_meta(db, op, rows);
     case SEL_USER_SONG_BRIEFS: return song_briefs(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);

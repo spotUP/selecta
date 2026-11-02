@@ -19,6 +19,18 @@ find_program(SQLITE3 sqlite3)
 if(NOT SQLITE3)
   message(FATAL_ERROR "dui-direct-calls-async needs the sqlite3 command line tool to load the fixture library")
 endif()
+# DUI_SITES_ONLY="1 5" runs only those sites (0 = the queue part, 1..6 the sites of part 2; the PLAYLIST_PLAY and I951 write runs always run); unset runs all.
+# A revert proof runs one site at a time instead of the 105-200 s of the whole file.
+function(sites_want n outvar)
+  if("$ENV{DUI_SITES_ONLY}" STREQUAL "")
+    set(${outvar} 1 PARENT_SCOPE)
+  elseif("${n}" IN_LIST DUI_ONLY_LIST)
+    set(${outvar} 1 PARENT_SCOPE)
+  else()
+    set(${outvar} 0 PARENT_SCOPE)
+  endif()
+endfunction()
+string(REPLACE " " ";" DUI_ONLY_LIST "$ENV{DUI_SITES_ONLY}")
 set(fx "${HERE}/../m3/lyrics")
 set(db "${WORK}/lib.db")
 dui_run(init --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats --db "${db}")
@@ -42,6 +54,8 @@ set(ENV{SELECTA_SDL_TEST_TIMED} "q@5000")
 # Remove dialog and the Song Information page read the same cache and are driven by dui-library-remove and dui-songinfo.
 set(args --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view queue --canvas 1280x800 --clock fixed --stats
   --exec "QUEUE_ADD \"fixture/1.mod\"" --exec "QUEUE_ADD \"fixture/2.mod\"" --exec "QUEUE_ADD \"fixture/3.xm\"")
+sites_want(0 w0)
+if(w0)
 execute_process(COMMAND "${SELECTA}" ${args} OUTPUT_VARIABLE o ERROR_VARIABLE o_err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${o}\nstderr:\n${o_err}")
@@ -78,6 +92,9 @@ if(CMAKE_MATCH_5 GREATER 4)
   message(FATAL_ERROR "the queue group read ran ${CMAKE_MATCH_5} times for a settled 3 entry queue, want a bounded few:\n${o}")
 endif()
 message(STATUS "direct_calls_async_ok pump_ms_max=${pump} turn_ms_max=${turn} text_reads=${CMAKE_MATCH_4} group_reads=${CMAKE_MATCH_5}")
+endif()
+
+unset(ENV{SELECTA_LIB_TEXT_SLOW_MS}) # part 1 set it for itself; each site below names its own knob
 
 # ---------------------------------------------------------------------------------------------------------------------------------
 # Part 2 (I906e): every moved site, driven live. One run per site with its slow knob set to 300 ms; each asserts turn_ms_max < 50 and
@@ -87,11 +104,19 @@ message(STATUS "direct_calls_async_ok pump_ms_max=${pump} turn_ms_max=${turn} te
 #   site 3  Clear dialog playlist count    SELECTA_LIB_COUNT_SLOW_MS  dialog open=2, playlists=1
 #   site 4  New playlist count             SELECTA_LIB_COUNT_SLOW_MS  sidehdr plus plus_clicks=1
 #   site 5  Add to Playlist submenu        SELECTA_LIB_ITEMS_SLOW_MS  song_menu pl_posts>=1 and pl_takes>=1
-#   site 6  queue of more than 4096 rows   none (the group read is a posted read keyed by the queue hash): group_reads 1..4
+#   site 6  queue of more than 4096 rows   SELECTA_LIB_GROUP_SLOW_MS (first group read only; 4200 reads at 300 ms would never finish): group_reads 1..4
 # Geometry comes from scripted mem runs on the same canvas; the live runs click through SDL timed events (SELECTA_SDL_TEST_TIMED).
 # ---------------------------------------------------------------------------------------------------------------------------------
 set(sites_canvas 1280x800)
 set(sites_db "${WORK}/sites.db")
+set(sites_slow_ms 300)
+# DUI_SITES_REALDB=<path to a COPY of a real library.db> runs the same scripts on it; DUI_SITES_SLOW_MS=0 turns the slow knobs off (real-size check).
+if(DEFINED ENV{DUI_SITES_REALDB})
+  file(COPY_FILE "$ENV{DUI_SITES_REALDB}" "${sites_db}" ONLY_IF_DIFFERENT)
+endif()
+if(DEFINED ENV{DUI_SITES_SLOW_MS})
+  set(sites_slow_ms "$ENV{DUI_SITES_SLOW_MS}")
+endif()
 file(MAKE_DIRECTORY "${WORK}/songs")
 foreach(n a b c)
   file(COPY_FILE "${SONGS}/selecta-test.mod" "${WORK}/songs/${n}.mod")
@@ -136,7 +161,7 @@ endfunction()
 function(sites_live outvar tokens)
   cmake_parse_arguments(L "" "SOCK" "KNOBS;ARGS" ${ARGN})
   foreach(k IN LISTS L_KNOBS)
-    set(ENV{${k}} 300)
+    set(ENV{${k}} ${sites_slow_ms})
   endforeach()
   set(ENV{SELECTA_SOCKET} "/tmp/selecta-dui-direct-calls-${L_SOCK}.sock")
   set(ENV{SELECTA_SDL_TEST_TIMED} "${tokens}")
@@ -151,6 +176,14 @@ function(sites_live outvar tokens)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "site ${L_SOCK}: selecta exited ${rc}\nstdout:\n${o}\nstderr:\n${e}")
   endif()
+  # Every live run reports its numbers, so a revert proof can quote fixed against reverted.
+  set(nums "")
+  foreach(key pump_ms_max turn_ms_max lib_ui_wait_ms lib_ui_watched_waits)
+    if("${o}" MATCHES "${key}=([0-9]+)")
+      string(APPEND nums " ${key}=${CMAKE_MATCH_1}")
+    endif()
+  endforeach()
+  message(STATUS "site ${L_SOCK} numbers:${nums}")
   # I946: lib_ui_wait_ms is the time the UI thread spent blocked in library requests; turn_ms_max (wall time) flaked at 130 ms under load.
   if(NOT "${o}" MATCHES "lib_ui_wait_ms=([0-9]+)")
     message(FATAL_ERROR "site ${L_SOCK}: no lib_ui_wait_ms in:\n${o}")
@@ -199,6 +232,8 @@ function(sites_menu_tokens outvar item_xy)
   set(${outvar} "${c1} ${c2} ${c3} ${c4}" PARENT_SCOPE)
 endfunction()
 
+sites_want(1 w1)
+if(w1)
 # --- site 1: Remove dialog title (TEXT knob). Remove is the fifth item, present on a library row.
 sites_menu_tokens(t1 "${itx},${it4y}")
 sites_live(s1 "${t1} q@5200" SOCK s1 KNOBS SELECTA_LIB_TEXT_SLOW_MS ARGS --db "${sites_db}" --view home)
@@ -213,7 +248,10 @@ if(CMAKE_MATCH_1 LESS 1)
   message(FATAL_ERROR "site 1: the posted title read never ran (text_reads=${CMAKE_MATCH_1}):\n${s1}")
 endif()
 message(STATUS "site1_ok turn_ms_max=${s1_turn} text_reads=${CMAKE_MATCH_1}")
+endif()
 
+sites_want(5 w5)
+if(w5)
 # --- site 5: Add to Playlist submenu (ITEMS knob). Item index 3 opens the playlist step; its list is read on the items slot.
 # Driven from a queue row: the composer page keeps the sidebar list stale every frame (Folders source), so its read always holds the
 # one items slot and the menu read would wait behind it; the Queue page leaves the sidebar quiet. The menu is the same song menu.
@@ -254,9 +292,12 @@ if(NOT "${s6}" MATCHES "lib_writes_done=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
   message(FATAL_ERROR "site 6: the queued PLAYLIST_ADD_SONG write did not run (lib_writes_done missing or 0):\n${s6}")
 endif()
 message(STATUS "site6_ok turn_ms_max=${s6_turn} lib_writes_done=${CMAKE_MATCH_1}")
+endif()
 
 # --- site 3: Clear dialog count (COUNT knob), on the Folders page. The first total count read has landed by 1.8 s.
 sites_mem(g_lib "${sites_db}" library "wait 3\n")
+sites_want(3 w3)
+if(w3)
 sites_centre(clear_xy "${g_lib}" "dialog [^\n]*clear=")
 sites_click(c3a 1800 1 "${clear_xy}")
 sites_live(s3 "${c3a} q@4000" SOCK s3 KNOBS SELECTA_LIB_COUNT_SLOW_MS ARGS --db "${sites_db}" --view library)
@@ -265,8 +306,11 @@ sites_field(s3_pl "${s3}" dialog playlists)
 sites_expect("site 3: Clear Library dialog open (kind 2)" "${s3_open}" 2)
 sites_expect("site 3: the dialog names the playlist count" "${s3_pl}" 1)
 message(STATUS "site3_ok turn_ms_max=${s3_turn} playlists=${s3_pl}")
+endif()
 
 # --- site 4: New playlist count (COUNT knob). The header plus creates "Playlist <n+1>" from the engine's count.
+sites_want(4 w4)
+if(w4)
 sites_centre(plus_xy "${g_lib}" "sidehdr plus [^\n]*rect ")
 sites_click(c4a 1800 1 "${plus_xy}")
 # I948b: the create is a library write too. WRITE_SLOW_MS makes it a 300 ms statement, so a create made on the UI thread fails the wait
@@ -275,7 +319,10 @@ sites_live(s4 "${c4a} q@4000" SOCK s4 KNOBS SELECTA_LIB_COUNT_SLOW_MS SELECTA_LI
 sites_field(s4_clicks "${s4}" sidehdr plus_clicks)
 sites_expect("site 4: the header plus was clicked once" "${s4_clicks}" 1)
 message(STATUS "site4_ok turn_ms_max=${s4_turn} plus_clicks=${s4_clicks}")
+endif()
 
+sites_want(2 w2)
+if(w2)
 # --- site 2: Song Information composer link (TEXT knob). Seeded song row names its composer; the Author row links to it.
 configure_file("${SONGS}/selecta-test.mod" "${WORK}/one.mod" COPYONLY)
 set(si_db "${WORK}/si.db")
@@ -301,12 +348,15 @@ if(CMAKE_MATCH_1 LESS 1)
   message(FATAL_ERROR "site 2: the posted metadata read never ran (text_reads=${CMAKE_MATCH_1}):\n${s2}")
 endif()
 message(STATUS "site2_ok turn_ms_max=${s2_turn} text_reads=${CMAKE_MATCH_1}")
+endif()
 
+sites_want(6 w6)
+if(w6)
 # --- site 6: a queue over 4096 rows. The group read is one posted read keyed by the queue hash: bounded, not one per frame.
 set(big "${WORK}/big.m3u")
 string(REPEAT "${WORK}/songs/a.mod\n" 4200 big_text)
 file(WRITE "${big}" "${big_text}")
-sites_live(s6 "q@6000" SOCK s6 ARGS --output null --db "${sites_db}" --view queue --exec "PLAYLIST_LOAD ${big}")
+sites_live(s6 "q@6000" SOCK s6b KNOBS SELECTA_LIB_GROUP_SLOW_MS ARGS --output null --db "${sites_db}" --view queue --exec "PLAYLIST_LOAD ${big}")
 sites_field(s6_queue "${s6}" overlay queue)
 if(s6_queue LESS 4097)
   message(FATAL_ERROR "site 6: the queue holds ${s6_queue} entries, want more than 4096:\n${s6}")
@@ -318,6 +368,7 @@ if(CMAKE_MATCH_1 LESS 1 OR CMAKE_MATCH_1 GREATER 4)
   message(FATAL_ERROR "site 6: group_reads=${CMAKE_MATCH_1} for a settled ${s6_queue} entry queue, want 1..4 (not one per frame):\n${s6}")
 endif()
 message(STATUS "site6_ok turn_ms_max=${s6_turn} queue=${s6_queue} group_reads=${CMAKE_MATCH_1}")
+endif()
 
 # --- I906g PLAYLIST_PLAY: the key read is a posted write-queue op; the queue fills from its done callback, the UI thread never waits.
 sites_mem(ignore "${sites_db}" home "wait 1\nexec PLAYLIST_ADD_SONG 1 local:${WORK}/songs/a.mod\nwait 2\n")
