@@ -30,6 +30,10 @@ typedef struct sel_ui_open_args {
                             * opened later in the same process (UI_SWITCH) skips the script, so each event fires once */
     /* Plugin lookup (sel_registry_find): a UI finds the viz plugins it renders with. NULL when the shell has no registry. */
     const sel_tag* (*find_plugin)(uint32_t kind, const char* id);
+    /* Refusal reason (I916): shell-owned buffer of why_cap bytes, NULL when the caller wants none. A UI that returns NULL from
+     * UI_OPEN writes the reason it refused for here, and the shell's startup report carries it. */
+    char* why;
+    uint32_t why_cap;
 } sel_ui_open_args;
 
 typedef void* (*sel_ui_open_fn)(const sel_ui_open_args* args);               /* UI_OPEN: state or NULL */

@@ -672,6 +672,14 @@ if(NOT SEL_AMIGA)
     COMMAND selecta --stats --ui no-such-ui --output null)
   set_tests_properties(selecta-startup-error-report PROPERTIES
     PASS_REGULAR_EXPRESSION "selecta: ui 'no-such-ui' is not registered.*startup_error_reports=1")
+
+  # I916: a UI that refuses its flags hands the shell the reason (sel_ui_open_args.why); the start-up report names it
+  # instead of "the UI could not open (no terminal?)". rc 1 is the WILL_FAIL half.
+  if(SELECTA_UI_DESKTOP)
+    add_test(NAME selecta-startup-error-ui-reason
+      COMMAND ${CMAKE_COMMAND} -DSEL=$<TARGET_FILE:selecta> -P ${CMAKE_CURRENT_SOURCE_DIR}/startup_ui_reason.cmake)
+    set_tests_properties(selecta-startup-error-ui-reason PROPERTIES PASS_REGULAR_EXPRESSION "startup_ui_reason_ok")
+  endif()
 endif()
 
 # Context-aware keys: Right pages the list, and seeks with the pattern panel up
@@ -2607,6 +2615,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(library_ui_guard_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_ui_guard_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-library-ui-guard COMMAND library_ui_guard_test)
+  # I915: the guard's one condition holds for an Amiga Debug view (compile-time check in the test).
+  add_executable(library_ui_guard_macro_test engine/library_ui_guard_macro_test.c)
+  target_include_directories(library_ui_guard_macro_test PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  add_test(NAME engine-library-ui-guard-macro COMMAND library_ui_guard_macro_test)
+  set_tests_properties(engine-library-ui-guard-macro PROPERTIES PASS_REGULAR_EXPRESSION "library_ui_guard_macro_ok")
   set_tests_properties(engine-library-ui-guard PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_ui_guard_ok")
   # I406b: the pin ring (32 slots) drops the 33rd queued pin, rows are written with added 0, close drains the ring.
   add_executable(library_pin_test engine/library_pin_test.c)
@@ -2615,11 +2628,6 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-pin COMMAND library_pin_test)
   set_tests_properties(library-pin PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_pin_ok")
   add_executable(majority_format_test engine/majority_format_test.c)
-  # I915: the guard's one condition holds for an Amiga Debug view (compile-time check in the test).
-  add_executable(library_ui_guard_macro_test engine/library_ui_guard_macro_test.c)
-  target_include_directories(library_ui_guard_macro_test PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
-  add_test(NAME engine-library-ui-guard-macro COMMAND library_ui_guard_macro_test)
-  set_tests_properties(engine-library-ui-guard-macro PROPERTIES PASS_REGULAR_EXPRESSION "library_ui_guard_macro_ok")
   target_include_directories(majority_format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db ${PROJECT_SOURCE_DIR}/src/engine)
   target_link_libraries(majority_format_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-majority-format COMMAND majority_format_test)

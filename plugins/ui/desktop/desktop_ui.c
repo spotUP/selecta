@@ -750,6 +750,20 @@ static uint32_t desk_flush(desk* d) {
     }
 }
 
+/* A refusal in desk_open (I916): the reason goes to the shell's startup report through args->why, or to stderr when the caller gave no buffer. */
+static void desk_refuse(const sel_ui_open_args* a, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+static void desk_refuse(const sel_ui_open_args* a, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    if (a->why != NULL && a->why_cap > 0) {
+        vsnprintf(a->why, a->why_cap, fmt, ap);
+    } else {
+        fprintf(stderr, "selecta: ");
+        vfprintf(stderr, fmt, ap);
+        fputc('\n', stderr);
+    }
+    va_end(ap);
+}
 static const char* desk_opt(const sel_ui_open_args* a, const char* name) {
     int i;
     for (i = 0; i + 1 < a->argc; i++) {
@@ -14570,12 +14584,12 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
     desk_trace(a->host, "desk_open begin");
     if (backend != NULL && strcmp(backend, "mem") != 0 && !want_sdl) {
-        fprintf(stderr, "selecta: desktop backend '%s' is not mem or sdl\n", backend);
+        desk_refuse(a, "desktop backend '%s' is not mem or sdl", backend);
         return NULL;
     }
 #ifndef SELECTA_DESKTOP_SDL
     if (want_sdl) {
-        fprintf(stderr, "selecta: desktop backend 'sdl' is not available in this build (configure with -DSELECTA_UI_DESKTOP=ON)\n");
+        desk_refuse(a, "desktop backend 'sdl' is not available in this build (configure with -DSELECTA_UI_DESKTOP=ON)");
         return NULL;
     }
 #endif
@@ -14601,7 +14615,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->input_consumed = a->input_consumed;
     d->hash = 2166136261u;
     if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format") != NULL ? desk_opt(a, "--format") : sel_uim_default_format(backend))) {
-        fprintf(stderr, "selecta: desktop format '%s' is not rgba32 or index8\n", desk_opt(a, "--format"));
+        desk_refuse(a, "desktop format '%s' is not rgba32 or index8", desk_opt(a, "--format"));
         a->host->mem_free(a->host, d);
         return NULL;
     }
@@ -14621,7 +14635,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         } else if ((d->view_pg = desk_page_named(d, view)) != SEL_UIM_PG_COUNT) { /* the pages the doors open: entered by desk_page_goto before the first frame (I266) */
             d->view_pending = 1;
         } else {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library (opens Browse Folders), folders, songs, queue, playlists, songinfo, widgets or settings\n", view);
+            desk_refuse(a, "desktop view '%s' is not testcard, text, home, library (opens Browse Folders), folders, songs, queue, playlists, songinfo, widgets or settings", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }
