@@ -27,6 +27,11 @@ jobs:
       - name: Install SDL3 (Linux)
         if: runner.os == 'Linux'
         run: |
+          # Build dependencies from SDL's README-linux (Ubuntu list): X11 and Wayland backends, audio, input.
+          sudo apt-get install -y build-essential pkg-config gnome-desktop-testing libasound2-dev libpulse-dev \
+            libaudio-dev libjack-dev libsndio-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libwayland-dev libdecor-0-dev liburing-dev
           git clone --depth 1 --branch release-3.4.8 https://github.com/libsdl-org/SDL "$RUNNER_TEMP/sdl-src"
           cmake -S "$RUNNER_TEMP/sdl-src" -B "$RUNNER_TEMP/sdl-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX="$HOME/sdl3"
