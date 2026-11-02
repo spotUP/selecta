@@ -3456,6 +3456,7 @@ static void draw_quick(desk* d, sel_gui_rect mn) {
         d->home_parts |= HP_TILE_CARD;
         art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
         if (art != NULL) {
+            d->shelf_album_art_draws += r->item_kind == (uint32_t)SEL_LIB_ITEM_ALBUM + 1u ? 1u : 0u; /* I997: an album item quick tile counts too */
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
             sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, radius);
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
@@ -3535,7 +3536,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             }
             art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
             if (art != NULL) { /* the library cover; generated art only when the song or album has none (design 2.7) */
-                d->shelf_album_art_draws += r->album ? 1u : 0u;
+                d->shelf_album_art_draws += r->album || r->item_kind == (uint32_t)SEL_LIB_ITEM_ALBUM + 1u ? 1u : 0u; /* I997: album item cards too */
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
                 sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]));
                 d->art_probe = ar; /* I477: the dump samples this tile's art corner and centre */

@@ -8,6 +8,7 @@
 
 #include <selecta/ui.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 /* The album of a song: queue ref -> canonical key -> (source, path) or the stored songs.key -> songs row -> albums row with the song's album
@@ -27,6 +28,19 @@ static int art_find_album(sqlite3* db, const char* ref) {
     sqlite3_bind_text(st, 1, ref, us != NULL ? (int)(us - ref) : -1, SQLITE_STATIC);
     if (us != NULL) sqlite3_bind_text(st, 2, us + 1, -1, SQLITE_STATIC);
     else sqlite3_bind_null(st, 2);
+    if (sqlite3_step(st) == SQLITE_ROW) id = sqlite3_column_int(st, 0);
+    sqlite3_finalize(st);
+    return id;
+}
+
+/* I997: an album item card (library item, I678j) names its album by id: "\x1e<albums.id>". The id is the album, no name match. */
+static int art_find_id(sqlite3* db, const char* ref) {
+    sqlite3_stmt* st = NULL;
+    int id = 0;
+
+    if (ref[0] != '\x1e' || ref[1] < '0' || ref[1] > '9') return 0;
+    if (sqlite3_prepare_v2(db, "SELECT id FROM albums WHERE id = ?1", -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_int64(st, 1, atoll(ref + 1));
     if (sqlite3_step(st) == SQLITE_ROW) id = sqlite3_column_int(st, 0);
     sqlite3_finalize(st);
     return id;
@@ -52,8 +66,9 @@ static int art_find_song(sqlite3* db, const sel_art_op* op) {
 }
 
 static int art_find(sqlite3* db, const sel_art_op* op) {
-    int id = art_find_song(db, op);
+    int id = art_find_id(db, op->ref);
 
+    if (id == 0) id = art_find_song(db, op);
     return id != 0 ? id : art_find_album(db, op->ref);
 }
 

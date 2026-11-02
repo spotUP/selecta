@@ -1,6 +1,8 @@
 #include <selecta/format_label.h>
 #include "view.h"
 
+#include <selecta/library_item.h>
+
 #include <string.h>
 
 enum { KEY_FOLDER = 0, KEY_FORMAT = 1 };
@@ -1062,6 +1064,15 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                             art[raw] = '\0';
                             pool += raw + 1u;
                         }
+                        if (item == (uint32_t)SEL_LIB_ITEM_ALBUM + 1u && klen > 0u) {
+                            /* I997: an album item card's key is albums.id (its artist follows 0x1f, its format 0x1d); its art_ref is
+                             * "\x1e<id>", which the artwork provider resolves by id, not by name, so the card shows the same cover as the
+                             * sidebar and Jump Back In. The pool check above reserved name + raw + 3 bytes, enough for key, artist and ref. */
+                            art = key + klen + 1u + (sart != NULL ? raw - name : 0u);
+                            art[0] = '\x1e';
+                            memcpy(art + 1, key, klen + 1u);
+                            pool += klen + 2u;
+                        }
                         pool += klen + 1u;
                         if (fmt_len > 0u && fmt_len < 16u && pool + fmt_len + 1u <= SEL_VIEW_HOME_TEXT_MAX) {
                             fmtp = v->fkey + pool;
@@ -1084,7 +1095,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             v->frows[n].composer = composer;
             v->frows[n].item_kind = item;
             v->frows[n].quick = kind == 'Q';
-            v->frows[n].art_ref = key[0] != '\0' && !composer && !item ? art : NULL;
+            v->frows[n].art_ref = key[0] != '\0' && !composer && (!item || art != key) ? art : NULL;
             /* I476: an album tile's artist is the part of its art_ref after the 0x1f byte. */
             v->frows[n].artist = NULL;
             if (sart != NULL && sart[0] != '\0') {
