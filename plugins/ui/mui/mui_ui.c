@@ -885,7 +885,6 @@ static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, m
     return s->txt[attr];
 }
 
-#define MUI_VOLUME_FIX_W 96 /* I717: the volume slider's fixed width in the transport row */
 
 /* I667f (design 3.2): the one slider constructor. Every Selecta slider (volume, seek, settings) is a Selecta_AASlider (mui_aaslider_class.c). */
 static Object* mui_make_slider(long lo, long hi, long value, LONG id, long fix_w) {
@@ -1115,7 +1114,12 @@ static Object* mui_player_group(mui_state* s) {
     mui_player_band_t band;
     uint32_t k;
     memset(&zero, 0, sizeof zero);
-    mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8); /* I949d: the compact class is ONE band, extras in the menu */
+    {
+        uint32_t sw, sh;
+        int laced;
+        mui_screen_size(&sw, &sh, &laced);
+        mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8, sw, (uint32_t)mui_aa_font_px((int)mui_layout_rows(sh, laced), (int)sw)); /* I949d, I973a */
+    }
     row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     for (k = 0; row1 != NULL && k < MUI_BTN_COUNT; k++) {
         uint32_t i = mui_player_transport_at(k);

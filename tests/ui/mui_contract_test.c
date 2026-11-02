@@ -2487,6 +2487,42 @@ static void test_compact_rail(void) {
           "mui_sidebar_group builds the rail without side_dyn");
 }
 
+/* I973a: the one-row bar's sizes. Pure maths from the metrics; the cap, the centre line and the width budget of design section 4. */
+static void test_player_band_sizes(void) {
+    mui_player_band_t c, r, w;
+    mui_aa_metrics_t tm, rm;
+    mui_aa_slider_t tsl, rsl;
+    uint32_t b0 = mui_player_bar_builds(), tc[3], rc[3], icon_box, i;
+    mui_player_band(&c, 1, 512, 640, 0);
+    mui_player_band(&r, 0, 256, 800, 15);
+    mui_player_band(&w, 0, 256, 900, 15);
+    CHECK(mui_player_bar_builds() == b0 + 3u, "bar sentinel %u (want %u)", (unsigned)mui_player_bar_builds(), (unsigned)(b0 + 3u));
+    mui_aa_metrics_aspect(0, 512, &tm);
+    mui_aa_metrics_aspect(15, 256, &rm);
+    mui_aa_slider_metrics(0, &tsl);
+    mui_aa_slider_metrics(15, &rsl);
+    icon_box = (uint32_t)(tm.icon_h + 2 * tm.pad_y);
+    CHECK(c.btn_px == (icon_box > (uint32_t)tm.height ? icon_box : (uint32_t)tm.height) && c.btn_px >= 12u, "640x256 btn_px %u", (unsigned)c.btn_px);
+    CHECK(c.btn_w == c.btn_px * 2u, "tall pixels: a square on screen is twice as wide in px, got %u x %u", (unsigned)c.btn_w, (unsigned)c.btn_px);
+    CHECK(c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H && c.art_h == 28u && c.extras == 0 && c.right_rows == 1 && c.n_transport == 5u && c.compact == 1,
+          "640x256 band: height %u art_h %u extras %d transport %u", (unsigned)c.height, (unsigned)c.art_h, (int)c.extras, (unsigned)c.n_transport);
+    CHECK(mui_player_min_width(&c) <= 600u, "640x256 minimum width %u > 600", (unsigned)mui_player_min_width(&c));
+    CHECK(c.show_left == 0u && r.show_left == 0u && w.show_left == 1u, "art and titles only from %d px: %u %u %u", (int)MUI_PLAYER_LEFT_MIN_W, (unsigned)c.show_left, (unsigned)r.show_left, (unsigned)w.show_left);
+    CHECK(r.art_h == 56u && r.btn_w == r.btn_px && r.height == (r.btn_px > 56u ? r.btn_px : 56u) + 2u * MUI_PLAYER_COMPACT_PAD && r.compact == 0,
+          "800x600 band: art_h %u height %u btn %u", (unsigned)r.art_h, (unsigned)r.height, (unsigned)r.btn_px);
+    /* one centre line: a button, the clock text, the seek track and the volume track all sit at the bar's middle within one row */
+    tc[0] = mui_player_centre_y(&c, c.btn_px);
+    tc[1] = mui_player_centre_y(&c, c.text_h);
+    tc[2] = (c.height - c.slider_h) / 2u + (c.slider_h - (uint32_t)tsl.track_h) / 2u + (uint32_t)tsl.track_h / 2u;
+    rc[0] = mui_player_centre_y(&r, r.btn_px);
+    rc[1] = mui_player_centre_y(&r, r.text_h);
+    rc[2] = (r.height - r.slider_h) / 2u + (r.slider_h - (uint32_t)rsl.track_h) / 2u + (uint32_t)rsl.track_h / 2u;
+    for (i = 1; i < 3; i++) {
+        CHECK(tc[i] + 1u >= tc[0] && tc[i] <= tc[0] + 1u, "640x256 centre %u: %u vs button %u", (unsigned)i, (unsigned)tc[i], (unsigned)tc[0]);
+        CHECK(rc[i] + 1u >= rc[0] && rc[i] <= rc[0] + 1u, "800x600 centre %u: %u vs button %u", (unsigned)i, (unsigned)rc[i], (unsigned)rc[0]);
+    }
+}
+
 static void test_compact_player(void) {
     mui_player_band_t c, tall, reg;
     mui_menu_item items[256];
@@ -2496,9 +2532,9 @@ static void test_compact_player(void) {
     const char* cg = strstr(src, "static Object* mui_player_group(");
     const char* end = cg != NULL ? strstr(cg, "\n}\n") : NULL;
     char* body = NULL;
-    mui_player_band(&c, mui_layout_compact(640, 256, SEL_UIM_TIER_BITMAP), mui_pixel_aspect_q8(22, 44));
-    mui_player_band(&tall, 1, 256);
-    mui_player_band(&reg, mui_layout_compact(800, 600, SEL_UIM_TIER_BITMAP), 256);
+    mui_player_band(&c, mui_layout_compact(640, 256, SEL_UIM_TIER_BITMAP), mui_pixel_aspect_q8(22, 44), 640, 0);
+    mui_player_band(&tall, 1, 256, 640, 0);
+    mui_player_band(&reg, mui_layout_compact(800, 600, SEL_UIM_TIER_BITMAP), 256, 800, 15);
     CHECK(mui_player_band_compact_builds() == builds + 2u, "compact player sentinel %u (want %u)", (unsigned)mui_player_band_compact_builds(), (unsigned)(builds + 2u));
     CHECK(c.compact == 1 && c.band_n == 1 && c.extras == 0 && c.right_rows == 1 && c.art_w == 56u && c.art_h == 28u && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
           "compact band: art %ux%u height %u extras %d", (unsigned)c.art_w, (unsigned)c.art_h, (unsigned)c.height, (int)c.extras);
@@ -2517,9 +2553,9 @@ static void test_compact_player(void) {
         need = tm.height + sl.height + gy;
         CHECK(need <= MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
               "compact band: transport %d + seek %d + gap %d = %d of %d", tm.height, sl.height, gy, need, MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD);
-        CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD, "square band heights moved");
+        CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "square band heights moved (I973: the compact cap applies)");
     }
-    CHECK(reg.compact == 0 && reg.extras == 1 && reg.right_rows == 3 && reg.art_h == 56u, "regular band unchanged");
+    CHECK(reg.compact == 0 && reg.extras == 0 && reg.right_rows == 1 && reg.art_h == 56u, "regular band: one row, extras in the menu only (I973 6a Q4)");
     n = mui_menu_build(items, 256);
     for (i = 0; i < sizeof want / sizeof want[0]; i++) {
         uint32_t k;
@@ -2536,7 +2572,7 @@ static void test_compact_player(void) {
         memcpy(body, cg, (size_t)(end - cg));
         body[end - cg] = 0;
     }
-    CHECK(body != NULL && strstr(body, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8)") != NULL &&
+    CHECK(body != NULL && strstr(body, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8, sw,") != NULL &&
               strstr(body, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL &&
               strstr(body, "if (band.extras) {\n        DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());") != NULL,
           "player group takes the band model, the aspect source and builds extras only when the band has them");
@@ -3088,6 +3124,8 @@ int main(int argc, char** argv) {
         test_player_bar();
     } else if (strcmp(argv[1], "viz-chooser") == 0) {
         test_viz_chooser();
+    } else if (strcmp(argv[1], "player-band-sizes") == 0) {
+        test_player_band_sizes();
     } else if (strcmp(argv[1], "compact-player") == 0) {
         test_compact_player();
     } else if (strcmp(argv[1], "compact-rail") == 0) {
