@@ -326,4 +326,4 @@ Checklist (tick here and in the ledger in the same edit):
 - D8 Song length: HVSC Songlengths wins; measured length only when HVSC has no entry.
 - D9 Amiga SID voice mute: wait for playsid.library to offer a mute call; ask its maintainer. No register-masking hack.
 - D10 C64 ROMs: bundle an open replacement KERNAL (MPS-1 checks its licence before shipping; BASIC tunes that need the
-  real BASIC ROM may still fail, reported as such).
+  real BASIC ROM may still fail, reported as such). Johan 2026-11-02: Settings lets users load their real KERNAL, BASIC and character ROMs (row MPS-1c).
