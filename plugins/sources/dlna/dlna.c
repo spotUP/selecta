@@ -8,8 +8,13 @@
  *   - a device description URL (http://host:port/desc/device.xml): that server is scanned;
  *   - "discover": SSDP finds the servers on the LAN (each is named on stderr) and every one is scanned.
  * SELECTA_DLNA_SSDP="ip:port" replaces the multicast address (tests point it at a unicast fixture).
- * The scan walks the tree from the root container "0" by BrowseDirectChildren, depth first, paging each container by
- * StartingIndex until TotalMatches. Every audio item with a res URL becomes one song, key
+ * The scan walks by BrowseDirectChildren, depth first, paging each container by StartingIndex until TotalMatches.
+ * Synology and Minidlna list every file under several virtual views (Artist, Album, Genre, Folder), so a walk of the
+ * whole tree costs a request per virtual container and meets each file about seven times (I894a4: 23045 requests, the
+ * row cap). The scan therefore looks for the server's folder view (a container titled "Folder", "Folders" or
+ * "Browse Folders" among the children of the root or of one level below it, e.g. root > Music > Folder) and walks
+ * only that; with no such container it walks everything from "0". A res URL already stored in this sync is skipped.
+ * Every audio item with a res URL becomes one song, key
  * `dlna:<artist>/<title>/<res url>`; play_url returns the res URL and the engine streams it over HTTP (seekable by
  * Range when the server allows it). Browse is read-only; nothing is written to the server, the library or the cache. */
 #include <selecta/catalogue.h>
@@ -43,8 +48,55 @@ typedef struct run {
     const sel_catalogue* cat;
     const char* server;
     const char* control;
-    uint32_t rows, skipped, requests;
+    uint32_t rows, skipped, requests, dups;
+    uint64_t* seen; /* open addressing set of res URL hashes (0 = empty slot), I894a4 dedup */
+    size_t seen_cap, seen_n;
 } run;
+
+static uint64_t url_hash(const char* s) {
+    uint64_t h = 1469598103934665603ull; /* FNV-1a */
+
+    for (; *s != '\0'; s++) {
+        h = (h ^ (unsigned char)*s) * 1099511628211ull;
+    }
+    return h != 0u ? h : 1u;
+}
+
+/* Adds the res URL to the seen set. 1 when it was new, 0 when this sync already stored it. */
+static int seen_add(run* r, const char* url) {
+    uint64_t h = url_hash(url);
+    size_t i;
+
+    if ((r->seen_n + 1u) * 2u > r->seen_cap) {
+        size_t ncap = r->seen_cap != 0u ? r->seen_cap * 2u : 4096u, k;
+        uint64_t* nt = (uint64_t*)calloc(ncap, sizeof *nt);
+
+        if (nt == NULL) {
+            return 1; /* out of memory: keep the song rather than lose it */
+        }
+        for (k = 0; k < r->seen_cap; k++) {
+            if (r->seen[k] != 0u) {
+                size_t j = (size_t)(r->seen[k] % ncap);
+
+                while (nt[j] != 0u) {
+                    j = (j + 1u) % ncap;
+                }
+                nt[j] = r->seen[k];
+            }
+        }
+        free(r->seen);
+        r->seen = nt;
+        r->seen_cap = ncap;
+    }
+    for (i = (size_t)(h % r->seen_cap); r->seen[i] != 0u; i = (i + 1u) % r->seen_cap) {
+        if (r->seen[i] == h) {
+            return 0;
+        }
+    }
+    r->seen[i] = h;
+    r->seen_n++;
+    return 1;
+}
 
 static void clean_part(char* s) {
     for (; *s != '\0'; s++) {
@@ -67,6 +119,10 @@ static void add_item(run* r, const sel_upnp_entry* e) {
 
     if (!is_audio(e) || e->title[0] == '\0') {
         r->skipped++;
+        return;
+    }
+    if (!seen_add(r, e->res_url)) {
+        r->dups++;
         return;
     }
     snprintf(artist, sizeof artist, "%s", e->artist[0] != '\0' ? e->artist : r->server);
@@ -131,6 +187,77 @@ static int walk(run* r, const char* id, unsigned depth) {
     return ok;
 }
 
+static int ci_has(const char* s, const char* word) {
+    size_t n = strlen(word), i;
+
+    for (i = 0; s[i] != '\0'; i++) {
+        size_t k = 0;
+
+        while (k < n && s[i + k] != '\0' && (s[i + k] | 32) == word[k]) {
+            k++;
+        }
+        if (k == n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Looks for the server's folder view in the children of container `id`: a container whose title holds "folder".
+ * Returns 1 and copies its id; 0 when none. `below` collects the other containers for a one level deeper search. */
+static int find_in(run* r, const char* id, char* folder, size_t fn, char (*below)[SEL_UPNP_ID_BYTES], unsigned* nb) {
+    sel_upnp_entry* page = (sel_upnp_entry*)malloc(SEL_UPNP_BROWSE_PAGE * sizeof *page);
+    unsigned start = 0, total = 0;
+    int found = 0;
+
+    if (page == NULL) {
+        return 0;
+    }
+    do {
+        int n = sel_upnp_browse(r->control, id, start, SEL_UPNP_BROWSE_PAGE, page, SEL_UPNP_BROWSE_PAGE, &total);
+        int i;
+
+        r->requests++;
+        if (n <= 0) {
+            break;
+        }
+        for (i = 0; i < n && !found; i++) {
+            if (!page[i].is_container) {
+                continue;
+            }
+            if (ci_has(page[i].title, "folder")) {
+                snprintf(folder, fn, "%s", page[i].id);
+                found = 1;
+            } else if (below != NULL && *nb < 16u) {
+                snprintf(below[(*nb)++], SEL_UPNP_ID_BYTES, "%s", page[i].id);
+            }
+        }
+        start += (unsigned)n;
+    } while (!found && start < total);
+    free(page);
+    return found;
+}
+
+/* The container to walk: the folder view under the root or one level below it (Synology: Music > Folder), else
+ * the root "0" (full walk). */
+static void pick_start(run* r, char* start, size_t n) {
+    char (*below)[SEL_UPNP_ID_BYTES] = (char(*)[SEL_UPNP_ID_BYTES])malloc(16u * SEL_UPNP_ID_BYTES);
+    unsigned nb = 0, i;
+
+    snprintf(start, n, "0");
+    if (below == NULL) {
+        return;
+    }
+    if (!find_in(r, "0", start, n, below, &nb)) {
+        for (i = 0; i < nb; i++) {
+            if (find_in(r, below[i], start, n, NULL, NULL)) {
+                break;
+            }
+        }
+    }
+    free(below);
+}
+
 /* Reads the device description at `location` into `out`. 0 when it is unreachable or has no ContentDirectory. */
 static int describe(const sel_host* host, const sel_net* net, const char* location, sel_upnp_server* out,
                     uint32_t* rq) {
@@ -155,6 +282,7 @@ static int dl_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* 
     const sel_net* net = host->net != NULL ? host->net(host) : NULL;
     const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
     sel_upnp_server servers[MAX_SERVERS];
+    char from[SEL_UPNP_ID_BYTES];
     int n = 0, i, ok = 0;
     run r;
 
@@ -193,8 +321,13 @@ static int dl_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* 
         fprintf(stderr, "dlna: server %s control %s\n", servers[i].name, servers[i].control_url);
         r.server = servers[i].name;
         r.control = servers[i].control_url;
-        ok &= walk(&r, "0", 0u);
+        pick_start(&r, from, sizeof from);
+        fprintf(stderr, "dlna: walking %s\n", strcmp(from, "0") == 0 ? "the whole tree (no folder view)" : "the folder view");
+        ok &= walk(&r, from, 0u);
     }
+    fprintf(stderr, "dlna: %u songs, %u repeated res URLs skipped, %u requests\n", (unsigned)r.rows, (unsigned)r.dups,
+            (unsigned)r.requests);
+    free(r.seen);
     if (ok) {
         ok = cat->commit(host);
     } else {

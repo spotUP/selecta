@@ -19,6 +19,10 @@ import time
 
 port_file, lifetime = sys.argv[1], float(sys.argv[2])
 MEDIA = open(sys.argv[3], "rb").read() if len(sys.argv) > 3 else b""  # I894a3: served for GET /media/*.mp3
+# I894a4: argv[4] picks the tree. "" = the 153-song tree below; "synology" = a Synology-like tree where every file is
+# listed under Artist, Album, Genre and Folder views (root > Music > ...); "synology-plain" = the same tree with the
+# folder view renamed so a client finds no folder container and has to do a full walk.
+TREE = sys.argv[4] if len(sys.argv) > 4 else ""
 NAME = "Fixture Media &amp; Music"
 DESC = f"""<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -70,7 +74,33 @@ def item(n, parent="1"):
             f'{escape(url)}</res></item>')
 
 
+SYN_FILES = {"d1": range(301, 311), "d2": range(311, 316)}  # folder -> files; 15 unique files, all in the Folder view
+
+
+def syn_children(oid):
+    """I894a4: Artist / Album / Genre views group the same 15 files as the Folder view (different object ids)."""
+    folder = "Folder" if TREE == "synology" else "By Path"
+    views = [("a", "Artist"), ("b", "Album"), ("g", "Genre"), ("f", folder)]
+    allfiles = [n for r in SYN_FILES.values() for n in r]
+    if oid == "0":
+        return [container("m", "0", "Music", len(views))]
+    if oid == "m":
+        return [container(v, "m", t, 3) for v, t in views]
+    if oid == "f":
+        return [container(f"f${d}", "f", f"dir-{d}", len(r)) for d, r in SYN_FILES.items()]
+    if oid in ("a", "b", "g"):  # three groups per view, five files each
+        return [container(f"{oid}${k}", oid, f"{oid}-group-{k}", 5) for k in range(3)]
+    if oid.startswith("f$"):
+        return [item(n, oid) for n in SYN_FILES[oid[2:]]]
+    if oid[:1] in ("a", "b", "g") and "$" in oid:
+        k = int(oid.split("$")[1])
+        return [item(n, oid) for n in allfiles[k * 5:k * 5 + 5]]
+    return []
+
+
 def children(oid):
+    if TREE.startswith("synology"):
+        return syn_children(oid)
     if oid == "0":
         return [container("1", "0", "Rock & Roll", 151), container("2", "0", "Jazz", 0)]
     if oid == "1":
