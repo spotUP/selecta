@@ -55,9 +55,22 @@ static void* holder(void* arg) {
     return NULL;
 }
 
+/* The id PLAYLIST_CREATE answers for the "addf" playlist (LIBRARY_RESULT key "playlist", name, value = id). */
+static volatile int g_addf_plid;
+
 static void sink(void* ctx, const sel_message* evt) {
+    const char* key;
+    const char* name;
+    const char* value;
+
     (void)ctx;
-    (void)evt;
+    if (evt->id != SEL_EVT_LIBRARY_RESULT || evt->argc == 0 || evt->args[0].type != SEL_ARG_TAGS) return;
+    key = (const char*)sel_tag_find(evt->args[0].v.t, SEL_SRC_KEY, 0);
+    name = (const char*)sel_tag_find(evt->args[0].v.t, SEL_SRC_NAME, 0);
+    value = (const char*)sel_tag_find(evt->args[0].v.t, SEL_SRC_PATH, 0);
+    if (key != NULL && name != NULL && value != NULL && strcmp(key, "playlist") == 0 && strcmp(name, "addf") == 0) {
+        g_addf_plid = atoi(value);
+    }
 }
 
 /* I906f2: a source with a search of one hit, so SOURCE_PIN has a hit to pin. */
@@ -328,24 +341,19 @@ int main(int argc, char** argv) {
         clock_gettime(CLOCK_MONOTONIC, &t0);
         for (;;) {
             sel_engine_pump(e, sink, NULL);
-            sel_engine_stats_get(e, &p_before);
-            if (p_before.lib_writes_done > p_after.lib_writes_done) break;
+            if (g_addf_plid != 0) break;
             if (ms_since(&t0) > 3000) break;
             usleep(2000);
         }
+        /* The id comes from the PLAYLIST_CREATE answer, as a UI gets it. Not a direct SELECT on lib->db: the create's done callback posts a
+         * folders reload (folders_reload_posted), so the worker is inside that request when the answer arrives, and a prepare here is two
+         * threads in sqlite on one connection (library_thread_violation, owner_check in db/worker.c). */
+        plid = g_addf_plid;
+        CHECK(plid != 0);
         sel_engine_stats_get(e, &p_before);
         /* The scan itself needs the library, so the lock cannot be held across it; the sentinel is the queue: the appends run on the
          * write thread, so stats.lib_writes_done rises by one with the run, and the run lands after the pump that ended the scan. */
         sel_library_watch(0);
-        {
-            sqlite3_stmt* st = NULL;
-
-            plid = 0;
-            CHECK(sqlite3_prepare_v2(lib->db, "SELECT id FROM playlists WHERE name = 'addf'", -1, &st, NULL) == SQLITE_OK);
-            if (sqlite3_step(st) == SQLITE_ROW) plid = sqlite3_column_int(st, 0);
-            sqlite3_finalize(st);
-            CHECK(plid != 0);
-        }
         snprintf(line, sizeof line, "PLAYLIST_ADD_FOLDER %d \"%s\"", plid, tree);
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
         worst = 0;
