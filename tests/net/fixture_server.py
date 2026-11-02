@@ -360,6 +360,14 @@ class ThreadedHTTP(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def server_bind(self):
+        # HTTPServer.server_bind() calls socket.getfqdn() on the bound address, a reverse-DNS lookup that stalls for
+        # 10+ s on the GitHub macOS runner and kept the port file from appearing in time (I989d). The fixture only
+        # binds 127.0.0.1 and never reads server_name.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+
 
 def ftp_session(conn, host):
     """Minimal anonymous passive-mode FTP."""
