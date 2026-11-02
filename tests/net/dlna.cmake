@@ -3,6 +3,7 @@
 #     150 items over 2 pages plus a sub-container with 3 items, so listing_rows=153 and db_songs=153 (container "2"
 #     is empty);
 #  2. sync "discover" (unicast SSDP to the fixture through SELECTA_DLNA_SSDP): the same 153 rows, one M-SEARCH;
+#  2c. I894a5 delta sync (see below);
 #  3. OPEN + PLAY one song from the sub-container streams its res URL: the fixture saw the media GET, the stream went
 #     through the source and sel_live, and the render holds non-zero samples (the played-samples sentinel).
 # -DCLI=<selecta-cli> -DWORK=<scratch dir> -DMP3=<tests/m3/stream/sine.mp3> -DSRV=<upnp_server.py>
@@ -27,6 +28,9 @@ endif()
 set(UDP "${CMAKE_MATCH_1}")
 set(HTTP "${CMAKE_MATCH_2}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+# I894a5: the per-server delta state lives in the cache dir, so every step gets its own (all fixtures share one UDN).
+file(REMOVE_RECURSE "${WORK}/dlna-cache")
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/s1")
 
 # 1. Scan by description URL.
 execute_process(COMMAND "${CLI}" library sync --db "${DB}" --now 2000 dlna "http://127.0.0.1:${HTTP}/desc.xml"
@@ -44,6 +48,7 @@ endforeach()
 
 # 2. Discover.
 set(ENV{SELECTA_DLNA_SSDP} "127.0.0.1:${UDP}")
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/s2")
 execute_process(COMMAND "${CLI}" library sync --db "${DB2}" --now 2000 dlna discover
   OUTPUT_VARIABLE so2 ERROR_VARIABLE se2 RESULT_VARIABLE src2 TIMEOUT 60)
 if(NOT src2 EQUAL 0 OR NOT so2 MATCHES "listing_rows=153 " OR NOT so2 MATCHES "db_songs=153"
@@ -62,6 +67,7 @@ function(syn_sync tree outvar)
   set(sport "${WORK}/dlna-${tree}-port")
   set(sdb "${WORK}/dlna-${tree}.db")
   file(REMOVE_RECURSE "${sport}" "${sport}.requests" "${sdb}")
+  set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/${tree}")
   execute_process(COMMAND sh -c "python3 -I '${SRV}' '${sport}' 30 '${MP3}' '${tree}' >/dev/null 2>&1 &")
   foreach(i RANGE 50)
     if(EXISTS "${sport}")
@@ -95,6 +101,106 @@ endif()
 if(NOT full_requests_log MATCHES "walking the whole tree" OR NOT full_requests_log MATCHES "45 repeated res URLs"
    OR NOT full_requests GREATER folder_requests)
   message(FATAL_ERROR "I894a4: the fallback must walk everything (${full_requests} requests) and drop repeats\n${full_requests_log}")
+endif()
+
+# 2c. I894a5: delta sync. A fixture per mode: "" = ContentDirectory:1 (SystemUpdateID only), "cd3" = ContentDirectory:3
+# (GetServiceResetToken + Search by objectUpdateID). The server is changed through GET /admin/add and /admin/del.
+function(delta_fixture tree outport outfile)
+  set(dport "${WORK}/dlna-delta-${tree}-port")
+  file(REMOVE_RECURSE "${dport}" "${dport}.requests")
+  execute_process(COMMAND sh -c "python3 -I '${SRV}' '${dport}' 30 '${MP3}' '${tree}' >/dev/null 2>&1 &")
+  foreach(i RANGE 50)
+    if(EXISTS "${dport}")
+      file(READ "${dport}" dp)
+      if(NOT dp STREQUAL "")
+        break()
+      endif()
+    endif()
+    execute_process(COMMAND sleep 0.1)
+  endforeach()
+  string(STRIP "${dp}" dp)
+  if(NOT dp MATCHES "^([0-9]+) ([0-9]+)$")
+    message(FATAL_ERROR "I894a5: ${tree} fixture did not start (${dp})")
+  endif()
+  set(${outport} ${CMAKE_MATCH_2} PARENT_SCOPE)
+  set(${outfile} "${dport}.requests" PARENT_SCOPE)
+endfunction()
+
+# Syncs and returns the stdout / stderr plus the Browse lines the fixture logged since the previous call.
+function(delta_sync tree port reqfile want_rows tag)
+  set(db "${WORK}/dlna-delta-${tree}.db")
+  if(EXISTS "${reqfile}")
+    file(READ "${reqfile}" before)
+  else()
+    set(before "")
+  endif()
+  string(LENGTH "${before}" blen)
+  execute_process(COMMAND "${CLI}" library sync --db "${db}" --now 2000 dlna "http://127.0.0.1:${port}/desc.xml"
+    OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
+  if(NOT rc EQUAL 0 OR NOT o MATCHES "listing_rows=${want_rows} " OR NOT o MATCHES "db_songs=${want_rows}")
+    message(FATAL_ERROR "I894a5: ${tag}: want ${want_rows} rows rc=${rc}\n${o}${e}")
+  endif()
+  file(READ "${reqfile}" after)
+  string(SUBSTRING "${after}" ${blen} -1 fresh)
+  string(REGEX MATCHALL "browse=[^\n]*" bl "${fresh}")
+  set(delta_browse "${bl}" PARENT_SCOPE)
+  set(delta_log "${e}" PARENT_SCOPE)
+  set(delta_fresh "${fresh}" PARENT_SCOPE)
+endfunction()
+
+function(admin port op cid num)
+  execute_process(COMMAND curl -s -m 5 "http://127.0.0.1:${port}/admin/${op}?c=${cid}&n=${num}" RESULT_VARIABLE crc)
+  if(NOT crc EQUAL 0)
+    message(FATAL_ERROR "I894a5: admin ${op} failed rc=${crc}")
+  endif()
+endfunction()
+
+# CD:1: unchanged SystemUpdateID = 0 Browse requests and the rows are kept; a change = a full walk that adds the new
+# items and removes the vanished ones.
+delta_fixture("" d1port d1req)
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/d1")
+file(REMOVE_RECURSE "${WORK}/dlna-delta-.db" "${WORK}/dlna-cache/d1")
+delta_sync("" ${d1port} ${d1req} 153 "cd1 first")
+list(LENGTH delta_browse n_first)
+if(n_first LESS 4)
+  message(FATAL_ERROR "I894a5: the first sync must walk the tree (${n_first} Browse requests)")
+endif()
+delta_sync("" ${d1port} ${d1req} 153 "cd1 unchanged")
+list(LENGTH delta_browse n_same)
+if(NOT n_same EQUAL 0 OR NOT delta_log MATCHES "SystemUpdateID 1 unchanged, no Browse needed \\(153 stored rows kept\\)")
+  message(FATAL_ERROR "I894a5: an unchanged SystemUpdateID must make 0 Browse requests (saw ${n_same})\n${delta_fresh}${delta_log}")
+endif()
+admin(${d1port} add "1$sub" 250)
+admin(${d1port} add "1$sub" 251)
+admin(${d1port} del "1" 5)
+delta_sync("" ${d1port} ${d1req} 154 "cd1 changed")
+list(LENGTH delta_browse n_changed)
+if(n_changed LESS 4 OR NOT delta_log MATCHES "1 vanished rows removed")
+  message(FATAL_ERROR "I894a5: a changed SystemUpdateID must walk again and drop the vanished row (${n_changed})\n${delta_log}")
+endif()
+
+# CD:3: one changed container is found by Search and re-browsed alone, its rows updated.
+delta_fixture("cd3" d3port d3req)
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/d3")
+file(REMOVE_RECURSE "${WORK}/dlna-delta-cd3.db" "${WORK}/dlna-cache/d3")
+delta_sync("cd3" ${d3port} ${d3req} 153 "cd3 first")
+admin(${d3port} add "1$sub" 260)
+delta_sync("cd3" ${d3port} ${d3req} 154 "cd3 one container changed")
+list(LENGTH delta_browse n_one)
+if(NOT n_one EQUAL 1 OR NOT delta_browse STREQUAL "browse=1$sub:0:100" OR NOT delta_fresh MATCHES "search=1\n"
+   OR NOT delta_log MATCHES "container 1[$]sub changed, re-browsing it alone")
+  message(FATAL_ERROR "I894a5: only the changed container may be browsed (saw ${delta_browse})\n${delta_fresh}${delta_log}")
+endif()
+admin(${d3port} del "1$sub" 260)
+delta_sync("cd3" ${d3port} ${d3req} 153 "cd3 row removed")
+list(LENGTH delta_browse n_del)
+if(NOT n_del EQUAL 1 OR NOT delta_log MATCHES "1 vanished rows removed")
+  message(FATAL_ERROR "I894a5: the re-browse must drop the vanished row (${delta_browse})\n${delta_log}")
+endif()
+delta_sync("cd3" ${d3port} ${d3req} 153 "cd3 unchanged")
+list(LENGTH delta_browse n_none)
+if(NOT n_none EQUAL 0)
+  message(FATAL_ERROR "I894a5: unchanged cd3 server must make 0 Browse requests (${delta_browse})")
 endif()
 
 # 3. Play one song of the sub-container.

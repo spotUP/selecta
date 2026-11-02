@@ -16,6 +16,9 @@ typedef struct sel_upnp_server {
     char usn[SEL_UPNP_NAME_BYTES + 32];        /* USN of the reply */
     char location[SEL_UPNP_URL_BYTES];         /* device description URL */
     char control_url[SEL_UPNP_URL_BYTES];      /* absolute ContentDirectory controlURL */
+    char udn[SEL_UPNP_NAME_BYTES];             /* <UDN> of the root device (I894a5), "" when absent */
+    char event_url[SEL_UPNP_URL_BYTES];        /* absolute ContentDirectory eventSubURL (GENA), "" when absent */
+    int cd_version;                            /* ContentDirectory service version: 1, 2 or 3 */
 } sel_upnp_server;
 
 /* Parses an SSDP response (or NOTIFY) datagram: LOCATION and USN headers (case-insensitive names). 1 when the
@@ -68,5 +71,17 @@ int sel_upnp_parse_browse(const char* soap, sel_upnp_entry* out, size_t max, uns
  * start >= *total (or the return is 0). Returns the entries filled, -1 on a transport or parse error. */
 int sel_upnp_browse(const char* control_url, const char* object_id, unsigned start, unsigned count,
                     sel_upnp_entry* out, size_t max, unsigned* total);
+
+/* ---- change tracking (I894a5) ---- */
+/* ContentDirectory GetSystemUpdateID. 1 and *id on success. */
+int sel_upnp_get_system_update_id(const char* control_url, unsigned long* id);
+
+/* ContentDirectory:3 GetServiceResetToken (a new token means the server lost its change history). 1 on success. */
+int sel_upnp_get_reset_token(const char* control_url, char* out, size_t n);
+
+/* ContentDirectory:3 Search from the root for containers with upnp:objectUpdateID > since: entries [start, ...) of
+ * the answer, paged like sel_upnp_browse. -1 on a transport error or a server without CD:3 Search. */
+int sel_upnp_search_changed(const char* control_url, unsigned long since, unsigned start, sel_upnp_entry* out,
+                            size_t max, unsigned* total);
 
 #endif

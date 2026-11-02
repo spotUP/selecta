@@ -23,6 +23,14 @@ MEDIA = open(sys.argv[3], "rb").read() if len(sys.argv) > 3 else b""  # I894a3: 
 # listed under Artist, Album, Genre and Folder views (root > Music > ...); "synology-plain" = the same tree with the
 # folder view renamed so a client finds no folder container and has to do a full walk.
 TREE = sys.argv[4] if len(sys.argv) > 4 else ""
+# I894a5: "cd3" = the default tree on a ContentDirectory:3 server (GetServiceResetToken + Search by objectUpdateID); every
+# mode answers GetSystemUpdateID. GET /admin/add?c=<container>&n=<num> and /admin/del?c=&n= change the tree, bump
+# SystemUpdateID and set that container's objectUpdateID.
+CD = 3 if TREE == "cd3" else 1
+SYSID = 1
+CUPD = {}  # container id -> objectUpdateID
+EXTRA = {}  # container id -> item numbers added
+GONE = set()  # item ids removed
 NAME = "Fixture Media &amp; Music"
 DESC = f"""<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -30,13 +38,14 @@ DESC = f"""<?xml version="1.0"?>
  <device>
   <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
   <friendlyName>{NAME}</friendlyName>
+  <UDN>uuid:fixture-0001</UDN>
   <serviceList>
    <service>
     <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
     <controlURL>/upnp/cm/control</controlURL>
    </service>
    <service>
-    <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+    <serviceType>urn:schemas-upnp-org:service:ContentDirectory:{CD}</serviceType>
     <serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
     <controlURL>/upnp/cd/control</controlURL>
     <eventSubURL>/upnp/cd/event</eventSubURL>
@@ -99,6 +108,11 @@ def syn_children(oid):
 
 
 def children(oid):
+    out = [c for c in base_children(oid) if not any(f'id="{g}"' in c for g in GONE)]
+    return out + [item(n, oid) for n in EXTRA.get(oid, [])]
+
+
+def base_children(oid):
     if TREE.startswith("synology"):
         return syn_children(oid)
     if oid == "0":
@@ -111,13 +125,39 @@ def children(oid):
 
 
 class Desc(http.server.BaseHTTPRequestHandler):
+    def reply(self, name, inner):
+        resp = ('<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+                's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
+                f'<u:{name}Response xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:{CD}">{inner}'
+                f"</u:{name}Response></s:Body></s:Envelope>").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", 'text/xml; charset="utf-8"')
+        self.send_header("Content-Length", str(len(resp)))
+        self.end_headers()
+        self.wfile.write(resp)
+
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode()
         oid = re.search(r"<ObjectID>(.*?)</ObjectID>", body)
         st = re.search(r"<StartingIndex>(\d+)</StartingIndex>", body)
         rc = re.search(r"<RequestedCount>(\d+)</RequestedCount>", body)
         action = self.headers.get("SOAPACTION", "")
-        if self.path != "/upnp/cd/control" or not (oid and st and rc) or not action.endswith('ContentDirectory:1#Browse"'):
+        name = action.rsplit("#", 1)[-1].strip('"')
+        if self.path == "/upnp/cd/control" and name == "GetSystemUpdateID":
+            log("sysid")
+            return self.reply(name, f"<Id>{SYSID}</Id>")
+        if self.path == "/upnp/cd/control" and name == "GetServiceResetToken" and CD >= 3:
+            log("reset_token")
+            return self.reply(name, "<ResetToken>token-1</ResetToken>")
+        if self.path == "/upnp/cd/control" and name == "Search" and CD >= 3 and st and rc:
+            since = int(re.search(r"objectUpdateID &gt; (\d+)", body).group(1))
+            log(f"search={since}")
+            hits = [container(c, "0", f"changed-{c}", 0) for c, u in CUPD.items() if u > since]
+            page = hits[int(st.group(1)):int(st.group(1)) + int(rc.group(1))]
+            didl = f"<DIDL-Lite {NS}>" + "".join(page) + "</DIDL-Lite>"
+            return self.reply(name, f"<Result>{escape(didl)}</Result><NumberReturned>{len(page)}</NumberReturned>"
+                                    f"<TotalMatches>{len(hits)}</TotalMatches><UpdateID>{SYSID}</UpdateID>")
+        if self.path != "/upnp/cd/control" or not (oid and st and rc) or name != "Browse":
             self.send_response(500)
             self.end_headers()
             return
@@ -130,7 +170,7 @@ class Desc(http.server.BaseHTTPRequestHandler):
                 's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
                 '<u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">'
                 f"<Result>{escape(didl)}</Result><NumberReturned>{len(page)}</NumberReturned>"
-                f"<TotalMatches>{len(allc)}</TotalMatches><UpdateID>1</UpdateID></u:BrowseResponse>"
+                f"<TotalMatches>{len(allc)}</TotalMatches><UpdateID>{SYSID}</UpdateID></u:BrowseResponse>"
                 "</s:Body></s:Envelope>").encode()
         self.send_response(200)
         self.send_header("Content-Type", 'text/xml; charset="utf-8"')
@@ -139,6 +179,22 @@ class Desc(http.server.BaseHTTPRequestHandler):
         self.wfile.write(resp)
 
     def do_GET(self):
+        global SYSID
+        adm = re.match(r"/admin/(add|del)\?c=([^&]*)&n=(\d+)", self.path)
+        if adm:
+            cid, num = adm.group(2), int(adm.group(3))
+            if adm.group(1) == "add":
+                EXTRA.setdefault(cid, []).append(num)
+            elif num in EXTRA.get(cid, []):
+                EXTRA[cid].remove(num)
+            else:
+                GONE.add(f"{cid}${num:03d}")
+            SYSID += 1
+            CUPD[cid] = SYSID
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if self.path.startswith("/media/") and MEDIA:
             log("media_get=" + self.path)
             self.send_response(200)
