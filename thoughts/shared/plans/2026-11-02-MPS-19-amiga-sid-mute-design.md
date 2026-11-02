@@ -181,8 +181,8 @@ One reachability test, through the engine top level, on host with the existing s
 ### Answers (Johan, 2026-11-02)
 
 1. Library route: the step B patch goes to Johan's friend who maintains playsid.library with the original author's
-   permission: https://github.com/erique/playsid.library. Selecta bundles no fork. Opening a PR or issue there is
-   outward-facing: prepare the patch, Johan approves before anything is sent.
+   permission: https://github.com/erique/playsid.library. Selecta bundles no fork. Johan 2026-11-02: "we should submit a pr":
+   fork as spotUP and open a pull request to erique/playsid.library.
 2. Ship step A (classic mode mute) now: yes.
 3. Old library in reSID or hardware mode: hide mute.
 4. Chips 2 and 3: include in the library patch.
