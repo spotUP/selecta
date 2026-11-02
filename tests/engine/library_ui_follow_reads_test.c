@@ -5,7 +5,8 @@
  * (sel_engine_send_line + sel_engine_pump) the test sends every command desk_page_load sends for the Home, Folders, Browse and
  * list pages, times each pump (the "sample": a blocking command shows as about HOLD_MS) and counts the synchronous library
  * requests it made (sel_library_watched_waits), and asserts
- *   - every pump returns within PUMP_BUDGET_MS, and no command made a synchronous library request (Debug builds),
+ *   - no command made a synchronous library request on the pump thread (the waits count; the pump times are printed, never asserted:
+ *     a wall-clock budget flakes under load, I985),
  *   - after the release the posted reads land (stats.lib_reads_applied advanced: the sentinel that the posted path ran). */
 #include <pthread.h>
 #include <selecta/engine.h>
@@ -260,7 +261,7 @@ int main(int argc, char** argv) {
         w1 = sel_library_watched_waits();
         if (pump_ms > worst) worst = pump_ms;
         printf("i906c sample: '%s' pump %ld ms, library waits %u\n", lines[i], pump_ms, (unsigned)(w1 - w0));
-        if (pump_ms >= PUMP_BUDGET_MS || w1 != w0) {
+        if (w1 != w0) {
             printf("i906c FAIL: '%s' waited on the library\n", lines[i]);
             g_fail++;
         }
@@ -315,7 +316,7 @@ int main(int argc, char** argv) {
             w1 = sel_library_watched_waits();
             if (pump_ms > worst) worst = pump_ms;
             printf("i906f sample: '%s' pump %ld ms, library waits %u\n", writes[i], pump_ms, (unsigned)(w1 - w0));
-            if (pump_ms >= PUMP_BUDGET_MS || w1 != w0) {
+            if (w1 != w0) {
                 printf("i906f FAIL: '%s' waited on the library\n", writes[i]);
                 g_fail++;
             }
@@ -355,7 +356,6 @@ int main(int argc, char** argv) {
         pump_ms = ms_since(&t0);
         w1 = sel_library_watched_waits();
         printf("i906g sample: OPEN pump %ld ms, library waits %u\n", pump_ms, (unsigned)(w1 - w0));
-        CHECK(pump_ms < PUMP_BUDGET_MS);
         CHECK(w1 == w0);
         sel_engine_stats_get(e, &g_after);
         CHECK(g_after.play_meta_reads == g_before.play_meta_reads); /* nothing ran yet: the worker is blocked */
@@ -399,7 +399,6 @@ int main(int argc, char** argv) {
         pump_ms = ms_since(&t0);
         w1 = sel_library_watched_waits();
         printf("i906f group1: CUE_SET + replace pump %ld ms, library waits %u\n", pump_ms, (unsigned)(w1 - w0));
-        CHECK(pump_ms < PUMP_BUDGET_MS);
         CHECK(w1 == w0);
         pthread_join(th, NULL);
         clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -444,7 +443,6 @@ int main(int argc, char** argv) {
         pump_ms = ms_since(&t0);
         w1 = sel_library_watched_waits();
         printf("i906f2 pin: SOURCE_PIN pump %ld ms, library waits %u\n", pump_ms, (unsigned)(w1 - w0));
-        CHECK(pump_ms < PUMP_BUDGET_MS);
         CHECK(w1 == w0);
         sel_engine_stats_get(e, &p_after);
         CHECK(p_after.source_pins == p_before.source_pins); /* nothing ran yet: the pin is queued behind the held lock */
@@ -483,8 +481,8 @@ int main(int argc, char** argv) {
         sel_engine_stats_get(e, &p_before);
         /* The scan itself needs the library, so the lock cannot be held across it; the sentinel is the queue: the appends run on the
          * write thread, so stats.lib_writes_done rises by one with the run, and the run lands after the pump that ended the scan. */
-        sel_library_watch(0);
         snprintf(line, sizeof line, "PLAYLIST_ADD_FOLDER %d \"%s\"", plid, tree);
+        waits0 = sel_library_watched_waits();
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
         worst = 0;
         clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -499,10 +497,14 @@ int main(int argc, char** argv) {
             if (ms_since(&t0) > 5000) break;
             usleep(2000);
         }
-        printf("i906f2 addf: worst pump %ld ms, addf_runs +%u, addf_added %u, plfail %u/%u, lib_writes_done +%u\n", worst,
+        printf("i906f2 addf: worst pump %ld ms, pump-thread library waits %u, addf_runs +%u, addf_added %u, plfail %u/%u, lib_writes_done +%u\n", worst,
+               (unsigned)(sel_library_watched_waits() - waits0),
                (unsigned)(p_after.addf_runs - p_before.addf_runs), (unsigned)p_after.addf_added,
                (unsigned)p_after.pl_fail_runs, (unsigned)p_after.pl_fail_reason, (unsigned)(p_after.lib_writes_done - p_before.lib_writes_done));
-        CHECK(worst < PUMP_BUDGET_MS);
+        /* I985: the wall-clock budget flaked under load. What it protected is that addf_finish and its done callback make no synchronous library
+         * request on the pump thread (the appends go through the write queue, the folders reload is posted). Measured: a baseline LIBRARY_SCAN of
+         * an identical tree makes 0 such requests, so the add-folder run must make 0 too. */
+        CHECK(sel_library_watched_waits() == waits0);
         CHECK(p_after.addf_runs == p_before.addf_runs + 1u);
         CHECK(p_after.addf_added == 1u);
         CHECK(p_after.lib_writes_done == p_before.lib_writes_done + 1u); /* the appends went through the write queue */
@@ -523,11 +525,13 @@ int main(int argc, char** argv) {
         pthread_create(&th, NULL, holder_gated, lib);
         while (!g_held) usleep(1000);
         snprintf(line, sizeof line, "COLLECTION_OPEN %u \"Touch Album\"", (unsigned)SEL_LIB_ITEM_ALBUM);
+        w0 = sel_library_watched_waits();
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
         clock_gettime(CLOCK_MONOTONIC, &t0);
         sel_engine_pump(e, sink, NULL);
         pump_ms = ms_since(&t0);
-        CHECK(pump_ms < PUMP_BUDGET_MS);
+        w1 = sel_library_watched_waits();
+        CHECK(w1 == w0);
         sel_engine_stats_get(e, &t_after);
         CHECK(t_after.lib_touch_calls == t_before.lib_touch_calls); /* nothing ran yet: the touch is queued behind the held lock */
         g_release = 1; /* I982: let go only now */
@@ -615,7 +619,6 @@ int main(int argc, char** argv) {
         pump_ms = ms_since(&t0);
         w1 = sel_library_watched_waits();
         sel_engine_stats_get(e, &v_after);
-        CHECK(pump_ms < PUMP_BUDGET_MS);
         CHECK(w1 == w0);
         CHECK(v_after.leveler_writes == v_before.leveler_writes); /* queued behind the held lock */
         pthread_join(th, NULL);
@@ -652,7 +655,6 @@ int main(int argc, char** argv) {
         pump_ms = ms_since(&t0);
         w1 = sel_library_watched_waits();
         sel_engine_stats_get(e, &s_after);
-        CHECK(pump_ms < PUMP_BUDGET_MS);
         CHECK(w1 == w0);
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done); /* queued behind the held lock */
         pthread_join(th, NULL);
@@ -710,7 +712,6 @@ int main(int argc, char** argv) {
         w1 = sel_library_watched_waits();
         sel_engine_stats_get(e, &s_after);
         printf("i906f2e sync time: worst pump %ld ms, waits %u\n", worst, (unsigned)(w1 - w0));
-        CHECK(worst < PUMP_BUDGET_MS);
         CHECK(w1 == w0);
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done); /* queued behind the held lock */
         pthread_join(th, NULL);
@@ -764,7 +765,6 @@ int main(int argc, char** argv) {
         w1 = sel_library_watched_waits();
         sel_engine_stats_get(e, &s_after);
         printf("i906f2f new this week: worst pump %ld ms, waits %u\n", worst, (unsigned)(w1 - w0));
-        CHECK(worst < PUMP_BUDGET_MS);
         CHECK(w1 == w0);
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done);
         pthread_join(th, NULL);

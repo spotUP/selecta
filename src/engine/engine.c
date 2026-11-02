@@ -4377,7 +4377,7 @@ static int scan_cancelled_cb(void* ctx) {
 }
 
 static void folder_report(sel_engine* e, int code, const char* who);
-static void folders_reload(sel_engine* e);
+static void folders_reload_posted(sel_engine* e);
 
 /* I652d: the scan reports every module it recognised; the paths pile up in addf_buf for addf_finish. Scan thread. */
 static void addf_collect(void* ctx, const char* path) {
@@ -4433,11 +4433,12 @@ static void wq_addf_run(sel_library* lib, sel_wq_op* op) {
     }
 }
 
-/* The run counters and the folders reload the old synchronous addf_finish did after its loop. */
+/* The run counters and the folders reload the old synchronous addf_finish did after its loop. The reload is posted (I985): this runs on the
+ * pump, and the old synchronous folders reload was a library request. */
 static void addf_done(sel_engine* e, uint32_t added) {
     e->addf_runs++;
     e->addf_added = added;
-    folders_reload(e);
+    folders_reload_posted(e);
 }
 
 static void wq_addf_done(sel_engine* e, sel_wq_op* op) {
@@ -5553,21 +5554,7 @@ static int folder_ready(sel_engine* e, const char* who) {
     return 1;
 }
 
-/* I179: rebuilds the rows of the folders view source from the library tree. Called when the source is
- * selected and after every folder command that changed the tree, so the text UI sees the tree only through
- * the view model. */
-static void folders_reload(sel_engine* e) {
-    char tree[SEL_RD_FOLDERS_MAX];
-    uint32_t lines = 0;
-    tree[0] = '\0';
-    if (e->lib != NULL && sel_library_folder_tree(e->lib, tree, sizeof tree, &lines) != SEL_FOLDER_OK) {
-        tree[0] = '\0';
-    }
-    if (!lib_read_idle(&e->rd_folders)) e->rd_folders.again = 1; /* a read posted before this edit may land stale: read once more */
-    e->folder_view_rows += sel_view_set_folders(&e->view, tree);
-}
-
-/* I829: VIEW_SOURCE folders posts the tree read; folder edits still reload in their own turn (folders_reload). */
+/* I829: VIEW_SOURCE folders and every folder edit post the tree read (folders_reload_posted); never a library request on the pump. */
 static void folders_read_run(sel_engine* e) {
     e->rd_fold_text[0] = '\0';
     e->rd_fold_lines = 0;
