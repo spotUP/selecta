@@ -4,8 +4,14 @@ ports, and writes "<udp port> <http port>" to <portfile>. An M-SEARCH for the Me
 200 response whose LOCATION is the description URL (the real multicast address is not used, so a CI box without
 multicast works). Every request is logged in <portfile>.requests as "ssdp_search=<ST>" and "desc_get=<path>".
 The description has a friendlyName with an entity, a relative controlURL in a ContentDirectory service that comes
-after a ConnectionManager service, and no URLBase: the client must resolve the control path against LOCATION."""
+after a ConnectionManager service, and no URLBase: the client must resolve the control path against LOCATION.
+I894a2: POST /upnp/cd/control answers ContentDirectory Browse (BrowseDirectChildren) and logs "browse=<id>:<start>:<count>".
+Tree: "0" holds containers "1" (Rock & Roll, childCount 151) and "2" (Jazz, childCount 0). "1" holds the
+container "1$sub" followed by 150 items "1$001".."1$150" = 151 children; the server never returns more than 100 per
+page, so a client has to page. The Result is entity-escaped DIDL-Lite inside the SOAP envelope."""
 import http.server
+import re
+from xml.sax.saxutils import escape
 import socket
 import sys
 import threading
@@ -42,7 +48,63 @@ def log(line):
         f.write(line + "\n")
 
 
+NS = ('xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" '
+      'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"')
+SERVER_PAGE_CAP = 100
+
+
+def container(cid, parent, title, count):
+    return (f'<container id="{cid}" parentID="{parent}" childCount="{count}" restricted="1">'
+            f'<dc:title>{escape(title)}</dc:title><upnp:class>object.container</upnp:class></container>')
+
+
+def item(n):
+    title = f"Song {n:03d} & More" if n == 42 else f"Track {n:03d}"
+    album = "Album <A>" if n == 42 else "Album"
+    url = f"http://127.0.0.1:{http_port}/media/{n:03d}.mp3?a=1&b=2"
+    return (f'<item id="1${n:03d}" parentID="1" restricted="1"><dc:title>{escape(title)}</dc:title>'
+            f'<upnp:artist>Artist {n:03d}</upnp:artist><upnp:album>{escape(album)}</upnp:album>'
+            f'<upnp:class>object.item.audioItem.musicTrack</upnp:class>'
+            f'<res protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3" duration="0:03:25.500" size="1234567">'
+            f'{escape(url)}</res></item>')
+
+
+def children(oid):
+    if oid == "0":
+        return [container("1", "0", "Rock & Roll", 151), container("2", "0", "Jazz", 0)]
+    if oid == "1":
+        return [container("1$sub", "1", "Sub", 0)] + [item(n) for n in range(1, 151)]
+    return []
+
+
 class Desc(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode()
+        oid = re.search(r"<ObjectID>(.*?)</ObjectID>", body)
+        st = re.search(r"<StartingIndex>(\d+)</StartingIndex>", body)
+        rc = re.search(r"<RequestedCount>(\d+)</RequestedCount>", body)
+        action = self.headers.get("SOAPACTION", "")
+        if self.path != "/upnp/cd/control" or not (oid and st and rc) or not action.endswith('ContentDirectory:1#Browse"'):
+            self.send_response(500)
+            self.end_headers()
+            return
+        start, want = int(st.group(1)), int(rc.group(1))
+        log(f"browse={oid.group(1)}:{start}:{want}")
+        allc = children(oid.group(1))
+        page = allc[start:start + min(want if want else SERVER_PAGE_CAP, SERVER_PAGE_CAP)]
+        didl = f"<DIDL-Lite {NS}>" + "".join(page) + "</DIDL-Lite>"
+        resp = ('<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+                's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
+                '<u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">'
+                f"<Result>{escape(didl)}</Result><NumberReturned>{len(page)}</NumberReturned>"
+                f"<TotalMatches>{len(allc)}</TotalMatches><UpdateID>1</UpdateID></u:BrowseResponse>"
+                "</s:Body></s:Envelope>").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", 'text/xml; charset="utf-8"')
+        self.send_header("Content-Length", str(len(resp)))
+        self.end_headers()
+        self.wfile.write(resp)
+
     def do_GET(self):
         log("desc_get=" + self.path)
         if self.path != "/desc.xml":
