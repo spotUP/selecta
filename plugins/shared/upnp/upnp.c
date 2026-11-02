@@ -103,7 +103,7 @@ int sel_upnp_parse_description(const char* xml, const char* location, sel_upnp_s
     const char* open = NULL;
     const char* close;
     const char* p;
-    char ctl[SEL_UPNP_URL_BYTES], base[SEL_UPNP_URL_BYTES];
+    char ctl[SEL_UPNP_URL_BYTES], evt[SEL_UPNP_URL_BYTES], base[SEL_UPNP_URL_BYTES];
 
     if (hit == NULL || !sel_xml_tag_text(xml, end, "friendlyName", out->name, sizeof out->name)) {
         return 0;
@@ -114,6 +114,13 @@ int sel_upnp_parse_description(const char* xml, const char* location, sel_upnp_s
     close = strstr(hit, "</service>");
     if (open == NULL || close == NULL || !sel_xml_tag_text(open, close, "controlURL", ctl, sizeof ctl)) {
         return 0;
+    }
+    out->cd_version = hit[sizeof CD_TYPE - 1u] >= '1' && hit[sizeof CD_TYPE - 1u] <= '9' ? hit[sizeof CD_TYPE - 1u] - '0' : 1;
+    out->udn[0] = '\0';
+    (void)sel_xml_tag_text(xml, end, "UDN", out->udn, sizeof out->udn);
+    out->event_url[0] = '\0';
+    if (sel_xml_tag_text(open, close, "eventSubURL", evt, sizeof evt)) {
+        (void)sel_upnp_resolve(location, evt, out->event_url, sizeof out->event_url);
     }
     if (!sel_xml_tag_text(xml, end, "URLBase", base, sizeof base)) {
         snprintf(base, sizeof base, "%s", location);
@@ -233,7 +240,6 @@ int sel_upnp_discover(const char* ip, unsigned port, unsigned wait_ms, sel_upnp_
 
 /* ---- ContentDirectory browse (I894a2) ---- */
 
-#define CD_ACTION "\"" CD_TYPE "1#Browse\""
 
 int sel_upnp_parse_duration(const char* s, unsigned long* ms) {
     unsigned long part[3] = {0, 0, 0}, frac = 0, scale = 100;
@@ -361,16 +367,54 @@ static int xml_escape_into(char* out, size_t n, size_t* o, const char* s) {
     return 1;
 }
 
-int sel_upnp_browse(const char* control_url, const char* object_id, unsigned start, unsigned count,
-                    sel_upnp_entry* out, size_t max, unsigned* total) {
-    static const char* const headers[] = {"Content-Type: text/xml; charset=\"utf-8\"", "SOAPACTION: " CD_ACTION, NULL};
-    char req_body[768], idesc[SEL_UPNP_ID_BYTES * 6];
-    size_t o = 0;
+/* One ContentDirectory SOAP call: POSTs <u:action xmlns:u="CD_TYPE<ver>">args</u:action> to control_url and returns the
+ * malloc'd, NUL terminated response (SOAP_BYTES cap) or NULL on a transport error / non-200 answer. */
+static char* cd_call(const char* control_url, unsigned ver, const char* action, const char* args) {
+    char hdr[160], req_body[1024];
+    const char* headers[3];
     sel_http_req req;
     sel_http_res res;
     body b;
+    int w;
+
+    snprintf(hdr, sizeof hdr, "SOAPACTION: \"" CD_TYPE "%u#%s\"", ver, action);
+    headers[0] = "Content-Type: text/xml; charset=\"utf-8\"";
+    headers[1] = hdr;
+    headers[2] = NULL;
+    w = snprintf(req_body, sizeof req_body,
+                 "<?xml version=\"1.0\"?>\r\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" "
+                 "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>"
+                 "<u:%s xmlns:u=\"" CD_TYPE "%u\">%s</u:%s></s:Body></s:Envelope>",
+                 action, ver, args, action);
+    if (w <= 0 || (size_t)w >= sizeof req_body) {
+        return NULL;
+    }
+    b.buf = (char*)malloc(SOAP_BYTES);
+    if (b.buf == NULL) {
+        return NULL;
+    }
+    b.len = 0;
+    memset(&req, 0, sizeof req);
+    req.method = "POST";
+    req.url = control_url;
+    req.headers = headers;
+    req.body = req_body;
+    req.body_len = (size_t)w;
+    if (sel_http_request(&req, soap_sink, &b, &res) == SEL_HTTP_OK && res.status == 200 && b.len < SOAP_BYTES - 1u) {
+        b.buf[b.len] = '\0';
+        return b.buf;
+    }
+    free(b.buf);
+    return NULL;
+}
+
+int sel_upnp_browse(const char* control_url, const char* object_id, unsigned start, unsigned count,
+                    sel_upnp_entry* out, size_t max, unsigned* total) {
+    char args[SEL_UPNP_ID_BYTES * 6 + 256], idesc[SEL_UPNP_ID_BYTES * 6];
+    size_t o = 0;
     unsigned returned = 0;
-    int n = -1, w;
+    char* soap;
+    int n = -1;
 
     if (count == 0u || count > SEL_UPNP_BROWSE_PAGE) {
         count = SEL_UPNP_BROWSE_PAGE;
@@ -382,31 +426,60 @@ int sel_upnp_browse(const char* control_url, const char* object_id, unsigned sta
     if (count == 0u || !xml_escape_into(idesc, sizeof idesc, &o, object_id)) {
         return -1;
     }
-    w = snprintf(req_body, sizeof req_body,
-                 "<?xml version=\"1.0\"?>\r\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" "
-                 "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>"
-                 "<u:Browse xmlns:u=\"" CD_TYPE "1\"><ObjectID>%s</ObjectID><BrowseFlag>BrowseDirectChildren"
-                 "</BrowseFlag><Filter>*</Filter><StartingIndex>%u</StartingIndex><RequestedCount>%u</RequestedCount>"
-                 "<SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>",
-                 idesc, start, count);
-    if (w <= 0 || (size_t)w >= sizeof req_body) {
-        return -1;
+    snprintf(args, sizeof args,
+             "<ObjectID>%s</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter>"
+             "<StartingIndex>%u</StartingIndex><RequestedCount>%u</RequestedCount><SortCriteria></SortCriteria>",
+             idesc, start, count);
+    soap = cd_call(control_url, 1u, "Browse", args);
+    if (soap != NULL) {
+        n = sel_upnp_parse_browse(soap, out, count, &returned, total);
+        free(soap);
     }
-    b.buf = (char*)malloc(SOAP_BYTES);
-    if (b.buf == NULL) {
-        return -1;
+    return n;
+}
+
+int sel_upnp_get_system_update_id(const char* control_url, unsigned long* id) {
+    char num[24];
+    char* soap = cd_call(control_url, 1u, "GetSystemUpdateID", "");
+    int ok = 0;
+
+    if (soap != NULL) {
+        ok = sel_xml_tag_text(soap, soap + strlen(soap), "Id", num, sizeof num) && num[0] >= '0' && num[0] <= '9';
+        if (ok) {
+            *id = strtoul(num, NULL, 10);
+        }
+        free(soap);
     }
-    b.len = 0;
-    memset(&req, 0, sizeof req);
-    req.method = "POST";
-    req.url = control_url;
-    req.headers = headers;
-    req.body = req_body;
-    req.body_len = (size_t)w;
-    if (sel_http_request(&req, soap_sink, &b, &res) == SEL_HTTP_OK && res.status == 200 && b.len < SOAP_BYTES - 1u) {
-        b.buf[b.len] = '\0';
-        n = sel_upnp_parse_browse(b.buf, out, count, &returned, total);
+    return ok;
+}
+
+int sel_upnp_get_reset_token(const char* control_url, char* out, size_t n) {
+    char* soap = cd_call(control_url, 3u, "GetServiceResetToken", "");
+    int ok = 0;
+
+    if (soap != NULL) {
+        ok = sel_xml_tag_text(soap, soap + strlen(soap), "ResetToken", out, n) && out[0] != '\0';
+        free(soap);
     }
-    free(b.buf);
+    return ok;
+}
+
+int sel_upnp_search_changed(const char* control_url, unsigned long since, unsigned start, sel_upnp_entry* out,
+                            size_t max, unsigned* total) {
+    char args[512];
+    unsigned returned = 0, count = max < SEL_UPNP_BROWSE_PAGE ? (unsigned)max : SEL_UPNP_BROWSE_PAGE;
+    char* soap;
+    int n = -1;
+
+    snprintf(args, sizeof args,
+             "<ContainerID>0</ContainerID><SearchCriteria>upnp:class derivedfrom &quot;object.container&quot; and "
+             "upnp:objectUpdateID &gt; %lu</SearchCriteria><Filter>*</Filter><StartingIndex>%u</StartingIndex>"
+             "<RequestedCount>%u</RequestedCount><SortCriteria></SortCriteria>",
+             since, start, count);
+    soap = cd_call(control_url, 3u, "Search", args);
+    if (soap != NULL) {
+        n = sel_upnp_parse_browse(soap, out, count, &returned, total);
+        free(soap);
+    }
     return n;
 }

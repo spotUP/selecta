@@ -61,6 +61,12 @@ typedef struct sel_catalogue {
     /* Writes `count` notes onto songs already in the library, after the queued rows. Returns the number of songs
      * annotated, or -1 when the batch is rejected. */
     int32_t (*annotate)(const sel_host* host, const sel_catalogue_note* notes, uint32_t count);
+    /* I894a6: the open source's sync state, kept by the engine in the library db under `key` and dropped when the
+     * source's last row goes (a removed source, a reset db, another db all start with no state). state_get copies up
+     * to `cap` bytes into `buf` (NULL = size query) and sets *len to the full size; 1 when the key exists.
+     * state_set stores the blob (data NULL = delete the key); 1 when stored. Both need an open batch. */
+    int (*state_get)(const sel_host* host, const char* key, void* buf, uint32_t cap, uint32_t* len);
+    int (*state_set)(const sel_host* host, const char* key, const void* data, uint32_t len);
 } sel_catalogue;
 
 SEL_EXTERN_C_END

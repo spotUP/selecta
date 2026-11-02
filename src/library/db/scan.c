@@ -468,3 +468,52 @@ void sel_library_meta(sel_library* lib, const sel_meta_op* op, sel_message* repl
     reply->args[1].type = SEL_ARG_INT;
     reply->args[1].v.i = rc;
 }
+
+/* SEL_LIB_REQ_SRCSTATE (I894a6): one per-source state blob, see sel_srcstate_op. */
+void sel_library_srcstate(sel_library* lib, const sel_srcstate_op* op, sel_message* reply) {
+    sqlite3_stmt* st = NULL;
+    int found = 0;
+    int rc;
+
+    if (op->set && op->data == NULL) {
+        rc = sqlite3_prepare_v2(lib->db, "DELETE FROM source_state WHERE source=?1 AND key=?2", -1, &st, NULL);
+    } else if (op->set) {
+        rc = sqlite3_prepare_v2(lib->db, "INSERT OR REPLACE INTO source_state(source, key, value) VALUES(?1, ?2, ?3)", -1,
+                                &st, NULL);
+    } else {
+        rc = sqlite3_prepare_v2(lib->db, "SELECT value FROM source_state WHERE source=?1 AND key=?2", -1, &st, NULL);
+    }
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, op->source, -1, SQLITE_STATIC);
+        sqlite3_bind_text(st, 2, op->key, -1, SQLITE_STATIC);
+        if (op->set && op->data != NULL) {
+            sqlite3_bind_blob(st, 3, op->data, (int)op->len, SQLITE_STATIC);
+        }
+        rc = sqlite3_step(st);
+        if (op->set) {
+            found = rc == SQLITE_DONE;
+            rc = found ? SQLITE_OK : rc;
+        } else if (rc == SQLITE_ROW) {
+            const void* v = sqlite3_column_blob(st, 0);
+            uint32_t n = (uint32_t)sqlite3_column_bytes(st, 0);
+
+            ((sel_srcstate_op*)op)->len = n;
+            if (op->data != NULL && v != NULL) {
+                memcpy(op->data, v, n < op->cap ? n : op->cap);
+            }
+            found = 1;
+            rc = SQLITE_OK;
+        } else if (rc == SQLITE_DONE) {
+            rc = SQLITE_OK;
+        }
+    }
+    sqlite3_finalize(st);
+    memset(reply, 0, sizeof *reply);
+    reply->kind = SEL_MSG_EVT;
+    reply->id = SEL_LIB_REQ_SRCSTATE;
+    reply->argc = 2;
+    reply->args[0].type = SEL_ARG_INT;
+    reply->args[0].v.i = found;
+    reply->args[1].type = SEL_ARG_INT;
+    reply->args[1].v.i = rc;
+}
