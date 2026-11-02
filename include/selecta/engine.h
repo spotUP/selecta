@@ -228,6 +228,7 @@ typedef struct sel_state {
                                  * composer, release, year, genre, rating, play count; absent data has no row), NULL: none */
     uint32_t panel_rows;        /* rows in `panel` */
     uint32_t panel_serial;      /* I288: counts panel loads; a change means `panel` was read again (a rating or sticker write) */
+    uint32_t search_serial;     /* I994b: the SOURCE_SEARCH hit list's version (list=hits); a change means the hits the UI shows are gone */
     uint32_t library_serial;    /* I348: counts library changes (a scan, sync or fetch finished); a change means library listings are stale */
     uint32_t library_playlists; /* I906e: saved playlists, counted with library_songs on the same posted read */
     uint32_t library_songs;     /* DUI-P4-18: songs in the catalogue, re-counted when library_serial changes (the Clear Library dialog names it) */
@@ -507,6 +508,8 @@ typedef struct sel_engine_stats {
                                    * (I632b2) */
     uint32_t songs_stale;         /* SONGS_* verbs refused because the list version moved */
     uint32_t context_plays;       /* PLAY_CONTEXT verbs that started a song (I994a sentinel) */
+    uint32_t songs_collection_opens; /* I994b: SONGS_* / PLAY_CONTEXT verbs that bound list=collection */
+    uint32_t songs_hits_opens;    /* I994b: ... that bound list=hits */
     uint32_t context_rows;        /* context rows PLAY_CONTEXT inserted, summed over all runs */
     uint32_t import_missing;      /* entries of the last PLAYLIST_IMPORT whose file does not exist */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
