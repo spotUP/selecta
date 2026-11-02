@@ -23,7 +23,7 @@ static const struct {
     /* sidebar doors (page names) */
     {"nav_back", SEL_GUI_ICON_CHEVRON_LEFT}, {"nav_forward", SEL_GUI_ICON_CHEVRON_RIGHT}, /* I794: top bar Back / Forward */
     {"home", SEL_GUI_ICON_HOUSE}, {"search", SEL_GUI_ICON_SEARCH}, {"library", SEL_GUI_ICON_LIBRARY}, {"folders", SEL_GUI_ICON_LIBRARY}, {"playlists", SEL_GUI_ICON_MUSIC},
-    {"queue", SEL_GUI_ICON_LIST}, {"nowplaying", SEL_GUI_ICON_DISC}, {"songinfo", SEL_GUI_ICON_USER},
+    {"queue", SEL_GUI_ICON_LIST}, {"nowplaying", SEL_GUI_ICON_DISC}, {"songinfo", SEL_GUI_ICON_INFO},
     /* toolbar (mui_tool_labels) */
     {"Like", SEL_GUI_ICON_HEART}, {"Remove From Queue", SEL_GUI_ICON_MINUS}, {"Clear Queue", SEL_GUI_ICON_X},
     {"Move Up", SEL_GUI_ICON_CHEVRON_UP}, {"Move Down", SEL_GUI_ICON_CHEVRON_DOWN}, {"Help", SEL_GUI_ICON_ELLIPSIS},

@@ -90,6 +90,14 @@ foreach(pg ${door_pages})
   math(EXPR i "${i} + 1")
 endforeach()
 
+# I365: the Song Information door (6) draws the info glyph (icon id 27, SEL_GUI_ICON_INFO; the person glyph was id 21) and its page paints the heading.
+if(NOT d6_out MATCHES "door_icon 6 27 Song Information")
+  message(FATAL_ERROR "I365: the Song Information door does not draw the info icon in:\n${d6_out}")
+endif()
+if(NOT d6_out MATCHES "si_title \\[Song Information\\]")
+  message(FATAL_ERROR "I365: the Song Information page paints no heading in:\n${d6_out}")
+endif()
+
 # 2. a walk through several doors ends on the last one, counting each click
 nav_run(w home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\ndoor 5\nwait 100\ndoor 6\nwait 100\n")
 expect_eq("walk ends at Song Info" "${w_page}" "songinfo")
