@@ -1904,6 +1904,33 @@ static void test_aabtn_wired(const char* src) {
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
  * states, extras, doors, toolbar labels, crumb); each must resolve to a baked Lucide body, the lookup counter must rise by
  * exactly that many, and mui_ui.c must build the image (Bodychunk with the theme palette) and the bigger padding. */
+/* I973b: an icon button with a fixed side is exactly that big; no weight can stretch it. Pure maths plus the class calling it. */
+static void test_icon_square(void) {
+    mui_btn_box_t bn, fx, tg;
+    static char src[400000], ui[1200000];
+    size_t n;
+    FILE* f = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    f = fopen(MUI_UI_SOURCE, "rb");
+    n = f != NULL ? fread(ui, 1, sizeof ui - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    ui[n] = 0;
+    mui_aabtn_minmax(20, 12, 0, 0, 0, &bn);
+    mui_aabtn_minmax(20, 12, 24, 12, 0, &fx);
+    mui_aabtn_minmax(20, 12, 0, 0, 1, &tg);
+    CHECK(bn.min_w == 20 && bn.w_fixed == 0 && bn.min_h == 12 && bn.h_fixed == 1, "a button with no fixed side keeps the unbounded width");
+    CHECK(fx.min_w == 24 && fx.def_w == 24 && fx.w_fixed == 1 && fx.min_h == 12 && fx.def_h == 12 && fx.h_fixed == 1, "a fixed side: min = def = max (%u %u %u)", (unsigned)fx.min_w, (unsigned)fx.def_w, (unsigned)fx.w_fixed);
+    CHECK(tg.w_fixed == 1, "a toggle box stays fixed");
+    CHECK(strstr(src, "mui_aabtn_minmax((uint32_t)d->minw") != NULL && strstr(src, "d->fixed_w = sp->fixed_w;") != NULL, "askminmax calls the helper and the spec carries the fixed sides");
+    CHECK(strstr(ui, "static Object* mui_make_button_fixed(") != NULL, "the fixed-size button builder exists");
+}
+
 static void test_icon_buttons(void) {
     static char src[400000];
     sel_uim_frame fr;
@@ -3102,6 +3129,8 @@ int main(int argc, char** argv) {
         test_newplaylist();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
         test_aabtn_tokens();
+    } else if (strcmp(argv[1], "icon-square") == 0) {
+        test_icon_square();
     } else if (strcmp(argv[1], "icon-buttons") == 0) {
         test_icon_buttons();
     } else if (strcmp(argv[1], "icon-rows") == 0) {

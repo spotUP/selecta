@@ -761,7 +761,7 @@ static int mui_theme_live_now(void) {
  * colour, baked Lucide icon, antialiased caption. alt_key names a second icon shown after mui_aabtn_set_alt (play/pause).
  * icon_only buttons (dense rows) draw no caption so their row fits the smallest screen; the label stays the ShortHelp.
  * weight 100 shares the row, 0 sizes the button to its contents. Sizes come from mui_aa_metrics. */
-static Object* mui_make_button_ex(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role, int align) {
+static Object* mui_make_button_ex(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role, int align, int fixed_w, int fixed_h) {
     mui_aabtn_spec sp;
     sp.caption = label;
     sp.widest = widest;
@@ -774,11 +774,18 @@ static Object* mui_make_button_ex(const char* label, const char* widest, const c
     sp.weight = weight;
     sp.selected = 0;
     sp.align = align;
+    sp.fixed_w = fixed_w;
+    sp.fixed_h = fixed_h;
     return mui_aabtn_new(&sp);
 }
 
+/* I973b: an icon-only button of an exact size (the player bar's squares: band.btn_w x band.btn_px), weight 0. */
+static Object* mui_make_button_fixed(const char* label, const char* icon_key, const char* alt_key, LONG id, int role, int w, int h) {
+    return mui_make_button_ex(label, label, icon_key, alt_key, id, 0, 1, role, MUI_AA_ALIGN_CENTRE, w, h);
+}
+
 static Object* mui_make_button_i(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role) {
-    return mui_make_button_ex(label, widest, icon_key, alt_key, id, weight, icon_only, role, MUI_AA_ALIGN_CENTRE);
+    return mui_make_button_ex(label, widest, icon_key, alt_key, id, weight, icon_only, role, MUI_AA_ALIGN_CENTRE, 0, 0);
 }
 
 static Object* mui_make_button_w(const char* label, const char* icon_key, LONG id, LONG weight) {
@@ -791,7 +798,7 @@ static Object* mui_make_button_icon(const char* label, const char* icon_key, LON
 
 /* I667b4: a ghost button with icon and caption at the left (sidebar doors). */
 static Object* mui_make_button_left(const char* label, const char* icon_key, LONG id) {
-    return mui_make_button_ex(label, label, icon_key, NULL, id, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
+    return mui_make_button_ex(label, label, icon_key, NULL, id, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT, 0, 0);
 }
 
 /* I667b-2 (design 3.1, AACheck): the four prefs checkboxes are Selecta_AAButton objects with role toggle: a rounded box, ACCENT
@@ -809,6 +816,7 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
     sp.weight = 0;
     sp.selected = on;
     sp.align = MUI_AA_ALIGN_CENTRE;
+    sp.fixed_w = sp.fixed_h = 0;
     return mui_aabtn_new(&sp);
 }
 
@@ -854,6 +862,7 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
         sp.selected = 0;
         sp.weight = 0;
         sp.align = MUI_AA_ALIGN_CENTRE;
+        sp.fixed_w = sp.fixed_h = 0;
         close = mui_aabtn_new_key(&sp, 27UL);
         hdr = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
         col = MUI_NewObject((char*)MUIC_Group, TH_FONT TAG_DONE);
@@ -1070,9 +1079,9 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     }
     hd = m.rail ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
     if (hd != NULL) {
-        Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
-        Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
-        Object* x = mui_make_button_ex(m.expand, m.expand, "crumb", NULL, CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
+        Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT, 0, 0);
+        Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE, 0, 0);
+        Object* x = mui_make_button_ex(m.expand, m.expand, "crumb", NULL, CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE, 0, 0);
         if (t != NULL) { DoMethod(hd, OM_ADDMEMBER, t); }
         if (c != NULL) { DoMethod(hd, OM_ADDMEMBER, c); }
         if (x != NULL) { DoMethod(hd, OM_ADDMEMBER, x); }
@@ -1527,7 +1536,7 @@ static Object* mui_facet_row_group(mui_state* s) {
         return NULL;
     }
     for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
-        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TOGGLE, MUI_AA_ALIGN_CENTRE);
+        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TOGGLE, MUI_AA_ALIGN_CENTRE, 0, 0);
         if (s->facet_btn[k] == NULL) {
             return NULL;
         }
