@@ -12,6 +12,9 @@
 
 #include <selecta/gui/gui_icons.h>
 
+/* M_PI is not in strict -std=c99 on glibc. */
+#define ICONBAKE_PI 3.14159265358979323846
+
 #define MAXSEG 4096
 #define MAXICON 128
 /* Every logical size 16, 20, 24 and 32 times the integer scales 1, 2 and 3 (DUI-P2-8), ascending. */
@@ -53,7 +56,7 @@ static void bezier(double x0, double y0, double x1, double y1, double x2, double
 
 /* SVG endpoint arc to centre form, flattened. */
 static void arc(double x1, double y1, double rx, double ry, double phi_deg, int fa, int fs, double x2, double y2) {
-    double phi = phi_deg * M_PI / 180.0, cp = cos(phi), sp = sin(phi);
+    double phi = phi_deg * ICONBAKE_PI / 180.0, cp = cos(phi), sp = sin(phi);
     double dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
     double x1p = cp * dx + sp * dy, y1p = -sp * dx + cp * dy;
     double lam, num, den, co, cxp, cyp, cx, cy, th1, dth;
@@ -82,9 +85,9 @@ static void arc(double x1, double y1, double rx, double ry, double phi_deg, int 
     th1 = atan2((y1p - cyp) / ry, (x1p - cxp) / rx);
     dth = atan2((-y1p - cyp) / ry, (-x1p - cxp) / rx) - th1;
     if (!fs && dth > 0) {
-        dth -= 2 * M_PI;
+        dth -= 2 * ICONBAKE_PI;
     } else if (fs && dth < 0) {
-        dth += 2 * M_PI;
+        dth += 2 * ICONBAKE_PI;
     }
     {
         double px = x1, py = y1;
@@ -264,7 +267,7 @@ static void elements(const char* svg) {
             double cx = anum(p, e, "cx", 0), cy = anum(p, e, "cy", 0), r = anum(p, e, "r", 0);
             int i;
             for (i = 0; i < 32; i++) {
-                double a0 = i * 2 * M_PI / 32, a1 = (i + 1) * 2 * M_PI / 32;
+                double a0 = i * 2 * ICONBAKE_PI / 32, a1 = (i + 1) * 2 * ICONBAKE_PI / 32;
                 add_seg(cx + r * cos(a0), cy + r * sin(a0), cx + r * cos(a1), cy + r * sin(a1));
             }
         } else if (strncmp(p, "<rect", 5) == 0) {
@@ -284,9 +287,9 @@ static void elements(const char* svg) {
                 int c, i;
                 for (c = 0; c < 4; c++) {
                     double ccx = x + (cxs[c] != 0 ? w - rx : rx), ccy = y + (cys[c] != 0 ? h - ry : ry);
-                    double base = (c - 1) * M_PI / 2; /* corner 0 (top right) sweeps -90..0 degrees */
+                    double base = (c - 1) * ICONBAKE_PI / 2; /* corner 0 (top right) sweeps -90..0 degrees */
                     for (i = 0; i < 8; i++) {
-                        double a0 = base + i * M_PI / 16, a1 = base + (i + 1) * M_PI / 16;
+                        double a0 = base + i * ICONBAKE_PI / 16, a1 = base + (i + 1) * ICONBAKE_PI / 16;
                         add_seg(ccx + rx * cos(a0), ccy + ry * sin(a0), ccx + rx * cos(a1), ccy + ry * sin(a1));
                     }
                 }

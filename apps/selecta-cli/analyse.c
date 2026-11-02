@@ -21,6 +21,9 @@
 #include <math.h>
 
 #include "loudness.h"
+
+/* M_PI is not in strict -std=c99 on glibc. */
+#define ANALYSE_PI 3.14159265358979323846
 #endif
 
 typedef struct analyse_sink {
@@ -119,7 +122,7 @@ static int analyse_sine(const char* spec, unsigned seconds) {
     while (done < total) {
         unsigned n = total - done > 4096 ? 4096 : (unsigned)(total - done), i;
         for (i = 0; i < n; i++) {
-            double v = amp * sin(2.0 * M_PI * hz * (double)(done + i) / (double)rate);
+            double v = amp * sin(2.0 * ANALYSE_PI * hz * (double)(done + i) / (double)rate);
             buf[2 * i] = v;
             buf[2 * i + 1] = v;
         }

@@ -8,6 +8,9 @@
 
 #include "stage.h"
 
+/* M_PI is not in strict -std=c99 on glibc. */
+#define STAGE_PI 3.14159265358979323846
+
 static int failures;
 
 #define CHECK(cond, ...)                                \
@@ -31,7 +34,7 @@ static double gain_at(uint32_t rate, double hz) {
     sel_mix_stage_init(&s, rate);
     sel_mix_stage_set_led(&s, 1);
     for (i = 0; i < N; i++) {
-        int16_t v = (int16_t)lrint(16000.0 * sin(2.0 * M_PI * hz * (double)i / (double)rate));
+        int16_t v = (int16_t)lrint(16000.0 * sin(2.0 * STAGE_PI * hz * (double)i / (double)rate));
         buf[i * 2] = v;
         buf[i * 2 + 1] = v;
     }
