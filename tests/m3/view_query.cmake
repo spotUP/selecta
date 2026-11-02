@@ -6,6 +6,9 @@
 # run's last screen must equal the golden.
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
+# I980b: never read the user's real config dir (a live app's prefs.conf puts "Stereo Width 99" on the status line, I945): an empty XDG_CONFIG_HOME.
+file(MAKE_DIRECTORY "${WORK}/xdg_empty")
+set(ENV{XDG_CONFIG_HOME} "${WORK}/xdg_empty")
 set(runs plain cycled)
 foreach(run IN LISTS runs)
   set(keys "${KEYS}")

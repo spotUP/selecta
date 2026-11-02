@@ -164,7 +164,7 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
     msg.kind = SEL_MSG_CMD;
     msg.id = SEL_CMD_PLAY;
     sel_engine_send(e, &msg);
-    sel_engine_pump(e, start_sink, &failed);
+    sel_engine_pump_reads(e, start_sink, &failed, 60000u); /* I980b: OPEN waits for its posted library read (I906g) */
     if (failed) {
         sel_engine_destroy(e);
         return NULL;

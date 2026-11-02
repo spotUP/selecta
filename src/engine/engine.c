@@ -3132,6 +3132,12 @@ static void cmd_PLAY(sel_engine* e, const sel_message* m) {
         }
         return;
     }
+    if (e->cur == SEL_SLOT_NONE && e->deferred) { /* I980b: the OPEN before this PLAY waits for its library read (I906g) or a free slot; the song is coming, so play it */
+        if (e->state.play == SEL_STOPPED) {
+            set_play(e, SEL_PLAYING);
+        }
+        return;
+    }
     if (e->cur == SEL_SLOT_NONE) { /* I726: nothing is open and nothing is queued; Playing with no song is a lie (label "Playing", clock "--:--") */
         sel_engine_report_error(e, "no_song", "PLAY");
         return;
