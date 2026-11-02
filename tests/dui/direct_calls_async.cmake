@@ -399,6 +399,21 @@ if(NOT "${s9}" MATCHES "lib_writes_done=([0-9]+)" OR CMAKE_MATCH_1 LESS 2)
 endif()
 message(STATUS "site9_ok wait_ms=${s9_turn} writes=${CMAKE_MATCH_1}")
 
+# --- I906g radio_fill: RADIO <seed> draws its look-ahead songs on the rd_radio read. RADIO_SLOW_MS makes each draw a 300 ms request (the draw
+# runs before the queue is topped up); radio_appends (sentinel: the posted draw was published and appended songs) proves the read ran, and
+# lib_ui_wait_ms < 50 (sites_live) proves the UI thread never waited on it.
+# radio_next only admits rated 4+ songs or genre/composer matches; the three scanned copies of selecta-test.mod share neither, so rate b and c.
+execute_process(COMMAND "${SQLITE3}" "${sites_db}" "INSERT OR REPLACE INTO ratings(key, rating) VALUES('local:${WORK}/songs/b.mod', 5), ('local:${WORK}/songs/c.mod', 5)"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "site 10 radio_fill: rating the fixture failed: ${err}")
+endif()
+sites_live(s10 "q@4000" SOCK s10 KNOBS SELECTA_LIB_RADIO_SLOW_MS ARGS --output null --db "${sites_db}" --view queue --exec "RADIO ${WORK}/songs/a.mod")
+if(NOT "${s10}" MATCHES "radio_appends=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "site 10 radio_fill: radio_appends=${CMAKE_MATCH_1}, want >= 1 (the posted draw never appended):\n${s10}")
+endif()
+message(STATUS "site10_ok wait_ms=${s10_turn} radio_appends=${CMAKE_MATCH_1}")
+
 # --- I951: the remaining library writes (stream add, playlist import, touch, playlist delete, library remove, library clear) ride the
 # write queue like PLAYLIST_CREATE. WRITE_SLOW_MS makes each a 300 ms statement; sites_live fails the run when the command runs it on the UI
 # thread (lib_ui_wait_ms >= 50), and lib_writes_done proves the queued write really ran. Destructive verbs use their own copy of the db.
