@@ -129,7 +129,8 @@ expect_eq("idle scroll shelf 1" "${a1}" 0)
 # cover, the Unicode album has none and keeps generated art). The shelf_album_art_draws counter proves the cover path ran;
 # without the album lookup in the art provider (art_find) every album tile falls back to generated art and it stays 0.
 dui_stat(album_art "${idle}" desktop shelf_album_art_draws)
-expect_eq("shelf album tiles drawn with a library cover" "${album_art}" 3)
+# I997: 3 Jump Back In album tiles plus 3 album item tiles/cards (quick grid and Recently Played) now resolving by album id.
+expect_eq("shelf album tiles drawn with a library cover" "${album_art}" 6)
 
 # I477: tile art is clipped to the card radius. A drawn cover's top-left corner pixel is the card fill behind it (the art
 # does not square off the rounded card), and its centre pixel is the cover, not the card.
@@ -470,7 +471,7 @@ file(REMOVE_RECURSE "${WORK}/cfg")
 file(WRITE "${WORK}/in.txt" "wait 1\n")
 dui_run(same --db "${db3}" --ui desktop --backend mem --view home --canvas 1000x800 --clock fixed --stats --input "${WORK}/in.txt")
 dui_stat(same_draws "${same}" desktop shelf_album_art_draws)
-expect_eq("same-named albums each draw a cover (Lotus x2, Monkey Island, Strange Sounds)" "${same_draws}" 4)
+# I997: 4 Jump Back In album tiles plus 3 album item tiles/cards (quick grid, Recently Played) that now resolve by album id.expect_eq("same-named albums each draw a cover (Lotus x2, Monkey Island, Strange Sounds)" "${same_draws}" 7)
 # I476: the dump's last tile field is the artist line a tile draws; each Lotus album tile carries its own album artist, an album
 # without a known artist carries none (an empty field, no placeholder).
 foreach(who "Other Artist" "Chris Huelsbeck")
