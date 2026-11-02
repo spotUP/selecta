@@ -88,6 +88,9 @@ typedef sel_uim_page_id desk_page;
 #define SHOW_ALL_PX 14
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
 #define DOOR_COUNT SEL_UIM_DOOR_COUNT
+/* The icon each sidebar door draws, by door index (I365: Song Information draws the info glyph; a person glyph named no page content). */
+static const uint32_t g_door_icon[DOOR_COUNT] = {SEL_GUI_ICON_HOUSE, SEL_GUI_ICON_SEARCH, SEL_GUI_ICON_LIBRARY, SEL_GUI_ICON_DISC,
+                                                  SEL_GUI_ICON_LIST,  SEL_GUI_ICON_MUSIC,  SEL_GUI_ICON_INFO};
 /* Capacity of the hover hit-test list (I345). Worst case on one page: the Songs rows at SONG_ROW_H 32 px in a 4K tall main
  * region (2160 / 32 = 67.5 -> 68 rows, plus one row half scrolled out = 69), 7 doors, 8 transport buttons and 16 chips,
  * tabs and page buttons: 69 + 7 + 8 + 16 = 100, rounded up to 128. Library rows at 48 px need 46, queue and playlist rows
@@ -283,6 +286,7 @@ typedef struct desk {
     uint32_t tr_bar;                                     /* the slot the playing-row bar drew in, TR_NO_BAR when none (I283) */
     uint32_t tr_pos, tr_moves; /* order << 16 | row of the last pattern frame, and how many frames moved it: the roll sentinel (I282) */
     uint32_t tr_asked, tr_order, tr_row, tr_qid;         /* the last pattern window asked for */
+    char si_title[40];       /* I365: the heading the last Song Information draw painted */
     int si_page;             /* --view songinfo: the main region shows the Song Information page (DUI-P4-10) */
     int si_edit;             /* 1 while the note field has the keyboard */
     uint32_t si_sig, si_acc; /* hash of the info rows: a change redraws the page */
@@ -6819,7 +6823,8 @@ static void draw_songinfo(desk* d) {
     uint32_t i;
     d->empty_text[0] = '\0';
     sel_gui_clip_push(d->canvas, mn);
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Song Information", 1, 32, text);
+    snprintf(d->si_title, sizeof d->si_title, "%s", "Song Information");
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), d->si_title, 1, 32, text);
     song_row_reg(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), st->song.path, 0, 0, 0); /* the open song (I372) */
     for (i = 0; i < SI_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
@@ -7429,6 +7434,9 @@ static const char* library_dump_build(desk* d) {
                                   (unsigned)i, st->queue_text + st->queue[i].path_offset);
         }
     }
+    if (d->si_page && o + 100u < sizeof d->library_dump) {
+        o = dump_put(d, o, "si_title [%s]\n", d->si_title);
+    }
     if (o + 400u < sizeof d->library_dump) { /* the page navigation (I262) */
         o = dump_put(d, o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u lib_off_page=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\nnav_icons %u\n",
                               sel_uim_page_at(d->page)->name, (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT,
@@ -7630,6 +7638,7 @@ static const char* library_dump_build(desk* d) {
         for (i = 0; i < DOOR_COUNT && o + 200u < sizeof d->library_dump; i++) { /* the door rectangles, where a test moves the pointer */
             sel_gui_rect dr = sidebar_door_rect(d, i);
             o = dump_put(d, o, "door %u %d %d %d %d\n", (unsigned)i, (int)dr.x, (int)dr.y, (int)dr.w, (int)dr.h);
+            o = dump_put(d, o, "door_icon %u %u %s\n", (unsigned)i, (unsigned)g_door_icon[i], sel_uim_door_at(i)->label); /* I365: the icon id each door draws */
         }
     }
     for (i = 0; i < d->label_n && o + 200u < sizeof d->library_dump; i++) { /* centred button and chip labels (I270) */
@@ -10109,8 +10118,6 @@ static int32_t desk_button_at(const desk* d, int32_t x, int32_t y) {
 
 /* The sidebar doors (DUI-P4-1, I262): an icon and a label per page, one row each under the brand. The icon-only breakpoint
  * (a narrow sidebar) draws the icons alone. door_page maps a door to the page it opens. */
-static const uint32_t g_door_icon[DOOR_COUNT] = {SEL_GUI_ICON_HOUSE, SEL_GUI_ICON_SEARCH, SEL_GUI_ICON_LIBRARY, SEL_GUI_ICON_DISC,
-                                                  SEL_GUI_ICON_LIST,  SEL_GUI_ICON_MUSIC,  SEL_GUI_ICON_USER};
 
 /* Door i's page: the shared door table (MUI-P4-0) names it, the shared page table (I792) maps the name to the page id. */
 static desk_page door_page(uint32_t i) {
