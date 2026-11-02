@@ -526,6 +526,18 @@ static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; th
  * ttengine or no Inter) draw in the screen font; without SA_Font they kept the 8 px Workbench font at 800x600. */
 static struct TextFont* g_scr_font;
 static struct TextAttr g_scr_font_attr;
+/* I972c: MUI 3.8 takes its Normal font from MUI prefs, not the screen font, so every label stayed 9 px at 800x600. The root group of each
+ * window gets MUIA_Font = the tier TextFont (children inherit); g_scr_font stays open until mui_screen_close, after the app is disposed.
+ * No tier font (256-row tier, font missing): TAG_IGNORE, the user's MUI font is untouched. g_font_applied counts the roots that got it. */
+static int g_font_applied;
+static ULONG mui_tier_font_tag(void) {
+    if (g_scr_font == NULL) {
+        return (ULONG)TAG_IGNORE;
+    }
+    g_font_applied++;
+    return (ULONG)MUIA_Font;
+}
+#define TH_FONT mui_tier_font_tag(), (ULONG)g_scr_font,
 
 static void mui_screen_font_close(void) {
     if (g_scr_font != NULL) {
@@ -844,7 +856,7 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
         sp.align = MUI_AA_ALIGN_CENTRE;
         close = mui_aabtn_new_key(&sp, 27UL);
         hdr = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-        col = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        col = MUI_NewObject((char*)MUIC_Group, TH_FONT TAG_DONE);
         if (close == NULL || hdr == NULL || col == NULL) {
             return NULL;
         }
@@ -3138,7 +3150,7 @@ static void* mui_open(const sel_ui_open_args* a) {
              * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
-            WindowContents, s->root = VGroup, TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
+            WindowContents, s->root = VGroup, TH_FONT TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
                 Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1),
                 Child, HGroup,
@@ -3159,6 +3171,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_WINDOW, "(MUI could not create the objects)");
         return NULL;
     }
+    fprintf(stderr, "selecta mui: tier font on %d window roots (%s)\n", g_font_applied, g_scr_font != NULL ? "applied" : "none");
     DoMethod(s->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, s->app, 2, MUIM_Application_ReturnID,
              MUIV_Application_ReturnID_Quit);
     g_drop_state = s;
