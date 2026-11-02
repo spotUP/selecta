@@ -4035,6 +4035,14 @@ static int lib_view_on(const desk* d, const sel_state* st) {
            st->view->style == (d->lib_mode == 1u ? (uint32_t)SEL_VIEW_STYLE_TREE : (uint32_t)SEL_VIEW_STYLE_DRILLDOWN);
 }
 
+/* I991: the Browse Folders tab m is lit when the engine's view draws that tab's style (Tree or Columns). lib_mode is only the
+ * tab the user last asked for; a Grid, Cover Flow or Compact style (the chooser, --exec) leaves it behind, so reading it lit Tree
+ * over a Cover Flow list. The style the list draws is the one source. */
+static int lib_tab_active(const sel_state* st, uint32_t m) {
+    return st->view != NULL &&
+           st->view->style == (k_folder_tab_mode[m] == 1u ? (uint32_t)SEL_VIEW_STYLE_TREE : (uint32_t)SEL_VIEW_STYLE_DRILLDOWN);
+}
+
 /* I906b: a NUL-separated block (formats, composers) ends at an empty string; its bytes are part of what the page draws, and the engine
  * now applies it on a later pump than the command, so the redraw check sees the answer land. */
 static uint32_t lib_block_hash(const char* p) {
@@ -6952,6 +6960,7 @@ static const char* library_dump_build(desk* d) {
     for (i = 0; i < LIB_TABS; i++) {
         sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
+        o = dump_put(d, o, "tab_active %u %d\n", (unsigned)i, lib_tab_active(st, i)); /* I991 */
     }
     o = dump_put(d, o, "sources %u\n", (unsigned)d->src_n); /* I786a: per-source state (key|kind|name|enabled|songs) for the sync checks; the Sources tab that carried it is gone (I678) */
     for (i = 0; i < d->src_n; i++) {
@@ -7992,7 +8001,7 @@ static void draw_library(desk* d) {
         for (m = 0; m < LIB_TABS; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
             const char* tname = sel_uim_libmode_name(k_folder_tab_mode[m]);
-            if (k_folder_tab_mode[m] == d->lib_mode) { /* the active tab is filled like the selected Home and Search chips (I362) */
+            if (lib_tab_active(st, m)) { /* the active tab is filled like the selected Home and Search chips (I362) */
                 draw_button_pad(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), tname, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]),
                                 lib_tab_pad(d));
             } else { /* I547: the centring pad is the tab's own pad, so a tab squeezed below 8 px still shows its whole label */
