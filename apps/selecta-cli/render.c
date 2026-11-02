@@ -364,6 +364,9 @@ int sel_cli_render(int argc, char** argv) {
     if (dsp != NULL) {
         printf("dsp=%s blocks=%u\n", dsp, (unsigned)stats.dsp_blocks);
     }
+    if (stats.rp_cfg_applied != 0u) {
+        printf("sid.cfg_applied=%u\n", (unsigned)stats.rp_cfg_applied);
+    }
     if (stats.render_kind) {
         printf("replayer=%s render_calls=%u rendered_frames=%u\n", stats.replayer, (unsigned)stats.replayer_render_calls,
                (unsigned)stats.rendered_frames);

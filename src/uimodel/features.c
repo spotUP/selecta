@@ -71,6 +71,10 @@ static const sel_uim_pref_row g_pref_rows[] = {
     {"playsid.filter", "reSID Filter", SEL_UIM_PREF_CYCLE, "internal,internal+external,off"},
     {"playsid.boost", "reSID Boost", SEL_UIM_PREF_CYCLE, "off,2x,3x,4x"},
     {"playsid.oversample", "reSID Oversampling", SEL_UIM_PREF_CYCLE, "normal,2x,3x,4x"},
+    {"sid.model", "Chip Model", SEL_UIM_PREF_CYCLE, "auto,6581,8580"},
+    {"sid.clock", "Video Standard", SEL_UIM_PREF_CYCLE, "auto,pal,ntsc"},
+    {"sid.filter", "Chip Filter", SEL_UIM_PREF_CHECK, "off,on"},
+    {"sid.digiboost", "Digi Boost", SEL_UIM_PREF_CYCLE, "auto,on,off"},
     {"view.title_format", "Title Format", SEL_UIM_PREF_STRING, ""},
     {"view.status_format", "Status Format", SEL_UIM_PREF_STRING, ""},
 };

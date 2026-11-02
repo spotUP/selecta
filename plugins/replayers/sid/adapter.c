@@ -7,6 +7,8 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define SID_TEXT 128u
@@ -19,7 +21,59 @@ typedef struct sid_state {
     uint64_t played;
     char title[SID_TEXT], author[SID_TEXT], release[SID_TEXT], format[SID_TEXT];
     sel_tag meta[8];
+    uint8_t kernal[8192], basic[8192], chargen[4096]; /* config-dir overrides, valid when the matching have_* is 1 */
+    int have_kernal, have_basic, have_chargen;
 } sid_state;
+
+static const char* cfg(const sel_host* host, const char* key, const char* def) {
+    const char* v = host->config_get != NULL ? host->config_get(host, key, def) : def;
+    return v != NULL ? v : def;
+}
+
+/* Whole file of exactly `size` bytes from <dir>/<name>; 0 when absent or another size. */
+static int load_rom(const char* dir, const char* name, uint8_t* out, size_t size) {
+    char path[512];
+    FILE* f;
+    size_t n;
+    int ok;
+    if (dir == NULL || dir[0] == '\0' || snprintf(path, sizeof path, "%s/%s", dir, name) >= (int)sizeof path) {
+        return 0;
+    }
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    n = fread(out, 1, size, f);
+    ok = n == size && fgetc(f) == EOF;
+    fclose(f);
+    return ok;
+}
+
+/* The chip, clock, filter and ROM settings of this start (MPS-1). A ROM file in the config directory beats the
+ * embedded OpenROMs image. */
+static void make_cfg(sid_state* s, sid_shim_cfg* c) {
+    const sel_host* h = s->host;
+    const char* v;
+    memset(c, 0, sizeof *c);
+    v = cfg(h, "sid.model", "auto");
+    c->model = strcmp(v, "6581") == 0 ? 1 : strcmp(v, "8580") == 0 ? 2 : 0;
+    v = cfg(h, "sid.clock", "auto");
+    c->clock = strcmp(v, "pal") == 0 ? 1 : strcmp(v, "ntsc") == 0 ? 2 : 0;
+    c->filter = strcmp(cfg(h, "sid.filter", "on"), "off") != 0;
+    v = cfg(h, "sid.digiboost", "auto");
+    c->digiboost = strcmp(v, "on") == 0 ? 1 : strcmp(v, "off") == 0 ? 2 : 0;
+    {
+        const char* dir = cfg(h, "config.dir", "");
+        s->have_kernal = load_rom(dir, "kernal", s->kernal, sizeof s->kernal);
+        s->have_basic = load_rom(dir, "basic", s->basic, sizeof s->basic);
+        s->have_chargen = load_rom(dir, "chargen", s->chargen, sizeof s->chargen);
+    }
+    c->kernal = s->have_kernal ? s->kernal : sid_shim_builtin_kernal();
+    c->basic = s->have_basic ? s->basic : sid_shim_builtin_basic();
+    c->chargen = s->have_chargen ? s->chargen : sid_shim_builtin_chargen();
+}
+
+static uint32_t rp_cfg_applied(void* state) { return sid_shim_cfg_applied(((sid_state*)state)->shim); }
 
 static int rp_probe(const uint8_t* data, size_t size, const char* name) {
     (void)name;
@@ -74,11 +128,13 @@ static void rp_close(void* state) {
 
 static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
     sid_state* s = (sid_state*)state;
+    sid_shim_cfg c;
     (void)voices;
     if (rate == 0u || subsong >= (s->subsongs > 0u ? s->subsongs : 1u)) {
         return 0;
     }
-    if (!sid_shim_start(s->shim, subsong + 1u, rate)) {
+    make_cfg(s, &c);
+    if (!sid_shim_start(s->shim, subsong + 1u, rate, &c)) {
         return 0;
     }
     s->rate = rate;
@@ -135,7 +191,7 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[12];
+static sel_tag g_hooks[13];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -158,7 +214,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[8], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[11], SEL_TAG_END, 0);
+    set(&g_hooks[11], SEL_RP_CFG_APPLIED, SEL_TAG_FN(rp_cfg_applied));
+    set(&g_hooks[12], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "sid");

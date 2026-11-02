@@ -241,6 +241,7 @@ typedef struct sel_slot {
     uint32_t hw;                              /* 1: HW kind, the replayer drives the sound hardware (I219) */
     sel_rp_hw_pause_fn rp_hw_pause;           /* optional, HW kind */
     sel_rp_hw_release_fn rp_hw_release;       /* optional, HW kind */
+    sel_rp_cfg_applied_fn rp_cfg_applied;     /* optional: starts that applied the configuration (MPS-1 sentinel) */
     sel_rp_seekable_fn rp_seekable;           /* optional: 0 = the song cannot be seeked (I434e) */
     sel_rp_hw_poll_fn rp_hw_poll;             /* optional, HW kind: song end flags (I219b) */
     sel_rp_hw_length_fn rp_hw_length;         /* optional, HW kind: catalogue length of the started subsong (I434f) */
@@ -2168,6 +2169,7 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
         have = 1;
     }
     if (have) return e->rp_value;
+    if (strcmp(key, "config.dir") == 0 && e->config_dir[0] != '\0') return e->config_dir; /* ROM files (sid, MPS-1) */
     {   /* a set engine pref the replayer names by its key (playsid.mode, output.id) beats the real host (I434b) */
         int id = sel_prefs_find(key);
         if (id >= 0 && e->prefs.value[id][0] != '\0') return e->prefs.value[id];
@@ -2597,6 +2599,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_hw_release = sl->hw ? (sel_rp_hw_release_fn)sel_tag_find(hooks, SEL_RP_HW_RELEASE, 0) : NULL;
     sl->rp_hw_poll = sl->hw ? (sel_rp_hw_poll_fn)sel_tag_find(hooks, SEL_RP_HW_POLL, 0) : NULL;
     sl->rp_seekable = (sel_rp_seekable_fn)sel_tag_find(hooks, SEL_RP_SEEKABLE, 0);
+    sl->rp_cfg_applied = (sel_rp_cfg_applied_fn)sel_tag_find(hooks, SEL_RP_CFG_APPLIED, 0);
     sl->rp_hw_length = sl->hw ? (sel_rp_hw_length_fn)sel_tag_find(hooks, SEL_RP_HW_LENGTH, 0) : NULL;
     sl->rp_viz_sid = sl->hw ? (sel_rp_viz_sid_fn)sel_tag_find(hooks, SEL_RP_VIZ_SID, 0) : NULL;
     sl->rp_viz_voices = sl->hw ? (sel_rp_viz_voices_fn)sel_tag_find(hooks, SEL_RP_VIZ_VOICES, 0) : NULL;
@@ -9746,6 +9749,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->replayer = sl ? sl->rp_name : NULL;
     out->render_kind = sl ? (sl->rp_render != NULL) : 0;
     out->replayer_render_calls = sl ? sl->rp_render_calls : 0;
+    out->rp_cfg_applied = sl && sl->rp_cfg_applied != NULL && sl->rp_state != NULL ? sl->rp_cfg_applied(sl->rp_state) : 0;
     out->rendered_frames = sl ? sl->rendered_frames : 0;
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;

@@ -1856,6 +1856,13 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)
     set_tests_properties(sid-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_decode_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-config)
+    add_test(NAME sid-config
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_config.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_test.sid ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_basic.sid
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-config)
+    set_tests_properties(sid-config PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_config_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.

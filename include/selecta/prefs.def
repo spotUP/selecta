@@ -113,3 +113,11 @@ SEL_PREF(PLAYSID_AHI_MODE,        "playsid.ahi_mode",        "",                
 SEL_PREF(PLAYSID_FILTER,          "playsid.filter",          "internal",                          SEL_PREF_PLAIN)
 SEL_PREF(PLAYSID_BOOST,           "playsid.boost",           "off",                               SEL_PREF_PLAIN)
 SEL_PREF(PLAYSID_OVERSAMPLE,      "playsid.oversample",      "normal",                            SEL_PREF_PLAIN)
+
+/* Host SID replayer (MPS-1, libsidplayfp): sid.model auto (the tune's), 6581 or 8580; sid.clock auto, pal or ntsc;
+ * sid.filter on or off; sid.digiboost auto (on for an 8580), on or off. Applied at every start. C64 ROMs: kernal, basic
+ * and chargen files in the config directory beat the embedded OpenROMs images. */
+SEL_PREF(SID_MODEL,               "sid.model",               "auto",                              SEL_PREF_PLAIN)
+SEL_PREF(SID_CLOCK,               "sid.clock",               "auto",                              SEL_PREF_PLAIN)
+SEL_PREF(SID_FILTER,              "sid.filter",              "on",                                SEL_PREF_PLAIN)
+SEL_PREF(SID_DIGIBOOST,           "sid.digiboost",           "auto",                              SEL_PREF_PLAIN)

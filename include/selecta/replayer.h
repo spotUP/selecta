@@ -146,6 +146,8 @@ typedef uint32_t (*sel_rp_viz_sid_fn)(void* state, uint8_t* regs, uint8_t* env, 
 /* RP_SEEKABLE (I434e): optional. 1 = the song can be seeked (the default when the hook is absent), 0 = it cannot, so
  * RP_SEEK returns 0 for every target and the front ends grey the seek bar. Read on the pump thread. */
 typedef int (*sel_rp_seekable_fn)(void* state);
+/* RP_CFG_APPLIED (MPS-1): optional. Count of starts that applied the replayer's configuration; test sentinel. */
+typedef uint32_t (*sel_rp_cfg_applied_fn)(void* state);
 
 /* One sample of the open song (RP_SAMPLE_GET). `data` points at `length` frames
  * of `channels` interleaved signed PCM, 8-bit (`bits` 8) or 16-bit native

@@ -1,0 +1,5 @@
+Replacement C64 ROMs from MEGA65/open-roms (https://github.com/MEGA65/open-roms), commit
+ad178dbe4d48cd6a317737a8e0e7e662f7e33d32 (master, fetched 2026-11-02), files bin/kernal_generic.rom,
+bin/basic_generic.rom, bin/chargen_openroms.rom. Licence: GNU LGPL v3 or later (LICENSE, COPYING.LESSER), some BASIC
+sources MIT (Microsoft, noted in LICENSE). Embedded by plugins/replayers/sid/CMakeLists.txt into the GPL sid module.
+Not the original Commodore ROMs: tunes that need real BASIC quirks may differ.

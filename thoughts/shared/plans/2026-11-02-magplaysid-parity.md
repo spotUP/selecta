@@ -100,7 +100,7 @@ fallback. Folded into MPS-1 because it is the same config surface.
 
 Checklist (tick here and in the ledger in the same edit):
 
-- [ ] MPS-1 Host SID configuration: chip model, clock, filter, digi boost, C64 ROMs
+- [x] MPS-1 Host SID configuration: chip model, clock, filter, digi boost, C64 ROMs
 - [ ] MPS-2 Host SID voice mute and solo
 - [ ] MPS-3 (dependency only) host SID register feed = existing I434j6, not a new row
 - [ ] MPS-4 Per-voice SID scopes on host, click a scope to mute

@@ -8,6 +8,8 @@
 #include <sidplayfp/sidplayfp.h>
 #include <builders/residfp-builder/residfp.h>
 
+#include "openroms.h"
+
 #include <cstring>
 #include <vector>
 
@@ -18,11 +20,16 @@ struct sid_shim {
     std::vector<uint8_t> image;
     std::vector<short> mix;
     size_t mixlen, mixpos;
-    sid_shim() : builder("selecta"), tune(nullptr), mixlen(0), mixpos(0) {}
+    uint32_t cfg_applied;
+    sid_shim() : builder("selecta"), tune(nullptr), mixlen(0), mixpos(0), cfg_applied(0) {}
     ~sid_shim() { delete tune; }
 };
 
 extern "C" {
+
+const uint8_t* sid_shim_builtin_kernal(void) { return sid_openrom_kernal; }
+const uint8_t* sid_shim_builtin_basic(void) { return sid_openrom_basic; }
+const uint8_t* sid_shim_builtin_chargen(void) { return sid_openrom_chargen; }
 
 sid_shim* sid_shim_open(const uint8_t* data, size_t size) {
     /* libsidplayfp indexes &buf[dataOffset] without checking it; refuse a damaged header first. */
@@ -41,18 +48,30 @@ sid_shim* sid_shim_open(const uint8_t* data, size_t size) {
     return s;
 }
 
-int sid_shim_start(sid_shim* s, uint32_t song, uint32_t rate) {
+int sid_shim_start(sid_shim* s, uint32_t song, uint32_t rate, const sid_shim_cfg* c) {
     SidConfig cfg = s->engine.config();
     cfg.frequency = rate;
     cfg.samplingMethod = SidConfig::INTERPOLATE;
     cfg.sidEmulation = &s->builder;
+    cfg.forceSidModel = c->model != 0;
+    cfg.defaultSidModel = c->model == 2 ? SidConfig::MOS8580 : SidConfig::MOS6581;
+    cfg.forceC64Model = c->clock != 0;
+    cfg.defaultC64Model = c->clock == 2 ? SidConfig::NTSC : SidConfig::PAL;
+    /* Auto digi boost follows the chip: on for an 8580 (forced, else the tune's own model). */
+    bool is8580 = c->model != 0 ? c->model == 2 : s->tune->getInfo()->sidModel(0) == SidTuneInfo::SIDMODEL_8580;
+    cfg.digiBoost = c->digiboost == 1 || (c->digiboost == 0 && is8580);
     if (!s->engine.config(cfg)) {
         return 0;
     }
+    s->engine.setRoms(c->kernal, c->basic, c->chargen);
     s->tune->selectSong(song);
     if (!s->engine.load(s->tune)) {
         return 0;
     }
+    for (unsigned i = 0; i < s->tune->getInfo()->sidChips(); i++) {
+        s->engine.filter(i, c->filter != 0);
+    }
+    s->cfg_applied++;
     s->engine.initMixer(true);
     s->mixlen = s->mixpos = 0;
     return 1;
@@ -92,6 +111,8 @@ uint32_t sid_shim_render(sid_shim* s, int16_t* out, uint32_t frames) {
     }
     return (uint32_t)(got / 2u);
 }
+
+uint32_t sid_shim_cfg_applied(const sid_shim* s) { return s->cfg_applied; }
 
 void sid_shim_close(sid_shim* s) { delete s; }
 
