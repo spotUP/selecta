@@ -421,7 +421,7 @@ message(STATUS "site10_ok wait_ms=${s10_turn} radio_appends=${CMAKE_MATCH_1}")
 set(s11_db "${WORK}/s11.db")
 file(REMOVE "${s11_db}" "${s11_db}-wal" "${s11_db}-shm")
 file(COPY_FILE "${sites_db}" "${s11_db}")
-execute_process(COMMAND "${SQLITE3}" "${s11_db}" "INSERT OR REPLACE INTO flags(key, skip) VALUES('${WORK}/songs/b.mod', 1)"
+execute_process(COMMAND "${SQLITE3}" "${s11_db}" "INSERT OR REPLACE INTO flags(key, skip) VALUES('local:${WORK}/songs/b.mod', 1)"
   RESULT_VARIABLE rc ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "site 11 order_ensure: flagging the fixture failed: ${err}")
