@@ -362,9 +362,16 @@ static int ui_switch(const char* id, const sel_ui_open_args* args, void** ctx) {
     printf("ui_closed id=%s frames=%u\n", cur->id, (unsigned)sel_tag_find(ui_stats_of(cur), SEL_UI_STAT_FRAMES, 0));
     cur->close(cur->state);
     cur->state = NULL; /* no event reaches a closed UI while the next one opens */
+    if (args->why != NULL && args->why_cap > 0) {
+        args->why[0] = '\0';
+    }
     next.state = next.open(args);
     if (next.state == NULL) {
-        STARTUP_FAIL("the UI '%s' could not open", id);
+        if (args->why != NULL && args->why[0] != '\0') {
+            STARTUP_FAIL("the UI '%s' could not open: %s", id, args->why);
+        } else {
+            STARTUP_FAIL("the UI '%s' could not open", id);
+        }
         return -1;
     }
     *cur = next;
@@ -479,6 +486,7 @@ int main(int argc, char** argv)
     void* ctx[3];
     unsigned u;
     char console_err[160] = "";
+    char ui_why[256] = ""; /* the reason a UI refused to open (sel_ui_open_args.why, I916) */
     const char* fallback_why = NULL; /* set when the text UI replaced a MUI that could not open (I671b) */
     int has_stats = 0;
 #if !defined(__amigaos__) && !defined(AMIGA)
@@ -644,6 +652,8 @@ int main(int argc, char** argv)
     args.find_plugin = sel_registry_find;
     args.argc = argc;
     args.argv = (const char* const*)argv;
+    args.why = ui_why;
+    args.why_cap = sizeof ui_why;
     if (library != NULL) {
         sel_library_art_provider(library, &art_src);
         args.art = &art_src;
@@ -667,6 +677,8 @@ int main(int argc, char** argv)
         if (g_uis[u].state == NULL) {
             if (fallback_why != NULL) {
                 STARTUP_FAIL("the MUI window could not open, and the text UI fallback failed: %s", fallback_why);
+            } else if (ui_why[0] != '\0') {
+                STARTUP_FAIL("the UI '%s' could not open: %s", g_uis[u].id, ui_why);
             } else {
                 STARTUP_FAIL("the UI could not open (no terminal?)");
             }

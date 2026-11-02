@@ -549,7 +549,7 @@ typedef struct desk {
     int nag_asked;           /* the launch SOURCES request was sent (I527) */
     int nag_done;            /* the sync offer dialog was shown this launch: it opens once, on the first Library visit with a due source (I602) */
     uint32_t nagdlg_n;       /* rows the sync offer dialog lists */
-    char nagdlg_key[16][24]; /* their source keys (I789): src[] is rebuilt by every SOURCES answer, so an index would drift */
+    char nagdlg_key[SEL_SOURCE_MAX][24]; /* one per registry source (I921); their source keys (I789): src[] is rebuilt by every SOURCES answer, so an index would drift */
     uint32_t nagdlg_opens;   /* sentinel: sync offer dialogs opened */
     uint32_t nagdlg_draws;   /* sentinel: sync offer dialog paints (I789: opened is not shown) */
     uint32_t src_gen;        /* sentinel (I826): SOURCES rows that changed what the pages draw */
@@ -750,6 +750,20 @@ static uint32_t desk_flush(desk* d) {
     }
 }
 
+/* A refusal in desk_open (I916): the reason goes to the shell's startup report through args->why, or to stderr when the caller gave no buffer. */
+static void desk_refuse(const sel_ui_open_args* a, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+static void desk_refuse(const sel_ui_open_args* a, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    if (a->why != NULL && a->why_cap > 0) {
+        vsnprintf(a->why, a->why_cap, fmt, ap);
+    } else {
+        fprintf(stderr, "selecta: ");
+        vfprintf(stderr, fmt, ap);
+        fputc('\n', stderr);
+    }
+    va_end(ap);
+}
 static const char* desk_opt(const sel_ui_open_args* a, const char* name) {
     int i;
     for (i = 0; i + 1 < a->argc; i++) {
@@ -2931,7 +2945,9 @@ static void song_menu_draw(desk* d) {
 /* ---- The confirm dialog of the two library removals (DUI-P4-18): Remove from Library names the song, Clear Library names
  * the song count. Nothing is sent until Confirm; Cancel, Escape or a click outside close it. ---- */
 
-enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = 16 };
+enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = SEL_SOURCE_MAX };
+/* I921: the sync offer lists every due source the registry can hold (C99 compile-time check: a negative array size fails the build). */
+typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nagdlg_key) / sizeof(((desk*)0)->nagdlg_key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
 enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5 };
 
 static const char* path_base(const char* p);
@@ -14568,12 +14584,12 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
     desk_trace(a->host, "desk_open begin");
     if (backend != NULL && strcmp(backend, "mem") != 0 && !want_sdl) {
-        fprintf(stderr, "selecta: desktop backend '%s' is not mem or sdl\n", backend);
+        desk_refuse(a, "desktop backend '%s' is not mem or sdl", backend);
         return NULL;
     }
 #ifndef SELECTA_DESKTOP_SDL
     if (want_sdl) {
-        fprintf(stderr, "selecta: desktop backend 'sdl' is not available in this build (configure with -DSELECTA_UI_DESKTOP=ON)\n");
+        desk_refuse(a, "desktop backend 'sdl' is not available in this build (configure with -DSELECTA_UI_DESKTOP=ON)");
         return NULL;
     }
 #endif
@@ -14599,7 +14615,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->input_consumed = a->input_consumed;
     d->hash = 2166136261u;
     if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format") != NULL ? desk_opt(a, "--format") : sel_uim_default_format(backend))) {
-        fprintf(stderr, "selecta: desktop format '%s' is not rgba32 or index8\n", desk_opt(a, "--format"));
+        desk_refuse(a, "desktop format '%s' is not rgba32 or index8", desk_opt(a, "--format"));
         a->host->mem_free(a->host, d);
         return NULL;
     }
@@ -14619,7 +14635,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         } else if ((d->view_pg = desk_page_named(d, view)) != SEL_UIM_PG_COUNT) { /* the pages the doors open: entered by desk_page_goto before the first frame (I266) */
             d->view_pending = 1;
         } else {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library (opens Browse Folders), folders, songs, queue, playlists, songinfo, widgets or settings\n", view);
+            desk_refuse(a, "desktop view '%s' is not testcard, text, home, library (opens Browse Folders), folders, songs, queue, playlists, songinfo, widgets or settings", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }

@@ -62,13 +62,16 @@ static int make_texture(desk_sdl* b, int32_t w, int32_t h) {
 /* Test hook: SELECTA_SDL_TEST_EVENTS is a space separated list of events pushed on the SDL queue at open, so a test can
  * drive the real desk_sdl_poll. `k<keycode hex>/<keymod hex>` is a KEY_DOWN, `t<text>` a TEXT_INPUT. */
 static void push_test_events(const char* list) {
-    char buf[256];
+    char* buf; /* I533: a copy sized from the input, so a long list never loses its tail */
     char* save = NULL;
     char* tok;
     if (list == NULL) {
         return;
     }
-    snprintf(buf, sizeof buf, "%s", list);
+    buf = SDL_strdup(list);
+    if (buf == NULL) {
+        return;
+    }
     for (tok = strtok_r(buf, " ", &save); tok != NULL; tok = strtok_r(NULL, " ", &save)) {
         SDL_Event ev;
         memset(&ev, 0, sizeof ev);
@@ -89,6 +92,7 @@ static void push_test_events(const char* list) {
         }
         SDL_PushEvent(&ev);
     }
+    SDL_free(buf);
 }
 
 /* Test hook: SELECTA_SDL_TEST_TIMED is a space separated list of events pushed from an SDL timer thread while the live
@@ -110,13 +114,16 @@ static Uint32 SDLCALL timed_event(void* param, SDL_TimerID id, Uint32 interval) 
 }
 
 static void push_timed_events(const char* list) {
-    char buf[2048]; /* a script of many clicks is long; a cut list silently loses its trailing quit and hangs the run */
+    char* buf; /* sized from the input: a cut list silently loses its trailing quit and hangs the run (I527, I533) */
     char* save = NULL;
     char* tok;
     if (list == NULL) {
         return;
     }
-    snprintf(buf, sizeof buf, "%s", list);
+    buf = SDL_strdup(list);
+    if (buf == NULL) {
+        return;
+    }
     for (tok = strtok_r(buf, " ", &save); tok != NULL; tok = strtok_r(NULL, " ", &save)) {
         timed_ev* te = (timed_ev*)SDL_calloc(1, sizeof *te); /* the test hook never frees: it runs once per process */
         SDL_Event* ev;
@@ -124,7 +131,7 @@ static void push_timed_events(const char* list) {
         float x = 0.0f, y = 0.0f;
         unsigned ms = 0u, btn = 0u;
         if (te == NULL) {
-            return;
+            break;
         }
         ev = &te->ev;
         if ((tok[0] == 'd' || tok[0] == 'u') && (body[0] == 'C' || body[0] == 'G')) { /* d1,.. -> dC1,.. : button held with Control / Command */
@@ -161,6 +168,7 @@ static void push_timed_events(const char* list) {
         }
         (void)SDL_AddTimer(ms, timed_event, te);
     }
+    SDL_free(buf);
 }
 
 void desk_sdl_default_size(int32_t* w, int32_t* h) {
