@@ -380,15 +380,24 @@ endif()
 message(STATUS "site7_ok wait_ms=${s7_turn} queue=${s7_queue}")
 
 # --- I906g run_search callers: QUEUE_ADD_QUERY and PLAY_QUERY post the search on the write queue and act in its done callback. SEARCH_SLOW_MS
-# makes the search a 300 ms statement (smart downloads are off: smart_sync runs its own search on the UI thread when a song starts, a separate open site); the queue holds the result songs (sentinel: the done callback ran), the UI thread never waited.
+# makes the search a 300 ms statement; the queue holds the result songs (sentinel: the done callback ran), the UI thread never waited.
 foreach(qcmd QUEUE_ADD_QUERY PLAY_QUERY)
-  sites_live(s8 "q@4000" SOCK s8${qcmd} KNOBS SELECTA_LIB_SEARCH_SLOW_MS ARGS --output null --db "${sites_db}" --view queue --exec "PREF_SET library.smart_downloads off" --exec "${qcmd} \"selecta\"")
+  sites_live(s8 "q@4000" SOCK s8${qcmd} KNOBS SELECTA_LIB_SEARCH_SLOW_MS ARGS --output null --db "${sites_db}" --view queue --exec "${qcmd} \"selecta\"")
   sites_field(s8_queue "${s8}" overlay queue)
   if(s8_queue LESS 1)
     message(FATAL_ERROR "site 8 ${qcmd}: the queue is empty, the posted search never delivered:\n${s8}")
   endif()
   message(STATUS "site8_${qcmd}_ok wait_ms=${s8_turn} queue=${s8_queue}")
 endforeach()
+
+# --- I906g smart_sync: a song start with library.smart_downloads on plans the smart downloads as a write-queue op (SMART_SLOW_MS makes the plan
+# a 300 ms statement). lib_writes_done counts finished ops: the PLAY_QUERY search, the song-start ops and the smart plan, so >= 2 proves the
+# plan ran off the UI thread; lib_ui_wait_ms < 50 (sites_live) proves it did not wait there.
+sites_live(s9 "q@4000" SOCK s9 KNOBS SELECTA_LIB_SMART_SLOW_MS ARGS --output null --db "${sites_db}" --view queue --exec "PREF_SET library.smart_downloads on" --exec "PLAY_QUERY \"selecta\"")
+if(NOT "${s9}" MATCHES "lib_writes_done=([0-9]+)" OR CMAKE_MATCH_1 LESS 2)
+  message(FATAL_ERROR "site 9 smart_sync: lib_writes_done=${CMAKE_MATCH_1}, want >= 2 (the plan op never ran):\n${s9}")
+endif()
+message(STATUS "site9_ok wait_ms=${s9_turn} writes=${CMAKE_MATCH_1}")
 
 # --- I951: the remaining library writes (stream add, playlist import, touch, playlist delete, library remove, library clear) ride the
 # write queue like PLAYLIST_CREATE. WRITE_SLOW_MS makes each a 300 ms statement; sites_live fails the run when the command runs it on the UI

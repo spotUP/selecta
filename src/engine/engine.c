@@ -3244,6 +3244,10 @@ static int pref_is_on(const sel_engine* e, int id) {
 
 /* Smart downloads (I169, F34): once per (queue version, playing entry, prefs generation) the library plans the songs of
  * the smart playlist and the history that are not cached; its thread fetches them behind the prefetch. */
+static void wq_smart_run(sel_library* lib, sel_wq_op* op) {
+    (void)sel_library_smart(lib, op->s[0], op->u1, op->s[1]);
+}
+
 static void smart_sync(sel_engine* e, int allowed) {
     uint32_t key;
 
@@ -3261,9 +3265,16 @@ static void smart_sync(sel_engine* e, int allowed) {
     if (key != e->sm_key) {
         char rules[512];
         e->sm_key = key;
+        sel_wq_op* op;
         sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
-        (void)sel_library_smart(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SMART_VIEW],
-                                (unsigned)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SMART_TOP], NULL, 10), rules);
+        /* I906g: the plan searches the saved view and reads the most played keys, so it is a write-queue op (writer thread), not a UI-thread wait */
+        op = wq_new(e, wq_smart_run, NULL, e->prefs.value[SEL_PREF_LIBRARY_SMART_VIEW], rules, NULL);
+        if (op != NULL) {
+            op->u1 = (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SMART_TOP], NULL, 10);
+            wq_submit(e);
+        } else {
+            e->sm_key = 0; /* queue full: plan again on the next sync */
+        }
     }
 }
 

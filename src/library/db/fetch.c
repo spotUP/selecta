@@ -360,6 +360,7 @@ unsigned sel_library_smart(sel_library* lib, const char* view, unsigned top, con
     char out[2048];
     unsigned n = 0;
 
+    sel_library_test_slow("SELECTA_LIB_SMART_SLOW_MS"); /* I906g test knob: a smart plan on a busy worker */
     if (lib == NULL || top == 0 || cache_get(lib) == NULL) {
         return 0;
     }
