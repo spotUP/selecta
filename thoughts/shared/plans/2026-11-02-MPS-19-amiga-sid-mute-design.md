@@ -177,3 +177,13 @@ One reachability test, through the engine top level, on host with the existing s
    host's 8/12 channels; alternative: SID 1 only.
 5. Voice 3 mute changes OSC3/ENV3 readback in reSID mode (tune logic may change). Recommended: accept, identical to
    the host (libsidplayfp) behaviour, note it in the mute tooltip docs only.
+
+### Answers (Johan, 2026-11-02)
+
+1. Library route: the step B patch goes to Johan's friend who maintains playsid.library with the original author's
+   permission: https://github.com/erique/playsid.library. Selecta bundles no fork. Opening a PR or issue there is
+   outward-facing: prepare the patch, Johan approves before anything is sent.
+2. Ship step A (classic mode mute) now: yes.
+3. Old library in reSID or hardware mode: hide mute.
+4. Chips 2 and 3: include in the library patch.
+5. Voice 3 readback change: accepted (default, same as the host behaviour).
