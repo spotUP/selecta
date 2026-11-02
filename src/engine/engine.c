@@ -153,7 +153,7 @@
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(STREAM_ADD) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(COLLECTION_OPEN) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(PLAY_CONTEXT) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
-    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
+    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) X(COLLECTION_VIEW) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -678,6 +678,8 @@ struct sel_engine {
     char* coll_titles;                        /* I994d1: per-row sort fields of the page (title, artist, album, added, duration_ms: 5 strings a row), for re-orders */
     uint32_t* coll_ord;                       /* I994d1: the page order block (shown position -> stored row), heap; the page's `order` points here */
     uint32_t collection_orders;               /* I994d1 sentinel: page orders built */
+    uint32_t collection_views;                /* I994d2 sentinel: COLLECTION_VIEW commands applied */
+    int rdc_reorder, rdc_next_reorder;        /* I994d2: the read re-orders the published page under the new view (no rebuild) */
     uint32_t coll_sort, coll_desc;            /* I994d1: the engine-global collection view the next build uses (SEL_COLL_SORT_*, 0/1) */
     char coll_filter[64];
     /* I910: COLLECTION_OPEN posts the page build to a read slot (design 2026-11-01-ui-thread-library-waits.md section 4). The thread builds
@@ -7065,11 +7067,11 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
 /* I994d1: builds pg's order from the rows (e->rdc_blk) and sort fields (e->rdc_titles) under the engine's collection view. The records
  * are a temporary array of pointers into both blocks; the order block stays with the page. A host without memory leaves the order NULL
  * (identity, every row shown). */
-static void coll_order_make(sel_engine* e, sel_collection_page* pg) {
+static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* rows, const char* titles) {
     sel_coll_rec* rec = (sel_coll_rec*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *rec, SEL_MEM_FAST);
     uint32_t* ord = (uint32_t*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *ord, SEL_MEM_FAST);
-    const char* r = e->rdc_blk;
-    const char* m = e->rdc_titles;
+    const char* r = rows;
+    const char* m = titles;
     uint32_t i;
     if (rec == NULL || ord == NULL) {
         if (rec != NULL) e->host->mem_free(e->host, rec);
@@ -7111,6 +7113,13 @@ static void coll_build_run(sel_engine* e) {
     sel_engine_collection_row head;
     coll_shelf_sink hk;
 
+    if (e->rdc_reorder) { /* I994d2: same rows, new view: only the order block is rebuilt, from the published rows and sort fields */
+        if (e->rdc_ord != NULL) e->host->mem_free(e->host, e->rdc_ord);
+        e->rdc_ord = NULL;
+        e->rdc_pg = e->coll;
+        if (e->coll_titles != NULL) coll_order_make(e, &e->rdc_pg, e->coll_rows, e->coll_titles);
+        return;
+    }
     if (!e->rdc_page) return;
     memset(&b, 0, sizeof b);
     b.rows.host = e->host;
@@ -7172,12 +7181,26 @@ static void coll_build_run(sel_engine* e) {
     pg->shown = b.n;
     if (b.meta.buf != NULL) { /* a song list page: build its order (I994d1; drill and composer pages have no sort keys and stay identity) */
         e->rdc_titles = b.meta.buf;
-        coll_order_make(e, pg);
+        coll_order_make(e, pg, e->rdc_blk, e->rdc_titles);
     }
 }
 
 /* The pump takes the finished page: it becomes state.collection with the next serial. */
 static void coll_publish(sel_engine* e) {
+    if (e->rdc_reorder) { /* I994d2: the page keeps its rows; the new order and view take the next serial */
+        e->rdc_reorder = 0;
+        if (e->rdc_ord == NULL) return;
+        if (e->coll_ord != NULL) e->host->mem_free(e->host, e->coll_ord);
+        e->coll_ord = e->rdc_ord;
+        e->rdc_ord = NULL;
+        e->coll.order = e->coll_ord;
+        e->coll.shown = e->rdc_pg.shown;
+        e->coll.sort = e->rdc_pg.sort;
+        e->coll.descending = e->rdc_pg.descending;
+        memcpy(e->coll.filter, e->rdc_pg.filter, sizeof e->coll.filter);
+        e->coll.serial = ++e->coll_serial;
+        return;
+    }
     if (!e->rdc_page) return;
     e->coll = e->rdc_pg;
     e->coll.serial = ++e->coll_serial;
@@ -7199,9 +7222,25 @@ static void coll_post(sel_engine* e) {
         e->rdc_kind = e->rdc_next_kind;
         snprintf(e->rdc_key, sizeof e->rdc_key, "%s", e->rdc_next_key);
         e->rdc_page = e->rdc_next_page;
+        e->rdc_reorder = e->rdc_next_reorder && !e->rdc_next_page;
         e->rdc_next_page = 0;
+        e->rdc_next_reorder = 0;
     }
     lib_read_post(e, &e->rd_coll, coll_build_run);
+}
+
+/* COLLECTION_VIEW filter sort [descending] (I994d2): the open collection page's tools row. The view lives in the engine; the page's order is
+ * rebuilt by a re-order job on the rd_coll slot (design section 11.3) and republished under a new serial. */
+static void cmd_COLLECTION_VIEW(sel_engine* e, const sel_message* m) {
+    uint32_t sort = (uint32_t)m->args[1].v.u;
+    snprintf(e->coll_filter, sizeof e->coll_filter, "%s", m->args[0].v.s);
+    e->coll_sort = sort < (uint32_t)SEL_COLL_SORT_COUNT ? sort : (uint32_t)SEL_COLL_SORT_CUSTOM;
+    e->coll_desc = m->argc > 2 && m->args[2].v.u != 0u ? 1u : 0u;
+    e->collection_views++;
+    if (e->coll_titles != NULL) {
+        e->rdc_next_reorder = 1;
+        coll_post(e);
+    }
 }
 
 /* I678e: a collection page was opened. The engine records which one and feeds Recents exactly as LIBRARY_TOUCH does, so every UI shares the
@@ -7226,7 +7265,12 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
             wq_submit(e);
         }
     }
-    if (!restore) e->collection_opens++;
+    if (!restore) {
+        e->collection_opens++;
+        e->coll_sort = (uint32_t)SEL_COLL_SORT_CUSTOM; /* I994d2: a new open starts from the stored order; Back / Forward keep the view */
+        e->coll_desc = 0u;
+        e->coll_filter[0] = '\0';
+    }
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
     if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
@@ -10389,6 +10433,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->collection_opens = e->collection_opens;
     out->collection_queries = e->collection_queries;
     out->collection_orders = e->collection_orders;
+    out->collection_views = e->collection_views;
     out->drill_rows = e->drill_rows;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
