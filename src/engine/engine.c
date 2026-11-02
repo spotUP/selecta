@@ -4608,19 +4608,32 @@ static void scan_collect(sel_engine* e) {
     search_start_next(e);
 }
 
-/* Stores the "new this week" count of a modland sync in the DB meta table, so it survives a restart (I161a). */
-static void persist_new_this_week(sel_engine* e, uint32_t count) {
+/* Stores the "new this week" count of a modland sync in the DB meta table, so it survives a restart (I161a). I906f2f: a queued write
+ * (sync_collect runs it on the pump, which waited on the library call lock); `run` is the meta set on the worker, a full queue reports
+ * library_busy. */
+static void wq_new_this_week_run(sel_library* lib, sel_wq_op* op) {
     char text[16];
-    sel_meta_op op;
+    sel_meta_op mop;
     sel_message reply;
 
-    snprintf(text, sizeof text, "%u", (unsigned)count);
-    op.key = SEL_MODLAND_META_NEW;
-    op.value = text;
-    op.cap = sizeof text;
-    op.set = 1;
+    snprintf(text, sizeof text, "%u", (unsigned)op->n1);
+    mop.key = SEL_MODLAND_META_NEW;
+    mop.value = text;
+    mop.cap = sizeof text;
+    mop.set = 1;
     memset(&reply, 0, sizeof reply);
-    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
+    op->rc = sel_library_request(lib, SEL_LIB_REQ_META, &mop, &reply);
+}
+
+static void persist_new_this_week(sel_engine* e, uint32_t count) {
+    sel_wq_op* op = wq_new(e, wq_new_this_week_run, NULL, NULL, NULL, NULL);
+
+    if (op != NULL) {
+        op->n1 = (int64_t)count;
+        wq_submit(e);
+    } else {
+        sel_engine_report_error(e, "library_busy", SEL_MODLAND_META_NEW);
+    }
 }
 
 /* LIBRARY_SYNC <source> <dir> [now]: syncs a network source's catalogue from the listing and changelogs in

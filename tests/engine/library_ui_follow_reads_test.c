@@ -25,6 +25,7 @@
 #include "db/db.h"
 #include "db/db_internal.h"
 #include "source.h"
+#include "sources/modland_net.h"
 
 enum { HOLD_MS = 1500, PUMP_BUDGET_MS = 50 };
 
@@ -77,6 +78,27 @@ static int i906f2e_sync(const sel_host* host, const char* arg, int64_t now, sel_
 static const sel_source g_sync_src = {
     "i906f2esrc", "I906f2e sync", "", "Syncs on demand.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, i906f2e_sync, SEL_SOURCE_SYNCS, NULL, NULL,
     NULL,
+};
+
+/* I906f2f: like the I906f2e source, but its sync reports a "new this week" count and carries the flag, so sync_collect persists it. */
+static int i906f2f_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
+    int waited = 0;
+
+    (void)host;
+    (void)arg;
+    (void)now;
+    (void)cap;
+    while (!g_sync_go && waited++ < 5000) usleep(1000);
+    stats[0].tag = SEL_SYNC_NEW_THIS_WEEK;
+    stats[0].value = 77;
+    stats[1].tag = SEL_TAG_END;
+    stats[1].value = 0;
+    return 1;
+}
+
+static const sel_source g_ntw_src = {
+    "i906f2fsrc", "I906f2f sync", "", "Syncs with a new this week count.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, i906f2f_sync,
+    SEL_SOURCE_SYNCS | SEL_SOURCE_NEW_THIS_WEEK, NULL, NULL, NULL,
 };
 
 /* The id PLAYLIST_CREATE answers for the "addf" playlist (LIBRARY_RESULT key "playlist", name, value = id). */
@@ -668,6 +690,58 @@ int main(int argc, char** argv) {
         }
         sel_library_watch(1);
         CHECK(stored == 1234567);
+    }
+    /* I906f2f: persist_new_this_week (sync_collect on the pump) is a queued write. Same shape as I906f2e; the finished sync queues two writes
+     * (the sync stamp and the count), so lib_writes_done moves by 2 after the release. The count is read back from the meta table. */
+    {
+        sel_engine_stats s_before, s_after;
+        sqlite3_stmt* st = NULL;
+        long long stored = 0;
+
+        CHECK(sel_source_register(&g_ntw_src));
+        g_sync_go = 0;
+        sel_engine_stats_get(e, &s_before);
+        CHECK(sel_engine_send_line(e, "LIBRARY_SYNC i906f2fsrc /x 1234567", pool, sizeof pool) == 0);
+        sel_engine_pump(e, sink, NULL);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        g_sync_go = 1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        worst = 0;
+        for (i = 0; i < 300; i++) {
+            struct timespec tp;
+
+            clock_gettime(CLOCK_MONOTONIC, &tp);
+            sel_engine_pump(e, sink, NULL);
+            if (ms_since(&tp) > worst) worst = ms_since(&tp);
+            usleep(2000);
+        }
+        w1 = sel_library_watched_waits();
+        sel_engine_stats_get(e, &s_after);
+        printf("i906f2f new this week: worst pump %ld ms, waits %u\n", worst, (unsigned)(w1 - w0));
+        CHECK(worst < PUMP_BUDGET_MS);
+        CHECK(w1 == w0);
+        CHECK(s_after.lib_writes_done == s_before.lib_writes_done);
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &s_after);
+            if (s_after.lib_writes_done >= s_before.lib_writes_done + 2u) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f2f after release: lib_writes_done +%u\n", (unsigned)(s_after.lib_writes_done - s_before.lib_writes_done));
+        CHECK(s_after.lib_writes_done == s_before.lib_writes_done + 2u);
+        sel_library_watch(0);
+        if (sqlite3_prepare_v2(lib->db, "SELECT value FROM meta WHERE key = '" SEL_MODLAND_META_NEW "'", -1, &st, NULL) == SQLITE_OK) {
+            if (sqlite3_step(st) == SQLITE_ROW) stored = sqlite3_column_int64(st, 0);
+            sqlite3_finalize(st);
+        }
+        sel_library_watch(1);
+        CHECK(stored == 77);
     }
     sel_library_watch(was);
 
