@@ -8106,7 +8106,7 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
     rows = (sel_library_item*)malloc((size_t)max * sizeof *rows);
     if (rows == NULL) return 0u;
     got = sel_library_items(e->lib, kind_mask, offset, rows, max, total);
-    e->library_items_calls++;
+    SEL_COUNT_ADD(&e->library_items_calls, 1u);
     n = got > 0 ? (uint32_t)got : 0u;
     for (i = 0; i < n; i++) {
         sel_engine_library_item* o = &out[i];
@@ -9870,7 +9870,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
     out->sources_listed = e->sources_listed;
-    out->library_items_calls = e->library_items_calls;
+    out->library_items_calls = SEL_COUNT_GET(&e->library_items_calls);
     out->lib_touch_calls = e->lib_touch_calls;
     out->collection_opens = e->collection_opens;
     out->collection_queries = e->collection_queries;

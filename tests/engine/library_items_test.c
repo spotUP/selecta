@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include "db/db.h"
@@ -71,6 +72,19 @@ static uint32_t calls(sel_engine* e) {
 
     sel_engine_stats_get(e, &s);
     return s.library_items_calls;
+}
+
+/* I787d: library_items_calls is bumped by the job thread and by UI-thread sync calls at once; a plain increment loses counts. */
+enum { RACE_THREADS = 4, RACE_CALLS = 1500 };
+
+static void* race_caller(void* arg) {
+    sel_engine_library_item row[1];
+    uint32_t i, total;
+
+    for (i = 0; i < RACE_CALLS; i++) {
+        (void)sel_engine_library_items((sel_engine*)arg, SEL_LIB_ITEM_ALL, 0, row, 1u, &total);
+    }
+    return NULL;
 }
 
 int main(void) {
@@ -236,6 +250,15 @@ int main(void) {
         CHECK(it != NULL && it->opened == 950u);
         it = find(all, w, SEL_LIB_ITEM_COMPOSER, "Y");
         CHECK(it != NULL && it->opened == 40u);
+    }
+
+    {
+        pthread_t th[RACE_THREADS];
+        uint32_t base = calls(e), k;
+
+        for (k = 0; k < RACE_THREADS; k++) CHECK(pthread_create(&th[k], NULL, race_caller, e) == 0);
+        for (k = 0; k < RACE_THREADS; k++) pthread_join(th[k], NULL);
+        CHECK(calls(e) - base == (uint32_t)RACE_THREADS * RACE_CALLS); /* I787d: no increment lost */
     }
 
     sel_engine_destroy(e);
