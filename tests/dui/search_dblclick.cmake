@@ -45,3 +45,13 @@ dui_stat(ps "${dbl}" desktop play_state)
 if(NOT dc EQUAL 1 OR NOT rp EQUAL 1 OR NOT ps EQUAL 1)
   message(FATAL_ERROR "double_clicks=${dc} row_plays=${rp} play_state=${ps}, expected 1 1 1")
 endif()
+
+# I1011: the Search result row under the pointer takes the same hover fill every song list uses (list_row_fill): after a move onto the
+# banana.mod row the dump line `searchhover fill=` is the surface-hover token (34343e).
+sd_run(hov "${typed}move ${x} ${y}\nwait 100\n")
+if(NOT "${hov}" MATCHES "searchhover fill=([0-9a-f]+)\n")
+  message(FATAL_ERROR "no searchhover line in:\n${hov}")
+endif()
+if(NOT CMAKE_MATCH_1 MATCHES "34343e$")
+  message(FATAL_ERROR "the Search row under the pointer has no hover fill (searchhover fill=${CMAKE_MATCH_1}):\n${hov}")
+endif()
