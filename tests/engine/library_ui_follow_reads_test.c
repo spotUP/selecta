@@ -217,6 +217,50 @@ int main(void) {
         printf("i906g after release: play_meta_reads %u\n", (unsigned)(g_after.play_meta_reads - g_before.play_meta_reads));
         CHECK(g_after.play_meta_reads > g_before.play_meta_reads);
     }
+    /* I906f group 1: the history row and the cue point of the song being played are queued writes. A song is opened first (library free), then
+     * the call lock is held: CUE_SET and the replacing OPEN (which ends the song, hence the history row) must return within the budget with no
+     * synchronous request; after the release stats.cue_sets and stats.history_writes rise (sentinels). */
+    {
+        sel_engine_stats h_before, h_after;
+        char open_line[512];
+
+        snprintf(open_line, sizeof open_line, "OPEN \"%s\"", SELECTA_TEST_MOD);
+        CHECK(sel_engine_send_line(e, open_line, pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            if (ms_since(&t0) > 300) break;
+            usleep(2000);
+        }
+        printf("i906f group1: song state %d\n", (int)sel_engine_state(e)->play);
+        sel_engine_stats_get(e, &h_before); /* no player in this registry: the opened song keeps its history key, which is all the two writes need */
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        CHECK(sel_engine_send_line(e, "CUE_SET 1", pool, sizeof pool) == 0);
+        CHECK(sel_engine_send_line(e, open_line, pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        sel_engine_pump(e, sink, NULL);
+        pump_ms = ms_since(&t0);
+        w1 = sel_library_watched_waits();
+        printf("i906f group1: CUE_SET + replace pump %ld ms, library waits %u\n", pump_ms, (unsigned)(w1 - w0));
+        CHECK(pump_ms < PUMP_BUDGET_MS);
+        CHECK(w1 == w0);
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &h_after);
+            if (h_after.cue_sets > h_before.cue_sets && h_after.history_writes > h_before.history_writes) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f group1 after release: cue_sets +%u, history_writes +%u\n", (unsigned)(h_after.cue_sets - h_before.cue_sets),
+               (unsigned)(h_after.history_writes - h_before.history_writes));
+        CHECK(h_after.cue_sets == h_before.cue_sets + 1u);
+        CHECK(h_after.history_writes > h_before.history_writes);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);

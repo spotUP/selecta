@@ -323,6 +323,7 @@ static int lib_read_idle(const sel_lib_read* r);
 static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
                         const char* s2, const char* s3);
 static void wq_submit(sel_engine* e);
+static void wq_sticker_set_run(sel_library* lib, sel_wq_op* op);
 
 /* I906g: what a song start reads from the library (best source, per-song config, stored loudness), filled by the rd_play read before the
  * pump starts the song. A start that finds no entry posts the read and waits (play_meta_ready); read_song, song_config_load and
@@ -2243,11 +2244,28 @@ static void panel_reload(sel_engine* e) {
 
 /* History (I170): the song that was playing ended. skipped = 0: it reached its natural end (a play);
  * skipped = 1: the user replaced it first. One row per song, written through the library worker. */
+static void wq_hist_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_history_add(lib, op->s[0], op->n1, (int)op->u1);
+}
+
+static void wq_hist_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc) {
+        e->history_writes++;
+        panel_reload(e);
+    }
+}
+
+/* I906f: the history row is written on the writer thread; the key is copied into the op, so hist_key is free at once. */
 static void hist_end(sel_engine* e, int skipped) {
     if (e->hist_key[0] != '\0' && e->lib != NULL) {
-        if (sel_library_history_add(e->lib, e->hist_key, (int64_t)time(NULL), skipped)) {
-            e->history_writes++;
-            panel_reload(e);
+        sel_wq_op* op = wq_new(e, wq_hist_run, wq_hist_done, e->hist_key, NULL, NULL);
+
+        if (op == NULL) {
+            sel_engine_report_error(e, "library_busy", "history");
+        } else {
+            op->n1 = (int64_t)time(NULL);
+            op->u1 = (uint32_t)skipped;
+            wq_submit(e);
         }
     }
     e->hist_key[0] = '\0';
@@ -4802,7 +4820,9 @@ static void cmd_VOTE(sel_engine* e, const sel_message* m) {
             sel_engine_report_error(e, "library_failed", "VOTE");
             return;
         }
-        if (r >= 0) (void)sel_library_sticker_set(e->lib, e->hist_key, "vote", r == 5 ? "5" : "0");
+        if (r >= 0) { /* I906f: the sticker of the vote is written on the writer thread; a full queue only loses the local mark */
+            if (wq_new(e, wq_sticker_set_run, NULL, e->hist_key, "vote", r == 5 ? "5" : "0") != NULL) wq_submit(e);
+        }
         snprintf(e->vote_song, sizeof e->vote_song, "%s", e->hist_key);
         snprintf(e->vote_mkey, sizeof e->vote_mkey, "%s", mkey);
         sel_library_vote(e->lib, e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN], mkey, r);
@@ -4829,6 +4849,31 @@ static void analyse_sink(void* ctx, const sel_message* evt) {
     } else if (evt->id == SEL_EVT_SONG_ENDED && *state == 0) {
         *state = 1;
     }
+}
+
+/* I906f: the analysed gain is stored on the writer thread; the figures the stats show are published when it landed (op->res, host memory). */
+typedef struct analyse_res {
+    uint32_t gated, speed;
+    int32_t lufs_cdb, gain_cdb, peak_cdb;
+} analyse_res;
+
+static void wq_analyse_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_loudness_set(lib, op->s[0], op->s[1], ((const analyse_res*)op->res)->gain_cdb);
+}
+
+static void wq_analyse_done(sel_engine* e, sel_wq_op* op) {
+    const analyse_res* ar = (const analyse_res*)op->res;
+
+    if (!op->rc) {
+        sel_engine_report_error(e, "library_failed", "ANALYSE");
+        return;
+    }
+    e->analyse_jobs++;
+    e->analyse_gated = ar->gated;
+    e->analyse_lufs_cdb = ar->lufs_cdb;
+    e->analyse_gain_cdb = ar->gain_cdb;
+    e->analyse_peak_cdb = ar->peak_cdb;
+    e->analyse_speed = ar->speed;
 }
 
 static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
@@ -4897,19 +4942,24 @@ static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
     }
     sel_loudness_result_get(an, &r);
     sel_loudness_free(an);
-    if (!sel_library_loudness_set(e->lib, key, loudness_path(key), r.gain_cdb)) {
-        sel_engine_report_error(e, "library_failed", "ANALYSE");
-        return;
-    }
-    e->analyse_jobs++;
-    e->analyse_gated = (uint32_t)r.gated;
-    e->analyse_lufs_cdb = (int32_t)(r.lufs * 100.0 - (r.lufs < 0 ? 0.5 : -0.5));
-    e->analyse_gain_cdb = r.gain_cdb;
-    e->analyse_peak_cdb = (int32_t)(r.peak_db * 100.0 - (r.peak_db < 0 ? 0.5 : -0.5));
     {
         double secs = (double)frames / (double)SEL_ANALYSE_RATE;
         double speed = cpu > 1e-6 ? secs / cpu : 1000000.0;
-        e->analyse_speed = speed > 1000000.0 ? 1000000u : (uint32_t)speed;
+        analyse_res* ar = (analyse_res*)e->host->mem_alloc(e->host, sizeof *ar, SEL_MEM_FAST);
+        sel_wq_op* op = ar != NULL ? wq_new(e, wq_analyse_run, wq_analyse_done, key, loudness_path(key), NULL) : NULL;
+
+        if (op == NULL) {
+            if (ar != NULL) e->host->mem_free(e->host, ar);
+            sel_engine_report_error(e, "library_busy", "ANALYSE");
+            return;
+        }
+        ar->gated = (uint32_t)r.gated;
+        ar->lufs_cdb = (int32_t)(r.lufs * 100.0 - (r.lufs < 0 ? 0.5 : -0.5));
+        ar->gain_cdb = r.gain_cdb;
+        ar->peak_cdb = (int32_t)(r.peak_db * 100.0 - (r.peak_db < 0 ? 0.5 : -0.5));
+        ar->speed = speed > 1000000.0 ? 1000000u : (uint32_t)speed;
+        op->res = ar;
+        wq_submit(e);
     }
 }
 #else
@@ -4919,16 +4969,31 @@ static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
 }
 #endif
 
-/* CUE_SET n: stores the playing position as cue n of the song being played (I175, table `cues`). */
+/* CUE_SET n: stores the playing position as cue n of the song being played (I175, table `cues`). I906f: written on the writer thread. */
+static void wq_cue_set_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_cue_set(lib, op->s[0], op->u1, op->u2);
+}
+
+static void wq_cue_set_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) sel_engine_report_error(e, "library_failed", "CUE_SET");
+    else e->cue_sets++;
+}
+
 static void cmd_CUE_SET(sel_engine* e, const sel_message* m) {
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "CUE_SET");
     } else if (e->hist_key[0] == '\0' || e->cur == SEL_SLOT_NONE) {
         sel_engine_report_error(e, "no_song", "CUE_SET");
-    } else if (!sel_library_cue_set(e->lib, e->hist_key, m->args[0].v.u, position_ms(e))) {
-        sel_engine_report_error(e, "library_failed", "CUE_SET");
     } else {
-        e->cue_sets++;
+        sel_wq_op* op = wq_new(e, wq_cue_set_run, wq_cue_set_done, e->hist_key, NULL, NULL);
+
+        if (op == NULL) {
+            sel_engine_report_error(e, "library_busy", "CUE_SET");
+        } else {
+            op->u1 = m->args[0].v.u;
+            op->u2 = position_ms(e);
+            wq_submit(e);
+        }
     }
 }
 
@@ -7128,6 +7193,14 @@ static void vote_publish(sel_engine* e) {
     e->votes_generation++;
 }
 
+static void wq_votes_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc) {
+        memset(e->vc_state, 0, sizeof e->vc_state); /* I906g: the stored counts are stale */
+        e->vote_epoch++;
+        e->votes_generation++;
+    }
+}
+
 /* Pump thread: a finished vote request that carries a count is stored as the sticker "votes" of the song it was made
  * for, so the playlist row shows it (and it survives a restart). A failed or refused request keeps the stored value. */
 static void vote_store(sel_engine* e) {
@@ -7141,11 +7214,7 @@ static void vote_store(sel_engine* e) {
         char text[SEL_VIEW_VOTES_MAX];
 
         snprintf(text, sizeof text, "%u", vr.count);
-        if (sel_library_sticker_set(e->lib, e->vote_song, "votes", text)) {
-            memset(e->vc_state, 0, sizeof e->vc_state); /* I906g: the stored counts are stale */
-            e->vote_epoch++;
-            e->votes_generation++;
-        }
+        if (wq_new(e, wq_sticker_set_run, wq_votes_done, e->vote_song, "votes", text) != NULL) wq_submit(e); /* I906f */
     }
 }
 
