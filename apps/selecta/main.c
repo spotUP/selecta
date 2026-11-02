@@ -262,6 +262,14 @@ static const char* option(int argc, char** argv, const char* name, const char* d
     return def;
 }
 
+/* I575: the one decision "this is a scripted/test run, not a user session". Scripted runs open no control socket unless
+ * SELECTA_SOCKET asks (I573). --keys and --input feed input, --console-frames is the test-only console frame flag
+ * (I218e), --output null produces no sound or picture a user could want. */
+static int scripted_run(int argc, char** argv, int has_keys, int out_is_null) {
+    return has_keys || out_is_null || option(argc, argv, "--input", NULL) != NULL ||
+           option(argc, argv, "--console-frames", NULL) != NULL;
+}
+
 /* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
 static int ui_resolve(const char* id, shell_ui* u) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_UI, id);
@@ -708,8 +716,10 @@ int main(int argc, char** argv)
 #ifndef SEL_NO_CONTROL_SOCKET
     /* I573: a scripted run (--keys, or the desktop UI's --input feeder) opens no control socket unless SELECTA_SOCKET asks.
      * With the socket open, a clockless run polls it SHELL_TURN_MS per turn, so a headless --input run plays its song in
-     * real time, and whether the socket binds depends on the TMPDIR length (sun_path), which made run time path-dependent. */
-    if (!(has_keys || option(argc, argv, "--input", NULL) != NULL) || getenv("SELECTA_SOCKET") != NULL) {
+     * real time, and whether the socket binds depends on the TMPDIR length (sun_path), which made run time path-dependent.
+     * --console-frames and --output null are scripted too (I575): a test run never depends on whether the user's own
+     * Selecta is running on the same socket path. */
+    if (!scripted_run(argc, argv, has_keys, is_null) || getenv("SELECTA_SOCKET") != NULL) {
         sel_ctl_path(ctl_path, sizeof ctl_path);
         ctl_fd = sel_ctl_listen(ctl_path);
         if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {

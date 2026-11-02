@@ -1037,6 +1037,12 @@ if(NOT SEL_AMIGA)
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/control_socket.sh" "$<TARGET_FILE:selecta>"
       "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/control_socket")
 
+  # I575: scripted runs (--console-frames, --output null) ignore a Selecta that holds the default control socket.
+  add_test(NAME scripted-run-no-socket
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/scripted_no_socket.sh" "$<TARGET_FILE:selecta>"
+      "${CMAKE_CURRENT_BINARY_DIR}/scripted_no_socket")
+  set_tests_properties(scripted-run-no-socket PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "scripted-no-socket ok")
+
   # M4-AX-0-4 ctl-socket-result (and M4-AX-2-4 QUIT): the one reachability test of the result reply and the new verbs.
   add_test(NAME ctl-socket-result
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/ctl_socket_result.sh" "$<TARGET_FILE:selecta>"
