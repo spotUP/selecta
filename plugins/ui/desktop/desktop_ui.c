@@ -11179,7 +11179,7 @@ static void draw_nowplaying(desk* d) {
         }
     }
     hdr = rect_of(pn.x + sp, dt.y + sp, side, lpx(d, 28));
-    draw_text(d, hdr, ctx[0] != '\0' ? ctx : "Now Playing", 1, 20, text);
+    draw_text(d, hdr, ctx[0] != '\0' ? ctx : "Now Playing", 1, 22, text);
     snprintf(d->np_ctx_shown, sizeof d->np_ctx_shown, "%s", ctx[0] != '\0' ? ctx : "Now Playing");
     /* The artwork spans the full content width between the two insets and stays square, so its height follows the panel
      * width (I443); the text lines below share the same insets (I404). */
@@ -11241,7 +11241,7 @@ static void draw_nowplaying(desk* d) {
                            ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
         sel_gui_icon_draw(d->canvas, &d->icons, lk ? SEL_GUI_ICON_CHECK : SEL_GUI_ICON_PLUS,
                           rect_of(d->np_add.x + (bd - ic) / 2, d->np_add.y + (bd - ic) / 2, ic, ic), ic, lk ? accent : text);
-        draw_text(d, rect_of(pn.x + sp, y, tw, lpx(d, 28)), f->title, 1, 20, text);
+        draw_text(d, rect_of(pn.x + sp, y, tw, lpx(d, 28)), f->title, 1, 22, text);
     }
     /* No artist: the artist line takes no height, so the like row follows the title (I446). */
     if (f->artist[0] != '\0') {
