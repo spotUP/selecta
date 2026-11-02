@@ -4245,22 +4245,46 @@ static void cmd_PLAY_QUERY(sel_engine* e, const sel_message* m) {
     }
 }
 
-static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
+/* I906f2d: the view save is a queued write (it ran on the pump and waited on the library call lock). `run` fills the 24-byte error code
+ * in op->res, `done` reports it on the pump. */
+static void wq_view_save_run(sel_library* lib, sel_wq_op* op) {
     sel_lib_job job;
+
+    memset(&job, 0, sizeof job);
+    job.text = op->s[0];
+    job.text2 = op->s[1];
+    job.now = op->n1;
+    op->rc = sel_library_run(lib, SEL_LIB_REQ_SAVE_VIEW, &job);
+    memcpy(op->res, job.error, sizeof job.error);
+}
+
+static void wq_view_save_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) {
+        sel_engine_report_error(e, "library_failed", "VIEW_SAVE");
+    } else if (((const char*)op->res)[0] != '\0') {
+        report_library_error(e, (const char*)op->res, "VIEW_SAVE");
+    }
+}
+
+static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
+    sel_wq_op* op;
+    char* res;
 
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "VIEW_SAVE");
         return;
     }
-    memset(&job, 0, sizeof job);
-    job.text = m->args[0].v.s;
-    job.text2 = m->args[1].v.s;
-    job.now = (long long)time(NULL);
-    if (!sel_library_run(e->lib, SEL_LIB_REQ_SAVE_VIEW, &job)) {
-        sel_engine_report_error(e, "library_failed", "VIEW_SAVE");
-    } else if (job.error[0] != '\0') {
-        report_library_error(e, job.error, "VIEW_SAVE");
+    res = (char*)e->host->mem_alloc(e->host, sizeof(((sel_lib_job*)0)->error), SEL_MEM_FAST);
+    op = res != NULL ? wq_new(e, wq_view_save_run, wq_view_save_done, m->args[0].v.s, m->args[1].v.s, NULL) : NULL;
+    if (op == NULL) {
+        if (res != NULL) e->host->mem_free(e->host, res);
+        sel_engine_report_error(e, "library_busy", "VIEW_SAVE");
+        return;
     }
+    res[0] = '\0';
+    op->res = res;
+    op->n1 = (int64_t)time(NULL);
+    wq_submit(e);
 }
 
 /* Emit a LIBRARY_RESULT with a path and a count from the library hooks (scan and fetch). */

@@ -551,6 +551,51 @@ int main(int argc, char** argv) {
         CHECK(v_after.leveler_writes == v_before.leveler_writes + 1u);
         CHECK(v_after.lib_writes_done >= v_before.lib_writes_done + 1u); /* the write queue ran (the song end queues its history row too) */
     }
+    /* I906f2d: VIEW_SAVE is a queued write. Sentinel: stats.lib_writes_done rises by one for it; the view row is absent while the call lock is
+     * held and present (read back from the views table) after the release. */
+    {
+        sel_engine_stats s_before, s_after;
+        sqlite3_stmt* st = NULL;
+        char qtext[64] = "";
+        int found = 0;
+
+        sel_engine_stats_get(e, &s_before);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        CHECK(sel_engine_send_line(e, "VIEW_SAVE i906f2dview format:xm", pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        sel_engine_pump(e, sink, NULL);
+        pump_ms = ms_since(&t0);
+        w1 = sel_library_watched_waits();
+        sel_engine_stats_get(e, &s_after);
+        CHECK(pump_ms < PUMP_BUDGET_MS);
+        CHECK(w1 == w0);
+        CHECK(s_after.lib_writes_done == s_before.lib_writes_done); /* queued behind the held lock */
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &s_after);
+            if (s_after.lib_writes_done > s_before.lib_writes_done) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f2d view: pump %ld ms, waits %u, lib_writes_done +%u\n", pump_ms, (unsigned)(w1 - w0),
+               (unsigned)(s_after.lib_writes_done - s_before.lib_writes_done));
+        CHECK(s_after.lib_writes_done == s_before.lib_writes_done + 1u); /* the save went through the write queue */
+        sel_library_watch(0);
+        if (sqlite3_prepare_v2(lib->db, "SELECT query FROM views WHERE name = 'i906f2dview'", -1, &st, NULL) == SQLITE_OK) {
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                found = 1;
+                snprintf(qtext, sizeof qtext, "%s", (const char*)sqlite3_column_text(st, 0));
+            }
+            sqlite3_finalize(st);
+        }
+        sel_library_watch(1);
+        CHECK(found && strcmp(qtext, "format:xm") == 0);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);
