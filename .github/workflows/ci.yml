@@ -48,12 +48,16 @@ jobs:
           submodules: true
       - name: Install cmake and ninja
         run: apt-get update && apt-get install -y cmake ninja-build
+      # The desktop UI plugin (SEL_DESKTOP_AGA defaults ON) needs the host-built bake tools, the RULES.md "Build (Amiga
+      # 68020) with the desktop UI" sequence: host gui_iconbake and gui_fontbake first, then the -D paths (I987).
+      - name: Configure (host bake tools)
+        run: cmake -S . -B build/host -G Ninja
+      - name: Build (host bake tools)
+        run: cmake --build build/host --target gui_iconbake gui_fontbake
       - name: Configure (68020)
-        run: cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DCMAKE_BUILD_TYPE=Debug -DAMIGA_GCC_ROOT=/opt/amiga
+        run: cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DCMAKE_BUILD_TYPE=Debug -DAMIGA_GCC_ROOT=/opt/amiga -DSELECTA_ICONBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_iconbake -DSELECTA_FONTBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_fontbake
       - name: Build (68020)
         run: cmake --build build/amiga -j2
-      - name: Configure (host selecta-cli)
-        run: cmake -S . -B build/host -G Ninja
       - name: Build (host selecta-cli)
         run: cmake --build build/host --target selecta-cli
       - name: Test (vamos)
