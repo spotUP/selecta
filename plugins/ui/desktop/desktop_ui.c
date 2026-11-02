@@ -549,7 +549,7 @@ typedef struct desk {
     int nag_asked;           /* the launch SOURCES request was sent (I527) */
     int nag_done;            /* the sync offer dialog was shown this launch: it opens once, on the first Library visit with a due source (I602) */
     uint32_t nagdlg_n;       /* rows the sync offer dialog lists */
-    char nagdlg_key[16][24]; /* their source keys (I789): src[] is rebuilt by every SOURCES answer, so an index would drift */
+    char nagdlg_key[SEL_SOURCE_MAX][24]; /* one per registry source (I921); their source keys (I789): src[] is rebuilt by every SOURCES answer, so an index would drift */
     uint32_t nagdlg_opens;   /* sentinel: sync offer dialogs opened */
     uint32_t nagdlg_draws;   /* sentinel: sync offer dialog paints (I789: opened is not shown) */
     uint32_t src_gen;        /* sentinel (I826): SOURCES rows that changed what the pages draw */
@@ -2931,7 +2931,9 @@ static void song_menu_draw(desk* d) {
 /* ---- The confirm dialog of the two library removals (DUI-P4-18): Remove from Library names the song, Clear Library names
  * the song count. Nothing is sent until Confirm; Cancel, Escape or a click outside close it. ---- */
 
-enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = 16 };
+enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = SEL_SOURCE_MAX };
+/* I921: the sync offer lists every due source the registry can hold (C99 compile-time check: a negative array size fails the build). */
+typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nagdlg_key) / sizeof(((desk*)0)->nagdlg_key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
 enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5 };
 
 static const char* path_base(const char* p);
