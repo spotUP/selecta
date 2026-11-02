@@ -121,6 +121,36 @@ int main(void) {
     for (i = 0; pg->order != NULL && i < NSONGS; i++) CHECK(pg->order[i] == i);
     serial = pg->serial;
 
+    /* I994d2: COLLECTION_VIEW re-orders the open page without a rebuild: new serial, title descending, filter, sentinel. */
+    {
+        uint32_t views = stats(e).collection_views, queries = stats(e).collection_queries;
+        run(e, "COLLECTION_VIEW \"\" 1 1");
+        pg = sel_engine_state(e)->collection;
+        CHECK(stats(e).collection_views == views + 1u && pg != NULL && pg->serial > serial && stats(e).collection_queries == queries);
+        CHECK(pg->sort == (uint32_t)SEL_COLL_SORT_TITLE && pg->descending == 1u && pg->shown == NSONGS && pg->songs == NSONGS);
+        for (i = 0; pg->order != NULL && i < NSONGS; i++) CHECK(pg->order[i] == NSONGS - 1u - i);
+        old_serial = serial;
+        serial = pg->serial;
+        snprintf(line, sizeof line, "SONGS_QUEUE_ADD collection %u \"0\"", (unsigned)old_serial);
+        stale = stats(e).songs_stale;
+        run(e, line);
+        CHECK(qcount(e) == 0u && stats(e).songs_stale == stale + 1u);
+        run(e, "COLLECTION_VIEW \"song3\" 1");
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->serial > serial && pg->shown == 1u && pg->order != NULL && pg->order[0] == 3u && strcmp(pg->filter, "song3") == 0);
+        serial = pg->serial;
+        /* Restore keeps the view; a plain open resets it. */
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"%u\" 1", (unsigned)SEL_LIB_ITEM_ALBUM, (unsigned)it[0].art_id);
+        run(e, line);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->sort == (uint32_t)SEL_COLL_SORT_TITLE && pg->shown == 1u && strcmp(pg->filter, "song3") == 0);
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"%u\"", (unsigned)SEL_LIB_ITEM_ALBUM, (unsigned)it[0].art_id);
+        run(e, line);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->sort == (uint32_t)SEL_COLL_SORT_CUSTOM && pg->descending == 0u && pg->shown == NSONGS && pg->filter[0] == '\0');
+        serial = pg->serial;
+    }
+
     /* PLAY_CONTEXT start 1 is shown position 1: rows 1..4 queue in shown order. */
     snprintf(line, sizeof line, "PLAY_CONTEXT collection %u 1 \"CvAlb\"", (unsigned)serial);
     run(e, line);
