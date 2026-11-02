@@ -895,6 +895,7 @@ int main(int argc, char** argv)
     if (has_stats) { /* the song the engine has open, for the mouse test (DUI-P3-2) */
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
     }
+    printf("collection_orders=%u\n", (unsigned)est.collection_orders); /* I994d1: song list pages whose order the engine built */
     printf("links_parsed=%u links_made=%u\n", (unsigned)est.links_parsed, (unsigned)est.links_made);
     printf("sources_listed=%u evt_dropped=%u\n", (unsigned)est.sources_listed, (unsigned)est.evt_dropped);
 

@@ -538,6 +538,7 @@ typedef struct sel_engine_stats {
     uint32_t collection_opens;  /* COLLECTION_OPEN commands applied (I678e sentinel: a collection page was opened through the engine) */
     uint32_t drill_rows;        /* I790 sentinel: source drill rows emitted by the library over all pages built */
     uint32_t collection_queries; /* I678f sentinel: collection page lists (songs or shelf) that reached the library */
+    uint32_t collection_orders;  /* I994d1 sentinel: collection page orders built (one per song list page build) */
     uint32_t lib_deferred;        /* I782 sentinel: library requests refused because the library was busy and the caller asked not to wait */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
