@@ -287,7 +287,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME dui-m68k-nofloat
     COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/dui-m68k" "-DGEN=${CMAKE_GENERATOR}"
       "-DCMAKE=${CMAKE_COMMAND}" "-DNM=${SEL_M68K_NM}" -P "${CMAKE_CURRENT_SOURCE_DIR}/m68k_nofloat.cmake")
-  set_tests_properties(dui-m68k-nofloat PROPERTIES LABELS dui RUN_SERIAL TRUE TIMEOUT 300)
+  set_tests_properties(dui-m68k-nofloat PROPERTIES LABELS "dui;m68k-gcc" RUN_SERIAL TRUE TIMEOUT 300)
 endif()
 
 # The Amiga art worker runs the job inline (I369): the host builds amiga/art_thread.c on its own, it needs no Amiga headers.
