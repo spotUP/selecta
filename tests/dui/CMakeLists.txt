@@ -163,6 +163,16 @@ if(NOT SEL_AMIGA)
       set(tlabel composer-settle)
     elseif(tname STREQUAL "dui-song-panel-art-async") # I906d: the song panel read and view art ids ride posted read slots, the pump never waits; ledger row, not a plan item
       set(tlabel song-panel-art-async)
+    elseif(tname STREQUAL "dui-direct-calls-async") # I906e: moved library call sites answer through posted slots; ledger row, not a plan item, so no dui label (dui-ratchet counts dui against the plan ids)
+      set(tlabel direct-calls-async)
+    elseif(tname STREQUAL "dui-nav-turn-cost") # I959: page navigation turn cost; ledger row, not a plan item, so no dui label (dui-ratchet counts dui against the plan ids)
+      set(tlabel nav-turn-cost)
+    elseif(tname STREQUAL "dui-song-total-async") # I936: the catalogue song count is read off the pump thread; ledger row, not a plan item, so no dui label (dui-ratchet counts dui against the plan ids)
+      set(tlabel song-total-async)
+    elseif(tname STREQUAL "dui-stats-nowait") # I958: stats rating_pending comes from the writer counter; ledger row, not a plan item, so no dui label (dui-ratchet counts dui against the plan ids)
+      set(tlabel stats-nowait)
+    elseif(tname STREQUAL "dui-sources-first-paint") # I825: a chip click repaints while a sidebar read is in flight; ledger row, not a plan item, so no dui label (dui-ratchet counts dui against the plan ids)
+      set(tlabel sources-first-paint)
     endif()
     # I989b: a script that compares a blessed frame hash (it honours SELECTA_GOLDEN_UPDATE) carries the golden label too.
     # The goldens are blessed on the maintainer's Mac: CI excludes the label (-LE golden), the pre-push step runs it (RULES.md).
@@ -182,7 +192,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME dui-settings
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
       "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-settings" -P "${CMAKE_CURRENT_SOURCE_DIR}/settings.cmake")
-  set_tests_properties(dui-settings PROPERTIES LABELS settings TIMEOUT 120)
+  set_tests_properties(dui-settings PROPERTIES LABELS "dui;settings" TIMEOUT 120) # I989e: the test of plan item DUI-P4-14, so it keeps the dui label that dui-ratchet counts
 endif()
 
 # dui-search-online (I406a): the Search page's Modules.pl scope, row click, remembered scope and radio row, against the net fixture.
