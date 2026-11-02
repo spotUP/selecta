@@ -2589,7 +2589,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_tracker_info = (sel_rp_tracker_info_fn)sel_tag_find(hooks, SEL_RP_TRACKER_INFO, 0);
     sl->rp_tracker_cells = (sel_rp_tracker_cells_fn)sel_tag_find(hooks, SEL_RP_TRACKER_CELLS, 0);
     sl->rp_sample_get = (sel_rp_sample_get_fn)sel_tag_find(hooks, SEL_RP_SAMPLE_GET, 0);
-    sl->rp_mute = kind == SEL_RP_KIND_RENDER ? (sel_rp_mute_fn)sel_tag_find(hooks, SEL_RP_MUTE, 0) : NULL;
+    sl->rp_mute = kind == SEL_RP_KIND_RENDER || kind == SEL_RP_KIND_HW ? (sel_rp_mute_fn)sel_tag_find(hooks, SEL_RP_MUTE, 0) : NULL;
     sl->applied_mute = 0;
     sl->rp_mute_calls = 0;
     sl->rp_set_speed =
@@ -10141,7 +10141,7 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
     uint32_t done = 0;
     {
         uint32_t want_mute = e->state.mute_mask;
-        if (sl->rp_render == NULL) {
+        if (sl->rp_render == NULL && !sl->hw) {
             sl->mixer.mute_mask = want_mute;
         } else if (sl->rp_mute != NULL && sl->applied_mute != want_mute) {
             uint32_t k;

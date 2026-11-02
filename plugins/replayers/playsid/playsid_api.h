@@ -49,6 +49,9 @@ typedef struct ps_ops {
      * psb_Envelope1..9 (clamped to 63) into env, for up to `chips` chips; returns the chips copied, 0 when the library
      * version is below PS_REGS_MIN_VERSION or there is no C64 memory. Private library offsets, see the design doc. */
     uint32_t (*read_sid_regs)(uint8_t* regs, uint8_t* env, uint32_t chips);
+    /* SetChannelEnable (MPS-19): a0 = four UWORDs, voice 1, 2, 3 and the sample channel, 0 = silent, 1 = audible. Only
+     * the classic engine honours it (Sound feeds Paula frequency 0, CreateFour stops the sample channel). */
+    void (*set_channel_enable)(const uint16_t enable[4]);
 } ps_ops;
 
 /* The Amiga build returns the LVO table (playsid_amiga.c); the host test defines its own stub. */
@@ -67,6 +70,11 @@ uint32_t ps_oversample_from_pref(const char* value);
 
 /* True for the modes the reSID engine renders (ForwardSong is skipped there, as in HippoPlayer). */
 int ps_mode_is_resid(uint32_t om);
+
+/* MPS-19: true when SetChannelEnable silences voices in operating mode `om`. The classic engine reads the enable words;
+ * writeSIDRegister (every reSID and hardware mode) does not in today's library, so those modes hide mute (voice_count
+ * 0) until the patched library of step B is installed and this gate learns its revision. */
+int ps_mode_can_mute(uint32_t om);
 
 /* I434e: ForwardSong exists only in the classic engine (HippoPlayer skips it in every special mode), so only
  * PS_OM_NORMAL is seekable. */

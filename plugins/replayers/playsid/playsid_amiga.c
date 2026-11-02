@@ -20,6 +20,7 @@ enum {
     LVO_CONTINUE = -78,
     LVO_FORWARD = -84,
     LVO_SETVERTFREQ = -96,
+    LVO_SETCHANNELENABLE = -102,
     LVO_SETOPMODE = -138,
     LVO_GETOPMODE = -144,
     LVO_SETRESIDMODE = -150,
@@ -61,6 +62,7 @@ PS_LVO_FN(lvo_pause, LVO_PAUSE)
 PS_LVO_FN(lvo_continue, LVO_CONTINUE)
 PS_LVO_FN(lvo_forward, LVO_FORWARD)
 PS_LVO_FN(lvo_vert, LVO_SETVERTFREQ)
+PS_LVO_FN(lvo_chenable, LVO_SETCHANNELENABLE)
 PS_LVO_FN(lvo_opmode, LVO_SETOPMODE)
 PS_LVO_FN(lvo_getopmode, LVO_GETOPMODE)
 PS_LVO_FN(lvo_ahi, LVO_SETAHIMODE)
@@ -102,6 +104,7 @@ static void a_continue(void) { (void)lvo_continue(0, 0, 0); }
 static void a_forward(void) { (void)lvo_forward(0, 0, 0); }
 static void a_vert(uint32_t hz) { (void)lvo_vert(hz, 0, 0); }
 static void a_opmode(uint32_t om) { (void)lvo_opmode(om, 0, 0); }
+static void a_channel_enable(const uint16_t enable[4]) { (void)lvo_chenable(0, enable, 0); }
 static void a_ahi(uint32_t id) { (void)lvo_ahi(id, 0, 0); }
 /* GetResidAudioBuffer returns d0 = length, d1 = period, a0/a1/a2 = buffers */
 static uint32_t a_resid_buffer(const int8_t* bufs[3], uint32_t* period) {
@@ -165,7 +168,7 @@ static uint32_t a_read_sid_regs(uint8_t* regs, uint8_t* env, uint32_t chips) {
 
 static const ps_ops g_ops = {a_open, a_close, a_alloc, a_free, a_set_module, a_start, a_stop,
                              a_pause, a_continue, a_forward, a_vert, a_opmode, a_ahi, a_getopmode,
-                             a_resid_filter, a_resid_boost, a_resid_mode, a_resid_buffer, a_measure_resid, a_read_sid_regs};
+                             a_resid_filter, a_resid_boost, a_resid_mode, a_resid_buffer, a_measure_resid, a_read_sid_regs, a_channel_enable};
 
 const ps_ops* ps_ops_get(void) {
     return &g_ops;
