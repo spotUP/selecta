@@ -1581,6 +1581,29 @@ static uint32_t ladder_run(uint32_t sw, uint32_t sh, int laced, uint32_t accept_
     return opened;
 }
 
+/* I973h: rig 2 (800x600 RTG): ladder step 0 (613x638) was refused, step 1 (464x243, layout width 599) opened, then the first resize
+ * check laid out the real 800 px width again; that layout does not fit, MUI 3.8 closed the open window silently and no window
+ * ever showed. The resize check must never lay out wider than the ladder step that opened the window. */
+static void test_open_layout_cap(void) {
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    const char* rs;
+    const char* cap;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(mui_open_layout_width(MUI_COMPACT_W, 800u) == MUI_COMPACT_W, "compact step caps the 800 px window to %u", (unsigned)MUI_COMPACT_W);
+    CHECK(mui_open_layout_width(800u, 800u) == 800u && mui_open_layout_width(800u, 640u) == 640u && mui_open_layout_width(0u, 800u) == 800u,
+          "no cap when the step fit the window, smaller windows and unset step pass through");
+    rs = strstr(src, "static void mui_check_resize(mui_state* s) {");
+    cap = rs != NULL ? strstr(rs, "mui_open_layout_width(s->open_layout_w") : NULL;
+    CHECK(cap != NULL && strstr(rs, "mui_layout_relayout(") != NULL && cap < strstr(rs, "mui_layout_relayout("),
+          "mui_check_resize applies the ladder cap before it relays out");
+    CHECK(strstr(src, "s->open_layout_w = st.layout_w;") != NULL, "the ladder step layout width is recorded");
+}
+
 static void test_screen_plan(void) {
     mui_screen_plan_t p;
     mui_layout_map_t m;
@@ -3224,6 +3247,7 @@ int main(int argc, char** argv) {
         test_layout_before_open();
     } else if (strcmp(argv[1], "screen-plan") == 0) {
         test_screen_plan();
+        test_open_layout_cap();
     } else if (strcmp(argv[1], "window-borderless") == 0) {
         test_window_borderless();
     } else if (strcmp(argv[1], "toolrows") == 0) {

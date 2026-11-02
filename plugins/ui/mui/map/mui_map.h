@@ -476,6 +476,11 @@ typedef struct mui_open_step_t {
     uint32_t step;
     uint32_t layout_w, layout_h;
 } mui_open_step_t;
+/* I973h: the width the layout is computed for after the window opened. The ladder step that opened it chose a layout whose
+ * minimum fits the screen; the real window width (the whole screen) would select the larger layout MUI 3.8 refuses, and MUI
+ * then closes the open window silently (rig 2 800x600: step 0 needs 613x638, step 1 464x243 opened, the first resize check
+ * applied the step 0 layout and the window vanished). opened_w 0 means no cap. */
+uint32_t mui_open_layout_width(uint32_t opened_w, uint32_t window_w);
 uint32_t mui_open_ladder(uint32_t step, uint32_t screen_w, uint32_t screen_h, int laced, mui_open_step_t* out);
 uint32_t mui_open_ladder_calls(void);
 /* I667n: the Workbench mode is RTG. Picasso96 (uaegfx) modes do not set DIPF_IS_FOREIGN, so the Workbench bitmap decides too: an
