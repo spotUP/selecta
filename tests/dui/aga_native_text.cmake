@@ -174,7 +174,7 @@ if(rrows GREATER 8)
   message(FATAL_ERROR "the library row text spans ${rrows} screen rows, expected at most 8 (mini8)")
 endif()
 # glyph pitch 8: from the first ink column, the text is a sequence of 8 wide cells whose gap column (the glyph's right
-# bearing) is blank in every cell, so exactly 7 of the 8 column offsets carry ink. A pitch of 6, 7 or 9 drifts the gap over
+# bearing) is blank in every cell, so at most 7 of the 8 column offsets carry ink. A pitch of 6, 7 or 9 drifts the gap over
 # every offset within a few glyphs and fills all 8.
 set(x0r -1)
 foreach(x RANGE 178 400)
@@ -197,8 +197,11 @@ endforeach()
 list(REMOVE_DUPLICATES hit_offsets)
 list(LENGTH hit_offsets noff)
 message(STATUS "P5 library row glyph cell offsets with ink: ${hit_offsets}")
-if(NOT noff EQUAL 7)
-  message(FATAL_ERROR "the library row glyphs are not on an 8 column pitch (ink at ${noff} of 8 offsets: ${hit_offsets}, expected exactly 7)")
+# I989f: since I972b the artist column starts right of x=400, so the scanned part of the first row is only its title
+# ("Intro", 5 glyphs, whose ink covers 6 of the 7 offsets). The gap column must stay blank (never all 8) and the 5 glyph
+# cells must still cover at least 5 offsets.
+if(noff GREATER_EQUAL 8 OR noff LESS 5)
+  message(FATAL_ERROR "the library row glyphs are not on an 8 column pitch (ink at ${noff} of 8 offsets: ${hit_offsets}, expected 5 to 7)")
 endif()
 
 # 4. I537 items 1-5 (the Library screen of the font build). Layout numbers come from the desktop's own stats lines (label,
@@ -219,7 +222,8 @@ if(clr_x LESS 289)
 endif()
 # 4.4 (item 4) every mode tab ends inside the 640 px page and the tabs do not overlap the style chooser or each other.
 set(prev_end 0)
-foreach(tab Composers Tree Columns Files History Sources)
+# I989f: Composers, Files, History and Sources left the tab strip with the retired Library page (I678i); Tree and Columns remain.
+foreach(tab Tree Columns)
   label_rect(tr "${lo}" "${tab}")
   list(GET tr 0 tx)
   list(GET tr 2 tw)
@@ -229,15 +233,7 @@ foreach(tab Composers Tree Columns Files History Sources)
   endif()
   set(prev_end ${tend})
 endforeach()
-foreach(st Grid "Cover Flow" List)
-  label_rect(sr "${lo}" "${st}")
-  list(GET sr 0 sx)
-  list(GET sr 1 sy)
-  list(GET tr 1 ty)
-  if(sy EQUAL ty AND sx LESS prev_end)
-    message(FATAL_ERROR "I537 item 4: style segment ${st} at x=${sx} overlaps the tab row ending at ${prev_end}")
-  endif()
-endforeach()
+# I989f: the Grid, Cover Flow and List style chooser is not on the Folders page (I678i); its overlap check went with it.
 # 4.2 (item 2) the rail labels are not ellipsized: the last 8 columns of each label's ink hold a letter (at least 4 rows),
 # an ellipsis leaves only its dots (1 to 2 rows). Doors are the ink bands right of the icon, below the brand row.
 function(rail_ink outvar x y)
@@ -270,7 +266,9 @@ message(STATUS "I537 rail label bands start at rows ${bands}")
 if(nb LESS 7)
   message(FATAL_ERROR "I537 item 2: expected 7 rail label bands, found ${nb}")
 endif()
-foreach(door 2 5 6) # Your Library, Now Playing, Song Information (list index = door index when the brand band is excluded)
+# I989f: since I972b the rail runs from the window top (Home, Search, Library, Queue, Now Playing, Songs, then the playlists block), so
+# the labelled doors sit at band 2, 4 and 5 (they were 2, 5 and 6 under the old brand row and door order).
+foreach(door 2 4 5)
   list(GET bands ${door} y0)
   math(EXPR y1 "${y0} + 9")
   set(xr -1)
@@ -423,7 +421,8 @@ endif()
 # margin so "Now Playing" and the rest do not touch the edge of the highlight.
 # Revert check: with the old 160 rail and the fixed 8 px tab centring pad, the tab ink widths drop below 8 per character and
 # the door row leaves 94 px for a 96 px label.
-foreach(tab Composers Tree Columns Files History Sources)
+# I989f: Composers, Files, History and Sources left the tab strip with the retired Library page (I678i); Tree and Columns remain.
+foreach(tab Tree Columns)
   if(NOT lo MATCHES "label (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ink (-?[0-9]+) (-?[0-9]+) text ${tab}\n")
     message(FATAL_ERROR "I547: no centred label for the ${tab} tab:\n${lo}")
   endif()
@@ -433,17 +432,26 @@ foreach(tab Composers Tree Columns Files History Sources)
     message(FATAL_ERROR "I547: the ${tab} tab label is ${CMAKE_MATCH_6} px wide, expected the whole label (${want}): it is truncated")
   endif()
 endforeach()
-set(widest "Your Library")
+# I989f: the widest rail label is "Now Playing" (11 characters) since the rail dropped the "Your Library" door text (I972b, I678i).
+set(widest "Now Playing")
 string(LENGTH "${widest}" wl)
 math(EXPR need "${wl} * 8 + 12 + 12 + 22 + 8")
+set(doors_seen 0)
 foreach(i RANGE 0 6)
   if(NOT lo MATCHES "door ${i} (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n")
     message(FATAL_ERROR "I547: no door ${i} rectangle:\n${lo}")
   endif()
+  if(CMAKE_MATCH_3 EQUAL 0)
+    continue() # I989f: door 2 is the retired Library door (I678i), laid out as an empty rectangle
+  endif()
+  math(EXPR doors_seen "${doors_seen} + 1")
   if(CMAKE_MATCH_3 LESS need)
     message(FATAL_ERROR "I547: sidebar row ${i} is ${CMAKE_MATCH_3} px wide, a ${wl} character label needs ${need}")
   endif()
 endforeach()
+if(NOT doors_seen EQUAL 6)
+  message(FATAL_ERROR "I547: ${doors_seen} sidebar doors have a rectangle, expected 6")
+endif()
 
 # 7. I554 on the 640x512 AGA layout the history arrows (nav_arrows, top right of the main pane) intersect no page content rect:
 # the search field of Home and Search, and on the Library page the title row buttons, the statistics strip, the More control, every
@@ -498,14 +506,14 @@ foreach(view home search library)
       message(FATAL_ERROR "I554: no lib_header line:\n${o}")
     endif()
     list(APPEND content "Add Folder|${CMAKE_MATCH_1} ${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4}" "Clear Library|${CMAKE_MATCH_5} ${CMAKE_MATCH_6} ${CMAKE_MATCH_7} ${CMAKE_MATCH_8}")
-    string(REGEX MATCHALL "(stats rect|stats_more|tab [0-5]|style_chooser [0-2] [A-Za-z ]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)" others "${o}")
+    string(REGEX MATCHALL "(stats rect|stats_more|tab [0-1]) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)" others "${o}")
     foreach(r ${others})
       string(REGEX MATCH "^(.*) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)$" _r "${r}")
       list(APPEND content "${CMAKE_MATCH_1}|${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4} ${CMAKE_MATCH_5}")
     endforeach()
     list(LENGTH content nc)
-    if(nc LESS 12)
-      message(FATAL_ERROR "I554: only ${nc} library content rects parsed, expected the 2 buttons, stats, More, 6 tabs and 3 styles")
+    if(nc LESS 6)
+      message(FATAL_ERROR "I554: only ${nc} library content rects parsed, expected the 2 buttons, stats, More and 2 tabs (I678i: no style chooser)")
     endif()
   endif()
   foreach(arrow ${arrow_list})
