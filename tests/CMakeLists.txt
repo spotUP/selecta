@@ -2536,6 +2536,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(podcast PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "podcast_ok")
 
+  # I894a1: UPnP MediaServer discovery (SSDP unicast to the fixture, HTTP description, ContentDirectory controlURL).
+  add_executable(upnp_discover_test net/upnp_discover_test.c)
+  target_link_libraries(upnp_discover_test PRIVATE selecta_shared_upnp selecta_library)
+  add_test(NAME upnp-discover
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:upnp_discover_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/upnp_server.py" -P "${SEL_NET_DIR}/upnp_discover.cmake")
+  set_tests_properties(upnp-discover PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "upnp_discover_ok")
+
   # I725g: the ccMixter source: one query per sync, per-upload licence shown, User-Agent, streamed playback.
   add_test(NAME ccmixter
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
