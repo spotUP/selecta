@@ -18,6 +18,7 @@ import threading
 import time
 
 port_file, lifetime = sys.argv[1], float(sys.argv[2])
+MEDIA = open(sys.argv[3], "rb").read() if len(sys.argv) > 3 else b""  # I894a3: served for GET /media/*.mp3
 NAME = "Fixture Media &amp; Music"
 DESC = f"""<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -58,12 +59,12 @@ def container(cid, parent, title, count):
             f'<dc:title>{escape(title)}</dc:title><upnp:class>object.container</upnp:class></container>')
 
 
-def item(n):
-    title = f"Song {n:03d} & More" if n == 42 else f"Track {n:03d}"
+def item(n, parent="1"):
+    title = f"Song {n:03d} & More" if n == 42 else (f"Track-{n:03d}" if n >= 200 else f"Track {n:03d}")
     album = "Album <A>" if n == 42 else "Album"
     url = f"http://127.0.0.1:{http_port}/media/{n:03d}.mp3?a=1&b=2"
-    return (f'<item id="1${n:03d}" parentID="1" restricted="1"><dc:title>{escape(title)}</dc:title>'
-            f'<upnp:artist>Artist {n:03d}</upnp:artist><upnp:album>{escape(album)}</upnp:album>'
+    return (f'<item id="{parent}${n:03d}" parentID="{parent}" restricted="1"><dc:title>{escape(title)}</dc:title>'
+            f'<upnp:artist>{"Artist-" if n >= 200 else "Artist "}{n:03d}</upnp:artist><upnp:album>{escape(album)}</upnp:album>'
             f'<upnp:class>object.item.audioItem.musicTrack</upnp:class>'
             f'<res protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3" duration="0:03:25.500" size="1234567">'
             f'{escape(url)}</res></item>')
@@ -73,7 +74,9 @@ def children(oid):
     if oid == "0":
         return [container("1", "0", "Rock & Roll", 151), container("2", "0", "Jazz", 0)]
     if oid == "1":
-        return [container("1$sub", "1", "Sub", 0)] + [item(n) for n in range(1, 151)]
+        return [container("1$sub", "1", "Sub", 3)] + [item(n) for n in range(1, 151)]
+    if oid == "1$sub":  # I894a3: a sub-container with 3 items the recursive scan must reach
+        return [item(n, "1$sub") for n in range(201, 204)]
     return []
 
 
@@ -106,6 +109,14 @@ class Desc(http.server.BaseHTTPRequestHandler):
         self.wfile.write(resp)
 
     def do_GET(self):
+        if self.path.startswith("/media/") and MEDIA:
+            log("media_get=" + self.path)
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Length", str(len(MEDIA)))
+            self.end_headers()
+            self.wfile.write(MEDIA)
+            return
         log("desc_get=" + self.path)
         if self.path != "/desc.xml":
             self.send_response(404)

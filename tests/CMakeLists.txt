@@ -2560,6 +2560,13 @@ if(NOT SEL_AMIGA)
   set_tests_properties(podcast PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "podcast_ok")
 
+  # I894a3: the dlna source: recursive Browse into library.db (153 songs), SSDP discover, play from the res URL.
+  add_test(NAME dlna
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DSRV=${SEL_NET_DIR}/upnp_server.py"
+            -P "${SEL_NET_DIR}/dlna.cmake")
+  set_tests_properties(dlna PROPERTIES LABELS m3 TIMEOUT 90 PASS_REGULAR_EXPRESSION "dlna_ok")
+
   # I894a1: UPnP MediaServer discovery (SSDP unicast to the fixture, HTTP description, ContentDirectory controlURL).
   add_executable(upnp_discover_test net/upnp_discover_test.c)
   target_link_libraries(upnp_discover_test PRIVATE selecta_shared_upnp selecta_library)
