@@ -325,5 +325,6 @@ Checklist (tick here and in the ledger in the same edit):
 - D7 Per-playlist heart colour: skipped.
 - D8 Song length: HVSC Songlengths wins; measured length only when HVSC has no entry.
 - D9 Amiga SID voice mute: wait for playsid.library to offer a mute call; ask its maintainer. No register-masking hack.
+  REVERSED by Johan 2026-11-02 (after MPS-2): "Add mute", Amiga SID mute now. Row MPS-19: Opus design pass first (how playsid.library is driven, where voices can be silenced, 68020 cost), then build.
 - D10 C64 ROMs: bundle an open replacement KERNAL (MPS-1 checks its licence before shipping; BASIC tunes that need the
   real BASIC ROM may still fail, reported as such). Johan 2026-11-02: Settings lets users load their real KERNAL, BASIC and character ROMs (row MPS-1c).
