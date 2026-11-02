@@ -412,7 +412,7 @@ const char* mui_like_line(void);
 /* MUI-P4-8 Now Playing: the objects of the group in order, and a synced lyric slot to its line index (-1: none). */
 uint32_t mui_np_objects(const char** names, uint32_t cap);
 int32_t mui_lyric_line_of(int32_t lyric_slot);
-/* MUI-P4-9 song info: the next subsong of a Cycle (wraps after the last) as a SUBSONG line; 0 when there is only one. */
+/* MUI-P4-9 song info: the Cycle's active entry (0-based, the engine's SUBSONG index; wraps past the song's count) as a SUBSONG line; 0 when there is only one. */
 uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, size_t cap);
 /* I973c: the bar's subsong label "n/m" (frame subsong is 1-based, as the desktop bar prints it). Returns 1 when the song has subsongs
  * (count > 1), else 0 with an empty label: the subsong group is hidden. */

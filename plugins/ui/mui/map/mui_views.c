@@ -202,7 +202,10 @@ uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, siz
     if (count < 2u) {
         return 0;
     }
-    snprintf(out, cap, "SUBSONG %u", (unsigned)(subsong >= count ? 1u : subsong + 1u));
+    /* `subsong` is the Cycle's active entry, 0-based and already advanced by the Cycle itself; the engine's SUBSONG index is 0-based too
+     * (the desktop bar sends frame.subsong - 2 / frame.subsong for its 1-based value), so the line carries the entry as it is. Entries
+     * past the song's count wrap to the first (I973d: it sent entry + 1, and 1 instead of 0 at the wrap). */
+    snprintf(out, cap, "SUBSONG %u", (unsigned)(subsong % count));
     return 1;
 }
 

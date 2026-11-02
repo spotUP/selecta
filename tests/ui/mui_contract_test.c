@@ -1423,8 +1423,10 @@ static void test_nowplaying(void) {
 
 static void test_songinfo(void) {
     char o[32];
-    CHECK(mui_subsong_cycle_line(1, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 2") == 0, "next '%s'", o);
-    CHECK(mui_subsong_cycle_line(3, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 1") == 0, "wraps '%s'", o);
+    /* I973d: the Cycle's active entry is 0-based, as the engine's SUBSONG index (desktop sends frame.subsong - 1 for its own 1-based value). */
+    CHECK(mui_subsong_cycle_line(0, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 0") == 0, "first entry '%s'", o);
+    CHECK(mui_subsong_cycle_line(2, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 2") == 0, "last entry '%s'", o);
+    CHECK(mui_subsong_cycle_line(3, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 0") == 0, "past the count wraps to 0, got '%s'", o);
     CHECK(mui_subsong_cycle_line(1, 1, o, sizeof o) == 0, "single subsong has no cycle");
 }
 
@@ -2577,6 +2579,13 @@ static void test_player_band_sizes(void) {
     }
 }
 
+static int body_has_fixheight(const char* src) {
+    const char* cg = strstr(src, "static Object* mui_player_group(");
+    const char* end = cg != NULL ? strstr(cg, "\n}\n") : NULL;
+    const char* fh = cg != NULL ? strstr(cg, "SetAttrs(g, MUIA_FixHeight, (ULONG)band.height") : NULL;
+    return fh != NULL && end != NULL && fh < end;
+}
+
 static void test_compact_player(void) {
     mui_player_band_t c, tall, reg;
     mui_menu_item items[256];
@@ -2608,6 +2617,17 @@ static void test_compact_player(void) {
         CHECK(need <= MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
               "compact band: transport %d + seek %d + gap %d = %d of %d", tm.height, sl.height, gy, need, MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD);
         CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "square band heights moved (I973: the compact cap applies)");
+    }
+    {
+        /* I973d: the bar's height is pb.height alone, and nothing in the bar needs more. The root minimum is measured by MUI itself (map/mui_map.h,
+         * no height model); the part the map layer owns is the bar: its minimum width and its height must leave the 600x220 window room. */
+        mui_player_band_t wide;
+        CHECK(c.btn_px <= c.height && c.text_h <= c.height && c.slider_h <= c.height && c.art_h <= c.height, "compact bar child taller than the bar: btn %u text %u slider %u art %u of %u",
+              (unsigned)c.btn_px, (unsigned)c.text_h, (unsigned)c.slider_h, (unsigned)c.art_h, (unsigned)c.height);
+        CHECK(mui_player_min_width(&c) <= 600u && c.height <= 220u, "compact root minimum: bar needs %ux%u, window allows 600x220", (unsigned)mui_player_min_width(&c), (unsigned)c.height);
+        mui_player_band(&wide, 1, mui_pixel_aspect_q8(22, 44), 1000, 0);
+        CHECK(wide.show_left == 1u && 2u * wide.text_h <= wide.height, "title and artist (two text rows %u) fit the bar height %u when shown", (unsigned)(2u * wide.text_h), (unsigned)wide.height);
+        CHECK(body_has_fixheight(src), "the bar panel takes MUIA_FixHeight from band.height");
     }
     CHECK(reg.compact == 0 && reg.extras == 0 && reg.right_rows == 1 && reg.art_h == 56u, "regular band: one row, extras in the menu only (I973 6a Q4)");
     n = mui_menu_build(items, 256);
