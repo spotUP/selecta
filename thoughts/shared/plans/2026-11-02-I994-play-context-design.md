@@ -421,3 +421,8 @@ Appended to `sel_collection_page` (include/selecta/engine.h, after `shelf`, so e
 | I994d5 | I994d4 | Desktop `col_rebuild` copies engine order; sort button and search keys send `COLLECTION_VIEW`; delete `col_match`, `col_order_cmp`, `col_ci_cmp`, `g_col_d`, briefs re-sort; dump `views=` `orders=` `eshown=`. desktop_ui.c. | dui-collection-page asserts views/orders; revert proof: local qsort back, views stays 0 |
 | I994d6 | I994d1 | Amiga MUI `mui_col_row` and count read through `order` / `shown`. mui_ui.c. | Amiga cross build; rig check in the batch run at the end |
 | I994d7 | I994d5, I994e | Reachability test `dui-collection-sorted-context` (11.8) with sentinels and revert proof. tests/dui. | itself, red before I994d5 + I994e, revert proof recorded |
+
+### 11.x Johan's decisions (2026-11-02)
+- Sort scope: full Spotify set now. Custom Order, Title, Artist, Album, Date Added, Duration, each ascending and descending. d1 implements every SEL_COLL_SORT_* key; d5 wires all of them to the sort control.
+- Filter: matches title, artist and album (Spotify behaviour), not title only.
+- Playlist pages become engine collection pages (d3, d4): yes.
