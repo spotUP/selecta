@@ -530,7 +530,7 @@ int main(int argc, char** argv) {
         sel_engine_stats v_before, v_after;
         char path[512], line[600];
         int16_t buf[4410u * 2u];
-        uint32_t k;
+        uint32_t k, opened0, opened1;
         FILE* f;
 
         snprintf(path, sizeof path, "%s/level.lvl", dir);
@@ -543,25 +543,42 @@ int main(int argc, char** argv) {
         CHECK(sel_engine_send_line(e, "PREF_SET mix.loudness \"auto\"", pool, sizeof pool) == 0);
         sel_engine_pump(e, sink, NULL); /* the pool is reused by the next line: take this one first */
         snprintf(line, sizeof line, "OPEN \"%s\"", path);
+        sel_engine_stats_get(e, &v_before);
+        opened0 = v_before.songs_opened;
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
-        sel_engine_pump(e, sink, NULL);
+        /* I981: the start waits for its library read (I906g) on another thread, so the song is open when songs_opened rises, not after a fixed pump count */
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        do {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_render(e, buf, 441u); /* this thread is the audio side: a render hands a busy slot back so the start can take it */
+            sel_engine_stats_get(e, &v_before);
+            if (v_before.songs_opened > opened0) break;
+            usleep(2000);
+        } while (ms_since(&t0) < 5000);
+        CHECK(v_before.songs_opened > opened0);
         CHECK(sel_engine_send_line(e, "PLAY", pool, sizeof pool) == 0);
-        for (k = 0; k < 400u; k++) { /* render until the leveler has measured more than its 3 s gate */
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) { /* render until the leveler has measured more than its 3 s gate */
             sel_engine_pump(e, sink, NULL);
             sel_engine_render(e, buf, 4410u);
             sel_engine_stats_get(e, &v_before);
-            if (v_before.leveler_frames > 150000u) break;
+            if (v_before.leveler_frames > 150000u || ms_since(&t0) > 5000) break;
         }
         sel_engine_pump(e, sink, NULL);
         sel_engine_stats_get(e, &v_before);
         printf("i906f2c state %d leveler_frames %u source %s\n", (int)sel_engine_state(e)->play, (unsigned)v_before.leveler_frames, v_before.loudness_source);
         CHECK(v_before.leveler_frames > 0u); /* the leveler measured the tone */
+        opened1 = v_before.songs_opened;
         snprintf(line, sizeof line, "OPEN \"%s\"", path); /* replaces the song: the swap is queued for the audio side, the old slot is handed back by the next render */
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
-        for (k = 0; k < 100u; k++) { /* pump only (no render) until the new song has loaded and its swap waits */
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        do { /* pump only (no render) until the new song has loaded and its swap waits (I981: wait on the counter, not on a pump count) */
             sel_engine_pump(e, sink, NULL);
-            usleep(5000);
-        }
+            sel_engine_stats_get(e, &v_after);
+            if (v_after.songs_opened > opened1) break;
+            usleep(2000);
+        } while (ms_since(&t0) < 5000);
+        CHECK(v_after.songs_opened > opened1);
         g_held = 0;
         pthread_create(&th, NULL, holder, lib);
         while (!g_held) usleep(1000);
