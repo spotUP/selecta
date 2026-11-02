@@ -59,6 +59,21 @@ static void* holder(void* arg) {
     return NULL;
 }
 
+/* I982: like holder, but the lock is let go when the test says so (g_release), not after a timer: the "nothing ran yet" checks of a queued write
+ * are made while the lock is certainly still held, however long this thread was descheduled. The 20 s cap only frees a test that lost its main thread. */
+static volatile int g_release;
+static void* holder_gated(void* arg) {
+    sel_library* lib = arg;
+    struct timespec t0;
+
+    pthread_mutex_lock(&lib->call_lock);
+    g_held = 1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    while (!g_release && ms_since(&t0) < 20000) usleep(500);
+    pthread_mutex_unlock(&lib->call_lock);
+    return NULL;
+}
+
 /* I906f2e: a source whose sync hook waits for g_sync_go, then succeeds, so the test can hold the call lock before the pump collects it. */
 static volatile int g_sync_go;
 
@@ -416,7 +431,8 @@ int main(int argc, char** argv) {
         }
         sel_engine_stats_get(e, &p_before);
         g_held = 0;
-        pthread_create(&th, NULL, holder, lib);
+        g_release = 0;
+        pthread_create(&th, NULL, holder_gated, lib);
         while (!g_held) usleep(1000);
         w0 = sel_library_watched_waits();
         CHECK(sel_engine_send_line(e, "SOURCE_PIN \"i906f2src:hit1\"", pool, sizeof pool) == 0);
@@ -429,6 +445,7 @@ int main(int argc, char** argv) {
         CHECK(w1 == w0);
         sel_engine_stats_get(e, &p_after);
         CHECK(p_after.source_pins == p_before.source_pins); /* nothing ran yet: the pin is queued behind the held lock */
+        g_release = 1; /* I982: let go only now */
         pthread_join(th, NULL);
         clock_gettime(CLOCK_MONOTONIC, &t0);
         for (;;) {
@@ -499,7 +516,8 @@ int main(int argc, char** argv) {
 
         sel_engine_stats_get(e, &t_before);
         g_held = 0;
-        pthread_create(&th, NULL, holder, lib);
+        g_release = 0;
+        pthread_create(&th, NULL, holder_gated, lib);
         while (!g_held) usleep(1000);
         snprintf(line, sizeof line, "COLLECTION_OPEN %u \"Touch Album\"", (unsigned)SEL_LIB_ITEM_ALBUM);
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
@@ -509,6 +527,7 @@ int main(int argc, char** argv) {
         CHECK(pump_ms < PUMP_BUDGET_MS);
         sel_engine_stats_get(e, &t_after);
         CHECK(t_after.lib_touch_calls == t_before.lib_touch_calls); /* nothing ran yet: the touch is queued behind the held lock */
+        g_release = 1; /* I982: let go only now */
         pthread_join(th, NULL);
         clock_gettime(CLOCK_MONOTONIC, &t0);
         for (;;) {
