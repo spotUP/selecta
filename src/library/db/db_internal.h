@@ -21,13 +21,7 @@
 /* Test knob (I910, I906d): the env var names a delay in ms the worker sleeps before the query it guards, so a dui test can keep the worker
  * busy the way a real scan does. Absent on Amiga and unset in production. */
 #if !defined(__amigaos__) && !defined(AMIGA)
-#include <stdlib.h>
-#include <unistd.h>
-static inline void sel_library_test_slow(const char* var) {
-    const char* slow = getenv(var);
-
-    if (slow != NULL && atoi(slow) > 0) usleep((useconds_t)atoi(slow) * 1000u);
-}
+void sel_library_test_slow(const char* var); /* test_slow.c: usleep needs _DEFAULT_SOURCE under -std=c99 on glibc (I990b) */
 #else
 #define sel_library_test_slow(var) ((void)0)
 #endif

@@ -26,8 +26,10 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/srcmirror.c db/items.c db/similar.c db/duplicates.c db/testgen.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
+target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/srcmirror.c db/items.c db/similar.c db/duplicates.c db/testgen.c db/test_slow.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
+# The test knob calls usleep, which -std=c99 hides on glibc (I990b); _DEFAULT_SOURCE restores it, ignored on macOS.
+set_source_files_properties(db/test_slow.c PROPERTIES COMPILE_DEFINITIONS _DEFAULT_SOURCE)
 target_link_libraries(selecta_library PUBLIC selecta_sqlite selecta_platform) # I691c2: the platform family table lives in selecta_platform, never in the GUI
 if(SEL_AMIGA)
   target_compile_definitions(selecta_library PRIVATE SEL_LIBRARY_NO_THREAD)
