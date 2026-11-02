@@ -2567,6 +2567,14 @@ if(NOT SEL_AMIGA)
             -P "${SEL_NET_DIR}/dlna.cmake")
   set_tests_properties(dlna PROPERTIES LABELS m3 TIMEOUT 90 PASS_REGULAR_EXPRESSION "dlna_ok")
 
+  # I892e1: CASTV2 session (TLS with a self-signed device certificate, CONNECT, heartbeat, RECEIVER_STATUS).
+  add_executable(cast_session_test net/cast_session_test.c)
+  target_link_libraries(cast_session_test PRIVATE selecta_shared_cast selecta_library)
+  add_test(NAME cast-session
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:cast_session_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/cast_server.py" -P "${SEL_NET_DIR}/cast_session.cmake")
+  set_tests_properties(cast-session PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_session_ok")
+
   # I894a1: UPnP MediaServer discovery (SSDP unicast to the fixture, HTTP description, ContentDirectory controlURL).
   add_executable(upnp_discover_test net/upnp_discover_test.c)
   target_link_libraries(upnp_discover_test PRIVATE selecta_shared_upnp selecta_library)
