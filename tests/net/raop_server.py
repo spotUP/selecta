@@ -1,12 +1,18 @@
-"""I892c2: fixture RAOP (AirPlay 1) receiver and test driver, standard library only.
+"""I892c2/I892c3: fixture RAOP (AirPlay 1) receiver and test driver, standard library only.
 
-    raop_server.py <raop_stream_test exe> <work dir>
+    raop_server.py <raop_stream_test exe> <work dir> [drop=N]
 
 Writes a known PCM block (20 packets of 352 stereo frames) to <work dir>/sent.pcm, listens for RTSP on an ephemeral TCP
 port and for RTP on an ephemeral UDP port, starts the sender executable against it, then checks: the RTSP methods came in
 order (OPTIONS ANNOUNCE SETUP RECORD SET_PARAMETER FLUSH TEARDOWN), the RTP header fields (payload type 0x60, marker on
 the first packet, sequence +1, timestamp +352, one ssrc), the volume parameter, and that the decrypted, unpacked PCM has
 the same md5 as the PCM sent. Prints `raop_stream_ok` on success.
+
+I892c3: the fixture also checks the first sync packet on the control port (extension bit, type 0xD4, stream time = first
+RTP timestamp), answers nothing itself on the timing port but sends one timing request and expects the NTP-style reply
+with its send time echoed. With `drop=N` the fixture discards the Nth audio packet on arrival, asks for it on the
+sender's control port when the next packet comes (type 0xD5), and takes the answer (type 0xD6 + original packet) from its
+control socket; md5 and `raop_resends=1` must still hold.
 
 Decrypt path: rsaaeskey -> RSA-OAEP(SHA-1) with the AirPort Express private key (public source, shairport-sync common.c
 `super_secret_key`; test file only, it pairs with the modulus in plugins/shared/raop/raop.c) done with pow(); AES-128-CBC
@@ -15,6 +21,7 @@ import base64
 import hashlib
 import random
 import re
+import select
 import socket
 import struct
 import subprocess
@@ -135,6 +142,10 @@ class Receiver:
         self.timing = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.timing.bind(("127.0.0.1", 0))
         self.stop = False
+        self.drop, self.dropped, self.requested = None, None, False
+        self.syncs, self.resent, self.timing_replies = [], 0, []
+        self.client_ctl = self.client_tim = 0
+        self.timing_ref = bytes(range(1, 9))
 
     def rtsp(self):
         conn, _ = self.tcp.accept()
@@ -166,6 +177,8 @@ class Receiver:
                 out.append("Transport: RTP/AVP/UDP;unicast;mode=record;server_port=%d;control_port=%d;timing_port=%d"
                            % (self.udp.getsockname()[1], self.control.getsockname()[1], self.timing.getsockname()[1]))
                 out.append("Session: 1")
+                self.client_ctl = int(re.search(r"control_port=(\d+)", hdr["transport"]).group(1))
+                self.client_tim = int(re.search(r"timing_port=(\d+)", hdr["transport"]).group(1))
                 if hdr.get("session"):
                     self.errors.append("SETUP carried a Session header")
             elif method == "RECORD":
@@ -186,8 +199,32 @@ class Receiver:
             except socket.timeout:
                 continue
             seq = struct.unpack(">H", data[2:4])[0]
+            if not self.order and self.dropped is None and not self.timing_replies and self.client_tim:
+                req = b"\x80\xd2\x00\x07" + bytes(4) + bytes(16) + self.timing_ref
+                self.timing.sendto(req, ("127.0.0.1", self.client_tim))
+            if self.drop is not None and self.dropped is None and len(self.order) == self.drop:
+                self.dropped = seq  # discarded on arrival; the sender must resend it
+                continue
             self.order.append(seq)
             self.packets[seq] = data
+            if self.dropped is not None and not self.requested:
+                self.requested = True
+                self.control.sendto(b"\x80\xd5\x00\x01" + struct.pack(">HH", self.dropped, 1),
+                                    ("127.0.0.1", self.client_ctl))
+
+    def aux(self):
+        """Control socket (sync packets in, resent packets in) and timing socket (replies in)."""
+        while not self.stop:
+            r, _, _ = select.select([self.control, self.timing], [], [], 0.1)
+            for sock in r:
+                data, _ = sock.recvfrom(4096)
+                if sock is self.timing and data[1] == 0xD3:
+                    self.timing_replies.append(data)
+                elif data[1] == 0xD4:
+                    self.syncs.append(data)
+                elif data[1] == 0xD6:
+                    self.packets[struct.unpack(">H", data[6:8])[0]] = data[4:]
+                    self.resent += 1
 
 
 def main():
@@ -197,6 +234,10 @@ def main():
     with open(work + "/sent.pcm", "wb") as f:
         f.write(pcm)
     rx = Receiver()
+    if len(sys.argv) > 3 and sys.argv[3].startswith("drop="):
+        rx.drop = int(sys.argv[3][5:])
+    t3 = threading.Thread(target=rx.aux, daemon=True)
+    t3.start()
     t1 = threading.Thread(target=rx.rtsp, daemon=True)
     t2 = threading.Thread(target=rx.audio, daemon=True)
     t1.start()
@@ -208,6 +249,7 @@ def main():
     time.sleep(0.3)
     rx.stop = True
     t2.join(5)
+    t3.join(5)
     print(out)
     fail = []
     if p.returncode != 0:
@@ -238,6 +280,20 @@ def main():
     m = re.search(r"raop_packets_sent=(\d+)", out)
     if not m or int(m.group(1)) != PACKETS:
         fail.append("raop_packets_sent missing or not %d" % PACKETS)
+    resends = re.search(r"raop_resends=(\d+)", out)
+    if not resends or int(resends.group(1)) != (1 if rx.drop is not None else 0):
+        fail.append("raop_resends %r with drop %r" % (resends and resends.group(1), rx.drop))
+    if rx.drop is not None and (rx.resent != 1 or not rx.requested):
+        fail.append("resend answers received: %d" % rx.resent)
+    if not rx.syncs or rx.syncs[0][0] != 0x90 or rx.syncs[0][1] != 0xD4 or len(rx.syncs[0]) != 20:
+        fail.append("first sync packet wrong: %r" % (rx.syncs[:1],))
+    elif struct.unpack(">I", rx.syncs[0][16:20])[0] != ts0 or struct.unpack(">I", rx.syncs[0][4:8])[0] != (ts0 - 11025) & 0xFFFFFFFF:
+        fail.append("sync RTP times wrong")
+    if len(rx.timing_replies) != 1 or rx.timing_replies[0][8:16] != rx.timing_ref or len(rx.timing_replies[0]) != 32:
+        fail.append("timing reply wrong: %d" % len(rx.timing_replies))
+    m = re.search(r"latency_ms=(\d+)", out)
+    if not m or int(m.group(1)) != 250:
+        fail.append("latency_ms %r, want 250 (11025 frames)" % (m and m.group(1)))
     if fail:
         print("raop_stream_FAIL " + "; ".join(fail))
         sys.exit(1)

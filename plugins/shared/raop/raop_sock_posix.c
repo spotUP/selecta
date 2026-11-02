@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 static int wait_fd(int fd, short ev, unsigned ms) {
@@ -107,4 +108,41 @@ int raop_udp_send(int h, const char *host, unsigned port, const void *data, size
 
 void raop_udp_close(int h) {
     if (h >= 0) close(h);
+}
+
+int raop_udp_bind(unsigned *port) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) return -1;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(fd, (struct sockaddr *)&sa, sizeof sa) != 0 || getsockname(fd, (struct sockaddr *)&sa, &sl) != 0) {
+        close(fd);
+        return -1;
+    }
+    *port = ntohs(sa.sin_port);
+    return fd;
+}
+
+int raop_udp_recv(int h, void *buf, size_t cap, unsigned timeout_ms, char *from, size_t from_cap, unsigned *from_port) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    ssize_t n;
+    int r = wait_fd(h, POLLIN, timeout_ms);
+    if (r == 0) return 0;
+    if (r < 0) return -1;
+    n = recvfrom(h, buf, cap, 0, (struct sockaddr *)&sa, &sl);
+    if (n <= 0) return -1;
+    if (!inet_ntop(AF_INET, &sa.sin_addr, from, (socklen_t)from_cap)) return -1;
+    *from_port = ntohs(sa.sin_port);
+    return (int)n;
+}
+
+void raop_ntp_now(uint32_t *sec, uint32_t *frac) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    *sec = (uint32_t)tv.tv_sec + 2208988800u; /* 1900 epoch */
+    *frac = (uint32_t)(((uint64_t)tv.tv_usec << 32) / 1000000u);
 }
