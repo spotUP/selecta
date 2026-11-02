@@ -3,6 +3,7 @@
  * and wait for the reply; the queues were allocated once at open, so a call
  * allocates nothing. Without threads (Amiga until Phase 12) the request runs
  * on the caller's task through the same handler and queues. */
+#define _POSIX_C_SOURCE 200809L /* PTHREAD_MUTEX_RECURSIVE and pthread_mutexattr_settype under -std=c99 on glibc */
 #include "db_internal.h"
 #include "../../core/count.h"
 
