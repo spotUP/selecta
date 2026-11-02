@@ -15,6 +15,7 @@
 
 #include "db/db.h"
 #include "db/db_internal.h"
+#include "engine_test_db_lock.h"
 
 #define ROWS 60000
 
@@ -79,6 +80,7 @@ int main(void) {
     cfg.registry_get = sel_registry_get;
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
+    db_enter(lib);
     sqlite3_exec(lib->db, "DROP TRIGGER songs_ai;", NULL, NULL, NULL);
     snprintf(sql, sizeof sql,
              "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < %d)"
@@ -88,6 +90,7 @@ int main(void) {
              ROWS);
     CHECK(sqlite3_exec(lib->db, sql, NULL, NULL, NULL) == SQLITE_OK);
     CHECK(sqlite3_exec(lib->db, "INSERT INTO source_new(source, day, n) VALUES('modland', 20000, 12);", NULL, NULL, NULL) == SQLITE_OK);
+    db_leave(lib);
 
     /* First level: the drill, not the songs. */
     pg = open_page(e, "modland");
@@ -131,12 +134,14 @@ int main(void) {
     {
         sqlite3_stmt* q = NULL;
         int rows = -1, ok = 0;
+        db_enter(lib);
         if (sqlite3_prepare_v2(lib->db, "SELECT count(*), sum(id = 'modland') FROM opened WHERE kind = 7;", -1, &q, NULL) == SQLITE_OK &&
             sqlite3_step(q) == SQLITE_ROW) {
             rows = sqlite3_column_int(q, 0);
             ok = sqlite3_column_int(q, 1);
         }
         sqlite3_finalize(q);
+        db_leave(lib);
         CHECK(rows == 1 && ok == 1);
     }
 
@@ -155,11 +160,13 @@ int main(void) {
     {
         sqlite3_stmt* q = NULL;
         int rows = -1;
+        db_enter(lib);
         if (sqlite3_prepare_v2(lib->db, "SELECT count(*) FROM opened WHERE kind = 4 AND id = 'Quit Album';", -1, &q, NULL) == SQLITE_OK &&
             sqlite3_step(q) == SQLITE_ROW) {
             rows = sqlite3_column_int(q, 0);
         }
         sqlite3_finalize(q);
+        db_leave(lib);
         CHECK(rows == 1);
     }
     sel_library_close(lib);

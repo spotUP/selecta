@@ -24,6 +24,7 @@
 
 #include "db/db.h"
 #include "db/db_internal.h"
+#include "engine_test_db_lock.h"
 #include "source.h"
 #include "sources/modland_net.h"
 
@@ -46,17 +47,6 @@ static long ms_since(const struct timespec* t0) {
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
     return (long)((t1.tv_sec - t0->tv_sec) * 1000L + (t1.tv_nsec - t0->tv_nsec) / 1000000L);
-}
-
-/* I984: SQLite is built SQLITE_THREADSAFE=0, so lib->db is safe only under call_lock, which every library caller holds while the worker
- * runs its request. The test's own direct statements on lib->db take it too: without it a posted read (lib_read_post, e.g. the folder
- * counts after a sync) runs on the worker at the same time, corrupts the connection's lookaside, and the next statement segfaults. */
-static void db_enter(sel_library* lib) {
-    pthread_mutex_lock(&lib->call_lock);
-}
-
-static void db_leave(sel_library* lib) {
-    pthread_mutex_unlock(&lib->call_lock);
 }
 
 /* Plays the sync job: owns the library call lock for HOLD_MS, then lets go. */

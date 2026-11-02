@@ -15,6 +15,7 @@
 
 #include "db/db.h"
 #include "db/db_internal.h"
+#include "engine_test_db_lock.h"
 #include "source.h"
 
 static int g_fail;
@@ -29,8 +30,12 @@ static int g_fail;
 
 static void sql(sel_library* lib, const char* text) {
     char* err = NULL;
+    int rc;
 
-    if (sqlite3_exec(lib->db, text, NULL, NULL, &err) != SQLITE_OK) {
+    db_enter(lib);
+    rc = sqlite3_exec(lib->db, text, NULL, NULL, &err);
+    db_leave(lib);
+    if (rc != SQLITE_OK) {
         printf("FAIL sql: %s (%s)\n", text, err != NULL ? err : "?");
         g_fail++;
     }
@@ -40,8 +45,10 @@ static int64_t scalar(sel_library* lib, const char* text) {
     sqlite3_stmt* st = NULL;
     int64_t v = -1;
 
+    db_enter(lib);
     if (sqlite3_prepare_v2(lib->db, text, -1, &st, NULL) == SQLITE_OK && sqlite3_step(st) == SQLITE_ROW) v = sqlite3_column_int64(st, 0);
     sqlite3_finalize(st);
+    db_leave(lib);
     return v;
 }
 

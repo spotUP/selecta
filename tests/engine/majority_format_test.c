@@ -18,6 +18,7 @@
 
 #include "db/db.h"
 #include "db/db_internal.h"
+#include "engine_test_db_lock.h"
 #include "view.h"
 
 static int g_fail;
@@ -84,6 +85,7 @@ int main(void) {
     CHECK(e != NULL);
     if (lib == NULL || e == NULL) return 2;
 
+    db_enter(lib);
     CHECK(sqlite3_exec(lib->db,
                        "INSERT INTO songs(key, source, path, name, artist, album, added) VALUES"
                        "('local:m0.mp3','local','m0.mp3','m0','Ann','Mixed',1),('local:m1.mod','local','m1.mod','m1','Ann','Mixed',2),"
@@ -97,6 +99,7 @@ int main(void) {
                        "(1,2,'local:m2.mod');"
                        "INSERT INTO history(key, played_at) VALUES('local:m1.mod',500),('local:t2.mod',400);",
                        NULL, NULL, &err) == SQLITE_OK);
+    db_leave(lib);
 
     /* 1. The Your Library list through the engine entry. */
     sel_engine_stats_get(e, &st0);
@@ -143,14 +146,18 @@ int main(void) {
      * sqlite3_total_changes64, so a play or a pin emptied it and the next Sources reply rescanned every song of the source (Modland:
      * 516 000 paths, seconds on the worker). sel_db_majority_scans counts those scans: zero after the write. Then a real change to the
      * source (more sid songs than mod songs) must move the answer. */
+    db_enter(lib);
     CHECK(sqlite3_exec(lib->db,
                        "WITH RECURSIVE c(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM c WHERE i<199)"
                        " INSERT INTO songs(key, source, path, name, added) SELECT 'big:a'||i||'.mod','big','a'||i||'.mod','a'||i,100+i FROM c;",
                        NULL, NULL, &err) == SQLITE_OK);
+    db_leave(lib);
     n = sel_engine_library_items(e, 1u << SEL_LIB_ITEM_SOURCE, 0, all, 64u, &total);
     it = find(all, n, SEL_LIB_ITEM_SOURCE, "big");
     CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA);
+    db_enter(lib);
     CHECK(sqlite3_exec(lib->db, "INSERT INTO history(key, played_at) VALUES('local:m2.mod',600);", NULL, NULL, &err) == SQLITE_OK);
+    db_leave(lib);
     {
         unsigned long scans0 = sel_db_majority_scans();
 
@@ -163,10 +170,12 @@ int main(void) {
         it = find(all, n, SEL_LIB_ITEM_SOURCE, "big");
         CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA);
     }
+    db_enter(lib);
     CHECK(sqlite3_exec(lib->db,
                        "WITH RECURSIVE c(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM c WHERE i<299)"
                        " INSERT INTO songs(key, source, path, name, added) SELECT 'big:c'||i||'.sid','big','c'||i||'.sid','c'||i,400+i FROM c;",
                        NULL, NULL, &err) == SQLITE_OK);
+    db_leave(lib);
     n = sel_engine_library_items(e, 1u << SEL_LIB_ITEM_SOURCE, 0, all, 64u, &total);
     it = find(all, n, SEL_LIB_ITEM_SOURCE, "big");
     CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_COMMODORE_64); /* 300 sid beat 200 mod: the stored answer moved */
