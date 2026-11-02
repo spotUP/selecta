@@ -277,3 +277,147 @@ Order: a, b, c, (d), e, f, g; g's test file may land with e.
    D1 covers it.
 3. The Songs page shows the queue in a UI sort (`d->order`), so a row index there is not the
    queue index; `songs_play_row` already maps through `d->order[row]`, which I994e keeps.
+
+## 11. I994d engine sort and filter (interface)
+
+Written 2026-11-02 for ledger row I994d (decision D1 = yes). Numbered 11 because section 10 already holds the row list. Goal: the
+engine owns the order of a collection or playlist page; the row the UI draws at position `p` is the row `PLAY_CONTEXT collection
+<serial> p` plays. Rule 1: no sort or filter left in a UI.
+
+### 11.1 Today (measured by reading the code)
+
+- Desktop `col_rebuild` (desktop_ui.c:4814) builds `pls_ord` from `col_q` with `col_match` (case-insensitive substring of
+  `pls_title`) and sorts with `qsort` / `col_order_cmp` when `col_sort == 1` (title, ties by stored index). Callers: `pls_reload_run`
+  (4774), `pls_briefs_follow` (4634, the titles landed), `pls_open` (4850), the sort button (5949 -> `col_changed`), the search
+  key handler (6130 -> `col_changed`). `pls_ord` maps a shown position to a stored row index; `pls_play_pos` (5891), row hit tests
+  (6023) and the dump (7306, 7355) read through it. Sort keys today: 0 stored order ("Custom Order"), 1 title. No direction.
+- Album, artist, composer, Liked, Recent, Local and source pages come from the engine page `state.collection` (built by
+  `coll_build_run` on the read thread, engine.c:7051, published by `coll_publish` with a new `serial`). Rows are `key\0plays\0`
+  (stride 2) in library order. `coll_song_row` gets the title (`f[1]`) and drops it.
+- Playlist pages (`col_kind == 0`) are not engine pages: the desktop reads keys through `sel_engine_playlist_keys_post/take`
+  (I961c) and titles through the `song_briefs` posted read. `COLLECTION_OPEN` with kind PLAYLIST only touches Recents (engine.c:7161).
+- `songs_open_ex` list `collection` (I994b, engine.c:8735) resolves `key_at[i]` = stored row `i`, version = `coll.serial`. List
+  `playlist:<id>` reads `sel_library_playlist_keys` in stored order, version = `view.pub.version`.
+- Amiga MUI (`mui_col_row`, mui_ui.c:1423) shows `state.collection` rows in stored order, no sort, no filter.
+- Precedent to copy: `COMPOSERS_VIEW filter sort` (I611, engine.c:6399). The engine stores the filter and sort, the read slot
+  rebuilds the list, the filter uses the shared `sel_uim_lfilter_match`, stat `composer_views` is the sentinel.
+
+### 11.2 Command
+
+New verb in `include/selecta/commands.def` next to `COLLECTION_OPEN` (rule 2):
+
+```
+SEL_CMD(COLLECTION_VIEW, "suu?", "playlists", "filter sort [descending]", "Filter And Sort Collection Page")
+```
+
+- `filter`: text, at most 63 bytes, matched with `sel_uim_lfilter_match` against the row title (the same match the Library page
+  uses; it replaces `col_match`). Empty: every row.
+- `sort`: `SEL_COLL_SORT_STORED = 0` (the page's own order: album track order, playlist position, plays for an artist),
+  `SEL_COLL_SORT_TITLE = 1`. New enum in `include/selecta/engine.h` beside `SEL_DRILL_PAGE_*`, with `SEL_COLL_SORTS 2u`; an
+  unknown value clamps to 0 (as `COMPOSERS_VIEW` does). More keys (artist, album, date added, duration) append to the enum
+  later without a new verb.
+- `descending`: 0 or absent ascending, 1 descending. Ties always break by stored index ascending so the order is stable and
+  reproducible.
+- Applies to the open page (`e->coll`). `COLLECTION_OPEN` without `restore` resets the view to stored, unfiltered, ascending (the
+  desktop does this today in `pls_open`, 4872); `COLLECTION_OPEN ... restore` (Back / Forward) keeps the view the engine holds.
+- No list argument: there is one open page per engine, exactly like `COMPOSERS_VIEW` applies to the one Library page.
+
+### 11.3 Where it runs
+
+- In memory, not SQL `ORDER BY`. Reasons: the filter is per keystroke and must not re-query the library; the stored order of an
+  album or playlist is itself a library order the page already holds; on Amiga (no read thread) a re-query per keystroke would
+  block the engine; the title filter has to match exactly what the row shows.
+- One pure function in engine.c: `coll_order_build(const char* rows, const char* titles, uint32_t n, const char* filter,
+  uint32_t sort, uint32_t desc, uint32_t* out)` returns the shown count. No library call, no engine state; unit-testable.
+- The titles: `coll_song_row` and `coll_composer_row` keep the title they already receive in a second block `rdc_titles`
+  (`title\0` per row, same row order), published as engine-private `e->coll_titles`. The public `rows` stride stays 2, so the
+  MUI UI and `songs_open` keep parsing it unchanged.
+- Full build: `coll_build_run` (read thread) calls `coll_order_build` with the view current at post time (copied into
+  `rdc_filter` / `rdc_sort` / `rdc_desc` by `coll_post`, as `composers_post` copies `rd_comp_*`).
+- View change: `cmd_COLLECTION_VIEW` stores `coll_filter[64]`, `coll_sort`, `coll_desc`, bumps `collection_views`, and posts a
+  re-order job on the same `rd_coll` slot (`rdc_page = 0`, new `rdc_reorder = 1`). The job reads the published `coll.rows` and
+  `coll_titles` (only the pump thread replaces them, and only in `coll_publish`, which cannot run while the slot is busy) and
+  writes a fresh `rdc_order`. The engine thread never sorts. Without a thread the job runs inline, as every posted read does.
+- A view change while a read is in flight: the newest view wins, the same idle check as `coll_post` / `composers_post`.
+
+### 11.4 What the page carries
+
+Appended to `sel_collection_page` (include/selecta/engine.h, after `shelf`, so existing fields keep their offsets):
+
+```
+    const uint32_t* order; /* I994d: shown position -> stored row index; NULL means identity (drill group pages) */
+    uint32_t shown;        /* rows in order (<= songs): the filtered count */
+    uint32_t sort, descending;
+    char filter[64];       /* the view this order was built for */
+```
+
+- `coll_publish` publishes a re-order exactly like a page: new `serial = ++coll_serial`, new `order`, `shown`, view fields. Rows
+  and titles are reused on a re-order (only the order block is swapped). The serial is the single version: a UI that rendered
+  serial S and clicks after the order changed gets `stale` from `songs_open`, never a wrong song.
+- Drill root and group pages (`SEL_DRILL_PAGE_ROOT` / `GROUPS`): `order = NULL`, `shown = songs`; the view does not apply.
+- Memory: `order` is 4 bytes per row (32 KB at the desktop's 8192-row cap); titles add the sum of title lengths (about 30 bytes
+  per row). Both freed with the page. No allocation on the engine thread.
+
+### 11.5 PLAY_CONTEXT and the other bulk verbs
+
+- `songs_open_ex` list `collection`: `s->count = pg->shown`, `s->key_at[i] = row(pg->order[i])` (identity when `order` is NULL).
+  So `start` and every `SONGS_*` range index are shown positions, the context is the shown rows from `start` to the end, and a
+  filtered page continues through the filtered rows only. Version check unchanged (`pg->serial`).
+- Playlist pages become engine pages (11.6), so the desktop playlist page sends `PLAY_CONTEXT collection <serial> <pos>`.
+  `playlist:<id>` stays for callers that mean the stored playlist (Playlists tree, ARexx, multi-select on a tree row) and stays in
+  stored order.
+- Edits that need the stored position (`PLAYLIST_REMOVE_SONG playlist index`, drag reorder) keep sending the stored index the UI
+  reads from `order[pos]`, as `pls_ord` is used today.
+
+### 11.6 Playlist pages as engine pages
+
+- `COLLECTION_OPEN 0 <id>` (kind `SEL_LIB_ITEM_PLAYLIST`, key = decimal id) builds the page on the read slot: keys from
+  `sel_library_playlist_keys` in position order, titles from the library song briefs in one request, plays column `0`. Title =
+  the playlist name, `sub` empty.
+- Any playlist change that bumps the folder generation while the open page is that playlist re-posts the build (with the current
+  view), so the page republishes with a new serial. This replaces the desktop's `pls_want` / `pls_min` polling for that page.
+- `sel_engine_playlist_keys_post/take` stays for its other callers; the desktop collection page stops using it.
+
+### 11.7 UIs
+
+- Desktop `col_rebuild` becomes a copy: `pls_ord[i] = pg->order != NULL ? pg->order[i] : i`, `pls_vn = pg->shown`. Deleted:
+  `col_match`, `col_order_cmp`, `col_ci_cmp`, `g_col_d`, the `qsort`. `col_sort` and `col_q` stay only as the input field state;
+  the sort button and every search keystroke send `COLLECTION_VIEW <q> <sort>` and the page redraws when the new serial lands
+  (`pls_reload_run` already reloads on a serial change). The `pls_briefs_follow` re-sort (4634) goes: the engine sorted on its
+  own titles.
+- `pls_reload_run` reads `state.collection` for playlist pages too (the `col_kind == 0` keys branch goes).
+- Amiga MUI: no sort UI today and none required, but `mui_col_row` and the list count must read through `order` / `shown`. Reason:
+  the view is engine state, so after `UI_SWITCH` from a desktop with a filter set, a stored-order MUI list would send indices
+  that are not shown positions once MUI sends `PLAY_CONTEXT` (I994h). Small change, same row as the build check.
+- Text UI and others: they do not render collection pages (unverified beyond a grep of plugins/ui/mui and plugins/ui/text).
+
+### 11.8 Stats, dump and tests
+
+- `sel_engine_stats` gains `collection_views` (COLLECTION_VIEW commands applied) and `collection_orders` (orders published: full
+  builds plus re-orders). Existing `songs_collection_opens` proves PLAY_CONTEXT bound list=collection.
+- Desktop dump line `collection ...` gains `views=` and `orders=` from the stats and `eshown=` from `pg->shown`, so a dui test sees
+  that the shown count came from the engine.
+- Unit (where it lives): `tests/engine/collection_view_test.c` drives the engine command entry: title sort ascending and descending
+  on an album fixture, filter `intro` keeps one row, stable ties, drill page identity, `COLLECTION_OPEN` resets and `restore`
+  keeps, `PLAY_CONTEXT collection <serial> 1` after a title sort plays the second title (not stored row 1), the old serial after a
+  re-order gives `stale` and `songs_stale` + 1.
+- Existing `dui-collection-page` (sort button Custom Order -> Title, filter `intro` gives shown=1 of=3) stays green unchanged; it
+  now also asserts `views>=1` and `orders` moved, which proves the desktop sort came from the engine.
+- The one reachability test (REACHABILITY_PROTOCOL): `dui-collection-sorted-context`, through the real desktop UI entry
+  (`-DSELECTA` binary, scripted clicks): open playlist alpha (Main Theme, Intro, Bass Line), click Sort (Title: Bass Line, Intro,
+  Main Theme), click shown row 1 (Intro), let it end. Asserts: the playing path is Intro, then Main Theme starts (shown row 2, not
+  stored row 2 Bass Line); sentinels `collection_views` 0 -> 1, `collection_orders` >= 2, `songs_collection_opens` 0 -> 1,
+  `context_plays` 0 -> 1. Revert proof: make `songs_open_ex` ignore `order` (stored index); the test must fail on the song after
+  Intro. It needs I994e (the row click sends PLAY_CONTEXT) and may share the fixture and script helpers of I994g.
+
+### 11.9 Rows
+
+| ID | Deps | Work | Test |
+| --- | --- | --- | --- |
+| I994d1 | I994b | Engine order model: `SEL_COLL_SORT_*`, appended page fields, `rdc_titles` / `coll_titles`, `coll_order_build`, order in `coll_build_run` and `coll_publish`, `songs_open_ex` collection through `order`, stat `collection_orders`. engine.c, engine.h. | collection_view_test.c: pure order cases + PLAY_CONTEXT shown index + stale |
+| I994d2 | I994d1 | `COLLECTION_VIEW` verb (commands.def), `cmd_COLLECTION_VIEW`, re-order job on `rd_coll`, reset on open, keep on restore, stat `collection_views`. engine.c, commands.def. | collection_view_test.c: view change republishes, reset/restore, old serial stale |
+| I994d3 | I994d2 | Playlist pages as engine pages: `COLLECTION_OPEN` kind PLAYLIST builds on the read slot (keys, titles), republish on playlist change while open. engine.c. | collection_view_test.c: playlist page rows in position order, add/remove republishes, sorted PLAY_CONTEXT |
+| I994d4 | I994d3 | Desktop playlist page reads `state.collection` (drop the keys branch in `pls_reload_run`, the `pls_want` / `pls_min` polling for it); local UI sort still in place. desktop_ui.c. | dui-collection-page, dui-playlist-page, playlists green |
+| I994d5 | I994d4 | Desktop `col_rebuild` copies engine order; sort button and search keys send `COLLECTION_VIEW`; delete `col_match`, `col_order_cmp`, `col_ci_cmp`, `g_col_d`, briefs re-sort; dump `views=` `orders=` `eshown=`. desktop_ui.c. | dui-collection-page asserts views/orders; revert proof: local qsort back, views stays 0 |
+| I994d6 | I994d1 | Amiga MUI `mui_col_row` and count read through `order` / `shown`. mui_ui.c. | Amiga cross build; rig check in the batch run at the end |
+| I994d7 | I994d5, I994e | Reachability test `dui-collection-sorted-context` (11.8) with sentinels and revert proof. tests/dui. | itself, red before I994d5 + I994e, revert proof recorded |
