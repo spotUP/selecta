@@ -851,6 +851,7 @@ int main(int argc, char** argv)
     sel_engine_stats_get(e, &est);
     printf("rating_pending=%u\n", (unsigned)est.rating_pending); /* I958: served from the writer's counter, never a library request */
     printf("lib_writes_done=%u\n", (unsigned)est.lib_writes_done); /* I906f: queued library writes that ran */
+    printf("skip_excluded=%u\n", (unsigned)est.skip_excluded); /* I906g: skip-flagged rows the random order left out */
     printf("radio_appends=%u\n", (unsigned)est.radio_appends); /* I906g: songs the posted radio draw appended */
     printf("shell_wait_ms_min=%u shell_wait_ms_max=%u\n", (unsigned)(wait_ms_min == 0xFFFFFFFFu ? 0u : wait_ms_min), (unsigned)wait_ms_max); /* what the shell asked the UI to wait (I684c) */
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),

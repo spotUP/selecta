@@ -414,6 +414,25 @@ if(NOT "${s10}" MATCHES "radio_appends=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
 endif()
 message(STATUS "site10_ok wait_ms=${s10_turn} radio_appends=${CMAKE_MATCH_1}")
 
+# --- I906g order_ensure: SHUFFLE builds the random order from a skip-flag cache; rows the cache has not seen are looked up on the rd_flags read
+# (never per row on the pump). ORDER_SLOW_MS makes every flag lookup a 300 ms request. b.mod is flagged skip in the db before the run; the
+# sentinel skip_excluded >= 1 proves the posted lookup was published and the order rebuilt without b (I171), lib_ui_wait_ms < 50 proves the
+# UI thread never waited on it.
+set(s11_db "${WORK}/s11.db")
+file(REMOVE "${s11_db}" "${s11_db}-wal" "${s11_db}-shm")
+file(COPY_FILE "${sites_db}" "${s11_db}")
+execute_process(COMMAND "${SQLITE3}" "${s11_db}" "INSERT OR REPLACE INTO flags(key, skip) VALUES('${WORK}/songs/b.mod', 1)"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "site 11 order_ensure: flagging the fixture failed: ${err}")
+endif()
+sites_live(s11 "q@4000" SOCK s11 KNOBS SELECTA_LIB_ORDER_SLOW_MS ARGS --output null --db "${s11_db}" --view queue
+  --exec "QUEUE_ADD ${WORK}/songs/a.mod" --exec "QUEUE_ADD ${WORK}/songs/b.mod" --exec "QUEUE_ADD ${WORK}/songs/c.mod" --exec "SHUFFLE on 7" --exec "PLAY")
+if(NOT "${s11}" MATCHES "skip_excluded=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "site 11 order_ensure: skip_excluded=${CMAKE_MATCH_1}, want >= 1 (the posted flag lookup never excluded the flagged row):\n${s11}")
+endif()
+message(STATUS "site11_ok wait_ms=${s11_turn} skip_excluded=${CMAKE_MATCH_1}")
+
 # --- I951: the remaining library writes (stream add, playlist import, touch, playlist delete, library remove, library clear) ride the
 # write queue like PLAYLIST_CREATE. WRITE_SLOW_MS makes each a 300 ms statement; sites_live fails the run when the command runs it on the UI
 # thread (lib_ui_wait_ms >= 50), and lib_writes_done proves the queued write really ran. Destructive verbs use their own copy of the db.

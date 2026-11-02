@@ -350,6 +350,7 @@ int sel_library_flag(sel_library* lib, const char* key, const char* kind, const 
 
 int sel_library_flag_skipped(sel_library* lib, const char* key) {
     sel_user_op op;
+    sel_library_test_slow("SELECTA_LIB_ORDER_SLOW_MS"); /* I906g test knob: a flag lookup on a busy worker */
     memset(&op, 0, sizeof op);
     op.op = SEL_USER_FLAG_SKIPPED;
     op.key = key;
