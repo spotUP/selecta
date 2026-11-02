@@ -90,7 +90,7 @@ static int send_analyse(sel_engine* e, const char* song, analyse_sink* sink) {
     msg.args[0].type = SEL_ARG_STR;
     msg.args[0].v.s = song;
     sel_engine_send(e, &msg);
-    sel_engine_pump(e, on_event, sink);
+    sel_engine_pump_reads(e, on_event, sink, 60000u); /* I980: ANALYSE stores the gain on the writer thread (I906f); wait for it */
     return !sink->failed;
 }
 
@@ -221,7 +221,7 @@ int sel_cli_library_analyse(int argc, char** argv) {
     if (e == NULL) return 1;
     snprintf(line, sizeof line, "LIBRARY_SEARCH %s", query);
     sel_engine_send_line(e, line, pool, sizeof pool);
-    sel_engine_pump(e, on_event, &sink);
+    sel_engine_pump_reads(e, on_event, &sink, 60000u); /* I980: LIBRARY_SEARCH answers from a posted read (I829) */
     for (i = 0; !sink.failed && i < sink.count; i++) {
         analyse_sink one;
         int32_t gain = 0;
