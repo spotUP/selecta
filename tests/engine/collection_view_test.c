@@ -170,6 +170,49 @@ int main(void) {
     run(e, line);
     CHECK(qcount(e) == 0u && stats(e).songs_stale == stale + 1u);
 
+    /* I994d3: a playlist page is an engine page: rows in position order, the playlist name as title, add/remove republishes under a new
+     * serial with the current view, and PLAY_CONTEXT follows the sorted order. Removing the republish hook leaves the serial and rows stale. */
+    {
+        uint32_t plid, ser;
+        sel_library_item pl[4];
+        uint32_t ptotal = 0;
+        run(e, "PLAYLIST_CREATE \"Mix\"");
+        CHECK(sel_library_items(lib, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0, pl, 4u, &ptotal) == 1u);
+        plid = (uint32_t)strtoul(pl[0].key, NULL, 10);
+        snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)plid, key[3]);
+        run(e, line);
+        snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)plid, key[1]);
+        run(e, line);
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"%u\"", (unsigned)SEL_LIB_ITEM_PLAYLIST, (unsigned)plid);
+        run(e, line);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && pg->songs == 2u && pg->shown == 2u && strcmp(pg->title, "Mix") == 0);
+        if (pg != NULL && pg->rows != NULL) {
+            CHECK(strcmp(pg->rows, key[3]) == 0);
+            CHECK(strcmp(pg->rows + strlen(pg->rows) + 1u + strlen(pg->rows + strlen(pg->rows) + 1u) + 1u, key[1]) == 0);
+        }
+        ser = pg != NULL ? pg->serial : 0u;
+        run(e, "COLLECTION_VIEW \"\" 1");
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->serial > ser && pg->order != NULL && pg->order[0] == 1u && pg->order[1] == 0u);
+        ser = pg->serial;
+        snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)plid, key[0]);
+        run(e, line);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->serial > ser && pg->songs == 3u && pg->shown == 3u && pg->sort == (uint32_t)SEL_COLL_SORT_TITLE);
+        CHECK(pg != NULL && pg->order != NULL && pg->order[0] == 2u && pg->order[1] == 1u && pg->order[2] == 0u); /* song0, song1, song3 */
+        ser = pg->serial;
+        run(e, "QUEUE_CLEAR");
+        snprintf(line, sizeof line, "PLAY_CONTEXT collection %u 0 \"Mix\"", (unsigned)ser);
+        run(e, line);
+        CHECK(qcount(e) == 3u && strcmp(qpath(e, 0), key[0]) == 0 && strcmp(qpath(e, 1), key[1]) == 0 && strcmp(qpath(e, 2), key[3]) == 0);
+        run(e, "QUEUE_CLEAR");
+        snprintf(line, sizeof line, "PLAYLIST_REMOVE_SONG %u 0", (unsigned)plid);
+        run(e, line);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->serial > ser && pg->songs == 2u);
+    }
+
     /* A drill group page has no order and builds none. */
     orders = stats(e).collection_orders;
     snprintf(line, sizeof line, "COLLECTION_OPEN %u \"local\"", (unsigned)SEL_LIB_ITEM_SOURCE);
