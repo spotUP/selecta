@@ -440,6 +440,13 @@ struct sel_engine {
     uint32_t radio_rng;                     /* radio draw state, stepped once per appended song */
     uint32_t radio_appends;                 /* songs the radio appended to the queue (I186 sentinel) */
     sel_lib_read rd_radio;                  /* I906g: the radio draw (radio_run) */
+    sel_lib_read rd_flags;                  /* I906g: skip flags of queue rows the cache has not seen (flags_run) */
+    uint64_t* skc_tab;                      /* I906g: skip-flag cache, open addressing; entry = (path hash & ~1) | skipped, 0 empty */
+    uint32_t skc_cap, skc_n;
+    char* fl_buf;                           /* paths the flags read looks up, NUL separated; fl_res holds one verdict per path */
+    uint8_t* fl_res;
+    uint32_t fl_n, fl_bytes;
+    int fl_failed;                          /* the cache could not grow: no further flags reads (rows stay candidates) */
     char rj_seed[SEL_DEFERRED_PATH_MAX], rj_last[SEL_DEFERRED_PATH_MAX], rj_pick[5][SEL_DEFERRED_PATH_MAX];
     uint32_t rj_rng0, rj_rng, rj_need, rj_n, rj_epoch, radio_epoch;
     uint32_t radio_min_ahead;               /* fewest songs queued after the playing one, measured after each top-up */
@@ -3007,11 +3014,142 @@ static void order_reset(sel_engine* e) {
     e->order_qver = 0xFFFFFFFFu; /* never equal to a queue version: rebuild on first use */
 }
 
+/* I906g: order_ensure runs on the pump and must not call the library per row. It reads skip flags from a cache (skc_*). A row the cache has
+ * not seen is a candidate for now; flags_post looks the unseen rows up on the rd_flags read, flags_publish stores the verdicts on the pump
+ * and, when a row turned out skip-flagged, marks the order stale so the next use rebuilds it without that row (I171). FLAG skip updates the
+ * cache itself (wq_flag_done). The cache lives as long as the engine; a flag set by another process shows after a restart. */
+static uint64_t skc_hash(const char* s) {
+    uint64_t h = 1469598103934665603ull;
+
+    for (; *s != '\0'; s++) {
+        h = (h ^ (uint8_t)*s) * 1099511628211ull;
+    }
+    h &= ~(uint64_t)1;
+    return h == 0 ? 2u : h;
+}
+
+/* -1 unseen, 0 not flagged, 1 skip-flagged. */
+static int skc_get(const sel_engine* e, const char* path) {
+    uint64_t h = skc_hash(path);
+    uint32_t i;
+
+    if (e->skc_cap == 0) return -1;
+    for (i = (uint32_t)h & (e->skc_cap - 1u); e->skc_tab[i] != 0; i = (i + 1u) & (e->skc_cap - 1u)) {
+        if ((e->skc_tab[i] & ~(uint64_t)1) == h) return (int)(e->skc_tab[i] & 1u);
+    }
+    return -1;
+}
+
+static int skc_put(sel_engine* e, const char* path, int skipped, int overwrite) {
+    uint64_t h = skc_hash(path);
+    uint32_t i;
+
+    if ((e->skc_n + 1u) * 2u > e->skc_cap) {
+        uint32_t ncap = e->skc_cap == 0 ? 64u : e->skc_cap * 2u, k;
+        uint64_t* nt = (uint64_t*)calloc(ncap, sizeof *nt);
+
+        if (nt == NULL) return 0;
+        for (k = 0; k < e->skc_cap; k++) {
+            if (e->skc_tab[k] != 0) {
+                uint32_t j = (uint32_t)(e->skc_tab[k] & ~(uint64_t)1) & (ncap - 1u);
+
+                while (nt[j] != 0) j = (j + 1u) & (ncap - 1u);
+                nt[j] = e->skc_tab[k];
+            }
+        }
+        free(e->skc_tab);
+        e->skc_tab = nt;
+        e->skc_cap = ncap;
+    }
+    for (i = (uint32_t)h & (e->skc_cap - 1u); e->skc_tab[i] != 0; i = (i + 1u) & (e->skc_cap - 1u)) {
+        if ((e->skc_tab[i] & ~(uint64_t)1) == h) {
+            if (overwrite) e->skc_tab[i] = h | (uint64_t)(skipped != 0);
+            return 1;
+        }
+    }
+    e->skc_tab[i] = h | (uint64_t)(skipped != 0);
+    e->skc_n++;
+    return 1;
+}
+
+static void flags_run(sel_engine* e) {
+    const char* p = e->fl_buf;
+    uint32_t i;
+
+    for (i = 0; i < e->fl_n; i++) {
+        e->fl_res[i] = (uint8_t)(sel_library_flag_skipped(e->lib, p) != 0);
+        p += strlen(p) + 1u;
+    }
+}
+
+/* Posts one read for every queue row the cache has not seen; no-op while a flags read runs (its publish scans again). */
+static void flags_post(sel_engine* e) {
+    const sel_queue* q = &e->queue;
+    uint32_t i, n = 0, bytes = 0;
+    char* w;
+
+    if (e->lib == NULL || e->fl_failed || !lib_read_idle(&e->rd_flags)) return;
+    for (i = 0; i < q->count; i++) {
+        if (!row_is_divider(q, i) && skc_get(e, sel_queue_path(q, i)) < 0) {
+            n++;
+            bytes += (uint32_t)strlen(sel_queue_path(q, i)) + 1u;
+        }
+    }
+    if (n == 0) return;
+    e->fl_buf = (char*)malloc(bytes);
+    e->fl_res = (uint8_t*)calloc(n, 1);
+    if (e->fl_buf == NULL || e->fl_res == NULL) {
+        free(e->fl_buf);
+        free(e->fl_res);
+        e->fl_buf = NULL;
+        e->fl_res = NULL;
+        e->fl_failed = 1;
+        return;
+    }
+    w = e->fl_buf;
+    for (i = 0; i < q->count; i++) {
+        if (!row_is_divider(q, i) && skc_get(e, sel_queue_path(q, i)) < 0) {
+            size_t len = strlen(sel_queue_path(q, i)) + 1u;
+
+            memcpy(w, sel_queue_path(q, i), len);
+            w += len;
+        }
+    }
+    e->fl_n = n;
+    e->fl_bytes = bytes;
+    lib_read_post(e, &e->rd_flags, flags_run);
+}
+
+static void order_ensure(sel_engine* e);
+
+static void flags_publish(sel_engine* e) {
+    const char* p = e->fl_buf;
+    uint32_t i;
+    int found = 0;
+
+    for (i = 0; i < e->fl_n; i++) {
+        if (!skc_put(e, p, e->fl_res[i], 0)) e->fl_failed = 1;
+        found |= e->fl_res[i];
+        p += strlen(p) + 1u;
+    }
+    free(e->fl_buf);
+    free(e->fl_res);
+    e->fl_buf = NULL;
+    e->fl_res = NULL;
+    e->fl_n = 0;
+    if (found) {
+        e->order_qver = 0xFFFFFFFFu; /* a candidate turned out skip-flagged: rebuild without it now */
+        order_ensure(e);
+    }
+    flags_post(e); /* rows added while the read ran */
+}
+
 /* Brings the order in line with the queue: played ids that are still queued
  * stay played; every other playable row is shuffled behind them. */
 static void order_ensure(sel_engine* e) {
     const sel_queue* q = &e->queue;
     uint32_t i, kept = 0;
+    int unseen = 0;
     if (e->order == NULL || e->order_qver == q->version) {
         return;
     }
@@ -3027,16 +3165,20 @@ static void order_ensure(sel_engine* e) {
     for (i = 0; i < q->count; i++) {
         if (!e->order_seen[i] && !row_is_divider(q, i)) {
             /* The one place the random candidate set is built: a skip-flagged song is never a candidate (I171). */
-            if (e->lib != NULL && sel_library_flag_skipped(e->lib, sel_queue_path(q, i))) {
+            int flag = e->lib != NULL ? skc_get(e, sel_queue_path(q, i)) : 0;
+
+            if (flag > 0) {
                 e->skip_excluded++;
                 continue;
             }
+            unseen |= flag < 0;
             e->order[kept++] = q->entries[i].id;
         }
     }
     e->order_n = kept;
     e->rng = sel_shuffle_ids(e->order + e->order_done, kept - e->order_done, e->rng);
     e->order_qver = q->version;
+    if (unseen) flags_post(e);
 }
 
 /* Marks the entry at queue position idx as the one that plays now. */
@@ -4881,7 +5023,10 @@ static void wq_flag_run(sel_library* lib, sel_wq_op* op) {
 
 static void wq_flag_done(sel_engine* e, sel_wq_op* op) {
     if (!op->rc) sel_engine_report_error(e, "library_failed", "FLAG");
-    else e->order_qver = 0xFFFFFFFFu; /* a skip flag changes the candidates: rebuild the order on next use */
+    else {
+        if (strcmp(op->s[1], "skip") == 0 && !skc_put(e, op->s[0], 1, 1)) e->fl_failed = 1;
+        e->order_qver = 0xFFFFFFFFu; /* a skip flag changes the candidates: rebuild the order on next use */
+    }
 }
 
 static void cmd_FLAG(sel_engine* e, const sel_message* m) {
@@ -8057,6 +8202,10 @@ static void lib_reads_collect(sel_engine* e) {
         panel_publish(e);
         if (e->rd_panel.again) panel_post(e);
     }
+    if (lib_read_take(&e->rd_flags)) {
+        e->lib_reads_applied++;
+        flags_publish(e);
+    }
     if (lib_read_take(&e->rd_radio)) {
         e->lib_reads_applied++;
         radio_publish(e);
@@ -9446,12 +9595,16 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_coll);
         lib_read_end(&e->rd_panel);
         lib_read_end(&e->rd_radio);
+        lib_read_end(&e->rd_flags);
         lib_read_end(&e->rd_play);
         lib_read_end(&e->rd_vote);
         lib_read_end(&e->rd_art);
         lib_read_end(&e->rd_txt);
         lib_read_end(&e->rd_grp);
         free(e->grp_snap);
+        free(e->skc_tab);
+        free(e->fl_buf);
+        free(e->fl_res);
         free(e->grp_job_pool);
         free(e->grp_job_name);
         free(e->grp_pool);
@@ -9742,7 +9895,7 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_radio) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->pm_wait && e->deferred) || (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
+    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_radio) || !lib_read_idle(&e->rd_flags) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->pm_wait && e->deferred) || (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
