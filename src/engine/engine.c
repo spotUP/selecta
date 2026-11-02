@@ -2316,6 +2316,14 @@ static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
     sl->loud_source = "none";
 }
 
+static void wq_leveler_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_loudness_set_ex(lib, op->s[0], op->s[1], (int32_t)op->n1, 1);
+}
+
+static void wq_leveler_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc) e->lev_writes++;
+}
+
 /* Command thread (I190): a song the leveler measured long enough leaves its estimate in the library as a
  * provisional gain; a real analysis or DEViLBOX value overrides it (the library never lets a provisional write
  * replace a real gain). The slot is no longer rendered when this runs. The audio thread only wrote the estimate. */
@@ -2328,8 +2336,14 @@ static void leveler_writeback(sel_engine* e, sel_slot* sl) {
     }
     sl->lev_done = 1;
     song_key(sl->path, key, sizeof key);
-    if (key[0] != '\0' && sel_library_loudness_set_ex(e->lib, key, loudness_path(key), cdb, 1)) {
-        e->lev_writes++;
+    if (key[0] != '\0') {
+        /* I906f2c: the provisional gain is a queued write (this runs on the pump, from reclaim_slots); a full queue drops it as a failed write did */
+        sel_wq_op* op = wq_new(e, wq_leveler_run, wq_leveler_done, key, loudness_path(key), NULL);
+
+        if (op != NULL) {
+            op->n1 = (int64_t)cdb;
+            wq_submit(e);
+        }
     }
 }
 
@@ -9135,6 +9149,9 @@ void sel_engine_destroy(sel_engine* e) {
             free(e->br_keys);
             free(e->br_out);
         }
+        for (i = 0; i < SEL_SLOT_COUNT; i++) { /* I906f2c: a closing slot queues its leveler gain, so it closes before the queue drains */
+            close_slot(e, &e->slot[i]);
+        }
         lib_read_end(&e->rd_wq); /* I906f: queued writes still run, their answers are dropped */
         wq_drain(e);
         while (e->wq_head != e->wq_tail) {
@@ -9171,9 +9188,6 @@ void sel_engine_destroy(sel_engine* e) {
         if (e->rd_home_text) e->host->mem_free(e->host, e->rd_home_text);
         if (e->scan_running || e->sync_running || e->search_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
-        }
-        for (i = 0; i < SEL_SLOT_COUNT; i++) {
-            close_slot(e, &e->slot[i]);
         }
         if (e->addf_buf != NULL) e->host->mem_free(e->host, e->addf_buf);
         free(e->songs_ranges);

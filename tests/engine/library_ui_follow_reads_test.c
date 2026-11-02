@@ -11,6 +11,9 @@
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/machine.h>
+#include <selecta/plugin.h>
+#include <selecta/replayer.h>
+#include <selecta/tags.h>
 #include <selecta/registry.h>
 #include <sqlite3.h>
 #include <stdio.h>
@@ -84,6 +87,64 @@ static const sel_source g_pin_src = {
     "i906f2src", "I906f2 pin source", "", "One search hit.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, pin_search,
 };
 
+/* I906f2c: a replayer of one loud constant tone (extension "lvl") so a song opens for real and the adaptive leveler measures it. */
+static int g_lvl_state;
+static uint32_t g_lvl_left; /* frames the song still has: it ends after LVL_FRAMES, which is what hands its slot back */
+enum { LVL_FRAMES = 160000 };
+
+static int lvl_probe(const uint8_t* data, size_t size, const char* name) {
+    size_t n = name != NULL ? strlen(name) : 0;
+
+    (void)data;
+    (void)size;
+    return n >= 4 && strcmp(name + n - 4, ".lvl") == 0 ? SEL_PROBE_YES : SEL_PROBE_NO;
+}
+
+static void* lvl_open(const sel_song_source* src, const sel_host* h, sel_rp_info* info) {
+    (void)src;
+    (void)h;
+    info->subsong_count = 1;
+    info->default_subsong = 0;
+    return &g_lvl_state;
+}
+
+static void lvl_close(void* state) {
+    (void)state;
+}
+
+static int lvl_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
+    (void)state;
+    (void)subsong;
+    (void)rate;
+    (void)voices;
+    g_lvl_left = LVL_FRAMES;
+    return 1;
+}
+
+static uint32_t lvl_render(void* state, int16_t* out, uint32_t frames) {
+    uint32_t i;
+
+    (void)state;
+    if (frames > g_lvl_left) frames = g_lvl_left;
+    g_lvl_left -= frames;
+    for (i = 0; i < frames * 2u; i++) out[i] = (int16_t)((i / 2u) % 100u < 50u ? 12000 : -12000);
+    return frames;
+}
+
+static sel_tag g_lvl_hooks[] = {{SEL_RP_KIND, SEL_RP_KIND_RENDER}, {SEL_RP_EXTENSIONS, (uintptr_t) "lvl"}, {SEL_RP_PROBE, SEL_TAG_FN(lvl_probe)},
+                                {SEL_RP_OPEN, SEL_TAG_FN(lvl_open)}, {SEL_RP_CLOSE, SEL_TAG_FN(lvl_close)}, {SEL_RP_START, SEL_TAG_FN(lvl_start)},
+                                {SEL_RP_RENDER, SEL_TAG_FN(lvl_render)}, {SEL_TAG_END, 0}};
+static sel_tag g_lvl_desc[] = {{SEL_PLUGIN_ID, (uintptr_t) "fake_level"}, {SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER},
+                               {SEL_PLUGIN_TAGS, (uintptr_t)g_lvl_hooks}, {SEL_TAG_END, 0}};
+
+static uint32_t reg_count(void) {
+    return sel_registry_count() + 1u;
+}
+
+static const sel_tag* reg_get(uint32_t i) {
+    return i == sel_registry_count() ? g_lvl_desc : sel_registry_get(i);
+}
+
 int main(int argc, char** argv) {
     CHECK(argc >= 2); /* argv[1] = gen_testmod */
     static const char* const lines[] = {"VIEW_SOURCE home", "VIEW_WINDOW 12", "VIEW_SHOW browse", "COMPOSERS_SHOW", "STATS_SHOW",
@@ -108,8 +169,8 @@ int main(int argc, char** argv) {
     CHECK(lib != NULL);
     memset(&cfg, 0, sizeof cfg);
     cfg.library = lib;
-    cfg.registry_count = sel_registry_count;
-    cfg.registry_get = sel_registry_get;
+    cfg.registry_count = reg_count;
+    cfg.registry_get = reg_get;
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
     CHECK(sqlite3_exec(lib->db,
@@ -117,6 +178,12 @@ int main(int argc, char** argv) {
                        "('local:a.mod','local','a.mod','a','Ann','Alb1','mod',100),('local:b.mod','local','b.mod','b','Ann','Alb1','mod',200),"
                        "('local:c.sid','local','c.sid','c','Bob',NULL,'sid',300);",
                        NULL, NULL, NULL) == SQLITE_OK);
+    { /* I906f2c: the song row the leveler's provisional gain updates (key of the lvl file the test plays) */
+        char sql[700];
+
+        snprintf(sql, sizeof sql, "INSERT INTO songs(key, source, path, name, artist, format, added) VALUES('local:%s/level.lvl','local','%s/level.lvl','lvl','Ann','lvl',400);", dir, dir);
+        CHECK(sqlite3_exec(lib->db, sql, NULL, NULL, NULL) == SQLITE_OK);
+    }
     sel_engine_stats_get(e, &s0);
 
     pthread_create(&th, NULL, holder, lib);
@@ -412,6 +479,77 @@ int main(int argc, char** argv) {
                (unsigned)(t_after.lib_touch_calls - t_before.lib_touch_calls), (unsigned)(t_after.lib_writes_done - t_before.lib_writes_done));
         CHECK(t_after.lib_touch_calls == t_before.lib_touch_calls + 1u);
         CHECK(t_after.lib_writes_done == t_before.lib_writes_done + 1u); /* the touch went through the write queue */
+    }
+    /* I906f2c: the provisional gain the adaptive leveler measured is a queued write, taken when the finished slot is reclaimed on the pump.
+     * A loud tone plays past the 3 s gate in auto mode, then the song ends (it is 160000 frames long) while the call lock is held: the pump returns fast with no
+     * synchronous request and stats.leveler_writes has not moved. After the release leveler_writes and lib_writes_done each rise by one. */
+    {
+        sel_engine_stats v_before, v_after;
+        char path[512], line[600];
+        int16_t buf[4410u * 2u];
+        uint32_t k;
+        FILE* f;
+
+        snprintf(path, sizeof path, "%s/level.lvl", dir);
+        f = fopen(path, "wb");
+        CHECK(f != NULL);
+        if (f != NULL) {
+            fputs("x", f);
+            fclose(f);
+        }
+        CHECK(sel_engine_send_line(e, "PREF_SET mix.loudness \"auto\"", pool, sizeof pool) == 0);
+        sel_engine_pump(e, sink, NULL); /* the pool is reused by the next line: take this one first */
+        snprintf(line, sizeof line, "OPEN \"%s\"", path);
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        sel_engine_pump(e, sink, NULL);
+        CHECK(sel_engine_send_line(e, "PLAY", pool, sizeof pool) == 0);
+        for (k = 0; k < 400u; k++) { /* render until the leveler has measured more than its 3 s gate */
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_render(e, buf, 4410u);
+            sel_engine_stats_get(e, &v_before);
+            if (v_before.leveler_frames > 150000u) break;
+        }
+        sel_engine_pump(e, sink, NULL);
+        sel_engine_stats_get(e, &v_before);
+        printf("i906f2c state %d leveler_frames %u source %s\n", (int)sel_engine_state(e)->play, (unsigned)v_before.leveler_frames, v_before.loudness_source);
+        CHECK(v_before.leveler_frames > 0u); /* the leveler measured the tone */
+        snprintf(line, sizeof line, "OPEN \"%s\"", path); /* replaces the song: the swap is queued for the audio side, the old slot is handed back by the next render */
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        for (k = 0; k < 100u; k++) { /* pump only (no render) until the new song has loaded and its swap waits */
+            sel_engine_pump(e, sink, NULL);
+            usleep(5000);
+        }
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        sel_engine_render(e, buf, 4410u); /* pops the swap: the leveled slot goes to the return queue */
+        for (k = 0; k < 5u; k++) { /* the pump reclaims it: the old code wrote the gain synchronously and waited on the held lock here */
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_render(e, buf, 441u);
+        }
+        sel_engine_pump(e, sink, NULL);
+        pump_ms = ms_since(&t0);
+        w1 = sel_library_watched_waits();
+        sel_engine_stats_get(e, &v_after);
+        CHECK(pump_ms < PUMP_BUDGET_MS);
+        CHECK(w1 == w0);
+        CHECK(v_after.leveler_writes == v_before.leveler_writes); /* queued behind the held lock */
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_render(e, buf, 441u); /* this thread is the audio side too: renders hand the stopped slot back */
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &v_after);
+            if (v_after.leveler_writes > v_before.leveler_writes) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f2c leveler: pump %ld ms, waits %u, leveler_writes +%u, lib_writes_done +%u\n", pump_ms, (unsigned)(w1 - w0),
+               (unsigned)(v_after.leveler_writes - v_before.leveler_writes), (unsigned)(v_after.lib_writes_done - v_before.lib_writes_done));
+        CHECK(v_after.leveler_writes == v_before.leveler_writes + 1u);
+        CHECK(v_after.lib_writes_done >= v_before.lib_writes_done + 1u); /* the write queue ran (the song end queues its history row too) */
     }
     sel_library_watch(was);
 
