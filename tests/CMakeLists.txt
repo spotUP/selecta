@@ -1030,6 +1030,11 @@ if(TARGET selecta_shared_raop_net AND SEL_PYTHON)
   add_test(NAME raop-stream COMMAND "${SEL_PYTHON}" -I "${CMAKE_CURRENT_SOURCE_DIR}/net/raop_server.py"
     $<TARGET_FILE:raop_stream_test> "${CMAKE_CURRENT_BINARY_DIR}/raop_stream")
   set_tests_properties(raop-stream PROPERTIES TIMEOUT 90 PASS_REGULAR_EXPRESSION "raop_stream_ok")
+  # I892c3: the fixture drops packet 7, asks for a resend on the control port; sync and timing are checked in both runs.
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/raop_resend")
+  add_test(NAME raop-resend COMMAND "${SEL_PYTHON}" -I "${CMAKE_CURRENT_SOURCE_DIR}/net/raop_server.py"
+    $<TARGET_FILE:raop_stream_test> "${CMAKE_CURRENT_BINARY_DIR}/raop_resend" drop=7)
+  set_tests_properties(raop-resend PROPERTIES TIMEOUT 90 PASS_REGULAR_EXPRESSION "raop_stream_ok")
 endif()
 
 # I218d: Latin-1 <-> UTF-8 at the OS boundary.

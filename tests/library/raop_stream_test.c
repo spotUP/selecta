@@ -48,7 +48,9 @@ int main(int argc, char **argv) {
     if (raop_session_flush(&s) != 0) return 1;
     raop_session_close(&s);
     raop_stats_get(&st);
-    printf("raop_packets_sent=%u latency=%u audio_port=%u\n", st.raop_packets_sent, s.latency, s.audio_port);
+    printf("raop_packets_sent=%u latency=%u audio_port=%u raop_resends=%u raop_syncs=%u raop_timing_replies=%u latency_ms=%u\n",
+           st.raop_packets_sent, s.latency, s.audio_port, st.raop_resends, st.raop_syncs, st.raop_timing_replies,
+           raop_session_latency_ms(&s));
     fclose(f);
     return n == st.raop_packets_sent ? 0 : 1;
 }

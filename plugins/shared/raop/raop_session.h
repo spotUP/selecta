@@ -1,7 +1,8 @@
 /* RAOP (AirPlay 1) sender session (I892c2): RTSP over TCP and RTP audio over UDP on top of the pure part (raop.h) and the
  * socket shim (raop_sock.h). No malloc, no float: the session struct holds every buffer. The caller owns pacing (one
  * packet per 352 frames, about 7.98 ms at 44.1 kHz). Flow: thoughts/shared/research/2026-11-01-airplay-chromecast.md,
- * section 1. Control-port sync, timing replies and resends are I892c3. */
+ * section 1. I892c3 adds the control port (sync packets out, resend requests in) and the timing port (replies); both
+ * are serviced from raop_session_send, or by raop_session_service when the caller is idle. */
 #ifndef SELECTA_RAOP_SESSION_H
 #define SELECTA_RAOP_SESSION_H
 
@@ -9,7 +10,14 @@
 
 typedef struct raop_stats {
     unsigned raop_packets_sent; /* RTP audio packets handed to the socket */
+    unsigned raop_resends;      /* lost packets answered from the ring */
+    unsigned raop_syncs;        /* sync packets sent on the control port */
+    unsigned raop_timing_replies;
 } raop_stats;
+
+#define RAOP_PKT_BYTES (12 + RAOP_ALAC_BYTES)
+#define RAOP_RING 64           /* sent packets kept for resend: about 0.5 s */
+#define RAOP_SYNC_FRAMES 44100 /* one sync per second of stream time */
 
 typedef struct raop_session {
     int tcp, udp;
@@ -26,7 +34,11 @@ typedef struct raop_session {
     int started;    /* first packet after RECORD or FLUSH carries the RTP marker bit */
     char buf[2048]; /* RTSP request and response text */
     char sdp[RAOP_SDP_MAX];
-    uint8_t pkt[12 + RAOP_ALAC_BYTES];
+    uint8_t pkt[RAOP_PKT_BYTES];
+    int ctl, tim; /* local control and timing sockets, -1 when closed */
+    unsigned local_ctl, local_tim;
+    uint32_t last_sync;                      /* RTP timestamp of the last sync packet */
+    uint8_t ring[RAOP_RING][RAOP_PKT_BYTES]; /* sent packets, index = seq % RAOP_RING */
 } raop_session;
 
 /* Connects to host:rtsp_port and runs OPTIONS, ANNOUNCE, SETUP, RECORD. rng seeds key, IV, session id, SSRC and the OAEP
@@ -34,6 +46,11 @@ typedef struct raop_session {
 int raop_session_open(raop_session *s, const char *host, unsigned rtsp_port, raop_rng_fn rng, void *rng_ctx);
 /* Encodes and sends one packet from RAOP_FRAMES interleaved stereo frames. Returns 0 or -1. */
 int raop_session_send(raop_session *s, const int16_t *pcm);
+/* Answers pending timing requests and resend requests without blocking. Called by raop_session_send; call it directly
+ * while no audio is due. */
+void raop_session_service(raop_session *s);
+/* Receiver buffer in milliseconds for SEL_OUT_LATENCY_MS (Audio-Latency from RECORD, 2 s when the receiver sends none). */
+unsigned raop_session_latency_ms(const raop_session *s);
 /* Volume in tenths of a dB, -300 .. 0, or -1440 for mute (integer only, no float on the 020). */
 int raop_session_set_volume(raop_session *s, int tenth_db);
 int raop_session_flush(raop_session *s);
