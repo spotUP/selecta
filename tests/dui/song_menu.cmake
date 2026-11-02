@@ -137,7 +137,8 @@ math(EXPR wpx "${wsx} + 10")
 math(EXPR wpy "${wsy} + 3 * 24 + 12")
 # I902: the filter text must match no sidebar row of any kind. The sidebar lists sources too (I678b, I790), so the old single "z"
 #   matched the ZX-Art source row; "qzj" is a substring of no source, playlist or song name.
-sm_run(filtered "${mk}click ${fmx} ${fmy}\nwait 50\nkey q\nkey z\nkey j\nwait 50\n${wide_open}move ${wsx} ${wsy}\nrclick ${wsx} ${wsy}\nclick ${wpx} ${wpy}\nwait 1\n")
+# I989e: the sidebar filter also narrows the Browse page tiles (the composer tile vanishes), so the composer page is opened first and the filter typed on it.
+sm_run(filtered "${mk}${wide_open}click ${fmx} ${fmy}\nwait 50\nkey q\nkey z\nkey j\nwait 50\nmove ${wsx} ${wsy}\nrclick ${wsx} ${wsy}\nclick ${wpx} ${wpy}\nwait 1\n")
 if(NOT "${filtered}" MATCHES "smenu_pl step=([0-9]+) playlists=([0-9]+) sidebar_rows=([0-9]+)")
   message(FATAL_ERROR "the playlist step never opened:\n${filtered}")
 endif()
