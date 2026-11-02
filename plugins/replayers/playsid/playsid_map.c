@@ -107,3 +107,7 @@ uint32_t ps_sid_count(const uint8_t* hdr, size_t size) {
 uint32_t ps_perf_limit(uint32_t limit_one_sid, uint32_t sids) {
     return sids >= 3u ? limit_one_sid / 3u : sids == 2u ? limit_one_sid / 2u : limit_one_sid;
 }
+
+int ps_mode_can_mute(uint32_t om) {
+    return om == PS_OM_NORMAL;
+}

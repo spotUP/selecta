@@ -90,8 +90,15 @@ static uint32_t st_readregs(uint8_t* regs, uint8_t* env, uint32_t chips) {
     memcpy(env, s_sid_env, chips * 3u);
     return chips;
 }
+/* SetChannelEnable stub (MPS-19): logs every call's four enable words */
+static uint16_t s_en_log[64][4];
+static uint32_t s_n_en;
+static void st_chenable(const uint16_t enable[4]) {
+    if (s_n_en < 64u) memcpy(s_en_log[s_n_en], enable, 4u * sizeof(uint16_t));
+    s_n_en++;
+}
 static const ps_ops s_ops = {st_open, st_close, st_alloc, st_free, st_setmodule, st_start, st_stop,
-                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over, st_getbuf, st_measure, st_readregs};
+                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over, st_getbuf, st_measure, st_readregs, st_chenable};
 const ps_ops* ps_ops_get(void) { return &s_ops; }
 
 static const sel_tag* t_desc;
@@ -295,6 +302,73 @@ static void viz_sid_test(const char* dir) {
             eng = NULL;
         }
     }
+    remove(p);
+}
+
+/* MPS-19: classic-mode voice mute through SetChannelEnable, driven from the engine's MUTE / SOLO commands. */
+static int en_is(uint32_t idx, uint16_t a, uint16_t b, uint16_t c, uint16_t d) {
+    return idx < 64u && s_en_log[idx][0] == a && s_en_log[idx][1] == b && s_en_log[idx][2] == c && s_en_log[idx][3] == d;
+}
+static void mute_test(const char* dir) {
+    char p[1100], line[1200];
+    sel_engine_config cfg;
+    sel_engine_stats st;
+    uint32_t sets0, n;
+    snprintf(p, sizeof p, "%s/ps_mute.sid", dir);
+    write_psid(p, 2, 1, 0);
+    memset(&cfg, 0, sizeof cfg);
+    cfg.registry_count = reg_count;
+    cfg.registry_get = reg_get;
+    s_installed = 1;
+    CHECK(ps_mode_can_mute(PS_OM_NORMAL) == 1);
+    CHECK(ps_mode_can_mute(PS_OM_RESID_6581) == 0 && ps_mode_can_mute(PS_OM_USBSID_PICO) == 0);
+    eng = sel_engine_create(sel_host_default(), &cfg);
+    CHECK(eng != NULL);
+    run("PREF_SET playsid.mode \"normal\"");
+    snprintf(line, sizeof line, "QUEUE_ADD %s", p);
+    run(line);
+    s_n_en = 0;
+    run("PLAY");
+    CHECK(s_n_en == 0u); /* nothing muted yet: no call */
+    sets0 = sel_playsid_mute_sets;
+    run("MUTE 1 on");
+    sel_engine_stats_get(eng, &st);
+    CHECK(st.rp_mute_calls == 1u); /* sentinel: the engine's RP_MUTE path ran */
+    CHECK(sel_playsid_mute_sets == sets0 + 1u && s_n_en == 1u && en_is(0, 0, 1, 1, 1));
+    run("MUTE 4 on"); /* the digi voice */
+    CHECK(s_n_en == 2u && en_is(1, 0, 1, 1, 0));
+    run("MUTE 4 off");
+    CHECK(s_n_en == 3u && en_is(2, 0, 1, 1, 1));
+    run("MUTE 1 off");
+    CHECK(s_n_en == 4u && en_is(3, 1, 1, 1, 1));
+    run("SOLO 2"); /* the engine walks the changed bits one channel at a time; the last call holds the final state */
+    CHECK(s_n_en > 4u && en_is(s_n_en - 1u, 0, 1, 0, 0));
+    run("SOLO 0");
+    CHECK(en_is(s_n_en - 1u, 1, 1, 1, 1));
+    run("MUTE 3 on");
+    CHECK(en_is(s_n_en - 1u, 1, 1, 0, 1));
+    n = s_n_en;
+    restart(); /* a subsong restart re-applies the mute */
+    CHECK(s_n_en > n && en_is(s_n_en - 1u, 1, 1, 0, 1));
+    run("STOP");
+    sel_engine_destroy(eng);
+    eng = NULL;
+    CHECK(en_is(s_n_en - 1u, 1, 1, 1, 1)); /* close restores all channels */
+
+    /* reSID mode: the old library cannot mute, so there is no mute surface and no SetChannelEnable call */
+    eng = sel_engine_create(sel_host_default(), &cfg);
+    CHECK(eng != NULL);
+    run("PREF_SET playsid.mode \"6581\"");
+    snprintf(line, sizeof line, "QUEUE_ADD %s", p);
+    run(line);
+    s_n_en = 0;
+    run("PLAY");
+    run("MUTE 1 on");
+    sel_engine_stats_get(eng, &st);
+    CHECK(s_n_en == 0u); /* the adapter never reaches SetChannelEnable in a mode the library cannot mute */
+    run("STOP");
+    sel_engine_destroy(eng);
+    eng = NULL;
     remove(p);
 }
 
@@ -594,6 +668,7 @@ int main(int argc, char** argv) {
             src.size = sizeof hb;
             st = rp_open(&src, sel_host_default(), &rinfo);
             CHECK(st != NULL);
+            CHECK(rinfo.voice_count == 4u * (k + 1u)); /* MPS-19: classic mode shows 4 mute voices per chip */
             if (st != NULL) {
                 sel_format_label((const char*)sel_tag_find(rp_metadata(st), SEL_META_FORMAT, 0), label, sizeof label);
                 CHECK(strcmp(label, want[k]) == 0);
@@ -717,6 +792,7 @@ int main(int argc, char** argv) {
     catalogue_length_test(argv[1]);
     viz_scope_test(argv[1]);
     viz_sid_test(argv[1]);
+    mute_test(argv[1]);
     perf_gate_test(argv[1]);
     if (g_fail != 0) {
         printf("playsid: %d failures\n", g_fail);

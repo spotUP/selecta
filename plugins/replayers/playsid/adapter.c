@@ -34,12 +34,15 @@ typedef struct ps_state {
     char title[PS_TEXT], author[PS_TEXT], release[PS_TEXT];
     const char* format; /* info label: "SID", "SID 2SID", "SID 3SID" */
     sel_tag meta[6];
+    uint32_t mute_mask;  /* engine mute bits, channel = chip*4 + voice (MPS-19) */
+    uint32_t chips;      /* SID count of the file */
+    uint16_t enable[4];  /* last words handed to SetChannelEnable (SID 1: voices 1-3, sample channel) */
 } ps_state;
 
 static ps_state* g_owner;
 
 /* Sentinels (tests/engine/playsid_test.c): the adapter ran, per hook. */
-uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills, sel_playsid_perf_gates, sel_playsid_perf_measures, sel_playsid_perf_asks, sel_playsid_reg_fills;
+uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills, sel_playsid_perf_gates, sel_playsid_perf_measures, sel_playsid_perf_asks, sel_playsid_reg_fills, sel_playsid_mute_sets;
 
 static uint32_t be16(const uint8_t* p) {
     return ((uint32_t)p[0] << 8) | p[1];
@@ -73,10 +76,26 @@ static void copy_text(char* dst, const uint8_t* src) {
     dst[PS_TEXT - 1u] = '\0';
 }
 
+/* Hands the mute mask of SID 1 to the library (MPS-19). The library base is shared with other players and keeps the
+ * words while it stays open, so stop() calls this with the mask cleared. Chips 2 and 3 need the library patch (step B). */
+static void apply_mute(ps_state* s, uint32_t mask) {
+    uint32_t k;
+    uint16_t en[4];    for (k = 0; k < 4u; k++) {
+        en[k] = (mask >> k) & 1u ? 0u : 1u;
+    }
+    if (memcmp(en, s->enable, sizeof en) == 0) {
+        return;
+    }
+    memcpy(s->enable, en, sizeof en);
+    s->ops->set_channel_enable(s->enable);
+    sel_playsid_mute_sets++;
+}
+
 static void stop(ps_state* s) {
     if (s->playing && g_owner == s) {
         s->ops->stop_song();
         s->ops->free_emul();
+        apply_mute(s, 0);
         g_owner = NULL;
     }
     s->playing = 0;
@@ -88,6 +107,7 @@ static const char* cfg(const sel_host* host, const char* key, const char* def) {
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     ps_state* s;
+    uint32_t i;
     const ps_ops* ops;
     if (src == NULL || src->stream != NULL || !has_magic(src->data, src->size)) {
         return NULL;
@@ -127,7 +147,10 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     copy_text(s->author, s->image + 54);
     copy_text(s->release, s->image + 86);
     s->mode = ps_mode_from_pref(cfg(host, "playsid.mode", "normal")); /* so RP_SEEKABLE answers before the first start */
-    info->voice_count = 0; /* the library owns the voices */
+    s->chips = ps_sid_count(s->image, s->size);
+    for (i = 0; i < 4u; i++) s->enable[i] = 1u;
+    /* The library owns the voices; the count only sizes SOLO and the mute controls, and is 0 where mute cannot work. */
+    info->voice_count = ps_mode_can_mute(s->mode) ? 4u * s->chips : 0u;
     info->subsong_count = s->subsongs;
     info->default_subsong = s->default_subsong;
     return s;
@@ -274,7 +297,26 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     s->ended = 0;
     g_owner = s;
     sel_playsid_starts++;
+    if (ps_mode_can_mute(s->mode)) { /* a subsong restart keeps the mute, as the host shim does */
+        apply_mute(s, s->mute_mask);
+    }
     return 1;
+}
+
+/* RP_MUTE (MPS-19): channel = chip*4 + voice, the host SID adapter's numbering. */
+static void rp_mute(void* state, uint32_t channel, uint32_t muted) {
+    ps_state* s = (ps_state*)state;
+    if (channel >= 4u * s->chips) {
+        return;
+    }
+    if (muted) {
+        s->mute_mask |= 1u << channel;
+    } else {
+        s->mute_mask &= ~(1u << channel);
+    }
+    if (s->playing && g_owner == s && ps_mode_can_mute(s->mode)) {
+        apply_mute(s, s->mute_mask);
+    }
 }
 
 /* Play time of the running subsong: the library plays on its own clock, so the adapter counts host time and holds it
@@ -388,7 +430,7 @@ static int rp_seek(void* state, uint32_t ms) {
     return 1;
 }
 
-static sel_tag g_hooks[20];
+static sel_tag g_hooks[21];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -419,7 +461,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[16], SEL_RP_HW_LENGTH, SEL_TAG_FN(rp_hw_length));
     set(&g_hooks[17], SEL_RP_VIZ_VOICES, SEL_TAG_FN(rp_viz_voices));
     set(&g_hooks[18], SEL_RP_VIZ_SID, SEL_TAG_FN(rp_viz_sid));
-    set(&g_hooks[19], SEL_TAG_END, 0);
+    set(&g_hooks[19], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
+    set(&g_hooks[20], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "playsid");
