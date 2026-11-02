@@ -308,6 +308,8 @@ static void handle_request(sel_library* lib, const sel_message* req, sel_message
         sel_library_meta(lib, (const sel_meta_op*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_ANNOTATE && req->argc == 1) {
         sel_library_annotate(lib, (const sel_annotate_batch*)req->args[0].v.s, reply);
+    } else if (req->id == SEL_LIB_REQ_SRCSTATE && req->argc == 1) {
+        sel_library_srcstate(lib, (const sel_srcstate_op*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_USER && req->argc == 1) {
         sel_library_user(lib, (const sel_user_op*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_GENRE && req->argc == 1) {

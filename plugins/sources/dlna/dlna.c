@@ -59,12 +59,15 @@ typedef struct cont {
     unsigned char dead;
 } cont;
 
-/* I894a5: the per-server delta state, a text file next to the other source caches (catalogue->cache_dir). The library
- * only holds the rows, so the state keeps what a delta needs: the server UDN, its SystemUpdateID, the CD:3 reset
+/* I894a5: the per-server delta state. The library only holds the rows, so the state keeps what a delta needs: the server UDN, its SystemUpdateID, the CD:3 reset
  * token, the walk's start container, every walked container (`c id parent`) and every stored row with the container
- * it was listed in (`r container path`). */
+ * it was listed in (`r container path`). I894a6: the engine owns it (catalogue->state_get/state_set, table source_state in
+ * the library db, dropped with the source's rows); `file` is only the working copy of that blob in the cache dir while a
+ * sync runs, so a removed source, a reset db or another db starts with no state and walks in full. */
 typedef struct state {
     char file[640];
+    char key[32];  /* catalogue state key of this server */
+    int unchanged; /* the sync changed nothing: the stored blob stays */
     char udn[SEL_UPNP_NAME_BYTES];
     char token[64];
     char start[SEL_UPNP_ID_BYTES];
@@ -559,11 +562,65 @@ static int state_stage(run* r, state* st, int full, const char* x, const char* p
 static void state_path(const sel_host* host, const sel_catalogue* cat, const sel_upnp_server* sv, state* st) {
     char dir[512];
 
+    unsigned long long h = (unsigned long long)str_hash(sv->udn[0] != '\0' ? sv->udn : sv->control_url);
+
     st->file[0] = '\0';
+    snprintf(st->key, sizeof st->key, "state-%016llx", h);
     if (cat->cache_dir != NULL && cat->cache_dir(host, "dlna", dir, sizeof dir)) {
-        snprintf(st->file, sizeof st->file, "%s/%016llx.state", dir,
-                 (unsigned long long)str_hash(sv->udn[0] != '\0' ? sv->udn : sv->control_url));
+        snprintf(st->file, sizeof st->file, "%s/%016llx.state", dir, h);
     }
+}
+
+/* Writes the db's blob of this server to the working file; no blob (or no way to read it) removes the working file. */
+static void state_fetch(const sel_host* host, const sel_catalogue* cat, const state* st) {
+    uint32_t len = 0;
+    void* buf;
+    FILE* f;
+    int ok = 0;
+
+    if (st->file[0] == '\0') {
+        return;
+    }
+    remove(st->file);
+    if (cat->state_get == NULL || !cat->state_get(host, st->key, NULL, 0u, &len) || len == 0u) {
+        return;
+    }
+    buf = malloc(len);
+    if (buf != NULL && cat->state_get(host, st->key, buf, len, &len) && (f = fopen(st->file, "w")) != NULL) {
+        ok = fwrite(buf, 1u, len, f) == len;
+        ok &= fclose(f) == 0;
+    }
+    free(buf);
+    if (!ok) {
+        remove(st->file);
+    }
+}
+
+/* Hands the working file to the db (no file = the state is dropped, the next sync walks in full), then removes it. */
+static void state_push(const sel_host* host, const sel_catalogue* cat, const state* st) {
+    FILE* f = st->file[0] != '\0' ? fopen(st->file, "r") : NULL;
+    void* buf = NULL;
+    long len = 0;
+
+    if (st->file[0] == '\0' || cat->state_set == NULL) {
+        return;
+    }
+    if (st->unchanged && f != NULL) {
+        fclose(f);
+        remove(st->file);
+        return;
+    }
+    if (f != NULL) {
+        if (fseek(f, 0, SEEK_END) == 0 && (len = ftell(f)) > 0 && fseek(f, 0, SEEK_SET) == 0 &&
+            (buf = malloc((size_t)len)) != NULL && fread(buf, 1u, (size_t)len, f) != (size_t)len) {
+            free(buf);
+            buf = NULL;
+        }
+        fclose(f);
+    }
+    (void)cat->state_set(host, st->key, buf, buf != NULL ? (uint32_t)len : 0u);
+    free(buf);
+    remove(st->file);
 }
 
 static FILE* part_open(run* r, const state* st, char* part, size_t n) {
@@ -672,14 +729,12 @@ static int full_walk(run* r, const sel_upnp_server* sv, state* st, int have, uns
 
 /* Brings one server's rows up to date: unchanged SystemUpdateID = nothing to do; CD:3 change tracking = only the
  * changed containers; else the full walk. */
-static int sync_server(run* r, const sel_upnp_server* sv) {
-    state st;
+static int sync_server_state(run* r, const sel_upnp_server* sv, state* stp) {
+    state st = *stp;
     unsigned long sysid = 0;
     char token[64] = "";
     int have, ok = 1, handled = 0, force = getenv("SELECTA_DLNA_FULL") != NULL;
 
-    memset(&st, 0, sizeof st);
-    state_path(r->host, r->cat, sv, &st);
     state_load(&st);
     have = sel_upnp_get_system_update_id(sv->control_url, &sysid);
     r->requests++;
@@ -691,6 +746,7 @@ static int sync_server(run* r, const sel_upnp_server* sv) {
         fprintf(stderr, "dlna: SystemUpdateID %lu unchanged, no Browse needed (%u stored rows kept)\n", sysid,
                 (unsigned)st.rows);
         r->rows += st.rows;
+        stp->unchanged = 1;
         state_free(&st);
         return 1;
     }
@@ -710,6 +766,18 @@ static int sync_server(run* r, const sel_upnp_server* sv) {
         remove(st.file); /* the library may be ahead of the state: the next sync walks in full */
     }
     state_free(&st);
+    return ok;
+}
+
+static int sync_server(run* r, const sel_upnp_server* sv) {
+    state st;
+    int ok;
+
+    memset(&st, 0, sizeof st);
+    state_path(r->host, r->cat, sv, &st);
+    state_fetch(r->host, r->cat, &st);
+    ok = sync_server_state(r, sv, &st);
+    state_push(r->host, r->cat, &st);
     return ok;
 }
 

@@ -179,6 +179,20 @@ if(n_changed LESS 4 OR NOT delta_log MATCHES "1 vanished rows removed")
   message(FATAL_ERROR "I894a5: a changed SystemUpdateID must walk again and drop the vanished row (${n_changed})\n${delta_log}")
 endif()
 
+# I894a6: the state belongs to the library db. A fresh db (or one whose source rows were removed) with the SAME cache dir
+# must walk in full and bring the rows back, not say "unchanged" from a state kept somewhere else.
+file(REMOVE "${WORK}/dlna-delta-.db")
+delta_sync("" ${d1port} ${d1req} 154 "cd1 fresh db")
+list(LENGTH delta_browse n_fresh)
+if(n_fresh LESS 4 OR delta_log MATCHES "unchanged")
+  message(FATAL_ERROR "I894a6: a fresh db must walk in full (${n_fresh} Browse requests)\n${delta_log}")
+endif()
+delta_sync("" ${d1port} ${d1req} 154 "cd1 unchanged after fresh db")
+list(LENGTH delta_browse n_again)
+if(NOT n_again EQUAL 0)
+  message(FATAL_ERROR "I894a6: the state stored with the fresh db must serve the next sync (${n_again} Browse requests)")
+endif()
+
 # CD:3: one changed container is found by Search and re-browsed alone, its rows updated.
 delta_fixture("cd3" d3port d3req)
 set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/d3")

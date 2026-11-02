@@ -32,7 +32,8 @@ enum {
     SEL_LIB_REQ_USER = 10,      /* payload: const sel_user_op*; history, liked, kept, per-song stickers (I170) */
     SEL_LIB_REQ_META = 11,      /* payload: sel_meta_op*; reads or writes one row of the meta table (I161a) */
     SEL_LIB_REQ_GENRE = 12,     /* payload: sel_genre_op*; genre_cache and songs.genre (I181) */
-    SEL_LIB_REQ_ART = 13        /* payload: sel_art_op*; albums and artwork rows (DUI-P2-4) */
+    SEL_LIB_REQ_ART = 13,       /* payload: sel_art_op*; albums and artwork rows (DUI-P2-4) */
+    SEL_LIB_REQ_SRCSTATE = 14   /* payload: sel_srcstate_op*; a source's sync state blob (I894a6) */
 };
 
 /* One genre_cache operation (SEL_LIB_REQ_GENRE). The reply is INT [0] 1 = done and found/stored, 0 = not found
@@ -190,6 +191,18 @@ typedef struct sel_meta_op {
     int set;
 } sel_meta_op;
 
+/* One per-source state blob (table source_state, dropped with the source's last song row). set != 0 stores
+ * `data`/`len` (data NULL = delete the key); set == 0 copies up to `cap` bytes into `data` and sets `len` to the full
+ * stored size (data NULL = size query). Reply: INT [0] 1 when found (read) or stored/deleted (write), [1] SQLite code. */
+typedef struct sel_srcstate_op {
+    const char* source;
+    const char* key;
+    void* data;
+    uint32_t len;
+    uint32_t cap;
+    int set;
+} sel_srcstate_op;
+
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
  * sel_library_run and blocks until the worker answers, so the pointers stay valid. No allocation:
  * `out` is a caller buffer of NUL-terminated keys. */
@@ -287,7 +300,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 16
+#define SEL_LIB_SCHEMA_VERSION 17
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 640 KiB (512 KiB + 32 KiB I687c + 32 KiB I790 + 64 KiB I848a), <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:
