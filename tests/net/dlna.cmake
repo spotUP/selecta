@@ -55,6 +55,48 @@ if(NOT rq MATCHES "ssdp_search=urn:schemas-upnp-org:device:MediaServer:1")
   message(FATAL_ERROR "I894a3: no M-SEARCH reached the fixture\n${rq}")
 endif()
 
+# 2b. I894a4: a Synology-like tree lists the same 15 files under Artist, Album, Genre and Folder views. With a folder
+# container the scan walks only root > Music > Folder (5 Browse requests: 0, m, f, f$d1, f$d2); without one it walks
+# everything and the repeated res URLs are dropped. Both store each file once; the folder walk asks for fewer pages.
+function(syn_sync tree outvar)
+  set(sport "${WORK}/dlna-${tree}-port")
+  set(sdb "${WORK}/dlna-${tree}.db")
+  file(REMOVE_RECURSE "${sport}" "${sport}.requests" "${sdb}")
+  execute_process(COMMAND sh -c "python3 -I '${SRV}' '${sport}' 30 '${MP3}' '${tree}' >/dev/null 2>&1 &")
+  foreach(i RANGE 50)
+    if(EXISTS "${sport}")
+      file(READ "${sport}" sp2)
+      if(NOT sp2 STREQUAL "")
+        break()
+      endif()
+    endif()
+    execute_process(COMMAND sleep 0.1)
+  endforeach()
+  string(STRIP "${sp2}" sp2)
+  if(NOT sp2 MATCHES "^([0-9]+) ([0-9]+)$")
+    message(FATAL_ERROR "I894a4: ${tree} fixture did not start (${sp2})")
+  endif()
+  execute_process(COMMAND "${CLI}" library sync --db "${sdb}" --now 2000 dlna "http://127.0.0.1:${CMAKE_MATCH_2}/desc.xml"
+    OUTPUT_VARIABLE so3 ERROR_VARIABLE se3 RESULT_VARIABLE src3 TIMEOUT 60)
+  if(NOT src3 EQUAL 0 OR NOT so3 MATCHES "listing_rows=15 " OR NOT so3 MATCHES "db_songs=15")
+    message(FATAL_ERROR "I894a4: ${tree}: want each of the 15 files stored once rc=${src3}\n${so3}${se3}")
+  endif()
+  file(READ "${sport}.requests" rq3)
+  string(REGEX MATCHALL "browse=[^\n]*" bl "${rq3}")
+  list(LENGTH bl cnt)
+  set(${outvar} ${cnt} PARENT_SCOPE)
+  set(${outvar}_log "${se3}" PARENT_SCOPE)
+endfunction()
+syn_sync("synology" folder_requests)
+syn_sync("synology-plain" full_requests)
+if(NOT folder_requests EQUAL 5 OR NOT folder_requests_log MATCHES "walking the folder view")
+  message(FATAL_ERROR "I894a4: the folder walk wanted 5 Browse requests, saw ${folder_requests}\n${folder_requests_log}")
+endif()
+if(NOT full_requests_log MATCHES "walking the whole tree" OR NOT full_requests_log MATCHES "45 repeated res URLs"
+   OR NOT full_requests GREATER folder_requests)
+  message(FATAL_ERROR "I894a4: the fallback must walk everything (${full_requests} requests) and drop repeats\n${full_requests_log}")
+endif()
+
 # 3. Play one song of the sub-container.
 set(KEY "dlna:Artist-201/Track-201/http://127.0.0.1:${HTTP}/media/201.mp3?a=1&b=2")
 file(WRITE "${WORK}/dlna.sel"
