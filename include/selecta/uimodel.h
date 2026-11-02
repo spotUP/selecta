@@ -123,7 +123,8 @@ typedef enum sel_uim_state_view { SEL_UIM_SV_LIBRARY = 0, SEL_UIM_SV_QUEUE, SEL_
 typedef enum sel_uim_state_kind { SEL_UIM_ST_EMPTY = 0, SEL_UIM_ST_LOADING, SEL_UIM_ST_ERROR } sel_uim_state_kind;
 const char* sel_uim_state_text(uint32_t view, uint32_t kind);
 /* Settings window rows (MUI-P4-10): the prefs a settings UI offers with the gadget each needs. */
-typedef enum sel_uim_pref_ui { SEL_UIM_PREF_CYCLE = 0, SEL_UIM_PREF_CHECK, SEL_UIM_PREF_SLIDER, SEL_UIM_PREF_STRING } sel_uim_pref_ui;
+typedef enum sel_uim_pref_ui { SEL_UIM_PREF_CYCLE = 0, SEL_UIM_PREF_CHECK, SEL_UIM_PREF_SLIDER, SEL_UIM_PREF_STRING,
+                      SEL_UIM_PREF_ROM /* MPS-1c: a C64 ROM file chooser, choices = the config-dir file name; not a prefs.def key */ } sel_uim_pref_ui;
 typedef struct sel_uim_pref_row {
     const char* key;      /* a prefs.def key */
     const char* label;    /* full English words */
@@ -143,6 +144,15 @@ const sel_uim_pref_row* sel_uim_pref_row_at_for(uint32_t machine, uint32_t i);
 /* The same for the machine this build runs on. */
 uint32_t sel_uim_pref_row_count(void);
 const sel_uim_pref_row* sel_uim_pref_row_at(uint32_t i);
+/* C64 ROM files (MPS-1c). The sid adapter reads <config dir>/kernal, basic and chargen when present at exactly the right size. */
+enum { SEL_UIM_ROM_KERNAL = 0, SEL_UIM_ROM_BASIC, SEL_UIM_ROM_CHARGEN, SEL_UIM_ROM_COUNT };
+int sel_uim_rom_slot(const char* name);     /* "kernal", "basic", "chargen" -> slot, else -1 */
+uint32_t sel_uim_rom_size(uint32_t slot);   /* 8192, 8192, 4096 */
+/* Checks the exact size, then copies src into the config dir. 0 and a one-line reason in err (nothing copied) on failure. */
+int sel_uim_rom_install(const char* config_dir, uint32_t slot, const char* src, char* err, size_t cap);
+int sel_uim_rom_is_user(const char* config_dir, uint32_t slot);   /* 1: the user's file is in force */
+const char* sel_uim_rom_source_text(int user);                    /* "Your ROM" or "Open ROMs (bundled)" */
+int sel_uim_rom_reset(const char* config_dir, uint32_t slot);     /* removes the copied file; 1 when none is left */
 /* PREF_SET key "value" */
 void sel_uim_pref_line(const char* key, const char* value, char* out, size_t cap);
 

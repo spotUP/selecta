@@ -2182,6 +2182,7 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
 static const char* pl_config_get(const sel_host* h, const char* key, const char* def) {
     const sel_engine* e = (const sel_engine*)h->ctx;
     int id = sel_prefs_find(key);
+    if (strcmp(key, "config.dir") == 0 && e->config_dir[0] != '\0') return e->config_dir; /* the Settings ROM rows (MPS-1c) */
     if (id >= 0 && e->prefs.value[id][0] != '\0') return e->prefs.value[id];
     return e->host->config_get != NULL ? e->host->config_get(e->host, key, def) : def;
 }
@@ -4160,18 +4161,98 @@ static int search_finish(sel_engine* e, const sel_lib_job* job, int ran, const c
     return 1;
 }
 
-/* Runs `text` on the library worker into res_text and waits. 1 on success; on failure the ERROR event is raised. Only for
- * commands that act on the result in the same turn (QUEUE_ADD_QUERY, PLAY_QUERY, VIEW_ACTIVATE); LIBRARY_SEARCH posts. */
-static int run_search(sel_engine* e, const char* text, const char* who, uint32_t* fts) {
+/* I906g: a search whose result the command acts on in the same turn (QUEUE_ADD_QUERY, PLAY_QUERY, VIEW_ACTIVATE on a query row) is a queued
+ * write-queue op. `res` holds the job and its two buffers in one block; `run` searches on the writer thread; `done` takes the answer into
+ * res_text/res_meta on the pump (as the LIBRARY_SEARCH collect does) and then acts. u1 = what to do, s[0] = query text, s[1] = command name. */
+enum { RS_QUEUE_ADD, RS_PLAY, RS_VIEW };
+
+typedef struct run_search_res {
     sel_lib_job job;
+    uint32_t used_text; /* bytes of the key list the job filled */
+} run_search_res;
+
+static void wq_search_run(sel_library* lib, sel_wq_op* op) {
+    run_search_res* r = (run_search_res*)op->res;
+
+    op->rc = sel_library_run(lib, SEL_LIB_REQ_SEARCH, &r->job);
+}
+
+static void search_act_queue_add(sel_engine* e) {
+    uint32_t i;
+    const char* key;
+
+    for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk, not O(n^2) result_key(i) */
+        queue_insert(e, e->queue.count, key, "QUEUE_ADD_QUERY");
+    }
+}
+
+static void search_act_play(sel_engine* e) {
+    uint32_t i;
+    const char* key;
+
+    sel_history_record(&e->history, &e->queue);
+    sel_history_bury(&e->history, &e->queue, SEL_QUEUE_NONE);
+    sel_queue_clear(&e->queue);
+    e->q_playing = 0;
+    e->q_hint = 0;
+    for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk */
+        queue_insert(e, e->queue.count, key, "PLAY_QUERY");
+    }
+    emit_queue_changed(e);
+    if (e->queue.count > 0) {
+        queue_start(e, 0);
+    }
+}
+
+static void view_source_apply(sel_engine* e, const sel_message* m);
+
+static void wq_search_done(sel_engine* e, sel_wq_op* op) {
+    run_search_res* r = (run_search_res*)op->res;
+    uint32_t fts = 0, i;
+    const char* k;
+
+    e->res_count = 0;
+    if (!search_finish(e, &r->job, op->rc, op->s[1], &fts)) return;
+    for (i = 0, k = r->job.out; i < e->res_count; i++) k += strlen(k) + 1u;
+    memcpy(e->res_text, r->job.out, (size_t)(k - r->job.out));
+    memcpy(e->res_meta, r->job.meta, r->job.meta_used);
+    if (op->u1 == RS_QUEUE_ADD) {
+        search_act_queue_add(e);
+    } else if (op->u1 == RS_PLAY) {
+        search_act_play(e);
+    } else {
+        sel_message q;
+        memset(&q, 0, sizeof q);
+        q.argc = 1;
+        q.args[0].v.s = "query";
+        view_source_apply(e, &q); /* the result is this turn's search, not a posted LIBRARY_SEARCH one */
+    }
+}
+
+/* Posts `text` on the write queue; `what` (RS_*) runs when the answer lands. On failure the ERROR event is raised. */
+static void run_search_post(sel_engine* e, const char* text, const char* who, int what) {
+    sel_wq_op* op;
+    run_search_res* r;
+    char* out;
 
     e->res_count = 0;
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", who);
-        return 0;
+        return;
     }
-    search_job_init(e, &job, text, e->res_text, e->res_meta);
-    return search_finish(e, &job, sel_library_run(e->lib, SEL_LIB_REQ_SEARCH, &job), who, fts);
+    r = (run_search_res*)e->host->mem_alloc(e->host, sizeof *r + 2u * (size_t)e->queue.text_bytes, SEL_MEM_FAST);
+    op = r != NULL ? wq_new(e, wq_search_run, wq_search_done, text, who, NULL) : NULL;
+    if (op == NULL) {
+        if (r != NULL) e->host->mem_free(e->host, r);
+        sel_engine_report_error(e, "library_busy", who);
+        return;
+    }
+    out = (char*)(r + 1);
+    op->res = r;
+    op->u1 = (uint32_t)what;
+    /* the query text lives in op->buf (s[0]) until the op is freed */
+    search_job_init(e, &r->job, op->s[0], out, out + e->queue.text_bytes);
+    wq_submit(e);
 }
 
 /* The search thread: rd_q into its own buffers (rd_res_*, or res_* without a thread, where nothing else runs meanwhile). */
@@ -4227,36 +4308,11 @@ static void cmd_LIBRARY_SEARCH(sel_engine* e, const sel_message* m) {
 }
 
 static void cmd_QUEUE_ADD_QUERY(sel_engine* e, const sel_message* m) {
-    uint32_t fts = 0, i;
-    const char* key;
-
-    if (!run_search(e, m->args[0].v.s, "QUEUE_ADD_QUERY", &fts)) {
-        return;
-    }
-    for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk, not O(n^2) result_key(i) */
-        queue_insert(e, e->queue.count, key, "QUEUE_ADD_QUERY");
-    }
+    run_search_post(e, m->args[0].v.s, "QUEUE_ADD_QUERY", RS_QUEUE_ADD);
 }
 
 static void cmd_PLAY_QUERY(sel_engine* e, const sel_message* m) {
-    uint32_t fts = 0, i;
-    const char* key;
-
-    if (!run_search(e, m->args[0].v.s, "PLAY_QUERY", &fts)) {
-        return;
-    }
-    sel_history_record(&e->history, &e->queue);
-    sel_history_bury(&e->history, &e->queue, SEL_QUEUE_NONE);
-    sel_queue_clear(&e->queue);
-    e->q_playing = 0;
-    e->q_hint = 0;
-    for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk */
-        queue_insert(e, e->queue.count, key, "PLAY_QUERY");
-    }
-    emit_queue_changed(e);
-    if (e->queue.count > 0) {
-        queue_start(e, 0);
-    }
+    run_search_post(e, m->args[0].v.s, "PLAY_QUERY", RS_PLAY);
 }
 
 /* I906f2d: the view save is a queued write (it ran on the pump and waited on the library call lock). `run` fills the 24-byte error code
@@ -8960,13 +9016,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
                 text[o++] = '"';
             }
             text[o] = '\0';
-            if (!run_search(e, text, "VIEW_ACTIVATE", &fts)) {
-                return;
-            }
-            memset(&q, 0, sizeof q);
-            q.argc = 1;
-            q.args[0].v.s = "query";
-            view_source_apply(e, &q); /* the result is this turn's run_search, not a posted one */
+            run_search_post(e, text, "VIEW_ACTIVATE", RS_VIEW);
         } else {
             uint32_t before = e->queue.count;
             queue_insert(e, before, r->key, "VIEW_ACTIVATE");

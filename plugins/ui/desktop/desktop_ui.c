@@ -346,6 +346,10 @@ typedef struct desk {
     int32_t set_y_q16;       /* I799a: Settings scroll offset in logical pixels, Q16 */
     int32_t set_focus;       /* I799a: the string row being edited, -1 when none */
     char set_buf[160];       /* I799a: the text of that row */
+    sel_gui_rect set_reset[24]; /* MPS-1c: the Reset to Bundled button of a ROM row (empty on every other row) */
+    char rom_err[SEL_UIM_ROM_COUNT][96]; /* MPS-1c: why the last ROM pick of that slot was refused */
+    uint32_t rom_loads, rom_resets, rom_refused; /* MPS-1c sentinels: ROM files installed, resets, picks refused for size or read errors */
+    int rom_wait;            /* MPS-1c: a ROM file dialog is open for this slot + 1, its answer arrives as a drop */
     sel_gui_rect set_rect[24]; /* I799a: the control rect of every row of the last frame (hit test and the dump) */
     sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
@@ -7145,9 +7149,18 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "settings draws=%u rows=%u table=%u sets=%u clicks=%u entry_clicks=%u entry %d %d %d %d\n", (unsigned)d->set_draws, (unsigned)d->set_rows,
                      (unsigned)sel_uim_pref_row_count(), (unsigned)d->set_sets, (unsigned)d->set_clicks, (unsigned)d->set_entry_clicks, (int)se.x, (int)se.y,
                      (int)se.w, (int)se.h);
+        o = dump_put(d, o, "rom loads=%u resets=%u refused=%u\n", (unsigned)d->rom_loads, (unsigned)d->rom_resets, (unsigned)d->rom_refused);
+        for (si = 0; si < SEL_UIM_ROM_COUNT; si++) {
+            o = dump_put(d, o, "rom_row %u source=%s err=%s\n", (unsigned)si,
+                         sel_uim_rom_source_text(sel_uim_rom_is_user(desk_pref(d, "config.dir", ""), si)), d->rom_err[si]);
+        }
         for (si = 0; d->page == SEL_UIM_PG_SETTINGS && si < d->set_rows && o + 200u < sizeof d->library_dump; si++) {
             o = dump_put(d, o, "settings_row %u %d %d %d %d key=%s\n", (unsigned)si, (int)d->set_rect[si].x, (int)d->set_rect[si].y, (int)d->set_rect[si].w,
                          (int)d->set_rect[si].h, sel_uim_pref_row_at(si)->key);
+            if (sel_uim_pref_row_at(si)->ui == (uint32_t)SEL_UIM_PREF_ROM) {
+                o = dump_put(d, o, "settings_reset %u %d %d %d %d\n", (unsigned)si, (int)d->set_reset[si].x, (int)d->set_reset[si].y, (int)d->set_reset[si].w,
+                             (int)d->set_reset[si].h);
+            }
         }
     }
     o = dump_put(d, o, "browse draws=%u tiles=%u opens=%u filter=%d\n", (unsigned)d->browse_draws, (unsigned)d->browse_n, (unsigned)d->browse_opens, d->browse_filter);
@@ -9113,6 +9126,17 @@ static void draw_settings(desk* d) {
             sel_gui_round_rect(d->canvas, bar, bar.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
             sel_gui_round_rect(d->canvas, rect_of(bar.x, bar.y, hi > lo ? (int32_t)((int64_t)bar.w * (v - lo) / (hi - lo)) : 0, bar.h), bar.h / 2,
                                ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_ROM) {
+            int slot = sel_uim_rom_slot(r->choices);
+            const char* shown = slot >= 0 && d->rom_err[slot][0] != '\0' ? d->rom_err[slot]
+                                : sel_uim_rom_source_text(slot >= 0 && sel_uim_rom_is_user(desk_pref(d, "config.dir", ""), (uint32_t)slot));
+            int32_t half = (cw - lpx(d, 8)) / 2, info = row.w / 3;
+            draw_text(d, rect_of(row.x + info, y, row.w - cw - info - lpx(d, 16), rh), shown, 0, 13,
+                      slot >= 0 && d->rom_err[slot][0] != '\0' ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : muted);
+            c = rect_of(row.x + row.w - cw, c.y, half, c.h);
+            d->set_reset[i] = rect_of(row.x + row.w - half, c.y, half, c.h);
+            draw_button(d, c, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]), "Choose File", 13, text);
+            draw_button(d, d->set_reset[i], ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]), "Reset to Bundled", 13, text);
         } else {
             char shown[170];
             const char* src = d->set_focus == (int32_t)i ? d->set_buf : cur;
@@ -9135,6 +9159,9 @@ static void draw_settings(desk* d) {
             sel_gui_round_rect(d->canvas, c, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
             draw_text(d, rect_of(c.x + lpx(d, 10), c.y, c.w - lpx(d, 20), c.h), shown, 0, 13, text);
         }
+        if (r->ui != (uint32_t)SEL_UIM_PREF_ROM) {
+            d->set_reset[i] = rect_of(0, 0, 0, 0);
+        }
         d->set_rect[i] = c;
         d->set_rows++;
         y += rh;
@@ -9142,6 +9169,35 @@ static void draw_settings(desk* d) {
     d->set_draws++;
     sel_gui_clip_pop(d->canvas);
     sel_gui_dirty_add(d->canvas, mn);
+}
+
+/* MPS-1c: a ROM file arrived for a slot (dialog answer or drop). The uimodel service checks the size and copies; the SID
+ * adapter reads the file at the next song start. */
+static int settings_rom_install(desk* d, uint32_t slot, const char* path) {
+    d->rom_wait = 0;
+    if (sel_uim_rom_install(desk_pref(d, "config.dir", ""), slot, path, d->rom_err[slot], sizeof d->rom_err[slot])) {
+        d->rom_loads++;
+    } else {
+        d->rom_refused++;
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return 1;
+}
+
+static int settings_rom_pick(desk* d, uint32_t slot) {
+    d->rom_err[slot][0] = '\0';
+    if (d->dialog_answer != NULL) {
+        return settings_rom_install(d, slot, d->dialog_answer);
+    }
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL && desk_sdl_open_file_dialog(d->sdl)) {
+        d->rom_wait = (int)slot + 1;
+        return 1;
+    }
+#endif
+    desk_toast(d, "No file dialog here");
+    return 1;
 }
 
 static int settings_click(desk* d, int32_t x, int32_t y) {
@@ -9153,10 +9209,25 @@ static int settings_click(desk* d, int32_t x, int32_t y) {
         const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
         sel_gui_rect c = d->set_rect[i];
         char v[48];
+        if (r->ui == (uint32_t)SEL_UIM_PREF_ROM && in_rect(d->set_reset[i], x, y)) {
+            int slot = sel_uim_rom_slot(r->choices);
+            d->set_clicks++;
+            if (slot >= 0 && sel_uim_rom_reset(desk_pref(d, "config.dir", ""), (uint32_t)slot)) {
+                d->rom_resets++;
+                d->rom_err[slot][0] = '\0';
+            }
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
         if (!in_rect(c, x, y)) {
             continue;
         }
         d->set_clicks++;
+        if (r->ui == (uint32_t)SEL_UIM_PREF_ROM) {
+            int slot = sel_uim_rom_slot(r->choices);
+            return slot >= 0 ? settings_rom_pick(d, (uint32_t)slot) : 1;
+        }
         if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
             uint32_t count = set_choice(r->choices, 0u, v, sizeof v);
             set_choice(r->choices, (set_choice_index(r->choices, desk_pref(d, r->key, "")) + 1u) % count, v, sizeof v);
@@ -13672,6 +13743,9 @@ static int desk_route_input(desk* d, const sel_gui_input* ev_in) {
     d->frame_open = 0; /* an input that changes nothing never flushes: its stamp must not leak into the next frame */
     desk_frame_begin(d);
     if (ev->kind == SEL_GUI_IN_DROP) {
+        if (d->rom_wait > 0) {
+            return desk_event_frame(d, settings_rom_install(d, (uint32_t)d->rom_wait - 1u, ev->path));
+        }
         if (d->imp_wait == 2) {
             return desk_event_frame(d, desk_pls_add_folder(d, ev->path));
         }

@@ -75,6 +75,9 @@ static const sel_uim_pref_row g_pref_rows[] = {
     {"sid.clock", "Video Standard", SEL_UIM_PREF_CYCLE, "auto,pal,ntsc", SEL_UIM_MACH_HOST},
     {"sid.filter", "Chip Filter", SEL_UIM_PREF_CHECK, "off,on", SEL_UIM_MACH_HOST},
     {"sid.digiboost", "Digi Boost", SEL_UIM_PREF_CYCLE, "auto,on,off", SEL_UIM_MACH_HOST},
+    {"sid.rom.kernal", "C64 KERNAL ROM", SEL_UIM_PREF_ROM, "kernal", SEL_UIM_MACH_HOST},
+    {"sid.rom.basic", "C64 BASIC ROM", SEL_UIM_PREF_ROM, "basic", SEL_UIM_MACH_HOST},
+    {"sid.rom.chargen", "C64 Character ROM", SEL_UIM_PREF_ROM, "chargen", SEL_UIM_MACH_HOST},
     {"view.title_format", "Title Format", SEL_UIM_PREF_STRING, "", SEL_UIM_MACH_ALL},
     {"view.status_format", "Status Format", SEL_UIM_PREF_STRING, "", SEL_UIM_MACH_ALL},
 };

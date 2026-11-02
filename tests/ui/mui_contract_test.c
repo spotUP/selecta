@@ -1431,11 +1431,11 @@ static void test_songinfo(void) {
 }
 
 static void test_settings(void) {
-    uint32_t i, n = sel_uim_pref_row_count();
+    uint32_t i, n = sel_uim_pref_row_count_for(SEL_UIM_MACH_AMIGA); /* MPS-1c: host ROM rows are no prefs.def keys */
     char o[96];
     CHECK(n >= 6u, "rows %u", (unsigned)n);
     for (i = 0; i < n; i++) {
-        const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
+        const sel_uim_pref_row* r = sel_uim_pref_row_at_for(SEL_UIM_MACH_AMIGA, i);
         int found = 0;
 #define SEL_PREF(id, pkey, def, kind) if (strcmp(pkey, r->key) == 0) found = 1;
 #include <selecta/prefs.def>
