@@ -190,6 +190,17 @@ enum {
     SEL_DRILL_WINDOW = 200   /* the most rows one drill page holds */
 };
 
+/* I994d1: the sort keys of a collection page order (design doc 2026-11-02-I994-play-context-design.md section 11); each has an ascending and a descending direction */
+enum {
+    SEL_COLL_SORT_CUSTOM = 0, /* stored order ("Custom Order") */
+    SEL_COLL_SORT_TITLE,
+    SEL_COLL_SORT_ARTIST,
+    SEL_COLL_SORT_ALBUM,
+    SEL_COLL_SORT_ADDED, /* Date Added */
+    SEL_COLL_SORT_DURATION,
+    SEL_COLL_SORT_COUNT
+};
+
 typedef struct sel_collection_page {
     uint32_t serial;
     uint32_t drill;       /* SEL_DRILL_PAGE_* */
@@ -204,6 +215,10 @@ typedef struct sel_collection_page {
     const char* rows;
     uint32_t shelf_n[SEL_COLLECTION_SHELVES], shelf_total[SEL_COLLECTION_SHELVES];
     sel_engine_collection_row shelf[SEL_COLLECTION_SHELVES][SEL_COLLECTION_SHELF_MAX];
+    const uint32_t* order;     /* I994d: shown position -> stored row index; NULL means identity (drill group pages) */
+    uint32_t shown;            /* rows in order (<= songs): the filtered count */
+    uint32_t sort, descending; /* SEL_COLL_SORT_*, 0/1 */
+    char filter[64];           /* the view this order was built for */
 } sel_collection_page;
 
 typedef struct sel_state {

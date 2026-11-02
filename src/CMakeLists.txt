@@ -19,6 +19,7 @@ add_library(selecta_core STATIC
   engine/queue.c
   engine/history.c
   engine/shuffle.c
+  engine/collorder.c
   engine/view.c
   engine/prefs.c
   engine/options.c
