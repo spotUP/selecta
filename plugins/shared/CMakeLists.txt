@@ -19,3 +19,12 @@ add_library(selecta_shared_archive STATIC archive/archive.c archive/archive_lzx.
 target_include_directories(selecta_shared_archive PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(selecta_shared_archive PRIVATE "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(selecta_shared_archive PUBLIC selecta_archive)
+
+# I892c1: RAOP (AirPlay 1) sender, pure part: ALAC escape-frame packer, AES-128-CBC packet encrypt, RSA-OAEP key wrap, SDP
+# ANNOUNCE builder. No sockets or OS calls. Crypto from third_party/mbedtls, which the build tree adds only off the Amiga
+# (src/library/CMakeLists.txt, SEL_NO_TLS); the Amiga RAOP plugin (I895) decides how mbedtls reaches the 68k build.
+if(TARGET selecta_mbedtls)
+  add_library(selecta_shared_raop STATIC raop/raop.c)
+  target_include_directories(selecta_shared_raop PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(selecta_shared_raop PUBLIC selecta_mbedtls)
+endif()

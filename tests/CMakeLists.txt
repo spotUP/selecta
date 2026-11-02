@@ -1013,6 +1013,14 @@ add_executable(cover_tag_test library/cover_tag_test.c)
 add_test(NAME cover-tag-unit COMMAND cover_tag_test)
 set_tests_properties(cover-tag-unit PROPERTIES PASS_REGULAR_EXPRESSION "cover_tag_ok")
 
+# I892c1: RAOP (AirPlay 1) sender, pure part. Needs mbedtls, which the build tree has off the Amiga only.
+if(TARGET selecta_shared_raop)
+  add_executable(raop_pure_test library/raop_pure_test.c)
+  target_link_libraries(raop_pure_test PRIVATE selecta_shared_raop)
+  add_test(NAME raop-pure COMMAND raop_pure_test)
+  set_tests_properties(raop-pure PROPERTIES PASS_REGULAR_EXPRESSION "raop_pure_ok")
+endif()
+
 # I218d: Latin-1 <-> UTF-8 at the OS boundary.
 add_executable(latin1_test library/latin1_test.c)
 target_link_libraries(latin1_test PRIVATE selecta_shared_source)
