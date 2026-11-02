@@ -1698,7 +1698,7 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/folders_screen.cmake")
   set_tests_properties(text-ui-folders-tree PROPERTIES LABELS m3)
 
-  find_program(SEL_SQLITE3_META sqlite3)
+  set(SEL_SQLITE3_META "$<TARGET_FILE:sel_sqlite3_shell>")
   add_test(NAME metadata-panel
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
@@ -2375,7 +2375,7 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "lyrics_status_ok")
 
   # T86 similar part (row I183): also-by and similar through selecta-cli; the duplicates part is row I184.
-  find_program(SEL_SQLITE3 sqlite3)
+  set(SEL_SQLITE3 "$<TARGET_FILE:sel_sqlite3_shell>")
   add_test(NAME similar-duplicates
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
             "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/m3/similar.golden" "-DSQLITE3=${SEL_SQLITE3}"

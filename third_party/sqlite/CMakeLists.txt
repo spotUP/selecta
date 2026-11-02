@@ -19,3 +19,16 @@ if(SEL_AMIGA)
   # file, and libnix lseek grows the file with junk there.
   target_compile_definitions(selecta_sqlite PRIVATE HAVE_PREAD=1 HAVE_PWRITE=1)
 endif()
+
+# Host-only sqlite3 CLI for the tests (shell.c, same 3.54.1 release as sqlite3.c). The runner's system sqlite3 has no FTS5.
+# It links selecta_sqlite, so it gets exactly the library's SQLITE_ENABLE_* options without a second list.
+if(NOT SEL_AMIGA)
+  add_executable(sel_sqlite3_shell shell.c)
+  target_link_libraries(sel_sqlite3_shell PRIVATE selecta_sqlite)
+  # The library is built without extension loading; the shell must be told so it does not call those functions.
+  target_compile_definitions(sel_sqlite3_shell PRIVATE SQLITE_OMIT_LOAD_EXTENSION SQLITE_OMIT_DEPRECATED SQLITE_DQS=0)
+  target_compile_options(sel_sqlite3_shell PRIVATE -w)
+  if(CMAKE_DL_LIBS)
+    target_link_libraries(sel_sqlite3_shell PRIVATE ${CMAKE_DL_LIBS})
+  endif()
+endif()
