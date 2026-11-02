@@ -72,3 +72,8 @@ expect_eq("Escape KEY_DOWN closes the palette" "${e_kind}" 0)
 expect_eq("the palette had opened" "${e_palette_opens}" 1)
 live_run(s "k3a/1 t:")
 expect_eq("a printable KEY_DOWN without Ctrl or Alt is left to the text event" "${s_kind}" 3)
+# I533: the event list is copied at its own length. 300 characters of skipped tokens precede the Ctrl+P, so a copy cut at 255
+# characters loses it and the palette never opens.
+string(REPEAT "xxxxxxxxx " 30 pad)
+live_run(l "${pad}k70/40")
+expect_eq("a SELECTA_SDL_TEST_EVENTS list longer than 256 characters keeps its tail" "${l_palette_opens}" 1)
