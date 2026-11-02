@@ -264,11 +264,14 @@ static const char* option(int argc, char** argv, const char* name, const char* d
 
 /* I575: the one decision "this is a scripted/test run, not a user session". Scripted runs open no control socket unless
  * SELECTA_SOCKET asks (I573). --keys and --input feed input, --console-frames is the test-only console frame flag
- * (I218e), --output null produces no sound or picture a user could want. */
+ * (I218e), --output null produces no sound or picture a user could want. Builds without the socket (Amiga) have no
+ * caller, so the helper is compiled out there. */
+#ifndef SEL_NO_CONTROL_SOCKET
 static int scripted_run(int argc, char** argv, int has_keys, int out_is_null) {
     return has_keys || out_is_null || option(argc, argv, "--input", NULL) != NULL ||
            option(argc, argv, "--console-frames", NULL) != NULL;
 }
+#endif
 
 /* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
 static int ui_resolve(const char* id, shell_ui* u) {
