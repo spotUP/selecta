@@ -400,6 +400,9 @@ struct sel_engine {
     uint32_t context_plays, context_rows;      /* PLAY_CONTEXT sentinel (I994a) */
     uint32_t songs_collection_opens, songs_hits_opens; /* I994b sentinels: songs_open bound list=collection / list=hits */
     char ctx_name[SEL_CTX_NAME_MAX];           /* PLAY_CONTEXT label, "" none */
+    uint32_t ctx_start_id;                     /* queue id of the row PLAY_CONTEXT started; repeat all wraps to it (I994c, D4), 0 none */
+    uint32_t order_fixed;                      /* random order: leading unplayed ids that keep queue order (hand-added before the context, D3) */
+    uint32_t context_random_starts;            /* PLAY_CONTEXT with the random start sentinel (I994c) */
     char* songs_ranges;                        /* SONGS_RANGES staging: ranges text for the next SONGS_* verb, heap, NULL none */
     size_t songs_ranges_len;
     uint32_t addf_runs, addf_added;            /* PLAYLIST_ADD_FOLDER sentinel and songs the last run appended (I652d) */
@@ -3013,6 +3016,7 @@ static void order_reset(sel_engine* e) {
         e->order_n = 1;
         e->order_done = 1;
     }
+    e->order_fixed = 0;
     e->order_qver = 0xFFFFFFFFu; /* never equal to a queue version: rebuild on first use */
 }
 
@@ -3156,8 +3160,8 @@ static void flags_publish(sel_engine* e) {
  * stay played; every other playable row is shuffled behind them. */
 static void order_ensure(sel_engine* e) {
     const sel_queue* q = &e->queue;
-    uint32_t i, kept = 0;
-    int unseen = 0;
+    uint32_t i, k, kept = 0, start, pass;
+    int unseen = 0, has_ctx = 0;
     if (e->order == NULL || e->order_qver == q->version) {
         return;
     }
@@ -3171,20 +3175,33 @@ static void order_ensure(sel_engine* e) {
     }
     e->order_done = kept;
     for (i = 0; i < q->count; i++) {
-        if (!e->order_seen[i] && !row_is_divider(q, i)) {
-            /* The one place the random candidate set is built: a skip-flagged song is never a candidate (I171). */
-            int flag = e->lib != NULL ? skc_get(e, skc_hash_path(sel_queue_path(q, i))) : 0;
+        has_ctx |= (q->entries[i].flags & SEL_QUEUE_FLAG_CONTEXT) != 0u;
+    }
+    /* D3: when a play context is queued, the hand-added songs come first in queue order (starting after the playing one), then the
+     * context rows shuffled. Without a context the whole unplayed set is shuffled as before. */
+    start = e->q_playing ? sel_queue_index_of(q, e->q_playing) : SEL_QUEUE_NONE;
+    start = !has_ctx || start == SEL_QUEUE_NONE ? 0u : start + 1u; /* no context: plain queue order, so a seed gives the same permutation as before */
+    e->order_fixed = 0;
+    for (pass = 0; pass < (has_ctx ? 2u : 1u); pass++) {
+        for (k = 0; k < q->count; k++) {
+            i = (start + k) % q->count;
+            if (!e->order_seen[i] && !row_is_divider(q, i) &&
+                (!has_ctx || (pass == 0u) == ((q->entries[i].flags & SEL_QUEUE_FLAG_CONTEXT) == 0u))) {
+                /* The one place the random candidate set is built: a skip-flagged song is never a candidate (I171). */
+                int flag = e->lib != NULL ? skc_get(e, skc_hash_path(sel_queue_path(q, i))) : 0;
 
-            if (flag > 0) {
-                e->skip_excluded++;
-                continue;
+                if (flag > 0) {
+                    if (pass == 0u) e->skip_excluded++;
+                    continue;
+                }
+                unseen |= flag < 0;
+                e->order[kept++] = q->entries[i].id;
             }
-            unseen |= flag < 0;
-            e->order[kept++] = q->entries[i].id;
         }
+        if (has_ctx && pass == 0u) e->order_fixed = kept - e->order_done;
     }
     e->order_n = kept;
-    e->rng = sel_shuffle_ids(e->order + e->order_done, kept - e->order_done, e->rng);
+    e->rng = sel_shuffle_ids(e->order + e->order_done + e->order_fixed, kept - e->order_done - e->order_fixed, e->rng);
     e->order_qver = q->version;
     if (unseen) flags_post(e);
 }
@@ -3306,6 +3323,13 @@ static void cmd_PLAY(sel_engine* e, const sel_message* m) {
     set_play(e, SEL_PLAYING);
 }
 
+/* D4: repeat all with a play context wraps to the row the context started at, not to the top of the queue (played rows of older
+ * contexts and hand-added history are not replayed). No context start left in the queue: the first row, as before. */
+static uint32_t repeat_wrap_start(const sel_engine* e) {
+    uint32_t at = e->ctx_start_id ? sel_queue_index_of(&e->queue, e->ctx_start_id) : SEL_QUEUE_NONE;
+    return at == SEL_QUEUE_NONE ? 0u : at;
+}
+
 /* Position that follows the playing one, honouring the scope option;
  * SEL_QUEUE_NONE when the queue (or the album under scope album) ends. */
 static uint32_t queue_next_index(sel_engine* e) {
@@ -3322,7 +3346,7 @@ static uint32_t queue_next_index(sel_engine* e) {
         if (e->repeat != 2u || strcmp(e->state.options[SEL_OPT_SCOPE], "album") == 0) {
             return SEL_QUEUE_NONE;
         }
-        next = skip_dividers(&e->queue, 0);
+        next = skip_dividers(&e->queue, repeat_wrap_start(e));
         if (next >= e->queue.count || strcmp(e->state.options[SEL_OPT_STOP_AFTER_QUEUE], "on") == 0) {
             return SEL_QUEUE_NONE;
         }
@@ -4012,6 +4036,7 @@ static void cmd_QUEUE_CLEAR(sel_engine* e, const sel_message* m) {
     e->q_playing = 0;
     e->q_hint = 0;
     e->ctx_name[0] = '\0';
+    e->ctx_start_id = 0;
     emit_queue_changed(e);
 }
 
@@ -4090,7 +4115,8 @@ static void cmd_RESHUFFLE(sel_engine* e, const sel_message* m) {
     if (random_on(e)) {
         /* rows stay; the unplayed part of the play order is permuted again */
         order_ensure(e);
-        e->rng = sel_shuffle_ids(e->order + e->order_done, e->order_n - e->order_done,
+        uint32_t fixed = e->order_fixed < e->order_n - e->order_done ? e->order_fixed : e->order_n - e->order_done;
+        e->rng = sel_shuffle_ids(e->order + e->order_done + fixed, e->order_n - e->order_done - fixed,
                                  sel_xorshift32(sel_shuffle_seed(e->rng)));
         return;
     }
@@ -8982,7 +9008,9 @@ static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
     sel_queue* q = &e->queue;
     uint32_t i, done = 0, first = 0, from, id, need_text = 0, dropped;
     size_t nl;
-    if (!songs_open_ex(e, verb, m->args[0].v.s, m->args[1].v.u, "", (int64_t)m->args[2].v.u, &s)) return;
+    int random_start = m->args[2].v.u == SEL_CONTEXT_START_RANDOM;
+
+    if (!songs_open_ex(e, verb, m->args[0].v.s, m->args[1].v.u, "", random_start ? 0 : (int64_t)m->args[2].v.u, &s)) return;
     if (s.kind == SONGS_QUEUE) { /* the queue is its own context: start the row where it is, touch nothing else */
         if (s.n > 0u && !row_is_divider(q, s.idx[0])) {
             queue_start(e, s.idx[0]);
@@ -8996,6 +9024,15 @@ static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
         songs_done(e, verb, 0u);
         songs_sel_free(&s);
         return;
+    }
+    if (random_start) { /* the engine picks the start row (shuffle button): that row plays first, row 0 takes its place */
+        uint32_t r = sel_xorshift32(sel_shuffle_seed(e->host->clock_ms(e->host) ^ e->rng)) % s.pn;
+        const char* t = s.plist[0];
+
+        e->rng = sel_xorshift32(e->rng + r + 1u);
+        s.plist[0] = s.plist[r];
+        s.plist[r] = t;
+        e->context_random_starts++;
     }
     sel_history_record(&e->history, q);
     /* 1. the old context's remaining rows go (entries after the playing one; all from the hint when nothing plays) */
@@ -9042,6 +9079,7 @@ static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
     e->ctx_name[nl] = '\0';
     e->context_plays++;
     e->context_rows += done;
+    e->ctx_start_id = q->entries[first].id;
     emit_queue_changed(e);
     queue_start(e, first);
     songs_done(e, verb, done);
@@ -10251,6 +10289,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->context_plays = e->context_plays;
     out->songs_collection_opens = e->songs_collection_opens;
     out->songs_hits_opens = e->songs_hits_opens;
+    out->context_random_starts = e->context_random_starts;
     out->context_rows = e->context_rows;
     out->songs_skipped = e->songs_skipped;
     out->import_missing = e->import_missing;
