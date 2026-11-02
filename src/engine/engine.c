@@ -3028,9 +3028,16 @@ static uint64_t skc_hash(const char* s) {
     return h == 0 ? 2u : h;
 }
 
+/* The cache is keyed by the canonical song key (I211), the key FLAG writes under, so a queue path is mapped first. */
+static uint64_t skc_hash_path(const char* path) {
+    char key[SEL_DEFERRED_PATH_MAX];
+
+    song_key(path, key, sizeof key);
+    return skc_hash(key[0] != '\0' ? key : path);
+}
+
 /* -1 unseen, 0 not flagged, 1 skip-flagged. */
-static int skc_get(const sel_engine* e, const char* path) {
-    uint64_t h = skc_hash(path);
+static int skc_get(const sel_engine* e, uint64_t h) {
     uint32_t i;
 
     if (e->skc_cap == 0) return -1;
@@ -3040,8 +3047,7 @@ static int skc_get(const sel_engine* e, const char* path) {
     return -1;
 }
 
-static int skc_put(sel_engine* e, const char* path, int skipped, int overwrite) {
-    uint64_t h = skc_hash(path);
+static int skc_put(sel_engine* e, uint64_t h, int skipped, int overwrite) {
     uint32_t i;
 
     if ((e->skc_n + 1u) * 2u > e->skc_cap) {
@@ -3090,7 +3096,7 @@ static void flags_post(sel_engine* e) {
 
     if (e->lib == NULL || e->fl_failed || !lib_read_idle(&e->rd_flags)) return;
     for (i = 0; i < q->count; i++) {
-        if (!row_is_divider(q, i) && skc_get(e, sel_queue_path(q, i)) < 0) {
+        if (!row_is_divider(q, i) && skc_get(e, skc_hash_path(sel_queue_path(q, i))) < 0) {
             n++;
             bytes += (uint32_t)strlen(sel_queue_path(q, i)) + 1u;
         }
@@ -3108,7 +3114,7 @@ static void flags_post(sel_engine* e) {
     }
     w = e->fl_buf;
     for (i = 0; i < q->count; i++) {
-        if (!row_is_divider(q, i) && skc_get(e, sel_queue_path(q, i)) < 0) {
+        if (!row_is_divider(q, i) && skc_get(e, skc_hash_path(sel_queue_path(q, i))) < 0) {
             size_t len = strlen(sel_queue_path(q, i)) + 1u;
 
             memcpy(w, sel_queue_path(q, i), len);
@@ -3128,7 +3134,7 @@ static void flags_publish(sel_engine* e) {
     int found = 0;
 
     for (i = 0; i < e->fl_n; i++) {
-        if (!skc_put(e, p, e->fl_res[i], 0)) e->fl_failed = 1;
+        if (!skc_put(e, skc_hash_path(p), e->fl_res[i], 0)) e->fl_failed = 1;
         found |= e->fl_res[i];
         p += strlen(p) + 1u;
     }
@@ -3165,7 +3171,7 @@ static void order_ensure(sel_engine* e) {
     for (i = 0; i < q->count; i++) {
         if (!e->order_seen[i] && !row_is_divider(q, i)) {
             /* The one place the random candidate set is built: a skip-flagged song is never a candidate (I171). */
-            int flag = e->lib != NULL ? skc_get(e, sel_queue_path(q, i)) : 0;
+            int flag = e->lib != NULL ? skc_get(e, skc_hash_path(sel_queue_path(q, i))) : 0;
 
             if (flag > 0) {
                 e->skip_excluded++;
@@ -5024,7 +5030,7 @@ static void wq_flag_run(sel_library* lib, sel_wq_op* op) {
 static void wq_flag_done(sel_engine* e, sel_wq_op* op) {
     if (!op->rc) sel_engine_report_error(e, "library_failed", "FLAG");
     else {
-        if (strcmp(op->s[1], "skip") == 0 && !skc_put(e, op->s[0], 1, 1)) e->fl_failed = 1;
+        if (strcmp(op->s[1], "skip") == 0 && !skc_put(e, skc_hash(op->s[0]), 1, 1)) e->fl_failed = 1;
         e->order_qver = 0xFFFFFFFFu; /* a skip flag changes the candidates: rebuild the order on next use */
     }
 }
