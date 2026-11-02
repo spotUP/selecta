@@ -2804,6 +2804,18 @@ static int open_share_link(sel_engine* e, const char* text);
  * the library's ring and written on the library job thread, so the command thread never waits (I782). Called by every
  * action that commits to a hit: OPEN, queue insert, playlist add and SOURCE_PIN. A key that is no hit does nothing; while
  * a search runs the table is being rewritten, so nothing is matched. Returns 1 when the key was a hit. */
+/* I906f2: the pin is a queued write. s[0] source, s[1] path, s[2] title; res holds artist and format (NUL separated). */
+static void wq_pin_run(sel_library* lib, sel_wq_op* op) {
+    const char* artist = (const char*)op->res;
+
+    sel_library_pin(lib, op->s[0], op->s[1], op->s[2], artist, artist + strlen(artist) + 1u);
+}
+
+static void wq_pin_done(sel_engine* e, sel_wq_op* op) {
+    (void)op;
+    e->source_pins++;
+}
+
 static int search_pin(sel_engine* e, const char* key) {
     uint32_t i;
 
@@ -2812,9 +2824,22 @@ static int search_pin(sel_engine* e, const char* key) {
     }
     for (i = 0; i < e->search_n && i < SEL_SEARCH_HITS; i++) {
         if (strcmp(e->search_hit[i].key, key) == 0) {
-            sel_library_pin(e->lib, e->search_source, key + strlen(e->search_source) + 1u, e->search_hit[i].title,
-                            e->search_hit[i].artist, e->search_hit[i].format);
-            e->source_pins++;
+            const char* artist = e->search_hit[i].artist;
+            const char* format = e->search_hit[i].format;
+            size_t an = strlen(artist) + 1u, fn = strlen(format) + 1u;
+            char* res = (char*)e->host->mem_alloc(e->host, an + fn, SEL_MEM_FAST);
+            sel_wq_op* op = res != NULL ? wq_new(e, wq_pin_run, wq_pin_done, e->search_source, key + strlen(e->search_source) + 1u,
+                                                 e->search_hit[i].title) : NULL;
+
+            if (op == NULL) {
+                if (res != NULL) e->host->mem_free(e->host, res);
+                sel_engine_report_error(e, "library_busy", "SOURCE_PIN");
+            } else {
+                memcpy(res, artist, an);
+                memcpy(res + an, format, fn);
+                op->res = res;
+                wq_submit(e);
+            }
             return 1;
         }
     }
@@ -4354,11 +4379,49 @@ static int addf_path_cmp(const void* a, const void* b) {
     return strcmp(*(const char* const*)a, *(const char* const*)b);
 }
 
-/* I652d: the folder scan ended: append the collected module paths, in path order, to the playlist. Pump thread. */
+/* I906f2: the appends of a finished add-folder scan run on the writer thread as one op. res holds the sorted paths (NUL separated, u1 of
+ * them), id the playlist; rc is the first failing SEL_FOLDER code (stops the run), u2 the songs appended. */
+static void wq_addf_run(sel_library* lib, sel_wq_op* op) {
+    const char* p = (const char*)op->res;
+    uint32_t i;
+
+    op->rc = SEL_FOLDER_OK;
+    op->u2 = 0u;
+    for (i = 0; i < op->u1; i++) {
+        int rc = sel_library_playlist_add_song(lib, op->id, p);
+
+        if (rc != SEL_FOLDER_OK) {
+            op->rc = rc;
+            break;
+        }
+        op->u2++;
+        p += strlen(p) + 1u;
+    }
+}
+
+/* The run counters and the folders reload the old synchronous addf_finish did after its loop. */
+static void addf_done(sel_engine* e, uint32_t added) {
+    e->addf_runs++;
+    e->addf_added = added;
+    folders_reload(e);
+}
+
+static void wq_addf_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) {
+        folder_report(e, op->rc, "PLAYLIST_ADD_FOLDER");
+        playlist_fail(e, SEL_PLFAIL_OTHER);
+    }
+    addf_done(e, op->u2);
+}
+
+/* I652d: the folder scan ended: append the collected module paths, in path order, to the playlist. Pump thread; the appends are a queued
+ * write (I906f2) and the run counters move in its done callback. */
 static void addf_finish(sel_engine* e, int scan_ok) {
     const char** list = NULL;
-    uint32_t i, added = 0;
+    uint32_t i;
     size_t off;
+    int queued = 0;
+
     e->addf_active = 0;
     if (!scan_ok || e->addf_oom) {
         sel_engine_report_error(e, "scan_failed", "PLAYLIST_ADD_FOLDER");
@@ -4369,19 +4432,31 @@ static void addf_finish(sel_engine* e, int scan_ok) {
             sel_engine_report_error(e, "no_memory", "PLAYLIST_ADD_FOLDER");
             playlist_fail(e, SEL_PLFAIL_OTHER);
         } else {
-            for (i = 0, off = 0; i < e->addf_count; i++) {
-                list[i] = e->addf_buf + off;
-                off += strlen(list[i]) + 1u;
-            }
-            qsort(list, e->addf_count, sizeof *list, addf_path_cmp);
-            for (i = 0; i < e->addf_count; i++) {
-                int rc = sel_library_playlist_add_song(e->lib, e->addf_id, list[i]);
-                if (rc != SEL_FOLDER_OK) {
-                    folder_report(e, rc, "PLAYLIST_ADD_FOLDER");
-                    playlist_fail(e, SEL_PLFAIL_OTHER);
-                    break;
+            char* res = (char*)e->host->mem_alloc(e->host, e->addf_len, SEL_MEM_FAST);
+            sel_wq_op* op = res != NULL ? wq_new(e, wq_addf_run, wq_addf_done, NULL, NULL, NULL) : NULL;
+
+            if (op == NULL) {
+                if (res != NULL) e->host->mem_free(e->host, res);
+                sel_engine_report_error(e, "library_busy", "PLAYLIST_ADD_FOLDER");
+                playlist_fail(e, SEL_PLFAIL_OTHER);
+            } else {
+                char* w = res;
+
+                for (i = 0, off = 0; i < e->addf_count; i++) {
+                    list[i] = e->addf_buf + off;
+                    off += strlen(list[i]) + 1u;
                 }
-                added++;
+                qsort(list, e->addf_count, sizeof *list, addf_path_cmp);
+                for (i = 0; i < e->addf_count; i++) {
+                    size_t n = strlen(list[i]) + 1u;
+
+                    memcpy(w, list[i], n);
+                    w += n;
+                }
+                op->res = res;
+                op->id = e->addf_id;
+                op->u1 = e->addf_count;
+                queued = 1;
             }
             e->host->mem_free(e->host, (void*)list);
         }
@@ -4391,9 +4466,11 @@ static void addf_finish(sel_engine* e, int scan_ok) {
     e->addf_len = e->addf_cap = 0u;
     e->addf_count = 0u;
     e->addf_oom = 0;
-    e->addf_runs++;
-    e->addf_added = added;
-    folders_reload(e);
+    if (queued) {
+        wq_submit(e); /* without a writer thread this runs the op and its done callback right here */
+    } else {
+        addf_done(e, 0u);
+    }
 }
 
 /* The scan itself, on the library job thread (I336); the only writer of the scan progress while it runs. */

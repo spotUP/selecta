@@ -21,6 +21,7 @@
 
 #include "db/db.h"
 #include "db/db_internal.h"
+#include "source.h"
 
 enum { HOLD_MS = 1500, PUMP_BUDGET_MS = 50 };
 
@@ -59,7 +60,19 @@ static void sink(void* ctx, const sel_message* evt) {
     (void)evt;
 }
 
-int main(void) {
+/* I906f2: a source with a search of one hit, so SOURCE_PIN has a hit to pin. */
+static int pin_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    (void)host;
+    (void)query;
+    return out->row(out->ctx, "hit1", "Hit One", "Hit Artist", "mod") ? 1 : 0;
+}
+
+static const sel_source g_pin_src = {
+    "i906f2src", "I906f2 pin source", "", "One search hit.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, pin_search,
+};
+
+int main(int argc, char** argv) {
+    CHECK(argc >= 2); /* argv[1] = gen_testmod */
     static const char* const lines[] = {"VIEW_SOURCE home", "VIEW_WINDOW 12", "VIEW_SHOW browse", "COMPOSERS_SHOW", "STATS_SHOW",
                                         "FORMATS_SHOW",     "SOURCES",        "VIEW_SOURCE folders", "VIEW_WINDOW 64", "LIBRARY_SEARCH \"\""};
     const sel_host* host = sel_host_default();
@@ -260,6 +273,104 @@ int main(void) {
                (unsigned)(h_after.history_writes - h_before.history_writes));
         CHECK(h_after.cue_sets == h_before.cue_sets + 1u);
         CHECK(h_after.history_writes > h_before.history_writes);
+    }
+    /* I906f2: the pin of a search hit (SOURCE_PIN) and the appends of a PLAYLIST_ADD_FOLDER scan are queued writes. Sentinel per write:
+     * stats.lib_writes_done rises by one for it, and its counter (source_pins, addf_runs) moves in the done callback, not at the call. The pin
+     * is also checked with the call lock held (nothing lands before the release, no synchronous request). */
+    {
+        sel_engine_stats p_before, p_after;
+        char line[700], tree[300], keys[1024];
+        int plid = 0;
+        uint32_t nkeys = 0;
+
+        CHECK(sel_source_register(&g_pin_src));
+        CHECK(sel_engine_send_line(e, "SOURCE_SEARCH i906f2src q", pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            if (ms_since(&t0) > 400) break; /* the search finishes in a few ms; the hit is in the table once it is collected */
+            usleep(2000);
+        }
+        sel_engine_stats_get(e, &p_before);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        CHECK(sel_engine_send_line(e, "SOURCE_PIN \"i906f2src:hit1\"", pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        sel_engine_pump(e, sink, NULL);
+        pump_ms = ms_since(&t0);
+        w1 = sel_library_watched_waits();
+        printf("i906f2 pin: SOURCE_PIN pump %ld ms, library waits %u\n", pump_ms, (unsigned)(w1 - w0));
+        CHECK(pump_ms < PUMP_BUDGET_MS);
+        CHECK(w1 == w0);
+        sel_engine_stats_get(e, &p_after);
+        CHECK(p_after.source_pins == p_before.source_pins); /* nothing ran yet: the pin is queued behind the held lock */
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &p_after);
+            if (p_after.source_pins > p_before.source_pins) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f2 pin after release: source_pins +%u, lib_writes_done +%u\n", (unsigned)(p_after.source_pins - p_before.source_pins),
+               (unsigned)(p_after.lib_writes_done - p_before.lib_writes_done));
+        CHECK(p_after.source_pins == p_before.source_pins + 1u);
+        CHECK(p_after.lib_writes_done == p_before.lib_writes_done + 1u); /* the pin went through the write queue */
+
+        /* add-folder: a tree with one module; the scan runs with the lock held, so addf_finish runs on the pump while it is held */
+        snprintf(tree, sizeof tree, "%s/addf", dir);
+        snprintf(line, sizeof line, "mkdir -p \"%s\" && \"%s\" \"%s/one.mod\"", tree, argv[1], tree);
+        CHECK(system(line) == 0);
+        CHECK(sel_engine_send_line(e, "PLAYLIST_CREATE addf", pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &p_before);
+            if (p_before.lib_writes_done > p_after.lib_writes_done) break;
+            if (ms_since(&t0) > 3000) break;
+            usleep(2000);
+        }
+        sel_engine_stats_get(e, &p_before);
+        /* The scan itself needs the library, so the lock cannot be held across it; the sentinel is the queue: the appends run on the
+         * write thread, so stats.lib_writes_done rises by one with the run, and the run lands after the pump that ended the scan. */
+        sel_library_watch(0);
+        {
+            sqlite3_stmt* st = NULL;
+
+            plid = 0;
+            CHECK(sqlite3_prepare_v2(lib->db, "SELECT id FROM playlists WHERE name = 'addf'", -1, &st, NULL) == SQLITE_OK);
+            if (sqlite3_step(st) == SQLITE_ROW) plid = sqlite3_column_int(st, 0);
+            sqlite3_finalize(st);
+            CHECK(plid != 0);
+        }
+        snprintf(line, sizeof line, "PLAYLIST_ADD_FOLDER %d \"%s\"", plid, tree);
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        worst = 0;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            struct timespec t1;
+
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            sel_engine_pump(e, sink, NULL);
+            if (ms_since(&t1) > worst) worst = ms_since(&t1);
+            sel_engine_stats_get(e, &p_after);
+            if (p_after.addf_runs > p_before.addf_runs) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f2 addf: worst pump %ld ms, addf_runs +%u, addf_added %u, plfail %u/%u, lib_writes_done +%u\n", worst,
+               (unsigned)(p_after.addf_runs - p_before.addf_runs), (unsigned)p_after.addf_added,
+               (unsigned)p_after.pl_fail_runs, (unsigned)p_after.pl_fail_reason, (unsigned)(p_after.lib_writes_done - p_before.lib_writes_done));
+        CHECK(worst < PUMP_BUDGET_MS);
+        CHECK(p_after.addf_runs == p_before.addf_runs + 1u);
+        CHECK(p_after.addf_added == 1u);
+        CHECK(p_after.lib_writes_done == p_before.lib_writes_done + 1u); /* the appends went through the write queue */
+        sel_library_watch(0);
+        CHECK(sel_library_playlist_keys(lib, (uint32_t)plid, keys, sizeof keys, &nkeys) == 0 && nkeys == 1u);
+        sel_library_watch(1);
     }
     sel_library_watch(was);
 
