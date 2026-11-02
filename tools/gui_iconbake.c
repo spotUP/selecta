@@ -570,7 +570,10 @@ int main(int argc, char** argv) {
         static char svg[8192];
         char path_[512];
         size_t len;
-        snprintf(path_, sizeof path_, "%s/%s.svg", argv[2], names[i]);
+        if ((size_t)snprintf(path_, sizeof path_, "%s/%s.svg", argv[2], names[i]) >= sizeof path_) {
+            fprintf(stderr, "gui_iconbake: icon directory path too long for %s\n", names[i]);
+            return 1;
+        }
         f = fopen(path_, "r");
         if (f == NULL) {
             fprintf(stderr, "gui_iconbake: cannot read %s\n", path_);

@@ -16,6 +16,9 @@
 #pragma GCC diagnostic ignored "-Wcomment"
 #ifdef __clang__
 #pragma GCC diagnostic ignored "-Wnewline-eof"
+#else
+/* Vendored stb_truetype.h: gcc -Wmaybe-uninitialized false positive (stbtt__fill_active_edges); third_party stays unedited. */
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
