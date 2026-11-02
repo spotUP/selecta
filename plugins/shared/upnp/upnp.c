@@ -126,13 +126,23 @@ typedef struct body {
     size_t len;
 } body;
 
-static int body_sink(void* ctx, const void* data, size_t len) {
-    body* b = (body*)ctx;
-    size_t room = DESC_BYTES - 1u - b->len;
+static int capped_sink(body* b, size_t cap, const void* data, size_t len) {
+    size_t room = cap - 1u - b->len;
 
     memcpy(b->buf + b->len, data, len < room ? len : room);
     b->len += len < room ? len : room;
     return 1;
+}
+
+static int body_sink(void* ctx, const void* data, size_t len) {
+    return capped_sink((body*)ctx, DESC_BYTES, data, len);
+}
+
+#define SOAP_BYTES 98304u /* raw Browse response cap: a 100 entry page, entity-escaped */
+#define DIDL_BYTES 65536u /* decoded Result cap */
+
+static int soap_sink(void* ctx, const void* data, size_t len) {
+    return capped_sink((body*)ctx, SOAP_BYTES, data, len);
 }
 
 static int fetch_description(const char* url, const char* usn, sel_upnp_server* out) {
@@ -219,4 +229,184 @@ int sel_upnp_discover(const char* ip, unsigned port, unsigned wait_ms, sel_upnp_
     free(locs);
     sel_usock_close(s);
     return (int)found;
+}
+
+/* ---- ContentDirectory browse (I894a2) ---- */
+
+#define CD_ACTION "\"" CD_TYPE "1#Browse\""
+
+int sel_upnp_parse_duration(const char* s, unsigned long* ms) {
+    unsigned long part[3] = {0, 0, 0}, frac = 0, scale = 100;
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        if (!isdigit((unsigned char)*s)) {
+            return 0;
+        }
+        while (isdigit((unsigned char)*s)) {
+            part[i] = part[i] * 10u + (unsigned long)(*s++ - '0');
+        }
+        if (i < 2 && *s++ != ':') {
+            return 0;
+        }
+    }
+    if (*s == '.') {
+        for (s++; isdigit((unsigned char)*s) && scale > 0u; s++, scale /= 10u) {
+            frac += (unsigned long)(*s - '0') * scale;
+        }
+    }
+    *ms = ((part[0] * 60u + part[1]) * 60u + part[2]) * 1000u + frac;
+    return 1;
+}
+
+/* Start of the next `<container ` or `<item ` open tag at or after p; *is_container tells which. */
+static const char* next_entry(const char* p, int* is_container) {
+    while ((p = strchr(p, '<')) != NULL) {
+        if (strncmp(p, "<container ", 11) == 0) {
+            *is_container = 1;
+            return p;
+        }
+        if (strncmp(p, "<item ", 6) == 0) {
+            *is_container = 0;
+            return p;
+        }
+        p++;
+    }
+    return NULL;
+}
+
+int sel_upnp_parse_didl(const char* didl, sel_upnp_entry* out, size_t max) {
+    const char* p = didl;
+    size_t n = 0;
+    int cont;
+
+    while (n < max && (p = next_entry(p, &cont)) != NULL) {
+        const char* close = strstr(p, cont ? "</container>" : "</item>");
+        sel_upnp_entry* e = &out[n];
+        char num[16];
+
+        if (close == NULL) {
+            break;
+        }
+        memset(e, 0, sizeof *e);
+        e->is_container = cont;
+        (void)sel_xml_tag_attr(p, close, cont ? "container" : "item", "id", e->id, sizeof e->id);
+        (void)sel_xml_tag_text(p, close, "dc:title", e->title, sizeof e->title);
+        if (!sel_xml_tag_text(p, close, "upnp:artist", e->artist, sizeof e->artist)) {
+            (void)sel_xml_tag_text(p, close, "dc:creator", e->artist, sizeof e->artist);
+        }
+        (void)sel_xml_tag_text(p, close, "upnp:album", e->album, sizeof e->album);
+        if (cont) {
+            if (sel_xml_tag_attr(p, close, "container", "childCount", num, sizeof num)) {
+                e->child_count = (unsigned)strtoul(num, NULL, 10);
+            }
+        } else {
+            char dur[24];
+
+            (void)sel_xml_tag_text(p, close, "res", e->res_url, sizeof e->res_url);
+            (void)sel_xml_tag_attr(p, close, "res", "protocolInfo", e->protocol_info, sizeof e->protocol_info);
+            if (sel_xml_tag_attr(p, close, "res", "duration", dur, sizeof dur)) {
+                (void)sel_upnp_parse_duration(dur, &e->duration_ms);
+            }
+        }
+        if (e->id[0] != '\0') {
+            n++;
+        }
+        p = close;
+    }
+    return (int)n;
+}
+
+int sel_upnp_parse_browse(const char* soap, sel_upnp_entry* out, size_t max, unsigned* returned, unsigned* total) {
+    const char* end = soap + strlen(soap);
+    char num[16];
+    char* didl = (char*)malloc(DIDL_BYTES);
+    int n = -1;
+
+    if (didl == NULL) {
+        return -1;
+    }
+    *returned = 0;
+    *total = 0;
+    if (sel_xml_tag_text(soap, end, "Result", didl, DIDL_BYTES) && strlen(didl) + 1u < DIDL_BYTES) {
+        n = sel_upnp_parse_didl(didl, out, max);
+        if (sel_xml_tag_text(soap, end, "NumberReturned", num, sizeof num)) {
+            *returned = (unsigned)strtoul(num, NULL, 10);
+        }
+        if (sel_xml_tag_text(soap, end, "TotalMatches", num, sizeof num)) {
+            *total = (unsigned)strtoul(num, NULL, 10);
+        }
+    }
+    free(didl);
+    return n;
+}
+
+/* Appends s to out[*o], escaping the XML characters; 0 when it does not fit. */
+static int xml_escape_into(char* out, size_t n, size_t* o, const char* s) {
+    for (; *s != '\0'; s++) {
+        const char* r = *s == '&' ? "&amp;" : *s == '<' ? "&lt;" : *s == '>' ? "&gt;" : *s == '"' ? "&quot;" : NULL;
+        size_t l = r != NULL ? strlen(r) : 1u;
+
+        if (*o + l + 1u > n) {
+            return 0;
+        }
+        if (r != NULL) {
+            memcpy(out + *o, r, l);
+        } else {
+            out[*o] = *s;
+        }
+        *o += l;
+    }
+    out[*o] = '\0';
+    return 1;
+}
+
+int sel_upnp_browse(const char* control_url, const char* object_id, unsigned start, unsigned count,
+                    sel_upnp_entry* out, size_t max, unsigned* total) {
+    static const char* const headers[] = {"Content-Type: text/xml; charset=\"utf-8\"", "SOAPACTION: " CD_ACTION, NULL};
+    char req_body[768], idesc[SEL_UPNP_ID_BYTES * 6];
+    size_t o = 0;
+    sel_http_req req;
+    sel_http_res res;
+    body b;
+    unsigned returned = 0;
+    int n = -1, w;
+
+    if (count == 0u || count > SEL_UPNP_BROWSE_PAGE) {
+        count = SEL_UPNP_BROWSE_PAGE;
+    }
+    if (count > max) {
+        count = (unsigned)max;
+    }
+    idesc[0] = '\0';
+    if (count == 0u || !xml_escape_into(idesc, sizeof idesc, &o, object_id)) {
+        return -1;
+    }
+    w = snprintf(req_body, sizeof req_body,
+                 "<?xml version=\"1.0\"?>\r\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" "
+                 "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>"
+                 "<u:Browse xmlns:u=\"" CD_TYPE "1\"><ObjectID>%s</ObjectID><BrowseFlag>BrowseDirectChildren"
+                 "</BrowseFlag><Filter>*</Filter><StartingIndex>%u</StartingIndex><RequestedCount>%u</RequestedCount>"
+                 "<SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>",
+                 idesc, start, count);
+    if (w <= 0 || (size_t)w >= sizeof req_body) {
+        return -1;
+    }
+    b.buf = (char*)malloc(SOAP_BYTES);
+    if (b.buf == NULL) {
+        return -1;
+    }
+    b.len = 0;
+    memset(&req, 0, sizeof req);
+    req.method = "POST";
+    req.url = control_url;
+    req.headers = headers;
+    req.body = req_body;
+    req.body_len = (size_t)w;
+    if (sel_http_request(&req, soap_sink, &b, &res) == SEL_HTTP_OK && res.status == 200 && b.len < SOAP_BYTES - 1u) {
+        b.buf[b.len] = '\0';
+        n = sel_upnp_parse_browse(b.buf, out, count, &returned, total);
+    }
+    free(b.buf);
+    return n;
 }

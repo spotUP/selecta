@@ -2567,6 +2567,13 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:upnp_discover_test>" "-DWORK=${SEL_NET_WORK}"
             "-DSRV=${SEL_NET_DIR}/upnp_server.py" -P "${SEL_NET_DIR}/upnp_discover.cmake")
   set_tests_properties(upnp-discover PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "upnp_discover_ok")
+  # I894a2: ContentDirectory Browse (SOAP, paged) + DIDL-Lite parse against the same fixture.
+  add_executable(upnp_browse_test net/upnp_browse_test.c)
+  target_link_libraries(upnp_browse_test PRIVATE selecta_shared_upnp selecta_library)
+  add_test(NAME upnp-browse
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:upnp_browse_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/upnp_server.py" -P "${SEL_NET_DIR}/upnp_browse.cmake")
+  set_tests_properties(upnp-browse PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "upnp_browse_ok")
 
   # I725g: the ccMixter source: one query per sync, per-upload licence shown, User-Agent, streamed playback.
   add_test(NAME ccmixter

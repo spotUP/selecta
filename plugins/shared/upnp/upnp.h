@@ -34,4 +34,39 @@ int sel_upnp_resolve(const char* base, const char* ref, char* out, size_t n);
  * ContentDirectory. Returns the count (0 when none, -1 when the socket cannot open). */
 int sel_upnp_discover(const char* ip, unsigned port, unsigned wait_ms, sel_upnp_server* out, size_t max);
 
+/* ---- ContentDirectory browse (I894a2) ---- */
+#define SEL_UPNP_ID_BYTES 64
+#define SEL_UPNP_TEXT_BYTES 96
+#define SEL_UPNP_BROWSE_PAGE 100u /* RequestedCount sent per page; the caller's `max` caps a page too */
+
+typedef struct sel_upnp_entry {
+    int is_container;                        /* 1 container, 0 item */
+    char id[SEL_UPNP_ID_BYTES];
+    char title[SEL_UPNP_TEXT_BYTES];         /* dc:title */
+    char artist[SEL_UPNP_TEXT_BYTES];        /* upnp:artist, else dc:creator; may be empty */
+    char album[SEL_UPNP_TEXT_BYTES];         /* upnp:album; may be empty */
+    unsigned long duration_ms;               /* res@duration "H+:MM:SS[.mmm]"; 0 when absent */
+    unsigned child_count;                    /* container@childCount; 0 when absent */
+    char res_url[SEL_UPNP_URL_BYTES];        /* first <res> URL (items) */
+    char protocol_info[SEL_UPNP_TEXT_BYTES]; /* first <res>@protocolInfo */
+} sel_upnp_entry;
+
+/* "H:MM:SS" or "H:MM:SS.mmm" to milliseconds (a fraction like "F0/F1" is ignored). 1 on success. */
+int sel_upnp_parse_duration(const char* s, unsigned long* ms);
+
+/* Parses an entity-decoded DIDL-Lite document: <container> and <item> elements in order, at most `max`.
+ * Returns the number of entries filled. */
+int sel_upnp_parse_didl(const char* didl, sel_upnp_entry* out, size_t max);
+
+/* Parses a Browse SOAP response: the entity-escaped Result is decoded and handed to sel_upnp_parse_didl;
+ * NumberReturned / TotalMatches are read. Returns the entries filled, -1 when the response is malformed or the
+ * Result does not fit the fixed 64 KB decode buffer. */
+int sel_upnp_parse_browse(const char* soap, sel_upnp_entry* out, size_t max, unsigned* returned, unsigned* total);
+
+/* One BrowseDirectChildren page of object_id from control_url: entries [start, start + count), count clamped to
+ * SEL_UPNP_BROWSE_PAGE and `max`. *total receives TotalMatches; the caller pages with start += return value until
+ * start >= *total (or the return is 0). Returns the entries filled, -1 on a transport or parse error. */
+int sel_upnp_browse(const char* control_url, const char* object_id, unsigned start, unsigned count,
+                    sel_upnp_entry* out, size_t max, unsigned* total);
+
 #endif
