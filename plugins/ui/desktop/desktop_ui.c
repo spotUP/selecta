@@ -236,6 +236,8 @@ typedef struct desk {
     uint32_t* col_av;        /* the artist / composer avatar: generated art of the name, rendered once and drawn through a circle mask (D6) */
     int32_t col_av_w;
     uint32_t col_av_hash;
+    int pls_recent;          /* I994d4: the next pls_open is a click on a playlist (feeds Recents); any other open rebuilds the page only */
+    uint32_t col_read_serial; /* I994d4: serial of the page pls_reload_run last read: a newer one (own change, view) is read again */
     uint32_t col_open_serial; /* serial of the published collection page when this page was opened: only a newer page is this page's */
     char col_key[256];       /* the item key of a kind page (album id, artist name, composer canon) */
     uint32_t* col_plays;     /* plays of each loaded song of a kind page */
@@ -255,7 +257,7 @@ typedef struct desk {
     uint32_t row_hover_fill; /* I690b: the fill the list row under the pointer was last painted with, 0 when none (dump line plhover) */
     uint32_t link_hover;     /* I690b: 1 artist or 2 album link of a track row is underlined under the pointer, 0 none (dump line pllink) */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
-    uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
+    uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
     char hdr_count[64];      /* I910b: the count line the header drew last (the per-frame trace) */
     uint32_t pls_family;     /* I691d: the majority family of the songs on the open page (an album, a person, a playlist), the header cover and the avatar */
@@ -268,7 +270,6 @@ typedef struct desk {
     int col_search;          /* 1 while the collection's search field has the keyboard */
     char col_q[64];
     size_t col_qlen;
-    uint32_t pls_min;        /* I652a: the page must list at least this many songs (an Add is still on its way to the engine) */
     uint32_t add_id;         /* I652b: the playlist the Library page adds to (0 = the Library page is not in add mode) */
     char add_name[96];
     uint32_t add_sent;       /* I652b: PLAYLIST_ADD_SONG lines sent from the Library page in add mode */
@@ -2522,14 +2523,9 @@ static void shelf_activate_row(desk* d, uint32_t row) {
  * stores it so every UI shares the order); the route table opens the page (a playlist's page of songs, I633; every other kind's collection
  * page, I678f/I678g). */
 static void desk_item_open(desk* d, sel_route_target via, uint32_t kind, uint32_t id, const char* key, const char* name, const char* sub) {
-    if (kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
-        char touch[160];
-        char head[32];
-        snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)kind);
-        desk_quoted_request(touch, sizeof touch, head, key);
-        desk_send(d, touch);
-    }
+    d->pls_recent = kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST; /* pls_open sends the COLLECTION_OPEN that feeds Recents and builds the page */
     desk_route(d, via, kind, id, key, name, sub);
+    d->pls_recent = 0;
 }
 
 /* Scrolls the whole Home content by wheel notches (positive = toward the end), clamped to the overflow. */
@@ -3354,7 +3350,6 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 char line[48];
                 snprintf(line, sizeof line, "PLAYLIST_REMOVE_SONG %u %u", (unsigned)d->sm_ref.pl_id, (unsigned)d->sm_ref.pl_index);
                 desk_send(d, line);
-                d->pls_want = d->pls_n; /* the page must show fewer songs than this */
                 d->pls_stale = 1u; /* the engine applies the command on its next pump: the page reads the list again then */
                 d->side_stale = 1u;
                 d->repaint = 1;
@@ -4529,7 +4524,7 @@ static void col_cover_refresh(desk* d);
 #define COL_LIKED 0x100u        /* I678g: col_kind of Liked Songs; its engine kind SEL_LIB_ITEM_LIKED is 0, which col_kind uses for a playlist */
 
 static uint32_t col_ui_kind(uint32_t eng_kind) { return eng_kind == (uint32_t)SEL_LIB_ITEM_LIKED ? COL_LIKED : eng_kind; }
-static uint32_t col_eng_kind(const desk* d) { return d->col_kind == COL_LIKED ? (uint32_t)SEL_LIB_ITEM_LIKED : d->col_kind; }
+static uint32_t col_eng_kind(const desk* d) { return d->col_kind == COL_LIKED ? (uint32_t)SEL_LIB_ITEM_LIKED : d->col_kind == 0u ? (uint32_t)SEL_LIB_ITEM_PLAYLIST : d->col_kind; }
 /* The three pinned rows show the wordmark header instead of a cover (design section 8). */
 static int col_wordmark(const desk* d) {
     return d->col_kind == COL_LIKED || d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT || d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL;
@@ -4649,30 +4644,16 @@ static void pls_briefs_follow(desk* d) {
 }
 
 static void pls_reload_run(desk* d) {
-    enum { CAP = 262144 };
-    char* buf = (char*)malloc(CAP);
+    char* buf = (char*)malloc(2u);
     uint32_t n = 0, i;
     const char* k;
     d->pls_stale = 0u;
-    if (buf != NULL && d->col_kind == 0u) { /* keys first: a busy library leaves the page as it is */
-        uint32_t got_id = 0u;
-        int ok = 0;
-        if (!sel_engine_playlist_keys_take(d->engine, &got_id, buf, CAP, &n, &ok) || got_id != d->pls_id) {
-            if (!sel_engine_playlist_keys_busy(d->engine)) { /* I961c: the keys are a posted read; the answer of another page is dropped */
-                (void)sel_engine_playlist_keys_post(d->engine, d->pls_id, CAP);
-            }
-            free(buf);
-            d->pls_stale = 1u;
-            return;
-        }
-        if (!ok) n = 0u;
-    }
     d->pls_ver++;
     pls_free(d);
     if (buf == NULL) {
         return;
     }
-    if (d->col_kind != 0u) { /* I678f: an album, artist or composer: COLLECTION_OPEN made the page, the UI only reads state.collection */
+    { /* I678f, I994d4: every collection page, a playlist too: COLLECTION_OPEN made the page, the UI only reads state.collection */
         const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
         uint32_t sh;
         n = 0u;
@@ -4682,6 +4663,7 @@ static void pls_reload_run(desk* d) {
         } else {
             const char* r;
             size_t len = 0;
+            d->col_read_serial = pg->serial;
             uint32_t ns = pg->songs;
             d->drl_page = pg->drill;
             snprintf(d->drl_path, sizeof d->drl_path, "%s", pg->drill_path);
@@ -4765,16 +4747,6 @@ static void pls_reload_run(desk* d) {
             sel_platform_family_tally_add(&tally, pls_key(d, i));
         }
         d->pls_family = sel_platform_family_tally_majority(&tally);
-    }
-    if (d->pls_want != 0u && d->pls_n >= d->pls_want) { /* the engine has not applied the removal yet: ask again next frame */
-        d->pls_stale = 1u;
-    } else {
-        d->pls_want = 0u;
-    }
-    if (d->pls_n < d->pls_min) { /* I652a: an Add has not been applied yet */
-        d->pls_stale = 1u;
-    } else {
-        d->pls_min = 0u;
     }
     col_rebuild(d);
     col_cover_refresh(d);
@@ -4863,8 +4835,6 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
     d->pls_id = id;
     d->col_kind = 0u;
     d->col_focus = -1;
-    d->pls_want = 0u;
-    d->pls_min = 0u;
     d->pls_scroll = 0u;
     d->qlen = 0u; /* I652a: the song search of an empty playlist starts empty */
     d->query[0] = '\0';
@@ -4878,6 +4848,16 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
     d->col_qlen = 0u;
     d->col_q[0] = '\0';
     d->col_search = 0;
+    d->col_ready = 0;
+    if (id != COL_KIND_ID) { /* I994d4: a playlist is an engine collection page, key = its id (design 11.6); col_kind_open sets its own after this */
+        const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
+        char open[48];
+        d->col_open_serial = pg != NULL ? pg->serial : 0u;
+        snprintf(d->col_key, sizeof d->col_key, "%u", (unsigned)id);
+        snprintf(open, sizeof open, "COLLECTION_OPEN %u \"%s\"%s", (unsigned)SEL_LIB_ITEM_PLAYLIST, d->col_key, d->pls_recent ? "" : " 1"); /* " 1": Back, Forward and re-opens rebuild without touching Recents */
+        d->pls_recent = 0;
+        desk_send(d, open);
+    }
     pls_reload(d);
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -5425,7 +5405,6 @@ static void pls_add_key(desk* d, uint32_t pid, const char* key) {
     snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)pid, key);
     desk_send(d, line);
     d->pls_adds++;
-    d->pls_min = d->pls_n + 1u;
     d->pls_stale = 1u;
     d->side_stale = 1u;
     d->qlen = 0u;
@@ -7317,9 +7296,9 @@ static const char* library_dump_build(desk* d) {
     if (d->pl_page && d->pls_id != 0u) { /* I633: the open playlist page: its songs in order and the geometry a script clicks */
         sel_gui_rect pmn = region_rect(d, "main"), bk = pls_back_rect(d, pmn), pp = pls_play_rect(d, pmn), pm = pls_more_rect(d, pmn);
         uint32_t j;
-        o = dump_put(d, o, "plpage id=%u name=[%s] songs=%u rows=%u draws=%u back=%d,%d,%d,%d play=%d,%d,%d,%d edit=%d\n", (unsigned)d->pls_id, d->pls_name,
+        o = dump_put(d, o, "plpage id=%u name=[%s] songs=%u rows=%u draws=%u back=%d,%d,%d,%d play=%d,%d,%d,%d edit=%d read_serial=%u\n", (unsigned)d->pls_id, d->pls_name,
                      (unsigned)d->pls_n, (unsigned)d->pls_rows, (unsigned)d->pls_draws, (int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h,
-                     (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h, d->pl_edit);
+                     (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h, d->pl_edit, (unsigned)d->col_read_serial);
         o = dump_put(d, o, "plmore %d %d %d %d\n", (int)pm.x, (int)pm.y, (int)pm.w, (int)pm.h);
         { /* I678e: the collection header, action row and the engine's open sentinel */
             sel_gui_rect cs = col_sort_rect(d, pmn), cf = col_find_rect(d, pmn);
@@ -7518,7 +7497,7 @@ static const char* library_dump_build(desk* d) {
     if (o + 300u < sizeof d->library_dump) { /* the route table (I678h): clicks routed, the page the window is on, the history */
         char cur[48];
         if (d->page == SEL_UIM_PG_COLLECTION) {
-            snprintf(cur, sizeof cur, "collection:%s", sel_route_kind_name(d->col_kind != 0u ? col_eng_kind(d) : (uint32_t)SEL_LIB_ITEM_PLAYLIST));
+            snprintf(cur, sizeof cur, "collection:%s", sel_route_kind_name(col_eng_kind(d)));
         } else {
             snprintf(cur, sizeof cur, "%s", sel_uim_page_at(d->page)->name);
         }
@@ -15165,6 +15144,12 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
                 d->si_y_q16 = si_max_q16(d);
             }
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
+    }
+    if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION) { /* I994d4: the engine republished the open page (own change, view): read it again */
+        const sel_collection_page* cp = sel_engine_state(d->engine)->collection;
+        if (cp != NULL && d->col_ready && cp->kind == col_eng_kind(d) && strcmp(cp->key, d->col_key) == 0 && cp->serial != d->col_read_serial) {
+            d->pls_stale = 1u;
         }
     }
     if (d->pls_stale && d->pls_id != 0u) { /* I633: a song left the open playlist: redraw so the page reads the list again */

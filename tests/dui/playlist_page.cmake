@@ -56,6 +56,15 @@ pp_centre(side "${i0}" "sidelib_row 3")
 file(WRITE "${WORK}/open.txt" "click ${side}\nwait 100\n")
 dui_run(o1 ${common} --input "${WORK}/open.txt")
 pp_page(open "${o1}" 2)
+# I994d4 sentinel: the rows arrive through the engine's collection page (COLLECTION_OPEN kind playlist built it, the UI only reads
+# state.collection). read_serial is the serial of the state.collection page the UI read; the old keys branch never read one, so it
+# stays 0 (or the field is missing) with the change reverted and this fails.
+if(NOT "${o1}" MATCHES "plpage id=[0-9]+ [^\n]* read_serial=([0-9]+)")
+  message(FATAL_ERROR "no read_serial on the plpage line in:\n${o1}")
+endif()
+if(CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the playlist page rows did not come from state.collection (read_serial=${CMAKE_MATCH_1}):\n${o1}")
+endif()
 if(NOT "${o1}" MATCHES "plsong 0 [0-9]+ [0-9]+ [0-9]+ [0-9]+ file=a.mod [^\n]*\nplsong 1 [0-9]+ [0-9]+ [0-9]+ [0-9]+ file=b.mod ")
   message(FATAL_ERROR "the page rows are not a.mod then b.mod in:\n${o1}")
 endif()
