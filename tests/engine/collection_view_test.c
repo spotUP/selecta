@@ -201,6 +201,40 @@ int main(void) {
         pg = sel_engine_state(e)->collection;
         CHECK(pg != NULL && pg->serial > ser && pg->songs == 3u && pg->shown == 3u && pg->sort == (uint32_t)SEL_COLL_SORT_TITLE);
         CHECK(pg != NULL && pg->order != NULL && pg->order[0] == 2u && pg->order[1] == 1u && pg->order[2] == 0u); /* song0, song1, song3 */
+        /* I994d3a: date and duration sorts use the songs' columns (positions: key3 added 497 4 s, key1 added 499 2 s, key0 added 500 1 s) */
+        run(e, "COLLECTION_VIEW \"\" 4");
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->sort == (uint32_t)SEL_COLL_SORT_ADDED && pg->order != NULL && pg->order[0] == 0u && pg->order[1] == 1u && pg->order[2] == 2u);
+        run(e, "COLLECTION_VIEW \"\" 5");
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->sort == (uint32_t)SEL_COLL_SORT_DURATION && pg->order != NULL && pg->order[0] == 2u && pg->order[1] == 1u && pg->order[2] == 0u);
+        run(e, "COLLECTION_VIEW \"\" 1");
+        /* I994d3a: renaming an unrelated playlist reloads the folder tree but leaves the open page alone; this playlist's own change moves it */
+        {
+            uint32_t other, before;
+            sel_library_item pl2[4];
+            uint32_t pt2 = 0, q;
+            run(e, "PLAYLIST_CREATE \"Other\"");
+            CHECK(sel_library_items(lib, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0, pl2, 4u, &pt2) == 2u);
+            other = 0;
+            for (q = 0; q < 2u && q < pt2; q++) {
+                if ((uint32_t)strtoul(pl2[q].key, NULL, 10) != plid) other = (uint32_t)strtoul(pl2[q].key, NULL, 10);
+            }
+            CHECK(other != 0u);
+            pg = sel_engine_state(e)->collection;
+            before = pg != NULL ? pg->serial : 0u;
+            snprintf(line, sizeof line, "PLAYLIST_RENAME %u \"Other Renamed\"", (unsigned)other);
+            run(e, line);
+            pg = sel_engine_state(e)->collection;
+            CHECK(pg != NULL && pg->serial == before && strcmp(pg->title, "Mix") == 0 && pg->songs == 3u);
+            snprintf(line, sizeof line, "PLAYLIST_RENAME %u \"Mix Two\"", (unsigned)plid);
+            run(e, line);
+            pg = sel_engine_state(e)->collection;
+            CHECK(pg != NULL && pg->serial > before && strcmp(pg->title, "Mix Two") == 0);
+            snprintf(line, sizeof line, "PLAYLIST_RENAME %u \"Mix\"", (unsigned)plid);
+            run(e, line);
+        }
+        pg = sel_engine_state(e)->collection;
         ser = pg->serial;
         run(e, "QUEUE_CLEAR");
         snprintf(line, sizeof line, "PLAY_CONTEXT collection %u 0 \"Mix\"", (unsigned)ser);
@@ -211,6 +245,23 @@ int main(void) {
         run(e, line);
         pg = sel_engine_state(e)->collection;
         CHECK(pg != NULL && pg->serial > ser && pg->songs == 2u);
+    }
+
+    /* I994d3a: a playlist whose briefs run far past 64 KB keeps every row (the page streams the entries; no fixed buffer). */
+    sql(lib, "INSERT INTO playlists(id, name) VALUES(900, 'Big');"
+             "WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c WHERE i < 3000)"
+             " INSERT INTO songs(key, source, path, name, artist, album, added, duration_ms)"
+             " SELECT 'local:big' || i || '.mod', 'local', 'big' || i || '.mod', 'bigsong number ' || i, 'Big Artist Name', 'Big Album Name', i, i FROM c;"
+             "INSERT INTO playlist_entries(playlist_id, pos, key) SELECT 900, i - 1, 'local:big' || i || '.mod'"
+             " FROM (WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c WHERE i < 3000) SELECT i FROM c);");
+    snprintf(line, sizeof line, "COLLECTION_OPEN %u \"900\"", (unsigned)SEL_LIB_ITEM_PLAYLIST);
+    run(e, line);
+    pg = sel_engine_state(e)->collection;
+    CHECK(pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && pg->songs == 3000u && pg->shown == 3000u && strcmp(pg->title, "Big") == 0);
+    if (pg != NULL && pg->rows != NULL && pg->songs == 3000u) {
+        const char* r = pg->rows;
+        for (i = 0; i < 2999u; i++) r += strlen(r) + 1u, r += strlen(r) + 1u;
+        CHECK(strcmp(r, "local:big3000.mod") == 0);
     }
 
     /* A drill group page has no order and builds none. */

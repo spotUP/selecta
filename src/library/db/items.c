@@ -396,6 +396,9 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
         }
         if (kind == SEL_LIB_ITEM_LOCAL) return SONG_COLS " WHERE s.source='local' ORDER BY s.id";
         if (kind == SEL_LIB_ITEM_SOURCE) return SONG_COLS " WHERE s.source=?1 ORDER BY s.id";
+        if (kind == SEL_LIB_ITEM_PLAYLIST) { /* I994d3a: the entries in position order, the same columns as every song page */
+            return SONG_COLS " JOIN playlist_entries pe ON pe.key=s.key WHERE pe.playlist_id=CAST(?1 AS INTEGER) ORDER BY pe.pos";
+        }
         return NULL;
     case SEL_COLL_ALBUMS: return kind == SEL_LIB_ITEM_ARTIST ? ALBUM_COLS " WHERE a.artist=?1" NEWEST : NULL;
     case SEL_COLL_APPEARS:
@@ -407,7 +410,12 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
                    ? ALBUM_COLS " WHERE a.id<>CAST(?1 AS INTEGER) AND IFNULL(a.artist,'')<>''"
                                 " AND a.artist=(SELECT artist FROM albums WHERE id=CAST(?1 AS INTEGER))" NEWEST
                    : NULL;
-    case SEL_COLL_HEAD: return kind == SEL_LIB_ITEM_ALBUM ? ALBUM_COLS " WHERE a.id=CAST(?1 AS INTEGER)" : NULL;
+    case SEL_COLL_HEAD:
+        if (kind == SEL_LIB_ITEM_PLAYLIST) { /* I994d3a: the name of the playlist (the page title) */
+            return "SELECT CAST(p.id AS TEXT),p.name,'',0,(SELECT COUNT(*) FROM playlist_entries e WHERE e.playlist_id=p.id)"
+                   " FROM playlists p WHERE p.id=CAST(?1 AS INTEGER)";
+        }
+        return kind == SEL_LIB_ITEM_ALBUM ? ALBUM_COLS " WHERE a.id=CAST(?1 AS INTEGER)" : NULL;
     case SEL_COLL_SPELLINGS:
         return kind == SEL_LIB_ITEM_COMPOSER ? "SELECT display,display,'',0,n FROM composer_spellings WHERE canon=?1 ORDER BY n DESC, display"
                                              : NULL;
