@@ -237,6 +237,7 @@ typedef struct sel_slot {
     sel_rp_mute_fn rp_mute;                   /* optional, RENDER kind: channel mute */
     sel_rp_set_speed_fn rp_set_speed;         /* optional, RENDER kind: pitch and tempo factors */
     uint32_t applied_pitch, applied_tempo;    /* audio side: factors last handed to rp_set_speed */
+    uint32_t rp_mute_calls;                   /* RP_MUTE calls made for this slot (MPS-2 sentinel) */
     uint32_t applied_mute;                    /* audio side: mask last handed to rp_mute */
     uint32_t hw;                              /* 1: HW kind, the replayer drives the sound hardware (I219) */
     sel_rp_hw_pause_fn rp_hw_pause;           /* optional, HW kind */
@@ -2589,6 +2590,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_sample_get = (sel_rp_sample_get_fn)sel_tag_find(hooks, SEL_RP_SAMPLE_GET, 0);
     sl->rp_mute = kind == SEL_RP_KIND_RENDER ? (sel_rp_mute_fn)sel_tag_find(hooks, SEL_RP_MUTE, 0) : NULL;
     sl->applied_mute = 0;
+    sl->rp_mute_calls = 0;
     sl->rp_set_speed =
         kind == SEL_RP_KIND_RENDER ? (sel_rp_set_speed_fn)sel_tag_find(hooks, SEL_RP_SET_SPEED, 0) : NULL;
     sl->applied_pitch = 0;
@@ -9752,6 +9754,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->replayer = sl ? sl->rp_name : NULL;
     out->render_kind = sl ? (sl->rp_render != NULL) : 0;
     out->replayer_render_calls = sl ? sl->rp_render_calls : 0;
+    out->rp_mute_calls = sl ? sl->rp_mute_calls : 0;
     out->rp_cfg_applied = sl && sl->rp_cfg_applied != NULL && sl->rp_state != NULL ? sl->rp_cfg_applied(sl->rp_state) : 0;
     out->rendered_frames = sl ? sl->rendered_frames : 0;
     out->seek_path = e->seek_path;
@@ -10087,6 +10090,7 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
             for (k = 0; k < 32u; k++) {
                 if (((sl->applied_mute ^ want_mute) >> k) & 1u) {
                     sl->rp_mute(sl->rp_state, k, (want_mute >> k) & 1u);
+                    sl->rp_mute_calls++;
                 }
             }
             sl->applied_mute = want_mute;

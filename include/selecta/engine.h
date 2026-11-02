@@ -525,6 +525,7 @@ typedef struct sel_engine_stats {
     uint32_t library_searches;    /* queries sent to the library worker (T64) */
     uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */
     uint32_t result_count;         /* keys held by the last query result (T64, T65) */
+    uint32_t rp_mute_calls;       /* RP_MUTE calls the engine made for the open song (MPS-2 sentinel) */
     uint32_t rp_cfg_applied;      /* starts of the open song that applied the replayer's configuration (RP_CFG_APPLIED, MPS-1) */
     uint32_t rp_config_applied;   /* replayer option values answered by the rp.config pref or the song override (T61) */
     uint32_t undo_depth, redo_depth; /* queue edits that UNDO / REDO can step over (T28) */

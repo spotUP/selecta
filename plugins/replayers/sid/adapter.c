@@ -110,7 +110,9 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     copy_text(s->author, sid_shim_info(s->shim, 1));
     copy_text(s->release, sid_shim_info(s->shim, 2));
     copy_text(s->format, sid_shim_format(s->shim));
-    info->voice_count = 0;
+    /* Four mute channels per chip: voices 0-2, then the chip's digi samples. RENDER kind, so no engine voices:
+     * the count sizes SOLO and the mute mask only. */
+    info->voice_count = 4u * sid_shim_chips(s->shim);
     info->subsong_count = s->subsongs > 0u ? s->subsongs : 1u;
     info->default_subsong = s->default_subsong > 0u ? s->default_subsong - 1u : 0u;
     info->timebase_hz = 0;
@@ -148,6 +150,11 @@ static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
     uint32_t n = sid_shim_render(s->shim, out, frames);
     s->played += n;
     return n;
+}
+
+/* RP_MUTE: channel = chip * 4 + voice (voice 3 is the chip's digi samples). */
+static void rp_mute(void* state, uint32_t channel, uint32_t muted) {
+    sid_shim_mute(((sid_state*)state)->shim, channel / 4u, channel % 4u, muted);
 }
 
 static int rp_seek(void* state, uint32_t ms) {
@@ -191,7 +198,7 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[13];
+static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -215,7 +222,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_CFG_APPLIED, SEL_TAG_FN(rp_cfg_applied));
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[12], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
+    set(&g_hooks[13], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "sid");

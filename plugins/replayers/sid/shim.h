@@ -35,6 +35,10 @@ uint32_t sid_shim_cfg_applied(const sid_shim* s);
 const uint8_t* sid_shim_builtin_kernal(void);
 const uint8_t* sid_shim_builtin_basic(void);
 const uint8_t* sid_shim_builtin_chargen(void);
+/* SID chips in the tune (1 to 3). */
+uint32_t sid_shim_chips(const sid_shim* s);
+/* Mutes (1) or unmutes (0) voice 0-2 of a chip, or voice 3 (its digi samples). The setting survives a restart. */
+void sid_shim_mute(sid_shim* s, uint32_t chip, uint32_t voice, uint32_t muted);
 void sid_shim_close(sid_shim* s);
 
 #ifdef __cplusplus

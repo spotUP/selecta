@@ -21,7 +21,8 @@ struct sid_shim {
     std::vector<short> mix;
     size_t mixlen, mixpos;
     uint32_t cfg_applied;
-    sid_shim() : builder("selecta"), tune(nullptr), mixlen(0), mixpos(0), cfg_applied(0) {}
+    uint8_t muted[4]; /* per chip, bit v = voice v muted (3 = digi samples); re-applied at every start */
+    sid_shim() : builder("selecta"), tune(nullptr), mixlen(0), mixpos(0), cfg_applied(0), muted{0, 0, 0, 0} {}
     ~sid_shim() { delete tune; }
 };
 
@@ -52,6 +53,7 @@ int sid_shim_start(sid_shim* s, uint32_t song, uint32_t rate, const sid_shim_cfg
     SidConfig cfg = s->engine.config();
     cfg.frequency = rate;
     cfg.samplingMethod = SidConfig::INTERPOLATE;
+    cfg.powerOnDelay = 0; /* the default is random (seeded from the clock): a start must render the same samples every time */
     cfg.sidEmulation = &s->builder;
     cfg.forceSidModel = c->model != 0;
     cfg.defaultSidModel = c->model == 2 ? SidConfig::MOS8580 : SidConfig::MOS6581;
@@ -70,6 +72,12 @@ int sid_shim_start(sid_shim* s, uint32_t song, uint32_t rate, const sid_shim_cfg
     }
     for (unsigned i = 0; i < s->tune->getInfo()->sidChips(); i++) {
         s->engine.filter(i, c->filter != 0);
+    }
+    for (unsigned i = 0; i < s->tune->getInfo()->sidChips() && i < 4; i++) {
+        for (unsigned v = 0; v < 4; v++) {
+            /* sidemu::voice(): bool argument true = MUTED (sidplayfp.h doc says the opposite) */
+            s->engine.mute(i, v, ((s->muted[i] >> v) & 1u) != 0);
+        }
     }
     s->cfg_applied++;
     s->engine.initMixer(true);
@@ -113,6 +121,16 @@ uint32_t sid_shim_render(sid_shim* s, int16_t* out, uint32_t frames) {
 }
 
 uint32_t sid_shim_cfg_applied(const sid_shim* s) { return s->cfg_applied; }
+
+uint32_t sid_shim_chips(const sid_shim* s) { return s->tune->getInfo()->sidChips(); }
+
+void sid_shim_mute(sid_shim* s, uint32_t chip, uint32_t voice, uint32_t muted) {
+    if (chip >= 4 || voice >= 4 || chip >= s->tune->getInfo()->sidChips()) {
+        return;
+    }
+    s->muted[chip] = (uint8_t)(muted ? s->muted[chip] | (1u << voice) : s->muted[chip] & ~(1u << voice));
+    s->engine.mute(chip, voice, muted != 0u);
+}
 
 void sid_shim_close(sid_shim* s) { delete s; }
 
