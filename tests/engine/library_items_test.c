@@ -201,8 +201,18 @@ int main(void) {
         CHECK(it != NULL && strcmp(it->creator, "You") == 0);
         snprintf(line, sizeof line, "LIBRARY_TOUCH %u \"%s\"", (unsigned)SEL_LIB_ITEM_ALBUM, alb->key);
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
-        (void)sel_engine_pump(e, quiet, NULL);
-        sel_engine_stats_get(e, &st);
+        /* LIBRARY_TOUCH is a queued write (I951): pump until the write queue reports it done, never read sqlite meanwhile. */
+        {
+            sel_engine_stats w0 = st;
+            unsigned spins;
+            for (spins = 0; spins < 2500u; spins++) {
+                (void)sel_engine_pump(e, quiet, NULL);
+                sel_engine_stats_get(e, &st);
+                if (st.lib_writes_done > w0.lib_writes_done) break;
+                usleep(2000);
+            }
+            CHECK(st.lib_writes_done == w0.lib_writes_done + 1u); /* the touch went through the write queue */
+        }
         CHECK(st.lib_touch_calls == 1u); /* sentinel: the engine command ran and wrote */
         CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == w);
         alb = find(all, w, SEL_LIB_ITEM_ALBUM, "Alb2");
