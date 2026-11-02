@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "db.h"
+#include "db_internal.h"
 #include "source.h"
 
 #define SEL_RADIO_MIN_RATING 4
@@ -92,6 +93,7 @@ int sel_library_radio_next(sel_library* lib, const char* seed, uint32_t draw, co
     int attempt;
 
     if (lib == NULL || seed == NULL || out == NULL || cap < 2u || !sel_song_key_of(seed, use, sizeof use)) return 0;
+    sel_library_test_slow("SELECTA_LIB_RADIO_SLOW_MS"); /* I906g test knob: a radio draw on a busy worker */
     for (attempt = 0; attempt < 2; attempt++) {
         memset(&p, 0, sizeof p);
         p.lib = lib;

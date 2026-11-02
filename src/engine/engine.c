@@ -439,6 +439,9 @@ struct sel_engine {
     char radio_last[SEL_DEFERRED_PATH_MAX]; /* last song the radio appended, left out of the next draw */
     uint32_t radio_rng;                     /* radio draw state, stepped once per appended song */
     uint32_t radio_appends;                 /* songs the radio appended to the queue (I186 sentinel) */
+    sel_lib_read rd_radio;                  /* I906g: the radio draw (radio_run) */
+    char rj_seed[SEL_DEFERRED_PATH_MAX], rj_last[SEL_DEFERRED_PATH_MAX], rj_pick[5][SEL_DEFERRED_PATH_MAX];
+    uint32_t rj_rng0, rj_rng, rj_need, rj_n, rj_epoch, radio_epoch;
     uint32_t radio_min_ahead;               /* fewest songs queued after the playing one, measured after each top-up */
     uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
@@ -5374,32 +5377,73 @@ static int sticker_ready(sel_engine* e, const char* who) {
  * is a song key or a queue path; with nothing playing it is queued and started first. */
 #define SEL_RADIO_AHEAD 5u
 
-static void radio_fill(sel_engine* e) {
-    uint32_t cur, ahead;
+/* I906g: the radio draws on the rd_radio read, never on the pump. radio_fill snapshots the draw state (seed, generator, last pick, how many
+ * songs are missing) and posts; the read draws that many songs one after the other (each excludes the one before); radio_publish appends
+ * them on the pump. radio_epoch moves with RADIO <seed|off>, so a draw for an old seed is dropped. */
+static uint32_t radio_ahead(const sel_engine* e) {
+    uint32_t cur = e->q_playing == 0 ? SEL_QUEUE_NONE : sel_queue_index_of(&e->queue, e->q_playing);
 
-    if (e->radio_seed[0] == '\0' || e->lib == NULL) {
-        return;
-    }
-    cur = e->q_playing == 0 ? SEL_QUEUE_NONE : sel_queue_index_of(&e->queue, e->q_playing);
-    ahead = cur == SEL_QUEUE_NONE ? e->queue.count : e->queue.count - cur - 1u;
-    while (ahead < SEL_RADIO_AHEAD) {
-        char pick[SEL_DEFERRED_PATH_MAX];
-        uint32_t before = e->queue.count;
+    return cur == SEL_QUEUE_NONE ? e->queue.count : e->queue.count - cur - 1u;
+}
 
-        e->radio_rng = sel_xorshift32(e->radio_rng);
-        if (!sel_library_radio_next(e->lib, e->radio_seed, e->radio_rng, e->radio_last, pick, sizeof pick)) {
+static void radio_run(sel_engine* e) {
+    uint32_t i;
+
+    e->rj_n = 0;
+    e->rj_rng = e->rj_rng0;
+    for (i = 0; i < e->rj_need; i++) {
+        e->rj_rng = sel_xorshift32(e->rj_rng);
+        if (!sel_library_radio_next(e->lib, e->rj_seed, e->rj_rng, i == 0 ? e->rj_last : e->rj_pick[i - 1], e->rj_pick[i], sizeof e->rj_pick[i])) {
             break;
         }
-        queue_insert(e, e->queue.count, pick, "RADIO");
+        e->rj_n++;
+    }
+}
+
+static void radio_fill(sel_engine* e) {
+    uint32_t ahead;
+
+    if (e->radio_seed[0] == '\0' || e->lib == NULL || !lib_read_idle(&e->rd_radio)) {
+        return;
+    }
+    ahead = radio_ahead(e);
+    if (ahead >= SEL_RADIO_AHEAD) {
+        return;
+    }
+    memcpy(e->rj_seed, e->radio_seed, sizeof e->rj_seed);
+    memcpy(e->rj_last, e->radio_last, sizeof e->rj_last);
+    e->rj_rng0 = e->radio_rng;
+    e->rj_need = SEL_RADIO_AHEAD - ahead;
+    e->rj_epoch = e->radio_epoch;
+    lib_read_post(e, &e->rd_radio, radio_run);
+}
+
+static void radio_publish(sel_engine* e) {
+    uint32_t i, ahead;
+    int full = e->rj_n == e->rj_need;
+
+    if (e->rj_epoch != e->radio_epoch || e->radio_seed[0] == '\0') {
+        radio_fill(e); /* RADIO named a new seed while the read ran */
+        return;
+    }
+    e->radio_rng = e->rj_rng;
+    ahead = radio_ahead(e);
+    for (i = 0; i < e->rj_n && ahead < SEL_RADIO_AHEAD; i++) {
+        uint32_t before = e->queue.count;
+
+        queue_insert(e, e->queue.count, e->rj_pick[i], "RADIO");
         if (e->queue.count == before) {
             break;
         }
-        strcpy(e->radio_last, pick);
+        strcpy(e->radio_last, e->rj_pick[i]);
         e->radio_appends++;
         ahead++;
     }
     if (ahead < e->radio_min_ahead) {
         e->radio_min_ahead = ahead;
+    }
+    if (full) {
+        radio_fill(e); /* the queue may have shrunk while the read ran; a failed draw waits for the next song change */
     }
 }
 
@@ -5408,6 +5452,7 @@ static void cmd_RADIO(sel_engine* e, const sel_message* m) {
     size_t n = strlen(seed);
 
     if (strcmp(seed, "off") == 0) {
+        e->radio_epoch++;
         e->radio_seed[0] = '\0';
         return;
     }
@@ -5421,6 +5466,7 @@ static void cmd_RADIO(sel_engine* e, const sel_message* m) {
     }
     memcpy(e->radio_seed, seed, n + 1u);
     e->radio_last[0] = '\0';
+    e->radio_epoch++;
     e->radio_rng = sel_shuffle_seed(e->rng);
     e->radio_min_ahead = 0xFFFFFFFFu;
     if (e->q_playing == 0) {
@@ -8011,6 +8057,10 @@ static void lib_reads_collect(sel_engine* e) {
         panel_publish(e);
         if (e->rd_panel.again) panel_post(e);
     }
+    if (lib_read_take(&e->rd_radio)) {
+        e->lib_reads_applied++;
+        radio_publish(e);
+    }
     if (lib_read_take(&e->rd_play)) {
         e->lib_reads_applied++;
         play_meta_publish(e);
@@ -9395,6 +9445,7 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_stats);
         lib_read_end(&e->rd_coll);
         lib_read_end(&e->rd_panel);
+        lib_read_end(&e->rd_radio);
         lib_read_end(&e->rd_play);
         lib_read_end(&e->rd_vote);
         lib_read_end(&e->rd_art);
@@ -9691,7 +9742,7 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->pm_wait && e->deferred) || (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
+    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_radio) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->pm_wait && e->deferred) || (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
