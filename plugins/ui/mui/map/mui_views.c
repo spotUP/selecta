@@ -206,6 +206,25 @@ uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, siz
     return 1;
 }
 
+uint32_t mui_subsong_label(uint32_t subsong, uint32_t count, char* out, size_t cap) {
+    if (count < 2u) {
+        if (cap > 0u) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    snprintf(out, cap, "%u/%u", (unsigned)subsong, (unsigned)count);
+    return 1;
+}
+
+uint32_t mui_subsong_step_line(uint32_t subsong, uint32_t count, int dir, char* out, size_t cap) {
+    if (count < 2u || subsong < 1u || subsong > count || (dir < 0 && subsong < 2u) || (dir >= 0 && subsong >= count)) {
+        return 0;
+    }
+    snprintf(out, cap, "SUBSONG %u", (unsigned)(dir < 0 ? subsong - 2u : subsong));
+    return 1;
+}
+
 /* MUI-P4-12 */
 void mui_confirm_text(uint32_t kind, const char* title, uint32_t songs, uint32_t playlists, char* out, size_t cap) {
     if (kind == 1u) {

@@ -1904,6 +1904,33 @@ static void test_aabtn_wired(const char* src) {
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
  * states, extras, doors, toolbar labels, crumb); each must resolve to a baked Lucide body, the lookup counter must rise by
  * exactly that many, and mui_ui.c must build the image (Bodychunk with the theme palette) and the bigger padding. */
+/* I973b: an icon button with a fixed side is exactly that big; no weight can stretch it. Pure maths plus the class calling it. */
+static void test_icon_square(void) {
+    mui_btn_box_t bn, fx, tg;
+    static char src[400000], ui[1200000];
+    size_t n;
+    FILE* f = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    f = fopen(MUI_UI_SOURCE, "rb");
+    n = f != NULL ? fread(ui, 1, sizeof ui - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    ui[n] = 0;
+    mui_aabtn_minmax(20, 12, 0, 0, 0, &bn);
+    mui_aabtn_minmax(20, 12, 24, 12, 0, &fx);
+    mui_aabtn_minmax(20, 12, 0, 0, 1, &tg);
+    CHECK(bn.min_w == 20 && bn.w_fixed == 0 && bn.min_h == 12 && bn.h_fixed == 1, "a button with no fixed side keeps the unbounded width");
+    CHECK(fx.min_w == 24 && fx.def_w == 24 && fx.w_fixed == 1 && fx.min_h == 12 && fx.def_h == 12 && fx.h_fixed == 1, "a fixed side: min = def = max (%u %u %u)", (unsigned)fx.min_w, (unsigned)fx.def_w, (unsigned)fx.w_fixed);
+    CHECK(tg.w_fixed == 1, "a toggle box stays fixed");
+    CHECK(strstr(src, "mui_aabtn_minmax((uint32_t)d->minw") != NULL && strstr(src, "d->fixed_w = sp->fixed_w;") != NULL, "askminmax calls the helper and the spec carries the fixed sides");
+    CHECK(strstr(ui, "static Object* mui_make_button_fixed(") != NULL, "the fixed-size button builder exists");
+}
+
 static void test_icon_buttons(void) {
     static char src[400000];
     sel_uim_frame fr;
@@ -1959,7 +1986,7 @@ static void test_icon_buttons(void) {
           "mui_ui.c builds the icon image outside the AAButton class");
     CHECK(strstr(src, "mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
               strstr(src, "mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
-              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(") != NULL && strstr(src, "mui_make_button_icon(mui_extra_label(i), mui_extra_action(i),") != NULL,
+              strstr(src, "mui_make_button_fixed(s->btn_label[i], mui_transport_action(i, &zero)") != NULL,
           "a button call site passes no icon key");
     test_aabtn_wired(src);
 }
@@ -2326,12 +2353,12 @@ static void test_volume_row(void) {
     if (grp == NULL || end == NULL) {
         return;
     }
-    seek = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->seek)");
+    seek = strstr(grp, "DoMethod(bar, OM_ADDMEMBER, s->seek)");
     len = strstr(grp, "MUI_ATTR_LENGTH");
-    vol = strstr(grp, "DoMethod(row4, OM_ADDMEMBER, s->vol)");
-    CHECK(seek != NULL && seek < end, "seek slider is not in the seek row");
-    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not in the right column");
-    CHECK(strstr(grp, "DoMethod(row1, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is in the button row");
+    vol = strstr(grp, "DoMethod(bar, OM_ADDMEMBER, s->vol)");
+    CHECK(seek != NULL && seek < end, "seek slider is not in the bar row");
+    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not at the right end of the bar, after the length");
+    CHECK(strstr(grp, "DoMethod(tr, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is in the transport group");
     CHECK(strstr(grp, "CTL_VOLUME, MUI_VOLUME_FIX_W)") != NULL, "volume slider has no fixed width");
 }
 
@@ -2351,7 +2378,7 @@ static int bar_send(void* ctx, const char* line) {
 
 static void test_player_bar(void) {
     static const uint32_t mac[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
-    char *src = ui_source(), *grp, *end, *ord, *tool, *tend;
+    char *src = ui_source(), *grp, *end, *ord, *tool, *tend, saved;
     sel_uim_frame f;
     uint32_t k, base = mui_action_fires();
     memset(&f, 0, sizeof f);
@@ -2376,20 +2403,47 @@ static void test_player_bar(void) {
     if (grp == NULL || end == NULL) {
         return;
     }
+    saved = *end;
+    *end = 0; /* the group checks below see the function body only */
     ord = strstr(grp, "mui_player_transport_at(k)");
-    CHECK(ord != NULL && ord < end, "the transport row is not built in the Mac order of the map layer");
+    CHECK(ord != NULL, "the transport row is not built in the Mac order of the map layer");
     CHECK(strstr(grp, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL, "no art frame in the player bar");
-    CHECK(strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_LEFT") != NULL && strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_CENTRE") != NULL &&
-              strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_RIGHT") != NULL,
-          "the three columns do not take the map-layer weights");
-    CHECK(strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colL)") != NULL && strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colC)") != NULL &&
-              strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colR)") != NULL && strstr(grp, "DoMethod(g, OM_ADDMEMBER, hbar)") != NULL,
-          "the bar is not one HGroup of three columns");
-    CHECK(strstr(grp, "CTL_P4_BASE + P4_LIKE") != NULL && strstr(grp, "DoMethod(row3, OM_ADDMEMBER, like)") != NULL, "Like is not beside the title");
+    CHECK(strstr(grp, "MUIA_HorizWeight") == NULL && strstr(grp, "colL") == NULL && strstr(grp, "colC") == NULL && strstr(grp, "colR") == NULL,
+          "the bar is still three weighted columns");
+    CHECK(strstr(grp, "MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)band.gap") != NULL && strstr(grp, "DoMethod(g, OM_ADDMEMBER, bar)") != NULL &&
+              strstr(grp, "MUIA_FixHeight, (ULONG)band.height") != NULL,
+          "the bar is not one fixed-height row on the band gap");
+    CHECK(strstr(grp, "mui_make_button_fixed(") != NULL && strstr(grp, "(int)band.btn_w, (int)band.btn_px") != NULL && strstr(grp, "k < band.n_transport") != NULL,
+          "the transport buttons are not square icons of the band size, n_transport of them");
+    CHECK(strstr(grp, "MUI_ATTR_REMAINING") == NULL && strstr(grp, "MUI_ATTR_FORMAT") == NULL && strstr(grp, "MUI_ATTR_STATUS") == NULL &&
+              strstr(grp, "mui_p8_extras_row") == NULL && strstr(grp, "P4_LIKE") == NULL && strstr(grp, "MUI_BTN_STOP") == NULL,
+          "the bar still builds a dropped element (remaining, format, status, extras, heart, Stop)");
+    CHECK(strstr(grp, "if (band.show_left) {") != NULL && strstr(grp, "mui_make_text(s, MUI_ATTR_TITLE") > strstr(grp, "if (band.show_left) {"),
+          "art and titles are not behind show_left");
+    CHECK(strstr(grp, "CTL_SUB_PREV") != NULL && strstr(grp, "CTL_SUB_NEXT") != NULL && strstr(grp, "MUIA_ShowMe, FALSE") != NULL, "the subsong group is not built hidden");
+    CHECK(strstr(grp, "MUI_ATTR_CLOCK") < strstr(grp, "s->seek)") && strstr(grp, "s->seek)") < strstr(grp, "MUI_ATTR_LENGTH") && strstr(grp, "MUI_ATTR_LENGTH") < strstr(grp, "s->vol)"),
+          "the bar is not clock, seek, length, volume in that order");
+    *end = saved;
+    CHECK(strstr(src, "mui_subsong_step_line(sf->subsong, sf->subsong_count") != NULL && strstr(src, "mui_subsong_label(f->subsong, f->subsong_count") != NULL &&
+              strstr(src, "mui_subsong_sync(s, f);") != NULL,
+          "the subsong group is not fired and synced from the frame");
     tool = strstr(src, "static Object* mui_tool_group(");
     tend = tool != NULL ? strstr(tool, "I667i2") : NULL;
     CHECK(tool != NULL && tend != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") < tend,
           "the tool rows still build Like");
+}
+
+/* I973c: the subsong label and the minus/plus lines. Pure maths; the wiring is checked by test_player_bar. */
+static void test_subsong_bar(void) {
+    char out[32];
+    CHECK(mui_subsong_label(1u, 1u, out, sizeof out) == 0u && out[0] == 0, "one subsong: group hidden, label empty");
+    CHECK(mui_subsong_label(0u, 0u, out, sizeof out) == 0u, "no subsongs: hidden");
+    CHECK(mui_subsong_label(2u, 5u, out, sizeof out) == 1u && strcmp(out, "2/5") == 0, "label '%s'", out);
+    CHECK(mui_subsong_step_line(1u, 1u, 1, out, sizeof out) == 0u, "no step without subsongs");
+    CHECK(mui_subsong_step_line(1u, 5u, -1, out, sizeof out) == 0u, "no minus at the first subsong");
+    CHECK(mui_subsong_step_line(5u, 5u, 1, out, sizeof out) == 0u, "no plus at the last subsong");
+    CHECK(mui_subsong_step_line(3u, 5u, 1, out, sizeof out) == 1u && strcmp(out, "SUBSONG 3") == 0, "plus from 3 sends '%s'", out);
+    CHECK(mui_subsong_step_line(3u, 5u, -1, out, sizeof out) == 1u && strcmp(out, "SUBSONG 1") == 0, "minus from 3 sends '%s'", out);
 }
 
 static void test_cycle_initial(void) {
@@ -2487,6 +2541,42 @@ static void test_compact_rail(void) {
           "mui_sidebar_group builds the rail without side_dyn");
 }
 
+/* I973a: the one-row bar's sizes. Pure maths from the metrics; the cap, the centre line and the width budget of design section 4. */
+static void test_player_band_sizes(void) {
+    mui_player_band_t c, r, w;
+    mui_aa_metrics_t tm, rm;
+    mui_aa_slider_t tsl, rsl;
+    uint32_t b0 = mui_player_bar_builds(), tc[3], rc[3], icon_box, i;
+    mui_player_band(&c, 1, 512, 640, 0);
+    mui_player_band(&r, 0, 256, 800, 15);
+    mui_player_band(&w, 0, 256, 900, 15);
+    CHECK(mui_player_bar_builds() == b0 + 3u, "bar sentinel %u (want %u)", (unsigned)mui_player_bar_builds(), (unsigned)(b0 + 3u));
+    mui_aa_metrics_aspect(0, 512, &tm);
+    mui_aa_metrics_aspect(15, 256, &rm);
+    mui_aa_slider_metrics(0, &tsl);
+    mui_aa_slider_metrics(15, &rsl);
+    icon_box = (uint32_t)(tm.icon_h + 2 * tm.pad_y);
+    CHECK(c.btn_px == (icon_box > (uint32_t)tm.height ? icon_box : (uint32_t)tm.height) && c.btn_px >= 12u, "640x256 btn_px %u", (unsigned)c.btn_px);
+    CHECK(c.btn_w == c.btn_px * 2u, "tall pixels: a square on screen is twice as wide in px, got %u x %u", (unsigned)c.btn_w, (unsigned)c.btn_px);
+    CHECK(c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H && c.art_h == 28u && c.extras == 0 && c.right_rows == 1 && c.n_transport == 5u && c.compact == 1,
+          "640x256 band: height %u art_h %u extras %d transport %u", (unsigned)c.height, (unsigned)c.art_h, (int)c.extras, (unsigned)c.n_transport);
+    CHECK(mui_player_min_width(&c) <= 600u, "640x256 minimum width %u > 600", (unsigned)mui_player_min_width(&c));
+    CHECK(c.show_left == 0u && r.show_left == 0u && w.show_left == 1u, "art and titles only from %d px: %u %u %u", (int)MUI_PLAYER_LEFT_MIN_W, (unsigned)c.show_left, (unsigned)r.show_left, (unsigned)w.show_left);
+    CHECK(r.art_h == 56u && r.btn_w == r.btn_px && r.height == (r.btn_px > 56u ? r.btn_px : 56u) + 2u * MUI_PLAYER_COMPACT_PAD && r.compact == 0,
+          "800x600 band: art_h %u height %u btn %u", (unsigned)r.art_h, (unsigned)r.height, (unsigned)r.btn_px);
+    /* one centre line: a button, the clock text, the seek track and the volume track all sit at the bar's middle within one row */
+    tc[0] = mui_player_centre_y(&c, c.btn_px);
+    tc[1] = mui_player_centre_y(&c, c.text_h);
+    tc[2] = (c.height - c.slider_h) / 2u + (c.slider_h - (uint32_t)tsl.track_h) / 2u + (uint32_t)tsl.track_h / 2u;
+    rc[0] = mui_player_centre_y(&r, r.btn_px);
+    rc[1] = mui_player_centre_y(&r, r.text_h);
+    rc[2] = (r.height - r.slider_h) / 2u + (r.slider_h - (uint32_t)rsl.track_h) / 2u + (uint32_t)rsl.track_h / 2u;
+    for (i = 1; i < 3; i++) {
+        CHECK(tc[i] + 1u >= tc[0] && tc[i] <= tc[0] + 1u, "640x256 centre %u: %u vs button %u", (unsigned)i, (unsigned)tc[i], (unsigned)tc[0]);
+        CHECK(rc[i] + 1u >= rc[0] && rc[i] <= rc[0] + 1u, "800x600 centre %u: %u vs button %u", (unsigned)i, (unsigned)rc[i], (unsigned)rc[0]);
+    }
+}
+
 static void test_compact_player(void) {
     mui_player_band_t c, tall, reg;
     mui_menu_item items[256];
@@ -2496,9 +2586,9 @@ static void test_compact_player(void) {
     const char* cg = strstr(src, "static Object* mui_player_group(");
     const char* end = cg != NULL ? strstr(cg, "\n}\n") : NULL;
     char* body = NULL;
-    mui_player_band(&c, mui_layout_compact(640, 256, SEL_UIM_TIER_BITMAP), mui_pixel_aspect_q8(22, 44));
-    mui_player_band(&tall, 1, 256);
-    mui_player_band(&reg, mui_layout_compact(800, 600, SEL_UIM_TIER_BITMAP), 256);
+    mui_player_band(&c, mui_layout_compact(640, 256, SEL_UIM_TIER_BITMAP), mui_pixel_aspect_q8(22, 44), 640, 0);
+    mui_player_band(&tall, 1, 256, 640, 0);
+    mui_player_band(&reg, mui_layout_compact(800, 600, SEL_UIM_TIER_BITMAP), 256, 800, 15);
     CHECK(mui_player_band_compact_builds() == builds + 2u, "compact player sentinel %u (want %u)", (unsigned)mui_player_band_compact_builds(), (unsigned)(builds + 2u));
     CHECK(c.compact == 1 && c.band_n == 1 && c.extras == 0 && c.right_rows == 1 && c.art_w == 56u && c.art_h == 28u && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
           "compact band: art %ux%u height %u extras %d", (unsigned)c.art_w, (unsigned)c.art_h, (unsigned)c.height, (int)c.extras);
@@ -2517,9 +2607,9 @@ static void test_compact_player(void) {
         need = tm.height + sl.height + gy;
         CHECK(need <= MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
               "compact band: transport %d + seek %d + gap %d = %d of %d", tm.height, sl.height, gy, need, MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD);
-        CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD, "square band heights moved");
+        CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "square band heights moved (I973: the compact cap applies)");
     }
-    CHECK(reg.compact == 0 && reg.extras == 1 && reg.right_rows == 3 && reg.art_h == 56u, "regular band unchanged");
+    CHECK(reg.compact == 0 && reg.extras == 0 && reg.right_rows == 1 && reg.art_h == 56u, "regular band: one row, extras in the menu only (I973 6a Q4)");
     n = mui_menu_build(items, 256);
     for (i = 0; i < sizeof want / sizeof want[0]; i++) {
         uint32_t k;
@@ -2536,10 +2626,9 @@ static void test_compact_player(void) {
         memcpy(body, cg, (size_t)(end - cg));
         body[end - cg] = 0;
     }
-    CHECK(body != NULL && strstr(body, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8)") != NULL &&
-              strstr(body, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL &&
-              strstr(body, "if (band.extras) {\n        DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());") != NULL,
-          "player group takes the band model, the aspect source and builds extras only when the band has them");
+    CHECK(body != NULL && strstr(body, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8, sw,") != NULL &&
+              strstr(body, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL && strstr(body, "mui_p8_extras_row") == NULL,
+          "player group takes the band model and the aspect source; the extras are in the menu only");
     free(body);
 }
 
@@ -3066,6 +3155,10 @@ int main(int argc, char** argv) {
         test_newplaylist();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
         test_aabtn_tokens();
+    } else if (strcmp(argv[1], "subsong-bar") == 0) {
+        test_subsong_bar();
+    } else if (strcmp(argv[1], "icon-square") == 0) {
+        test_icon_square();
     } else if (strcmp(argv[1], "icon-buttons") == 0) {
         test_icon_buttons();
     } else if (strcmp(argv[1], "icon-rows") == 0) {
@@ -3088,6 +3181,8 @@ int main(int argc, char** argv) {
         test_player_bar();
     } else if (strcmp(argv[1], "viz-chooser") == 0) {
         test_viz_chooser();
+    } else if (strcmp(argv[1], "player-band-sizes") == 0) {
+        test_player_band_sizes();
     } else if (strcmp(argv[1], "compact-player") == 0) {
         test_compact_player();
     } else if (strcmp(argv[1], "compact-rail") == 0) {

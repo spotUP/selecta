@@ -83,21 +83,57 @@ uint32_t mui_art_height(uint32_t width, int aspect_q8) {
     return (uint32_t)mui_aa_rows((int)width, aspect_q8 > 0 ? aspect_q8 : 256);
 }
 
-void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8) {
+static uint32_t g_player_bar_builds;
+uint32_t mui_player_bar_builds(void) { return g_player_bar_builds; }
+
+void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8, uint32_t bar_w, uint32_t font_px) {
+    mui_aa_metrics_t m;
+    mui_aa_slider_t sl;
+    uint32_t icon_box;
     memset(out, 0, sizeof *out);
+    g_player_bar_builds++;
+    mui_aa_metrics_aspect((int)font_px, aspect_q8, &m);
+    mui_aa_slider_metrics((int)font_px, &sl);
     out->band_n = 1;
+    out->right_rows = 1;
     out->art_w = (uint32_t)MUI_PLAYER_ART_PX;
     out->art_h = mui_art_height(out->art_w, aspect_q8); /* square on screen: a tall pixel counts as its aspect in rows */
+    icon_box = (uint32_t)(m.icon_h + 2 * m.pad_y);
+    out->btn_px = icon_box > (uint32_t)m.height ? icon_box : (uint32_t)m.height;
+    out->btn_w = (out->btn_px * (uint32_t)m.aspect_q8 + 128u) / 256u;
+    out->btn_gap = (uint32_t)m.pad_x / 2u;
+    out->gap = (uint32_t)m.pad_x;
+    out->n_transport = MUI_BAR_TRANSPORT_N;
+    out->show_left = bar_w >= (uint32_t)MUI_PLAYER_LEFT_MIN_W;
+    out->sub_w = (uint32_t)MUI_PLAYER_SUB_LABEL_W + 2u * out->btn_w + 3u * out->btn_gap;
+    out->track_h = (uint32_t)sl.track_h;
+    out->slider_h = (uint32_t)sl.height;
+    out->text_h = (uint32_t)m.height;
+    out->height = (out->btn_px > out->art_h ? out->btn_px : out->art_h) + 2u * (uint32_t)MUI_PLAYER_COMPACT_PAD;
     if (compact) {
         g_player_compact_builds++;
         out->compact = 1;
-        out->right_rows = 1;
-        out->height = out->art_h + 2u * (uint32_t)MUI_PLAYER_COMPACT_PAD;
-        return;
+        if (out->height > (uint32_t)MUI_PLAYER_COMPACT_MAX_H) {
+            out->height = (uint32_t)MUI_PLAYER_COMPACT_MAX_H;
+        }
     }
-    out->extras = 1;
-    out->right_rows = 3;
-    out->height = out->art_h + 2u * (uint32_t)MUI_PLAYER_COMPACT_PAD;
+}
+
+void mui_aabtn_minmax(uint32_t content_w, uint32_t content_h, uint32_t fixed_w, uint32_t fixed_h, uint32_t toggle, mui_btn_box_t* out) {
+    out->min_w = out->def_w = fixed_w != 0u ? fixed_w : content_w;
+    out->min_h = out->def_h = fixed_h != 0u ? fixed_h : content_h;
+    out->w_fixed = (fixed_w != 0u || toggle) ? 1u : 0u;
+    out->h_fixed = 1u;
+}
+
+uint32_t mui_player_centre_y(const mui_player_band_t* pb, uint32_t child_h) {
+    return (pb->height - child_h) / 2u + child_h / 2u;
+}
+
+uint32_t mui_player_min_width(const mui_player_band_t* pb) {
+    uint32_t trans = pb->n_transport * pb->btn_w + (pb->n_transport - 1u) * pb->btn_gap;
+    /* groups: transport, clock, seek, length, speaker, volume = 6 children, 5 gaps */
+    return trans + (uint32_t)MUI_PLAYER_CLOCK_W + (uint32_t)MUI_SLIDER_MIN + (uint32_t)MUI_PLAYER_CLOCK_W + pb->btn_w + (uint32_t)MUI_VOLUME_FIX_W + 5u * pb->gap;
 }
 
 /* I798 (T2, R3): the same map with the Now Playing column dropped when `detail_hidden`, through the layout the Mac computes

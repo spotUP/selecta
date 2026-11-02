@@ -20,6 +20,7 @@
 #include <proto/utility.h>
 
 #include "map/mui_icons.h"
+#include "map/mui_map.h"
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
 
@@ -27,7 +28,7 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aabtn_data {
     char caption[48], widest[48];
-    int icon[2], alt, icon_only, role, hover, backend, minw, minh, align, on, fit;
+    int icon[2], alt, icon_only, role, hover, backend, minw, minh, align, on, fit, fixed_w, fixed_h;
     mui_aa_metrics_t m;
     aa_ctx aa;
     struct MUI_EventHandlerNode ehn;
@@ -108,14 +109,16 @@ static void aabtn_measure(Object* obj, aabtn_data* d) {
 
 static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
     aabtn_data* d = INST_DATA(cl, obj);
+    mui_btn_box_t bx;
     DoSuperMethodA(cl, obj, (Msg)msg);
     aabtn_measure(obj, d);
-    msg->MinMaxInfo->MinWidth += d->minw;
-    msg->MinMaxInfo->DefWidth += d->minw;
-    msg->MinMaxInfo->MaxWidth = d->role == MUI_AA_ROLE_TOGGLE ? msg->MinMaxInfo->MinWidth : MUI_MAXMAX;
-    msg->MinMaxInfo->MinHeight += d->minh;
-    msg->MinMaxInfo->DefHeight += d->minh;
-    msg->MinMaxInfo->MaxHeight += d->minh;
+    mui_aabtn_minmax((uint32_t)d->minw, (uint32_t)d->minh, (uint32_t)d->fixed_w, (uint32_t)d->fixed_h, d->role == MUI_AA_ROLE_TOGGLE, &bx); /* I973b */
+    msg->MinMaxInfo->MinWidth += bx.min_w;
+    msg->MinMaxInfo->DefWidth += bx.def_w;
+    msg->MinMaxInfo->MaxWidth = bx.w_fixed ? msg->MinMaxInfo->MinWidth : MUI_MAXMAX;
+    msg->MinMaxInfo->MinHeight += bx.min_h;
+    msg->MinMaxInfo->DefHeight += bx.def_h;
+    msg->MinMaxInfo->MaxHeight += bx.min_h;
     return 0;
 }
 
@@ -311,6 +314,8 @@ Object* mui_aabtn_new_key(const mui_aabtn_spec* sp, ULONG key) {
         d->icon_only = sp->icon_only && sp->icon >= 0;
         d->role = sp->role;
         d->align = sp->align;
+        d->fixed_w = sp->fixed_w;
+        d->fixed_h = sp->fixed_h;
         if (sp->role == MUI_AA_ROLE_TOGGLE) {
             DoMethod(o, MUIM_Notify, MUIA_Selected, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
         } else {

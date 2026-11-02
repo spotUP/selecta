@@ -183,6 +183,10 @@ typedef struct mui_state {
     Object* str_cmd;                /* MUI-P4-13 */
     Object* cyc_rating;             /* MUI-P4-7 */
     Object* cyc_subsong;            /* MUI-P4-9 */
+    Object* sub_grp;                /* I973c: the bar's subsong group (label + minus + plus), shown only when the song has subsongs */
+    Object* sub_txt;                /* I973c: its "n/m" label */
+    char sub_buf[16];
+    uint32_t sub_shown;
     Object* status;                 /* the last line a P4 gadget sent (MUI-P4-11: the one-line toast) */
     mui_toast toast;                /* MUI-P4-11 */
     Object* help_win;               /* MUI-P4-14: created on the first Help click */
@@ -490,6 +494,8 @@ static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 
 static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subsong 3", "Subsong 4", "Subsong 5", "Subsong 6", "Subsong 7", "Subsong 8", NULL};
 #define CTL_LIB_PREV 0x2810L /* I670: the sidebar library filter, previous and next */
 #define CTL_LIB_NEXT 0x2811L
+#define CTL_SUB_PREV 0x2812L /* I973c: the bar's subsong minus and plus */
+#define CTL_SUB_NEXT 0x2813L
 #define CTL_EXTRA_BASE 0x2700L /* MUI-P8-1: album and speed buttons of the transport area */
 
 
@@ -761,7 +767,7 @@ static int mui_theme_live_now(void) {
  * colour, baked Lucide icon, antialiased caption. alt_key names a second icon shown after mui_aabtn_set_alt (play/pause).
  * icon_only buttons (dense rows) draw no caption so their row fits the smallest screen; the label stays the ShortHelp.
  * weight 100 shares the row, 0 sizes the button to its contents. Sizes come from mui_aa_metrics. */
-static Object* mui_make_button_ex(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role, int align) {
+static Object* mui_make_button_ex(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role, int align, int fixed_w, int fixed_h) {
     mui_aabtn_spec sp;
     sp.caption = label;
     sp.widest = widest;
@@ -774,11 +780,18 @@ static Object* mui_make_button_ex(const char* label, const char* widest, const c
     sp.weight = weight;
     sp.selected = 0;
     sp.align = align;
+    sp.fixed_w = fixed_w;
+    sp.fixed_h = fixed_h;
     return mui_aabtn_new(&sp);
 }
 
+/* I973b: an icon-only button of an exact size (the player bar's squares: band.btn_w x band.btn_px), weight 0. */
+static Object* mui_make_button_fixed(const char* label, const char* icon_key, const char* alt_key, LONG id, int role, int w, int h) {
+    return mui_make_button_ex(label, label, icon_key, alt_key, id, 0, 1, role, MUI_AA_ALIGN_CENTRE, w, h);
+}
+
 static Object* mui_make_button_i(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role) {
-    return mui_make_button_ex(label, widest, icon_key, alt_key, id, weight, icon_only, role, MUI_AA_ALIGN_CENTRE);
+    return mui_make_button_ex(label, widest, icon_key, alt_key, id, weight, icon_only, role, MUI_AA_ALIGN_CENTRE, 0, 0);
 }
 
 static Object* mui_make_button_w(const char* label, const char* icon_key, LONG id, LONG weight) {
@@ -791,7 +804,7 @@ static Object* mui_make_button_icon(const char* label, const char* icon_key, LON
 
 /* I667b4: a ghost button with icon and caption at the left (sidebar doors). */
 static Object* mui_make_button_left(const char* label, const char* icon_key, LONG id) {
-    return mui_make_button_ex(label, label, icon_key, NULL, id, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
+    return mui_make_button_ex(label, label, icon_key, NULL, id, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT, 0, 0);
 }
 
 /* I667b-2 (design 3.1, AACheck): the four prefs checkboxes are Selecta_AAButton objects with role toggle: a rounded box, ACCENT
@@ -809,6 +822,7 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
     sp.weight = 0;
     sp.selected = on;
     sp.align = MUI_AA_ALIGN_CENTRE;
+    sp.fixed_w = sp.fixed_h = 0;
     return mui_aabtn_new(&sp);
 }
 
@@ -854,6 +868,7 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
         sp.selected = 0;
         sp.weight = 0;
         sp.align = MUI_AA_ALIGN_CENTRE;
+        sp.fixed_w = sp.fixed_h = 0;
         close = mui_aabtn_new_key(&sp, 27UL);
         hdr = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
         col = MUI_NewObject((char*)MUIC_Group, TH_FONT TAG_DONE);
@@ -879,13 +894,16 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
                          MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
 }
 
-static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
+static Object* mui_make_text_al(mui_state* s, uint32_t attr, const char* initial, mui_label label, int align) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
-    s->txt[attr] = mui_aatext_sized(s->txt_buf[attr], mui_attr_fixwidth(attr), mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0);
+    s->txt[attr] = mui_aatext_sized(s->txt_buf[attr], mui_attr_fixwidth(attr), mui_pens_label_tone(label), align, 0);
     return s->txt[attr];
 }
 
-#define MUI_VOLUME_FIX_W 96 /* I717: the volume slider's fixed width in the transport row */
+static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
+    return mui_make_text_al(s, attr, initial, label, MUI_AA_ALIGN_LEFT);
+}
+
 
 /* I667f (design 3.2): the one slider constructor. Every Selecta slider (volume, seek, settings) is a Selecta_AASlider (mui_aaslider_class.c). */
 static Object* mui_make_slider(long lo, long hi, long value, LONG id, long fix_w) {
@@ -1071,9 +1089,9 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     }
     hd = m.rail ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
     if (hd != NULL) {
-        Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
-        Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
-        Object* x = mui_make_button_ex(m.expand, m.expand, "crumb", NULL, CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
+        Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT, 0, 0);
+        Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE, 0, 0);
+        Object* x = mui_make_button_ex(m.expand, m.expand, "crumb", NULL, CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE, 0, 0);
         if (t != NULL) { DoMethod(hd, OM_ADDMEMBER, t); }
         if (c != NULL) { DoMethod(hd, OM_ADDMEMBER, c); }
         if (x != NULL) { DoMethod(hd, OM_ADDMEMBER, x); }
@@ -1092,88 +1110,102 @@ static int mui_p8_send(void* ctx, const char* line) {
     return mui_engine_line((mui_state*)ctx, line);
 }
 
-static Object* mui_p8_extras_row(void) {
-    Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    uint32_t i;
-    for (i = 0; row != NULL && i < MUI_EXTRA_COUNT; i++) {
-        Object* b = mui_make_button_icon(mui_extra_label(i), mui_extra_action(i), CTL_EXTRA_BASE + (LONG)i);
-        if (b != NULL) {
-            SetAttrs(b, MUIA_ShortHelp, (ULONG)mui_extra_tip(i), TAG_DONE);
-            DoMethod(row, OM_ADDMEMBER, b);
-        }
-    }
-    return row;
-}
-
-/* I796 (drift B1-B4, research 2026-10-30-mui-mac-drift.md): the player bar is the Mac's three columns in one HGroup. Left: the cover art
- * frame and the title with the Like heart beside it, the artist under it (draw_player_left). Centre: the transport icons in the Mac order
- * (mui_player_transport_at) above the seek row. Right: the volume slider, the album and speed extras, the format and the status.
- * The column weights are MUI_PLAYER_W_* of the map layer. */
+/* I973c (design 2026-11-02-I973-mui-player-bar-design.md sections 3, 4, 6a): the player bar is ONE row, for the bitmap screen and RTG alike.
+ * Left to right: art and titles (only when the band says so), the subsong group (hidden until the song has subsongs), five square transport
+ * icons (Random, Previous, Play, Next, Repeat; no Stop), the clock, the seek slider (the only child that stretches), the length, the speaker
+ * and the volume slider. Every size comes from mui_player_band (map layer); the group height is fixed so every child sits on the centre line. */
 static Object* mui_player_group(mui_state* s) {
     sel_uim_frame zero;
-    Object *row1, *row2, *row3, *row4, *row5, *g, *art, *hbar, *colL, *colC, *colR, *titles, *like;
+    Object *g, *bar, *tr, *art, *titles, *left, *sub, *sub_prev, *sub_next, *speaker;
     mui_player_band_t band;
     uint32_t k;
     memset(&zero, 0, sizeof zero);
-    mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8); /* I949d: the compact class is ONE band, extras in the menu */
-    row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    for (k = 0; row1 != NULL && k < MUI_BTN_COUNT; k++) {
-        uint32_t i = mui_player_transport_at(k);
-        s->btn_label[i] = mui_transport_label(i, &zero);
-        s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL,
-                                      CTL_BTN_BASE + (LONG)i, 100, mui_transport_icon_only(i), i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL);
-        if (s->btn[i] != NULL) {
-            mui_set_tip(s, MUI_TS_BTN + i, s->btn[i], MUI_TIP_TRANSPORT, i, &zero, 0);
-            DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
-        }
+    {
+        uint32_t sw, sh;
+        int laced;
+        mui_screen_size(&sw, &sh, &laced);
+        mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8, sw, (uint32_t)mui_aa_font_px((int)mui_layout_rows(sh, laced), (int)sw)); /* I949d, I973a */
     }
-    s->vol = mui_make_slider(0, MUI_VOLUME_MAX, 0, CTL_VOLUME, MUI_VOLUME_FIX_W);
-    s->seek = mui_make_slider(0, MUI_SEEK_MAX, 0, CTL_SEEK, 0);
-    row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    row4 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    row5 = band.extras ? MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE) : row4; /* the compact band has no separate status row */
-    art = mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h);
-    like = mui_make_button_icon(mui_tool_labels[0], mui_tool_labels[0], CTL_P4_BASE + P4_LIKE);
-    mui_set_tip(s, MUI_TS_LIKE, like, MUI_TIP_LIKE, 0, NULL, 0);
-    mui_set_tip(s, MUI_TS_SEEK, s->seek, MUI_TIP_SEEK, 0, NULL, 0);
-    mui_set_tip(s, MUI_TS_VOL, s->vol, MUI_TIP_VOLUME, 0, NULL, 0);
-    titles = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
-    colL = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_HorizWeight, MUI_PLAYER_W_LEFT, TAG_DONE);
-    colC = MUI_NewObject((char*)MUIC_Group, MUIA_HorizWeight, MUI_PLAYER_W_CENTRE, TAG_DONE);
-    colR = MUI_NewObject((char*)MUIC_Group, MUIA_HorizWeight, MUI_PLAYER_W_RIGHT, TAG_DONE);
-    hbar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     g = mui_aapanel(MUI_AA_PANEL_SURFACE, 0);
-    if (row1 == NULL || row2 == NULL || row3 == NULL || row4 == NULL || row5 == NULL || g == NULL || s->vol == NULL || s->seek == NULL || art == NULL ||
-        like == NULL || titles == NULL || colL == NULL || colC == NULL || colR == NULL || hbar == NULL) {
+    bar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)band.gap, TAG_DONE);
+    tr = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)band.btn_gap, MUIA_Weight, 0, TAG_DONE);
+    sub = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)band.btn_gap, MUIA_Weight, 0, MUIA_ShowMe, FALSE, TAG_DONE);
+    if (g == NULL || bar == NULL || tr == NULL || sub == NULL) {
         return NULL;
     }
-    DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child; the cover itself is the Now Playing art */
-    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_CLOCK, "0:00 ", MUI_LBL_CLOCK));
-    DoMethod(row2, OM_ADDMEMBER, s->seek);
-    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_REMAINING, "-0:00", MUI_LBL_REMAINING));
-    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_LENGTH, "0:00 ", MUI_LBL_LENGTH));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song", MUI_LBL_TITLE));
-    DoMethod(row3, OM_ADDMEMBER, like); /* B4: the heart beside the title */
-    DoMethod(titles, OM_ADDMEMBER, row3);
-    DoMethod(titles, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
-    DoMethod(colL, OM_ADDMEMBER, art);
-    DoMethod(colL, OM_ADDMEMBER, titles);
-    DoMethod(colC, OM_ADDMEMBER, row1);
-    DoMethod(colC, OM_ADDMEMBER, row2);
-    DoMethod(row4, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the bar, like the Mac player bar */
-    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT)); /* compact: row5 is row4, volume, format, status on one row */
-    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
-    DoMethod(colR, OM_ADDMEMBER, row4);
-    if (band.extras) {
-        DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());
-        DoMethod(colR, OM_ADDMEMBER, row5);
+    SetAttrs(g, MUIA_FixHeight, (ULONG)band.height, TAG_DONE);
+    if (band.show_left) {
+        art = mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h);
+        titles = MUI_NewObject((char*)MUIC_Group, MUIA_Weight, 0, MUIA_FixWidth, (ULONG)MUI_PLAYER_TITLES_W, TAG_DONE);
+        left = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)band.gap, MUIA_Weight, 0, TAG_DONE);
+        if (art == NULL || titles == NULL || left == NULL) {
+            return NULL;
+        }
+        DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child; the cover itself is the Now Playing art */
+        DoMethod(titles, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song", MUI_LBL_TITLE));
+        DoMethod(titles, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
+        DoMethod(left, OM_ADDMEMBER, art);
+        DoMethod(left, OM_ADDMEMBER, titles);
+        DoMethod(bar, OM_ADDMEMBER, left);
     }
-    DoMethod(hbar, OM_ADDMEMBER, colL);
-    DoMethod(hbar, OM_ADDMEMBER, colC);
-    DoMethod(hbar, OM_ADDMEMBER, colR);
-    DoMethod(g, OM_ADDMEMBER, hbar);
+    sub_prev = mui_make_button_fixed("Previous Subsong", "minus", NULL, CTL_SUB_PREV, MUI_AA_ROLE_NORMAL, (int)band.btn_w, (int)band.btn_px);
+    sub_next = mui_make_button_fixed("Next Subsong", "plus", NULL, CTL_SUB_NEXT, MUI_AA_ROLE_NORMAL, (int)band.btn_w, (int)band.btn_px);
+    s->sub_buf[0] = '\0';
+    s->sub_txt = mui_aatext_sized(s->sub_buf, "00/00", mui_pens_label_tone(MUI_LBL_CLOCK), MUI_AA_ALIGN_CENTRE, 0);
+    if (sub_prev == NULL || sub_next == NULL || s->sub_txt == NULL) {
+        return NULL;
+    }
+    SetAttrs(sub_prev, MUIA_ShortHelp, (ULONG) "Previous subsong", TAG_DONE);
+    SetAttrs(sub_next, MUIA_ShortHelp, (ULONG) "Next subsong", TAG_DONE);
+    DoMethod(sub, OM_ADDMEMBER, sub_prev);
+    DoMethod(sub, OM_ADDMEMBER, s->sub_txt);
+    DoMethod(sub, OM_ADDMEMBER, sub_next);
+    s->sub_grp = sub;
+    s->sub_shown = 0u;
+    DoMethod(bar, OM_ADDMEMBER, sub);
+    for (k = 0; k < band.n_transport; k++) {
+        uint32_t i = mui_player_transport_at(k);
+        s->btn_label[i] = mui_transport_label(i, &zero);
+        s->btn[i] = mui_make_button_fixed(s->btn_label[i], mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL, CTL_BTN_BASE + (LONG)i,
+                                          i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL, (int)band.btn_w, (int)band.btn_px);
+        if (s->btn[i] != NULL) {
+            mui_set_tip(s, MUI_TS_BTN + i, s->btn[i], MUI_TIP_TRANSPORT, i, &zero, 0);
+            DoMethod(tr, OM_ADDMEMBER, s->btn[i]);
+        }
+    }
+    DoMethod(bar, OM_ADDMEMBER, tr);
+    s->seek = mui_make_slider(0, MUI_SEEK_MAX, 0, CTL_SEEK, 0);
+    s->vol = mui_make_slider(0, MUI_VOLUME_MAX, 0, CTL_VOLUME, MUI_VOLUME_FIX_W);
+    speaker = mui_make_button_fixed("Volume", "volume-2", NULL, 0, MUI_AA_ROLE_GHOST, (int)band.btn_w, (int)band.btn_px); /* an indicator: no mute action exists */
+    if (s->seek == NULL || s->vol == NULL || speaker == NULL) {
+        return NULL;
+    }
+    mui_set_tip(s, MUI_TS_SEEK, s->seek, MUI_TIP_SEEK, 0, NULL, 0);
+    mui_set_tip(s, MUI_TS_VOL, s->vol, MUI_TIP_VOLUME, 0, NULL, 0);
+    DoMethod(bar, OM_ADDMEMBER, mui_make_text_al(s, MUI_ATTR_CLOCK, "0:00 ", MUI_LBL_CLOCK, MUI_AA_ALIGN_RIGHT));
+    DoMethod(bar, OM_ADDMEMBER, s->seek);
+    DoMethod(bar, OM_ADDMEMBER, mui_make_text_al(s, MUI_ATTR_LENGTH, "0:00 ", MUI_LBL_LENGTH, MUI_AA_ALIGN_LEFT));
+    DoMethod(bar, OM_ADDMEMBER, speaker);
+    DoMethod(bar, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the bar, like the Mac player bar */
+    DoMethod(g, OM_ADDMEMBER, bar);
     return g;
+}
+
+/* I973c: show or hide the bar's subsong group and keep its "n/m" label on the frame. The text is touched only when it changes. */
+static void mui_subsong_sync(mui_state* s, const sel_uim_frame* f) {
+    char label[sizeof s->sub_buf];
+    uint32_t show = mui_subsong_label(f->subsong, f->subsong_count, label, sizeof label);
+    if (s->sub_grp == NULL) {
+        return;
+    }
+    if (show && strcmp(label, s->sub_buf) != 0) {
+        snprintf(s->sub_buf, sizeof s->sub_buf, "%s", label);
+        mui_aatext_set(s->sub_txt, s->sub_buf);
+    }
+    if (show != s->sub_shown) {
+        s->sub_shown = show;
+        set(s->sub_grp, MUIA_ShowMe, show ? TRUE : FALSE);
+    }
 }
 
 /* MUI-P3-4: the List's display hook. The entry is the row's cell array; a NULL entry asks for the column titles
@@ -1523,7 +1555,7 @@ static Object* mui_facet_row_group(mui_state* s) {
         return NULL;
     }
     for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
-        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TOGGLE, MUI_AA_ALIGN_CENTRE);
+        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TOGGLE, MUI_AA_ALIGN_CENTRE, 0, 0);
         if (s->facet_btn[k] == NULL) {
             return NULL;
         }
@@ -2180,6 +2212,7 @@ static void mui_refresh(mui_state* s) {
             }
         }
     }
+    mui_subsong_sync(s, f);
     mui_palette_sync(s);
     mui_detail_refresh(s, st);
     v = st->view;
@@ -2869,6 +2902,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
     LONG v = 0;
     if (id >= CTL_BTN_BASE && id < CTL_BTN_BASE + (LONG)MUI_BTN_COUNT) {
         if (mui_engine_line(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
+            s->transport_hits++;
+        }
+    } else if (id == CTL_SUB_PREV || id == CTL_SUB_NEXT) {
+        const sel_uim_frame* sf = &s->uim.frame;
+        if (mui_subsong_step_line(sf->subsong, sf->subsong_count, id == CTL_SUB_PREV ? -1 : 1, line, sizeof line) && mui_engine_line(s, line)) {
             s->transport_hits++;
         }
     } else if (id >= CTL_EXTRA_BASE && id < CTL_EXTRA_BASE + (LONG)MUI_EXTRA_COUNT) {

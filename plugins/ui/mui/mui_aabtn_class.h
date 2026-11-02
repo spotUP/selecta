@@ -20,6 +20,8 @@ typedef struct mui_aabtn_spec {
     LONG id;              /* MUIM_Application_ReturnID on release */
     int selected;         /* role toggle: initial checked state */
     LONG weight;          /* MUIA_Weight: 100 shares the row, 0 sizes to the contents */
+    int fixed_w;          /* I973b: exact width in px, 0 = from the contents (the player bar's square icon buttons) */
+    int fixed_h;          /* I973b: exact height in px, 0 = from the contents */
     int align;            /* MUI_AA_ALIGN_*: where icon+caption sit in the button (I667b4); MUI_AA_ALIGN_CENTRE for every button but the sidebar doors */
 } mui_aabtn_spec;
 

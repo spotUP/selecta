@@ -86,15 +86,45 @@ uint32_t mui_layout_compact(uint32_t width, uint32_t height, uint32_t tier);
  * seek row; right the volume and the format/status on ONE row. Album and speed leave the band: they are menu items only (the action
  * table rows next_album .. tempo_down, listed by mui_menu_build), no overflow button. A non-compact class keeps the Mac's three columns. */
 enum { MUI_PLAYER_COMPACT_MAX_H = 36, MUI_PLAYER_COMPACT_PAD = 4 };
+/* I973 (design 2026-11-02-I973-mui-player-bar-design.md sections 3, 4, 6a): the bar is ONE row in both classes: [subsong] transport
+ * clock | seek | length speaker volume, every child on one centre line; art + title/artist only from MUI_PLAYER_LEFT_MIN_W px (the Mac
+ * rule). No Stop, no remaining time, no status or format text, no heart, no album/speed extras on the bar (menu only). */
+enum { MUI_PLAYER_LEFT_MIN_W = 900, MUI_PLAYER_CLOCK_W = 64 /* "00:00:00" at MUI_FONT_W */, MUI_PLAYER_SUB_LABEL_W = 56, MUI_PLAYER_TITLES_W = 160, MUI_VOLUME_FIX_W = 96, MUI_BAR_TRANSPORT_N = 5 };
 typedef struct mui_player_band_t {
-    uint8_t compact;      /* 1 = the one-band form */
-    uint8_t band_n;       /* bands: 1 compact; 1 also for the regular bar (it is one HGroup) */
-    uint8_t extras;       /* 1 = the album and speed buttons are children of the band */
-    uint8_t right_rows;   /* rows in the right column: 1 compact (volume + format + status), 3 regular */
+    uint8_t compact;      /* 1 = the compact class (640x256 class screen) */
+    uint8_t band_n;       /* bands: always 1 */
+    uint8_t extras;       /* 0: the album and speed buttons are menu items only, in both classes */
+    uint8_t right_rows;   /* 1: the right end is the speaker and the volume on the one row */
     uint32_t art_w, art_h;
-    uint32_t height;      /* the band height budget in px: art height plus 2 x pad */
+    uint32_t height;      /* bar height in rows: max(btn_px, art_h) + 2 x pad; the compact class is capped at MUI_PLAYER_COMPACT_MAX_H */
+    uint32_t btn_px;      /* height in rows of every icon-only bar button (max of icon height and text height, plus 2 x pad_y) */
+    uint32_t btn_w;       /* width in pixels of the same button: btn_px x aspect / 256, so it is a square on screen (tall pixels: wider in px) */
+    uint32_t btn_gap;     /* spacing inside the transport group */
+    uint32_t gap;         /* spacing between the bar groups */
+    uint32_t n_transport; /* 5: Shuffle, Previous, Play, Next, Repeat (no Stop) */
+    uint32_t show_left;   /* 1 = art and title/artist are children of the bar (bar_w >= MUI_PLAYER_LEFT_MIN_W) */
+    uint32_t sub_w;       /* width of the subsong group (label + minus + plus); the group is shown only when the song has subsongs */
+    uint32_t track_h;     /* seek and volume track height (centred in the slider box) */
+    uint32_t slider_h;    /* slider box height in rows */
+    uint32_t text_h;      /* clock/length text box height in rows */
 } mui_player_band_t;
-void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8);
+/* bar_w: the screen (window) width in px; font_px: mui_aa_font_px of the screen. Counts mui_player_bar_builds. */
+void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8, uint32_t bar_w, uint32_t font_px);
+/* Vertical centre (rows from the bar top) of a child of height child_h in the bar: every child of the bar returns the same value +-1. */
+uint32_t mui_player_centre_y(const mui_player_band_t* pb, uint32_t child_h);
+/* Minimum bar width in px: transport + clock + MUI_SLIDER_MIN + length + speaker + volume + gaps (without the subsong group and the art block). */
+uint32_t mui_player_min_width(const mui_player_band_t* pb);
+/* Sentinel: bars built (mui_player_band calls) since start. */
+uint32_t mui_player_bar_builds(void);
+
+/* I973b: an icon button's size request, pure. fixed_w / fixed_h in px (0 = none). The deltas are added to the Area's own insets.
+ * A fixed side has min = def = max, so no weight can stretch the square; a labelled button keeps the unbounded width. */
+typedef struct mui_btn_box {
+    uint32_t min_w, def_w, min_h, def_h;
+    uint32_t w_fixed; /* 1: MaxWidth = MinWidth, else unbounded */
+    uint32_t h_fixed; /* always 1 today: a button never grows taller than its contents */
+} mui_btn_box_t;
+void mui_aabtn_minmax(uint32_t content_w, uint32_t content_h, uint32_t fixed_w, uint32_t fixed_h, uint32_t toggle, mui_btn_box_t* out);
 /* I949e2: height of an art frame width px wide so it is square on screen: width x 256 / aspect (mui_aa_rows). The player art is
  * MUI_PLAYER_ART_PX wide, the detail art MUI_DETAIL_ART_PX. 256 (square pixels) gives the width. */
 #define MUI_DETAIL_ART_PX 64
@@ -384,6 +414,12 @@ uint32_t mui_np_objects(const char** names, uint32_t cap);
 int32_t mui_lyric_line_of(int32_t lyric_slot);
 /* MUI-P4-9 song info: the next subsong of a Cycle (wraps after the last) as a SUBSONG line; 0 when there is only one. */
 uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, size_t cap);
+/* I973c: the bar's subsong label "n/m" (frame subsong is 1-based, as the desktop bar prints it). Returns 1 when the song has subsongs
+ * (count > 1), else 0 with an empty label: the subsong group is hidden. */
+uint32_t mui_subsong_label(uint32_t subsong, uint32_t count, char* out, size_t cap);
+/* I973c: the engine line of the bar's minus (dir -1) or plus (dir +1) button. `subsong` is the 1-based frame value; the line carries the
+ * 0-based target, as the desktop bar sends it. Returns 0 (no line) at either end of the range. */
+uint32_t mui_subsong_step_line(uint32_t subsong, uint32_t count, int dir, char* out, size_t cap);
 /* MUI-P4-12 dialogs: the confirm text per kind (0 remove, 1 clear library) and the line a confirm sends. */
 void mui_confirm_text(uint32_t kind, const char* title, uint32_t songs, uint32_t playlists, char* out, size_t cap);
 const char* mui_confirm_line(uint32_t kind);
