@@ -36,9 +36,11 @@ if(TARGET selecta_mbedtls)
 endif()
 
 # I894a1: UPnP / DLNA media server discovery (SSDP + device description). All sockets go through upnp/upnp_sock.h; the
-# POSIX backend is linked here, the Amiga bsdsocket backend replaces it in I897. The HTTP fetch is src/library/net/http.c,
-# so the user of this library links selecta_library as well.
-add_library(selecta_shared_upnp STATIC upnp/upnp.c upnp/upnp_sock_posix.c)
-target_include_directories(selecta_shared_upnp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_include_directories(selecta_shared_upnp PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
-target_link_libraries(selecta_shared_upnp PUBLIC selecta_shared_source)
+# POSIX backend is linked here; the Amiga bsdsocket backend is I1004, which removes this guard. The HTTP fetch is
+# src/library/net/http.c, so the user of this library links selecta_library as well.
+if(NOT SEL_AMIGA)
+  add_library(selecta_shared_upnp STATIC upnp/upnp.c upnp/upnp_sock_posix.c)
+  target_include_directories(selecta_shared_upnp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_include_directories(selecta_shared_upnp PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
+  target_link_libraries(selecta_shared_upnp PUBLIC selecta_shared_source)
+endif()
