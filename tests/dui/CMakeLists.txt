@@ -66,7 +66,7 @@ if(NOT SEL_AMIGA)
     list(GET pair 1 script)
     add_test(NAME ${tname}
       COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs" "-DBUILD_TYPE=${CMAKE_BUILD_TYPE}"
-        "-DWORK=${PROJECT_BINARY_DIR}/tests/${tname}" "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden"
+        "-DWORK=${PROJECT_BINARY_DIR}/tests/${tname}" "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden" "-DSQLITE3=$<TARGET_FILE:sel_sqlite3_shell>"
         "-DSDL_BUILT=${SELECTA_UI_DESKTOP}" "-DSID_MODULES=${PROJECT_BINARY_DIR}/tests/fixtures/plugin_sidfeed/mod" "-DGENMOD=$<TARGET_FILE:gen_testmod>" "-DUNIT=$<TARGET_FILE:dui_draw_unit>" "-DTAGGED=${PROJECT_SOURCE_DIR}/tests/m3/stream" "-DGUISRC=${PROJECT_SOURCE_DIR}/src/gui" "-DGUIHDR=${PROJECT_SOURCE_DIR}/include/selecta/gui" -P "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake")
     # Each test owns its default control socket path ($TMPDIR/selecta-<uid>.sock): two tests sharing
     # the per-user default collide under ctest -j ("selecta: already running"). TMPDIR, not
@@ -164,7 +164,13 @@ if(NOT SEL_AMIGA)
     elseif(tname STREQUAL "dui-song-panel-art-async") # I906d: the song panel read and view art ids ride posted read slots, the pump never waits; ledger row, not a plan item
       set(tlabel song-panel-art-async)
     endif()
-    set_tests_properties(${tname} PROPERTIES LABELS ${tlabel} TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
+    # I989b: a script that compares a blessed frame hash (it honours SELECTA_GOLDEN_UPDATE) carries the golden label too.
+    # The goldens are blessed on the maintainer's Mac: CI excludes the label (-LE golden), the pre-push step runs it (RULES.md).
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake" script_text)
+    if(script_text MATCHES "SELECTA_GOLDEN_UPDATE")
+      set(tlabel "${tlabel};golden")
+    endif()
+    set_tests_properties(${tname} PROPERTIES LABELS "${tlabel}" TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()
   # I906e: eight live SDL runs (six moved sites plus setup scans) take about 105 s; the shared 120 s leaves no margin.
   set_tests_properties(dui-direct-calls-async PROPERTIES TIMEOUT 300)
@@ -352,3 +358,5 @@ target_link_libraries(dui_index8_blend_unit PRIVATE selecta_gui)
 add_test(NAME dui-index8-blend COMMAND dui_index8_blend_unit)
 set_tests_properties(dui-index8-blend PROPERTIES TIMEOUT 60)
 
+
+sel_isolate_config() # I989b

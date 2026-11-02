@@ -14,3 +14,5 @@ if(UNIX AND NOT CMAKE_BUILD_TYPE MATCHES "^(Release|MinSizeRel)$")
               -DEXPECT_ABORT=${abort} -P "${CMAKE_CURRENT_SOURCE_DIR}/thread_assert.cmake")
   endforeach()
 endif()
+
+sel_isolate_config() # I989b

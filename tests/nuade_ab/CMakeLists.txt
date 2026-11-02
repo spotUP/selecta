@@ -25,3 +25,5 @@ add_test(NAME nuade-ab
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DAB=$<TARGET_FILE:nuade_ab>"
     "-DMOD=${SEL_TESTMOD}" "-DOUT=${SEL_RENDER_OUT}/nuade-ab.linear.wav"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/nuade_ab.cmake")
+
+sel_isolate_config() # I989b

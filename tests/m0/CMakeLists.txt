@@ -29,3 +29,5 @@ if(APPLE)
   set_tests_properties(no-alloc-render-queue PROPERTIES
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests/songs")
 endif()
+
+sel_isolate_config() # I989b

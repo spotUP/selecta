@@ -42,7 +42,7 @@ jobs:
       # dui-red: deliberate red rows of the unfinished desktop UI (dui-ratchet still counts them, it only lists with
       # `ctest -L dui -N`). m68k-gcc: rows that need the Amiga cross compiler, which host runners do not have.
       - name: Test
-        run: ctest --test-dir build/host -LE 'dui-red|m68k-gcc' --output-on-failure
+        run: ctest --test-dir build/host -LE 'dui-red|m68k-gcc|golden' --output-on-failure
 
   # Amiga 68020 cross build plus the vamos ctest rows. Image liv2/amiga-gcc
   # (bebbo m68k-amigaos-gcc 6.5.0b, amitools vamos, Ubuntu 24.04), pinned by

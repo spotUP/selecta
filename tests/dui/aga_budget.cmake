@@ -53,9 +53,9 @@ foreach(view IN LISTS views)
 endforeach()
 
 # Sentinel: artwork on screen runs the quantiser.
-find_program(SQLITE3 sqlite3)
+# SQLITE3: the in-tree shell (sel_sqlite3_shell, I989a-B), passed by tests/dui/CMakeLists.txt; no system sqlite3.
 if(NOT SQLITE3)
-  message(FATAL_ERROR "dui-aga-budget needs the sqlite3 command line tool to load the fixture library")
+  message(FATAL_ERROR "dui-aga-budget: -DSQLITE3=<sel_sqlite3_shell> missing")
 endif()
 set(db "${WORK}/library.db")
 dui_run(init --db "${db}" ${index8} --view home)

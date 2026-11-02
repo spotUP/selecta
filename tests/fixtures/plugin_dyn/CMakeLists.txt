@@ -33,3 +33,5 @@ add_test(NAME plugin-dyn-nm
 add_test(NAME plugin-dyn-reject
   COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DREJECT=${SEL_DYN_REJECT}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/reject.cmake")
+
+sel_isolate_config() # I989b

@@ -28,3 +28,5 @@ if(TARGET selecta)
       -P "${PROJECT_SOURCE_DIR}/tests/dui/sndh_open.cmake")
   set_tests_properties(sndh-open PROPERTIES LABELS sndh-open TIMEOUT 120)
 endif()
+
+sel_isolate_config() # I989b

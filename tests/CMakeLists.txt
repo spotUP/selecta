@@ -193,6 +193,7 @@ if(APPLE)
   set_tests_properties(coreaudio-play PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
 endif()
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/isolate_config.cmake")
 add_subdirectory(m0)
 add_subdirectory(nuade_ab)
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
@@ -2695,3 +2696,5 @@ add_subdirectory(dui)
 # I847a: the perf fixture generator and the bench command, run through selecta-cli at 5000 songs (the 600k run is manual, see the design doc section 4).
 add_test(NAME library-gen-bench COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DDIR=${CMAKE_CURRENT_BINARY_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/library_gen_bench.cmake")
 set_tests_properties(library-gen-bench PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_gen_bench_ok")
+
+sel_isolate_config()
