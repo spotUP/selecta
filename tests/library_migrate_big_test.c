@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
         remove(master);
         check(make_v12(host, master), "build the v12 file");
     }
-    /* The 576 KiB a500 tier still runs out of memory (I787a open item): 155 KB of its 340 KB heap part is used before the
+    /* The 640 KiB a500 tier still runs out of memory (I787a open item): 155 KB of its 340 KB heap part is used before the
      * migration starts. */
     migrate_on(host, master, "a1200-fpu"); /* 2 MiB tier */
     if (!keep) {

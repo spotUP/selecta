@@ -37,10 +37,10 @@ check() { # machine expected_heap
     [ "$(field "$line" heap_bytes)" = "$2" ] || { echo "[ERROR] $1: heap_bytes $(field "$line" heap_bytes) != $2"; fail=1; }
 }
 
-# Scaling table (src/library/db/db.c): fast + chip RAM <= 4 MiB 576 KiB (I687c),
+# Scaling table (src/library/db/db.c): fast + chip RAM <= 4 MiB 640 KiB (I848a),
 # <= 16 MiB 2 MiB, <= 128 MiB 8 MiB, above 32 MiB. a500 = 2 MiB chip.
-check a500 589824
-check a1200 589824
+check a500 655360
+check a1200 655360
 check a1200-fpu 2097152
 check a060 8388608
 mach=$("$cli" machine 2>/dev/null)

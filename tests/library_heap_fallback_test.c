@@ -44,7 +44,7 @@ int main(void) {
     const sel_tag* a060 = sel_machine_fake("a060"); /* 66 MB: the 8 MiB tier */
     sel_library* lib;
 
-    check(small_tier == 576u * 1024u, "a1200 tier is 576 KiB");
+    check(small_tier == 640u * 1024u, "a1200 tier is 640 KiB");
     g_host = *sel_host_default();
     g_host.mem_alloc = capped_alloc;
     g_host.mem_free = plain_free;
@@ -70,7 +70,7 @@ int main(void) {
         sel_library_close(lib);
     }
 
-    /* Below the 576 KiB floor: the open still fails cleanly. */
+    /* Below the 640 KiB floor: the open still fails cleanly. */
     g_cap = 256u * 1024u;
     lib = sel_library_open(&g_host, a060, 0, ":memory:");
     check(lib == NULL, "open fails below the floor");
@@ -88,7 +88,7 @@ int main(void) {
     if (lib != NULL) {
         sqlite3_int64 cur = 0, hi = 0;
 
-        check(sel_library_heap_size(lib) == 576u * 1024u, "small tier is 576 KiB");
+        check(sel_library_heap_size(lib) == 640u * 1024u, "small tier is 640 KiB");
         check(sqlite3_status64(SQLITE_STATUS_MALLOC_SIZE, &cur, &hi, 0) == SQLITE_OK, "malloc size status");
         check(hi > 0 && hi <= 32 * 1024, "small tier lookaside request fits a 32 KiB memsys5 block");
         sel_library_close(lib);

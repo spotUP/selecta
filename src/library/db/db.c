@@ -18,8 +18,10 @@ static uint32_t g_heap_allocs;
  * SCHEMA_V11 is one more page of the schema, and with it `library scan` into the 512 KiB heap ran out of memsys5 blocks
  * (SQLITE_NOMEM, peak 311040 of 327680 bytes of the heap part). The extra 32 KiB gives the heap part 20 KiB more. 
  * I790 (D-M3-2): the V14 indexes songs_source_format and songs_source_artist plus the source_new table pushed the :memory:
- * scan past 544 KiB again (SQLITE_NOMEM in sel_library_scan_batch, peak ~333 KB); another 32 KiB makes the tier 576 KiB. */
-#define HEAP_SMALL_BYTES (576u * 1024u)
+ * scan past 544 KiB again (SQLITE_NOMEM in sel_library_scan_batch, peak ~333 KB); another 32 KiB makes the tier 576 KiB.
+ * I848a (D-M3-2): the V16 partial indexes songs_md5 and songs_source_path (+ I838 item_formats) outgrew it again; 608 KiB
+ * still failed (memsys5 power-of-two blocks), so the tier is 640 KiB. */
+#define HEAP_SMALL_BYTES (640u * 1024u)
 
 /* Lookaside of the small tier: 32400 bytes, just under the 32 KiB memsys5 block (the default asks 48000 -> 64 KiB). */
 #define LOOKASIDE_SMALL_SLOT 1200
