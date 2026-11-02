@@ -380,6 +380,39 @@ int main(int argc, char** argv) {
         CHECK(sel_library_playlist_keys(lib, (uint32_t)plid, keys, sizeof keys, &nkeys) == 0 && nkeys == 1u);
         sel_library_watch(1);
     }
+    /* I906f2b: the Recents touch of COLLECTION_OPEN is a queued write. Sentinel: stats.lib_writes_done rises by one for it and lib_touch_calls
+     * moves in the done callback; neither moves while the call lock is held. The result is taken from the stats only: this thread runs no
+     * sqlite while the worker may be busy. */
+    {
+        sel_engine_stats t_before, t_after;
+        char line[200];
+
+        sel_engine_stats_get(e, &t_before);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"Touch Album\"", (unsigned)SEL_LIB_ITEM_ALBUM);
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        sel_engine_pump(e, sink, NULL);
+        pump_ms = ms_since(&t0);
+        CHECK(pump_ms < PUMP_BUDGET_MS);
+        sel_engine_stats_get(e, &t_after);
+        CHECK(t_after.lib_touch_calls == t_before.lib_touch_calls); /* nothing ran yet: the touch is queued behind the held lock */
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &t_after);
+            if (t_after.lib_touch_calls > t_before.lib_touch_calls) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f2b touch: pump %ld ms, lib_touch_calls +%u, lib_writes_done +%u\n", pump_ms,
+               (unsigned)(t_after.lib_touch_calls - t_before.lib_touch_calls), (unsigned)(t_after.lib_writes_done - t_before.lib_writes_done));
+        CHECK(t_after.lib_touch_calls == t_before.lib_touch_calls + 1u);
+        CHECK(t_after.lib_writes_done == t_before.lib_writes_done + 1u); /* the touch went through the write queue */
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);

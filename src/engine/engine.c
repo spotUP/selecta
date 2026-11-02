@@ -663,16 +663,6 @@ struct sel_engine {
     char* rdc_blk;
     uint32_t rdc_kind, rdc_next_kind, coll_serial;
     char rdc_key[128], rdc_next_key[128];
-    /* I925: the Recents touches of the opens, written by the read before it builds the page (the touch waits on the library worker,
-     * which a cold home list holds for seconds). rdc_next_touch collects the opens the pump takes while a read is in flight; coll_post
-     * hands them to rdc_touch when the slot is idle, so none is lost. rdc_touch[i].rc is the read's answer, reported by the pump. */
-    struct {
-        uint32_t kind;
-        int rc;
-        int64_t when;
-        char key[128];
-    } rdc_touch[8], rdc_next_touch[8];
-    uint32_t rdc_touch_n, rdc_next_touch_n;
     int rdc_page, rdc_next_page;              /* the read builds a page (0: a playlist open, the read only touches) */
     /* I906d: the Now Playing panel of a newly opened song is read on rd_panel (design 2026-11-01-ui-thread-library-waits.md section 4). The
      * thread fills rdp_buf / rdp_rows for rdp_path; the pump publishes them when rdp_state is still the open song's state. */
@@ -6684,7 +6674,6 @@ static void coll_build_run(sel_engine* e) {
     sel_engine_collection_row head;
     coll_shelf_sink hk;
 
-    for (sh = 0; sh < e->rdc_touch_n; sh++) e->rdc_touch[sh].rc = sel_library_touch(e->lib, e->rdc_touch[sh].kind, e->rdc_touch[sh].key, e->rdc_touch[sh].when);
     if (!e->rdc_page) return;
     memset(&b, 0, sizeof b);
     b.rows.host = e->host;
@@ -6742,14 +6731,6 @@ static void coll_build_run(sel_engine* e) {
 
 /* The pump takes the finished page: it becomes state.collection with the next serial. */
 static void coll_publish(sel_engine* e) {
-    uint32_t i;
-    int failed = SEL_FOLDER_OK;
-    for (i = 0; i < e->rdc_touch_n; i++) {
-        if (e->rdc_touch[i].rc == SEL_FOLDER_OK) e->lib_touch_calls++;
-        else if (failed == SEL_FOLDER_OK) failed = e->rdc_touch[i].rc;
-    }
-    e->rdc_touch_n = 0u;
-    if (failed != SEL_FOLDER_OK) folder_report(e, failed, "COLLECTION_OPEN");
     if (!e->rdc_page) return;
     e->coll = e->rdc_pg;
     e->coll.serial = ++e->coll_serial;
@@ -6763,9 +6744,6 @@ static void coll_post(sel_engine* e) {
     if (lib_read_idle(&e->rd_coll)) {
         e->rdc_kind = e->rdc_next_kind;
         snprintf(e->rdc_key, sizeof e->rdc_key, "%s", e->rdc_next_key);
-        memcpy(e->rdc_touch, e->rdc_next_touch, sizeof e->rdc_touch);
-        e->rdc_touch_n = e->rdc_next_touch_n;
-        e->rdc_next_touch_n = 0u;
         e->rdc_page = e->rdc_next_page;
         e->rdc_next_page = 0;
     }
@@ -6780,13 +6758,19 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
     int restore = m->argc > 2 && m->args[2].v.u != 0u; /* I678h2: Back / Forward rebuild the page they return to; that is not an open, Recents stays as it is */
     if (!restore && kind != (uint32_t)SEL_LIB_ITEM_LIKED && kind != (uint32_t)SEL_LIB_ITEM_RECENT && kind != (uint32_t)SEL_LIB_ITEM_LOCAL) { /* the pinned rows stay out of Recents */
-        uint32_t t = e->rdc_next_touch_n < 8u ? e->rdc_next_touch_n++ : 7u; /* a full list keeps the newest open in the last row */
-        char* us; /* a source key carries its drill path after the id (I790); Recents keeps the source */
-        e->rdc_next_touch[t].kind = kind;
-        e->rdc_next_touch[t].when = (int64_t)time(NULL);
-        snprintf(e->rdc_next_touch[t].key, sizeof e->rdc_next_touch[t].key, "%s", m->args[1].v.s);
-        us = kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? strpbrk(e->rdc_next_touch[t].key, "\x1f\x1e") : NULL;
-        if (us != NULL) *us = '\0';
+        /* I906f2b: the Recents touch is a queued write; a source key carries its drill path after the id (I790) and Recents keeps the source */
+        sel_wq_op* op = wq_new(e, wq_touch_run, wq_touch_done, m->args[1].v.s, NULL, NULL);
+
+        if (op == NULL) {
+            sel_engine_report_error(e, "library_busy", "COLLECTION_OPEN");
+        } else {
+            char* us = kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? strpbrk(op->s[0], "\x1f\x1e") : NULL;
+
+            if (us != NULL) *us = '\0';
+            op->u1 = kind;
+            op->n1 = (int64_t)time(NULL);
+            wq_submit(e);
+        }
     }
     if (!restore) e->collection_opens++;
     e->collection_kind = kind;
@@ -6796,7 +6780,7 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
         snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
         e->rdc_next_page = 1;
     }
-    if (e->rdc_next_page || e->rdc_next_touch_n > 0u) coll_post(e);
+    if (e->rdc_next_page) coll_post(e);
 }
 
 static void wq_playlist_del_run(sel_library* lib, sel_wq_op* op) {
@@ -9164,12 +9148,6 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_composers);
         lib_read_end(&e->rd_stats);
         lib_read_end(&e->rd_coll);
-        /* I935: opens taken while the collection read was in flight wait in rdc_next_touch for the next post; at quit there is no next
-         * post, so their Recents touches are written here (the library closes after the engine). */
-        for (i = 0; e->lib != NULL && i < e->rdc_next_touch_n; i++) {
-            (void)sel_library_touch(e->lib, e->rdc_next_touch[i].kind, e->rdc_next_touch[i].key, e->rdc_next_touch[i].when);
-        }
-        e->rdc_next_touch_n = 0u;
         lib_read_end(&e->rd_panel);
         lib_read_end(&e->rd_play);
         lib_read_end(&e->rd_vote);
