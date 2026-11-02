@@ -5148,19 +5148,34 @@ static int64_t sync_time_get(sel_engine* e, const char* id) {
     return e->lib != NULL ? sel_library_source_synced(e->lib, id) : 0;
 }
 
-static void sync_time_set(sel_engine* e, const char* id, int64_t when) {
-    char key[64], text[24];
-    sel_meta_op op;
+/* I906f2e: the sync time is a queued write (sync_collect runs it on the pump, which waited on the library call lock). `run` is the meta
+ * set on the worker; a full queue reports library_busy. */
+static void wq_sync_time_run(sel_library* lib, sel_wq_op* op) {
+    char text[24];
+    sel_meta_op mop;
     sel_message reply;
 
-    snprintf(key, sizeof key, "sync.%s", id);
-    snprintf(text, sizeof text, "%lld", (long long)when);
-    op.key = key;
-    op.value = text;
-    op.cap = sizeof text;
-    op.set = 1;
+    snprintf(text, sizeof text, "%lld", (long long)op->n1);
+    mop.key = op->s[0];
+    mop.value = text;
+    mop.cap = sizeof text;
+    mop.set = 1;
     memset(&reply, 0, sizeof reply);
-    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
+    op->rc = sel_library_request(lib, SEL_LIB_REQ_META, &mop, &reply);
+}
+
+static void sync_time_set(sel_engine* e, const char* id, int64_t when) {
+    char key[64];
+    sel_wq_op* op;
+
+    snprintf(key, sizeof key, "sync.%s", id);
+    op = wq_new(e, wq_sync_time_run, NULL, key, NULL, NULL);
+    if (op != NULL) {
+        op->n1 = when;
+        wq_submit(e);
+    } else {
+        sel_engine_report_error(e, "library_busy", id);
+    }
 }
 
 /* SOURCES: one LIBRARY_RESULT per registered source for the Library page's Sources tab (DUI-P4-3): SRC_KEY id,
