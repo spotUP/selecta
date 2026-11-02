@@ -51,3 +51,11 @@ add_library(selecta_shared_upnp STATIC upnp/upnp.c ${SEL_UPNP_SOCK})
 target_include_directories(selecta_shared_upnp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(selecta_shared_upnp PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library" "${PROJECT_SOURCE_DIR}/src/core/amiga")
 target_link_libraries(selecta_shared_upnp PUBLIC selecta_shared_source)
+
+# I892e1: Chromecast CASTV2. cast.c (framing, protobuf, status JSON) is pure and builds everywhere; cast_session.c rides the
+# socket table (src/library/net/net.h) and tls.h, so the user links selecta_library as well. On the Amiga the TLS half
+# answers SEL_CAST_E_TLS until I899 (sel_tls_open_insecure is the SEL_NO_TLS stub there).
+add_library(selecta_shared_cast STATIC cast/cast.c cast/cast_session.c)
+target_include_directories(selecta_shared_cast PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(selecta_shared_cast PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
+target_link_libraries(selecta_shared_cast PUBLIC selecta_shared_source)

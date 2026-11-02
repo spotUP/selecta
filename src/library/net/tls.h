@@ -23,6 +23,10 @@ enum {
 
 /* Handshake on the open socket handle h, verifying host, within timeout_ms. */
 int sel_tls_open(int h, const char* host, unsigned timeout_ms);
+/* Same handshake without chain or host name verification, for devices with a self-signed certificate that the user
+ * picked on the local network (Chromecast, I892e1). Never used for a URL the user typed. On the Amiga stub it answers
+ * SEL_TLS_E_UNAVAILABLE like sel_tls_open. */
+int sel_tls_open_insecure(int h, const char* host, unsigned timeout_ms);
 /* Completed handshakes since start (the tls_handshakes counter). */
 unsigned sel_tls_handshakes(void);
 
