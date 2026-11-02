@@ -27,10 +27,28 @@ int main(void) {
     CHECK(sel_stack_canary_ok(stack));
     CHECK(sel_stack_untouched(stack, STACK) == STACK - 1000u);
 
-    /* One byte overwritten at the very bottom, and at the top edge of the canary: broken. */
-    stack[0] ^= 0xFFu;
+    /* I974: exec 40.10 StackSwap writes 0xBAD1BAD3 at stk_Lower of the stack it leaves, i.e. low[0..3] on the
+     * swap back. That longword is exec's: canary intact, high-water mark unchanged. */
+    stack[0] = 0xBAu;
+    stack[1] = 0xD1u;
+    stack[2] = 0xBAu;
+    stack[3] = 0xD3u;
+    CHECK(sel_stack_canary_ok(stack));
+    CHECK(sel_stack_untouched(stack, STACK) == STACK - 1000u);
+
+    /* The first canary byte above exec's longword broken: canary broken, but the fill above it survives, so the
+     * high-water mark still measures the use (no "used N of N"). */
+    stack[SEL_STACK_EXEC_COOKIE] ^= 0xFFu;
+    CHECK(!sel_stack_canary_ok(stack));
+    CHECK(sel_stack_untouched(stack, STACK) == STACK - 1000u);
+
+    /* The stack ran down through all the fill into the canary: a real overflow, nothing untouched. */
+    memset(stack + SEL_STACK_CANARY, 0x11, STACK - SEL_STACK_CANARY);
+    stack[SEL_STACK_CANARY - 1u] = 0u;
     CHECK(!sel_stack_canary_ok(stack));
     CHECK(sel_stack_untouched(stack, STACK) == 0u);
+
+    /* The top edge of the canary alone: broken. */
     sel_stack_canary_fill(stack, STACK);
     stack[SEL_STACK_CANARY - 1u] = 0u;
     CHECK(!sel_stack_canary_ok(stack));
