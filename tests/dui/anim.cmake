@@ -15,12 +15,12 @@ file(WRITE "${WORK}/idle.txt" "wait 10000\n")
 dui_run(idle --ui desktop --backend mem --stats --clock fixed --input "${WORK}/idle.txt")
 dui_stat(idle_frames "${idle}" desktop frames)
 # I594: the start enters Home through the page door, so the first frame is followed by one frame when the Home view
-# arrives. Idle time itself must add nothing: a 10 s wait draws as many frames as a 100 ms wait.
+# arrives; I787/I910: the sidebar list read is posted to the library worker and its answer repaints once more (3 frames). Idle time itself must add nothing: a 10 s wait draws as many frames as a 100 ms wait.
 file(WRITE "${WORK}/idle_short.txt" "wait 100\n")
 dui_run(idle_short --ui desktop --backend mem --stats --clock fixed --input "${WORK}/idle_short.txt")
 dui_stat(idle_short_frames "${idle_short}" desktop frames)
-if(NOT idle_frames EQUAL idle_short_frames OR idle_frames GREATER 2)
-  message(FATAL_ERROR "an idle run with no input and no song must draw the first frame plus the start-page frame only, and idle time must add none (10 s drew ${idle_frames}, 100 ms drew ${idle_short_frames})")
+if(NOT idle_frames EQUAL idle_short_frames OR idle_frames GREATER 3)
+  message(FATAL_ERROR "an idle run with no input and no song must draw the first frame, the start-page frame and the frame of the posted sidebar read answer only, and idle time must add none (10 s drew ${idle_frames}, 100 ms drew ${idle_short_frames})")
 endif()
 
 file(STRINGS "${HERE}/fixture_library.sql" album_lines REGEX "^INSERT INTO albums")
