@@ -14078,6 +14078,8 @@ static void desk_replay_resizes(desk* d) {
             printf("region name=%s x=%d y=%d w=%u h=%u\n", r->name, (int)r->x, (int)r->y, (unsigned)r->w,
                    (unsigned)r->h);
         }
+        printf("layout-topbar x=%d y=%d w=%u h=%u\n", (int)d->layout.topbar.x, (int)d->layout.topbar.y, (unsigned)d->layout.topbar.w,
+               (unsigned)d->layout.topbar.h); /* I972b */
         for (i = 0; i < TRANSPORT_COUNT; i++) {
             sel_gui_rect b = desk_button_rect(d, i);
             if (desk_slot_action(d, i) != NULL) {

@@ -95,15 +95,15 @@ static void topbar_set(sel_uim_region* r, const char* name, int32_t x, int32_t y
     r->min_h = 0;
 }
 
-static void topbar_compute(sel_uim_layout* l, uint32_t width, uint32_t tb_h) {
+static void topbar_compute(sel_uim_layout* l, uint32_t x_off, uint32_t width, uint32_t tb_h) {
     uint32_t btn = SEL_UIM_TOPBAR_BUTTON, gap = 8u, gutter = 16u;
     uint32_t fw = width > 2u * gutter + btn + gap ? width - 2u * gutter - btn - gap : 0u;
     uint32_t gw, x0;
     int32_t y = (int32_t)((tb_h - btn) / 2u);
     fw = fw > SEL_UIM_TOPBAR_FIELD_MAX ? SEL_UIM_TOPBAR_FIELD_MAX : fw;
     gw = btn + gap + fw;
-    x0 = (width - gw) / 2u;
-    topbar_set(&l->topbar, "topbar", 0, 0, width, tb_h);
+    x0 = x_off + (width - gw) / 2u;
+    topbar_set(&l->topbar, "topbar", (int32_t)x_off, 0, width, tb_h);
     topbar_set(&l->topbar_home, "topbar-home", (int32_t)x0, y, btn, btn);
     topbar_set(&l->topbar_field, "topbar-field", (int32_t)(x0 + btn + gap), y, fw, btn);
     topbar_set(&l->topbar_browse, "topbar-browse", (int32_t)(x0 + btn + gap + fw - btn), y, btn, btn);
@@ -160,13 +160,13 @@ void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t he
     }
     main_w = width - side - detail;
     if (tb_h > 0u) {
-        topbar_compute(l, width, tb_h);
+        topbar_compute(l, side, width - side, tb_h); /* I972b: the bar spans the main and detail columns, the sidebar runs from the window top */
     }
     if (top > 0u) {
         add(l, "suggestion", width, 0, 0, 0, width, top);
     }
     if (side > 0u) {
-        add(l, "sidebar", side, MAIN_MIN_H, 0, (int32_t)tb_h, side, body_h);
+        add(l, "sidebar", side, MAIN_MIN_H, 0, 0, side, tb_h + body_h);
     }
     add(l, "main", MAIN_MIN_W, MAIN_MIN_H, (int32_t)side, (int32_t)(tb_h + top), main_w, body_h - top);
     if (detail > 0u) {
@@ -195,6 +195,9 @@ void sel_uim_layout_set_side_width(sel_uim_layout* l, uint32_t side) {
     sb->min_w = side < sb->min_w ? side : sb->min_w;
     mn->x = (int32_t)side;
     mn->w = mn->w + old - side;
+    if (l->topbar.h > 0u) { /* I972b: the top bar starts at the sidebar's right edge */
+        topbar_compute(l, side, l->width - side, l->topbar.h);
+    }
 }
 
 /* 0 when every region lies inside the canvas, meets its minimum size and overlaps no other region. */
