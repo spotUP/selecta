@@ -565,6 +565,7 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
 }
 
 void sel_library_search(sel_library* lib, sel_lib_job* job) {
+    sel_library_test_slow("SELECTA_LIB_SEARCH_SLOW_MS"); /* I906g test knob: a search on a busy worker */
     char sql_idx[SEL_QUERY_SQL_MAX + 64]; /* the compiled query over the attached index */
     char match[SEL_QUERY_TEXT_MAX * 2];
     static const char CHECK[] = " AND sel_fts_prefix(:pfx, songs.name, songs.artist, songs.format, songs.path)";

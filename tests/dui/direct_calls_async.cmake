@@ -379,6 +379,17 @@ if(s7_queue LESS 1)
 endif()
 message(STATUS "site7_ok wait_ms=${s7_turn} queue=${s7_queue}")
 
+# --- I906g run_search callers: QUEUE_ADD_QUERY and PLAY_QUERY post the search on the write queue and act in its done callback. SEARCH_SLOW_MS
+# makes the search a 300 ms statement (smart downloads are off: smart_sync runs its own search on the UI thread when a song starts, a separate open site); the queue holds the result songs (sentinel: the done callback ran), the UI thread never waited.
+foreach(qcmd QUEUE_ADD_QUERY PLAY_QUERY)
+  sites_live(s8 "q@4000" SOCK s8${qcmd} KNOBS SELECTA_LIB_SEARCH_SLOW_MS ARGS --output null --db "${sites_db}" --view queue --exec "PREF_SET library.smart_downloads off" --exec "${qcmd} \"selecta\"")
+  sites_field(s8_queue "${s8}" overlay queue)
+  if(s8_queue LESS 1)
+    message(FATAL_ERROR "site 8 ${qcmd}: the queue is empty, the posted search never delivered:\n${s8}")
+  endif()
+  message(STATUS "site8_${qcmd}_ok wait_ms=${s8_turn} queue=${s8_queue}")
+endforeach()
+
 # --- I951: the remaining library writes (stream add, playlist import, touch, playlist delete, library remove, library clear) ride the
 # write queue like PLAYLIST_CREATE. WRITE_SLOW_MS makes each a 300 ms statement; sites_live fails the run when the command runs it on the UI
 # thread (lib_ui_wait_ms >= 50), and lib_writes_done proves the queued write really ran. Destructive verbs use their own copy of the db.

@@ -4168,7 +4168,6 @@ enum { RS_QUEUE_ADD, RS_PLAY, RS_VIEW };
 
 typedef struct run_search_res {
     sel_lib_job job;
-    uint32_t used_text; /* bytes of the key list the job filled */
 } run_search_res;
 
 static void wq_search_run(sel_library* lib, sel_wq_op* op) {
@@ -8979,8 +8978,6 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         if (r->album) {
             /* worst case: two quoted terms with every byte escaped, plus album:"" artist:"" and the NUL */
             char text[(SEL_QUERY_TEXT_MAX - 1) * 2 + 20];
-            sel_message q;
-            uint32_t fts = 0;
             size_t o = 0;
             const char* k;
             /* I473: the album identity is name and artist, the art_ref "<album>\x1f<artist>" the row carries (I471). A row without an
