@@ -48,6 +48,17 @@ static long ms_since(const struct timespec* t0) {
     return (long)((t1.tv_sec - t0->tv_sec) * 1000L + (t1.tv_nsec - t0->tv_nsec) / 1000000L);
 }
 
+/* I984: SQLite is built SQLITE_THREADSAFE=0, so lib->db is safe only under call_lock, which every library caller holds while the worker
+ * runs its request. The test's own direct statements on lib->db take it too: without it a posted read (lib_read_post, e.g. the folder
+ * counts after a sync) runs on the worker at the same time, corrupts the connection's lookaside, and the next statement segfaults. */
+static void db_enter(sel_library* lib) {
+    pthread_mutex_lock(&lib->call_lock);
+}
+
+static void db_leave(sel_library* lib) {
+    pthread_mutex_unlock(&lib->call_lock);
+}
+
 /* Plays the sync job: owns the library call lock for HOLD_MS, then lets go. */
 static void* holder(void* arg) {
     sel_library* lib = arg;
@@ -231,6 +242,7 @@ int main(int argc, char** argv) {
     cfg.registry_get = reg_get;
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
+    db_enter(lib);
     CHECK(sqlite3_exec(lib->db,
                        "INSERT INTO songs(key, source, path, name, artist, album, format, added) VALUES"
                        "('local:a.mod','local','a.mod','a','Ann','Alb1','mod',100),('local:b.mod','local','b.mod','b','Ann','Alb1','mod',200),"
@@ -242,6 +254,7 @@ int main(int argc, char** argv) {
         snprintf(sql, sizeof sql, "INSERT INTO songs(key, source, path, name, artist, format, added) VALUES('local:%s/level.lvl','local','%s/level.lvl','lvl','Ann','lvl',400);", dir, dir);
         CHECK(sqlite3_exec(lib->db, sql, NULL, NULL, NULL) == SQLITE_OK);
     }
+    db_leave(lib);
     sel_engine_stats_get(e, &s0);
 
     pthread_create(&th, NULL, holder, lib);
@@ -665,6 +678,7 @@ int main(int argc, char** argv) {
                (unsigned)(s_after.lib_writes_done - s_before.lib_writes_done));
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done + 1u); /* the save went through the write queue */
         sel_library_watch(0);
+        db_enter(lib);
         if (sqlite3_prepare_v2(lib->db, "SELECT query FROM views WHERE name = 'i906f2dview'", -1, &st, NULL) == SQLITE_OK) {
             if (sqlite3_step(st) == SQLITE_ROW) {
                 found = 1;
@@ -672,6 +686,7 @@ int main(int argc, char** argv) {
             }
             sqlite3_finalize(st);
         }
+        db_leave(lib);
         sel_library_watch(1);
         CHECK(found && strcmp(qtext, "format:xm") == 0);
     }
@@ -720,10 +735,12 @@ int main(int argc, char** argv) {
         printf("i906f2e after release: lib_writes_done +%u\n", (unsigned)(s_after.lib_writes_done - s_before.lib_writes_done));
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done + 1u);
         sel_library_watch(0);
+        db_enter(lib);
         if (sqlite3_prepare_v2(lib->db, "SELECT value FROM meta WHERE key = 'sync.i906f2esrc'", -1, &st, NULL) == SQLITE_OK) {
             if (sqlite3_step(st) == SQLITE_ROW) stored = sqlite3_column_int64(st, 0);
             sqlite3_finalize(st);
         }
+        db_leave(lib);
         sel_library_watch(1);
         CHECK(stored == 1234567);
     }
@@ -772,10 +789,12 @@ int main(int argc, char** argv) {
         printf("i906f2f after release: lib_writes_done +%u\n", (unsigned)(s_after.lib_writes_done - s_before.lib_writes_done));
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done + 2u);
         sel_library_watch(0);
+        db_enter(lib);
         if (sqlite3_prepare_v2(lib->db, "SELECT value FROM meta WHERE key = '" SEL_MODLAND_META_NEW "'", -1, &st, NULL) == SQLITE_OK) {
             if (sqlite3_step(st) == SQLITE_ROW) stored = sqlite3_column_int64(st, 0);
             sqlite3_finalize(st);
         }
+        db_leave(lib);
         sel_library_watch(1);
         CHECK(stored == 77);
     }
