@@ -21,15 +21,28 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build
       - name: Install ninja (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: brew install ninja sdl3
+      # dui-build-deps configures with SELECTA_UI_DESKTOP=ON, which needs SDL3 (find_package CONFIG, 3.2 or newer).
+      # Ubuntu LTS runners have no libsdl3-dev package, so build the release tag once and point CMake at it.
+      - name: Install SDL3 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          git clone --depth 1 --branch release-3.4.8 https://github.com/libsdl-org/SDL "$RUNNER_TEMP/sdl-src"
+          cmake -S "$RUNNER_TEMP/sdl-src" -B "$RUNNER_TEMP/sdl-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX="$HOME/sdl3"
+          cmake --build "$RUNNER_TEMP/sdl-build"
+          cmake --install "$RUNNER_TEMP/sdl-build"
+          echo "CMAKE_PREFIX_PATH=$HOME/sdl3" >> "$GITHUB_ENV"
       - name: Configure
         run: cmake -S . -B build/host -G Ninja
       - name: Build
         run: cmake --build build/host
       - name: Lint
         run: cmake --build build/host --target lint
+      # dui-red: deliberate red rows of the unfinished desktop UI (dui-ratchet still counts them, it only lists with
+      # `ctest -L dui -N`). m68k-gcc: rows that need the Amiga cross compiler, which host runners do not have.
       - name: Test
-        run: ctest --test-dir build/host --output-on-failure
+        run: ctest --test-dir build/host -LE 'dui-red|m68k-gcc' --output-on-failure
 
   # Amiga 68020 cross build plus the vamos ctest rows. Image liv2/amiga-gcc
   # (bebbo m68k-amigaos-gcc 6.5.0b, amitools vamos, Ubuntu 24.04), pinned by
