@@ -9698,7 +9698,7 @@ const sel_host* sel_engine_plugin_host(const sel_engine* e) {
 }
 
 void sel_ui_wait_note(const char* what) {
-#if !defined(NDEBUG) && !defined(SEL_LIBRARY_NO_THREAD)
+#if defined(SEL_LIBRARY_UI_GUARD)
     sel_library_ui_wait_check(what, 0xFFFFFFFFu);
 #else
     (void)what;

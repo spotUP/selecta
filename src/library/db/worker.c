@@ -100,7 +100,7 @@ uint32_t sel_library_ui_guard_hits(void) {
     return SEL_COUNT_GET(&g_guard_hits);
 }
 
-#if !defined(NDEBUG)
+#if defined(SEL_LIBRARY_UI_GUARD)
 /* I906a (design 2026-11-01-ui-thread-library-waits.md section 3): debug builds say where the UI thread waits on the library.
  * `what` names the wait ("req", "art_join"). SELECTA_LIB_UI_GUARD=log (default) prints and counts, =abort also aborts. */
 void sel_library_ui_wait_check(const char* what, uint32_t id) {
