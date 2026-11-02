@@ -398,6 +398,7 @@ struct sel_engine {
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
     uint32_t songs_runs, songs_done, songs_stale, songs_skipped; /* SONGS_* sentinel, songs handled by the last verb, stale refusals (I632b) */
     uint32_t context_plays, context_rows;      /* PLAY_CONTEXT sentinel (I994a) */
+    uint32_t songs_collection_opens, songs_hits_opens; /* I994b sentinels: songs_open bound list=collection / list=hits */
     char ctx_name[SEL_CTX_NAME_MAX];           /* PLAY_CONTEXT label, "" none */
     char* songs_ranges;                        /* SONGS_RANGES staging: ranges text for the next SONGS_* verb, heap, NULL none */
     size_t songs_ranges_len;
@@ -572,6 +573,7 @@ struct sel_engine {
     } sync_next[SEL_SYNC_QUEUE];
     uint32_t sync_next_n;
     uint32_t search_n;
+    uint32_t search_serial;                  /* I994b: the hit list's version; bumped when a search starts (the list empties) and when its hits are collected */
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
@@ -7377,6 +7379,7 @@ static void search_start(sel_engine* e, const char* source, const char* query) {
     snprintf(e->search_source, sizeof e->search_source, "%s", source);
     snprintf(e->search_query, sizeof e->search_query, "%s", query);
     e->search_n = 0;
+    e->search_serial++;
     e->search_rc = -1;
     memset(&e->search_ctx, 0, sizeof e->search_ctx);
     e->search_ctx.scfg.host = e->host;
@@ -7422,6 +7425,7 @@ static void search_collect(sel_engine* e) {
         return;
     }
     e->search_running = 0;
+    e->search_serial++;
     if (e->search_rc < 0) {
         sel_engine_report_error(e, sel_source_find(e->search_source) == NULL ? "unknown_source" : "search_failed",
                                 e->search_source);
@@ -8597,7 +8601,7 @@ int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap)
  * SONGS_RANGES stages chunks that the next SONGS_* verb prepends to its own. The count of songs handled is the sentinel
  * songs_runs / songs_done in the engine stats, the same way PLAYLIST_IMPORT reports (import_added). */
 
-enum { SONGS_QUEUE, SONGS_VIEW, SONGS_PLAYLIST };
+enum { SONGS_QUEUE, SONGS_VIEW, SONGS_PLAYLIST, SONGS_COLLECTION, SONGS_HITS };
 
 typedef struct songs_sel {
     int kind;
@@ -8702,6 +8706,55 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
         }
         for (i = 0, k = s->keys; i < n; i++, k += strlen(k) + 1u) s->key_at[i] = k;
         s->count = n;
+    } else if (strcmp(list, "collection") == 0 || strcmp(list, "hits") == 0) {
+        /* I994b: the open collection page (version = its serial) or the source-search hit list (version = search_serial). Both are
+         * flat lists of song keys: key_at points into the page rows / hit table, a row that names no song is a NULL entry. */
+        uint32_t i, stride = 2u;
+        const char* r;
+        if (list[0] == 'c') {
+            const sel_collection_page* pg = &e->coll;
+            s->kind = SONGS_COLLECTION;
+            have = pg->serial;
+            if (pg->serial == 0u || pg->rows == NULL) {
+                sel_engine_report_error(e, "bad_list", verb);
+                songs_unstage(e);
+                return 0;
+            }
+            stride = pg->drill == (uint32_t)SEL_DRILL_PAGE_GROUPS || pg->drill == (uint32_t)SEL_DRILL_PAGE_ROOT ? 3u : 2u;
+            s->count = pg->songs;
+            s->key_at = (const char**)calloc((size_t)s->count + 1u, sizeof *s->key_at);
+            if (s->key_at == NULL) {
+                sel_engine_report_error(e, "no_memory", verb);
+                songs_sel_free(s);
+                songs_unstage(e);
+                return 0;
+            }
+            for (i = 0, r = pg->rows; i < s->count; i++) {
+                uint32_t c;
+                if (stride == 2u) s->key_at[i] = r; /* a drill group page lists groups, not songs: those rows stay NULL */
+                for (c = 0; c < stride; c++) r += strlen(r) + 1u;
+            }
+            e->songs_collection_opens++;
+        } else {
+            s->kind = SONGS_HITS;
+            have = e->search_serial;
+            if (e->search_running) { /* the worker is filling the table: the list the UI saw is gone */
+                e->songs_stale++;
+                sel_engine_report_error(e, "stale", verb);
+                songs_unstage(e);
+                return 0;
+            }
+            s->count = e->search_n;
+            s->key_at = (const char**)calloc((size_t)s->count + 1u, sizeof *s->key_at);
+            if (s->key_at == NULL) {
+                sel_engine_report_error(e, "no_memory", verb);
+                songs_sel_free(s);
+                songs_unstage(e);
+                return 0;
+            }
+            for (i = 0; i < s->count; i++) s->key_at[i] = e->search_hit[i].key;
+            e->songs_hits_opens++;
+        }
     } else {
         sel_engine_report_error(e, "bad_list", verb);
         songs_unstage(e);
@@ -8783,7 +8836,7 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
 static int songs_row_path(sel_engine* e, const songs_sel* s, uint32_t i, char* out, size_t cap) {
     const char* path = NULL;
     uint32_t at = s->idx[i];
-    if (s->kind == SONGS_PLAYLIST) {
+    if (s->kind == SONGS_PLAYLIST || s->kind == SONGS_COLLECTION || s->kind == SONGS_HITS) {
         path = s->key_at[at];
     } else if (s->kind == SONGS_QUEUE) {
         path = row_is_divider(&e->queue, at) ? NULL : sel_queue_path(&e->queue, at);
@@ -9800,6 +9853,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.panel_rows = e->panel_rows;
     e->state.panel_serial = e->panel_loads;
     e->state.library_serial = e->library_changes;
+    e->state.search_serial = e->search_serial;
     if (e->lib != NULL && e->songs_counted_at != e->library_changes + 1u && lib_read_idle(&e->rd_total)) {
         e->rdt_at = e->library_changes + 1u; /* I936: posted; the old count stays until the read lands */
         lib_read_post(e, &e->rd_total, total_run);
@@ -10195,6 +10249,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_done = e->songs_done;
     out->songs_stale = e->songs_stale;
     out->context_plays = e->context_plays;
+    out->songs_collection_opens = e->songs_collection_opens;
+    out->songs_hits_opens = e->songs_hits_opens;
     out->context_rows = e->context_rows;
     out->songs_skipped = e->songs_skipped;
     out->import_missing = e->import_missing;
