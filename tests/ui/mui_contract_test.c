@@ -1986,7 +1986,7 @@ static void test_icon_buttons(void) {
           "mui_ui.c builds the icon image outside the AAButton class");
     CHECK(strstr(src, "mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
               strstr(src, "mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
-              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(") != NULL && strstr(src, "mui_make_button_icon(mui_extra_label(i), mui_extra_action(i),") != NULL,
+              strstr(src, "mui_make_button_fixed(s->btn_label[i], mui_transport_action(i, &zero)") != NULL,
           "a button call site passes no icon key");
     test_aabtn_wired(src);
 }
@@ -2353,12 +2353,12 @@ static void test_volume_row(void) {
     if (grp == NULL || end == NULL) {
         return;
     }
-    seek = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->seek)");
+    seek = strstr(grp, "DoMethod(bar, OM_ADDMEMBER, s->seek)");
     len = strstr(grp, "MUI_ATTR_LENGTH");
-    vol = strstr(grp, "DoMethod(row4, OM_ADDMEMBER, s->vol)");
-    CHECK(seek != NULL && seek < end, "seek slider is not in the seek row");
-    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not in the right column");
-    CHECK(strstr(grp, "DoMethod(row1, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is in the button row");
+    vol = strstr(grp, "DoMethod(bar, OM_ADDMEMBER, s->vol)");
+    CHECK(seek != NULL && seek < end, "seek slider is not in the bar row");
+    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not at the right end of the bar, after the length");
+    CHECK(strstr(grp, "DoMethod(tr, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is in the transport group");
     CHECK(strstr(grp, "CTL_VOLUME, MUI_VOLUME_FIX_W)") != NULL, "volume slider has no fixed width");
 }
 
@@ -2378,7 +2378,7 @@ static int bar_send(void* ctx, const char* line) {
 
 static void test_player_bar(void) {
     static const uint32_t mac[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
-    char *src = ui_source(), *grp, *end, *ord, *tool, *tend;
+    char *src = ui_source(), *grp, *end, *ord, *tool, *tend, saved;
     sel_uim_frame f;
     uint32_t k, base = mui_action_fires();
     memset(&f, 0, sizeof f);
@@ -2403,20 +2403,47 @@ static void test_player_bar(void) {
     if (grp == NULL || end == NULL) {
         return;
     }
+    saved = *end;
+    *end = 0; /* the group checks below see the function body only */
     ord = strstr(grp, "mui_player_transport_at(k)");
-    CHECK(ord != NULL && ord < end, "the transport row is not built in the Mac order of the map layer");
+    CHECK(ord != NULL, "the transport row is not built in the Mac order of the map layer");
     CHECK(strstr(grp, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL, "no art frame in the player bar");
-    CHECK(strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_LEFT") != NULL && strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_CENTRE") != NULL &&
-              strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_RIGHT") != NULL,
-          "the three columns do not take the map-layer weights");
-    CHECK(strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colL)") != NULL && strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colC)") != NULL &&
-              strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colR)") != NULL && strstr(grp, "DoMethod(g, OM_ADDMEMBER, hbar)") != NULL,
-          "the bar is not one HGroup of three columns");
-    CHECK(strstr(grp, "CTL_P4_BASE + P4_LIKE") != NULL && strstr(grp, "DoMethod(row3, OM_ADDMEMBER, like)") != NULL, "Like is not beside the title");
+    CHECK(strstr(grp, "MUIA_HorizWeight") == NULL && strstr(grp, "colL") == NULL && strstr(grp, "colC") == NULL && strstr(grp, "colR") == NULL,
+          "the bar is still three weighted columns");
+    CHECK(strstr(grp, "MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)band.gap") != NULL && strstr(grp, "DoMethod(g, OM_ADDMEMBER, bar)") != NULL &&
+              strstr(grp, "MUIA_FixHeight, (ULONG)band.height") != NULL,
+          "the bar is not one fixed-height row on the band gap");
+    CHECK(strstr(grp, "mui_make_button_fixed(") != NULL && strstr(grp, "(int)band.btn_w, (int)band.btn_px") != NULL && strstr(grp, "k < band.n_transport") != NULL,
+          "the transport buttons are not square icons of the band size, n_transport of them");
+    CHECK(strstr(grp, "MUI_ATTR_REMAINING") == NULL && strstr(grp, "MUI_ATTR_FORMAT") == NULL && strstr(grp, "MUI_ATTR_STATUS") == NULL &&
+              strstr(grp, "mui_p8_extras_row") == NULL && strstr(grp, "P4_LIKE") == NULL && strstr(grp, "MUI_BTN_STOP") == NULL,
+          "the bar still builds a dropped element (remaining, format, status, extras, heart, Stop)");
+    CHECK(strstr(grp, "if (band.show_left) {") != NULL && strstr(grp, "mui_make_text(s, MUI_ATTR_TITLE") > strstr(grp, "if (band.show_left) {"),
+          "art and titles are not behind show_left");
+    CHECK(strstr(grp, "CTL_SUB_PREV") != NULL && strstr(grp, "CTL_SUB_NEXT") != NULL && strstr(grp, "MUIA_ShowMe, FALSE") != NULL, "the subsong group is not built hidden");
+    CHECK(strstr(grp, "MUI_ATTR_CLOCK") < strstr(grp, "s->seek)") && strstr(grp, "s->seek)") < strstr(grp, "MUI_ATTR_LENGTH") && strstr(grp, "MUI_ATTR_LENGTH") < strstr(grp, "s->vol)"),
+          "the bar is not clock, seek, length, volume in that order");
+    *end = saved;
+    CHECK(strstr(src, "mui_subsong_step_line(sf->subsong, sf->subsong_count") != NULL && strstr(src, "mui_subsong_label(f->subsong, f->subsong_count") != NULL &&
+              strstr(src, "mui_subsong_sync(s, f);") != NULL,
+          "the subsong group is not fired and synced from the frame");
     tool = strstr(src, "static Object* mui_tool_group(");
     tend = tool != NULL ? strstr(tool, "I667i2") : NULL;
     CHECK(tool != NULL && tend != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") < tend,
           "the tool rows still build Like");
+}
+
+/* I973c: the subsong label and the minus/plus lines. Pure maths; the wiring is checked by test_player_bar. */
+static void test_subsong_bar(void) {
+    char out[32];
+    CHECK(mui_subsong_label(1u, 1u, out, sizeof out) == 0u && out[0] == 0, "one subsong: group hidden, label empty");
+    CHECK(mui_subsong_label(0u, 0u, out, sizeof out) == 0u, "no subsongs: hidden");
+    CHECK(mui_subsong_label(2u, 5u, out, sizeof out) == 1u && strcmp(out, "2/5") == 0, "label '%s'", out);
+    CHECK(mui_subsong_step_line(1u, 1u, 1, out, sizeof out) == 0u, "no step without subsongs");
+    CHECK(mui_subsong_step_line(1u, 5u, -1, out, sizeof out) == 0u, "no minus at the first subsong");
+    CHECK(mui_subsong_step_line(5u, 5u, 1, out, sizeof out) == 0u, "no plus at the last subsong");
+    CHECK(mui_subsong_step_line(3u, 5u, 1, out, sizeof out) == 1u && strcmp(out, "SUBSONG 3") == 0, "plus from 3 sends '%s'", out);
+    CHECK(mui_subsong_step_line(3u, 5u, -1, out, sizeof out) == 1u && strcmp(out, "SUBSONG 1") == 0, "minus from 3 sends '%s'", out);
 }
 
 static void test_cycle_initial(void) {
@@ -2600,9 +2627,8 @@ static void test_compact_player(void) {
         body[end - cg] = 0;
     }
     CHECK(body != NULL && strstr(body, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8, sw,") != NULL &&
-              strstr(body, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL &&
-              strstr(body, "if (band.extras) {\n        DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());") != NULL,
-          "player group takes the band model, the aspect source and builds extras only when the band has them");
+              strstr(body, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL && strstr(body, "mui_p8_extras_row") == NULL,
+          "player group takes the band model and the aspect source; the extras are in the menu only");
     free(body);
 }
 
@@ -3129,6 +3155,8 @@ int main(int argc, char** argv) {
         test_newplaylist();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
         test_aabtn_tokens();
+    } else if (strcmp(argv[1], "subsong-bar") == 0) {
+        test_subsong_bar();
     } else if (strcmp(argv[1], "icon-square") == 0) {
         test_icon_square();
     } else if (strcmp(argv[1], "icon-buttons") == 0) {

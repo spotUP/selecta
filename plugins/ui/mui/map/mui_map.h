@@ -414,6 +414,12 @@ uint32_t mui_np_objects(const char** names, uint32_t cap);
 int32_t mui_lyric_line_of(int32_t lyric_slot);
 /* MUI-P4-9 song info: the next subsong of a Cycle (wraps after the last) as a SUBSONG line; 0 when there is only one. */
 uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, size_t cap);
+/* I973c: the bar's subsong label "n/m" (frame subsong is 1-based, as the desktop bar prints it). Returns 1 when the song has subsongs
+ * (count > 1), else 0 with an empty label: the subsong group is hidden. */
+uint32_t mui_subsong_label(uint32_t subsong, uint32_t count, char* out, size_t cap);
+/* I973c: the engine line of the bar's minus (dir -1) or plus (dir +1) button. `subsong` is the 1-based frame value; the line carries the
+ * 0-based target, as the desktop bar sends it. Returns 0 (no line) at either end of the range. */
+uint32_t mui_subsong_step_line(uint32_t subsong, uint32_t count, int dir, char* out, size_t cap);
 /* MUI-P4-12 dialogs: the confirm text per kind (0 remove, 1 clear library) and the line a confirm sends. */
 void mui_confirm_text(uint32_t kind, const char* title, uint32_t songs, uint32_t playlists, char* out, size_t cap);
 const char* mui_confirm_line(uint32_t kind);

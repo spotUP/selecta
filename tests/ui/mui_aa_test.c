@@ -463,7 +463,7 @@ static void test_transport_icons(void) {
     CHECK(mui_transport_on(MUI_BTN_REPEAT, &f) == 1 && mui_transport_on(MUI_BTN_RANDOM, &f) == 1 && mui_transport_on(MUI_BTN_PLAY, &f) == 0, "lit by state");
     CHECK(ui != NULL, "ui source readable");
     if (ui != NULL) {
-        CHECK(strstr(ui, "mui_transport_icon_only(i)") != NULL && strstr(ui, "row1b") == NULL, "mui_player_group does not build icon-only buttons in one row");
+        CHECK(strstr(ui, "mui_make_button_fixed(s->btn_label[i], mui_transport_action(i, &zero)") != NULL && strstr(ui, "row1b") == NULL, "mui_player_group does not build icon-only buttons in one row");
         CHECK(strstr(ui, "mui_aabtn_set_on(") != NULL, "lit state not pushed to the buttons");
     }
     free(ui);
