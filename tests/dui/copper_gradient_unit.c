@@ -67,9 +67,13 @@ int main(void) {
     /* I628: a gradient on rows another pen holds takes the next pen */
     sel_gui_gradient(c, rc(0, 10, 64, 4), 1, 0xFF000000u, 0xFF00FF00u);
     CHECK(c->copper_n == 3u && px[10 * 64] == 254);
-    /* I628/I510: a gradient on exactly the rows of a recorded one shares its key: one line colour per row band */
+    /* I628/I510: a gradient on exactly the rows of a recorded one with the same colours shares its key (one line colour per row
+     * band)... */
+    sel_gui_gradient(c, rc(0, 10, 64, 4), 1, 0xFF000000u, 0xFF00FF00u);
+    CHECK(c->copper_n == 3u && c->copper_miss == 0u && px[10 * 64] == 254);
+    /* ...but other colours on those rows dither in their own: a copper pen is one colour per scanline (43385d86, I628) */
     sel_gui_gradient(c, rc(0, 10, 64, 4), 1, 0xFF112233u, 0xFF445566u);
-    CHECK(c->copper_n == 3u && px[10 * 64] == 254);
+    CHECK(c->copper_n == 3u && c->copper_miss == 1u && px[10 * 64] != 254 && px[10 * 64] != 255);
     /* a whole-canvas repaint hands the pens out again */
     sel_gui_dirty_add(c, rc(0, 0, 64, 32));
     CHECK(c->copper_n == 0u);
