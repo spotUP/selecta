@@ -3,7 +3,7 @@
  * Covers: the clicked row plays and the rows after it follow (flag CONTEXT), hand-added songs go before the context, a new
  * PLAY_CONTEXT replaces only the old context rows, one QUEUE_CHANGED and one UNDO per verb, a stale version and a start past
  * the end change nothing, the name is stored and cut on a UTF-8 boundary, QUEUE_MOVE flips the flag, QUEUE_CLEAR clears the
- * name, the context is cut at the queue capacity (8 here) and the oldest played context rows make room. */
+ * name, I994c: shuffle order (D3), random start sentinel, repeat-all wrap (D4), PREV. The context is cut at the queue capacity (8 here) and the oldest played context rows make room. */
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/machine.h>
@@ -225,6 +225,97 @@ int main(int argc, char** argv) {
         run(e, line);
         CHECK(strlen(sel_engine_state(e)->ctx_name) == 126u);
     }
+
+    /* I994c. D3: with shuffle on, hand-added songs play first in queue order, then the context rows in random order. */
+    {
+        int seen[NSONGS], dup = 0, sorted = 1, last = -1;
+        uint32_t starts[8], distinct = 0, k;
+
+        run(e, "QUEUE_CLEAR");
+        run(e, "SHUFFLE on 7");
+        snprintf(line, sizeof line, "PLAY_CONTEXT playlist:1 %u 2 \"Alpha\"", (unsigned)vversion(e));
+        run(e, line);
+        snprintf(line, sizeof line, "QUEUE_ADD \"%s\"", h[0]);
+        run(e, line);
+        snprintf(line, sizeof line, "QUEUE_ADD \"%s\"", h[1]);
+        run(e, line);
+        SHAPE_IS("a2c h0 h1 a3c a4c a5c a6c a7c a8c a9c");
+        run(e, "NEXT");
+        CHECK(strcmp(playing_path(e), h[0]) == 0);
+        run(e, "NEXT");
+        CHECK(strcmp(playing_path(e), h[1]) == 0);
+        memset(seen, 0, sizeof seen);
+        for (i = 0; i < 7u; i++) {
+            run(e, "NEXT");
+            for (k = 0; k < NSONGS; k++) {
+                if (strcmp(playing_path(e), f[k]) == 0) {
+                    dup += seen[k]++;
+                    sorted &= (int)k > last;
+                    last = (int)k;
+                }
+            }
+        }
+        for (k = 3; k < NSONGS; k++) CHECK(seen[k] == 1);
+        CHECK(dup == 0 && !sorted); /* seed 7: the context rows are not in list order */
+
+        /* PLAY_CONTEXT resets the random order: the new context plays every row again, each once. */
+        snprintf(line, sizeof line, "PLAY_CONTEXT playlist:1 %u 0 \"Alpha\"", (unsigned)vversion(e));
+        run(e, line);
+        memset(seen, 0, sizeof seen);
+        seen[0] = 1;
+        for (i = 0; i < 9u; i++) {
+            run(e, "NEXT");
+            for (k = 0; k < NSONGS; k++) seen[k] += strcmp(playing_path(e), f[k]) == 0;
+        }
+        for (k = 0; k < NSONGS; k++) {
+            if (seen[k] != 1) printf("seen[%u]=%d\n", (unsigned)k, seen[k]);
+            CHECK(seen[k] == 1);
+        }
+
+        /* Start sentinel: the engine picks the start row; the whole list is queued. */
+        run(e, "QUEUE_CLEAR");
+        for (i = 0; i < 8u; i++) {
+            uint32_t before = stats(e).context_random_starts;
+
+            snprintf(line, sizeof line, "PLAY_CONTEXT playlist:1 %u 4294967295 \"Alpha\"", (unsigned)vversion(e));
+            run(e, line);
+            CHECK(stats(e).context_random_starts == before + 1u);
+            CHECK(qcount(e) == NSONGS && is_ctx(e, NSONGS - 1u));
+            for (k = 0; k < NSONGS; k++) {
+                if (strcmp(playing_path(e), f[k]) == 0) starts[i] = k;
+            }
+            run(e, "QUEUE_CLEAR");
+        }
+        for (i = 0; i < 8u; i++) {
+            uint32_t j;
+            for (j = 0; j < i && starts[j] != starts[i]; j++) {
+            }
+            distinct += j == i;
+        }
+        CHECK(distinct >= 3u);
+    }
+
+    /* D4: repeat all wraps to the row the context started at; older played rows are not replayed. PREV after row 4 goes to row 3. */
+    run(e, "QUEUE_CLEAR");
+    run(e, "SHUFFLE off");
+    run(e, "REPEAT all");
+    snprintf(line, sizeof line, "PLAY_CONTEXT playlist:1 %u 0 \"Alpha\"", (unsigned)vversion(e));
+    run(e, line);
+    snprintf(line, sizeof line, "PLAY_CONTEXT playlist:1 %u 5 \"Alpha\"", (unsigned)vversion(e));
+    run(e, line);
+    SHAPE_IS("a0c a5c a6c a7c a8c a9c");
+    for (i = 0; i < 4u; i++) run(e, "NEXT");
+    CHECK(strcmp(playing_path(e), f[9]) == 0);
+    run(e, "NEXT");
+    CHECK(strcmp(playing_path(e), f[5]) == 0);
+    run(e, "REPEAT off");
+    run(e, "QUEUE_CLEAR");
+    snprintf(line, sizeof line, "PLAY_CONTEXT playlist:1 %u 0 \"Alpha\"", (unsigned)vversion(e));
+    run(e, line);
+    for (i = 0; i < 4u; i++) run(e, "NEXT");
+    CHECK(strcmp(playing_path(e), f[4]) == 0);
+    run(e, "PREV");
+    CHECK(strcmp(playing_path(e), f[3]) == 0);
 
     /* A queue of 8: rows 1..8 fit, row 9 is cut and reported once. */
     sel_engine_destroy(e);

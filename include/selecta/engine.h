@@ -58,6 +58,8 @@ typedef struct sel_queue_entry {
 #define SEL_QUEUE_FLAG_HIDDEN 2u
 /* A row of the play context (PLAY_CONTEXT, I994): the list the user clicked a row of continues after the hand-added rows. */
 #define SEL_QUEUE_FLAG_CONTEXT 4u
+/* PLAY_CONTEXT start argument: the engine picks a random row (shuffle button, I994c). */
+#define SEL_CONTEXT_START_RANDOM 0xFFFFFFFFu
 #define SEL_CTX_NAME_MAX 128
 
 /* The view model (design doc section 9b), regular style: one flat list over
@@ -507,6 +509,7 @@ typedef struct sel_engine_stats {
                                    * (I632b2) */
     uint32_t songs_stale;         /* SONGS_* verbs refused because the list version moved */
     uint32_t context_plays;       /* PLAY_CONTEXT verbs that started a song (I994a sentinel) */
+    uint32_t context_random_starts; /* PLAY_CONTEXT calls whose start row the engine picked (I994c sentinel) */
     uint32_t context_rows;        /* context rows PLAY_CONTEXT inserted, summed over all runs */
     uint32_t import_missing;      /* entries of the last PLAYLIST_IMPORT whose file does not exist */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
