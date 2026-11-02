@@ -7223,6 +7223,9 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "searchrow %u %d %d %d %d key=%s\n", (unsigned)j, (int)d->sm_rows[j].r.x, (int)d->sm_rows[j].r.y, (int)d->sm_rows[j].r.w,
                      (int)d->sm_rows[j].r.h, d->sm_rows[j].ref.path);
     }
+    if (d->page == SEL_UIM_PG_SEARCH) { /* I1011: the fill list_row_fill last gave the row under the pointer (the shared list-row hover path) */
+        o = dump_put(d, o, "searchhover fill=%08x\n", (unsigned)d->row_hover_fill);
+    }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
@@ -9018,8 +9021,13 @@ static void draw_search(desk* d) {
                     drawn_all++;
                 }
             } else if (show && y + lpx(d, SEARCH_ROW_H) < mn.y + mn.h) {
-                if (d->kb_list && v->window_start + k == v->cursor) { /* the keyboard focus row (I498) */
-                    sel_gui_fill_rect(d->canvas, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+                {
+                    /* I498, I1011: the keyboard focus row and the row under the pointer take the one list-row fill every song list uses */
+                    sel_gui_rect rr = rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H));
+                    uint32_t rf = list_row_fill(d, rr, d->kb_list && v->window_start + k == v->cursor);
+                    if (rf != 0u) {
+                        sel_gui_fill_rect(d->canvas, rr, rf);
+                    }
                 }
                 {
                     int pl = group == 1u && !r->album && song_playing(d, r->key); /* I690 */
