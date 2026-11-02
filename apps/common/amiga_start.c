@@ -85,8 +85,13 @@ int sel_amiga_run_with_stack(int (*body)(int, char**), int argc, char** argv, un
             break;
         }
     }
-    if (!sel_stack_canary_ok(mem)) {
-        fputs("amiga_start: stack overflow, canary at the stack bottom overwritten (stack too small)\n", stderr);
+    if (!sel_stack_canary_ok(mem)) { /* exec's own cookie at mem[0..3] (I974) is outside the checked bytes */
+        if (sel_stack_untouched(mem, bytes) > SEL_STACK_CANARY) {
+            fputs("amiga_start: canary at the stack bottom overwritten below unused stack (a stray write, not an "
+                  "overflow)\n", stderr);
+        } else {
+            fputs("amiga_start: stack overflow, canary at the stack bottom overwritten (stack too small)\n", stderr);
+        }
         g_rc = 1;
     }
 #ifdef SEL_STACKMEASURE /* I523: the high-water mark of the swapped stack */
