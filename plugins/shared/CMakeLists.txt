@@ -55,7 +55,12 @@ target_link_libraries(selecta_shared_upnp PUBLIC selecta_shared_source)
 # I892e1: Chromecast CASTV2. cast.c (framing, protobuf, status JSON) is pure and builds everywhere; cast_session.c rides the
 # socket table (src/library/net/net.h) and tls.h, so the user links selecta_library as well. On the Amiga the TLS half
 # answers SEL_CAST_E_TLS until I899 (sel_tls_open_insecure is the SEL_NO_TLS stub there).
-add_library(selecta_shared_cast STATIC cast/cast.c cast/cast_session.c)
+add_library(selecta_shared_mdns STATIC mdns/mdns.c) # I892e1: mDNS browsing; cast discovery now, AirPlay _raop._tcp later
+target_include_directories(selecta_shared_mdns PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(selecta_shared_mdns PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
+target_link_libraries(selecta_shared_mdns PUBLIC selecta_shared_upnp) # the UDP socket shim lives there (upnp_sock.h)
+
+add_library(selecta_shared_cast STATIC cast/cast.c cast/cast_session.c cast/cast_discover.c)
 target_include_directories(selecta_shared_cast PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(selecta_shared_cast PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
-target_link_libraries(selecta_shared_cast PUBLIC selecta_shared_source)
+target_link_libraries(selecta_shared_cast PUBLIC selecta_shared_source selecta_shared_mdns)

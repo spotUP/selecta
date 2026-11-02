@@ -2575,6 +2575,14 @@ if(NOT SEL_AMIGA)
             "-DSRV=${SEL_NET_DIR}/cast_server.py" -P "${SEL_NET_DIR}/cast_session.cmake")
   set_tests_properties(cast-session PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_session_ok")
 
+  # I892e1: Chromecast mDNS discovery (pure parser with name compression + browse against the loopback responder).
+  add_executable(cast_discover_test net/cast_discover_test.c)
+  target_link_libraries(cast_discover_test PRIVATE selecta_shared_cast selecta_library)
+  add_test(NAME cast-discover
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:cast_discover_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/mdns_server.py" -P "${SEL_NET_DIR}/cast_discover.cmake")
+  set_tests_properties(cast-discover PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_discover_ok")
+
   # I894a1: UPnP MediaServer discovery (SSDP unicast to the fixture, HTTP description, ContentDirectory controlURL).
   add_executable(upnp_discover_test net/upnp_discover_test.c)
   target_link_libraries(upnp_discover_test PRIVATE selecta_shared_upnp selecta_library)
