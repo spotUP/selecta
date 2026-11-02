@@ -129,7 +129,18 @@ typedef struct sel_uim_pref_row {
     const char* label;    /* full English words */
     uint32_t ui;          /* sel_uim_pref_ui */
     const char* choices;  /* cycle: comma list; check: "off,on"; slider: "min,max" */
+    uint32_t machines;    /* SEL_UIM_MACH_* mask: where the row does something (MPS-1b) */
 } sel_uim_pref_row;
+/* Machines a Settings row applies to. The runtime, not the UI kind: the desktop UI also runs on the Amiga. */
+enum { SEL_UIM_MACH_HOST = 1, SEL_UIM_MACH_AMIGA = 2, SEL_UIM_MACH_ALL = 3 };
+/* Capacity UIs size their per-row arrays with; features.c fails to compile when the table outgrows it. */
+#define SEL_UIM_PREF_ROWS_MAX 24u
+/* The machine this build runs on (SEL_UIM_MACH_AMIGA under the 68k build, else SEL_UIM_MACH_HOST). */
+uint32_t sel_uim_machine_here(void);
+/* The visible rows for a machine, in table order. The single filter both the MUI window and the desktop Settings page use. */
+uint32_t sel_uim_pref_row_count_for(uint32_t machine);
+const sel_uim_pref_row* sel_uim_pref_row_at_for(uint32_t machine, uint32_t i);
+/* The same for the machine this build runs on. */
 uint32_t sel_uim_pref_row_count(void);
 const sel_uim_pref_row* sel_uim_pref_row_at(uint32_t i);
 /* PREF_SET key "value" */

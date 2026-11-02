@@ -1446,8 +1446,8 @@ static void test_settings(void) {
     }
     {
         const sel_uim_pref_row* ov = NULL;
-        for (i = 0; i < n; i++)
-            if (strcmp(sel_uim_pref_row_at(i)->key, "ui.desktop.overscan") == 0) ov = sel_uim_pref_row_at(i);
+        for (i = 0; i < sel_uim_pref_row_count_for(SEL_UIM_MACH_AMIGA); i++)
+            if (strcmp(sel_uim_pref_row_at_for(SEL_UIM_MACH_AMIGA, i)->key, "ui.desktop.overscan") == 0) ov = sel_uim_pref_row_at_for(SEL_UIM_MACH_AMIGA, i);
         CHECK(ov != NULL && strcmp(ov->label, "Fill Screen (Overscan)") == 0 && ov->ui == SEL_UIM_PREF_CHECK && strcmp(ov->choices, "off,on") == 0, "overscan row");
         if (ov != NULL) {
             sel_uim_pref_line(ov->key, "1", o, sizeof o);

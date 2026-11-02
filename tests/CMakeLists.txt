@@ -940,6 +940,9 @@ if(NOT SEL_AMIGA)
   add_executable(uim_lsort_test uimodel/lsort_test.c)
   target_link_libraries(uim_lsort_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-lsort COMMAND uim_lsort_test)
+  add_executable(uim_pref_rows_test uimodel/pref_rows_test.c)
+  target_link_libraries(uim_pref_rows_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-pref-rows COMMAND uim_pref_rows_test)
   set_tests_properties(uim-lsort PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_lsort_ok")
   add_test(NAME ctl-exec-result COMMAND ctl_exec_test status)
   add_test(NAME commands-reflection-format COMMAND ctl_exec_test commands)
@@ -1855,6 +1858,13 @@ if(NOT SEL_AMIGA)
               ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_test.sid
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)
     set_tests_properties(sid-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-mute)
+    add_test(NAME sid-mute
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_mute.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_test.sid
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-mute)
+    set_tests_properties(sid-mute PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_mute_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-config)
     add_test(NAME sid-config

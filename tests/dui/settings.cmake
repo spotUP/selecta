@@ -1,7 +1,7 @@
 # dui-settings (I799a, DUI-P4-14): the desktop Settings page, through the real shell and the scripted --input feeder
 # (--output null, a temp config dir; ~/.config/selecta is never touched). -DSELECTA -DSONGS -DWORK
 #  1. the Settings entry in the top bar is found in the dump and CLICKED (not --view settings);
-#  2. sentinel: `settings rows=N table=N` - the page drew exactly one row per sel_uim_pref_row (the table the MUI window reads);
+#  2. sentinel: `settings rows=N table=N` - the page drew exactly one row per sel_uim_pref_row (the machine-filtered table the MUI window reads too, MPS-1b: 12 rows on the host, sid.* in, playsid.* and overscan out);
 #  3. the first cycle row (mix.loudness, track,auto,off) is clicked: its control steps track -> auto and the engine writes
 #     mix.loudness=auto to <cfg>/prefs.conf (sets>=1 is the sentinel that PREF_SET went out).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -35,6 +35,9 @@ if(NOT "${opened}" MATCHES "settings draws=([0-9]+) rows=([0-9]+) table=([0-9]+)
 endif()
 if(NOT CMAKE_MATCH_2 EQUAL CMAKE_MATCH_3 OR NOT CMAKE_MATCH_3 EQUAL table OR table LESS 1)
   message(FATAL_ERROR "rows drawn ${CMAKE_MATCH_2} != table ${CMAKE_MATCH_3}")
+endif()
+if(NOT table EQUAL 12)
+  message(FATAL_ERROR "host Settings shows ${table} rows, expected 12 (MPS-1b machine filter)")
 endif()
 if(NOT "${opened}" MATCHES "settings_row 0 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) key=mix.loudness\n")
   message(FATAL_ERROR "row 0 is not mix.loudness:\n${opened}")

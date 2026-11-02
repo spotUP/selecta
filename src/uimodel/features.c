@@ -61,30 +61,58 @@ const char* sel_uim_state_text(uint32_t view, uint32_t kind) {
 }
 
 static const sel_uim_pref_row g_pref_rows[] = {
-    {"mix.loudness", "Loudness", SEL_UIM_PREF_CYCLE, "track,auto,off"},
-    {"dsp.crossfeed", "Crossfeed", SEL_UIM_PREF_CYCLE, "auto,on,off"},
-    {"output.led", "Power LED Filter", SEL_UIM_PREF_CHECK, "off,on"},
-    {"mix.stereo_width", "Stereo Width", SEL_UIM_PREF_SLIDER, "0,100"},
-    {"library.prefetch", "Prefetch Next Song", SEL_UIM_PREF_CHECK, "off,on"},
-    {"library.metered", "Metered Connection", SEL_UIM_PREF_CHECK, "off,on"},
-    {"ui.desktop.overscan", "Fill Screen (Overscan)", SEL_UIM_PREF_CHECK, "off,on"},
-    {"playsid.filter", "reSID Filter", SEL_UIM_PREF_CYCLE, "internal,internal+external,off"},
-    {"playsid.boost", "reSID Boost", SEL_UIM_PREF_CYCLE, "off,2x,3x,4x"},
-    {"playsid.oversample", "reSID Oversampling", SEL_UIM_PREF_CYCLE, "normal,2x,3x,4x"},
-    {"sid.model", "Chip Model", SEL_UIM_PREF_CYCLE, "auto,6581,8580"},
-    {"sid.clock", "Video Standard", SEL_UIM_PREF_CYCLE, "auto,pal,ntsc"},
-    {"sid.filter", "Chip Filter", SEL_UIM_PREF_CHECK, "off,on"},
-    {"sid.digiboost", "Digi Boost", SEL_UIM_PREF_CYCLE, "auto,on,off"},
-    {"view.title_format", "Title Format", SEL_UIM_PREF_STRING, ""},
-    {"view.status_format", "Status Format", SEL_UIM_PREF_STRING, ""},
+    {"mix.loudness", "Loudness", SEL_UIM_PREF_CYCLE, "track,auto,off", SEL_UIM_MACH_ALL},
+    {"dsp.crossfeed", "Crossfeed", SEL_UIM_PREF_CYCLE, "auto,on,off", SEL_UIM_MACH_ALL},
+    {"output.led", "Power LED Filter", SEL_UIM_PREF_CHECK, "off,on", SEL_UIM_MACH_ALL},
+    {"mix.stereo_width", "Stereo Width", SEL_UIM_PREF_SLIDER, "0,100", SEL_UIM_MACH_ALL},
+    {"library.prefetch", "Prefetch Next Song", SEL_UIM_PREF_CHECK, "off,on", SEL_UIM_MACH_ALL},
+    {"library.metered", "Metered Connection", SEL_UIM_PREF_CHECK, "off,on", SEL_UIM_MACH_ALL},
+    {"ui.desktop.overscan", "Fill Screen (Overscan)", SEL_UIM_PREF_CHECK, "off,on", SEL_UIM_MACH_AMIGA},
+    {"playsid.filter", "reSID Filter", SEL_UIM_PREF_CYCLE, "internal,internal+external,off", SEL_UIM_MACH_AMIGA},
+    {"playsid.boost", "reSID Boost", SEL_UIM_PREF_CYCLE, "off,2x,3x,4x", SEL_UIM_MACH_AMIGA},
+    {"playsid.oversample", "reSID Oversampling", SEL_UIM_PREF_CYCLE, "normal,2x,3x,4x", SEL_UIM_MACH_AMIGA},
+    {"sid.model", "Chip Model", SEL_UIM_PREF_CYCLE, "auto,6581,8580", SEL_UIM_MACH_HOST},
+    {"sid.clock", "Video Standard", SEL_UIM_PREF_CYCLE, "auto,pal,ntsc", SEL_UIM_MACH_HOST},
+    {"sid.filter", "Chip Filter", SEL_UIM_PREF_CHECK, "off,on", SEL_UIM_MACH_HOST},
+    {"sid.digiboost", "Digi Boost", SEL_UIM_PREF_CYCLE, "auto,on,off", SEL_UIM_MACH_HOST},
+    {"view.title_format", "Title Format", SEL_UIM_PREF_STRING, "", SEL_UIM_MACH_ALL},
+    {"view.status_format", "Status Format", SEL_UIM_PREF_STRING, "", SEL_UIM_MACH_ALL},
 };
 
+typedef char sel_uim_pref_rows_fit[(sizeof g_pref_rows / sizeof g_pref_rows[0]) <= SEL_UIM_PREF_ROWS_MAX ? 1 : -1];
+
+uint32_t sel_uim_machine_here(void) {
+#if defined(__amigaos__) || defined(AMIGA)
+    return SEL_UIM_MACH_AMIGA;
+#else
+    return SEL_UIM_MACH_HOST;
+#endif
+}
+
+uint32_t sel_uim_pref_row_count_for(uint32_t machine) {
+    uint32_t i, n = 0;
+    for (i = 0; i < (uint32_t)(sizeof g_pref_rows / sizeof g_pref_rows[0]); i++) {
+        n += (g_pref_rows[i].machines & machine) != 0u;
+    }
+    return n;
+}
+
+const sel_uim_pref_row* sel_uim_pref_row_at_for(uint32_t machine, uint32_t i) {
+    uint32_t k;
+    for (k = 0; k < (uint32_t)(sizeof g_pref_rows / sizeof g_pref_rows[0]); k++) {
+        if ((g_pref_rows[k].machines & machine) != 0u && i-- == 0u) {
+            return &g_pref_rows[k];
+        }
+    }
+    return NULL;
+}
+
 uint32_t sel_uim_pref_row_count(void) {
-    return (uint32_t)(sizeof g_pref_rows / sizeof g_pref_rows[0]);
+    return sel_uim_pref_row_count_for(sel_uim_machine_here());
 }
 
 const sel_uim_pref_row* sel_uim_pref_row_at(uint32_t i) {
-    return i < sel_uim_pref_row_count() ? &g_pref_rows[i] : NULL;
+    return sel_uim_pref_row_at_for(sel_uim_machine_here(), i);
 }
 
 void sel_uim_pref_line(const char* key, const char* value, char* out, size_t cap) {
