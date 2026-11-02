@@ -6,6 +6,7 @@
 
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_input.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct desk_sdl desk_sdl;
@@ -56,6 +57,9 @@ uint32_t desk_sdl_ticks(void);
  * desk_sdl_next_input as a SEL_GUI_IN_DROP. Returns 0 when there is no window to attach it to. */
 int desk_sdl_open_folder_dialog(desk_sdl* b);
 int desk_sdl_open_file_dialog(desk_sdl* b);
+/* I999: copies the first line of the system clipboard text into out (NUL-terminated, at most cap - 1 bytes). Returns the
+ * byte count, 0 when the clipboard holds no text. */
+size_t desk_sdl_clipboard(desk_sdl* b, char* out, size_t cap);
 int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev);
 
 #endif

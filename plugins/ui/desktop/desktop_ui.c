@@ -310,6 +310,8 @@ typedef struct desk {
     uint32_t lib_reloads;    /* I348: page reloads the library serial caused (stats line library_reloads) */
     uint32_t scans;          /* LIBRARY_SCAN answers seen: STAT_SCANS */
     const char* dialog_answer; /* --dialog-answer <path>: what the folder dialog answers in a test (DUI-P5-11) */
+    const char* clipboard; /* I999: --clipboard <text>: what a paste reads in a test, in place of the system clipboard */
+    uint32_t pastes;       /* I999: pastes that changed a text field (stats line pastes) */
     uint32_t scan_done, scan_total; /* I315: scan progress last drawn on the Library page (files started, files in the folder) */
     char scan_file[SEL_SCAN_FILE_MAX]; /* I315: path of the file the progress shows */
     uint32_t scan_mid;       /* I336: progress snapshots seen while the scan was still running (done < total), proof the shell kept turning */
@@ -6119,6 +6121,62 @@ static int plmenu_pointer(desk* d, const sel_gui_input* ev) {
     return 1;
 }
 
+/* I999: the clipboard text a paste reads: --clipboard in a test, the system clipboard in the live window. */
+static size_t desk_clipboard(desk* d, char* out, size_t cap) {
+    if (d->clipboard != NULL) {
+        snprintf(out, cap, "%s", d->clipboard);
+        return strlen(out);
+    }
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL) {
+        return desk_sdl_clipboard(d->sdl, out, cap);
+    }
+#endif
+    if (cap > 0u) {
+        out[0] = '\0';
+    }
+    return 0u;
+}
+
+/* I999: the edit rules every one-line text field shares. Backspace deletes, a printable key (no Control, Option or
+ * Command held) appends, Command+V (Control+V elsewhere) pastes the clipboard's first line. Bytes outside 32..126 and the
+ * `reject` byte (a field whose value travels in a quoted command line rejects '"'; 0 rejects nothing) are dropped.
+ * Returns 0 for a key that is no edit, 1 for an edit key that left the text as it was, 2 when the text changed. */
+static int field_edit(desk* d, char* buf, size_t* len, size_t cap, char reject, const sel_gui_input* ev) {
+    if (ev->code == 127u) {
+        if (*len == 0u) {
+            return 1;
+        }
+        buf[--*len] = '\0';
+        return 2;
+    }
+    if ((ev->code == 'v' || ev->code == 'V') && (ev->mods & ~TXT_MOD_SHIFT) == TXT_MOD_CTRL) {
+        char clip[512];
+        size_t n = desk_clipboard(d, clip, sizeof clip), i, before = *len;
+        for (i = 0u; i < n && clip[i] != '\n' && clip[i] != '\r'; i++) {
+            unsigned char c = (unsigned char)clip[i];
+            if (c >= 32u && c < 127u && (char)c != reject && *len + 1u < cap) {
+                buf[(*len)++] = (char)c;
+            }
+        }
+        buf[*len] = '\0';
+        if (*len == before) {
+            return 1;
+        }
+        d->pastes++;
+        return 2;
+    }
+    if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
+        if ((char)ev->code == reject || *len + 1u >= cap) {
+            return 1;
+        }
+        buf[(*len)++] = (char)ev->code;
+        buf[*len] = '\0';
+        return 2;
+    }
+    return 0;
+}
+
 /* I678e: a typed key while the collection's search field has the keyboard; every change refilters the songs. */
 static int col_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == 13u || ev->code == 27u) {
@@ -6127,15 +6185,15 @@ static int col_key(desk* d, const sel_gui_input* ev) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
     }
-    if (ev->code == 127u && d->col_qlen > 0u) {
-        d->col_q[--d->col_qlen] = '\0';
-    } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u && d->col_qlen + 1u < sizeof d->col_q) {
-        d->col_q[d->col_qlen++] = (char)ev->code;
-        d->col_q[d->col_qlen] = '\0';
-    } else {
+    switch (field_edit(d, d->col_q, &d->col_qlen, sizeof d->col_q, 0, ev)) {
+    case 0:
         return 0;
+    case 2:
+        col_changed(d);
+        break;
+    default:
+        break;
     }
-    col_changed(d);
     return desk_present(d);
 }
 
@@ -6148,16 +6206,7 @@ static int pl_key(desk* d, const sel_gui_input* ev) {
         pl_send(d, line);
     } else if (ev->code == 13u || ev->code == 27u) {
         d->pl_edit = 0;
-    } else if (ev->code == 127u) {
-        if (d->pl_nlen > 0u) {
-            d->pl_name[--d->pl_nlen] = '\0';
-        }
-    } else if (ev->code >= 32u && ev->code < 127u && ev->code != '"' && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
-        if (d->pl_nlen + 1u < sizeof d->pl_name) {
-            d->pl_name[d->pl_nlen++] = (char)ev->code;
-            d->pl_name[d->pl_nlen] = '\0';
-        }
-    } else {
+    } else if (field_edit(d, d->pl_name, &d->pl_nlen, sizeof d->pl_name, '"', ev) == 0) {
         return 0;
     }
     d->repaint = 1;
@@ -6907,16 +6956,7 @@ static int si_pointer(desk* d, const sel_gui_input* ev) {
 static int si_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == 13u || ev->code == 27u) {
         d->si_edit = 0;
-    } else if (ev->code == 127u) {
-        if (d->si_nlen > 0u) {
-            d->si_note[--d->si_nlen] = '\0';
-        }
-    } else if (ev->code >= 32u && ev->code < 127u && ev->code != '"' && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
-        if (d->si_nlen + 1u < sizeof d->si_note) {
-            d->si_note[d->si_nlen++] = (char)ev->code;
-            d->si_note[d->si_nlen] = '\0';
-        }
-    } else {
+    } else if (field_edit(d, d->si_note, &d->si_nlen, sizeof d->si_note, '"', ev) == 0) {
         return 0;
     }
     d->repaint = 1;
@@ -7156,6 +7196,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "scan_mid %u\n", (unsigned)d->scan_mid);
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
+    o = dump_put(d, o, "pastes %u\n", (unsigned)d->pastes); /* I999 */
     o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u saves=%u\n", d->scope[0] != '\0' ? d->scope : "-",
                  (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays, (unsigned)d->on_saves);
     {
@@ -9294,16 +9335,7 @@ static int settings_key(desk* d, const sel_gui_input* ev) {
         set_commit(d);
     } else if (ev->code == 27u) {
         d->set_focus = -1;
-    } else if (ev->code == 127u) {
-        if (len > 0u) {
-            d->set_buf[len - 1u] = '\0';
-        }
-    } else if (ev->code >= 32u && ev->code < 127u && ev->code != '"' && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
-        if (len + 1u < sizeof d->set_buf) {
-            d->set_buf[len] = (char)ev->code;
-            d->set_buf[len + 1u] = '\0';
-        }
-    } else {
+    } else if (field_edit(d, d->set_buf, &len, sizeof d->set_buf, '"', ev) == 0) {
         return 0;
     }
     d->repaint = 1;
@@ -10834,23 +10866,18 @@ static void tl_click(desk* d, sel_gui_rect t, int32_t k) {
 static int lf_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == 13u || ev->code == 27u) {
         d->lf_edit = 0;
-    } else if (ev->code == 127u) {
-        if (d->lf_len > 0u) {
-            d->lf_text[--d->lf_len] = '\0';
-            d->side_stale = 1u;
-            lib_view_push(d);
-            d->side_filter_keys++;
-        }
-    } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
-        if (d->lf_len + 1u < sizeof d->lf_text) {
-            d->lf_text[d->lf_len++] = (char)ev->code;
-            d->lf_text[d->lf_len] = '\0';
-            d->side_stale = 1u;
-            lib_view_push(d);
-            d->side_filter_keys++;
-        }
     } else {
-        return 0;
+        size_t n = d->lf_len;
+        int r = field_edit(d, d->lf_text, &n, sizeof d->lf_text, 0, ev);
+        d->lf_len = (uint32_t)n;
+        if (r == 0) {
+            return 0;
+        }
+        if (r == 2) {
+            d->side_stale = 1u;
+            lib_view_push(d);
+            d->side_filter_keys++;
+        }
     }
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -12735,21 +12762,15 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
                 desk_search_fire(d);
             }
             d->focus = 0;
-        } else if (ev->code == 127u) {
-            if (d->qlen > 0u) {
-                d->query[--d->qlen] = '\0';
-                d->search_pending = 1;
-                d->search_since = d->now_ms;
-            }
-        } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
-            if (d->qlen + 1u < sizeof d->query) {
-                d->query[d->qlen++] = (char)ev->code;
-                d->query[d->qlen < sizeof d->query ? d->qlen : sizeof d->query - 1u] = '\0';
-                d->search_pending = 1;
-                d->search_since = d->now_ms;
-            }
         } else {
-            return 0;
+            int r = field_edit(d, d->query, &d->qlen, sizeof d->query, 0, ev);
+            if (r == 0) {
+                return 0;
+            }
+            if (r == 2) {
+                d->search_pending = 1;
+                d->search_since = d->now_ms;
+            }
         }
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -14740,6 +14761,9 @@ static void* desk_open(const sel_ui_open_args* a) {
         }
         if (strcmp(a->argv[i], "--dialog-answer") == 0 && i + 1 < a->argc) {
             d->dialog_answer = a->argv[i + 1];
+        }
+        if (strcmp(a->argv[i], "--clipboard") == 0 && i + 1 < a->argc) {
+            d->clipboard = a->argv[i + 1];
         }
         if (strcmp(a->argv[i], "--ticks") == 0 && i + 1 < a->argc) {
             d->ticks = (uint32_t)atoi(a->argv[i + 1]);
