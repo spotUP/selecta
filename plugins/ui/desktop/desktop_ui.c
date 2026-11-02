@@ -10595,6 +10595,7 @@ static void side_lib_apply(desk* d, uint32_t got) {
             d->side_open_n = 0u;
         } else if (d->side_n >= d->side_open_n) { /* the list is oldest first: the new one is last */
             d->side_open_n = 0u;
+            d->side_stale = 1u; /* I989e: this list was read playlists only (side_lib_mask); read it again for the mixed list */
             pls_open(d, d->side_items[d->side_n - 1u].id, d->side_items[d->side_n - 1u].name);
             d->pl_nlen = 0u;
             d->pl_name[0] = '\0';
