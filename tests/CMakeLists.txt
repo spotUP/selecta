@@ -2552,6 +2552,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(playlist_add_folder_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-playlist-add-folder COMMAND playlist_add_folder_test "$<TARGET_FILE:gen_testmod>")
   set_tests_properties(engine-playlist-add-folder PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "playlist_add_folder_ok")
+  # I994a: PLAY_CONTEXT (context_plays sentinel): placement, replace, hand-added first, capacity, name, QUEUE_MOVE flag.
+  add_executable(play_context_test engine/play_context_test.c)
+  target_include_directories(play_context_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(play_context_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-play-context COMMAND play_context_test "$<TARGET_FILE:gen_testmod>")
+  set_tests_properties(engine-play-context PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "play_context_ok")
   # I632b: the SONGS_* bulk verbs (songs_runs sentinel): order, one history step, one QUEUE_CHANGED, stale version, playlist add/remove.
   add_executable(songs_bulk_test engine/songs_bulk_test.c)
   target_include_directories(songs_bulk_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)

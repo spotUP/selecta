@@ -56,6 +56,9 @@ typedef struct sel_queue_entry {
  * row plays but the regular style does not show it (Hippo stealth). */
 #define SEL_QUEUE_FLAG_DIVIDER 1u
 #define SEL_QUEUE_FLAG_HIDDEN 2u
+/* A row of the play context (PLAY_CONTEXT, I994): the list the user clicked a row of continues after the hand-added rows. */
+#define SEL_QUEUE_FLAG_CONTEXT 4u
+#define SEL_CTX_NAME_MAX 128
 
 /* The view model (design doc section 9b), regular style: one flat list over
  * the queue or the browse listing, a cursor and the visible window. */
@@ -210,6 +213,7 @@ typedef struct sel_state {
     const sel_queue_entry* queue;
     const char* queue_text; /* path arena the entries' path_offset points into */
     uint32_t queue_count, queue_playing, queue_version; /* queue_playing: id, 0 = none */
+    const char* ctx_name; /* label of the play context (PLAY_CONTEXT name), "" none; engine-owned, valid until the next pump */
     const sel_view_state* view; /* the view model, valid until the next pump */
     const sel_viz_frame* viz;   /* newest visualisation frame (seq 0: none yet), valid until the next pump */
     int32_t pitch_cents;        /* PITCH: -1200..1200 */
@@ -502,6 +506,8 @@ typedef struct sel_engine_stats {
     uint32_t songs_skipped;       /* rows the last SONGS_* verb skipped because they name no song (group, folder, heading, divider)
                                    * (I632b2) */
     uint32_t songs_stale;         /* SONGS_* verbs refused because the list version moved */
+    uint32_t context_plays;       /* PLAY_CONTEXT verbs that started a song (I994a sentinel) */
+    uint32_t context_rows;        /* context rows PLAY_CONTEXT inserted, summed over all runs */
     uint32_t import_missing;      /* entries of the last PLAYLIST_IMPORT whose file does not exist */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */
