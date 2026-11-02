@@ -1423,8 +1423,10 @@ static void test_nowplaying(void) {
 
 static void test_songinfo(void) {
     char o[32];
-    CHECK(mui_subsong_cycle_line(1, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 2") == 0, "next '%s'", o);
-    CHECK(mui_subsong_cycle_line(3, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 1") == 0, "wraps '%s'", o);
+    /* I973d: the Cycle's active entry is 0-based, as the engine's SUBSONG index (desktop sends frame.subsong - 1 for its own 1-based value). */
+    CHECK(mui_subsong_cycle_line(0, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 0") == 0, "first entry '%s'", o);
+    CHECK(mui_subsong_cycle_line(2, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 2") == 0, "last entry '%s'", o);
+    CHECK(mui_subsong_cycle_line(3, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 0") == 0, "past the count wraps to 0, got '%s'", o);
     CHECK(mui_subsong_cycle_line(1, 1, o, sizeof o) == 0, "single subsong has no cycle");
 }
 
@@ -2577,6 +2579,13 @@ static void test_player_band_sizes(void) {
     }
 }
 
+static int body_has_fixheight(const char* src) {
+    const char* cg = strstr(src, "static Object* mui_player_group(");
+    const char* end = cg != NULL ? strstr(cg, "\n}\n") : NULL;
+    const char* fh = cg != NULL ? strstr(cg, "SetAttrs(g, MUIA_FixHeight, (ULONG)band.height") : NULL;
+    return fh != NULL && end != NULL && fh < end;
+}
+
 static void test_compact_player(void) {
     mui_player_band_t c, tall, reg;
     mui_menu_item items[256];
@@ -2609,6 +2618,17 @@ static void test_compact_player(void) {
               "compact band: transport %d + seek %d + gap %d = %d of %d", tm.height, sl.height, gy, need, MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD);
         CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "square band heights moved (I973: the compact cap applies)");
     }
+    {
+        /* I973d: the bar's height is pb.height alone, and nothing in the bar needs more. The root minimum is measured by MUI itself (map/mui_map.h,
+         * no height model); the part the map layer owns is the bar: its minimum width and its height must leave the 600x220 window room. */
+        mui_player_band_t wide;
+        CHECK(c.btn_px <= c.height && c.text_h <= c.height && c.slider_h <= c.height && c.art_h <= c.height, "compact bar child taller than the bar: btn %u text %u slider %u art %u of %u",
+              (unsigned)c.btn_px, (unsigned)c.text_h, (unsigned)c.slider_h, (unsigned)c.art_h, (unsigned)c.height);
+        CHECK(mui_player_min_width(&c) <= 600u && c.height <= 220u, "compact root minimum: bar needs %ux%u, window allows 600x220", (unsigned)mui_player_min_width(&c), (unsigned)c.height);
+        mui_player_band(&wide, 1, mui_pixel_aspect_q8(22, 44), 1000, 0);
+        CHECK(wide.show_left == 1u && 2u * wide.text_h <= wide.height, "title and artist (two text rows %u) fit the bar height %u when shown", (unsigned)(2u * wide.text_h), (unsigned)wide.height);
+        CHECK(body_has_fixheight(src), "the bar panel takes MUIA_FixHeight from band.height");
+    }
     CHECK(reg.compact == 0 && reg.extras == 0 && reg.right_rows == 1 && reg.art_h == 56u, "regular band: one row, extras in the menu only (I973 6a Q4)");
     n = mui_menu_build(items, 256);
     for (i = 0; i < sizeof want / sizeof want[0]; i++) {
@@ -2630,6 +2650,44 @@ static void test_compact_player(void) {
               strstr(body, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h)") != NULL && strstr(body, "mui_p8_extras_row") == NULL,
           "player group takes the band model and the aspect source; the extras are in the menu only");
     free(body);
+}
+
+/* I973e reachability: the one test for the player bar. mui_open (MUI build only; the host build has no MUI) builds the player slot with
+ * mui_player_group, which takes every size from mui_player_band. The wiring of mui_ui.c is grepped (removing it turns this red); the band is
+ * driven for the bitmap class and RTG with the sentinel mui_player_bar_builds(), and the bar's numbers from the design (section 3/5) are asserted:
+ * one row, five transport icons, square buttons btn_w x btn_px, one centre line. */
+static void test_player_bar_reach(void) {
+    mui_player_band_t t, r;
+    char* src = ui_source();
+    const char* open_fn = src != NULL ? strstr(src, "static void* mui_open(const sel_ui_open_args* a) {") : NULL;
+    const char* slot = open_fn != NULL ? strstr(open_fn, "s->slot[MUI_SLOT_PLAYER] = mui_player_group(s)") : NULL;
+    const char* grp = src != NULL ? strstr(src, "static Object* mui_player_group(") : NULL;
+    const char* grp_end = grp != NULL ? strstr(grp, "\n}\n") : NULL;
+    const char* call = grp != NULL ? strstr(grp, "mui_player_band(&band,") : NULL;
+    uint32_t b0 = mui_player_bar_builds(), k, tc[4];
+    CHECK(src != NULL && open_fn != NULL && slot != NULL, "mui_open builds the player slot through mui_player_group");
+    CHECK(call != NULL && grp_end != NULL && call < grp_end, "mui_player_group takes its sizes from mui_player_band");
+    CHECK(grp_end != NULL && strstr(grp, "k < band.n_transport") != NULL && strstr(grp, "(int)band.btn_w, (int)band.btn_px") != NULL,
+          "the transport buttons are built n_transport times at btn_w x btn_px");
+    mui_player_band(&t, 1, mui_pixel_aspect_q8(22, 44), 640, 0);
+    mui_player_band(&r, 0, 256, 800, 15);
+    CHECK(mui_player_bar_builds() == b0 + 2u, "the bar sentinel ran: %u (want %u)", (unsigned)mui_player_bar_builds(), (unsigned)(b0 + 2u));
+    CHECK(t.band_n == 1 && t.right_rows == 1 && t.extras == 0 && r.band_n == 1 && r.right_rows == 1 && r.extras == 0, "one row, no extras row, in both classes");
+    CHECK(t.n_transport == 5u && r.n_transport == 5u, "five transport icons, got %u and %u", (unsigned)t.n_transport, (unsigned)r.n_transport);
+    for (k = 0; k < t.n_transport; k++) {
+        CHECK(mui_transport_icon_only(mui_player_transport_at(k)) == 1, "transport slot %u is icon-only", (unsigned)k);
+    }
+    CHECK(t.btn_w == 2u * t.btn_px, "bitmap class: a square on tall pixels is btn_w %u x btn_px %u", (unsigned)t.btn_w, (unsigned)t.btn_px);
+    CHECK(r.btn_w == r.btn_px, "RTG class: square pixels, btn_w %u = btn_px %u", (unsigned)r.btn_w, (unsigned)r.btn_px);
+    CHECK(t.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H && t.art_h == 28u && r.art_h == 56u && r.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD,
+          "bar heights: bitmap %u art %u, RTG %u art %u", (unsigned)t.height, (unsigned)t.art_h, (unsigned)r.height, (unsigned)r.art_h);
+    tc[0] = mui_player_centre_y(&t, t.btn_px);
+    tc[1] = mui_player_centre_y(&t, t.text_h);
+    tc[2] = mui_player_centre_y(&t, t.slider_h);
+    tc[3] = mui_player_centre_y(&t, t.btn_px);
+    for (k = 1; k < 4u; k++) {
+        CHECK(tc[k] + 1u >= tc[0] && tc[k] <= tc[0] + 1u, "bitmap centre line %u: %u vs button %u", (unsigned)k, (unsigned)tc[k], (unsigned)tc[0]);
+    }
 }
 
 static void test_viz_chooser(void) {
@@ -3183,6 +3241,8 @@ int main(int argc, char** argv) {
         test_viz_chooser();
     } else if (strcmp(argv[1], "player-band-sizes") == 0) {
         test_player_band_sizes();
+    } else if (strcmp(argv[1], "player-bar-reach") == 0) {
+        test_player_bar_reach();
     } else if (strcmp(argv[1], "compact-player") == 0) {
         test_compact_player();
     } else if (strcmp(argv[1], "compact-rail") == 0) {
