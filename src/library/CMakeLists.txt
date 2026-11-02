@@ -13,6 +13,9 @@ else()
   endif()
   set(SEL_NET_SOURCE ${PROJECT_SOURCE_DIR}/src/core/posix/net.c)
   set(SEL_DIR_SOURCE ${PROJECT_SOURCE_DIR}/src/core/macos/dir.c)
+  # dir.c uses PATH_MAX and st_mtim. CMAKE_C_STANDARD 99 compiles with -std=c99, which makes glibc hide both (I990b);
+  # _DEFAULT_SOURCE restores them on glibc and is ignored on macOS.
+  set_source_files_properties(${SEL_DIR_SOURCE} PROPERTIES COMPILE_DEFINITIONS _DEFAULT_SOURCE)
 endif()
 # Playlist codecs (plan M1.2 phase 3): portable C, no OS code.
 add_library(selecta_library STATIC local.c ${SEL_DIR_SOURCE}

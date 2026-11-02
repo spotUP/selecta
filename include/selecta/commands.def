@@ -121,6 +121,7 @@ SEL_CMD(SONGS_PLAY, "sus", "playlists", "list version ranges", "Play Selected So
 SEL_CMD(SONGS_PLAY_NEXT, "sus", "playlists", "list version ranges", "Play Selected Songs Next")
 SEL_CMD(SONGS_QUEUE_ADD, "sus", "playlists", "list version ranges", "Add Selected Songs To Queue")
 SEL_CMD(SONGS_PLAYLIST_ADD, "usus", "playlists", "playlist list version ranges", "Add Selected Songs To Playlist")
+SEL_CMD(PLAY_CONTEXT, "suus?", "playlists", "list version start [name]", "Play From Row And Continue With The List")
 SEL_CMD(SONGS_REMOVE, "sus", "playlists", "list version ranges", "Remove Selected Songs")
 SEL_CMD(STICKER_LIST, "s", "playlists", "path", "List Stickers")
 SEL_CMD(PREF_GET, "s", "playlists", "key", "Get Preference")

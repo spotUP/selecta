@@ -151,7 +151,7 @@
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(STREAM_ADD) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(COLLECTION_OPEN) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
-    X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
+    X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(PLAY_CONTEXT) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -397,6 +397,8 @@ struct sel_engine {
     uint32_t stream_adds;                      /* STREAM_ADD URLs saved (I725a) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
     uint32_t songs_runs, songs_done, songs_stale, songs_skipped; /* SONGS_* sentinel, songs handled by the last verb, stale refusals (I632b) */
+    uint32_t context_plays, context_rows;      /* PLAY_CONTEXT sentinel (I994a) */
+    char ctx_name[SEL_CTX_NAME_MAX];           /* PLAY_CONTEXT label, "" none */
     char* songs_ranges;                        /* SONGS_RANGES staging: ranges text for the next SONGS_* verb, heap, NULL none */
     size_t songs_ranges_len;
     uint32_t addf_runs, addf_added;            /* PLAYLIST_ADD_FOLDER sentinel and songs the last run appended (I652d) */
@@ -3460,8 +3462,17 @@ static void queue_insert(sel_engine* e, uint32_t at, const char* path, const cha
     emit_queue_changed(e);
 }
 
+/* I994: where a hand-added song goes: after the playing entry's hand-added block, before the play context's rows. */
+static uint32_t queue_handadd_end(const sel_engine* e) {
+    uint32_t i = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : e->q_hint;
+    for (; i < e->queue.count; i++) {
+        if ((e->queue.entries[i].flags & SEL_QUEUE_FLAG_CONTEXT) != 0u) return i;
+    }
+    return e->queue.count;
+}
+
 static void cmd_QUEUE_ADD(sel_engine* e, const sel_message* m) {
-    queue_insert(e, e->queue.count, m->args[0].v.s, "QUEUE_ADD");
+    queue_insert(e, queue_handadd_end(e), m->args[0].v.s, "QUEUE_ADD");
 }
 
 /* ---- playlist files --------------------------------------------------- */
@@ -3850,6 +3861,7 @@ static void cmd_QUEUE_CLEAR(sel_engine* e, const sel_message* m) {
     sel_queue_clear(&e->queue);
     e->q_playing = 0;
     e->q_hint = 0;
+    e->ctx_name[0] = '\0';
     emit_queue_changed(e);
 }
 
@@ -3871,6 +3883,19 @@ static void cmd_QUEUE_MOVE(sel_engine* e, const sel_message* m) {
         sel_history_forget(&e->history);
         sel_engine_report_error(e, "range", "QUEUE_MOVE");
         return;
+    }
+    {
+        /* I994: a row moved into the hand-added block stops being context, one moved into the context block becomes it. Rows at or
+         * before the playing entry are history and keep their flag. */
+        uint32_t at = sel_queue_index_of(&e->queue, m->args[0].v.u);
+        uint32_t playing = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : SEL_QUEUE_NONE;
+        if (at != SEL_QUEUE_NONE && (playing == SEL_QUEUE_NONE || at > playing)) {
+            const sel_queue_entry* nb = at + 1u < e->queue.count ? &e->queue.entries[at + 1u] : NULL;
+            int ctx = nb != NULL ? (nb->flags & SEL_QUEUE_FLAG_CONTEXT) != 0u
+                                 : at > 0u && (e->queue.entries[at - 1u].flags & SEL_QUEUE_FLAG_CONTEXT) != 0u;
+            if (ctx) e->queue.entries[at].flags |= SEL_QUEUE_FLAG_CONTEXT;
+            else e->queue.entries[at].flags &= ~SEL_QUEUE_FLAG_CONTEXT;
+        }
     }
     emit_queue_changed(e);
 }
@@ -8464,8 +8489,17 @@ static void songs_unstage(sel_engine* e) {
 static int songs_resolve(sel_engine* e, const char* verb, songs_sel* s);
 
 /* Binds the verb's list, checks the version and expands the ranges. 0: nothing to do (an ERROR was reported, or stale). */
+static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint32_t version, const char* inline_ranges,
+                         int64_t tail_from, songs_sel* s);
+
 static int songs_open(sel_engine* e, const char* verb, const char* list, uint32_t version, const char* inline_ranges,
                       songs_sel* s) {
+    return songs_open_ex(e, verb, list, version, inline_ranges, -1, s);
+}
+
+/* tail_from >= 0 (PLAY_CONTEXT): the selection is the rows tail_from .. last, instead of the ranges text. */
+static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint32_t version, const char* inline_ranges,
+                         int64_t tail_from, songs_sel* s) {
     uint32_t pass, have;
     char* text = NULL;
     const char* p;
@@ -8525,7 +8559,7 @@ static int songs_open(sel_engine* e, const char* verb, const char* list, uint32_
         songs_unstage(e);
         return 0;
     }
-    text = (char*)malloc(sl + il + 2u);
+    text = (char*)malloc(sl + il + 32u);
     if (text == NULL) {
         sel_engine_report_error(e, "no_memory", verb);
         songs_sel_free(s);
@@ -8539,6 +8573,15 @@ static int songs_open(sel_engine* e, const char* verb, const char* list, uint32_
         strcat(text, inline_ranges);
     }
     songs_unstage(e);
+    if (tail_from >= 0) {
+        if ((uint64_t)tail_from >= s->count) {
+            sel_engine_report_error(e, "range", verb);
+            free(text);
+            songs_sel_free(s);
+            return 0;
+        }
+        snprintf(text, sl + il + 32u, "%u-%u", (unsigned)tail_from, (unsigned)(s->count - 1u));
+    }
     for (pass = 0; pass < 2u; pass++) {
         s->n = 0;
         first = 1;
@@ -8697,7 +8740,7 @@ static void cmd_SONGS_QUEUE_ADD(sel_engine* e, const sel_message* m) {
     songs_sel s;
     uint32_t first = 0;
     if (!songs_open(e, "SONGS_QUEUE_ADD", m->args[0].v.s, m->args[1].v.u, m->args[2].v.s, &s)) return;
-    songs_done(e, "SONGS_QUEUE_ADD", songs_insert(e, "SONGS_QUEUE_ADD", &s, SEL_QUEUE_NONE, &first));
+    songs_done(e, "SONGS_QUEUE_ADD", songs_insert(e, "SONGS_QUEUE_ADD", &s, queue_handadd_end(e), &first));
     songs_sel_free(&s);
 }
 
@@ -8719,6 +8762,81 @@ static void cmd_SONGS_PLAY(sel_engine* e, const sel_message* m) {
         if (done > 0u) queue_start(e, first);
     }
     songs_done(e, "SONGS_PLAY", done);
+    songs_sel_free(&s);
+}
+
+/* I994a: PLAY_CONTEXT list version start [name]. The clicked row plays now, the rows after it in the list continue after the
+ * hand-added songs. One history step, one QUEUE_CHANGED. The old context's remaining rows are replaced; when the queue is full
+ * the oldest played context rows go first, then the context is cut at capacity (the clicked row is inserted first). */
+static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
+    static const char verb[] = "PLAY_CONTEXT";
+    songs_sel s;
+    sel_queue* q = &e->queue;
+    uint32_t i, done = 0, first = 0, from, id, need_text = 0, dropped;
+    size_t nl;
+    if (!songs_open_ex(e, verb, m->args[0].v.s, m->args[1].v.u, "", (int64_t)m->args[2].v.u, &s)) return;
+    if (s.kind == SONGS_QUEUE) { /* the queue is its own context: start the row where it is, touch nothing else */
+        if (s.n > 0u && !row_is_divider(q, s.idx[0])) {
+            queue_start(e, s.idx[0]);
+            done = 1u;
+        }
+        songs_done(e, verb, done);
+        songs_sel_free(&s);
+        return;
+    }
+    if (s.pn == 0u) {
+        songs_done(e, verb, 0u);
+        songs_sel_free(&s);
+        return;
+    }
+    sel_history_record(&e->history, q);
+    /* 1. the old context's remaining rows go (entries after the playing one; all from the hint when nothing plays) */
+    from = e->q_playing ? sel_queue_index_of(q, e->q_playing) + 1u : e->q_hint;
+    for (i = from; i < q->count;) {
+        if ((q->entries[i].flags & SEL_QUEUE_FLAG_CONTEXT) != 0u) queue_take(e, q->entries[i].id);
+        else i++;
+    }
+    /* 2. make room: oldest played context rows first (section 7) */
+    for (i = 0; i < s.pn; i++) need_text += (uint32_t)strlen(s.plist[i]) + 1u;
+    for (i = 0; i < q->count && i < from && (q->count + s.pn > q->capacity || need_text > q->text_bytes - q->text_used);) {
+        if ((q->entries[i].flags & SEL_QUEUE_FLAG_CONTEXT) != 0u && q->entries[i].id != e->q_playing) {
+            queue_take(e, q->entries[i].id);
+            from--;
+        } else {
+            i++;
+        }
+    }
+    /* 3. the clicked row right after the playing entry, then the rest at the end (everything after is hand-added) */
+    if (!sel_queue_insert(q, from, s.plist[0], &id)) {
+        sel_history_forget(&e->history);
+        sel_engine_report_error(e, "queue_full", verb);
+        songs_sel_free(&s);
+        return;
+    }
+    first = from;
+    q->entries[first].flags |= SEL_QUEUE_FLAG_CONTEXT;
+    done = 1u;
+    for (i = 1; i < s.pn; i++) {
+        if (!sel_queue_insert(q, q->count, s.plist[i], &id)) break;
+        q->entries[q->count - 1u].flags |= SEL_QUEUE_FLAG_CONTEXT;
+        done++;
+    }
+    dropped = s.pn - done;
+    if (dropped > 0u) {
+        sel_engine_report_error(e, "queue_full", verb);
+    }
+    nl = strlen(m->argc > 3 ? m->args[3].v.s : "");
+    if (nl >= SEL_CTX_NAME_MAX) {
+        nl = SEL_CTX_NAME_MAX - 1u;
+        while (nl > 0u && (((unsigned char)m->args[3].v.s[nl]) & 0xC0u) == 0x80u) nl--; /* cut on a UTF-8 boundary */
+    }
+    if (nl > 0u) memcpy(e->ctx_name, m->args[3].v.s, nl);
+    e->ctx_name[nl] = '\0';
+    e->context_plays++;
+    e->context_rows += done;
+    emit_queue_changed(e);
+    queue_start(e, first);
+    songs_done(e, verb, done);
     songs_sel_free(&s);
 }
 
@@ -9576,6 +9694,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.queue_count = e->queue.count;
     e->state.queue_playing = e->q_playing;
     e->state.queue_version = e->queue.version;
+    e->state.ctx_name = e->ctx_name;
 }
 
 /* While the output is handed over to a HW-kind replayer no output pulls sel_engine_render, so the pump runs it
@@ -9916,6 +10035,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_runs = e->songs_runs;
     out->songs_done = e->songs_done;
     out->songs_stale = e->songs_stale;
+    out->context_plays = e->context_plays;
+    out->context_rows = e->context_rows;
     out->songs_skipped = e->songs_skipped;
     out->import_missing = e->import_missing;
     out->links_parsed = e->links_parsed;
