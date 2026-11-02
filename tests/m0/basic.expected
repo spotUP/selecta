@@ -1,8 +1,6 @@
 VOLUME 50
 VOLUME 55
-STATE playing
-STATE paused
-STATE stopped
+ERROR no_song PLAY
 ERROR unknown_command FOO
 ERROR no_song SEEK
 VOLUME 20
