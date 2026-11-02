@@ -223,7 +223,7 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 15, "text constructor sites: %d (definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
+    CHECK(count_of(ui, "mui_aatext(") == 15, "text constructor sites: %d (definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 4 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
     CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
@@ -250,7 +250,7 @@ static void test_panel_source(void) {
     }
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_PANEL") == 0, "TH PANEL group left in mui_ui.c: %d", count_of(ui, "TH_TAGS(MUI_TH_PANEL"));
     CHECK(count_of(ui, "MUIA_Frame, MUIV_Frame_Group") == 0, "plain art frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aapanel(") == 6, "panel constructor sites: %d (definition + 5; the player art frame goes through mui_aapanel_wh, I949d)", count_of(ui, "mui_aapanel("));
+    CHECK(count_of(ui, "mui_aapanel(") == 5, "panel constructor sites: %d (definition + 4: sidebar, player, main, detail; both art frames go through mui_aapanel_wh, I949d, I949e2)", count_of(ui, "mui_aapanel("));
     CHECK(count_of(ui, "mui_aapanel_new(") == 1, "one AAPanel constructor call: %d", count_of(ui, "mui_aapanel_new("));
     CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_corners(") != NULL,
           "class does not draw through the shared panel helpers");
@@ -293,8 +293,8 @@ static void test_tabs(void) {
     CHECK(mui_aa_tabs_calls() > before, "tabs helpers did not run");
 }
 
-/* I667j mui-tabs-source: no stock Register is left in the MUI UI, the detail pane builds its tabs through one AATabs constructor
- * call, and the class draws through the shared helpers with no colour literal. */
+/* I667j mui-tabs-source: no stock Register is left in the MUI UI, the detail pane and the Visualizer page (I918) build their tabs through
+ * two AATabs constructor calls, and the class draws through the shared helpers with no colour literal. */
 static void test_tabs_source(void) {
     char* ui = slurp(UI_SOURCE);
     char* cls = slurp(AATABS_SOURCE);
@@ -304,7 +304,7 @@ static void test_tabs_source(void) {
         return;
     }
     CHECK(count_of(ui, "MUIC_Register") == 0 && count_of(ui, "MUIA_Register_") == 0, "stock Register left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatabs_new(") == 1, "AATabs constructor calls in mui_ui.c: %d", count_of(ui, "mui_aatabs_new("));
+    CHECK(count_of(ui, "mui_aatabs_new(") == 2, "AATabs constructor calls in mui_ui.c: %d", count_of(ui, "mui_aatabs_new("));
     CHECK(count_of(ui, "AATab_Active") >= 1 && count_of(ui, "MUIA_Group_ActivePage") >= 1, "tab strip not wired to the page group");
     CHECK(count_of(ui, "mui_aatabs_class_free()") == 1, "class not freed at close");
     CHECK(strstr(cls, "mui_aa_tabs_line(") != NULL && strstr(cls, "mui_aa_tabs_rgb(") != NULL && strstr(cls, "mui_aa_tabs_key(") != NULL && strstr(cls, "mui_aa_tabs_click(") != NULL,

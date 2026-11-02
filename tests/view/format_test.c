@@ -110,10 +110,10 @@ static void test_prefs_and_rows(void) {
     CHECK(strcmp(row0(), "Tune.mod") == 0, "default row '%s'", row0());
     run("PREF_SET view.title_format \"%file%|%format%\"");
     CHECK(strstr(evlog, "PREFS_CHANGED view.title_format") != NULL, "PREF_SET event: %s", evlog);
-    CHECK(strcmp(row0(), "Tune.mod|mod") == 0, "formatted row '%s'", row0());
+    CHECK(strcmp(row0(), "Tune.mod|Protracker (mod)") == 0, "formatted row '%s'", row0());
     run("PREF_SET view.title_format \"%foo%\"");
     CHECK(strstr(evlog, "ERROR bad_format") != NULL, "bad format rejected: %s", evlog);
-    CHECK(strcmp(row0(), "Tune.mod|mod") == 0, "row kept after bad format '%s'", row0());
+    CHECK(strcmp(row0(), "Tune.mod|Protracker (mod)") == 0, "row kept after bad format '%s'", row0());
 }
 
 int main(void) {

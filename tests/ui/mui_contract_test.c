@@ -2359,14 +2359,20 @@ static void test_status_face(void) {
     end = grp != NULL ? strstr(grp, "MUI-P3-4") : NULL;
     CHECK(grp != NULL && end != NULL, "mui_player_group not found");
     if (grp != NULL && end != NULL) {
-        const char* attrs[] = {"MUI_ATTR_CLOCK", "MUI_ATTR_REMAINING", "MUI_ATTR_LENGTH", "MUI_ATTR_TITLE", "MUI_ATTR_ARTIST", "MUI_ATTR_FORMAT", "MUI_ATTR_STATUS"};
+        /* I973c: the one-row bar holds title, artist, clock and length; remaining, format and status left the bar. */
+        const char* attrs[] = {"MUI_ATTR_TITLE", "MUI_ATTR_ARTIST", "MUI_ATTR_CLOCK", "MUI_ATTR_LENGTH"};
+        const char* gone[] = {"MUI_ATTR_REMAINING", "MUI_ATTR_FORMAT", "MUI_ATTR_STATUS"};
         size_t i;
         for (i = 0; i < sizeof attrs / sizeof attrs[0]; i++) {
             char key[96];
             const char* at;
-            snprintf(key, sizeof key, "mui_make_text(s, %s,", attrs[i]);
+            snprintf(key, sizeof key, "%s, %s,", i < 2 ? "mui_make_text(s" : "mui_make_text_al(s", attrs[i]);
             at = strstr(grp, key);
             CHECK(at != NULL && at < end, "player group has no %s text box", attrs[i]);
+        }
+        for (i = 0; i < sizeof gone / sizeof gone[0]; i++) {
+            const char* at = strstr(grp, gone[i]);
+            CHECK(at == NULL || at >= end, "player group still has a %s text box", gone[i]);
         }
     }
 }
@@ -2480,7 +2486,7 @@ static void test_subsong_bar(void) {
 
 static void test_cycle_initial(void) {
     static char src[1000000];
-    const char* line;
+    const char *line, *vp, *vend;
     FILE* f = fopen(MUI_UI_SOURCE, "rb");
     size_t n;
     CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
@@ -2490,12 +2496,20 @@ static void test_cycle_initial(void) {
     n = fread(src, 1, sizeof src - 1, f);
     fclose(f);
     src[n] = 0;
+    /* I735 (4983dade): the P4_VIZPICK handler runs on a user pick, long after OM_NEW, and keeps every picker on the plugin the engine runs.
+     * It is the only place that may set AAC_Active; any other set() is a startup-time set of a cycle. */
+    vp = strstr(src, "case P4_VIZPICK:");
+    vend = vp != NULL ? strstr(vp, "\n    case P4_") : NULL;
+    if (vend == NULL && vp != NULL) {
+        vend = vp + strlen(vp);
+    }
+    CHECK(vp != NULL, "P4_VIZPICK handler not found");
     for (line = src; line != NULL && *line != 0;) {
         const char* end = strchr(line, '\n');
         size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
         char buf[512];
         snprintf(buf, sizeof buf, "%.*s", (int)(len < sizeof buf - 1 ? len : sizeof buf - 1), line);
-        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "AAC_Active") != NULL), "mui_ui.c sets AAC_Active after OM_NEW: %s", buf);
+        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "AAC_Active") != NULL && !(vp != NULL && line > vp && line < vend)), "mui_ui.c sets AAC_Active after OM_NEW: %s", buf);
         line = end != NULL ? end + 1 : NULL;
     }
     CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");
@@ -2884,7 +2898,7 @@ static void test_overlays(void) {
         return;
     }
     CHECK(strstr(src, "mui_tip(kind, index, f, flag,") != NULL && strstr(src, "MUIA_ShortHelp") != NULL && strstr(src, "MUI_TIP_DOOR,") != NULL &&
-              strstr(src, "MUI_TIP_TRANSPORT,") != NULL && strstr(src, "MUI_TIP_LIKE,") != NULL && strstr(src, "MUI_TIP_SEEK,") != NULL,
+              strstr(src, "MUI_TIP_TRANSPORT,") != NULL && strstr(src, "MUI_TIP_LIKE,") == NULL && strstr(src, "MUI_TIP_SEEK,") != NULL,
           "tooltips are not set from mui_tip");
     CHECK(strstr(src, "CTL_NP_TOGGLE") != NULL && strstr(src, "mui_np_toggle(&s->lay)") != NULL && strstr(src, "mui_layout_map_panel(&s->lay") != NULL &&
               strstr(src, "mui_np_toggle_shown(&s->lay)") != NULL,

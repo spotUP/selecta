@@ -282,7 +282,8 @@ static const mui_page_slot_t g_page_slots[SEL_UIM_PG_COUNT] = {
     [SEL_UIM_PG_TRACKER] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I735: the main-area Pattern pane, @pattern */
     [SEL_UIM_PG_SHELF] = {MUI_PAGE_EXEMPT, "Show all on a Home shelf has no MUI handler yet (drift doc section 5)"},
     [SEL_UIM_PG_BROWSE] = {MUI_PAGE_MAIN_VIEW, NULL}, /* the top bar Browse button sends mui_topbar_browse_lines */
-    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_EXEMPT, "an album, artist or playlist page has no MUI handler yet; the main list shows the playlist source (drift doc section 5)"}};
+    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_EXEMPT, "an album, artist or playlist page has no MUI handler yet; the main list shows the playlist source (drift doc section 5)"},
+    [SEL_UIM_PG_SETTINGS] = {MUI_PAGE_EXEMPT, "MUI opens Settings as its own window (mui_settings_open, MUI-P4-10) on the shared pref rows, not as a main-area page (I799a added the page)"}};
 
 const mui_page_slot_t* mui_page_slot(uint32_t page) {
     return page < (uint32_t)SEL_UIM_PG_COUNT ? &g_page_slots[page] : (const mui_page_slot_t*)0;
