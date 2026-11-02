@@ -85,6 +85,10 @@ target_include_directories(selecta_archive PUBLIC ${PROJECT_SOURCE_DIR}/third_pa
 # Third-party source: no project warning flags. miniz without stdio and time (memory in, memory out).
 target_compile_options(selecta_archive PRIVATE -w)
 target_compile_definitions(selecta_archive PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+# lhasa calls strdup (lha_file_header.c). CMAKE_C_STANDARD 99 compiles with -std=c99, which makes glibc hide the POSIX
+# declarations, and gcc 14 (ubuntu-latest) turns the implicit declaration into an error (I988). _DEFAULT_SOURCE restores
+# the POSIX 2008 set on glibc and is ignored on macOS and libnix.
+target_compile_definitions(selecta_archive PRIVATE _DEFAULT_SOURCE)
 target_link_libraries(selecta_library PUBLIC selecta_archive selecta_shared_archive selecta_shared_source)
 
 # Song length database (I605, feature F1): tools/songlen_bake.c turns the audacious-uade-tools songlengths.tsv into the
