@@ -40,6 +40,10 @@ uint32_t mui_open_ladder(uint32_t step, uint32_t screen_w, uint32_t screen_h, in
     return 1;
 }
 
+uint32_t mui_open_layout_width(uint32_t opened_w, uint32_t window_w) {
+    return opened_w != 0u && window_w > opened_w ? opened_w : window_w;
+}
+
 uint32_t mui_open_ladder_calls(void) {
     return g_ladder_calls;
 }

@@ -145,6 +145,7 @@ typedef struct mui_state {
     Object* root;                   /* window contents: its MUIA_Width drives the breakpoint (MUI-P2-2) */
     Object* slot[MUI_SLOT_COUNT];   /* the five layout regions and the top bar, created once, shown or hidden */
     Object* balance[2];             /* sidebar|main and main|detail */
+    uint32_t open_layout_w; /* I973h: layout width of the ladder step that opened the window (cap for the resize check) */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
     Object* btn[MUI_BTN_COUNT];     /* MUI-P2-5 transport buttons */
@@ -3107,6 +3108,7 @@ static uint32_t mui_layout_for_screen(mui_state* s, uint32_t step) {
     if (!mui_open_ladder(step, w, h, laced, &st)) {
         return 0;
     }
+    s->open_layout_w = st.layout_w;
     mui_layout_map_panel(&s->lay, st.layout_w, st.layout_h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP,
                          s->lay.detail_hidden);
     mui_apply_layout(s);
@@ -3123,6 +3125,7 @@ static void mui_check_resize(mui_state* s) {
     }
     GetAttr(MUIA_Width, s->root, &w);
     GetAttr(MUIA_Height, s->root, &h);
+    w = mui_open_layout_width(s->open_layout_w, (uint32_t)w); /* I973h: never a layout larger than the ladder step that fit */
     if (w == 0 || (w == s->lay.width && h == s->lay.height)) {
         return;
     }
