@@ -647,6 +647,7 @@ static uint32_t desk_toast_wait(const desk* d);
 static void desk_toast(desk* d, const char* text);
 static int desk_add_folder(desk* d);
 static sel_gui_rect toast_rect(desk* d);
+static sel_gui_rect toast_layout(desk* d, int32_t* lines);
 static sel_gui_rect sync_card_rect(desk* d);
 static sel_gui_rect sync_bar_rect(desk* d);
 static int desk_toast_tick(desk* d);
@@ -7343,6 +7344,13 @@ static const char* library_dump_build(desk* d) {
                               d->scan_pending, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h, (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h,
                               (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
     }
+    {
+        int32_t tn = 1;
+        sel_gui_rect tb = toast_layout(d, &tn);
+        const sel_gui_atlas* tat = desk_font(d, 1, 13);
+        o = dump_put(d, o, "toast on=%d rect %d %d %d %d lines=%d textw=%d lineh=%d\n", d->toast_on, (int)tb.x, (int)tb.y, (int)tb.w, (int)tb.h, (int)tn,
+                     tat != NULL ? (int)sel_gui_text_width(tat, d->toast_text, strlen(d->toast_text)) : 0, tat != NULL ? (int)tat->line_height : 0);
+    }
     o = dump_put(d, o, "toast_text %s\n", d->toast_text[0] != '\0' ? d->toast_text : "-");
     o = dump_put(d, o, "scan_mid %u\n", (unsigned)d->scan_mid);
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
@@ -12465,7 +12473,7 @@ static void desk_bind_actions(desk* d) {
 /* Overlays (DUI-P4-13): the command palette, the shortcut help and the command line share the text UI's models
  * (txt_palette, txt_cmdline), so the ranking, the completion and the key names exist once. Toasts report a pick. */
 enum { OV_NONE, OV_PALETTE, OV_HELP, OV_CMDLINE };
-enum { OV_W = 560, OV_ROW_H = 28, OV_ROWS = 10, OV_HEAD_H = 40, OV_TOP = 72, TOAST_MS = 2500, TOAST_SLIDE = 12, CMD_BAR_H = 36 };
+enum { OV_W = 560, OV_ROW_H = 28, OV_ROWS = 10, OV_HEAD_H = 40, OV_TOP = 72, TOAST_MS = 2500, TOAST_SLIDE = 12, TOAST_MAX_LINES = 4, CMD_BAR_H = 36 };
 
 static sel_gui_rect overlay_box(const desk* d) {
     int32_t w = lpx(d, OV_W) < d->canvas->w ? lpx(d, OV_W) : d->canvas->w;
@@ -12481,9 +12489,36 @@ static sel_gui_rect overlay_row(const desk* d, uint32_t i) {
     return rect_of(b.x + lpx(d, 8), b.y + lpx(d, OV_HEAD_H) + (int32_t)i * lpx(d, OV_ROW_H), b.w - lpx(d, 16), lpx(d, OV_ROW_H));
 }
 
-/* I442: the toast sits in the bottom right corner of the app window, 16 px in from both edges. */
+/* I442: the toast sits in the bottom right corner of the app window, 16 px in from both edges. I1046: the box sizes to its text
+ * (measured width plus the 16 px side padding), capped at a third of the canvas (never under 320 px); past the cap the text wraps
+ * to more lines (at most TOAST_MAX_LINES) and the height follows. The one function that computes it: the draw, the dump and the
+ * hit-test all take it from here. *lines gets the line count. */
+static sel_gui_rect toast_layout(desk* d, int32_t* lines) {
+    const sel_gui_atlas* at = desk_font(d, 1, 13);
+    int32_t pad = lpx(d, 16), margin = lpx(d, 16), cw = d->canvas->w;
+    int32_t maxw = cw / 3 > lpx(d, 320) ? cw / 3 : lpx(d, 320), tw, n = 1, w, h;
+    if (maxw > cw - 2 * margin) {
+        maxw = cw - 2 * margin;
+    }
+    tw = at != NULL ? sel_gui_text_width(at, d->toast_text, strlen(d->toast_text)) : lpx(d, 288);
+    w = tw + 2 * pad;
+    h = lpx(d, 40);
+    if (w > maxw) {
+        w = maxw;
+        if (at != NULL) {
+            n = sel_gui_text_wrap(NULL, at, rect_of(0, 0, w - 2 * pad, 0), d->toast_text, 0u, TOAST_MAX_LINES, NULL);
+            n = n < 1 ? 1 : n;
+        }
+        h = n * (at != NULL ? at->line_height : lpx(d, 16)) + 2 * lpx(d, 12);
+    }
+    if (lines != NULL) {
+        *lines = n;
+    }
+    return rect_of(cw - w - margin, cvh(d) - h - margin, w, h);
+}
+
 static sel_gui_rect toast_rect(desk* d) {
-    return rect_of(d->canvas->w - lpx(d, 320 + 16), cvh(d) - lpx(d, 40 + 16), lpx(d, 320), lpx(d, 40));
+    return toast_layout(d, NULL);
 }
 
 /* I782: the sync card sits in the bottom right corner above the toast: phase, songs stored, queued syncs and Cancel. */
@@ -12641,6 +12676,7 @@ static void desk_draw_overlay(desk* d) {
 static void desk_draw_notices(desk* d) {
     int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
     sel_gui_rect b;
+    int32_t tl = 1;
     sync_card_draw(d);
     if (d->toast_on) {
         int32_t q = sel_gui_tween_value(&d->tl, ANIM_KEY_TOAST, 65536); /* 0 hidden .. 65536 shown */
@@ -12648,13 +12684,18 @@ static void desk_draw_notices(desk* d) {
         if (d->toast_out) {
             q = 65536 - q;
         }
-        b = toast_rect(d);
+        b = toast_layout(d, &tl);
         b.y += (int32_t)(((int64_t)(65536 - q) * lpx(d, TOAST_SLIDE)) >> 16); /* slides up into place, back down on the way out */
         fill = desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_ACCENT], q);
         ink = desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT], q);
         /* I442: no drop shadow; it read as a heavy black outline around the toast. */
         sel_gui_round_rect(d->canvas, b, rad, fill);
-        draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), b.h), d->toast_text, 1, 13, ink);
+        if (tl > 1) {
+            sel_gui_text_wrap(d->canvas, desk_font(d, 1, 13), rect_of(b.x + lpx(d, 16), b.y + lpx(d, 12), b.w - lpx(d, 32), b.h - lpx(d, 24)), d->toast_text,
+                              ink, TOAST_MAX_LINES, &d->text);
+        } else {
+            draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), b.h), d->toast_text, 1, 13, ink);
+        }
         sel_gui_dirty_add(d->canvas, rect_of(b.x, b.y, b.w, b.h + lpx(d, TOAST_SLIDE)));
     }
 }
