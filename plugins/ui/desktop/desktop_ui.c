@@ -386,7 +386,7 @@ typedef struct desk {
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
-    char search_sec_head[8][72]; uint32_t search_sec_rows[8], search_sec_n; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
+    char search_sec_head[8][72]; uint32_t search_sec_rows[8], search_sec_n; int32_t search_sec_y[8]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
@@ -7367,6 +7367,7 @@ static const char* library_dump_build(desk* d) {
         uint32_t si;
         for (si = 0; si < d->search_sec_n; si++) { /* I1019e: one line per From section the list frame drew */
             o = dump_put(d, o, "search_section %u rows=%u %s\n", (unsigned)si, (unsigned)d->search_sec_rows[si], d->search_sec_head[si]);
+            o = dump_put(d, o, "search_section_y %u %d\n", (unsigned)si, (int)d->search_sec_y[si]); /* I1041: heading top */
         }
     }
     if (d->pl_page) { /* the Playlists page geometry and tree rows (DUI-P4-9) */
@@ -8705,7 +8706,8 @@ static int library_click(desk* d, int32_t x, int32_t y) {
 /* ---- Search (DUI-P4-6): the query field on top, facet chips, and the engine's QUERY rows grouped by type. The engine
  * does the search (LIBRARY_SEARCH, the query language incl. `format:mod`); the debounce reuses the tooltip delay pattern
  * (a UI clock stamp, a wait hint for the idle block, a tick that fires once). */
-enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4 };
+/* SEARCH_SECTION_GAP: the space above every shown section heading after the first (I1041), in the draw and the height. */
+enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_SECTION_GAP = 24 };
 /* The Search page draws the whole grouped result (library groups, then one From section per source) and scrolls it in
  * pixels, so its view window holds every row the search text can hold; a shorter window cut the last From sections off
  * behind a library that matches the query (I1030: From Radio Browser missing on All sources). */
@@ -9098,7 +9100,7 @@ static int32_t search_content_h(desk* d) {
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     uint32_t k, group = 0;
     int32_t h = 0;
-    int show = 0;
+    int show = 0, heads = 0;
     if (desk_scope_online(d)) {
         return (int32_t)d->on_n * lpx(d, 48);
     }
@@ -9111,6 +9113,9 @@ static int32_t search_content_h(desk* d) {
             const char* t = r->text != NULL ? r->text : "";
             group = sel_uim_search_group(t);
             show = search_group_shown(d, group);
+            if (show && heads++ > 0) {
+                h += lpx(d, SEARCH_SECTION_GAP);
+            }
             h += show ? lpx(d, 32) : 0;
         } else if (show) {
             h += lpx(d, SEARCH_ROW_H);
@@ -9211,7 +9216,7 @@ static void draw_search(desk* d) {
         }
         d->search_drawn = n;
     } else if (v != NULL) { /* the engine's groups: a heading row (type and count) starts each, its entries follow */
-        uint32_t group = 0, drawn_all = 0;
+        uint32_t group = 0, drawn_all = 0, heads = 0;
         int32_t top = y, bottom = mn.y + mn.h, rh = lpx(d, SEARCH_ROW_H);
         int show = 0;
         char src[72] = "Library"; /* I1020: the source name the rows under the current heading carry as their badge */
@@ -9240,8 +9245,12 @@ static void draw_search(desk* d) {
                     memcpy(src, nm, nl);
                     src[nl] = '\0';
                 }
+                if (show && heads++ > 0u) { /* I1041: a gap above every section heading but the first */
+                    y += lpx(d, SEARCH_SECTION_GAP);
+                }
                 if (group == 4u && d->search_sec_n < 8u) { /* the dump's per-section line */
                     snprintf(d->search_sec_head[d->search_sec_n], sizeof d->search_sec_head[0], "%s", t);
+                    d->search_sec_y[d->search_sec_n] = y;
                     d->search_sec_rows[d->search_sec_n++] = 0;
                 }
                 if (show && y + lpx(d, 32) > top && y < bottom) {

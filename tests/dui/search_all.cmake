@@ -8,6 +8,7 @@
 #     8 get a metadata request = the plugin's cap), the sentinel that its search hook is registered and ran;
 #  1c. (I1024d) the same fan-out draws `From Radio Browser (2)`: radiobrowser answers from the local stations fixture (3 stations, the AAC one dropped).
 #  1d. (I1024e) and `From ccMixter (2)`: ccmixter answers from the local /api/query fixture (4 uploads, closed licence and WAV-only dropped).
+#  1e. (I1041) a 24 px gap above the second From heading (search_section_y lines).
 #  2. the From rows are song rows of the shared loop: `searchrow` lines carry their modulespl: keys.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -58,6 +59,20 @@ if(NOT "${o}" MATCHES "search_section [0-9]+ rows=2 From ccMixter \\(2\\)\n")
 endif()
 if(NOT "${o}" MATCHES "search_section [0-9]+ rows=2 From Jamendo \\(2\\)\n")
   message(FATAL_ERROR "I1024b: no 'From Jamendo' section with 2 rows:\n${o}")
+endif()
+# I1041: a gap above every section heading after the first. From section 0 to 1 the heading top moves by its heading (32),
+# its rows (32 each) and the 24 px gap; before the fix the next heading sat right under the last row (gap 0).
+if(NOT "${o}" MATCHES "search_section 0 rows=([0-9]+) [^\n]*\nsearch_section_y 0 (-?[0-9]+)\n")
+  message(FATAL_ERROR "I1041: no search_section_y 0 line:\n${o}")
+endif()
+set(r0 "${CMAKE_MATCH_1}")
+set(y0 "${CMAKE_MATCH_2}")
+if(NOT "${o}" MATCHES "search_section_y 1 (-?[0-9]+)\n")
+  message(FATAL_ERROR "I1041: no search_section_y 1 line:\n${o}")
+endif()
+math(EXPR gap "${CMAKE_MATCH_1} - ${y0} - 32 * (1 + ${r0})")
+if(NOT gap EQUAL 24)
+  message(FATAL_ERROR "I1041: the gap above the second From heading is ${gap} px, want 24:\n${o}")
 endif()
 if(NOT "${o}" MATCHES "search groups songs=")
   message(FATAL_ERROR "no library groups line in:\n${o}")
