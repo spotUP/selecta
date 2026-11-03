@@ -180,7 +180,11 @@ if(NOT SEL_AMIGA)
     if(script_text MATCHES "SELECTA_GOLDEN_UPDATE")
       set(tlabel "${tlabel};golden")
     endif()
-    set_tests_properties(${tname} PROPERTIES LABELS "${tlabel}" TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
+    set(tenv "TMPDIR=${tmpdir}")
+    if(script_text MATCHES "testsrc") # I1025: the test-only source plugin is a module, loaded only where a test names it
+      list(APPEND tenv "SELECTA_PLUGIN_PATH=${SEL_TESTSRC_PLUGIN_DIR}")
+    endif()
+    set_tests_properties(${tname} PROPERTIES LABELS "${tlabel}" TIMEOUT 120 ENVIRONMENT "${tenv}")
   endforeach()
   # I906e: eight live SDL runs (six moved sites plus setup scans) take about 105 s; the shared 120 s leaves no margin.
   set_tests_properties(dui-direct-calls-async PROPERTIES TIMEOUT 300)

@@ -21,14 +21,10 @@ sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}"
 
 # T5: the registry walked every descriptor and found only known tags. The expected count is the plugin list the registry
 # is generated from (cmake/selecta_registry.cmake, every sel_add_plugin call), not a hand count: I512, the literal said 20
-# after dr_flac, gme and ym joined and the registry held 23. The negative tree adds one bad plugin and is configured
-# with SEL_BUILD_TESTS=OFF, so it lacks the test-only source plugin testsrc (tests/sources/testsrc).
+# after dr_flac, gme and ym joined and the registry held 23. The negative tree adds one bad plugin.
 get_property(_sel_expect_plugins GLOBAL PROPERTY SEL_PLUGINS)
 list(LENGTH _sel_expect_plugins SEL_EXPECT_PLUGINS)
-set(_sel_bad_plugins ${_sel_expect_plugins})
-list(REMOVE_ITEM _sel_bad_plugins testsrc)
-list(LENGTH _sel_bad_plugins SEL_EXPECT_BAD_BASE)
-math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_BAD_BASE} + 1")
+math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
 
 # T6: sel_host layout golden per architecture.
@@ -1614,7 +1610,8 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.sel
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.expected
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
-  set_tests_properties(sources PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
+  set_tests_properties(sources PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${SEL_TESTSRC_PLUGIN_DIR}")
 
   # I265: library.sources_off switches a source off: SOURCES reports SRC_ENABLED=0 and the library search skips its songs.
   add_test(NAME sources-off
@@ -1622,7 +1619,8 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources_off.sel
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources_off.expected
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
-  set_tests_properties(sources-off PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
+  set_tests_properties(sources-off PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${SEL_TESTSRC_PLUGIN_DIR}")
 
   add_test(NAME user-data
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sh $<TARGET_FILE:selecta-cli>
@@ -1751,7 +1749,8 @@ if(NOT SEL_AMIGA)
       "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_songs"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/source_songs.cmake")
-  set_tests_properties(source-songs PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_songs_ok")
+  set_tests_properties(source-songs PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_songs_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${SEL_TESTSRC_PLUGIN_DIR}")
 
   add_executable(key_remote_test m3/key_remote_test.c)
   target_link_libraries(key_remote_test PRIVATE selecta_core)
@@ -2675,7 +2674,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME src-plugin-reach
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/src-plugin-reach"
       "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}" "-DREACH_TEST=$<TARGET_FILE:src_plugin_reach_test>"
-      "-DSRC=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/tests/dui/src_plugin_reach.cmake")
+      "-DSRC=${PROJECT_SOURCE_DIR}" "-DPLUGINS=${SEL_TESTSRC_PLUGIN_DIR}" -P "${PROJECT_SOURCE_DIR}/tests/dui/src_plugin_reach.cmake")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
   set_tests_properties(src-plugin-reach PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "src_plugin_reach_ok"
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
