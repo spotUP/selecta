@@ -1061,6 +1061,19 @@ if(NOT SEL_AMIGA)
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/control_socket.sh" "$<TARGET_FILE:selecta>"
       "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/control_socket")
 
+  # I1013: live UI control over the socket (ui.state, ui.input, ui.frame), SDL dummy video, desktop UI only.
+  if(SELECTA_UI_DESKTOP)
+    add_test(NAME ui-control-socket
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/ui_control.sh" "$<TARGET_FILE:selecta>" "${SEL_CLI}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/dui/fixture_library.sql" "${CMAKE_CURRENT_BINARY_DIR}/ui_control_socket")
+    set_tests_properties(ui-control-socket PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "ui-control-socket ok")
+    add_test(NAME ui-control-mcp
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/ui_mcp_smoke.sh" "$<TARGET_FILE:selecta>" "${SEL_CLI}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/dui/fixture_library.sql" "${CMAKE_CURRENT_BINARY_DIR}/ui_control_mcp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/selecta-ui-mcp.py")
+    set_tests_properties(ui-control-mcp PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "ui-control-mcp ok")
+  endif()
+
   # I575: scripted runs (--console-frames, --output null) ignore a Selecta that holds the default control socket.
   add_test(NAME scripted-run-no-socket
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/scripted_no_socket.sh" "$<TARGET_FILE:selecta>"

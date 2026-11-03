@@ -123,7 +123,7 @@ if(SEL_AMIGA)
 else()
   set(ART_THREAD posix/art_thread.c)
 endif()
-sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c font_roles.c art.c ${ART_THREAD} stb_impl.c ${FONT_GEN}
+sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c font_roles.c art.c ${ART_THREAD} stb_impl.c desk_png.c ${FONT_GEN}
   THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb" "${PROJECT_SOURCE_DIR}/third_party/miniz")
 set_property(GLOBAL APPEND PROPERTY SEL_GUI_ONLY_PLUGINS desktop_ui) # left out of selecta_registry_cli on the Amiga (I583)
 if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
