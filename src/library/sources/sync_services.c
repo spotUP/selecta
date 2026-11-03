@@ -397,6 +397,8 @@ static int cat_state_set(const sel_host* host, const char* key, const void* data
     op.set = 1;
     memset(&reply, 0, sizeof reply);
     return sel_library_request(c->scfg.lib, SEL_LIB_REQ_SRCSTATE, &op, &reply) && reply.args[1].v.i == 0;
+}
+
 static void cat_progress(const sel_host* host, uint32_t done, uint32_t total) {
     sel_sync_ctx* c = ctx_of(host);
 
