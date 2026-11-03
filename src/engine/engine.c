@@ -13,6 +13,7 @@
  * thread as its consumer, these two have the audio thread on one end. */
 #include <selecta/uimodel/browse.h>
 #include <selecta/engine.h>
+#include <selecta/format_label.h>
 #include <selecta/platform.h>
 #include <selecta/machine.h>
 
@@ -197,7 +198,7 @@
 #define SEL_SEARCH_QUERY_MAX 256
 #define SEL_SEARCH_TEXT_MAX 160
 #define SEL_SEARCH_ARTIST_MAX 96
-#define SEL_SEARCH_FORMAT_MAX 16
+#define SEL_SEARCH_FORMAT_MAX SEL_FORMAT_LABEL_MAX /* I1043: the longest label the format table produces; a hit keeps its whole format name */
 
 typedef struct sel_search_hit { /* one SOURCE_SEARCH hit; tags point into the same struct */
     char key[SEL_SEARCH_KEY_MAX];
@@ -601,8 +602,14 @@ struct sel_engine {
         char id[SEL_SOURCE_ID_MAX];
         int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
         uint32_t n;
+        uint32_t ms;                         /* I1044: wall time of this source's search */
+        sel_tag done_tags[4];                /* I1044: the search_done event points here; several sources can land in one pump */
         sel_search_hit hit[SEL_SEARCH_HITS_PER_SOURCE];
     } * search_bucket;
+    struct sel_search_job* search_jobs;      /* I1044: one thread per source of the running fan-out (threaded builds) */
+    uint32_t search_peak;                    /* I1044: most searches in flight at once, ever (parallel sentinel) */
+    uint32_t search_wall_ms;                 /* I1044: first launch to last landing of the latest query */
+    uint64_t search_t0_ms;
     uint32_t search_bucket_cap;              /* buckets allocated */
     uint32_t search_buckets;                 /* buckets of the current query */
     uint32_t search_cur;                     /* the bucket the running task fills */
@@ -2903,10 +2910,21 @@ static const sel_search_hit* search_hit_at(const sel_engine* e, uint32_t idx, co
     return NULL;
 }
 
+/* 1 while a search is rewriting the hit table behind the UI. Serial build: the worker fills the table in place. Threaded build:
+ * job threads fill private buffers and the pump copies them in on landing (search_serial moves then), so the landed sections stay readable. */
+static int search_table_busy(const sel_engine* e) {
+#if defined(SEL_LI_THREAD)
+    (void)e;
+    return 0;
+#else
+    return e->search_running;
+#endif
+}
+
 static int search_pin(sel_engine* e, const char* key) {
     uint32_t i, total = search_total(e);
 
-    if (e->lib == NULL || e->search_running || key == NULL || total == 0) {
+    if (e->lib == NULL || search_table_busy(e) || key == NULL || total == 0) {
         return 0;
     }
     for (i = 0; i < total; i++) {
@@ -4711,6 +4729,7 @@ void sel_engine_sync_cancel(sel_engine* e) {
 }
 
 int sel_engine_scan_busy(const sel_engine* e) {
+    /* Idle test: a threaded search holds no library slot but still counts as busy here (tests and quit wait on it). */
     return e->scan_running || e->sync_running || e->search_running || search_queued(e); /* the scan and the sync share the one library task slot (I527) */
 }
 
@@ -7615,6 +7634,7 @@ static void search_hit_tags(sel_search_hit* h, const char* source) {
     t[6].value = 0;
 }
 
+#if !defined(SEL_LI_THREAD)
 static int search_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
     sel_engine* e = ctx;
     uint32_t i = e->search_n;
@@ -7650,6 +7670,8 @@ static void search_task(void* ctx) {
     sel_sync_ctx_release(&e->search_ctx);
 }
 
+#endif
+
 static void view_reread(sel_engine* e, uint32_t source);
 
 /* I1019b: the From sections follow the buckets; a shown Search view is rebuilt whenever a bucket changes. */
@@ -7660,6 +7682,7 @@ static void search_view_changed(sel_engine* e) {
     }
 }
 
+#if !defined(SEL_LI_THREAD)
 /* Starts the library task for bucket `b` of the current query. */
 static void search_start(sel_engine* e, uint32_t b) {
     snprintf(e->search_source, sizeof e->search_source, "%s", e->search_bucket[b].id);
@@ -7685,6 +7708,8 @@ static void search_start(sel_engine* e, uint32_t b) {
     }
 }
 
+#endif
+
 static int search_queued(const sel_engine* e) {
     uint32_t b;
 
@@ -7696,6 +7721,142 @@ static int search_queued(const sel_engine* e) {
     return 0;
 }
 
+#if defined(SEL_LI_THREAD)
+/* I1044: every source of a fan-out searches on its own thread, so the answer takes as long as the slowest source, not the sum of all of
+ * them (the one library job slot ran them one after another, so IA's metadata requests held back every source behind it). A job owns its
+ * hits on the heap; the pump copies them into the bucket when the job is done and the query is still current. */
+struct sel_search_job {
+    struct sel_search_job* next;
+    sel_engine* e;
+    uint32_t gen, b, n, ms;
+    int rc, started;
+    volatile unsigned cancel; /* the thread's net cancel generation: supersede moves it, a wait ends within one poll slice */
+    volatile int done;
+    pthread_t th;
+    sel_sync_ctx ctx;
+    char id[SEL_SOURCE_ID_MAX];
+    char query[SEL_SEARCH_QUERY_MAX];
+    sel_search_hit* hit;
+};
+
+static uint64_t search_now_ms(void) {
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
+static int search_job_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
+    struct sel_search_job* j = ctx;
+    sel_search_hit* h;
+
+    if (j->n >= SEL_SEARCH_HITS_PER_SOURCE) {
+        return 0;
+    }
+    h = &j->hit[j->n++];
+    snprintf(h->key, sizeof h->key, "%s:%s", j->id, path);
+    snprintf(h->title, sizeof h->title, "%s", title);
+    snprintf(h->artist, sizeof h->artist, "%s", artist);
+    snprintf(h->format, sizeof h->format, "%s", format);
+    return 1;
+}
+
+static void* search_job_main(void* arg) {
+    struct sel_search_job* j = arg;
+    sel_host shost;
+    sel_search_sink sink;
+    uint64_t t0 = search_now_ms();
+
+    sel_net_set_cancel(&j->cancel, 0u);
+    sel_sync_host_bind(&shost, j->e->host, &j->ctx);
+    sink.ctx = j;
+    sink.row = search_job_row;
+    j->rc = sel_source_search(&shost, j->id, j->query, &sink);
+    sel_sync_ctx_release(&j->ctx);
+    j->ms = (uint32_t)(search_now_ms() - t0);
+    __atomic_store_n(&j->done, 1, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+static void search_job_free(sel_engine* e, struct sel_search_job* j) {
+    e->host->mem_free(e->host, j->hit);
+    e->host->mem_free(e->host, j);
+}
+
+/* Launches a thread for every queued bucket of the current query. */
+static void search_start_next(sel_engine* e) {
+    uint32_t b, live = 0;
+    struct sel_search_job* j;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        if (e->search_bucket[b].state != SEARCH_QUEUED) {
+            continue;
+        }
+        for (j = e->search_jobs; j != NULL && strcmp(j->id, e->search_bucket[b].id) != 0; j = j->next) {
+        }
+        if (j != NULL) {
+            continue; /* a source runs one search at a time (its plugin reuses one cache file name): the superseded one is collected first */
+        }
+        j = (struct sel_search_job*)e->host->mem_alloc(e->host, sizeof *j, SEL_MEM_FAST);
+        if (j != NULL) {
+            memset(j, 0, sizeof *j);
+            j->hit = (sel_search_hit*)e->host->mem_alloc(e->host, SEL_SEARCH_HITS_PER_SOURCE * sizeof *j->hit, SEL_MEM_FAST);
+        }
+        if (j == NULL || j->hit == NULL) {
+            if (j != NULL) e->host->mem_free(e->host, j);
+            e->search_bucket[b].state = SEARCH_FAILED;
+            sel_engine_report_error(e, "out_of_memory", e->search_bucket[b].id);
+            continue;
+        }
+        j->e = e;
+        j->gen = e->search_gen;
+        j->b = b;
+        snprintf(j->id, sizeof j->id, "%s", e->search_bucket[b].id);
+        snprintf(j->query, sizeof j->query, "%s", e->search_wait_query);
+        j->ctx.scfg.host = e->host;
+        j->ctx.scfg.lib = e->lib;
+        if (e->search_jobs == NULL) {
+            e->search_t0_ms = search_now_ms();
+        }
+        e->source_searches++;
+        e->search_bucket[b].state = SEARCH_RUNNING;
+        if (pthread_create(&j->th, NULL, search_job_main, j) != 0) {
+            e->search_bucket[b].state = SEARCH_FAILED;
+            sel_engine_report_error(e, "search_failed", j->id);
+            search_job_free(e, j);
+            continue;
+        }
+        e->search_worker_runs++;
+        j->started = 1;
+        j->next = e->search_jobs;
+        e->search_jobs = j;
+        e->search_running = 1;
+    }
+    for (j = e->search_jobs; j != NULL; j = j->next) {
+        live += __atomic_load_n(&j->done, __ATOMIC_ACQUIRE) ? 0u : 1u;
+    }
+    if (live > e->search_peak) {
+        e->search_peak = live;
+    }
+    e->search_serial++;
+}
+
+/* Cancels every search thread and joins it (engine destroy). */
+static void search_jobs_end(sel_engine* e) {
+    struct sel_search_job* j;
+
+    for (j = e->search_jobs; j != NULL; j = j->next) {
+        j->cancel++;
+    }
+    while (e->search_jobs != NULL) {
+        j = e->search_jobs;
+        e->search_jobs = j->next;
+        pthread_join(j->th, NULL);
+        search_job_free(e, j);
+    }
+    e->search_running = 0;
+}
+#else
 /* One library task per source, one at a time: the first queued bucket of the current generation starts when the slot is free. */
 static void search_start_next(sel_engine* e) {
     uint32_t b;
@@ -7710,14 +7871,29 @@ static void search_start_next(sel_engine* e) {
     }
 }
 
+#endif
+
 /* A new query supersedes the one in flight: the generation bump makes its collect a drop, the cancel request ends its network wait. */
 static void search_supersede(sel_engine* e) {
     e->search_gen++;
     e->search_buckets = 0;
     e->search_serial++;
+#if defined(SEL_LI_THREAD)
+    {
+        struct sel_search_job* j;
+
+        for (j = e->search_jobs; j != NULL; j = j->next) {
+            j->cancel++; /* I1044: the net waits of every search in flight end within one poll slice */
+        }
+    }
+#endif
+#if !defined(SEL_LI_THREAD)
     if (e->search_running) {
+        /* Serial build only: the search owns the one library task slot. Threaded builds cancel through the job threads above;
+         * the slot may hold a scan or sync, which a new query must not cancel. */
         sel_library_task_cancel_request(e->lib); /* I782: returns at once; the job thread notices at its next poll slice */
     }
+#endif
 }
 
 /* Registered sources that have a search hook (the most buckets one fan-out can hold). */
@@ -7795,6 +7971,77 @@ static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
     search_view_changed(e);
 }
 
+#if defined(SEL_LI_THREAD)
+/* The events of one finished search go out in the pump, copied into their bucket first (events point into the bucket). */
+static void search_land(sel_engine* e, struct sel_search_job* j) {
+    sel_message r;
+    uint32_t i, b = j->b;
+
+    e->search_serial++;
+    e->search_bucket[b].ms = j->ms;
+    if (j->rc < 0) {
+        e->search_bucket[b].state = SEARCH_FAILED;
+        sel_engine_report_error(e, sel_source_find(j->id) == NULL ? "unknown_source" : "search_failed", e->search_bucket[b].id);
+        return;
+    }
+    for (i = 0; i < j->n; i++) {
+        e->search_bucket[b].hit[i] = j->hit[i];
+        search_hit_tags(&e->search_bucket[b].hit[i], e->search_bucket[b].id);
+        evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+        evt_tags(&r, e->search_bucket[b].hit[i].tags);
+        emit(e, &r);
+    }
+    e->search_bucket[b].n = j->n;
+    e->search_bucket[b].state = SEARCH_DONE;
+    e->search_bucket[b].done_tags[0].tag = SEL_SRC_KEY;
+    e->search_bucket[b].done_tags[0].value = (uintptr_t)e->search_bucket[b].id;
+    e->search_bucket[b].done_tags[1].tag = SEL_SRC_KIND;
+    e->search_bucket[b].done_tags[1].value = (uintptr_t) "search_done";
+    e->search_bucket[b].done_tags[2].tag = SEL_SRC_COUNT;
+    e->search_bucket[b].done_tags[2].value = j->n;
+    e->search_bucket[b].done_tags[3].tag = SEL_TAG_END;
+    e->search_bucket[b].done_tags[3].value = 0;
+    evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&r, e->search_bucket[b].done_tags);
+    emit(e, &r);
+}
+
+/* Pump side of SOURCE_SEARCH: each section lands as its own source answers, in arrival order. */
+static void search_collect(sel_engine* e) {
+    struct sel_search_job** pj = &e->search_jobs;
+    int landed = 0;
+
+    while (*pj != NULL) {
+        struct sel_search_job* j = *pj;
+
+        if (!__atomic_load_n(&j->done, __ATOMIC_ACQUIRE)) {
+            pj = &j->next;
+            continue;
+        }
+        *pj = j->next;
+        pthread_join(j->th, NULL);
+        if (j->gen != e->search_gen) {
+            e->search_stale_drops++; /* a superseded query: no events, its buckets are gone */
+        } else {
+            search_land(e, j);
+            landed = 1;
+        }
+        search_job_free(e, j);
+    }
+    e->search_running = e->search_jobs != NULL;
+    if (search_queued(e)) {
+        search_start_next(e); /* a bucket held back behind its source's superseded search starts now */
+    }
+    if (landed) {
+        if (!e->search_running && !search_queued(e)) {
+            e->search_wall_ms = (uint32_t)(search_now_ms() - e->search_t0_ms);
+        }
+        scan_start_next(e);
+        sync_start_next(e);
+        search_view_changed(e);
+    }
+}
+#else
 /* Pump side of SOURCE_SEARCH: the events go out from the pump thread only. */
 static void search_collect(sel_engine* e) {
     sel_message r;
@@ -7843,6 +8090,8 @@ static void search_collect(sel_engine* e) {
     search_start_next(e);
     search_view_changed(e);
 }
+
+#endif
 
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     const sel_source* src;
@@ -9146,7 +9395,7 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
         } else {
             s->kind = SONGS_HITS;
             have = e->search_serial;
-            if (e->search_running) { /* the worker is filling the table: the list the UI saw is gone */
+            if (search_table_busy(e)) { /* the worker is filling the table: the list the UI saw is gone */
                 e->songs_stale++;
                 sel_engine_report_error(e, "stale", verb);
                 songs_unstage(e);
@@ -10120,6 +10369,9 @@ void sel_engine_destroy(sel_engine* e) {
         }
         /* I1019c: sentinel, read after destroy by `selecta --stats` */
         e->search_buckets = 0; /* I1019a: no queued source may start after the cancel below */
+#if defined(SEL_LI_THREAD)
+        search_jobs_end(e);
+#endif
         if (e->scan_running || e->sync_running || e->search_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
         }
@@ -10657,6 +10909,19 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->source_pins = e->source_pins;
     out->pin_rows = e->lib != NULL ? sel_library_pin_rows(e->lib) : 0;
     out->search_worker_runs = e->search_worker_runs;
+    out->search_peak = e->search_peak;
+    out->search_wall_ms = e->search_wall_ms;
+    out->search_src_n = 0;
+    {
+        uint32_t b;
+
+        for (b = 0; b < e->search_buckets && out->search_src_n < SEL_STATS_SEARCH_SRC; b++) {
+            if (e->search_bucket[b].state == SEARCH_DONE || e->search_bucket[b].state == SEARCH_FAILED) {
+                out->search_src_id[out->search_src_n] = e->search_bucket[b].id;
+                out->search_src_ms[out->search_src_n++] = e->search_bucket[b].ms;
+            }
+        }
+    }
     out->archive_member = e->archive_member;
     if (e->lib != NULL) {
         sel_hash_stats hs;

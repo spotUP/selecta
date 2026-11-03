@@ -16,7 +16,14 @@
 
 #include <stddef.h>
 
+/* Connection table size. Amiga searches one source at a time (serial library slot), so 8 covers it. Threaded builds run
+ * every searchable source's search on its own thread (I1044) beside stream, prefetch, sync and the DLNA server, so the
+ * table must hold all of them at once (with 8 the dui search-online tests fail: sources get SEL_NET_E_TABLE). */
+#if defined(__amigaos__) || defined(AMIGA)
 #define SEL_NET_MAX_CONN 8
+#else
+#define SEL_NET_MAX_CONN 32
+#endif
 
 enum {
     SEL_NET_E_BLOCKED = -1, /* guard refused the target; no socket was created */

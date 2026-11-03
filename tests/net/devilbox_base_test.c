@@ -11,7 +11,7 @@ int main(void) {
     int bad = 0;
 
     unsetenv("SELECTA_DEVILBOX_URL");
-    if (strcmp(sel_devilbox_base(), "https://devilbox.uprough.net") != 0) {
+    if (strcmp(sel_devilbox_base(), "https://hippoplayer.se") != 0) {
         printf("FAIL default base is %s\n", sel_devilbox_base());
         bad = 1;
     }

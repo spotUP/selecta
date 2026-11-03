@@ -469,6 +469,8 @@ void sel_engine_set_paula_output(sel_engine* e, uint32_t on);
 /* Why the last PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER failed (sel_engine_stats.pl_fail_reason, I652e). */
 enum { SEL_PLFAIL_NONE = 0, SEL_PLFAIL_UNREADABLE = 1, SEL_PLFAIL_BUSY = 2, SEL_PLFAIL_OTHER = 3 };
 
+#define SEL_STATS_SEARCH_SRC 16u /* sources whose search time sel_engine_stats lists (I1044) */
+
 typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
     uint32_t voice_ops;    /* calls through the voices API */
@@ -487,6 +489,11 @@ typedef struct sel_engine_stats {
     uint32_t source_pins;        /* I406b: search hits handed to the library by play, queue, playlist add or SOURCE_PIN */
     uint32_t pin_rows;           /* I406b: rows the library job thread wrote for those pins */
     uint32_t search_worker_runs; /* of those, runs that executed off the command thread (I782) */
+    uint32_t search_peak;        /* I1044: most source searches in flight at once (the fan-out runs in parallel when > 1) */
+    uint32_t search_wall_ms;     /* I1044: first launch to last landing of the latest fan-out */
+    uint32_t search_src_n;       /* I1044: sources of the current query that answered or failed, with their own wall time */
+    const char* search_src_id[SEL_STATS_SEARCH_SRC];
+    uint32_t search_src_ms[SEL_STATS_SEARCH_SRC];
     const char* archive_member;   /* name of the member the last such OPEN played, "" when none */
     uint32_t hash_files;          /* local files the idle md5 pass finished (I184b, sel_hash_stats) */
     uint32_t hash_chunks;         /* file reads of the pass: without threads one chunk per idle tick */

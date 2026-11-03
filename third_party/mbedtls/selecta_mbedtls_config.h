@@ -33,3 +33,10 @@
 #define MBEDTLS_ENTROPY_HARDWARE_ALT
 #define MBEDTLS_PLATFORM_MS_TIME_ALT
 #endif
+
+/* I1044: the All-sources search runs one thread per source, and a scan or sync runs beside them; every thread may open a
+ * TLS session. The shared CTR-DRBG, entropy and PSA state need mbedTLS's own locking. Off the Amiga (no pthreads there). */
+#if !defined(__amigaos__)
+#define MBEDTLS_THREADING_C
+#define MBEDTLS_THREADING_PTHREAD
+#endif
