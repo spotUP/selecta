@@ -15,7 +15,7 @@ endforeach()
 file(WRITE "${WORK}/in.txt" "wait 1\nexec LIBRARY_SCAN ${WORK}/songs\nwait 4\n")
 dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view library --canvas 900x600 --clock fixed --stats
   --input "${WORK}/in.txt")
-if(NOT "${o}" MATCHES "library_serial=([0-9]+) library_reloads=([0-9]+)\n")
+if(NOT "${o}" MATCHES "library_serial=([0-9]+) library_reloads=([0-9]+) ")
   message(FATAL_ERROR "no library_serial line in:\n${o}")
 endif()
 if(CMAKE_MATCH_1 LESS 1)

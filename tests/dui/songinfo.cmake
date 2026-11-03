@@ -8,7 +8,12 @@
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 get_filename_component(BINDIR "${SELECTA}" DIRECTORY)
-set(CLI "${BINDIR}/../selecta-cli/selecta-cli")
+# The macOS bundle puts the binary at apps/selecta/Selecta.app/Contents/MacOS; selecta-cli sits beside the bundle's app directory.
+if(BINDIR MATCHES "\\.app/Contents/MacOS$")
+  set(CLI "${BINDIR}/../../../../selecta-cli/selecta-cli")
+else()
+  set(CLI "${BINDIR}/../selecta-cli/selecta-cli")
+endif()
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 configure_file("${SONGS}/selecta-test.mod" "${WORK}/one.mod" COPYONLY)

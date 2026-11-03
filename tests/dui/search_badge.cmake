@@ -79,8 +79,8 @@ if(NOT nmp EQUAL 3 OR NOT nlib GREATER 0 OR NOT n EQUAL want)
 endif()
 
 # 2. Modules.pl picked: three rows, three Modules.pl badges, no Library badge.
-if(NOT "${a}" MATCHES "online_chip 5 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no Modules.pl chip (online_chip 5):\n${a}")
+if(NOT "${a}" MATCHES "online_chip [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) scope=modulespl\n")
+  message(FATAL_ERROR "no Modules.pl chip (online_chip scope=modulespl):\n${a}")
 endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
