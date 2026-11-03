@@ -31,6 +31,30 @@ int sel_url_path_encode(const char* root, const char* path, char* out, size_t n)
     return 1;
 }
 
+int sel_url_query_encode(const char* s, char* out, size_t n) {
+    static const char hex[] = "0123456789ABCDEF";
+    size_t used = 0;
+
+    for (; *s != '\0'; s++) {
+        unsigned char c = (unsigned char)*s;
+        int plain = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+                    c == '.' || c == '~';
+
+        if (used + (plain ? 1u : 3u) + 1u > n) {
+            return 0;
+        }
+        if (plain) {
+            out[used++] = (char)c;
+        } else {
+            out[used++] = '%';
+            out[used++] = hex[c >> 4];
+            out[used++] = hex[c & 15u];
+        }
+    }
+    out[used] = '\0';
+    return 1;
+}
+
 static int hex_value(char c) {
     if (c >= '0' && c <= '9') {
         return c - '0';

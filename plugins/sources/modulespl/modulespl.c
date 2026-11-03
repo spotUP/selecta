@@ -14,6 +14,7 @@
 #include <selecta/source.h>
 #include "modulespl_parse.h"
 #include "source/descriptor.h"
+#include "source/url_path.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,30 +33,6 @@ static const char* site_base(void) {
     const char* env = getenv("SELECTA_MODULESPL_SITE");
 
     return env != NULL && env[0] != '\0' ? env : "https://www.modules.pl";
-}
-
-/* Percent-encode everything but unreserved characters. 0 when it does not fit. */
-static int encode_query(const char* q, char* out, size_t cap) {
-    size_t o = 0;
-
-    for (; *q != '\0'; q++) {
-        unsigned char c = (unsigned char)*q;
-
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
-            c == '.' || c == '~') {
-            if (o + 2u > cap) {
-                return 0;
-            }
-            out[o++] = (char)c;
-        } else {
-            if (o + 4u > cap) {
-                return 0;
-            }
-            o += (size_t)snprintf(out + o, 4, "%%%02X", c);
-        }
-    }
-    out[o] = '\0';
-    return 1;
 }
 
 static char* slurp(const char* path, size_t* n) {
@@ -99,7 +76,7 @@ static int ms_search(const sel_host* host, const char* query, sel_search_sink* o
     size_t n = 0;
     int rows;
 
-    if (net == NULL || cat == NULL || query == NULL || query[0] == '\0' || !encode_query(query, enc, sizeof enc) ||
+    if (net == NULL || cat == NULL || query == NULL || query[0] == '\0' || !sel_url_query_encode(query, enc, sizeof enc) ||
         !cat->cache_dir(host, "modulespl", dir, sizeof dir)) {
         return -1;
     }

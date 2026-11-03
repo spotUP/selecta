@@ -9,6 +9,10 @@
  * absolute, or the result does not fit `n`. */
 int sel_url_path_encode(const char* root, const char* path, char* out, size_t n);
 
+/* `s` percent-encoded for a URL query value: everything but letters, digits and `-_.~` becomes %XX. 0 when it does not
+ * fit `n`. */
+int sel_url_query_encode(const char* s, char* out, size_t n);
+
 /* The inverse: the decoded rest of `url` after `root`. 0 when `url` does not start with `root`, has a bad escape, is
  * empty after the root or does not fit `n`. */
 int sel_url_path_decode(const char* root, const char* url, char* path, size_t n);
