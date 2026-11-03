@@ -20,7 +20,7 @@ if(NOT SQLITE3)
   message(FATAL_ERROR "dui-nav-turn-cost needs the sqlite3 command line tool to seed the library")
 endif()
 set(db "${WORK}/lib.db")
-dui_run(init --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats --db "${db}")
+dui_run(init --ui desktop --backend mem --view home --canvas 1280x1000 --clock fixed --stats --db "${db}")
 string(CONCAT seed
   "DROP TRIGGER IF EXISTS songs_ai; "
   "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50000) "
@@ -47,7 +47,7 @@ function(live_run outvar events)
   set(ENV{SELECTA_SDL_TEST_LIVE} 1)
   set(ENV{SELECTA_SOCKET} "/tmp/selecta-dui-nav-turn-cost.sock")
   set(ENV{SELECTA_SDL_TEST_TIMED} "${events}")
-  execute_process(COMMAND "${SELECTA}" --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view home --canvas 1280x800
+  execute_process(COMMAND "${SELECTA}" --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view home --canvas 1280x1000
     --clock fixed --stats OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${o}\nstderr:\n${e}")
@@ -95,20 +95,48 @@ function(check_turns label events sentinel)
   message(STATUS "dui-nav-turn-cost ${label} ok (turn_ms_max=${best_turn} pump_ms_max=${best_pump})")
 endfunction()
 
-# 1. Sources chip (rows are 48 px from y 396), then the Modland sidebar row.
+# 1. Sources chip (five right-chevron steps), then the Modland sidebar row. Both targets are read from idle dumps of the same
+# library at the live canvas (the sidebar moves with every layout change; I1010b): the right chevron from a plain idle run, the
+# Modland row (kind source) from a run that has stepped the chip five times, since the chip filters the list.
+set(common_idle --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1000)
+file(WRITE "${WORK}/idle.txt" "wait 100\n")
+dui_run(idle0 ${common_idle} --input "${WORK}/idle.txt")
+if(NOT "${idle0}" MATCHES "sidechev L [0-9]+ [0-9]+ [0-9]+ [0-9]+ R ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no sidechev line in:\n${idle0}")
+endif()
+math(EXPR chip_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR chip_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+# The top bar Browse button, read from the same dump (it sits right of the search field; a fixed pixel there hit the field).
+if(NOT "${idle0}" MATCHES "topbar draws=[0-9]+ shown=1 home [-0-9]+ [-0-9]+ [-0-9]+ [-0-9]+ field [-0-9]+ [-0-9]+ [-0-9]+ [-0-9]+ browse ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) ")
+  message(FATAL_ERROR "no topbar line in:\n${idle0}")
+endif()
+math(EXPR browse_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR browse_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+set(chip_steps "")
+foreach(k RANGE 1 5)
+  string(APPEND chip_steps "click ${chip_x} ${chip_y}\nwait 100\n")
+endforeach()
+file(WRITE "${WORK}/chip5.txt" "${chip_steps}")
+dui_run(idle5 ${common_idle} --input "${WORK}/chip5.txt")
+# The centre of the sidebar row of kind `kind` called `name` (copy of side_row in kind_pages.cmake, 0fadc05b).
+if(NOT "${idle5}" MATCHES "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=7 Modland\n")
+  message(FATAL_ERROR "no Modland sidebar row after the Sources chip in:\n${idle5}")
+endif()
+math(EXPR row_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR row_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 set(ev "")
 set(t 4000)
 foreach(k RANGE 1 5)
-  click(c 180 336 ${t})
+  click(c ${chip_x} ${chip_y} ${t})
   string(APPEND ev "${c} ")
   math(EXPR t "${t} + 1500")
 endforeach()
-click(c 110 468 ${t})
+click(c ${row_x} ${row_y} ${t})
 math(EXPR tq "${t} + 4000")
 check_turns("sources-chip-then-row" "${ev}${c} q@${tq}" "sidechips chip=5;collection kind=source opens=1 ")
 
 # 2. Topbar Browse, then the Impulsetracker format tile (browserect 481 260 217 88): a search whose result list search_reload walks.
-click(b 884 28 4000)
+click(b ${browse_x} ${browse_y} 4000)
 click(m 589 304 8000)
 check_turns("browse-then-format-tile" "${b} ${m} q@15000" "search draws [0-9]+ rows [0-9]+ query format:impulsetracker")
 
