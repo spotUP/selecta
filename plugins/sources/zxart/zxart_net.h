@@ -20,4 +20,11 @@ typedef struct sel_zxart_net_stats {
 int sel_zxart_net_sync(const sel_host* host, const char* base, sel_zxart_sync_stats* stats,
                        sel_zxart_net_stats* net);
 
+#define SEL_ZXART_SEARCH_ROWS 25u /* tunes a search asks for */
+
+/* I1024f: one GET `<base>/api/language:eng/export:zxMusic/start:0/limit:25/filter:zxMusicTitleSearch=<query>`; the tunes go
+ * to `out` as the sync's rows and the catalogue is not touched. The answer file is the search's own (a sync may be
+ * fetching) and is removed. Returns the rows, -1 when the site answers no 200 or the answer is not a success. */
+int sel_zxart_net_search(const sel_host* host, const char* base, const char* query, const sel_search_sink* out);
+
 #endif
