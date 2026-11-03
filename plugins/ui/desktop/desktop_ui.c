@@ -15665,7 +15665,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
         const sel_view_state* hv = sel_engine_state(d->engine)->view;
-        uint32_t sig = hv->source == SEL_VIEW_HOME ? 1u + hv->row_n : d->search_on && hv->source == SEL_VIEW_SEARCH ? 0x10000u + hv->row_count * 64u + hv->row_n : 0u;
+        uint32_t sig = hv->source == SEL_VIEW_HOME ? 1u + hv->row_n : d->search_on && hv->source == SEL_VIEW_SEARCH ? 0x10000u + (pl_hash(hv) ^ hv->row_count) /* I1024e: content, not shape; a From state row changing text (Searching to Could not reach) must repaint */ : 0u;
         if (hv->source == SEL_VIEW_FOLDERS && (d->pl_page || hv->row_n > 0u)) { /* the saved playlists arrived or changed */
             sig = 0x20000u + pl_hash(hv);
         }
