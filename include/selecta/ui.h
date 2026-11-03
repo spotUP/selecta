@@ -42,6 +42,8 @@ typedef void (*sel_ui_on_event_fn)(void* state, const sel_message* evt);     /* 
 typedef int (*sel_ui_wait_fn)(void* state, uint32_t timeout_ms);
 typedef void (*sel_ui_close_fn)(void* state);                                /* UI_CLOSE */
 typedef const sel_tag* (*sel_ui_stats_fn)(void* state);                      /* UI_STATS */
+/* UI_CONTROL (I1013): `line` is the text after `ui.`; the result lines go to reply; 0 = OK, non-zero = ERROR. */
+typedef int (*sel_ui_control_fn)(void* state, const char* line, char* reply, size_t cap);
 
 SEL_EXTERN_C_END
 

@@ -12,6 +12,7 @@
 #include <selecta/uimodel.h>
 
 #include "art.h"
+#include "desk_png.h"
 #include <selecta/gui/gui_genart.h>
 #include "atlas_build.h"
 #include "font_roles.h"
@@ -57,6 +58,7 @@
 #define desk_backend_open(w, h, idx) ((void)(idx), desk_sdl_open((w), (h)))
 #endif
 
+#include <errno.h>
 #include <stdarg.h>
 #include <time.h>
 #include <stdio.h>
@@ -177,6 +179,8 @@ typedef struct desk {
     const char* frame_dump; /* --frame-dump <file>: the canvas as PPM at close */
     char* input;            /* --input <file>: scripted clicks, replayed once on the first quiet turn */
     int input_done;
+    int ctl_input;          /* I1013: the buffer holds a ui.input text; resumes on later turns even with --ticks, never sets input_consumed */
+    uint32_t ctl_lines, ctl_states, ctl_frames; /* I1013 sentinels: input lines fed, ui.state replies, frames written through the control socket */
     int* input_consumed;    /* the shell's once-per-process flag for the --input script */
     desk_art* art;          /* tile artwork from the library, NULL without one (DUI-P2-4) */
     uint64_t art_tile_hash; /* pixels of the first home tile, STAT_ART_TILE_HASH (DUI-P2-5) */
@@ -538,7 +542,7 @@ typedef struct desk {
     uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
-    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 10];
+    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 13];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[24576]; /* the Library page as text for the stats (DUI-P4-3); 8 KB past the composer rows are reserved for the sources and nag lines (I789) */
@@ -14014,15 +14018,13 @@ static void desk_sdl_route(desk* d) {
 }
 #endif
 
-static int desk_replay_input(desk* d) {
-    char* line = d->input_at != NULL ? d->input_at : d->input;
+/* Runs replay-script lines from `line` (newline separated, edited in place). A line that waits for an engine answer stores
+ * the rest in input_at and returns 1; the next turn resumes there. I1013: shared by --input and the ui.input socket verb. */
+static int desk_replay_lines(desk* d, char* line) {
     uint32_t sent = d->sends;
     int opened = 0, pointer_sent = 0;
     d->input_done = 1;
     d->input_at = NULL;
-    if (d->input_consumed != NULL) {
-        *d->input_consumed = 1;
-    }
     while (line != NULL && *line != '\0') {
         char* nl = strchr(line, '\n');
         int x, y;
@@ -14030,6 +14032,9 @@ static int desk_replay_input(desk* d) {
         sel_gui_input ev;
         if (nl != NULL) {
             *nl = '\0';
+        }
+        if (d->ctl_input) {
+            d->ctl_lines++; /* I1013 sentinel: a line that really entered the replay loop through the control socket */
         }
         if (strncmp(line, "drop ", 5) == 0) { /* `drop /a /b`: one drop of several files, all queue */
             char* sp = line + 5;
@@ -14174,7 +14179,16 @@ static int desk_replay_input(desk* d) {
         sent = d->sends;
         pointer_sent = 0;
     }
+    d->ctl_input = 0; /* the control text is used up */
     return opened;
+}
+
+/* --input <file>: the script, replayed once; the shell's flag keeps a second UI from replaying it (I246). */
+static int desk_replay_input(desk* d) {
+    if (d->input_consumed != NULL) {
+        *d->input_consumed = 1;
+    }
+    return desk_replay_lines(d, d->input_at != NULL ? d->input_at : d->input);
 }
 
 /* Reads --input <file> (at most 4096 bytes) into a heap copy; 0 when unreadable. */
@@ -14195,13 +14209,34 @@ static int desk_load_input(desk* d, const char* path) {
     return 1;
 }
 
-/* Writes the canvas as a binary PPM (P6, 0xRRGGBB per pixel). */
-static void desk_write_frame(const desk* d, const char* path) {
+/* Writes the canvas to path: a PNG when the name ends in .png (I1013), else a binary PPM (P6, 0xRRGGBB per pixel).
+ * Returns 1 on success, 0 on failure (errno set by the open). */
+static int desk_write_frame(const desk* d, const char* path) {
     FILE* f = fopen(path, "wb");
     int32_t x, y;
+    size_t pl = strlen(path);
     if (f == NULL) {
         fprintf(stderr, "selecta: cannot write frame dump '%s'\n", path);
-        return;
+        return 0;
+    }
+    if (pl > 4u && strcmp(path + pl - 4u, ".png") == 0) {
+        unsigned char* rgb = (unsigned char*)d->host->mem_alloc(d->host, (uint32_t)d->canvas->w * (uint32_t)d->canvas->h * 3u, SEL_MEM_FAST);
+        int ok = 0;
+        if (rgb != NULL) {
+            unsigned char* q = rgb;
+            for (y = 0; y < d->canvas->h; y++) {
+                for (x = 0; x < d->canvas->w; x++) {
+                    uint32_t px = sel_gui_pixel(d->canvas, x, y);
+                    *q++ = (unsigned char)((px >> 16) & 0xFFu);
+                    *q++ = (unsigned char)((px >> 8) & 0xFFu);
+                    *q++ = (unsigned char)(px & 0xFFu);
+                }
+            }
+            ok = desk_png_write(f, (int)d->canvas->w, (int)d->canvas->h, rgb);
+            d->host->mem_free(d->host, rgb);
+        }
+        fclose(f);
+        return ok;
     }
     fprintf(f, "P6\n%d %d\n255\n", (int)d->canvas->w, (int)d->canvas->h);
     for (y = 0; y < d->canvas->h; y++) {
@@ -14212,7 +14247,247 @@ static void desk_write_frame(const desk* d, const char* path) {
             fputc((int)(rgb & 0xFFu), f);
         }
     }
-    fclose(f);
+    return fclose(f) == 0;
+}
+
+/* ---- I1013: the ui.* verbs of the control socket (SEL_UI_CONTROL). They run on the UI thread, called by the shell's
+ * ctl_handle between two turns, so they touch the desk state like any other turn does. ---- */
+
+/* The page name the user sees: the model names the Library page "folders" (its old tab), the UI and the design call it library. */
+static const char* ctl_page_name(uint32_t page) {
+    const sel_uim_page* pg = sel_uim_page_at(page);
+    return page == SEL_UIM_PG_FOLDERS ? "library" : pg != NULL ? pg->name : "unknown";
+}
+
+/* A route entry's page is a sel_route_page: the named ones, else 100 + the UI page number. */
+static const char* ctl_route_page_name(uint32_t rp) {
+    switch (rp) {
+    case SEL_ROUTE_PAGE_HOME: return "home";
+    case SEL_ROUTE_PAGE_SEARCH: return "search";
+    case SEL_ROUTE_PAGE_SHELF: return "shelf";
+    case SEL_ROUTE_PAGE_COLLECTION: return "collection";
+    default: return rp >= (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE ? ctl_page_name(rp - (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE) : "none";
+    }
+}
+
+/* Appends one formatted line to a reply buffer; a cut reply ends with truncated=1 (room is kept for it). */
+static void ctl_put(char* reply, size_t cap, size_t* o, const char* fmt, ...) {
+    va_list ap;
+    int n;
+    if (*o + 16u >= cap) {
+        return;
+    }
+    va_start(ap, fmt);
+    n = vsnprintf(reply + *o, cap - *o - 16u, fmt, ap);
+    va_end(ap);
+    if (n < 0) {
+        return;
+    }
+    if ((size_t)n >= cap - *o - 16u) {
+        *o += (size_t)snprintf(reply + *o, cap - *o, "\ntruncated=1");
+        *o = cap; /* nothing more fits */
+        return;
+    }
+    *o += (size_t)n;
+}
+
+/* The visible rows of the current list page, with the click rectangle each one draws at: the Library page's composer list or
+ * its engine view rows (the same lib_row_rect the dump uses), only those that intersect the main panel. Returns how many
+ * were emitted; first receives the index of the first one. hover is the index of the row under the pointer, -1 for none
+ * (the pointer is not stored per row: list_row_fill compares the row rectangle with ptr_x/ptr_y, and so does this). */
+typedef struct ctl_rows {
+    char* reply;
+    size_t cap, *o;
+    uint32_t count, first;
+    int32_t hover;
+} ctl_rows;
+
+static void ctl_row_emit(desk* d, ctl_rows* cr, uint32_t i, sel_gui_rect rr, const char* label, sel_gui_rect mn) {
+    if (rr.y + rr.h <= mn.y || rr.y >= mn.y + mn.h) {
+        return;
+    }
+    if (cr->count == 0u) {
+        cr->first = i;
+    }
+    if (in_rect(rr, d->ptr_x, d->ptr_y)) {
+        cr->hover = (int32_t)i;
+    }
+    cr->count++;
+    ctl_put(cr->reply, cr->cap, cr->o, "row %u %d %d %d %d %s\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h, label);
+}
+
+static void desk_visible_rows(desk* d, ctl_rows* cr) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = panel_rect(d, "main");
+    uint32_t i;
+    cr->count = 0u;
+    cr->first = 0u;
+    cr->hover = -1;
+    if (d->page != SEL_UIM_PG_FOLDERS) {
+        return;
+    }
+    if (lib_view_on(d, st)) {
+        for (i = 0; i < st->view->row_n; i++) {
+            ctl_row_emit(d, cr, i, lib_row_rect(d, mn, i), st->view->rows[i].text != NULL ? st->view->rows[i].text : "", mn);
+        }
+    } else {
+        const char* p;
+        for (p = st->composers, i = 0; p != NULL && *p != '\0'; i++) {
+            const char* disp = lib_next(p);
+            const char* cnt = lib_next(disp);
+            char label[96];
+            snprintf(label, sizeof label, "%.*s", (int)(cnt - disp > 1 ? cnt - disp - 1 : 0), disp); /* display field: up to the next separator */
+            ctl_row_emit(d, cr, i, lib_row_rect(d, mn, i), label, mn);
+            p = lib_next(cnt);
+        }
+    }
+}
+
+static int ctl_state(desk* d, char* reply, size_t cap) {
+    size_t o = 0, rows_at;
+    uint32_t i;
+    ctl_rows cr;
+    char tail[96];
+    ctl_put(reply, cap, &o, "page=%s\n", ctl_page_name(d->page));
+    ctl_put(reply, cap, &o, "canvas=%dx%d density=%d\n", (int)d->canvas->w, (int)d->canvas->h, (int)d->scale);
+    ctl_put(reply, cap, &o, "route n=%u pos=%u\n", (unsigned)d->rh.n, (unsigned)d->rh.pos);
+    for (i = 0; i < d->rh.n; i++) {
+        const sel_route_entry* e = &d->rh.e[i];
+        ctl_put(reply, cap, &o, "route %u page=%s key=%s name=%s scroll=%d%s\n", (unsigned)i, ctl_route_page_name(e->page), e->key, e->name,
+                (int)e->scroll, i == d->rh.pos ? " *" : "");
+    }
+    ctl_put(reply, cap, &o, "dialog=%d overlay=%d\n", d->dlg_open, (int)d->overlay); /* a modal dialog (3 = sync offer, 4 = quit) or overlay swallows pointer input */
+    ctl_put(reply, cap, &o, "focus ring %d %d %d %d kb_list=%d\n", (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h, d->kb_list);
+    ctl_put(reply, cap, &o, "scroll lib=%d queue=%d songs=%d\n", (int)(d->lib_q16 >> 16), (int)(d->queue_q16 >> 16), (int)(d->scroll_q16 >> 16));
+    rows_at = o;
+    cr.reply = reply;
+    cr.cap = cap;
+    cr.o = &o;
+    desk_visible_rows(d, &cr); /* emits the row lines; the summary lines go in front below */
+    {
+        char rows[2048]; /* the row lines moved behind the hover and rows summary */
+        size_t rl = o > rows_at && o < cap ? o - rows_at : 0u;
+        if (rl >= sizeof rows) {
+            rl = 0u;
+        }
+        memcpy(rows, reply + rows_at, rl);
+        rows[rl] = '\0';
+        o = rows_at;
+        ctl_put(reply, cap, &o, "hover tile=%d shelf=%u row=%d\n", (int)d->hover_tile, (unsigned)d->hover_shelf1, (int)cr.hover);
+        ctl_put(reply, cap, &o, "rows first=%u count=%u\n", (unsigned)cr.first, (unsigned)cr.count);
+        ctl_put(reply, cap, &o, "%s", rows);
+    }
+    d->ctl_states++; /* counts this reply, so the ctl line below already includes it */
+    snprintf(tail, sizeof tail, "input_pending=%d\nctl lines=%u states=%u frames=%u clicks=%u sends=%u", d->input != NULL && !d->input_done, (unsigned)d->ctl_lines,
+             (unsigned)d->ctl_states, (unsigned)d->ctl_frames, (unsigned)d->clicks, (unsigned)d->sends);
+    ctl_put(reply, cap, &o, "%s", tail);
+    if (o < cap) {
+        reply[o] = '\0';
+    }
+    return 0;
+}
+
+static int ctl_input(desk* d, const char* text, char* reply, size_t cap) {
+    size_t n = strlen(text), k = 0, i;
+    uint32_t before = d->ctl_lines;
+    if (n == 0u) {
+        snprintf(reply, cap, "ui empty");
+        return 1;
+    }
+    if (n > 4096u) {
+        snprintf(reply, cap, "ui too long");
+        return 1;
+    }
+    if (d->input != NULL && !d->input_done) {
+        snprintf(reply, cap, "ui busy");
+        return 1;
+    }
+    if (d->input == NULL) {
+        d->input = (char*)d->host->mem_alloc(d->host, 4097u, SEL_MEM_FAST);
+        if (d->input == NULL) {
+            snprintf(reply, cap, "ui no memory");
+            return 1;
+        }
+    }
+    for (i = 0; i < n; i++) { /* `;` separates lines; blanks around it go */
+        if (text[i] == ';') {
+            while (k > 0u && d->input[k - 1u] == ' ') {
+                k--;
+            }
+            d->input[k++] = '\n';
+            while (i + 1u < n && text[i + 1u] == ' ') {
+                i++;
+            }
+        } else {
+            d->input[k++] = text[i];
+        }
+    }
+    d->input[k] = '\0';
+    d->ctl_input = 1;
+    d->input_done = 0;
+    d->input_at = NULL;
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->live) {
+        desk_live_tick(d); /* tweens start on the current clock, as for a window event */
+    }
+#endif
+    (void)desk_replay_lines(d, d->input);
+    snprintf(reply, cap, "fed=%u pending=%d", (unsigned)(d->ctl_lines - before), d->input_done == 0);
+    return 0;
+}
+
+static int ctl_frame(desk* d, const char* path, char* reply, size_t cap) {
+    if (path[0] != '/') {
+        snprintf(reply, cap, "ui frame path");
+        return 1;
+    }
+    if (!desk_write_frame(d, path)) {
+        snprintf(reply, cap, "ui frame %s", strerror(errno));
+        return 1;
+    }
+    d->ctl_frames++;
+    snprintf(reply, cap, "wrote=%s w=%d h=%d", path, (int)d->canvas->w, (int)d->canvas->h);
+    return 0;
+}
+
+static int desk_control(void* state, const char* line, char* reply, size_t cap) {
+    desk* d = (desk*)state;
+    reply[0] = '\0';
+    if (strncmp(line, "input ", 6) == 0) {
+        return ctl_input(d, line + 6, reply, cap);
+    }
+    if (strcmp(line, "state") == 0) {
+        return ctl_state(d, reply, cap);
+    }
+    if (strncmp(line, "state dump ", 11) == 0 || strncmp(line, "frame ", 6) == 0) {
+        const char* path = line[0] == 's' ? line + 11 : line + 6;
+        if (line[0] == 'f') {
+            return ctl_frame(d, path, reply, cap);
+        }
+        {
+            const char* text = library_dump_build(d);
+            FILE* f;
+            size_t len = strlen(text);
+            if (path[0] != '/') {
+                snprintf(reply, cap, "ui dump path");
+                return 1;
+            }
+            f = fopen(path, "wb");
+            if (f == NULL || fwrite(text, 1, len, f) != len) {
+                snprintf(reply, cap, "ui dump %s", strerror(errno));
+                if (f != NULL) {
+                    fclose(f);
+                }
+                return 1;
+            }
+            fclose(f);
+            d->ctl_states++;
+            snprintf(reply, cap, "wrote=%u", (unsigned)len);
+            return 0;
+        }
+    }
+    snprintf(reply, cap, "ui unknown verb");
+    return 1;
 }
 
 /* The primitive test card (DUI-P2-1): every rasterizer primitive in fixed places, for the golden hash. */
@@ -15332,7 +15607,8 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         d->turn_why[2]++;
         return 1;
     }
-    if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
+    if (d->input != NULL && !d->input_done && (d->ticks == 0u || d->ctl_input) &&
+        (d->ctl_input ? desk_replay_lines(d, d->input_at) : desk_replay_input(d))) { /* scripted input, once; I1013: or the rest of a ui.input */
         d->turn_why[3]++;
         return 1; /* every event flushed its own frame */
     }
@@ -15644,6 +15920,12 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->headline_hits[0];
         d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_24;
         d->stats[n++].value = d->headline_hits[1];
+        d->stats[n].tag = SEL_UI_STAT_CTL_LINES;
+        d->stats[n++].value = d->ctl_lines;
+        d->stats[n].tag = SEL_UI_STAT_CTL_STATES;
+        d->stats[n++].value = d->ctl_states;
+        d->stats[n].tag = SEL_UI_STAT_CTL_FRAMES;
+        d->stats[n++].value = d->ctl_frames;
         d->stats[n].tag = SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS;
         d->stats[n++].value = d->shelf_album_art_draws;
         d->stats[n].tag = SEL_UI_STAT_TOOLTIP_TARGETS;
@@ -15654,7 +15936,7 @@ static const sel_tag* desk_stats(void* state) {
     return d->stats;
 }
 
-static sel_tag g_hooks[8];
+static sel_tag g_hooks[9];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -15673,7 +15955,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[4], SEL_UI_CLOSE, SEL_TAG_FN(desk_close));
     set(&g_hooks[5], SEL_UI_STATS, SEL_TAG_FN(desk_stats));
     set(&g_hooks[6], SEL_UI_VIEW_STYLES, SEL_VIEW_STYLES_ALL);
-    set(&g_hooks[7], SEL_TAG_END, 0);
+    set(&g_hooks[7], SEL_UI_CONTROL, SEL_TAG_FN(desk_control));
+    set(&g_hooks[8], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "desktop");

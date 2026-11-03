@@ -63,6 +63,7 @@ typedef struct shell_ui {
     sel_ui_stats_fn stats;
     uint32_t view_styles; /* SEL_UI_VIEW_STYLES: sel_view_style bits the UI offers, 0 the classic three */
     int (*theme)(void* state, const char* path); /* SEL_UI_THEME (I676b), NULL when the UI has none */
+    sel_ui_control_fn control; /* SEL_UI_CONTROL (I1013): the ui.* socket verbs, NULL when the UI has none */
 } shell_ui;
 
 static shell_ui g_uis[SHELL_MAX_UIS];
@@ -290,6 +291,7 @@ static int ui_resolve(const char* id, shell_ui* u) {
     u->stats = (sel_ui_stats_fn)sel_tag_find(h, SEL_UI_STATS, 0);
     u->view_styles = (uint32_t)sel_tag_find(h, SEL_UI_VIEW_STYLES, 0);
     u->theme = (int (*)(void*, const char*))sel_tag_find(h, SEL_UI_THEME, 0);
+    u->control = (sel_ui_control_fn)sel_tag_find(h, SEL_UI_CONTROL, 0);
     return u->open != NULL && u->wait != NULL && u->close != NULL;
 }
 
@@ -438,7 +440,18 @@ static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
     int rc;
     const sel_host* ph = sel_engine_plugin_host(c->engine);
     uint32_t t0 = ph->clock_ms(ph), dt;
-    sel_ctl_exec_fwd(c->engine, line, out, sizeof out, &rc, ctl_fwd, c);
+    if (strncmp(line, "ui.", 3) == 0) { /* I1013: UI verbs go straight to the primary UI, on this (the UI) thread */
+        shell_ui* u = &g_uis[0];
+        out[0] = '\0';
+        if (u->control == NULL || u->state == NULL) {
+            snprintf(out, sizeof out, "ui no UI control");
+            rc = 1;
+        } else {
+            rc = u->control(u->state, line + 3, out, sizeof out) != 0;
+        }
+    } else {
+        sel_ctl_exec_fwd(c->engine, line, out, sizeof out, &rc, ctl_fwd, c);
+    }
     dt = ph->clock_ms(ph) - t0; /* I906d: a control command runs on the UI thread too; a library wait inside it counts as pump time */
     if (dt > g_pump_ms_max) g_pump_ms_max = dt;
     if (rc != 0) {
@@ -1013,6 +1026,8 @@ int main(int argc, char** argv)
                 printf("\n");
             }
             printf("ui_library id=%s\n%s", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIBRARY_DUMP, (uintptr_t) ""));
+            printf("ui_ctl lines=%u states=%u frames=%u\n", (unsigned)sel_tag_find(us, SEL_UI_STAT_CTL_LINES, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_CTL_STATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_CTL_FRAMES, 0));
             printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));
             printf("ui_list id=%s %s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIST_VIEW, (uintptr_t) ""));

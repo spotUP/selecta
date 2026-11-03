@@ -367,6 +367,14 @@ SEL_TAG(UI, STAT_BITMAP_HITS_MINI8,   0x50DE, INT)
 SEL_TAG(UI, STAT_HEADLINE_HITS_18,    0x50DF, INT)
 SEL_TAG(UI, STAT_HEADLINE_HITS_24,    0x50E0, INT)
 
+/* I1013: live UI control over the control socket. UI_CONTROL is int fn(void* state, const char* line, char* reply, size_t cap):
+ * `line` is the text after `ui.`, the reply is the result lines (no framing), 0 = OK, non-zero = ERROR. The stats count the
+ * input lines fed, state replies and frames written through that path (the test sentinel). */
+SEL_TAG(UI, CONTROL,                  0x50E3, PTR)
+SEL_TAG(UI, STAT_CTL_LINES,           0x50E4, INT)
+SEL_TAG(UI, STAT_CTL_STATES,          0x50E5, INT)
+SEL_TAG(UI, STAT_CTL_FRAMES,          0x50E6, INT)
+
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
 SEL_TAG(SRC, COUNT,            0x7001, INT)
