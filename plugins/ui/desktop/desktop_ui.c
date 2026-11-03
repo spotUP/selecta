@@ -7135,6 +7135,7 @@ static uint32_t online_scope_count(const desk* d);
 static int desk_scope_online(const desk* d);
 static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k);
 static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k);
+static const char* online_chip_scope(const desk* d, uint32_t k);
 
 static size_t dump_put(desk* d, size_t o, const char* fmt, ...) {
     va_list ap;
@@ -7358,7 +7359,8 @@ static const char* library_dump_build(desk* d) {
         uint32_t oi;
         for (oi = 0; oi < online_scope_count(d); oi++) {
             sel_gui_rect cr = online_chip_rect(d, panel_rect(d, "main"), oi);
-            o = dump_put(d, o, "online_chip %u %d %d %d %d\n", (unsigned)oi, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h);
+            const char* csc = online_chip_scope(d, oi); /* the source key the chip stands for ("-" for All sources): tests pick a chip by it, never by index */
+            o = dump_put(d, o, "online_chip %u %d %d %d %d scope=%s\n", (unsigned)oi, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h, csc[0] != '\0' ? csc : "-");
         }
         for (oi = 0; oi < 4u; oi++) { /* I1019f: the facet row (SEARCH_FACETS), always drawn */
             sel_gui_rect fr = search_facet_rect(d, panel_rect(d, "main"), oi);
