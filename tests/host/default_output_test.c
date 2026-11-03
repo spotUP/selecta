@@ -55,9 +55,35 @@ static void check_rates(void) {
     }
 }
 
+/* I1023: a launch with no --ui picks the machine default: desktop (and its sdl backend) on macOS when the desktop plugin is
+ * registered, text everywhere else. */
+static void check_default_ui(void) {
+    sel_tag none[1];
+    const char* ui;
+    const char* backend;
+    int have_desktop = sel_registry_find(SEL_PLUGIN_KIND_UI, "desktop") != NULL;
+    int want_desktop = 0;
+#ifdef __APPLE__
+    want_desktop = have_desktop;
+#endif
+    none[0].tag = SEL_TAG_END;
+    none[0].value = 0;
+    ui = sel_registry_default_ui(none);
+    backend = sel_registry_default_backend(none);
+    if (strcmp(ui, want_desktop ? "desktop" : "text") != 0) {
+        failures++;
+        printf("FAIL default ui '%s' (desktop registered: %d)\n", ui, have_desktop);
+    }
+    if (want_desktop ? (backend == NULL || strcmp(backend, "sdl") != 0) : backend != NULL) {
+        failures++;
+        puts("FAIL default backend must be sdl exactly when the default ui is desktop");
+    }
+}
+
 int main(void) {
     check_rates();
     sel_registry_init(sel_host_default());
+    check_default_ui();
     expect("wav", "wav");
     expect("paula,ahi", "null"); /* neither is registered on the host */
     expect("wav-not-an-entry,null", "null");

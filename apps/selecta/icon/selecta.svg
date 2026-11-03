@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Rounded square in the desktop accent token (gui.accent, 0x3B82F6), white mark: a stylised S over a waveform. -->
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="#3B82F6"/>
+  <path d="M 690 270 C 690 200 620 170 512 170 C 400 170 330 215 330 290 C 330 365 400 385 512 410 C 624 435 694 455 694 530 C 694 605 624 650 512 650 C 400 650 330 610 330 540"
+        fill="none" stroke="#FFFFFF" stroke-width="96" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#FFFFFF">
+    <rect x="224" y="772" width="64" height="80" rx="32"/>
+    <rect x="320" y="740" width="64" height="144" rx="32"/>
+    <rect x="416" y="708" width="64" height="208" rx="32"/>
+    <rect x="512" y="740" width="64" height="144" rx="32"/>
+    <rect x="608" y="716" width="64" height="192" rx="32"/>
+    <rect x="704" y="756" width="64" height="112" rx="32"/>
+  </g>
+</svg>

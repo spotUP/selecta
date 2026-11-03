@@ -284,6 +284,21 @@ const char* sel_registry_default_output(const sel_tag* machine) {
     return pid ? pid : "null";
 }
 
+const char* sel_registry_default_ui(const sel_tag* machine) {
+    (void)machine;
+#ifdef __APPLE__
+    /* I1023: a double-click on Selecta.app opens the desktop UI; a build without it falls back to text. */
+    if (sel_registry_find(SEL_PLUGIN_KIND_UI, "desktop") != NULL) {
+        return "desktop";
+    }
+#endif
+    return "text";
+}
+
+const char* sel_registry_default_backend(const sel_tag* machine) {
+    return strcmp(sel_registry_default_ui(machine), "desktop") == 0 ? "sdl" : NULL;
+}
+
 uint32_t sel_registry_output_rate(const sel_tag* hooks, const sel_tag* machine) {
     sel_out_rate_for_fn fn = hooks ? (sel_out_rate_for_fn)sel_tag_find(hooks, SEL_OUT_RATE_FOR, 0) : NULL;
     uint32_t rate = fn ? fn(machine) : 0u;
