@@ -374,6 +374,8 @@ typedef struct desk {
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
     uint32_t home_chip;      /* the Home format chip in force: 0 All, 1 Music, 2 Modules, 3 Chiptunes (I678j) */
     uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Albums, 3 Artists */
+    uint32_t badge_drawn;    /* I1020: the source badges the last Search frame painted (one per result row); badge_text keeps the first 16 names for the dump */
+    char badge_text[16][48];
     uint32_t facet_drawn;    /* I1019f: the facet chips the last Search frame painted (the dump sentinel that the row is drawn under every source pick) */
     char scope[24];          /* I1019f: the source chip in force: "" All sources (the fan-out, every launch), SEARCH_SCOPE_LIBRARY the library alone, else the id of one online source (SOURCE_SEARCH). Never persisted */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
@@ -1095,6 +1097,25 @@ static void draw_button(desk* d, sel_gui_rect box, uint32_t base, const char* la
 static void draw_chip(desk* d, sel_gui_rect box, const char* label, int selected, int off_token) {
     draw_button(d, box, ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_ACCENT : off_token]), label, 13,
                 ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
+}
+
+/* I1020: the source badge at the right end of a Search result row: a small rounded label naming where the hit came from. Same
+ * primitives and tokens as draw_button_pad (rounded fill, centred label) but not a control: no hover, no click. Returns the
+ * badge's width plus a gap, so the caller narrows the row's title by it. */
+static int32_t search_badge_w(desk* d, const char* name) {
+    const sel_gui_atlas* at = desk_font(d, 0, 11);
+    return (at != NULL ? sel_gui_text_width(at, name, strlen(name)) : 0) + lpx(d, 16);
+}
+
+static void search_badge_draw(desk* d, sel_gui_rect row, const char* name) {
+    int32_t w = search_badge_w(d, name), h = lpx(d, 20);
+    sel_gui_rect bx = rect_of(row.x + row.w - w - lpx(d, 8), row.y + (row.h - h) / 2, w, h);
+    sel_gui_round_rect(d->canvas, bx, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+    draw_text_centered_pad(d, bx, name, 0, 11, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), lpx(d, 8));
+    if (d->badge_drawn < 16u) {
+        snprintf(d->badge_text[d->badge_drawn], sizeof d->badge_text[0], "%s", name);
+    }
+    d->badge_drawn++;
 }
 
 /* Fill the box with the surface colour, then draw the text (regular 13 pixel Inter, ellipsized), and mark the box
@@ -7263,6 +7284,10 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "search_facet_chip %u %d %d %d %d\n", (unsigned)oi, (int)fr.x, (int)fr.y, (int)fr.w, (int)fr.h);
         }
         o = dump_put(d, o, "search_facet_drawn %u\n", (unsigned)d->facet_drawn);
+        o = dump_put(d, o, "search_badges %u\n", (unsigned)d->badge_drawn); /* I1020: one source badge per result row of the last Search frame */
+        for (oi = 0; oi < d->badge_drawn && oi < 16u; oi++) {
+            o = dump_put(d, o, "search_badge %u %s\n", (unsigned)oi, d->badge_text[oi]);
+        }
         for (oi = 0; oi < d->on_n && oi < 3u; oi++) {
             o = dump_put(d, o, "online_row %u %d %d %d %d %s\n", (unsigned)oi, (int)d->on_row[oi].rect.x, (int)d->on_row[oi].rect.y, (int)d->on_row[oi].rect.w, (int)d->on_row[oi].rect.h, d->on_row[oi].key);
         }
@@ -8787,10 +8812,22 @@ static void online_draw_chips(desk* d, sel_gui_rect mn) {
 }
 
 /* The online results as a Spotify-style list: a 48 px row per hit, the title in the text colour over the muted artist and format. */
+/* The display name of the picked source scope (the badge of its hits). */
+static const char* online_scope_name(const desk* d) {
+    uint32_t k;
+    for (k = 0; k < online_scope_count(d); k++) {
+        if (strcmp(online_chip_scope(d, k), d->scope) == 0) {
+            return online_chip_name(d, k);
+        }
+    }
+    return d->scope;
+}
+
 static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
     int32_t mg = lpx(d, HOME_MARGIN), rh = lpx(d, 48), top = y, bottom = mn.y + mn.h;
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t k;
+    int32_t bw;
     char sub[80];
     d->on_drawn = 0u;
     for (k = 0; k < d->on_n; k++) {
@@ -8814,7 +8851,9 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
         }
         d->on_row[k].rect = sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top));
         d->on_row[k].drawn = 1;
-        draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, rh / 2 + lpx(d, 4)), d->on_row[k].title, 1, 14, text);
+        bw = search_badge_w(d, online_scope_name(d)) + lpx(d, 16);
+        search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), online_scope_name(d));
+        draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg - bw, rh / 2 + lpx(d, 4)), d->on_row[k].title, 1, 14, text);
         snprintf(sub, sizeof sub, "%s%s%s", d->on_row[k].artist, d->on_row[k].artist[0] != '\0' && d->on_row[k].format[0] != '\0' ? "  -  " : "", d->on_row[k].format);
         draw_text(d, rect_of(mn.x + mg, y + rh / 2, mn.w - 2 * mg, rh / 2), sub, 0, 12, muted);
         d->on_drawn++;
@@ -9083,6 +9122,7 @@ static void draw_search(desk* d) {
         desk_draw_query(d, sr, hint);
     }
     d->facet_drawn = 0u;
+    d->badge_drawn = 0u;
     for (k = 0; k < SEARCH_FACETS; k++) { /* facet chips: the active one filled with the accent; always drawn, below the source row (I1019f) */
         sel_gui_rect cr = search_facet_rect(d, mn, k);
         d->facet_drawn++;
@@ -9152,6 +9192,7 @@ static void draw_search(desk* d) {
         uint32_t group = 0, drawn_all = 0;
         int32_t top = y, bottom = mn.y + mn.h, rh = lpx(d, SEARCH_ROW_H);
         int show = 0;
+        char src[72] = "Library"; /* I1020: the source name the rows under the current heading carry as their badge */
         y -= lpx_q16(d, d->search_q16); /* the groups scroll inside the body under the chips; rows outside it are skipped */
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
@@ -9165,6 +9206,17 @@ static void draw_search(desk* d) {
                 show = search_group_shown(d, group);
                 if (group >= 1u && group <= 3u) {
                     d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
+                }
+                snprintf(src, sizeof src, "Library");
+                if (group == 4u) { /* "From <name> (n)": the badge names <name> */
+                    const char* nm = strncmp(t, "From ", 5) == 0 ? t + 5 : t, *pp = strrchr(nm, '(');
+                    size_t nl = pp != NULL && pp > nm ? (size_t)(pp - nm) : strlen(nm);
+                    while (nl > 0u && nm[nl - 1u] == ' ') {
+                        nl--;
+                    }
+                    nl = nl < sizeof src - 1u ? nl : sizeof src - 1u;
+                    memcpy(src, nm, nl);
+                    src[nl] = '\0';
                 }
                 if (group == 4u && d->search_sec_n < 8u) { /* the dump's per-section line */
                     snprintf(d->search_sec_head[d->search_sec_n], sizeof d->search_sec_head[0], "%s", t);
@@ -9188,7 +9240,12 @@ static void draw_search(desk* d) {
                 }
                 {
                     int pl = (group == 1u || group == 4u) && !r->album && r->key != NULL && song_playing(d, r->key); /* I690 */
-                    draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), t, pl, 14, pl ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
+                    int32_t bw = 0;
+                    if (group >= 1u && group <= 3u ? 1 : (group == 4u && r->key != NULL)) { /* I1020: every result row names its source; a note row has none */
+                        bw = search_badge_w(d, src) + lpx(d, 16);
+                        search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), src);
+                    }
+                    draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg - bw, lpx(d, SEARCH_ROW_H)), t, pl, 14, pl ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
                 }
                 if ((group == 1u || group == 4u) && !r->album && r->key != NULL) {
                     song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),
