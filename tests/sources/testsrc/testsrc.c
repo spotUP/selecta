@@ -6,11 +6,21 @@
 #include <selecta/source.h>
 #include "source/descriptor.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-unsigned sel_testsrc_sync_calls;
+/* The module is a separate image, so the sentinel is a file: each sync call appends one byte to $SELECTA_TESTSRC_CALLS. */
+static void testsrc_count_call(void) {
+    const char* f = getenv("SELECTA_TESTSRC_CALLS");
+    FILE* fp = f != NULL ? fopen(f, "ab") : NULL;
+
+    if (fp != NULL) {
+        fputc('x', fp);
+        fclose(fp);
+    }
+}
 
 static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
     static const char* const names[3] = {"one", "two", "three"};
@@ -20,15 +30,27 @@ static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_
     (void)arg;
     (void)now;
     (void)cap;
-    sel_testsrc_sync_calls++;
+    testsrc_count_call();
     if (getenv("SELECTA_TESTSRC_FAIL") != NULL) { /* I582: the dui-sync-banner test makes this source fail like a source without network */
         return 0;
     }
     if (cat == NULL || !cat->begin(host, "testsrc")) {
         return 0;
     }
-    if (getenv("SELECTA_TESTSRC_SLOW_MS") != NULL) { /* I782: the dui-sync-nowait test keeps the sync running while it clicks */
+    if (getenv("SELECTA_TESTSRC_SLOW_MS") != NULL && getenv("SELECTA_TESTSRC_TOTAL") == NULL) { /* I782: the dui-sync-nowait test keeps the sync running while it clicks */
         usleep((useconds_t)strtoul(getenv("SELECTA_TESTSRC_SLOW_MS"), NULL, 10) * 1000u);
+    }
+    if (getenv("SELECTA_TESTSRC_TOTAL") != NULL && cat->progress != NULL) { /* I1026: the dui-sync-bar test; reports 0, 1/4 .. 4/4 of the total, SLOW_MS/16 apart, then holds at the total for SLOW_MS */
+        uint32_t total = (uint32_t)strtoul(getenv("SELECTA_TESTSRC_TOTAL"), NULL, 10), k;
+        useconds_t gap = getenv("SELECTA_TESTSRC_SLOW_MS") != NULL ? (useconds_t)strtoul(getenv("SELECTA_TESTSRC_SLOW_MS"), NULL, 10) * 1000u / 16u : 0u;
+
+        for (k = 0; k <= 4u; k++) {
+            cat->progress(host, total / 4u * k, total);
+            usleep(gap);
+        }
+        if (getenv("SELECTA_TESTSRC_SLOW_MS") != NULL) {
+            usleep((useconds_t)strtoul(getenv("SELECTA_TESTSRC_SLOW_MS"), NULL, 10) * 1000u);
+        }
     }
     for (i = 0; i < 3; i++) {
         char path[16];

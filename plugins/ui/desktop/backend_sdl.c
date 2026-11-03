@@ -390,6 +390,30 @@ int desk_sdl_open_folder_dialog(desk_sdl* b) {
 }
 
 /* I652c: the native file dialog for a playlist file (.m3u .m3u8 .pls); the answer arrives like the folder dialog's, as a drop. */
+size_t desk_sdl_clipboard(desk_sdl* b, char* out, size_t cap) {
+    char* text;
+    size_t n = 0u;
+    (void)b;
+    if (cap == 0u) {
+        return 0u;
+    }
+    out[0] = '\0';
+    if (!SDL_HasClipboardText()) {
+        return 0u;
+    }
+    text = SDL_GetClipboardText();
+    if (text == NULL) {
+        return 0u;
+    }
+    while (text[n] != '\0' && text[n] != '\n' && text[n] != '\r' && n + 1u < cap) {
+        out[n] = text[n];
+        n++;
+    }
+    out[n] = '\0';
+    SDL_free(text);
+    return n;
+}
+
 int desk_sdl_open_file_dialog(desk_sdl* b) {
     static const SDL_DialogFileFilter filters[] = {{"Playlists", "m3u;m3u8;pls"}};
     if (b == NULL || b->window == NULL || b->headless) {

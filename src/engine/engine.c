@@ -24,6 +24,7 @@
 
 #include "mixer.h"
 #include "claims.h"
+#include "collorder.h"
 #include "stage.h"
 #include "loudness_gain.h"
 #include "dsp_chain.h"
@@ -152,7 +153,7 @@
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(STREAM_ADD) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(COLLECTION_OPEN) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(PLAY_CONTEXT) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
-    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
+    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) X(COLLECTION_VIEW) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -191,12 +192,23 @@
 #define SEL_RESULT_LINE_MAX 255u
 #define SEL_SYNC_QUEUE SEL_SOURCE_MAX /* LIBRARY_SYNCs waiting behind the running sync or scan (I527): one per source,
                                        * so the sync-all banner never loses a source to sync_busy */
-#define SEL_SEARCH_HITS 120
+#define SEL_SEARCH_HITS_PER_SOURCE 40 /* I1019a: one source's hit cap (today's single-source cap 120 shrinks; a site returns its best first) */
 #define SEL_SEARCH_KEY_MAX 256
 #define SEL_SEARCH_QUERY_MAX 256
 #define SEL_SEARCH_TEXT_MAX 160
 #define SEL_SEARCH_ARTIST_MAX 96
 #define SEL_SEARCH_FORMAT_MAX 16
+
+typedef struct sel_search_hit { /* one SOURCE_SEARCH hit; tags point into the same struct */
+    char key[SEL_SEARCH_KEY_MAX];
+    char title[SEL_SEARCH_TEXT_MAX];
+    char artist[SEL_SEARCH_ARTIST_MAX];
+    char format[SEL_SEARCH_FORMAT_MAX];
+    sel_tag tags[7];
+} sel_search_hit;
+enum { SEARCH_NONE = 0, SEARCH_QUEUED, SEARCH_RUNNING, SEARCH_DONE, SEARCH_FAILED }; /* bucket states */
+struct sel_engine;
+static int search_queued(const struct sel_engine* e);
 #define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
 
 /* Events coalesced inside a batch: the latest value wins, emitted at END. */
@@ -580,23 +592,31 @@ struct sel_engine {
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
-    struct {                                 /* SOURCE_SEARCH hits (I406): stable until the next search, events point here */
-        char key[SEL_SEARCH_KEY_MAX];
-        char title[SEL_SEARCH_TEXT_MAX];
-        char artist[SEL_SEARCH_ARTIST_MAX];
-        char format[SEL_SEARCH_FORMAT_MAX];
-        sel_tag tags[7];
-    } search_hit[SEL_SEARCH_HITS];
-    char search_source[SEL_SOURCE_ID_MAX];
+    sel_search_hit search_hit[SEL_SEARCH_HITS_PER_SOURCE]; /* SOURCE_SEARCH landing (I406): the running task fills it, the events point here until the next task starts */
+    /* I1019a: SOURCE_SEARCH * fans out over the enabled searchable sources. One bucket per registered source with a search hook, in registry
+     * order; the collect of each finished task copies the landing into its bucket. The single-source form is one bucket.
+     * I1035: the array is sized by the searchable source count and allocated when the engine starts (library engines); a source
+     * registered later grows it at the next query (search_buckets_ensure), never during one. */
+    struct sel_search_bucket {
+        char id[SEL_SOURCE_ID_MAX];
+        int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
+        uint32_t n;
+        sel_search_hit hit[SEL_SEARCH_HITS_PER_SOURCE];
+    } * search_bucket;
+    uint32_t search_bucket_cap;              /* buckets allocated */
+    uint32_t search_buckets;                 /* buckets of the current query */
+    uint32_t search_cur;                     /* the bucket the running task fills */
+    uint32_t search_gen;                     /* bumped per query; a task of an older generation is dropped at its collect */
+    uint32_t search_task_gen;                /* the generation the running task started in */
+    uint32_t search_stale_drops;             /* collects dropped by the generation check (sentinel) */
+    char search_source[SEL_SOURCE_ID_MAX];   /* id of the running task's source */
     sel_tag search_done_tags[4];
     /* I406a: SOURCE_SEARCH runs on the library job thread (I782: the network never blocks the command thread). The task
      * owns search_* while search_running; one request that arrives while the slot is busy waits in search_wait_*. */
     int search_running;
     int search_rc;
     char search_query[SEL_SEARCH_QUERY_MAX];
-    int search_waiting;
-    char search_wait_source[SEL_SOURCE_ID_MAX];
-    char search_wait_query[SEL_SEARCH_QUERY_MAX];
+    char search_wait_query[SEL_SEARCH_QUERY_MAX]; /* the current query; queued buckets start from it, search_query belongs to the running task */
     sel_sync_ctx search_ctx;
     uint32_t source_searches;      /* searches started (STAT_SOURCE_SEARCHES) */
     uint32_t source_pins;          /* I406b: hits handed to the library (search_pin) */
@@ -674,14 +694,24 @@ struct sel_engine {
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
+    char* coll_titles;                        /* I994d1: per-row sort fields of the page (title, artist, album, added, duration_ms: 5 strings a row), for re-orders */
+    uint32_t* coll_ord;                       /* I994d1: the page order block (shown position -> stored row), heap; the page's `order` points here */
+    uint32_t collection_orders;               /* I994d1 sentinel: page orders built */
+    uint32_t collection_views;                /* I994d2 sentinel: COLLECTION_VIEW commands applied */
+    int rdc_reorder, rdc_next_reorder;        /* I994d2: the read re-orders the published page under the new view (no rebuild) */
+    uint32_t coll_sort, coll_desc;            /* I994d1: the engine-global collection view the next build uses (SEL_COLL_SORT_*, 0/1) */
+    char coll_filter[64];
     /* I910: COLLECTION_OPEN posts the page build to a read slot (design 2026-11-01-ui-thread-library-waits.md section 4). The thread builds
      * into rdc_pg / rdc_blk from rdc_kind / rdc_key; the pump publishes them as e->coll when the read lands. rdc_next_* is the newest ask. */
     sel_lib_read rd_coll;
     sel_collection_page rdc_pg;
     sel_collection_page* coll_target;         /* the page drill_query counts its rows into: only the read thread sets it */
     char* rdc_blk;
+    char* rdc_titles;
+    uint32_t* rdc_ord;
     uint32_t rdc_kind, rdc_next_kind, coll_serial;
     char rdc_key[128], rdc_next_key[128];
+    int rdc_follow, rdc_next_follow;          /* I994d3a: the build refreshes the open playlist page; identical content is dropped, never republished */
     int rdc_page, rdc_next_page;              /* the read builds a page (0: a playlist open, the read only touches) */
     /* I906d: the Now Playing panel of a newly opened song is read on rd_panel (design 2026-11-01-ui-thread-library-waits.md section 4). The
      * thread fills rdp_buf / rdp_rows for rdp_path; the pump publishes them when rdp_state is still the open song's state. */
@@ -949,7 +979,7 @@ static void copy_str(char* dst, size_t cap, const char* src) {
 }
 
 void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx) {
-    while (e->scan_running || e->sync_running || e->search_running || e->search_waiting) {
+    while (e->scan_running || e->sync_running || e->search_running || search_queued(e)) {
 #if defined(__unix__) || defined(__APPLE__)
         struct timespec ts;
         ts.tv_sec = 0;
@@ -2843,20 +2873,47 @@ static void wq_pin_done(sel_engine* e, sel_wq_op* op) {
     e->source_pins++;
 }
 
-static int search_pin(sel_engine* e, const char* key) {
-    uint32_t i;
+/* I1019a: the hits of the current query as one list, bucket by bucket in registry order (only finished buckets hold hits). */
+static uint32_t search_total(const sel_engine* e) {
+    uint32_t b, n = 0;
 
-    if (e->lib == NULL || e->search_running || key == NULL || e->search_source[0] == '\0') {
+    for (b = 0; b < e->search_buckets; b++) {
+        n += e->search_bucket[b].state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+    }
+    return n;
+}
+
+static const sel_search_hit* search_hit_at(const sel_engine* e, uint32_t idx, const char** source) {
+    uint32_t b;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        uint32_t n = e->search_bucket[b].state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+
+        if (idx < n) {
+            if (source != NULL) *source = e->search_bucket[b].id;
+            return &e->search_bucket[b].hit[idx];
+        }
+        idx -= n;
+    }
+    return NULL;
+}
+
+static int search_pin(sel_engine* e, const char* key) {
+    uint32_t i, total = search_total(e);
+
+    if (e->lib == NULL || e->search_running || key == NULL || total == 0) {
         return 0;
     }
-    for (i = 0; i < e->search_n && i < SEL_SEARCH_HITS; i++) {
-        if (strcmp(e->search_hit[i].key, key) == 0) {
-            const char* artist = e->search_hit[i].artist;
-            const char* format = e->search_hit[i].format;
+    for (i = 0; i < total; i++) {
+        const char* source = "";
+        const sel_search_hit* hit = search_hit_at(e, i, &source);
+
+        if (strcmp(hit->key, key) == 0) {
+            const char* artist = hit->artist;
+            const char* format = hit->format;
             size_t an = strlen(artist) + 1u, fn = strlen(format) + 1u;
             char* res = (char*)e->host->mem_alloc(e->host, an + fn, SEL_MEM_FAST);
-            sel_wq_op* op = res != NULL ? wq_new(e, wq_pin_run, wq_pin_done, e->search_source, key + strlen(e->search_source) + 1u,
-                                                 e->search_hit[i].title) : NULL;
+            sel_wq_op* op = res != NULL ? wq_new(e, wq_pin_run, wq_pin_done, source, key + strlen(source) + 1u, hit->title) : NULL;
 
             if (op == NULL) {
                 if (res != NULL) e->host->mem_free(e->host, res);
@@ -4635,6 +4692,8 @@ void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out) {
     out->active = (uint32_t)(e->sync_running != 0);
     if (out->active) {
         out->rows = e->sync_ctx.rows_done;
+        out->done = e->sync_ctx.prog_done;
+        out->total = e->sync_ctx.prog_total;
         snprintf(out->source, sizeof out->source, "%s", e->sync_id);
     }
     out->queued = (uint32_t)e->sync_next_n;
@@ -4647,7 +4706,7 @@ void sel_engine_sync_cancel(sel_engine* e) {
 }
 
 int sel_engine_scan_busy(const sel_engine* e) {
-    return e->scan_running || e->sync_running || e->search_running || e->search_waiting; /* the scan and the sync share the one library task slot (I527) */
+    return e->scan_running || e->sync_running || e->search_running || search_queued(e); /* the scan and the sync share the one library task slot (I527) */
 }
 
 static int scan_cancelled_cb(void* ctx) {
@@ -6059,6 +6118,48 @@ static uint32_t search_pick_songs(const sel_engine* e, uint32_t* pick) {
     return n;
 }
 
+/* I1019b: one "H From <name> (n)" section per source of the current query, after the library groups. The rows are the source's hits
+ * as keyed song rows ("S <source:path>\t<title>  <artist>", the key VIEW_ACTIVATE plays and search_pin finds) or one keyless state
+ * row: Searching (queued or running), Could not reach <name> (failed), No results (done, no hits). A row that does not fit the text
+ * buffer is left out whole. Returns the new text length. */
+static size_t search_reload_sources(const sel_engine* e, char* text, size_t o, size_t cap) {
+    uint32_t b, i;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        const char* id = e->search_bucket[b].id;
+        const sel_source* src = sel_source_find(id);
+        const char* name = src != NULL && src->name != NULL ? src->name : id;
+        int state = e->search_bucket[b].state;
+        uint32_t n = state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+        int w = snprintf(text + o, cap - o, "H From %s (%u)\n", name, (unsigned)n);
+
+        if (w < 0 || (size_t)w >= cap - o) {
+            break;
+        }
+        o += (size_t)w;
+        if (state != SEARCH_DONE) {
+            w = snprintf(text + o, cap - o, state == SEARCH_FAILED ? "S Could not reach %s\n" : "S Searching\n", name);
+        } else if (n == 0u) {
+            w = snprintf(text + o, cap - o, "S No results\n");
+        } else {
+            w = 0;
+        }
+        if (w > 0 && (size_t)w < cap - o) {
+            o += (size_t)w;
+        }
+        for (i = 0; i < n; i++) {
+            const sel_search_hit* h = &e->search_bucket[b].hit[i];
+
+            w = snprintf(text + o, cap - o, "S %s\t%s  %s\n", h->key, h->title, h->artist);
+            if (w < 0 || (size_t)w >= cap - o) {
+                break;
+            }
+            o += (size_t)w;
+        }
+    }
+    return o;
+}
+
 static void search_reload(sel_engine* e) {
     char* text = e->view.htext;
     uint32_t albums[2u * SEARCH_DISTINCT_MAX], artists[2u * SEARCH_DISTINCT_MAX];
@@ -6115,6 +6216,7 @@ static void search_reload(sel_engine* e) {
         memcpy(text + o, art, lr);
         o += lr;
     }
+    o = search_reload_sources(e, text, o, cap);
     text[o < cap ? o : cap - 1u] = '\0';
     (void)sel_view_set_home(&e->view, text);
 }
@@ -6855,15 +6957,22 @@ static void cmd_LIBRARY_TOUCH(sel_engine* e, const sel_message* m) {
 /* ---- I678f: the page COLLECTION_OPEN builds for an album, artist or composer (design doc section 7/8) ---- */
 typedef struct coll_build {
     composer_fill rows;
+    composer_fill meta; /* I994d1: title, artist, album, added, duration_ms of every row, for the order build */
     uint32_t n;
 } coll_build;
 
-static void coll_song_row(void* ctx, const char* const* f) { /* key, name, artist, album, plays */
+static void coll_song_row(void* ctx, const char* const* f) { /* key, name, artist, album, plays, format, added, duration_ms */
     coll_build* b = (coll_build*)ctx;
-    const char* parts[2];
+    const char* parts[5];
     parts[0] = f[0];
     parts[1] = f[4];
     composer_put(&b->rows, parts, 2);
+    parts[0] = f[1];
+    parts[1] = f[2];
+    parts[2] = f[3];
+    parts[3] = f[6];
+    parts[4] = f[7];
+    composer_put(&b->meta, parts, 5);
     b->n++;
 }
 
@@ -7047,6 +7156,64 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
     }
 }
 
+/* I994d1: builds pg's order from the rows (e->rdc_blk) and sort fields (e->rdc_titles) under the engine's collection view. The records
+ * are a temporary array of pointers into both blocks; the order block stays with the page. A host without memory leaves the order NULL
+ * (identity, every row shown). */
+static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* rows, const char* titles) {
+    sel_coll_rec* rec = (sel_coll_rec*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *rec, SEL_MEM_FAST);
+    uint32_t* ord = (uint32_t*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *ord, SEL_MEM_FAST);
+    const char* r = rows;
+    const char* m = titles;
+    uint32_t i;
+    if (rec == NULL || ord == NULL) {
+        if (rec != NULL) e->host->mem_free(e->host, rec);
+        if (ord != NULL) e->host->mem_free(e->host, ord);
+        return;
+    }
+    for (i = 0; i < pg->songs; i++) {
+        rec[i].key = r;
+        r += strlen(r) + 1u;
+        r += strlen(r) + 1u;
+        rec[i].title = m;
+        m += strlen(m) + 1u;
+        rec[i].artist = m;
+        m += strlen(m) + 1u;
+        rec[i].album = m;
+        m += strlen(m) + 1u;
+        rec[i].added = strtoll(m, NULL, 10);
+        m += strlen(m) + 1u;
+        rec[i].duration_ms = strtoll(m, NULL, 10);
+        m += strlen(m) + 1u;
+    }
+    pg->sort = e->coll_sort;
+    pg->descending = e->coll_desc;
+    snprintf(pg->filter, sizeof pg->filter, "%s", e->coll_filter);
+    pg->shown = sel_coll_order_build(rec, pg->songs, pg->sort, pg->descending, pg->filter, ord);
+    SEL_COUNT_ADD(&e->collection_orders, 1u);
+    e->host->mem_free(e->host, rec);
+    e->rdc_ord = ord;
+    pg->order = ord;
+}
+
+/* Byte length of `n` records of `fields` NUL-terminated strings (empty strings included) at the start of a composer block. */
+static size_t coll_block_span(const char* blk, uint32_t n, unsigned fields) {
+    const char* p = blk;
+    uint32_t i;
+    for (i = 0; i < n * fields; i++) p += strlen(p) + 1u;
+    return (size_t)(p - blk);
+}
+
+/* I994d3a: a folder-tree reload fires for every playlist and folder edit; the open playlist page follows only when ITS content changed
+ * (items, plays, sort fields or name). The comparison is against the published page, which the read thread may read: the pump publishes
+ * only after this build is taken. */
+static int coll_same_as_published(sel_engine* e, const coll_build* b) {
+    size_t r = coll_block_span(e->coll_rows != NULL ? e->coll_rows : "", b->n, 2u);
+    size_t m = b->meta.buf != NULL ? coll_block_span(b->meta.buf, b->n, 5u) : 0u;
+    if (e->coll.kind != e->rdc_pg.kind || strcmp(e->coll.key, e->rdc_pg.key) != 0 || strcmp(e->coll.title, e->rdc_pg.title) != 0) return 0;
+    if (e->coll.songs != b->n || e->coll_rows == NULL || e->coll_titles == NULL || b->rows.buf == NULL || b->meta.buf == NULL) return b->n == 0u && e->coll.songs == 0u;
+    return coll_block_span(b->rows.buf, b->n, 2u) == r && memcmp(b->rows.buf, e->coll_rows, r) == 0 && memcmp(b->meta.buf, e->coll_titles, m) == 0;
+}
+
 /* Runs on the read thread (or inline without threads): builds the page rdc_kind / rdc_key name into rdc_pg and rdc_blk. */
 static void coll_build_run(sel_engine* e) {
     sel_collection_page* pg = &e->rdc_pg;
@@ -7057,9 +7224,17 @@ static void coll_build_run(sel_engine* e) {
     sel_engine_collection_row head;
     coll_shelf_sink hk;
 
+    if (e->rdc_reorder) { /* I994d2: same rows, new view: only the order block is rebuilt, from the published rows and sort fields */
+        if (e->rdc_ord != NULL) e->host->mem_free(e->host, e->rdc_ord);
+        e->rdc_ord = NULL;
+        e->rdc_pg = e->coll;
+        if (e->coll_titles != NULL) coll_order_make(e, &e->rdc_pg, e->coll_rows, e->coll_titles);
+        return;
+    }
     if (!e->rdc_page) return;
     memset(&b, 0, sizeof b);
     b.rows.host = e->host;
+    b.meta.host = e->host;
     memset(pg, 0, sizeof *pg);
     e->coll_target = pg;
     pg->kind = kind;
@@ -7080,6 +7255,9 @@ static void coll_build_run(sel_engine* e) {
         snprintf(pg->title, sizeof pg->title, "%s", head.name);
         snprintf(pg->sub, sizeof pg->sub, "%s", head.artist);
         pg->year = head.year;
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) { /* I994d3a: the name comes from the playlist row, the songs from the song query below */
+        if (sel_library_collection(e->lib, kind, key, SEL_COLL_HEAD, coll_shelf_row, &hk) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
+        snprintf(pg->title, sizeof pg->title, "%s", head.name);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* the most used spelling is the display name */
         snprintf(pg->title, sizeof pg->title, "%s", pg->shelf_n[3] > 0u ? pg->shelf[3][0].name : key);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_LIKED) { /* I678g: the pinned rows and a source page have a fixed or keyed title */
@@ -7106,14 +7284,43 @@ static void coll_build_run(sel_engine* e) {
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
         SEL_COUNT_ADD(&e->collection_queries, 1u);
     }
+    if (e->rdc_follow && coll_same_as_published(e, &b)) { /* I994d3a: nothing of this playlist changed: no page, no serial */
+        composer_release(e->host, &b.rows.buf);
+        composer_release(e->host, &b.meta.buf);
+        e->rdc_page = 0;
+        return;
+    }
     composer_release(e->host, &e->rdc_blk);
     e->rdc_blk = composer_take(&b.rows);
     pg->rows = e->rdc_blk;
     pg->songs = b.n;
+    composer_release(e->host, &e->rdc_titles);
+    if (e->rdc_ord != NULL) e->host->mem_free(e->host, e->rdc_ord);
+    e->rdc_ord = NULL;
+    pg->order = NULL;
+    pg->shown = b.n;
+    if (b.meta.buf != NULL) { /* a song list page: build its order (I994d1; drill and composer pages have no sort keys and stay identity) */
+        e->rdc_titles = b.meta.buf;
+        coll_order_make(e, pg, e->rdc_blk, e->rdc_titles);
+    }
 }
 
 /* The pump takes the finished page: it becomes state.collection with the next serial. */
 static void coll_publish(sel_engine* e) {
+    if (e->rdc_reorder) { /* I994d2: the page keeps its rows; the new order and view take the next serial */
+        e->rdc_reorder = 0;
+        if (e->rdc_ord == NULL) return;
+        if (e->coll_ord != NULL) e->host->mem_free(e->host, e->coll_ord);
+        e->coll_ord = e->rdc_ord;
+        e->rdc_ord = NULL;
+        e->coll.order = e->coll_ord;
+        e->coll.shown = e->rdc_pg.shown;
+        e->coll.sort = e->rdc_pg.sort;
+        e->coll.descending = e->rdc_pg.descending;
+        memcpy(e->coll.filter, e->rdc_pg.filter, sizeof e->coll.filter);
+        e->coll.serial = ++e->coll_serial;
+        return;
+    }
     if (!e->rdc_page) return;
     e->coll = e->rdc_pg;
     e->coll.serial = ++e->coll_serial;
@@ -7121,6 +7328,13 @@ static void coll_publish(sel_engine* e) {
     e->coll_rows = e->rdc_blk;
     e->rdc_blk = NULL;
     e->coll.rows = e->coll_rows;
+    composer_release(e->host, &e->coll_titles); /* I994d1: the order and its sort fields move with the page */
+    if (e->coll_ord != NULL) e->host->mem_free(e->host, e->coll_ord);
+    e->coll_titles = e->rdc_titles;
+    e->coll_ord = e->rdc_ord;
+    e->rdc_titles = NULL;
+    e->rdc_ord = NULL;
+    e->coll.order = e->coll_ord;
 }
 
 static void coll_post(sel_engine* e) {
@@ -7128,9 +7342,27 @@ static void coll_post(sel_engine* e) {
         e->rdc_kind = e->rdc_next_kind;
         snprintf(e->rdc_key, sizeof e->rdc_key, "%s", e->rdc_next_key);
         e->rdc_page = e->rdc_next_page;
+        e->rdc_reorder = e->rdc_next_reorder && !e->rdc_next_page;
+        e->rdc_follow = e->rdc_next_follow;
+        e->rdc_next_follow = 0;
         e->rdc_next_page = 0;
+        e->rdc_next_reorder = 0;
     }
     lib_read_post(e, &e->rd_coll, coll_build_run);
+}
+
+/* COLLECTION_VIEW filter sort [descending] (I994d2): the open collection page's tools row. The view lives in the engine; the page's order is
+ * rebuilt by a re-order job on the rd_coll slot (design section 11.3) and republished under a new serial. */
+static void cmd_COLLECTION_VIEW(sel_engine* e, const sel_message* m) {
+    uint32_t sort = (uint32_t)m->args[1].v.u;
+    snprintf(e->coll_filter, sizeof e->coll_filter, "%s", m->args[0].v.s);
+    e->coll_sort = sort < (uint32_t)SEL_COLL_SORT_COUNT ? sort : (uint32_t)SEL_COLL_SORT_CUSTOM;
+    e->coll_desc = m->argc > 2 && m->args[2].v.u != 0u ? 1u : 0u;
+    e->collection_views++;
+    if (e->coll_titles != NULL) {
+        e->rdc_next_reorder = 1;
+        coll_post(e);
+    }
 }
 
 /* I678e: a collection page was opened. The engine records which one and feeds Recents exactly as LIBRARY_TOUCH does, so every UI shares the
@@ -7155,10 +7387,15 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
             wq_submit(e);
         }
     }
-    if (!restore) e->collection_opens++;
+    if (!restore) {
+        e->collection_opens++;
+        e->coll_sort = (uint32_t)SEL_COLL_SORT_CUSTOM; /* I994d2: a new open starts from the stored order; Back / Forward keep the view */
+        e->coll_desc = 0u;
+        e->coll_filter[0] = '\0';
+    }
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
-    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS) {
         e->rdc_next_kind = kind; /* I910: the page is built by a posted read, never on this thread */
         snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
         e->rdc_next_page = 1;
@@ -7352,34 +7589,41 @@ static void sync_start_next(sel_engine* e) {
 /* SOURCE_SEARCH <source> <query> (D-OS-3, row I406): asks the source's own search (its `search` hook, a site query, not
  * the local library) and answers one LIBRARY_RESULT per hit (SRC_KIND search; SRC_PATH is the song key `source:path`,
  * playable with OPEN), then one with SRC_KIND search_done and SRC_COUNT. The source is remembered as the pref
- * search.last_source. Runs on the command thread, like LIBRARY_FETCH. */
-static int search_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
-    sel_engine* e = ctx;
-    uint32_t i = e->search_n;
-    sel_tag* t;
+ * nothing is remembered (I1019a dropped search.last_source). Runs on the library job thread; source `*` fans out over every enabled
+ * searchable source, one task per source (search_bucket). */
+static void search_hit_tags(sel_search_hit* h, const char* source) {
+    sel_tag* t = h->tags;
 
-    if (i >= SEL_SEARCH_HITS) {
-        return 0;
-    }
-    snprintf(e->search_hit[i].key, sizeof e->search_hit[i].key, "%s:%s", e->search_source, path);
-    snprintf(e->search_hit[i].title, sizeof e->search_hit[i].title, "%s", title);
-    snprintf(e->search_hit[i].artist, sizeof e->search_hit[i].artist, "%s", artist);
-    snprintf(e->search_hit[i].format, sizeof e->search_hit[i].format, "%s", format);
-    t = e->search_hit[i].tags;
     t[0].tag = SEL_SRC_KEY;
-    t[0].value = (uintptr_t)e->search_source;
+    t[0].value = (uintptr_t)source;
     t[1].tag = SEL_SRC_KIND;
     t[1].value = (uintptr_t)"search";
     t[2].tag = SEL_SRC_PATH;
-    t[2].value = (uintptr_t)e->search_hit[i].key;
+    t[2].value = (uintptr_t)h->key;
     t[3].tag = SEL_SRC_NAME;
-    t[3].value = (uintptr_t)e->search_hit[i].title;
+    t[3].value = (uintptr_t)h->title;
     t[4].tag = SEL_SRC_ARTIST;
-    t[4].value = (uintptr_t)e->search_hit[i].artist;
+    t[4].value = (uintptr_t)h->artist;
     t[5].tag = SEL_SRC_FORMAT;
-    t[5].value = (uintptr_t)e->search_hit[i].format;
+    t[5].value = (uintptr_t)h->format;
     t[6].tag = SEL_TAG_END;
     t[6].value = 0;
+}
+
+static int search_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
+    sel_engine* e = ctx;
+    uint32_t i = e->search_n;
+    sel_search_hit* h;
+
+    if (i >= SEL_SEARCH_HITS_PER_SOURCE) {
+        return 0;
+    }
+    h = &e->search_hit[i];
+    snprintf(h->key, sizeof h->key, "%s:%s", e->search_source, path);
+    snprintf(h->title, sizeof h->title, "%s", title);
+    snprintf(h->artist, sizeof h->artist, "%s", artist);
+    snprintf(h->format, sizeof h->format, "%s", format);
+    search_hit_tags(h, e->search_source);
     e->search_n++;
     return 1;
 }
@@ -7401,9 +7645,23 @@ static void search_task(void* ctx) {
     sel_sync_ctx_release(&e->search_ctx);
 }
 
-static void search_start(sel_engine* e, const char* source, const char* query) {
-    snprintf(e->search_source, sizeof e->search_source, "%s", source);
-    snprintf(e->search_query, sizeof e->search_query, "%s", query);
+static void view_reread(sel_engine* e, uint32_t source);
+
+/* I1019b: the From sections follow the buckets; a shown Search view is rebuilt whenever a bucket changes. */
+static void search_view_changed(sel_engine* e) {
+    if (e->view.active && e->view.pub.source == SEL_VIEW_SEARCH) {
+        search_reload(e);
+        view_reread(e, SEL_VIEW_SEARCH);
+    }
+}
+
+/* Starts the library task for bucket `b` of the current query. */
+static void search_start(sel_engine* e, uint32_t b) {
+    snprintf(e->search_source, sizeof e->search_source, "%s", e->search_bucket[b].id);
+    snprintf(e->search_query, sizeof e->search_query, "%s", e->search_wait_query);
+    e->search_cur = b;
+    e->search_task_gen = e->search_gen;
+    e->search_bucket[b].state = SEARCH_RUNNING;
     e->search_n = 0;
     e->search_serial++;
     e->search_rc = -1;
@@ -7417,69 +7675,167 @@ static void search_start(sel_engine* e, const char* source, const char* query) {
     e->search_running = 1;
     if (!sel_library_task_start(e->lib, search_task, e)) {
         e->search_running = 0;
-        sel_engine_report_error(e, "search_failed", source);
+        e->search_bucket[b].state = SEARCH_FAILED;
+        sel_engine_report_error(e, "search_failed", e->search_source);
     }
 }
 
+static int search_queued(const sel_engine* e) {
+    uint32_t b;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        if (e->search_bucket[b].state == SEARCH_QUEUED) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* One library task per source, one at a time: the first queued bucket of the current generation starts when the slot is free. */
 static void search_start_next(sel_engine* e) {
-    if (e->search_waiting && !e->scan_running && !e->sync_running && !e->search_running) {
-        e->search_waiting = 0;
-        search_start(e, e->search_wait_source, e->search_wait_query);
+    uint32_t b;
+
+    while (!e->scan_running && !e->sync_running && !e->search_running) {
+        for (b = 0; b < e->search_buckets && e->search_bucket[b].state != SEARCH_QUEUED; b++) {
+        }
+        if (b >= e->search_buckets) {
+            return;
+        }
+        search_start(e, b); /* a start that fails marks its bucket failed; the next queued one is tried */
     }
 }
 
+/* A new query supersedes the one in flight: the generation bump makes its collect a drop, the cancel request ends its network wait. */
+static void search_supersede(sel_engine* e) {
+    e->search_gen++;
+    e->search_buckets = 0;
+    e->search_serial++;
+    if (e->search_running) {
+        sel_library_task_cancel_request(e->lib); /* I782: returns at once; the job thread notices at its next poll slice */
+    }
+}
+
+/* Registered sources that have a search hook (the most buckets one fan-out can hold). */
+static uint32_t search_source_count(void) {
+    uint32_t i, n = 0;
+
+    for (i = 0; i < sel_source_count(); i++) {
+        const sel_source* src = sel_source_get(i);
+
+        n += src != NULL && src->search != NULL;
+    }
+    return n;
+}
+
+/* I1035: the bucket array covers every searchable source. Idle only (the caller superseded the running query). 0: out of memory. */
+static int search_buckets_ensure(sel_engine* e) {
+    uint32_t want = search_source_count();
+    struct sel_search_bucket* nb;
+
+    if (want <= e->search_bucket_cap) {
+        return 1;
+    }
+    nb = (struct sel_search_bucket*)e->host->mem_alloc(e->host, (size_t)want * sizeof *nb, SEL_MEM_FAST);
+    if (nb == NULL) {
+        return 0;
+    }
+    if (e->search_bucket != NULL) {
+        e->host->mem_free(e->host, e->search_bucket);
+    }
+    e->search_bucket = nb;
+    e->search_bucket_cap = want;
+    e->search_buckets = 0;
+    return 1;
+}
+
+static void search_bucket_set(sel_engine* e, const char* id) {
+    uint32_t b = e->search_buckets++;
+
+    snprintf(e->search_bucket[b].id, sizeof e->search_bucket[b].id, "%s", id);
+    e->search_bucket[b].state = SEARCH_QUEUED;
+    e->search_bucket[b].n = 0;
+}
+
+/* SOURCE_SEARCH <source> <query>; source `*` (I1019a) searches every enabled source that has a search hook, in registry order. */
 static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
+    const char* source = m->args[0].v.s;
+    const char* query = m->args[1].v.s;
+
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "SOURCE_SEARCH");
         return;
     }
-    if (!e->scan_running && !e->sync_running && !e->search_running) {
-        search_start(e, m->args[0].v.s, m->args[1].v.s);
+    search_supersede(e);
+    sel_source_register_builtin();
+    if (!search_buckets_ensure(e)) {
+        sel_engine_report_error(e, "out_of_memory", "SOURCE_SEARCH");
         return;
     }
-    snprintf(e->search_wait_source, sizeof e->search_wait_source, "%s", m->args[0].v.s);
-    snprintf(e->search_wait_query, sizeof e->search_wait_query, "%s", m->args[1].v.s);
-    e->search_waiting = 1; /* a newer request replaces the waiting one */
+    snprintf(e->search_wait_query, sizeof e->search_wait_query, "%s", query);
+    if (strcmp(source, "*") == 0) {
+        uint32_t i;
+
+        for (i = 0; query[0] != '\0' && i < sel_source_count() && e->search_buckets < e->search_bucket_cap; i++) {
+            const sel_source* src = sel_source_get(i);
+
+            if (src != NULL && src->search != NULL && !sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], src->id)) {
+                search_bucket_set(e, src->id);
+            }
+        }
+    } else if (e->search_bucket_cap > 0) {
+        search_bucket_set(e, source);
+    }
+    search_start_next(e); /* busy slot (scan, sync or the superseded search): the pump starts it after that task's collect */
+    search_view_changed(e);
 }
 
 /* Pump side of SOURCE_SEARCH: the events go out from the pump thread only. */
 static void search_collect(sel_engine* e) {
     sel_message r;
-    uint32_t i;
+    uint32_t i, b;
 
     if (!e->search_running || e->lib == NULL || !sel_library_task_take(e->lib)) {
         return;
     }
     e->search_running = 0;
-    e->search_serial++;
-    if (e->search_rc < 0) {
-        sel_engine_report_error(e, sel_source_find(e->search_source) == NULL ? "unknown_source" : "search_failed",
-                                e->search_source);
+    if (e->search_task_gen != e->search_gen) {
+        e->search_stale_drops++; /* a superseded query: no events, no view change, its buckets are gone */
     } else {
-        for (i = 0; i < e->search_n; i++) {
+        b = e->search_cur;
+        e->search_serial++;
+        if (e->search_rc < 0) {
+            e->search_bucket[b].state = SEARCH_FAILED;
+            sel_engine_report_error(e, sel_source_find(e->search_source) == NULL ? "unknown_source" : "search_failed",
+                                    e->search_source);
+        } else {
+            /* The events point into the bucket, not the landing: the next source's task starts below and rewrites the landing while these
+             * events still sit in the queue. A bucket is rewritten only by a later query's collect. */
+            for (i = 0; i < e->search_n; i++) {
+                e->search_bucket[b].hit[i] = e->search_hit[i];
+                search_hit_tags(&e->search_bucket[b].hit[i], e->search_bucket[b].id);
+                evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+                evt_tags(&r, e->search_bucket[b].hit[i].tags);
+                emit(e, &r);
+            }
+            e->search_bucket[b].n = e->search_n;
+            e->search_bucket[b].state = SEARCH_DONE;
+            e->search_done_tags[0].tag = SEL_SRC_KEY;
+            e->search_done_tags[0].value = (uintptr_t)e->search_bucket[b].id;
+            e->search_done_tags[1].tag = SEL_SRC_KIND;
+            e->search_done_tags[1].value = (uintptr_t)"search_done";
+            e->search_done_tags[2].tag = SEL_SRC_COUNT;
+            e->search_done_tags[2].value = e->search_n;
+            e->search_done_tags[3].tag = SEL_TAG_END;
+            e->search_done_tags[3].value = 0;
             evt_init(&r, SEL_EVT_LIBRARY_RESULT);
-            evt_tags(&r, e->search_hit[i].tags);
+            evt_tags(&r, e->search_done_tags);
             emit(e, &r);
-        }
-        e->search_done_tags[0].tag = SEL_SRC_KEY;
-        e->search_done_tags[0].value = (uintptr_t)e->search_source;
-        e->search_done_tags[1].tag = SEL_SRC_KIND;
-        e->search_done_tags[1].value = (uintptr_t)"search_done";
-        e->search_done_tags[2].tag = SEL_SRC_COUNT;
-        e->search_done_tags[2].value = e->search_n;
-        e->search_done_tags[3].tag = SEL_TAG_END;
-        e->search_done_tags[3].value = 0;
-        evt_init(&r, SEL_EVT_LIBRARY_RESULT);
-        evt_tags(&r, e->search_done_tags);
-        emit(e, &r);
-        (void)sel_prefs_set(&e->prefs, "search.last_source", e->search_source);
-        if (e->config_dir[0] != '\0') {
-            (void)sel_prefs_save(&e->prefs, e->config_dir);
         }
     }
     scan_start_next(e);
     sync_start_next(e);
     search_start_next(e);
+    search_view_changed(e);
 }
 
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
@@ -8311,6 +8667,13 @@ static void lib_reads_collect(sel_engine* e) {
         e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
         view_reread(e, SEL_VIEW_FOLDERS);
         if (e->rd_folders.again) lib_read_post(e, &e->rd_folders, folders_read_run);
+        if (e->collection_kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && e->coll.kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) { /* I994d3: the open playlist page follows the playlist */
+            e->rdc_next_kind = e->collection_kind;
+            snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
+            e->rdc_next_page = 1;
+            e->rdc_next_follow = 1;
+            coll_post(e);
+        }
     }
 }
 
@@ -8760,6 +9123,19 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
                 if (stride == 2u) s->key_at[i] = r; /* a drill group page lists groups, not songs: those rows stay NULL */
                 for (c = 0; c < stride; c++) r += strlen(r) + 1u;
             }
+            if (pg->order != NULL) { /* I994d1: the list is the shown rows in shown order, so start and every range index are shown positions */
+                const char** shown = (const char**)calloc((size_t)pg->shown + 1u, sizeof *shown);
+                if (shown == NULL) {
+                    sel_engine_report_error(e, "no_memory", verb);
+                    songs_sel_free(s);
+                    songs_unstage(e);
+                    return 0;
+                }
+                for (i = 0; i < pg->shown; i++) shown[i] = s->key_at[pg->order[i]];
+                free((void*)s->key_at);
+                s->key_at = shown;
+                s->count = pg->shown;
+            }
             e->songs_collection_opens++;
         } else {
             s->kind = SONGS_HITS;
@@ -8770,7 +9146,7 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
                 songs_unstage(e);
                 return 0;
             }
-            s->count = e->search_n;
+            s->count = search_total(e);
             s->key_at = (const char**)calloc((size_t)s->count + 1u, sizeof *s->key_at);
             if (s->key_at == NULL) {
                 sel_engine_report_error(e, "no_memory", verb);
@@ -8778,7 +9154,7 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
                 songs_unstage(e);
                 return 0;
             }
-            for (i = 0; i < s->count; i++) s->key_at[i] = e->search_hit[i].key;
+            for (i = 0; i < s->count; i++) s->key_at[i] = search_hit_at(e, i, NULL)->key;
             e->songs_hits_opens++;
         }
     } else {
@@ -9648,6 +10024,13 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         sel_engine_destroy(e);
         return NULL;
     }
+    if (cfg && cfg->library != NULL) { /* I1035: library engines size the search buckets once, at start; job engines never search */
+        sel_source_register_builtin();
+        if (!search_buckets_ensure(e)) {
+            sel_engine_destroy(e);
+            return NULL;
+        }
+    }
     e->browse.name_ok = browse_name_claimed; /* the folder browser lists folders and files a replayer claims (I218i) */
     e->browse.name_ctx = e;
     return e;
@@ -9655,6 +10038,12 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
 
 void sel_engine_mark_audio_thread(sel_engine* e) {
     SEL_THREAD_MARK_AUDIO(e);
+}
+
+/* I1019c: buckets still queued (never started) when the last engine was destroyed; process-wide because the engine is gone when it is read. */
+static uint32_t g_quit_queue_dropped;
+uint32_t sel_engine_quit_queue_dropped(void) {
+    return g_quit_queue_dropped;
 }
 
 void sel_engine_destroy(sel_engine* e) {
@@ -9710,12 +10099,21 @@ void sel_engine_destroy(sel_engine* e) {
         e->txt = NULL;
         lib_read_end(&e->rd_total);
         composer_release(e->host, &e->rdc_blk);
+        composer_release(e->host, &e->rdc_titles);
+        if (e->rdc_ord != NULL) e->host->mem_free(e->host, e->rdc_ord);
         composer_release(e->host, &e->rd_fmt_blk);
         composer_release(e->host, &e->rd_comp_blk);
         composer_release(e->host, &e->rd_comp_page_blk);
+        if (e->search_bucket) e->host->mem_free(e->host, e->search_bucket);
         if (e->rd_res_text) e->host->mem_free(e->host, e->rd_res_text);
         if (e->rd_res_meta) e->host->mem_free(e->host, e->rd_res_meta);
         if (e->rd_home_text) e->host->mem_free(e->host, e->rd_home_text);
+        g_quit_queue_dropped = 0;
+        for (i = 0; i < e->search_buckets; i++) {
+            g_quit_queue_dropped += e->search_bucket[i].state == SEARCH_QUEUED ? 1u : 0u;
+        }
+        /* I1019c: sentinel, read after destroy by `selecta --stats` */
+        e->search_buckets = 0; /* I1019a: no queued source may start after the cancel below */
         if (e->scan_running || e->sync_running || e->search_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
         }
@@ -9730,6 +10128,8 @@ void sel_engine_destroy(sel_engine* e) {
         composer_release(e->host, &e->composers);
         composer_release(e->host, &e->composer_page);
         composer_release(e->host, &e->coll_rows);
+        composer_release(e->host, &e->coll_titles);
+        if (e->coll_ord != NULL) e->host->mem_free(e->host, e->coll_ord);
         composer_release(e->host, &e->formats);
         if (e->order) {
             e->host->mem_free(e->host, e->order);
@@ -10300,6 +10700,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->lib_touch_calls = e->lib_touch_calls;
     out->collection_opens = e->collection_opens;
     out->collection_queries = e->collection_queries;
+    out->collection_orders = e->collection_orders;
+    out->collection_views = e->collection_views;
     out->drill_rows = e->drill_rows;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;

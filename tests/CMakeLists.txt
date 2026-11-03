@@ -21,14 +21,10 @@ sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}"
 
 # T5: the registry walked every descriptor and found only known tags. The expected count is the plugin list the registry
 # is generated from (cmake/selecta_registry.cmake, every sel_add_plugin call), not a hand count: I512, the literal said 20
-# after dr_flac, gme and ym joined and the registry held 23. The negative tree adds one bad plugin and is configured
-# with SEL_BUILD_TESTS=OFF, so it lacks the test-only source plugin testsrc (tests/sources/testsrc).
+# after dr_flac, gme and ym joined and the registry held 23. The negative tree adds one bad plugin.
 get_property(_sel_expect_plugins GLOBAL PROPERTY SEL_PLUGINS)
 list(LENGTH _sel_expect_plugins SEL_EXPECT_PLUGINS)
-set(_sel_bad_plugins ${_sel_expect_plugins})
-list(REMOVE_ITEM _sel_bad_plugins testsrc)
-list(LENGTH _sel_bad_plugins SEL_EXPECT_BAD_BASE)
-math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_BAD_BASE} + 1")
+math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
 
 # T6: sel_host layout golden per architecture.
@@ -939,6 +935,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_library_subtitle_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-library-subtitle COMMAND uim_library_subtitle_test)
   set_tests_properties(uim-library-subtitle PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_library_subtitle_ok")
+  # I1019d: the shared SOURCE_SEARCH * line and the search heading kinds.
+  add_executable(uim_search_group_test uimodel/search_group_test.c)
+  target_link_libraries(uim_search_group_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-search-group COMMAND uim_search_group_test)
+  set_tests_properties(uim-search-group PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_search_group_ok")
   # I831: the left button of the label control (Previous Filter or Clear Filter).
   add_executable(uim_libfilter_left_test uimodel/libfilter_left_test.c)
   target_link_libraries(uim_libfilter_left_test PRIVATE selecta_uimodel selecta_core)
@@ -1013,6 +1014,30 @@ add_executable(cover_tag_test library/cover_tag_test.c)
 add_test(NAME cover-tag-unit COMMAND cover_tag_test)
 set_tests_properties(cover-tag-unit PROPERTIES PASS_REGULAR_EXPRESSION "cover_tag_ok")
 
+# I892c1: RAOP (AirPlay 1) sender, pure part. Needs mbedtls, which the build tree has off the Amiga only.
+if(TARGET selecta_shared_raop)
+  add_executable(raop_pure_test library/raop_pure_test.c)
+  target_link_libraries(raop_pure_test PRIVATE selecta_shared_raop)
+  add_test(NAME raop-pure COMMAND raop_pure_test)
+  set_tests_properties(raop-pure PROPERTIES PASS_REGULAR_EXPRESSION "raop_pure_ok")
+endif()
+
+# I892c2: raop_server.py (fixture receiver) starts raop_stream_test as the sender and compares the decrypted PCM.
+find_program(SEL_PYTHON python3)
+if(TARGET selecta_shared_raop_net AND SEL_PYTHON)
+  add_executable(raop_stream_test library/raop_stream_test.c)
+  target_link_libraries(raop_stream_test PRIVATE selecta_shared_raop_net)
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/raop_stream")
+  add_test(NAME raop-stream COMMAND "${SEL_PYTHON}" -I "${CMAKE_CURRENT_SOURCE_DIR}/net/raop_server.py"
+    $<TARGET_FILE:raop_stream_test> "${CMAKE_CURRENT_BINARY_DIR}/raop_stream")
+  set_tests_properties(raop-stream PROPERTIES TIMEOUT 90 PASS_REGULAR_EXPRESSION "raop_stream_ok")
+  # I892c3: the fixture drops packet 7, asks for a resend on the control port; sync and timing are checked in both runs.
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/raop_resend")
+  add_test(NAME raop-resend COMMAND "${SEL_PYTHON}" -I "${CMAKE_CURRENT_SOURCE_DIR}/net/raop_server.py"
+    $<TARGET_FILE:raop_stream_test> "${CMAKE_CURRENT_BINARY_DIR}/raop_resend" drop=7)
+  set_tests_properties(raop-resend PROPERTIES TIMEOUT 90 PASS_REGULAR_EXPRESSION "raop_stream_ok")
+endif()
+
 # I218d: Latin-1 <-> UTF-8 at the OS boundary.
 add_executable(latin1_test library/latin1_test.c)
 target_link_libraries(latin1_test PRIVATE selecta_shared_source)
@@ -1036,6 +1061,19 @@ if(NOT SEL_AMIGA)
   add_test(NAME control-socket
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/control_socket.sh" "$<TARGET_FILE:selecta>"
       "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/control_socket")
+
+  # I1013: live UI control over the socket (ui.state, ui.input, ui.frame), SDL dummy video, desktop UI only.
+  if(SELECTA_UI_DESKTOP)
+    add_test(NAME ui-control-socket
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/ui_control.sh" "$<TARGET_FILE:selecta>" "${SEL_CLI}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/dui/fixture_library.sql" "${CMAKE_CURRENT_BINARY_DIR}/ui_control_socket")
+    set_tests_properties(ui-control-socket PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "ui-control-socket ok")
+    add_test(NAME ui-control-mcp
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/ui_mcp_smoke.sh" "$<TARGET_FILE:selecta>" "${SEL_CLI}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/dui/fixture_library.sql" "${CMAKE_CURRENT_BINARY_DIR}/ui_control_mcp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/selecta-ui-mcp.py")
+    set_tests_properties(ui-control-mcp PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "ui-control-mcp ok")
+  endif()
 
   # I575: scripted runs (--console-frames, --output null) ignore a Selecta that holds the default control socket.
   add_test(NAME scripted-run-no-socket
@@ -1614,7 +1652,8 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.sel
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.expected
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
-  set_tests_properties(sources PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
+  set_tests_properties(sources PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${SEL_TESTSRC_PLUGIN_DIR}")
 
   # I265: library.sources_off switches a source off: SOURCES reports SRC_ENABLED=0 and the library search skips its songs.
   add_test(NAME sources-off
@@ -1622,7 +1661,8 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources_off.sel
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources_off.expected
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
-  set_tests_properties(sources-off PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
+  set_tests_properties(sources-off PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${SEL_TESTSRC_PLUGIN_DIR}")
 
   add_test(NAME user-data
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sh $<TARGET_FILE:selecta-cli>
@@ -1751,7 +1791,8 @@ if(NOT SEL_AMIGA)
       "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_songs"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/source_songs.cmake")
-  set_tests_properties(source-songs PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_songs_ok")
+  set_tests_properties(source-songs PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_songs_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${SEL_TESTSRC_PLUGIN_DIR}")
 
   add_executable(key_remote_test m3/key_remote_test.c)
   target_link_libraries(key_remote_test PRIVATE selecta_core)
@@ -2512,6 +2553,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(radio-browser PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "radio_browser_ok")
 
+  # I1029: a station whose endless stream no replayer can stream fails the open at once instead of being drained.
+  add_test(NAME radio-endless
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DICY=${SEL_NET_DIR}/icy_server.py"
+            -P "${SEL_NET_DIR}/radio_endless.cmake")
+  set_tests_properties(radio-endless PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "radio_endless_ok")
+
   # I725e: the Jamendo source: popular-tracks sync, missing client id, streamed playback, no audio file cached.
   add_test(NAME jamendo
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
@@ -2528,6 +2577,24 @@ if(NOT SEL_AMIGA)
   set_tests_properties(archiveorg PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_ok")
 
+  # I1024a: SOURCE_SEARCH archiveorg over a local advancedsearch/metadata fixture: licence gate, 8-hit metadata cap, -1 when unreachable.
+  add_test(NAME archiveorg-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/archiveorg_search.cmake")
+  set_tests_properties(archiveorg-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_search_ok")
+
+  # I1024d: SOURCE_SEARCH radiobrowser over a local /json/stations/search fixture: codec filter, sink rows, -1 when unreachable.
+  add_test(NAME radiobrowser-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/radiobrowser_search.cmake")
+  set_tests_properties(radiobrowser-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "radiobrowser_search_ok")
+
+  # I1024e: SOURCE_SEARCH ccmixter over a local /api/query fixture: licence and MP3 filter, sink rows, -1 when unreachable.
+  add_test(NAME ccmixter-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/ccmixter_search.cmake")
+  set_tests_properties(ccmixter-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "ccmixter_search_ok")
+
   # I725f: the podcast source: RSS parse, Podcast Index search auth, Range playback and seek, User-Agent.
   add_test(NAME podcast
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
@@ -2535,6 +2602,60 @@ if(NOT SEL_AMIGA)
             -P "${SEL_NET_DIR}/podcast.cmake")
   set_tests_properties(podcast PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "podcast_ok")
+
+  # I894a3: the dlna source: recursive Browse into library.db (153 songs), SSDP discover, play from the res URL.
+  add_test(NAME dlna
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DSRV=${SEL_NET_DIR}/upnp_server.py"
+            -P "${SEL_NET_DIR}/dlna.cmake")
+  set_tests_properties(dlna PROPERTIES LABELS m3 TIMEOUT 90 PASS_REGULAR_EXPRESSION "dlna_ok")
+
+  # I892e1: CASTV2 session (TLS with a self-signed device certificate, CONNECT, heartbeat, RECEIVER_STATUS).
+  add_executable(cast_session_test net/cast_session_test.c)
+  target_link_libraries(cast_session_test PRIVATE selecta_shared_cast selecta_library)
+  add_test(NAME cast-session
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:cast_session_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/cast_server.py" -P "${SEL_NET_DIR}/cast_session.cmake")
+  set_tests_properties(cast-session PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_session_ok")
+
+  # I892e2: LAUNCH + LOAD of a URL served by the built-in HTTP file server (md5 of the fetched bytes equals the file).
+  add_executable(cast_load_test net/cast_load_test.c)
+  target_link_libraries(cast_load_test PRIVATE selecta_shared_cast selecta_library)
+  add_test(NAME cast-load
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:cast_load_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/cast_server.py" "-DFILE=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3"
+            -P "${SEL_NET_DIR}/cast_load.cmake")
+  set_tests_properties(cast-load PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_load_ok")
+
+  # I892e1: Chromecast mDNS discovery (pure parser with name compression + browse against the loopback responder).
+  add_executable(cast_discover_test net/cast_discover_test.c)
+  target_link_libraries(cast_discover_test PRIVATE selecta_shared_cast selecta_library)
+  add_test(NAME cast-discover
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:cast_discover_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/mdns_server.py" -P "${SEL_NET_DIR}/cast_discover.cmake")
+  set_tests_properties(cast-discover PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_discover_ok")
+
+  # I899a: entropy pool (threshold, distinct output, seed file) and the cast HTTP server refusing to start unseeded.
+  add_executable(entropy_test net/entropy_test.c)
+  target_link_libraries(entropy_test PRIVATE selecta_shared_cast selecta_library)
+  target_include_directories(entropy_test PRIVATE "${PROJECT_SOURCE_DIR}/src/library")
+  add_test(NAME entropy COMMAND entropy_test "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(entropy PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "entropy_ok")
+
+  # I894a1: UPnP MediaServer discovery (SSDP unicast to the fixture, HTTP description, ContentDirectory controlURL).
+  add_executable(upnp_discover_test net/upnp_discover_test.c)
+  target_link_libraries(upnp_discover_test PRIVATE selecta_shared_upnp selecta_library)
+  add_test(NAME upnp-discover
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:upnp_discover_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/upnp_server.py" -P "${SEL_NET_DIR}/upnp_discover.cmake")
+  set_tests_properties(upnp-discover PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "upnp_discover_ok")
+  # I894a2: ContentDirectory Browse (SOAP, paged) + DIDL-Lite parse against the same fixture.
+  add_executable(upnp_browse_test net/upnp_browse_test.c)
+  target_link_libraries(upnp_browse_test PRIVATE selecta_shared_upnp selecta_library)
+  add_test(NAME upnp-browse
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:upnp_browse_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/upnp_server.py" -P "${SEL_NET_DIR}/upnp_browse.cmake")
+  set_tests_properties(upnp-browse PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "upnp_browse_ok")
 
   # I725g: the ccMixter source: one query per sync, per-upload licence shown, User-Agent, streamed playback.
   add_test(NAME ccmixter
@@ -2572,9 +2693,21 @@ if(NOT SEL_AMIGA)
   target_link_libraries(play_context_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-play-context COMMAND play_context_test "$<TARGET_FILE:gen_testmod>")
   set_tests_properties(engine-play-context PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "play_context_ok")
+  # I994d1: the pure collection order (sort keys both ways, three-field filter, ties, title fallback).
+  add_executable(collection_order_test engine/collection_order_test.c)
+  target_include_directories(collection_order_test PRIVATE ${PROJECT_SOURCE_DIR}/src/engine)
+  target_link_libraries(collection_order_test PRIVATE selecta_core)
+  add_test(NAME engine-collection-order COMMAND collection_order_test)
+  set_tests_properties(engine-collection-order PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "collection_order_ok")
   add_executable(play_context_lists_test engine/play_context_lists_test.c)
   target_include_directories(play_context_lists_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(play_context_lists_test PRIVATE selecta_library selecta_registry selecta_core)
+  # I994d1: the collection page order through the engine (collection_orders sentinel, shown index, stale serial).
+  add_executable(collection_view_test engine/collection_view_test.c)
+  target_include_directories(collection_view_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(collection_view_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-collection-view COMMAND collection_view_test)
+  set_tests_properties(engine-collection-view PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "collection_view_ok")
   add_test(NAME engine-play-context-lists COMMAND play_context_lists_test)
   set_tests_properties(engine-play-context-lists PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "play_context_lists_ok")
   # I632b: the SONGS_* bulk verbs (songs_runs sentinel): order, one history step, one QUEUE_CHANGED, stale version, playlist add/remove.
@@ -2661,6 +2794,20 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-sync-dispatch COMMAND library_sync_dispatch_test)
   set_tests_properties(library-sync-dispatch PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sync_dispatch_ok")
 
+  # I1019a: SOURCE_SEARCH * fans out over every enabled searchable source in registry order; a newer query drops the stale task's hits.
+  add_executable(source_search_all_test engine/source_search_all_test.c)
+  target_include_directories(source_search_all_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(source_search_all_test PRIVATE selecta_library selecta_core)
+  add_test(NAME source-search-all COMMAND source_search_all_test)
+  set_tests_properties(source-search-all PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_all_ok")
+
+  # I1019b: the Search view lists a From section per source after Artists; Enter on a From row plays its source:path key.
+  add_executable(source_search_view_test engine/source_search_view_test.c)
+  target_include_directories(source_search_view_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(source_search_view_test PRIVATE selecta_library selecta_core)
+  add_test(NAME source-search-view COMMAND source_search_view_test)
+  set_tests_properties(source-search-view PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_view_ok")
+
   # I527: LIBRARY_SYNC runs on the library job thread; the pump returns while a blocking sync runs, a second sync and a scan queue.
   add_executable(library_sync_async_test engine/library_sync_async_test.c)
   target_include_directories(library_sync_async_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
@@ -2675,7 +2822,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME src-plugin-reach
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/src-plugin-reach"
       "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}" "-DREACH_TEST=$<TARGET_FILE:src_plugin_reach_test>"
-      "-DSRC=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/tests/dui/src_plugin_reach.cmake")
+      "-DSRC=${PROJECT_SOURCE_DIR}" "-DPLUGINS=${SEL_TESTSRC_PLUGIN_DIR}" -P "${PROJECT_SOURCE_DIR}/tests/dui/src_plugin_reach.cmake")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
   set_tests_properties(src-plugin-reach PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "src_plugin_reach_ok"
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")

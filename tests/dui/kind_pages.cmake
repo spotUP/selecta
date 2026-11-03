@@ -114,14 +114,26 @@ function(expect_kind dump kind label)
   endif()
 endfunction()
 
-set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1600) # 1600: the source row sits below the album, artist and composer rows
+set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}")
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
+# The sidebar lists every registered source (I1022: HVSC sat at y=1540, under the 1600px canvas's footer, so the click landed on the footer
+# and the app stayed on Home), and rows outside the sidebar view take no click. The canvas is therefore as tall as the row needs: the row's
+# bottom edge plus the footer.
+set(FOOTER_ROOM 140)
 # Each open touches Recents and reorders the sidebar, so the row is read from an idle run right before the run that clicks it.
 function(open_run out tag kind name script)
-  dui_run(idle_${tag} ${common} --input "${WORK}/idle.txt")
+  set(canvas 1280x1600)
+  dui_run(idle_${tag} ${common} --canvas ${canvas} --input "${WORK}/idle.txt")
   side_row(xy "${idle_${tag}}" ${kind} "${name}")
+  string(REGEX REPLACE "^[0-9]+ " "" cy "${xy}")
+  math(EXPR need "${cy} + ${FOOTER_ROOM}")
+  if(need GREATER 1600)
+    set(canvas 1280x${need})
+    dui_run(idle2_${tag} ${common} --canvas ${canvas} --input "${WORK}/idle.txt")
+    side_row(xy "${idle2_${tag}}" ${kind} "${name}")
+  endif()
   file(WRITE "${WORK}/${tag}.txt" "click ${xy}\nwait 100\n${script}")
-  dui_run(run_${tag} ${common} --input "${WORK}/${tag}.txt")
+  dui_run(run_${tag} ${common} --canvas ${canvas} --input "${WORK}/${tag}.txt")
   set(${out} "${run_${tag}}" PARENT_SCOPE)
 endfunction()
 
@@ -250,6 +262,12 @@ endfunction()
 expect_pinned(liked 0 "Liked Songs" liked Playlist 1 0 0 "SELECT COUNT(*) FROM liked" "local:fixture/12.mod")
 expect_pinned(recent 1 "Recently Played" recent Playlist 1 1 0 "SELECT COUNT(DISTINCT h.key) FROM history h JOIN songs s ON s.key=h.key" "local:fixture/1.mod")
 expect_pinned(local 2 "Local Files" local Source 1 0 0 "SELECT COUNT(*) FROM songs WHERE source='local'" "local:fixture/1.mod")
+# I938: the Local Files sidebar tile and page header both draw the Lucide folder mark (dump line localicon); the Liked Songs and Recently Played headers keep the wordmark
+if(NOT "${pg}" MATCHES "localicon side=([0-9]+) head=([0-9]+) folder=([0-9]+)")
+  message(FATAL_ERROR "no localicon line in:\n${pg}")
+endif()
+expect_eq("Local Files sidebar tile icon" "${CMAKE_MATCH_1}" "${CMAKE_MATCH_3}")
+expect_eq("Local Files header icon" "${CMAKE_MATCH_2}" "${CMAKE_MATCH_3}")
 # I790: a source page opens its drill (formats, platforms, artists, new), never its song list: no song rows, no first song
 expect_pinned(src 7 "HVSC" source Source 0 0 1 "SELECT 0" "")
 kh_field(status "${pg}" status)

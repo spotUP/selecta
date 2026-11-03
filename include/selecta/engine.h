@@ -109,6 +109,10 @@ typedef struct sel_view_row {
     uint32_t art_id;   /* grid, cover flow and compact queue rows: albums.id of the song's album (the artwork id), 0 none; a Home album tile: albums.id of that album (I678h2) */
 } sel_view_row;
 
+/* The largest view window (VIEW_WINDOW n, 1..SEL_VIEW_WINDOW_MAX); also the most rows a home or search text holds, so a
+ * page that draws a whole grouped result (the Search page) asks for this window and gets every row (I1030). */
+#define SEL_VIEW_WINDOW_MAX 256u
+
 /* rows[0..row_n) are the visible window: listing indices window_start and up.
  * Row and path pointers are valid until the next pump. */
 typedef struct sel_view_state {
@@ -190,6 +194,17 @@ enum {
     SEL_DRILL_WINDOW = 200   /* the most rows one drill page holds */
 };
 
+/* I994d1: the sort keys of a collection page order (design doc 2026-11-02-I994-play-context-design.md section 11); each has an ascending and a descending direction */
+enum {
+    SEL_COLL_SORT_CUSTOM = 0, /* stored order ("Custom Order") */
+    SEL_COLL_SORT_TITLE,
+    SEL_COLL_SORT_ARTIST,
+    SEL_COLL_SORT_ALBUM,
+    SEL_COLL_SORT_ADDED, /* Date Added */
+    SEL_COLL_SORT_DURATION,
+    SEL_COLL_SORT_COUNT
+};
+
 typedef struct sel_collection_page {
     uint32_t serial;
     uint32_t drill;       /* SEL_DRILL_PAGE_* */
@@ -204,6 +219,10 @@ typedef struct sel_collection_page {
     const char* rows;
     uint32_t shelf_n[SEL_COLLECTION_SHELVES], shelf_total[SEL_COLLECTION_SHELVES];
     sel_engine_collection_row shelf[SEL_COLLECTION_SHELVES][SEL_COLLECTION_SHELF_MAX];
+    const uint32_t* order;     /* I994d: shown position -> stored row index; NULL means identity (drill group pages) */
+    uint32_t shown;            /* rows in order (<= songs): the filtered count */
+    uint32_t sort, descending; /* SEL_COLL_SORT_*, 0/1 */
+    char filter[64];           /* the view this order was built for */
 } sel_collection_page;
 
 typedef struct sel_state {
@@ -308,6 +327,7 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out);
  * Cancel asks the running sync to stop at its next batch and returns at once (the sync then reports sync_failed). */
 typedef struct sel_sync_progress {
     uint32_t active, rows, queued;
+    uint32_t done, total; /* I1026: the source's fetch progress, `done` of `total`; total 0 = the source gave none (indeterminate) */
     char source[40];
 } sel_sync_progress;
 void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out);
@@ -350,6 +370,8 @@ void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx);
 
 sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg);
 void sel_engine_destroy(sel_engine* e);
+/* I1019c sentinel: search buckets still queued when sel_engine_destroy cleared the queue (the last destroy in this process). */
+uint32_t sel_engine_quit_queue_dropped(void);
 
 /* Enqueues a command. String and tag arguments are not copied: they must
  * stay valid until the next sel_engine_pump. Returns 0 when the queue is full. */
@@ -523,6 +545,8 @@ typedef struct sel_engine_stats {
     uint32_t collection_opens;  /* COLLECTION_OPEN commands applied (I678e sentinel: a collection page was opened through the engine) */
     uint32_t drill_rows;        /* I790 sentinel: source drill rows emitted by the library over all pages built */
     uint32_t collection_queries; /* I678f sentinel: collection page lists (songs or shelf) that reached the library */
+    uint32_t collection_views;   /* I994d2 sentinel: COLLECTION_VIEW commands applied */
+    uint32_t collection_orders;  /* I994d1 sentinel: collection page orders built (one per song list page build) */
     uint32_t lib_deferred;        /* I782 sentinel: library requests refused because the library was busy and the caller asked not to wait */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */

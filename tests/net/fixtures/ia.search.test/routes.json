@@ -1,0 +1,35 @@
+{
+ "/advancedsearch.php": {
+  "file": "advancedsearch.json"
+ },
+ "/metadata/ia_s01": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s02": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s03": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s04": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s05": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s06": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s07": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s08": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s09": {
+  "file": "metadata.json"
+ },
+ "/metadata/ia_s10": {
+  "file": "metadata.json"
+ }
+}

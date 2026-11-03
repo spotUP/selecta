@@ -109,6 +109,10 @@ int sel_uim_actions_check(char* msg, size_t cap);
 /* Shared command lines and texts of the views (MUI-P4-3..P4-16; the desktop UI uses the same functions). */
 /* LIBRARY_SEARCH "text" with backslash and quote escaped; returns the length (0 when it does not fit). */
 size_t sel_uim_search_line(const char* text, char* out, size_t cap);
+/* I1019d: SOURCE_SEARCH * "text" (the fan-out over the library and every searchable source), same escaping and return as above. */
+size_t sel_uim_search_all_line(const char* text, char* out, size_t cap);
+/* I1019d: the kind of a search view heading row: 1 Songs, 2 Albums, 3 Artists, 4 "From <source>"; 0 for anything else. */
+uint32_t sel_uim_search_group(const char* heading);
 /* Song context menu (DUI-P4-16): five items on every page; item 4 is Remove from Queue on the Queue page. */
 #define SEL_UIM_SONG_MENU_ITEMS 5u
 const char* sel_uim_song_menu_label(uint32_t item, int on_queue);

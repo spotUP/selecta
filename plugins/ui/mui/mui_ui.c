@@ -2683,6 +2683,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         for (i = 0; i < n; i++) {
             mui_engine_line(s, lines[i]);
         }
+        if (n > 0 && mui_search_all_line((const char*)text, line, sizeof line)) {
+            mui_engine_line(s, line); /* I1019g: the From <source> sections, on Return only */
+        }
         if (n > 0) {
             mui_p4_note(s, which, lines[0]);
         }

@@ -397,6 +397,8 @@ void mui_help_row(uint32_t i, char* out, size_t cap);
 
 /* MUI-P4-3 search: the lines a changed String gadget sends; line 0 is the one search line. */
 uint32_t mui_search_lines(const char* text, char lines[3][160]);
+/* I1019g: the SOURCE_SEARCH * line for the same text (Return only). 1 when `out` holds a line, an empty query gives the clearing line. */
+uint32_t mui_search_all_line(const char* text, char* out, size_t cap);
 /* MUI-P4-4 queue: entry ids, as the desktop queue sends them. */
 void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, size_t cap); /* "move", "remove", "clear" */
 /* MUI-P4-5 playlists: action is "open", "rename" or "delete"; name is only used by rename. Returns 0 for an unknown action. */

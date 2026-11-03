@@ -281,6 +281,7 @@ typedef struct resp_head {
     long content_length;
     int chunked;
     unsigned icy_metaint;
+    int radio; /* ICY status line or icy-* header (I1029) */
     char content_type[40];
     char location[URL_CAP];
     unsigned long retry_after_s; /* Retry-After in whole seconds; HTTP-date form is not parsed (0) */
@@ -294,7 +295,8 @@ static int header_is(const char* line, const char* name) {
 #define HEAD_TOTAL_CAP (1024u * 1024u)
 
 /* Every header name parse_head reads; a line not listed here is dropped before parse_head sees it. */
-static const char* const kept_headers[] = {"content-length:", "icy-metaint:", "content-type:", "retry-after:", "transfer-encoding:", "location:"};
+static const char* const kept_headers[] = {"content-length:", "icy-metaint:", "content-type:", "retry-after:", "transfer-encoding:", "location:",
+                                             "icy-name:", "icy-br:"};
 
 static char* memmem_crlf(char* p, size_t n) {
     size_t i;
@@ -332,6 +334,7 @@ static int parse_head(char* h, resp_head* r) {
         if (first) {
             if (strncmp(line, "ICY ", 4) == 0 && strlen(line) >= 7) { /* Shoutcast v1: "ICY 200 OK" (I196a) */
                 r->status = atoi(line + 4);
+                r->radio = 1;
             } else if (strncmp(line, "HTTP/1.", 7) != 0 || strlen(line) < 12) {
                 return 0;
             } else {
@@ -345,6 +348,9 @@ static int parse_head(char* h, resp_head* r) {
             r->content_length = atol(line + 15);
         } else if (header_is(line, "icy-metaint:")) {
             r->icy_metaint = (unsigned)strtoul(line + 12, NULL, 10);
+            r->radio = 1;
+        } else if (header_is(line, "icy-name:") || header_is(line, "icy-br:")) {
+            r->radio = 1; /* I1029: a radio server without metadata (no Icy-MetaData asked) still names itself */
         } else if (header_is(line, "content-type:")) {
             const char* v = line + 13;
             size_t n = 0;
@@ -580,6 +586,7 @@ static sel_http_err exchange(const sel_http_req* req, const char* method, const 
     res->status = head.status;
     res->content_length = head.chunked ? -1 : head.content_length;
     res->icy_metaint = head.icy_metaint;
+    res->radio = head.radio;
     res->retry_after_s = head.retry_after_s;
     memcpy(res->content_type, head.content_type, sizeof res->content_type);
     if (head.status >= 300 && head.status < 400 && head.status != 304 && head.location[0] != '\0') {

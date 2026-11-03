@@ -16,6 +16,10 @@ int sel_tls_open(int h, const char* host, unsigned timeout_ms) {
     return SEL_TLS_E_UNAVAILABLE;
 }
 
+int sel_tls_open_insecure(int h, const char* host, unsigned timeout_ms) {
+    return sel_tls_open(h, host, timeout_ms);
+}
+
 unsigned sel_tls_handshakes(void) {
     return 0;
 }
@@ -52,6 +56,7 @@ static tls_slot g_slot[SEL_NET_MAX_CONN];
 static unsigned g_handshakes;
 static int g_init_state; /* 0 not tried, 1 ready, -1 failed */
 static mbedtls_ssl_config g_conf;
+static mbedtls_ssl_config g_conf_noverify; /* self-signed device certificates (Chromecast), I892e1 */
 static mbedtls_entropy_context g_entropy;
 static mbedtls_ctr_drbg_context g_drbg;
 static mbedtls_x509_crt g_ca;
@@ -83,11 +88,14 @@ static int tls_init(void) {
     }
     g_init_state = -1;
     mbedtls_ssl_config_init(&g_conf);
+    mbedtls_ssl_config_init(&g_conf_noverify);
     mbedtls_entropy_init(&g_entropy);
     mbedtls_ctr_drbg_init(&g_drbg);
     if (psa_crypto_init() != PSA_SUCCESS ||
         mbedtls_ctr_drbg_seed(&g_drbg, mbedtls_entropy_func, &g_entropy, (const unsigned char*)"selecta", 7) != 0 ||
         mbedtls_ssl_config_defaults(&g_conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
+                                    MBEDTLS_SSL_PRESET_DEFAULT) != 0 ||
+        mbedtls_ssl_config_defaults(&g_conf_noverify, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
                                     MBEDTLS_SSL_PRESET_DEFAULT) != 0) {
         return -1;
     }
@@ -95,6 +103,8 @@ static int tls_init(void) {
     mbedtls_ssl_conf_rng(&g_conf, mbedtls_ctr_drbg_random, &g_drbg);
     mbedtls_ssl_conf_authmode(&g_conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_ca_chain(&g_conf, &g_ca, NULL);
+    mbedtls_ssl_conf_rng(&g_conf_noverify, mbedtls_ctr_drbg_random, &g_drbg);
+    mbedtls_ssl_conf_authmode(&g_conf_noverify, MBEDTLS_SSL_VERIFY_NONE);
     g_init_state = 1;
     return 0;
 }
@@ -129,7 +139,7 @@ static void slot_release(tls_slot* s) {
     }
 }
 
-int sel_tls_open(int h, const char* host, unsigned timeout_ms) {
+static int tls_open(int h, const char* host, unsigned timeout_ms, int verify) {
     tls_slot* s;
     int rc;
     if (h < 0 || h >= SEL_NET_MAX_CONN || tls_init() != 0) {
@@ -141,7 +151,7 @@ int sel_tls_open(int h, const char* host, unsigned timeout_ms) {
     s->active = 1;
     s->timed_out = 0;
     s->deadline = sel_net_now_ms() + timeout_ms;
-    if (mbedtls_ssl_setup(&s->ssl, &g_conf) != 0 || mbedtls_ssl_set_hostname(&s->ssl, host) != 0) {
+    if (mbedtls_ssl_setup(&s->ssl, verify ? &g_conf : &g_conf_noverify) != 0 || mbedtls_ssl_set_hostname(&s->ssl, host) != 0) {
         slot_release(s);
         return SEL_TLS_E_INIT;
     }
@@ -167,6 +177,14 @@ int sel_tls_open(int h, const char* host, unsigned timeout_ms) {
     }
     slot_release(s);
     return rc;
+}
+
+int sel_tls_open(int h, const char* host, unsigned timeout_ms) {
+    return tls_open(h, host, timeout_ms, 1);
+}
+
+int sel_tls_open_insecure(int h, const char* host, unsigned timeout_ms) {
+    return tls_open(h, host, timeout_ms, 0);
 }
 
 unsigned sel_tls_handshakes(void) {

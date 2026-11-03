@@ -14,6 +14,13 @@ string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
 set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx}")
+# I1024a: archive.org is a searchable source now; point it at the fixture host (no advancedsearch route there,
+# so 404 = search_failed, and no real network is touched)
+set(ENV{SELECTA_ARCHIVEORG_BASE} "http://fixture.test")
+# I1024d: radiobrowser searches too; same 404 = search_failed
+set(ENV{SELECTA_RADIO_BROWSER} "http://fixture.test")
+# I1024e: ccmixter searches too; same 404 = search_failed
+set(ENV{SELECTA_CCMIXTER_BASE} "http://fixture.test")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
@@ -27,10 +34,10 @@ function(ts_run outvar view input)
   set(${outvar} "${o}" PARENT_SCOPE)
 endfunction()
 
-# The remembered scope is Modules.pl (pref search.last_source, as in the user's config). Every run starts from a fresh library
-# (a source row click reorders the list by recency), the config dir with the pref is shared.
+# Every run starts from a fresh library (a source row click reorders the list by recency). I1019f: the scope is not remembered,
+# the Search page opens on All sources and the Modules.pl chip is clicked after the typing.
 file(MAKE_DIRECTORY "${WORK}/cfg")
-file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\nsearch.last_source=modulespl\n")
+file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
 
 ts_run(c0 home "wait 300\n")
 if(NOT "${c0}" MATCHES "sidechev L [0-9]+ [0-9]+ [0-9]+ [0-9]+ R ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
@@ -78,9 +85,23 @@ endif()
 if(NOT "${c3}" MATCHES "online scope=([^ ]*) searches=([0-9]+) rows=([0-9]+) ")
   message(FATAL_ERROR "no online line in:\n${c3}")
 endif()
+if(NOT CMAKE_MATCH_1 STREQUAL "-")
+  message(FATAL_ERROR "I1019f: the Search page must open on All sources (scope=-), got ${CMAKE_MATCH_1}:\n${c3}")
+endif()
+if(NOT "${c3}" MATCHES "online_chip 4 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no Modules.pl chip on the Search page:\n${c3}")
+endif()
+math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+
+# Pass 4: the Modules.pl chip picked after the typing searches that source.
+ts_run(c4 home "wait 300\n${open}click ${mx0} ${my0}\nwait 50\nmove ${fx0} ${fy0}\nclick ${fx0} ${fy0}\nwait 50\nkey c\nkey h\nkey i\nkey p\nkey enter\nwait 100\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 100\nwait 100\nwait 100\nwait 100\n")
+if(NOT "${c4}" MATCHES "online scope=([^ ]*) searches=([0-9]+) rows=([0-9]+) ")
+  message(FATAL_ERROR "no online line in:\n${c4}")
+endif()
 set(scope "${CMAKE_MATCH_1}")
 set(searches "${CMAKE_MATCH_2}")
 set(rows "${CMAKE_MATCH_3}")
 if(NOT scope STREQUAL "modulespl" OR searches LESS 1 OR NOT rows EQUAL 3)
-  message(FATAL_ERROR "typing chip after the field click must search modulespl (scope=${scope} searches=${searches} rows=${rows}, want modulespl >=1 3):\n${c3}")
+  message(FATAL_ERROR "typing chip after the field click and picking the chip must search modulespl (scope=${scope} searches=${searches} rows=${rows}, want modulespl >=1 3):\n${c4}")
 endif()

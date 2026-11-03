@@ -116,6 +116,12 @@ uint32_t mui_search_lines(const char* text, char lines[3][160]) {
     return 3;
 }
 
+/* I1019g: the online sections. Sent on String acknowledge (Return) only, never per change: the Amiga build has no library job thread,
+ * so a fan-out would run every source's network search inline on the engine command path. Returns 1 when `out` holds the line. */
+uint32_t mui_search_all_line(const char* text, char* out, size_t cap) {
+    return sel_uim_search_all_line(text, out, cap) > 0u ? 1u : 0u;
+}
+
 /* MUI-P4-4: the queue verbs take entry ids (the desktop sends the same). */
 void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, size_t cap) {
     if (strcmp(verb, "move") == 0) {

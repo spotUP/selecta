@@ -360,8 +360,55 @@ static int32_t cat_annotate(const sel_host* host, const sel_catalogue_note* note
     return matched;
 }
 
+static int cat_state_get(const sel_host* host, const char* key, void* buf, uint32_t cap, uint32_t* len) {
+    sel_sync_ctx* c = ctx_of(host);
+    sel_srcstate_op op;
+    sel_message reply;
+
+    if (c->batch == NULL || key == NULL || len == NULL) {
+        return 0;
+    }
+    memset(&op, 0, sizeof op);
+    op.source = c->batch->source;
+    op.key = key;
+    op.data = buf;
+    op.cap = cap;
+    memset(&reply, 0, sizeof reply);
+    if (!sel_library_request(c->scfg.lib, SEL_LIB_REQ_SRCSTATE, &op, &reply) || reply.args[1].v.i != 0) {
+        return 0;
+    }
+    *len = op.len;
+    return reply.args[0].v.i != 0;
+}
+
+static int cat_state_set(const sel_host* host, const char* key, const void* data, uint32_t len) {
+    sel_sync_ctx* c = ctx_of(host);
+    sel_srcstate_op op;
+    sel_message reply;
+
+    if (c->batch == NULL || key == NULL || !cat_flush(c)) {
+        return 0;
+    }
+    memset(&op, 0, sizeof op);
+    op.source = c->batch->source;
+    op.key = key;
+    op.data = (void*)data;
+    op.len = len;
+    op.set = 1;
+    memset(&reply, 0, sizeof reply);
+    return sel_library_request(c->scfg.lib, SEL_LIB_REQ_SRCSTATE, &op, &reply) && reply.args[1].v.i == 0;
+}
+
+static void cat_progress(const sel_host* host, uint32_t done, uint32_t total) {
+    sel_sync_ctx* c = ctx_of(host);
+
+    c->prog_done = done;
+    c->prog_total = total;
+}
+
 static const sel_catalogue g_catalogue = {cat_begin,    cat_song,      cat_remove,   cat_move,  cat_commit,
-                                          cat_abort,    cat_cache_dir, cat_list_dir, cat_now, cat_annotate};
+                                          cat_abort,    cat_cache_dir, cat_list_dir, cat_now, cat_annotate,
+                                          cat_state_get, cat_state_set, cat_progress};
 
 static const sel_catalogue* host_catalogue(const sel_host* host) {
     return ctx_of(host)->scfg.lib != NULL ? &g_catalogue : NULL;

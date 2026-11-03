@@ -145,7 +145,7 @@ static uint32_t row_fields(uint32_t op) {
     case SEL_COMPOSER_LIST: return 3u;
     case SEL_FORMAT_LIST: return 2u;
     case SEL_LIBRARY_ITEMS: return 11u;
-    case SEL_COLLECTION: return 6u;
+    case SEL_COLLECTION: return 8u; /* I994d1: + songs.added, songs.duration_ms */
     default: return 0u;
     }
 }

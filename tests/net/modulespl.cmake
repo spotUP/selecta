@@ -2,7 +2,7 @@
 #  1. the engine command SOURCE_SEARCH asks the plugin, which GETs /?id=search&q=chip (fixture log) and parses the page:
 #     3 result events (one row of the recorded page has no playable file and is skipped) and one done event;
 #     sentinel SOURCESEARCH runs>=1 proves the new code ran;
-#  2. the last used search source is remembered (pref search.last_source);
+#  2. no search source is remembered any more (I1019a dropped the pref search.last_source write);
 #  3. OPEN modulespl:<result path> + PLAY fetches the zip, unpacks the one module member into the cache and plays it
 #     (non-silent render; cached file is a module, not a zip);
 #  4. an unknown source id reports an error and does not touch the network.
@@ -70,17 +70,19 @@ if(raw MATCHES "2HD")
   message(FATAL_ERROR "I406: the row without a playable file was delivered\n${raw}")
 endif()
 need("done event with the row count" "${raw}" "search_done[^\n]*3")
-need("remembered source" "${raw}" "search.last_source[^\n]*modulespl")
+if(raw MATCHES "search\\.last_source[^\n]*modulespl")
+  message(FATAL_ERROR "I1019a: the engine wrote search.last_source\n${raw}")
+endif()
 need("unknown source is an error" "${raw}" "unknown_source")
 # I406a: the search ran on the library job thread, not the command thread (I782), and was counted (STAT_SOURCE_SEARCHES).
 need("worker-thread sentinel" "${raw}" "SOURCESEARCH runs=[1-9][0-9]* searches=[1-9][0-9]* worker=[1-9]")
-# I406a (D-YT-4): 150 recorded hits arrive capped at 120 result rows plus one done event with the count 120.
+# I406a (D-YT-4): 150 recorded hits arrive capped at 40 result rows (I1019a: SEL_SEARCH_HITS_PER_SOURCE) plus one done event with the count 40.
 string(REGEX MATCHALL "Many_[0-9][0-9][0-9]\\.zip" many "${raw}")
 list(LENGTH many manyn)
-if(NOT manyn EQUAL 120)
-  message(FATAL_ERROR "I406a: ${manyn} result rows for 150 hits, want 120")
+if(NOT manyn EQUAL 40)
+  message(FATAL_ERROR "I406a: ${manyn} result rows for 150 hits, want 40")
 endif()
-need("done event with the capped count" "${raw}" "search_done[^\n]*120")
+need("done event with the capped count" "${raw}" "search_done[^\n]*40")
 
 execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/log --out "${WORK}/i406-log.json" OUTPUT_VARIABLE lo)
 file(READ "${WORK}/i406-log.json" log)

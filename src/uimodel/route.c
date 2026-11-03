@@ -1,5 +1,6 @@
 /* The click-to-page route table and the app-wide page history (I678h). See include/selecta/uimodel/route.h. */
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <selecta/library_item.h>
 #include <selecta/uimodel/route.h>
@@ -75,6 +76,15 @@ void sel_route_hist_seed(sel_route_hist* h, const sel_route_entry* cur) {
 void sel_route_hist_scroll(sel_route_hist* h, int32_t scroll) {
     if (h->n > 0u) {
         h->e[h->pos].scroll = scroll;
+    }
+}
+
+void sel_route_hist_keep(sel_route_hist* h, const char* name, const char* sub, uint32_t aux) {
+    if (h->n > 0u) {
+        sel_route_entry* e = &h->e[h->pos];
+        snprintf(e->name, sizeof e->name, "%s", name != NULL ? name : "");
+        snprintf(e->sub, sizeof e->sub, "%s", sub != NULL ? sub : "");
+        e->aux = aux;
     }
 }
 

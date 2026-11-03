@@ -1,0 +1,18 @@
+{
+ "files": [
+  {
+   "name": "cover.png",
+   "format": "PNG",
+   "source": "derivative"
+  },
+  {
+   "name": "chip.mp3",
+   "format": "VBR MP3",
+   "title": "Chip Tune",
+   "source": "derivative"
+  }
+ ],
+ "metadata": {
+  "identifier": "x"
+ }
+}

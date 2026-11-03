@@ -53,6 +53,7 @@
 /* The open UIs (DUI-P1-2): every `--ui <id>` opens one, each sees every event and takes its turn in the wait loop.
  * Slot 0 is the primary UI; its stats fill the exit lines and UI_SWITCH replaces it (DUI-P1-1). */
 #define SHELL_MAX_UIS 4
+#define SHELL_MAX_ARGS 256 /* the default-backend argv copy (I1023) holds this many arguments */
 typedef struct shell_ui {
     const char* id;
     void* state;
@@ -63,6 +64,7 @@ typedef struct shell_ui {
     sel_ui_stats_fn stats;
     uint32_t view_styles; /* SEL_UI_VIEW_STYLES: sel_view_style bits the UI offers, 0 the classic three */
     int (*theme)(void* state, const char* path); /* SEL_UI_THEME (I676b), NULL when the UI has none */
+    sel_ui_control_fn control; /* SEL_UI_CONTROL (I1013): the ui.* socket verbs, NULL when the UI has none */
 } shell_ui;
 
 static shell_ui g_uis[SHELL_MAX_UIS];
@@ -273,6 +275,16 @@ static int scripted_run(int argc, char** argv, int has_keys, int out_is_null) {
 }
 #endif
 
+/* I1023: a launch with no --ui takes the machine default UI (the desktop UI on macOS) only when a person started it by
+ * double-click: no terminal on stdin or stdout, and none of the scripted-run markers (--keys, --console-frames, --size,
+ * --output). Anything else keeps the text UI, so test and terminal runs never open a window. --input is deliberately not a
+ * marker: it is the desktop UI's own script file, so a run that passes it is asking for the desktop. */
+static int default_ui_allowed(int argc, char** argv) {
+    return !isatty(0) && !isatty(1) && option(argc, argv, "--keys", NULL) == NULL &&
+           option(argc, argv, "--console-frames", NULL) == NULL && option(argc, argv, "--size", NULL) == NULL &&
+           option(argc, argv, "--output", NULL) == NULL;
+}
+
 /* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
 static int ui_resolve(const char* id, shell_ui* u) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_UI, id);
@@ -290,6 +302,7 @@ static int ui_resolve(const char* id, shell_ui* u) {
     u->stats = (sel_ui_stats_fn)sel_tag_find(h, SEL_UI_STATS, 0);
     u->view_styles = (uint32_t)sel_tag_find(h, SEL_UI_VIEW_STYLES, 0);
     u->theme = (int (*)(void*, const char*))sel_tag_find(h, SEL_UI_THEME, 0);
+    u->control = (sel_ui_control_fn)sel_tag_find(h, SEL_UI_CONTROL, 0);
     return u->open != NULL && u->wait != NULL && u->close != NULL;
 }
 
@@ -438,7 +451,18 @@ static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
     int rc;
     const sel_host* ph = sel_engine_plugin_host(c->engine);
     uint32_t t0 = ph->clock_ms(ph), dt;
-    sel_ctl_exec_fwd(c->engine, line, out, sizeof out, &rc, ctl_fwd, c);
+    if (strncmp(line, "ui.", 3) == 0) { /* I1013: UI verbs go straight to the primary UI, on this (the UI) thread */
+        shell_ui* u = &g_uis[0];
+        out[0] = '\0';
+        if (u->control == NULL || u->state == NULL) {
+            snprintf(out, sizeof out, "ui no UI control");
+            rc = 1;
+        } else {
+            rc = u->control(u->state, line + 3, out, sizeof out) != 0;
+        }
+    } else {
+        sel_ctl_exec_fwd(c->engine, line, out, sizeof out, &rc, ctl_fwd, c);
+    }
     dt = ph->clock_ms(ph) - t0; /* I906d: a control command runs on the UI thread too; a library wait inside it counts as pump time */
     if (dt > g_pump_ms_max) g_pump_ms_max = dt;
     if (rc != 0) {
@@ -471,7 +495,7 @@ int main(int argc, char** argv)
     const sel_host* host = sel_host_default();
     const sel_tag* machine_tags = sel_machine_probe(host); /* probed once; the registry hides what it cannot run */
     const char* out_id;
-    const char* ui_id = option(argc, argv, "--ui", "text");
+    const char* ui_id = option(argc, argv, "--ui", NULL); /* NULL: the machine default (I1023), set after the registry is up */
     const char* start = option(argc, argv, "--start-dir", NULL);
     const char* catalogue = option(argc, argv, "--catalogue", NULL);
     sel_library* library = NULL;
@@ -551,6 +575,24 @@ int main(int argc, char** argv)
     sel_trace_load_address();
     sel_registry_init_machine(host, machine_tags);
     sel_trace(host, "registry init done");
+    if (ui_id == NULL) {
+        /* I1023: a launch with no --ui (a double-click on Selecta.app) takes the machine default UI, and its default backend. */
+        int user_launch = default_ui_allowed(argc, argv);
+        const char* dflt_backend = user_launch ? sel_registry_default_backend(machine_tags) : NULL;
+        static char* dflt_argv[SHELL_MAX_ARGS + 3];
+        ui_id = user_launch ? sel_registry_default_ui(machine_tags) : "text";
+        if (dflt_backend != NULL && option(argc, argv, "--backend", NULL) == NULL && argc <= SHELL_MAX_ARGS) {
+            int k;
+            for (k = 0; k < argc; k++) {
+                dflt_argv[k] = argv[k];
+            }
+            dflt_argv[argc] = (char*)"--backend";
+            dflt_argv[argc + 1] = (char*)dflt_backend;
+            dflt_argv[argc + 2] = NULL;
+            argv = dflt_argv;
+            argc += 2;
+        }
+    }
     out_id = option(argc, argv, "--output", sel_registry_default_output(machine_tags));
     is_null = strcmp(out_id, "null") == 0;
     int_id = option(argc, argv, "--integration",
@@ -895,6 +937,7 @@ int main(int argc, char** argv)
     if (has_stats) { /* the song the engine has open, for the mouse test (DUI-P3-2) */
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
     }
+    printf("collection_orders=%u\n", (unsigned)est.collection_orders); /* I994d1: song list pages whose order the engine built */
     printf("links_parsed=%u links_made=%u\n", (unsigned)est.links_parsed, (unsigned)est.links_made);
     printf("sources_listed=%u evt_dropped=%u\n", (unsigned)est.sources_listed, (unsigned)est.evt_dropped);
 
@@ -1012,6 +1055,8 @@ int main(int argc, char** argv)
                 printf("\n");
             }
             printf("ui_library id=%s\n%s", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIBRARY_DUMP, (uintptr_t) ""));
+            printf("ui_ctl lines=%u states=%u frames=%u\n", (unsigned)sel_tag_find(us, SEL_UI_STAT_CTL_LINES, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_CTL_STATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_CTL_FRAMES, 0));
             printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));
             printf("ui_list id=%s %s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIST_VIEW, (uintptr_t) ""));
@@ -1068,6 +1113,9 @@ int main(int argc, char** argv)
         so.close(so.out);
     }
     sel_engine_destroy(e);
+    if (g_trace) {
+        printf("engine_quit queue_dropped=%u\n", (unsigned)sel_engine_quit_queue_dropped()); /* I1019c */
+    }
     if (library != NULL) {
         sel_library_cache_report(library); /* cache_hits= fetches= ... after LIBRARY_FETCH (I166a) */
         sel_library_close(library);

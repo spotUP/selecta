@@ -15,7 +15,7 @@ set -eu
 
 BUILD_DIR=${1:-build/app}
 DEST=${2:-/Applications}
-BIN="$BUILD_DIR/apps/selecta/selecta"
+BIN="$BUILD_DIR/apps/selecta/Selecta.app/Contents/MacOS/Selecta" # I1023: the build itself makes a bundle; this script re-wraps its binary with the launcher, plugins and SDL3
 APP="$DEST/Selecta.app"
 
 if [ ! -x "$BIN" ]; then

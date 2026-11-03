@@ -38,7 +38,8 @@
     X(GALLERY_HORIZONTAL, "gallery-horizontal") \
     X(CHEVRON_UP, "chevron-up") \
     X(SQUARE, "square") \
-    X(INFO, "info")
+    X(INFO, "info") \
+    X(FOLDER, "folder")
 
 typedef enum sel_gui_icon {
 #define X(id, file) SEL_GUI_ICON_##id,

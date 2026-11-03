@@ -1,0 +1,5 @@
+[
+ {"stationuuid": "rs-0001", "name": "Chiptune Radio One", "url_resolved": "http://stream.rb.search.test/one.mp3", "codec": "MP3", "country": "Sweden", "tags": "chiptune,demoscene"},
+ {"stationuuid": "rs-0002", "name": "Chiptune FM", "url_resolved": "http://stream.rb.search.test/two.ogg", "codec": "OGG", "country": "Germany", "tags": "chiptune"},
+ {"stationuuid": "rs-0003", "name": "Chiptune AAC Only", "url_resolved": "http://stream.rb.search.test/three.aac", "codec": "AAC", "country": "France", "tags": "chiptune"}
+]
