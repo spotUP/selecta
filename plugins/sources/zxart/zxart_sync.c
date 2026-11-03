@@ -436,6 +436,8 @@ typedef struct sync_state {
     sel_zxart_sync_stats* st;
     const people* ppl;
     row_text* text;
+    const sel_search_sink* sink; /* search: rows go to the sink and the catalogue is not touched; NULL: sync */
+    uint32_t sunk;
     int failed;
 } sync_state;
 
@@ -522,6 +524,10 @@ static int on_tune(void* ctx, const sel_zxart_item* it) {
     } else {
         snprintf(t->name, sizeof t->name, "%s.%s", title, ext);
     }
+    if (s->sink != NULL) {
+        s->sunk++;
+        return s->sink->row(s->sink->ctx, t->path, t->name, t->artist, t->format);
+    }
     memset(&song, 0, sizeof song);
     song.path = t->path;
     song.format = t->format;
@@ -563,6 +569,26 @@ static int read_pages(const char* dir, const char* fmt, const char* what, int (*
     return (int)k;
 }
 
+/* The state both entry points share: the row text, the people table and its pool. */
+static int state_open(const sel_host* host, sync_state* s, people* ppl) {
+    s->text = host->mem_alloc(host, sizeof *s->text, SEL_MEM_FAST);
+    ppl->list = host->mem_alloc(host, (size_t)PEOPLE_MAX * sizeof *ppl->list, SEL_MEM_FAST);
+    ppl->pool = host->mem_alloc(host, POOL_BYTES, SEL_MEM_FAST);
+    return s->text != NULL && ppl->list != NULL && ppl->pool != NULL;
+}
+
+static void state_close(const sel_host* host, sync_state* s, people* ppl) {
+    if (s->text != NULL) {
+        host->mem_free(host, s->text);
+    }
+    if (ppl->list != NULL) {
+        host->mem_free(host, ppl->list);
+    }
+    if (ppl->pool != NULL) {
+        host->mem_free(host, ppl->pool);
+    }
+}
+
 int sel_zxart_sync(const sel_host* host, const char* dir, sel_zxart_sync_stats* stats) {
     sync_state s;
     people ppl;
@@ -576,10 +602,7 @@ int sel_zxart_sync(const sel_host* host, const char* dir, sel_zxart_sync_stats* 
     s.cat = cat;
     s.st = stats;
     s.ppl = &ppl;
-    s.text = host->mem_alloc(host, sizeof *s.text, SEL_MEM_FAST);
-    ppl.list = host->mem_alloc(host, (size_t)PEOPLE_MAX * sizeof *ppl.list, SEL_MEM_FAST);
-    ppl.pool = host->mem_alloc(host, POOL_BYTES, SEL_MEM_FAST);
-    if (s.text != NULL && ppl.list != NULL && ppl.pool != NULL && cat != NULL && cat->begin(host, "zxart") &&
+    if (state_open(host, &s, &ppl) && cat != NULL && cat->begin(host, "zxart") &&
         (open = 1) && read_pages(dir, SEL_ZXART_PEOPLE, "author", add_person, &ppl) > 0) {
         int pages;
 
@@ -595,14 +618,35 @@ int sel_zxart_sync(const sel_host* host, const char* dir, sel_zxart_sync_stats* 
             cat->abort(host);
         }
     }
-    if (s.text != NULL) {
-        host->mem_free(host, s.text);
-    }
-    if (ppl.list != NULL) {
-        host->mem_free(host, ppl.list);
-    }
-    if (ppl.pool != NULL) {
-        host->mem_free(host, ppl.pool);
-    }
+    state_close(host, &s, &ppl);
     return ok;
+}
+
+int32_t sel_zxart_search_file(const sel_host* host, const char* dir, const char* file, const sel_search_sink* out) {
+    sync_state s;
+    sel_zxart_sync_stats st;
+    people ppl;
+    uint32_t total;
+    int32_t n = -1;
+    FILE* f;
+
+    memset(&s, 0, sizeof s);
+    memset(&ppl, 0, sizeof ppl);
+    memset(&st, 0, sizeof st);
+    s.host = host;
+    s.st = &st;
+    s.ppl = &ppl;
+    s.sink = out;
+    if (state_open(host, &s, &ppl) && (f = fopen(file, "rb")) != NULL) {
+        /* The artists come from the people a sync downloaded; without one they stay unknown, like a sync without a name. */
+        read_pages(dir, SEL_ZXART_PEOPLE, "author", add_person, &ppl);
+        qsort(ppl.list, ppl.n, sizeof *ppl.list, by_id);
+        n = sel_zxart_read_page(f, "zxMusic", on_tune, &s, &total);
+        fclose(f);
+        if (n >= 0) {
+            n = (int32_t)s.sunk;
+        }
+    }
+    state_close(host, &s, &ppl);
+    return n;
 }

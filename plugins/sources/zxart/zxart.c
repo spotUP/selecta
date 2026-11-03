@@ -13,6 +13,7 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define SITE "https://zxart.ee/file/id:"
@@ -118,11 +119,19 @@ static int zxart_sync_host(const sel_host* host, const char* arg, int64_t now, s
     return ok;
 }
 
+#define SITE_BASE "https://zxart.ee"
+
+/* SOURCE_SEARCH (I1024f): the site's title filter; the rows are the sync's, so a hit and a synced row share a key. */
+static int zxart_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    const char* env = getenv("SELECTA_ZXART_SITE"); /* tests point it at the fixture */
+
+    return sel_zxart_net_search(host, env != NULL && env[0] != '\0' ? env : SITE_BASE, query, out);
+}
+
 static const sel_source g_zxart = {
     "zxart", "ZX-Art", "https://zxart.ee/", "ZX Spectrum music: AY trackers, beeper and digital, from zxart.ee.",
     g_tags, NULL, parse, NULL, url_of, path_in, NULL, NULL, zxart_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
-    NULL, /* search (I406) */
-    NULL, /* search_ready (I1037) */
+    zxart_search, NULL, /* search (I1024f); search_ready NULL: no key needed (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

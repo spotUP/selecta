@@ -9,6 +9,7 @@
 #define SELECTA_PLUGINS_SOURCES_ZXART_SYNC_H
 
 #include <selecta/host.h>
+#include <selecta/source.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -53,5 +54,10 @@ int32_t sel_zxart_millis(const char* time);
 /* Reads <dir>/zxauthor_*.json and <dir>/zxmusic_*.json into the catalogue service. Returns 0 when the first page of
  * either cannot be read, memory runs out, the host has no catalogue or the library rejects a batch. */
 int sel_zxart_sync(const sel_host* host, const char* dir, sel_zxart_sync_stats* stats);
+
+/* I1024f: reads one search answer `file` (a zxMusic page) and hands each tune to `out` with the sync's own row (path
+ * `<id>/<file>`, title, artist, format); the catalogue is not touched. The artist names come from the people pages a
+ * sync left in `dir` (unknown without them). Returns the rows given, -1 when the answer is unreadable or not a success. */
+int32_t sel_zxart_search_file(const sel_host* host, const char* dir, const char* file, const sel_search_sink* out);
 
 #endif

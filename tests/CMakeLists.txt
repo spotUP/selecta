@@ -2601,6 +2601,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(jamendo-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "jamendo_search_ok")
 
+  # I1024f: SOURCE_SEARCH zxart over the zxart.ee fixture: title filter request, the sync's row shape, -1 when unreachable.
+  add_test(NAME zxart-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/zxart_search.cmake")
+  set_tests_properties(zxart-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "zxart_search_ok")
+
   # I725f: the podcast source: RSS parse, Podcast Index search auth, Range playback and seek, User-Agent.
   add_test(NAME podcast
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
