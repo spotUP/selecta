@@ -1084,6 +1084,9 @@ int main(int argc, char** argv)
         so.close(so.out);
     }
     sel_engine_destroy(e);
+    if (g_trace) {
+        printf("engine_quit queue_dropped=%u\n", (unsigned)sel_engine_quit_queue_dropped()); /* I1019c */
+    }
     if (library != NULL) {
         sel_library_cache_report(library); /* cache_hits= fetches= ... after LIBRARY_FETCH (I166a) */
         sel_library_close(library);
