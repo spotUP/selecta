@@ -259,6 +259,7 @@ typedef struct desk {
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
+    uint32_t local_icon_side, local_icon_head; /* I938: the icon the Local Files sidebar tile and the Local Files page header last drew (dump line localicon) */
     char hdr_count[64];      /* I910b: the count line the header drew last (the per-frame trace) */
     uint32_t pls_family;     /* I691d: the majority family of the songs on the open page (an album, a person, a playlist), the header cover and the avatar */
     int pl_edit;             /* 1 while the name field has the keyboard */
@@ -5606,7 +5607,13 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         col_round_art(d, cv);
     } else if (col_wordmark(d)) { /* I678g: Liked Songs, Recently Played, Local Files: the large wordmark title in the accent colour, no cover art */
         sel_gui_round_rect(d->canvas, cv, rad, accent);
-        draw_text(d, rect_of(cv.x + lpx(d, 12), cv.y, cv.w - lpx(d, 24), cv.h), d->pls_name, 1, 22, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        if (d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL) { /* I938: the Local Files tile carries the Lucide folder mark, like its sidebar tile */
+            d->local_icon_head = SEL_GUI_ICON_FOLDER;
+            sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_FOLDER, rect_of(cv.x + cv.w / 4, cv.y + cv.h / 4, cv.w / 2, cv.h / 2), cv.w / 2,
+                              ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        } else {
+            draw_text(d, rect_of(cv.x + lpx(d, 12), cv.y, cv.w - lpx(d, 24), cv.h), d->pls_name, 1, 22, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        }
     } else {
         family_platform_cover(d, d->canvas, cv, d->pls_family, d->pls_name, &d->pc_header);
     }
@@ -7334,6 +7341,7 @@ static const char* library_dump_build(desk* d) {
                                  (int)stg.x, (int)stg.y, (int)stg.w, (int)stg.h, (int)ssy.x, (int)ssy.y, (int)ssy.w, (int)ssy.h,
                                  d->pls_n > 0u && d->pls_ord != NULL ? pls_key(d, d->pls_ord[0]) : "");
                 }
+                o = dump_put(d, o, "localicon side=%u head=%u folder=%u\n", (unsigned)d->local_icon_side, (unsigned)d->local_icon_head, (unsigned)SEL_GUI_ICON_FOLDER);
                 if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I790: the drill level, its row and crumb geometry, and the rows-built sentinel */
                     sel_gui_rect dr0 = pls_row_rect(d, pmn, 0u), dr1 = pls_row_rect(d, pmn, 1u);
                     char dl[96];
@@ -11045,7 +11053,10 @@ static void tl_draw(desk* d, sel_gui_rect t) {
  * Local Files the library mark); everything else the generated art from the name (round avatars and album covers: I678c). */
 static void side_item_thumb(desk* d, sel_gui_rect ar, const sel_engine_library_item* it) {
     if (it->pinned) {
-        uint32_t ic = it->kind == (uint32_t)SEL_LIB_ITEM_LIKED ? SEL_GUI_ICON_HEART : it->kind == (uint32_t)SEL_LIB_ITEM_RECENT ? SEL_GUI_ICON_LIST : SEL_GUI_ICON_LIBRARY;
+        uint32_t ic = it->kind == (uint32_t)SEL_LIB_ITEM_LIKED ? SEL_GUI_ICON_HEART : it->kind == (uint32_t)SEL_LIB_ITEM_RECENT ? SEL_GUI_ICON_LIST : SEL_GUI_ICON_FOLDER;
+        if (it->kind == (uint32_t)SEL_LIB_ITEM_LOCAL) {
+            d->local_icon_side = ic;
+        }
         sel_gui_round_rect(d->canvas, ar, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
         sel_gui_icon_draw(d->canvas, &d->icons, ic, rect_of(ar.x + ar.w / 4, ar.y + ar.h / 4, ar.w / 2, ar.h / 2), ar.w / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         return;
