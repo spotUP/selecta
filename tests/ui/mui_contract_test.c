@@ -1348,7 +1348,9 @@ static void test_help(void) {
 }
 
 static void test_search(void) {
-    char l[3][160];
+    char l[3][160], all[160];
+    CHECK(mui_search_all_line("chip", all, sizeof all) == 1 && strcmp(all, "SOURCE_SEARCH * \"chip\"") == 0, "search all '%s'", all);
+    CHECK(mui_search_all_line("", all, sizeof all) == 1 && strcmp(all, "SOURCE_SEARCH * \"\"") == 0, "search all empty clears");
     CHECK(mui_search_lines("abc", l) == 3 && strcmp(l[0], "LIBRARY_SEARCH \"abc\"") == 0 && strcmp(l[1], "VIEW_SOURCE search") == 0, "search '%s'", l[0]);
     CHECK(mui_search_lines("a\"b\\", l) == 3 && strcmp(l[0], "LIBRARY_SEARCH \"a\\\"b\\\\\"") == 0, "escape '%s'", l[0]);
 }
@@ -2994,6 +2996,7 @@ static void test_tiles_reach(void) {
     CHECK(strstr(src, "mui_home_split(") != NULL && strstr(src, "mui_shelf_find(") != NULL && strstr(src, "mui_home_fill(") != NULL, "Home quick row and shelves are built from the view");
     CHECK(strstr(src, "mui_browse_tiles(") != NULL && strstr(src, "mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE))") != NULL, "Browse tiles are built and fire");
     CHECK(strstr(src, "mui_search_facet_line(") != NULL && strstr(src, "sel_uim_search_facets") != NULL && strstr(src, "CTL_FACET_BASE") != NULL, "Search facet chips are built and fire");
+    CHECK(strstr(src, "mui_search_all_line((const char*)text, line") != NULL, "I1019g: the Return handler sends SOURCE_SEARCH *");
     CHECK(strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k]") != NULL &&
               strstr(src, "mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE") != NULL && strstr(src, "mui_home_row_fire(s, view, idx)") != NULL,
           "Show all, composer tiles and quick tiles go through the route handler");
