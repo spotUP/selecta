@@ -17,6 +17,7 @@
 #include "source/descriptor.h"
 #include "source/json_scan.h"
 #include "source/sync_stat.h"
+#include "source/url_path.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,7 @@
 #define UUID_MAX 40u
 #define URL_BYTES 1100u
 #define PAUSE_MS 500u
+#define SEARCH_ROWS 50u /* stations a search asks for, most clicked first */
 
 static const sel_tag g_tags[] = {
     {SEL_TAG_END, 0},
@@ -134,6 +136,8 @@ typedef struct run {
     const sel_host* host;
     const sel_catalogue* cat;
     uint32_t rows, skipped;
+    int stopped;
+    const sel_search_sink* sink; /* search: rows go to the sink and nothing is written to the catalogue; NULL: sync */
 } run;
 
 static void add_station(run* r, station* st) {
@@ -149,6 +153,13 @@ static void add_station(run* r, station* st) {
     snprintf(path, sizeof path, "%s/%s", st->uuid, st->name);
     snprintf(artist, sizeof artist, "%s%s%s", st->country, st->country[0] != '\0' && st->tags[0] != '\0' ? " - " : "",
              st->tags);
+    if (r->sink != NULL) {
+        r->rows++;
+        if (!r->sink->row(r->sink->ctx, path, st->name, artist, is_mp3(st->codec) ? "Radio - MP3" : "Radio - Ogg")) {
+            r->stopped = 1; /* the sink asked to stop */
+        }
+        return;
+    }
     memset(&song, 0, sizeof song);
     song.path = path;
     song.format = is_mp3(st->codec) ? "Radio - MP3" : "Radio - Ogg";
@@ -178,6 +189,9 @@ static void read_page(FILE* f, run* r) {
             break;
         }
         add_station(r, &st);
+        if (r->stopped) {
+            break;
+        }
     }
 }
 
@@ -203,6 +217,39 @@ static const char* api_base(void) {
     const char* env = getenv("SELECTA_RADIO_BROWSER");
 
     return env != NULL && env[0] != '\0' ? env : DEFAULT_BASE;
+}
+
+/* Search: one GET /json/stations/search?name=<query> (the sync's station filter: MP3 and Ogg only), most clicked first.
+ * The rows go to the sink, the catalogue is not touched. Returns the row count, -1 when the service answers no 200. */
+static int rb_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    const sel_net* net = host != NULL && host->net != NULL ? host->net(host) : NULL;
+    const sel_catalogue* cat = host != NULL && host->catalogue != NULL ? host->catalogue(host) : NULL;
+    char dir[URL_BYTES - 64u], enc[300], url[URL_BYTES], path[URL_BYTES];
+    uint32_t rq = 0;
+    unsigned long got = 0;
+    run r;
+    FILE* f;
+    int ok = 0;
+
+    memset(&r, 0, sizeof r);
+    r.host = host;
+    r.cat = cat;
+    r.sink = out;
+    if (net == NULL || cat == NULL || query == NULL || out == NULL || !cat->cache_dir(host, "radiobrowser", dir, sizeof dir) ||
+        !sel_url_query_encode(query, enc, sizeof enc)) {
+        return -1;
+    }
+    snprintf(url, sizeof url, "%s/json/stations/search?name=%s&hidebroken=true&order=clickcount&reverse=true&limit=%u",
+             api_base(), enc, SEARCH_ROWS);
+    /* A search may run while a sync of this source is fetching: each keeps its own file. */
+    snprintf(path, sizeof path, "%s/search-query.json", dir);
+    if (net->get_file(host, url, path, &rq, &got) == 200 && (f = fopen(path, "rb")) != NULL) {
+        read_page(f, &r);
+        fclose(f);
+        ok = 1;
+    }
+    remove(path);
+    return ok ? (int)r.rows : -1;
 }
 
 static int rb_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
@@ -350,7 +397,7 @@ static const sel_source g_radiobrowser = {
     "Internet radio stations from the community directory radio-browser.info: search by name, tag or country.",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, rb_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     DEFAULT_BASE "/", rb_play_url,
-    NULL, /* search (I406) */
+    rb_search,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

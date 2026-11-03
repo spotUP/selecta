@@ -23,6 +23,8 @@ set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.te
 # I1024a: archive.org is a searchable source now; point it at the fixture host (no advancedsearch route there,
 # so 404 = search_failed, and no real network is touched)
 set(ENV{SELECTA_ARCHIVEORG_BASE} "http://fixture.test")
+# I1024d: radiobrowser searches too; same 404 = search_failed
+set(ENV{SELECTA_RADIO_BROWSER} "http://fixture.test")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")

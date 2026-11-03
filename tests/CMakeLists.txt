@@ -2575,6 +2575,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(archiveorg-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_search_ok")
 
+  # I1024d: SOURCE_SEARCH radiobrowser over a local /json/stations/search fixture: codec filter, sink rows, -1 when unreachable.
+  add_test(NAME radiobrowser-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/radiobrowser_search.cmake")
+  set_tests_properties(radiobrowser-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "radiobrowser_search_ok")
+
   # I725f: the podcast source: RSS parse, Podcast Index search auth, Range playback and seek, User-Agent.
   add_test(NAME podcast
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
