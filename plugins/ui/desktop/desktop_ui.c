@@ -375,6 +375,7 @@ typedef struct desk {
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
+    char search_sec_head[8][72]; uint32_t search_sec_rows[8], search_sec_n; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
@@ -5351,7 +5352,7 @@ static const sel_view_row* pls_find_result(desk* d, uint32_t slot) {
         const sel_view_row* r = &v->rows[k];
         const char* t = r->text != NULL ? r->text : "";
         if (r->kind == SEL_ROW_HEADING) {
-            group = strncmp(t, "Songs", 5) == 0 ? 1u : 2u;
+            group = sel_uim_search_group(t);
         } else if (group == 1u && !r->album && r->key != NULL && n++ == slot) {
             return r;
         }
@@ -7309,6 +7310,12 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
+    {
+        uint32_t si;
+        for (si = 0; si < d->search_sec_n; si++) { /* I1019e: one line per From section the list frame drew */
+            o = dump_put(d, o, "search_section %u rows=%u %s\n", (unsigned)si, (unsigned)d->search_sec_rows[si], d->search_sec_head[si]);
+        }
+    }
     if (d->pl_page) { /* the Playlists page geometry and tree rows (DUI-P4-9) */
         const sel_view_state* pv = pl_view(st);
         sel_gui_rect pmn = region_rect(d, "main"), pn = pl_name_rect(d, pmn);
@@ -8845,6 +8852,8 @@ static void desk_search_fire(desk* d) {
     }
     (void)sel_uim_search_line(d->query, line, sizeof line);
     desk_send(d, line);
+    (void)sel_uim_search_all_line(d->query, line, sizeof line); /* I1019e: no source chip picked: every searchable source answers in its own From section */
+    desk_send(d, line);
     desk_send(d, "VIEW_SOURCE search"); /* the engine groups the result by type: Songs, Albums, Artists */
     /* the view style stays as the user picked it (grid, cover flow, list): draw_search renders the results in it (I615b) */
     snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)SEARCH_WINDOW_ROWS);
@@ -8987,6 +8996,26 @@ static int32_t search_body_y(desk* d, sel_gui_rect mn) {
 /* The height in pixels of the results the list layouts draw: the online hits (radio entry, then 48 px rows) or the engine's
  * groups (a 32 px heading, then 32 px rows, for the shown facet). Grid and Cover Flow follow the cursor instead (0). One walk
  * the draw and the wheel share, so the scroll bound is the drawn height. */
+/* Whether the group of a heading (sel_uim_search_group) is drawn under the facet chip: online From sections are song results (I1019e). */
+static int search_group_shown(const desk* d, uint32_t group) {
+    return d->search_facet == 0u || d->search_facet == (group == 4u ? 1u : group);
+}
+
+/* I1019e: whether a From section of the shown search view still reads Searching (its source has not answered). A scripted run keeps turning while
+ * it does, the way it did for the UI-side online search, so the script's next line sees the answer. */
+static int desk_search_out(const desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    const sel_view_state* v = st != NULL && st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
+    uint32_t k;
+
+    for (k = 0; v != NULL && d->search_on && k < v->row_n; k++) {
+        if (v->rows[k].kind != SEL_ROW_HEADING && v->rows[k].text != NULL && strcmp(v->rows[k].text, "Searching") == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int32_t search_content_h(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
@@ -9003,8 +9032,8 @@ static int32_t search_content_h(desk* d) {
         const sel_view_row* r = &v->rows[k];
         if (r->kind == SEL_ROW_HEADING) {
             const char* t = r->text != NULL ? r->text : "";
-            group = strncmp(t, "Songs", 5) == 0 ? 1u : strncmp(t, "Albums", 6) == 0 ? 2u : 3u;
-            show = d->search_facet == 0u || d->search_facet == group;
+            group = sel_uim_search_group(t);
+            show = search_group_shown(d, group);
             h += show ? lpx(d, 32) : 0;
         } else if (show) {
             h += lpx(d, SEARCH_ROW_H);
@@ -9056,6 +9085,7 @@ static void draw_search(desk* d) {
     }
     sel_gui_clip_push(d->canvas, rect_of(mn.x, y, mn.w, mn.y + mn.h - y));
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
+    d->search_sec_n = 0;
     if (d->scope[0] != '\0') { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
         d->search_drawn = d->on_drawn;
@@ -9073,12 +9103,14 @@ static void draw_search(desk* d) {
             const sel_view_row* r = &v->rows[k];
             if (r->kind == SEL_ROW_HEADING) {
                 const char* t = r->text != NULL ? r->text : "", *par = strchr(t, '(');
-                group = strncmp(t, "Songs", 5) == 0 ? 1u : strncmp(t, "Albums", 6) == 0 ? 2u : 3u;
-                show = d->search_facet == 0u || d->search_facet == group;
-                d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
+                group = sel_uim_search_group(t);
+                show = search_group_shown(d, group);
+                if (group >= 1u && group <= 3u) {
+                    d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
+                }
             } else if (show) {
                 tiles[n] = *r;
-                if (group != 1u || r->album) {
+                if ((group != 1u && group != 4u) || r->album) {
                     tiles[n].key = NULL;
                 }
                 if (v->window_start + k == v->cursor) {
@@ -9107,11 +9139,20 @@ static void draw_search(desk* d) {
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
             const char* t = r->text != NULL ? r->text : "";
+            if (r->kind != SEL_ROW_HEADING && group == 4u && d->search_sec_n > 0u) {
+                d->search_sec_rows[d->search_sec_n - 1u]++;
+            }
             if (r->kind == SEL_ROW_HEADING) {
                 const char* par = strchr(t, '(');
-                group = strncmp(t, "Songs", 5) == 0 ? 1u : strncmp(t, "Albums", 6) == 0 ? 2u : 3u;
-                show = d->search_facet == 0u || d->search_facet == group;
-                d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
+                group = sel_uim_search_group(t);
+                show = search_group_shown(d, group);
+                if (group >= 1u && group <= 3u) {
+                    d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
+                }
+                if (group == 4u && d->search_sec_n < 8u) { /* the dump's per-section line */
+                    snprintf(d->search_sec_head[d->search_sec_n], sizeof d->search_sec_head[0], "%s", t);
+                    d->search_sec_rows[d->search_sec_n++] = 0;
+                }
                 if (show && y + lpx(d, 32) > top && y < bottom) {
                     draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, 28)), t, 1, 18, text);
                     drawn_all++;
@@ -9129,10 +9170,10 @@ static void draw_search(desk* d) {
                     }
                 }
                 {
-                    int pl = group == 1u && !r->album && song_playing(d, r->key); /* I690 */
+                    int pl = (group == 1u || group == 4u) && !r->album && r->key != NULL && song_playing(d, r->key); /* I690 */
                     draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), t, pl, 14, pl ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
                 }
-                if (group == 1u && !r->album && r->key != NULL) {
+                if ((group == 1u || group == 4u) && !r->album && r->key != NULL) {
                     song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),
                                       SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
                 }
@@ -14122,7 +14163,7 @@ static int desk_replay_input(desk* d) {
             desk_advance(d, n);
         }
         line = nl != NULL ? nl + 1 : NULL;
-        if (!d->live && (d->on_state == 1u || desk_src_pending(d))) { /* I889: and a SOURCES answer; I406a: an online search is out; the script's next line waits for its answer (the turn holds meanwhile) */
+        if (!d->live && (d->on_state == 1u || desk_search_out(d) || desk_src_pending(d))) { /* I889: and a SOURCES answer; I406a: an online search is out; the script's next line waits for its answer (the turn holds meanwhile) */
             pointer_sent = 1;
         }
         if (pointer_sent && line != NULL && *line != '\0') { /* the engine answers on the shell's next pump: resume then */
@@ -15277,7 +15318,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         d->turn_why[2]++;
         return 1;
     }
-    if (!d->live && d->on_state == 1u && d->on_waits < 20000u) { /* I406a: the online search runs on a library worker; a scripted or headless run keeps turning until its
+    if (!d->live && (d->on_state == 1u || desk_search_out(d)) && d->on_waits < 20000u) { /* I406a: the online search runs on a library worker; a scripted or headless run keeps turning until its
                                         * search_done arrives (at most about 20 s), so the script's next line sees the answered search */
         d->on_waits++;
         desk_nap();
