@@ -53,7 +53,8 @@ int sel_live_head(sel_live* s, uint8_t* dst, size_t want, size_t* n);
 /* The consumer view handed to a SEL_RP_STREAMING replayer; valid until sel_live_close. */
 const sel_byte_stream* sel_live_source(sel_live* s);
 /* Reads the rest of the stream into one host buffer (the replayer cannot stream): memory grows with the file,
- * capped like sel_stream_read. NULL on failure. */
+ * capped like sel_stream_read. NULL on failure, and at once for a radio stream (sel_http_res.radio, I1029): its
+ * body has no end, so only a streaming replayer can play it. Call after sel_live_head returned bytes. */
 uint8_t* sel_live_drain(sel_live* s, size_t* size);
 /* Sentinel: records bytes received so far and whether the download had finished, at the first audio frame. */
 void sel_live_note_audio(sel_live* s);

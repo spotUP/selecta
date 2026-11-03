@@ -8,7 +8,10 @@ title change to <portfile>.seg1 and <portfile>.seg2. The title changes after chu
 recorder cuts at the first MPEG frame start at or after it (I196d), so seg1 ends and seg2 starts on a whole frame.
 I725c: it also answers the radio-browser API: /json/stations/search?...codec=mp3|ogg lists stations (the mp3 answer carries
 one AAC row the source must skip) and logs "rb_search=<codec>"; /json/url/<uuid> is the click, logs "rb_click=<uuid>"
-and names the stream http://icy.test/live."""
+and names the stream http://icy.test/live.
+I1029: the click on uuid eeee-5555 names http://icy.test/endless instead: a radio stream in a format no replayer streams
+(ADTS AAC bytes under an audio/mpeg label, like the real "Retro Lofi Chiptune Radio"), sent at a radio's pace (16 KB/s)
+with icy-metaint and no Content-Length until the client hangs up; it logs "endless=1" and "endless_bytes=<n>" at the end."""
 import json
 import socket
 import sys
@@ -87,7 +90,8 @@ def serve(c):
             uuid = target.rsplit("/", 1)[1]
             with open(port_file + ".requests", "a") as rq:
                 rq.write("rb_click=%s\n" % uuid)
-            body = json.dumps({"ok": True, "message": "retrieved station url", "stationuuid": uuid, "url": live}).encode()
+            url = "http://icy.test/endless" if uuid == "eeee-5555" else live
+            body = json.dumps({"ok": True, "message": "retrieved station url", "stationuuid": uuid, "url": url}).encode()
         c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
         time.sleep(0.2)
         c.close()
@@ -230,6 +234,29 @@ def serve(c):
             body = b"#EXTM3U\nhttp://icy.test/live\n"
         c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: audio/x-scpls\r\nConnection: close\r\n\r\n" + body)
         time.sleep(0.2)
+        c.close()
+        return
+    if target.startswith("/endless"):  # I1029: an endless radio stream no replayer can stream
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("endless=1\n")
+        metaint = 4096
+        frame = b"\xff\xf1\x50\x80\x02\x1f\xfc" + bytes(249)  # ADTS AAC header, silent payload: no MP3 sync
+        chunk = (frame * (metaint // len(frame) + 1))[:metaint] + (b"\x00" if icy else b"")
+        head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nicy-name: Echo\r\nicy-br: 128\r\n"
+        if icy:
+            head += "icy-metaint: %d\r\n" % metaint
+        sent = 0
+        try:
+            c.sendall((head + "Connection: close\r\n\r\n").encode() + chunk * 8)  # 32 KB at once: the head arrives fast
+            sent = 8 * metaint
+            while True:
+                time.sleep(0.25)
+                c.sendall(chunk)
+                sent += metaint
+        except OSError:
+            pass
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("endless_bytes=%d\n" % sent)
         c.close()
         return
     with open(port_file + ".requests", "a") as rq:

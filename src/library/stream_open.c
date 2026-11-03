@@ -22,6 +22,7 @@ static int g_status; /* HTTP status of the last sel_stream_read (0: no response)
 
 typedef struct sbuf {
     const sel_host* host;
+    const sel_http_res* res; /* the response being read, NULL for a pipe */
     uint8_t* p;
     size_t len, cap;
 } sbuf;
@@ -55,7 +56,11 @@ static int sbuf_add(sbuf* b, const void* data, size_t n) {
 }
 
 static int sink(void* ctx, const void* data, size_t len) {
-    return sbuf_add((sbuf*)ctx, data, len);
+    sbuf* b = (sbuf*)ctx;
+    if (b->res != NULL && b->res->radio) {
+        return 0; /* I1029: a radio stream has no end; reading it whole would block until SEL_STREAM_MAX */
+    }
+    return sbuf_add(b, data, len);
 }
 
 int sel_stream_is_url(const char* path) {
@@ -172,6 +177,7 @@ uint8_t* sel_stream_read(const sel_host* host, const char* path, size_t* size) {
         memset(&req, 0, sizeof req);
         memset(&res, 0, sizeof res);
         req.url = path;
+        b.res = &res;
         ok = sel_http_request(&req, sink, &b, &res) == SEL_HTTP_OK && res.status >= 200 && res.status < 300;
         g_status = res.status;
     } else if (sel_stream_is_pipe(path)) {
@@ -305,6 +311,8 @@ struct sel_live {
     volatile unsigned wr, rd;       /* byte counters, free running; wr - rd bytes are buffered */
     volatile unsigned eof, failed;  /* set by the download thread when it ends */
     volatile unsigned status;       /* HTTP status of the response, stored before eof (0: no response) */
+    volatile unsigned endless;      /* I1029: the response is a radio stream (sel_http_res.radio), stored before the
+                                     * first body byte enters the ring */
     const sel_http_res* res;        /* the download thread's response record: status is set before any body byte */
     volatile unsigned stop;         /* the thread's cancel generation (sel_net_set_cancel) and the sink's abort */
     unsigned long received;
@@ -488,6 +496,7 @@ static void sink_start(sel_live* s) {
     if (s->res != NULL) {
         s->icy_metaint = s->res->icy_metaint;
         s->icy_left = s->icy_metaint;
+        st_store(&s->endless, s->res->radio ? 1u : 0u);
     }
     if (s->rec_dir[0] != '\0') {
         char buf[8];
@@ -803,6 +812,9 @@ uint8_t* sel_live_drain(sel_live* s, size_t* size) {
     int ok = 1;
     memset(&b, 0, sizeof b);
     b.host = s->host;
+    if (ld(&s->endless) != 0u) {
+        return NULL; /* I1029: a radio stream never ends; draining it would hold the engine thread until 256 MB */
+    }
     while ((n = view_read_wait(s, chunk, sizeof chunk)) > 0) {
         if (!sbuf_add(&b, chunk, n)) {
             ok = 0;
