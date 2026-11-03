@@ -193,7 +193,6 @@
 #define SEL_SYNC_QUEUE SEL_SOURCE_MAX /* LIBRARY_SYNCs waiting behind the running sync or scan (I527): one per source,
                                        * so the sync-all banner never loses a source to sync_busy */
 #define SEL_SEARCH_HITS_PER_SOURCE 40 /* I1019a: one source's hit cap (today's single-source cap 120 shrinks; a site returns its best first) */
-#define SEL_SEARCH_SOURCES_MAX 4      /* I1019a: searchable sources one fan-out holds (registry order; the registry has one today, modulespl) */
 #define SEL_SEARCH_KEY_MAX 256
 #define SEL_SEARCH_QUERY_MAX 256
 #define SEL_SEARCH_TEXT_MAX 160
@@ -594,14 +593,17 @@ struct sel_engine {
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
     sel_search_hit search_hit[SEL_SEARCH_HITS_PER_SOURCE]; /* SOURCE_SEARCH landing (I406): the running task fills it, the events point here until the next task starts */
-    /* I1019a: SOURCE_SEARCH * fans out over the enabled searchable sources. One bucket per source, fixed (no allocation after start), in registry
-     * order; the collect of each finished task copies the landing into its bucket. The single-source form is one bucket. */
-    struct {
+    /* I1019a: SOURCE_SEARCH * fans out over the enabled searchable sources. One bucket per registered source with a search hook, in registry
+     * order; the collect of each finished task copies the landing into its bucket. The single-source form is one bucket.
+     * I1035: the array is sized by the searchable source count and allocated when the engine starts (library engines); a source
+     * registered later grows it at the next query (search_buckets_ensure), never during one. */
+    struct sel_search_bucket {
         char id[SEL_SOURCE_ID_MAX];
         int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
         uint32_t n;
         sel_search_hit hit[SEL_SEARCH_HITS_PER_SOURCE];
-    } search_bucket[SEL_SEARCH_SOURCES_MAX];
+    } * search_bucket;
+    uint32_t search_bucket_cap;              /* buckets allocated */
     uint32_t search_buckets;                 /* buckets of the current query */
     uint32_t search_cur;                     /* the bucket the running task fills */
     uint32_t search_gen;                     /* bumped per query; a task of an older generation is dropped at its collect */
@@ -7713,6 +7715,39 @@ static void search_supersede(sel_engine* e) {
     }
 }
 
+/* Registered sources that have a search hook (the most buckets one fan-out can hold). */
+static uint32_t search_source_count(void) {
+    uint32_t i, n = 0;
+
+    for (i = 0; i < sel_source_count(); i++) {
+        const sel_source* src = sel_source_get(i);
+
+        n += src != NULL && src->search != NULL;
+    }
+    return n;
+}
+
+/* I1035: the bucket array covers every searchable source. Idle only (the caller superseded the running query). 0: out of memory. */
+static int search_buckets_ensure(sel_engine* e) {
+    uint32_t want = search_source_count();
+    struct sel_search_bucket* nb;
+
+    if (want <= e->search_bucket_cap) {
+        return 1;
+    }
+    nb = (struct sel_search_bucket*)e->host->mem_alloc(e->host, (size_t)want * sizeof *nb, SEL_MEM_FAST);
+    if (nb == NULL) {
+        return 0;
+    }
+    if (e->search_bucket != NULL) {
+        e->host->mem_free(e->host, e->search_bucket);
+    }
+    e->search_bucket = nb;
+    e->search_bucket_cap = want;
+    e->search_buckets = 0;
+    return 1;
+}
+
 static void search_bucket_set(sel_engine* e, const char* id) {
     uint32_t b = e->search_buckets++;
 
@@ -7731,18 +7766,23 @@ static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
         return;
     }
     search_supersede(e);
+    sel_source_register_builtin();
+    if (!search_buckets_ensure(e)) {
+        sel_engine_report_error(e, "out_of_memory", "SOURCE_SEARCH");
+        return;
+    }
     snprintf(e->search_wait_query, sizeof e->search_wait_query, "%s", query);
     if (strcmp(source, "*") == 0) {
         uint32_t i;
 
-        for (i = 0; query[0] != '\0' && i < sel_source_count() && e->search_buckets < SEL_SEARCH_SOURCES_MAX; i++) {
+        for (i = 0; query[0] != '\0' && i < sel_source_count() && e->search_buckets < e->search_bucket_cap; i++) {
             const sel_source* src = sel_source_get(i);
 
             if (src != NULL && src->search != NULL && !sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], src->id)) {
                 search_bucket_set(e, src->id);
             }
         }
-    } else {
+    } else if (e->search_bucket_cap > 0) {
         search_bucket_set(e, source);
     }
     search_start_next(e); /* busy slot (scan, sync or the superseded search): the pump starts it after that task's collect */
@@ -9984,6 +10024,13 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         sel_engine_destroy(e);
         return NULL;
     }
+    if (cfg && cfg->library != NULL) { /* I1035: library engines size the search buckets once, at start; job engines never search */
+        sel_source_register_builtin();
+        if (!search_buckets_ensure(e)) {
+            sel_engine_destroy(e);
+            return NULL;
+        }
+    }
     e->browse.name_ok = browse_name_claimed; /* the folder browser lists folders and files a replayer claims (I218i) */
     e->browse.name_ctx = e;
     return e;
@@ -10057,6 +10104,7 @@ void sel_engine_destroy(sel_engine* e) {
         composer_release(e->host, &e->rd_fmt_blk);
         composer_release(e->host, &e->rd_comp_blk);
         composer_release(e->host, &e->rd_comp_page_blk);
+        if (e->search_bucket) e->host->mem_free(e->host, e->search_bucket);
         if (e->rd_res_text) e->host->mem_free(e->host, e->rd_res_text);
         if (e->rd_res_meta) e->host->mem_free(e->host, e->rd_res_meta);
         if (e->rd_home_text) e->host->mem_free(e->host, e->rd_home_text);

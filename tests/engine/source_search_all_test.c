@@ -5,6 +5,7 @@
  * source's hits and its search_done count arrive (a: 2, d: 0), the unreachable one reports search_failed and the others still
  * answer; then a newer query sent while the first query's task blocks supersedes it: the stale task's hits never reach the
  * event stream (generation check in search_collect), its queued sources never run, and the new query answers in full.
+ * I1035: seven searchable sources are registered (five enabled): the fifth enabled one still answers (the old cap of 4 left it out).
  * With the generation check removed the stale hits (path ".../slow") arrive and the test fails. */
 #include <selecta/engine.h>
 #include <selecta/host.h>
@@ -77,6 +78,20 @@ static int hook_d(const sel_host* host, const char* q, sel_search_sink* out) {
     return 0;
 }
 
+/* I1035: two more searchable sources, so the enabled count (a, c, d, e, f = 5, plus the disabled b and modulespl) passes the old fixed
+ * cap of 4. The fifth enabled source in registry order is i1019f; with a cap of 4 its bucket is never made and it never runs. */
+static int hook_e(const sel_host* host, const char* q, sel_search_sink* out) {
+    (void)host;
+    log_call("i1019e", q);
+    return out->row(out->ctx, "e/1", "Title", "Artist", "mod") ? 1 : 0;
+}
+
+static int hook_f(const sel_host* host, const char* q, sel_search_sink* out) {
+    (void)host;
+    log_call("i1019f", q);
+    return out->row(out->ctx, "f/1", "Title", "Artist", "mod") ? 1 : 0;
+}
+
 static int hook_b(const sel_host* host, const char* q, sel_search_sink* out) {
     (void)host;
     (void)out;
@@ -85,7 +100,8 @@ static int hook_b(const sel_host* host, const char* q, sel_search_sink* out) {
 }
 
 #define SRC(ID, HOOK) { ID, ID, "", "I1019a stand-in.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, HOOK }
-static const sel_source g_a = SRC("i1019a", hook_a), g_b = SRC("i1019b", hook_b), g_c = SRC("i1019c", hook_c), g_d = SRC("i1019d", hook_d);
+static const sel_source g_a = SRC("i1019a", hook_a), g_b = SRC("i1019b", hook_b), g_c = SRC("i1019c", hook_c), g_d = SRC("i1019d", hook_d),
+                       g_e = SRC("i1019e", hook_e), g_f = SRC("i1019f", hook_f);
 
 static void sink(void* ctx, const sel_message* evt) {
     (void)ctx;
@@ -154,16 +170,17 @@ int main(void) {
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
     sel_source_register_builtin();
-    CHECK(sel_source_register(&g_a) && sel_source_register(&g_b) && sel_source_register(&g_c) && sel_source_register(&g_d));
+    CHECK(sel_source_register(&g_a) && sel_source_register(&g_b) && sel_source_register(&g_c) && sel_source_register(&g_d) &&
+          sel_source_register(&g_e) && sel_source_register(&g_f)); /* registered after the engine started: the buckets grow at the query */
     CHECK(send_line(e, "PREF_SET library.sources_off \"modulespl,i1019b\""));
     sel_engine_pump(e, sink, NULL);
 
     /* Order, disabled skipped, failed and empty buckets. */
     CHECK(send_line(e, "SOURCE_SEARCH * \"abc\""));
     drain(e);
-    CHECK(strcmp(g_log, "i1019a:abc;i1019c:abc;i1019d:abc;") == 0); /* registry order; i1019b (disabled) and modulespl never ran */
+    CHECK(strcmp(g_log, "i1019a:abc;i1019c:abc;i1019d:abc;i1019e:abc;i1019f:abc;") == 0); /* registry order; i1019b (disabled) and modulespl never ran */
     CHECK(g_rows_a == 2);
-    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;") == 0); /* the unreachable source gives no search_done */
+    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0); /* the unreachable source gives no search_done */
     CHECK(g_failed == 1);
 
     /* Cancel mid-search: a new query while the first query's task blocks. */
@@ -180,8 +197,8 @@ int main(void) {
     atomic_store(&g_release, 1);
     drain(e);
     CHECK(g_stale_seen == 0); /* the stale task's hits were dropped */
-    CHECK(strcmp(g_log, "i1019a:slow;i1019a:fast;i1019c:fast;i1019d:fast;") == 0); /* the stale query's queued sources never ran */
-    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;") == 0 && g_rows_a == 2);
+    CHECK(strcmp(g_log, "i1019a:slow;i1019a:fast;i1019c:fast;i1019d:fast;i1019e:fast;i1019f:fast;") == 0); /* the stale query's queued sources never ran */
+    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0 && g_rows_a == 2);
     CHECK(g_failed == 1);
 
     sel_engine_destroy(e);
