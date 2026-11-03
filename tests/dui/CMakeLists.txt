@@ -204,6 +204,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-search-online PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-online.tmp")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-online.tmp")
+  # I1019e: no source chip picked: the fan-out line, one From section per searchable source in the shared row loop.
+  add_test(NAME dui-search-all
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-all" "-DNETWORK=${SEL_NET_WORK}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/search_all.cmake")
+  set_tests_properties(dui-search-all PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-all.tmp")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-all.tmp")
   # I832: quitting during the fixture's 4 s first-byte delay returns well under the delay (the search task's net wait sees the cancel).
   add_test(NAME dui-search-online-quit
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}"
