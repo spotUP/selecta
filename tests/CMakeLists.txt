@@ -191,11 +191,22 @@ endif()
 
 # I1039: the CoreAudio output's device list, pick, default follow and latency through its plugin entry, on a fake device layer.
 if(APPLE)
-  add_executable(coreaudio_device_test coreaudio_device_test.c)
+  enable_language(OBJC)
+  add_executable(coreaudio_device_test coreaudio_device_test.c
+    "${PROJECT_SOURCE_DIR}/plugins/outputs/coreaudio/macos/coreaudio_av.m")
   target_include_directories(coreaudio_device_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
-  target_link_libraries(coreaudio_device_test PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")
+  target_compile_options(coreaudio_device_test PRIVATE $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
+  target_link_libraries(coreaudio_device_test PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation"
+    "-framework AVFoundation" "-framework CoreMedia" "-framework Foundation")
   add_test(NAME coreaudio-device COMMAND coreaudio_device_test)
   set_tests_properties(coreaudio-device PROPERTIES PASS_REGULAR_EXPRESSION "coreaudio_device_ok")
+  # I1039 reachability: headless selecta with the AirPlay route entry picked plays through the AVSampleBufferAudioRenderer
+  # path; out_av_buffers in the --stats dump is the sentinel. Volume 0, so nothing is heard.
+  add_test(NAME coreaudio-airplay-route
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_TESTMOD}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/coreaudio_airplay_route"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/coreaudio_airplay_route.cmake")
+  set_tests_properties(coreaudio-airplay-route PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/isolate_config.cmake")

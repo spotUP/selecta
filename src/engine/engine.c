@@ -10046,6 +10046,10 @@ void sel_engine_mark_audio_thread(sel_engine* e) {
     SEL_THREAD_MARK_AUDIO(e);
 }
 
+void sel_engine_unmark_audio_thread(sel_engine* e) {
+    SEL_THREAD_UNMARK_AUDIO(e);
+}
+
 /* I1019c: buckets still queued (never started) when the last engine was destroyed; process-wide because the engine is gone when it is read. */
 static uint32_t g_quit_queue_dropped;
 uint32_t sel_engine_quit_queue_dropped(void) {

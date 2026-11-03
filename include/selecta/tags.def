@@ -127,6 +127,7 @@ SEL_TAG(OUT, UNPACED,           0x2021, INT) /* 1 = OUT_PUMP never blocks (Paula
 SEL_TAG(OUT, STAT_PEAK,         0x2022, INT) /* null output: largest absolute sample value of every frame it pulled (a non-silence measure for the dui tests, I427b) */
 SEL_TAG(OUT, DEVICES,           0x2023, PTR) /* uint32_t (*)(sel_out_device*, uint32_t max): the devices the output can play to (I1039) */
 SEL_TAG(OUT, LATENCY_QUERY,     0x2024, PTR) /* uint32_t (*)(void* state): the open output's real latency in ms (I1039) */
+SEL_TAG(OUT, STAT_AV_BUFFERS,   0x2025, INT) /* CoreAudio: sample buffers queued on the AVFoundation AirPlay route path (I1039) */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)

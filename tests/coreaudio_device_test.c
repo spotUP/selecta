@@ -66,10 +66,57 @@ static uint32_t fake_latency(ca_out* o) {
     (void)o;
     return strcmp(g_fake.bound, "homepod-uid") == 0 ? 187u : 12u;
 }
+/* The AirPlay route path's renderer, faked (I1039): a synchronizer clock that advances 256 frames per idle step once
+ * started, and counters for every call. */
+static struct {
+    uint32_t creates, destroys, enqueues, starts, live;
+    int64_t clock, last_start, queued_to;
+    int running;
+} g_avf;
+static void* fake_av_create(uint32_t rate) {
+    (void)rate;
+    g_avf.creates++;
+    g_avf.live++;
+    g_avf.running = 0;
+    return &g_avf;
+}
+static void fake_av_destroy(void* av) {
+    (void)av;
+    g_avf.destroys++;
+    g_avf.live--;
+}
+static int fake_av_ready(void* av) {
+    (void)av;
+    return 1;
+}
+static int fake_av_enqueue(void* av, const int16_t* pcm, uint32_t frames, int64_t pts) {
+    (void)av;
+    (void)pcm;
+    g_avf.enqueues++;
+    g_avf.queued_to = pts + frames;
+    return 1;
+}
+static int64_t fake_av_played(void* av) {
+    (void)av;
+    return g_avf.clock;
+}
+static void fake_av_start(void* av, int64_t pts) {
+    (void)av;
+    g_avf.starts++;
+    g_avf.last_start = pts;
+    g_avf.clock = pts;
+    g_avf.running = 1;
+}
+static const ca_av_backend g_fake_av = {fake_av_create, fake_av_destroy, fake_av_ready, fake_av_enqueue, fake_av_played,
+                                        fake_av_start};
+
 /* One device callback per idle step: 256 frames. */
 static void fake_idle(ca_out* o) {
     __atomic_add_fetch(&o->frames, 256u, __ATOMIC_RELAXED);
     __atomic_add_fetch(&o->callbacks, 1u, __ATOMIC_RELAXED);
+    if (g_avf.running) {
+        g_avf.clock += 256;
+    }
 }
 static const ca_backend g_fake_be = {fake_list, fake_bind, fake_start, fake_stop, fake_watch, fake_latency, fake_idle};
 
@@ -112,7 +159,10 @@ int main(void) {
     void (*close_fn)(void*);
     void (*source_fn)(void*, sel_pcm_pull, void*);
     uint32_t (*pump_fn)(void*, uint32_t);
+    const sel_tag* (*stats_fn)(void*);
     sel_out_device list[8];
+    ca_out* co;
+    int64_t ahead = 44100 * (int64_t)CA_AV_AHEAD_MS / 1000;
     void* out;
     uint32_t n, before;
 
@@ -123,6 +173,7 @@ int main(void) {
     host.mem_free = host_free;
     host.config_get = host_config_get;
     g_be = &g_fake_be;
+    g_av = &g_fake_av;
 
     desc = SEL_PLUGIN_ENTRY(1u);
     hooks = desc != NULL ? (const sel_tag*)hook(desc, SEL_PLUGIN_TAGS) : NULL;
@@ -136,14 +187,19 @@ int main(void) {
     close_fn = (void (*)(void*))hook(hooks, SEL_OUT_CLOSE);
     source_fn = (void (*)(void*, sel_pcm_pull, void*))hook(hooks, SEL_OUT_SET_SOURCE);
     pump_fn = (uint32_t (*)(void*, uint32_t))hook(hooks, SEL_OUT_PUMP);
-    CHECK(devices != NULL && latency != NULL && open_fn != NULL && close_fn != NULL && source_fn != NULL && pump_fn != NULL);
-    if (devices == NULL || latency == NULL || open_fn == NULL || pump_fn == NULL) {
+    stats_fn = (const sel_tag* (*)(void*))hook(hooks, SEL_OUT_STATS);
+    CHECK(devices != NULL && latency != NULL && open_fn != NULL && close_fn != NULL && source_fn != NULL && pump_fn != NULL &&
+          stats_fn != NULL);
+    if (devices == NULL || latency == NULL || open_fn == NULL || pump_fn == NULL || stats_fn == NULL) {
         return 1;
     }
 
     /* The list: names, uids, the default flag and the AirPlay mark all arrive. */
     n = devices(list, 8u);
-    CHECK(n == FAKE_N);
+    CHECK(n == FAKE_N + 1u);
+    /* I1039: the last entry is the AirPlay route entry; picking it moves playback onto the AVFoundation path. */
+    CHECK(strcmp(list[FAKE_N].uid, SEL_OUT_DEVICE_AIRPLAY_ROUTE) == 0 && list[FAKE_N].transport == SEL_OUT_TRANSPORT_AIRPLAY);
+    CHECK(list[FAKE_N].is_default == 0u);
     CHECK(strcmp(list[0].name, "Built-in Speakers") == 0 && list[0].is_default == 1u);
     CHECK(strcmp(list[1].name, "Living Room HomePod") == 0 && list[1].transport == SEL_OUT_TRANSPORT_AIRPLAY);
     CHECK(list[2].transport != SEL_OUT_TRANSPORT_AIRPLAY);
@@ -188,7 +244,44 @@ int main(void) {
     CHECK(pump_fn(out, 256u) == 256u);
     CHECK(g_fake.bind_calls == before + 1u); /* and only once */
 
+    /* I1039: the AirPlay route entry is picked while playing: HAL stops, the renderer is made, latency is the queue. */
+    before = g_fake.stops;
+    snprintf(g_pref, sizeof g_pref, "%s", SEL_OUT_DEVICE_AIRPLAY_ROUTE);
+    CHECK(pump_fn(out, 512u) == 512u);
+    co = (ca_out*)out;
+    CHECK(g_avf.creates == 1u && g_avf.live == 1u && co->av != NULL);
+    CHECK(g_fake.stops == before + 1u);
+    CHECK(latency(out) == CA_AV_AHEAD_MS);
+    CHECK(g_avf.enqueues >= 1u && g_avf.starts == 1u && g_avf.last_start == 0);
+    CHECK(hook(stats_fn(out), SEL_OUT_STAT_AV_BUFFERS) == g_avf.enqueues);
+
+    /* A long pump paces on the synchronizer clock: never more than the queue depth plus one chunk ahead of it. */
+    CHECK(pump_fn(out, 30000u) == 30000u);
+    CHECK(g_avf.queued_to == co->av_pts);
+    CHECK(co->av_pts - g_avf.clock < ahead + (int64_t)CA_AV_CHUNK);
+    CHECK(g_avf.clock > 0 && g_avf.starts == 1u); /* the clock ran; no re-anchor while fed */
+
+    /* Underrun: the clock passed everything queued, the next buffer re-anchors the clock at its own time. */
+    g_avf.clock = co->av_pts + 5000;
+    n = g_avf.starts;
+    CHECK(pump_fn(out, 256u) == 256u);
+    CHECK(g_avf.starts == n + 1u && g_avf.last_start == co->av_pts - 256);
+
+    /* A HAL device is picked again: the renderer goes, HAL binds and starts. */
+    before = g_fake.starts;
+    snprintf(g_pref, sizeof g_pref, "%s", "homepod-uid");
+    CHECK(pump_fn(out, 256u) == 256u);
+    CHECK(g_avf.destroys == 1u && g_avf.live == 0u && co->av == NULL);
+    CHECK(strcmp(g_fake.bound, "homepod-uid") == 0 && g_fake.starts == before + 1u);
+    CHECK(latency(out) == 187u);
+
+    /* Close in route mode drops the renderer. */
+    snprintf(g_pref, sizeof g_pref, "%s", SEL_OUT_DEVICE_AIRPLAY_ROUTE);
+    CHECK(pump_fn(out, 256u) == 256u);
+    CHECK(g_avf.live == 1u);
+
     close_fn(out);
+    CHECK(g_avf.live == 0u);
     CHECK(g_fake.watcher == NULL); /* the default is no longer watched */
 
     if (g_fail != 0) {

@@ -675,6 +675,9 @@ uint32_t sel_engine_lib_deferred(void);
  * pull callback on its first run). Debug builds then assert that
  * sel_engine_render runs only there and send/pump/destroy never do. */
 void sel_engine_mark_audio_thread(sel_engine* e);
+/* Clears the mark: the output now renders from the pump on the calling thread (the CoreAudio AirPlay route
+ * path, I1039), so no output thread exists until a pull thread marks itself again. */
+void sel_engine_unmark_audio_thread(sel_engine* e);
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
 /* The running end fade of the playing song: 1 and its position and length in frames, else 0. */

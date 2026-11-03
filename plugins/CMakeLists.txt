@@ -48,8 +48,13 @@ foreach(viz scope levels spectrum sidregs)
 endforeach()
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).
 if(APPLE)
-  sel_add_plugin(coreaudio 2 outputs/coreaudio/macos/coreaudio.c)
-  target_link_libraries(sel_plugin_coreaudio PUBLIC "-framework AudioToolbox" "-framework CoreAudio")
+  # I1039: coreaudio_av.m is the AVSampleBufferAudioRenderer path that follows the app's AirPlay route pick (ARC).
+  enable_language(OBJC)
+  sel_add_plugin(coreaudio 2 outputs/coreaudio/macos/coreaudio.c outputs/coreaudio/macos/coreaudio_av.m)
+  target_compile_options(sel_plugin_coreaudio PRIVATE $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
+  target_compile_options(sel_sdkcheck_coreaudio PRIVATE $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
+  target_link_libraries(sel_plugin_coreaudio PUBLIC "-framework AudioToolbox" "-framework CoreAudio"
+    "-framework AVFoundation" "-framework CoreMedia" "-framework Foundation")
 endif()
 
 # T5 negative path only; see tests/m0/bad_plugin.cmake.

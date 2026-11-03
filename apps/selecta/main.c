@@ -162,6 +162,9 @@ static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
     if (g_mark_audio && !g_marked && !g_pumping) { /* a clockless output pumps on the main thread */
         sel_engine_mark_audio_thread((sel_engine*)ctx);
         g_marked = 1;
+    } else if (g_marked && g_pumping) { /* I1039: the output moved its pulls onto the pump (AirPlay route path) */
+        sel_engine_unmark_audio_thread((sel_engine*)ctx);
+        g_marked = 0;
     }
     return sel_engine_render((sel_engine*)ctx, stereo, frames);
 }
@@ -932,8 +935,10 @@ int main(int argc, char** argv)
         sel_out_stats_fn ostats = (sel_out_stats_fn)sel_tag_find(oh, SEL_OUT_STATS, 0);
         const sel_tag* os = ostats != NULL && so.out != NULL ? ostats(so.out) : NULL;
 
-        printf("replayer_render_calls=%u rendered_frames=%u out_peak=%u\n", (unsigned)est.replayer_render_calls,
-               (unsigned)est.rendered_frames, os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_PEAK, 0) : 0u);
+        printf("replayer_render_calls=%u rendered_frames=%u out_peak=%u out_av_buffers=%u\n",
+               (unsigned)est.replayer_render_calls, (unsigned)est.rendered_frames,
+               os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_PEAK, 0) : 0u,
+               os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_AV_BUFFERS, 0) : 0u);
     }
     if (has_stats) { /* the song the engine has open, for the mouse test (DUI-P3-2) */
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");

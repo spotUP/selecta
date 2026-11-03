@@ -34,6 +34,9 @@ typedef uint32_t (*sel_out_rate_for_fn)(const sel_tag* machine);
 #define SEL_OUT_TRANSPORT_BLUETOOTH 3u
 #define SEL_OUT_TRANSPORT_HDMI 4u
 #define SEL_OUT_TRANSPORT_AIRPLAY 5u
+/* The uid of the AirPlay route entry: not a hardware device but the route the system AirPlay picker chose for the app.
+ * An output that lists it plays through a path that follows that route (CoreAudio: AVSampleBufferAudioRenderer). */
+#define SEL_OUT_DEVICE_AIRPLAY_ROUTE "selecta:airplay-route"
 
 typedef struct sel_out_device {
     char uid[SEL_OUT_DEVICE_UID_MAX];
