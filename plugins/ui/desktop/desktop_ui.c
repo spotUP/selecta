@@ -588,6 +588,9 @@ typedef struct desk {
     char open_fail_text[96]; /* I695b: the text of the last one */
     sel_sync_progress sync_ui; /* I782: the running sync as the last frame drew it; the card shows while active */
     uint32_t sync_ui_draws, sync_ui_shown, sync_ui_cancels; /* test sentinels: cards drawn, times it appeared, Cancel clicks */
+    uint32_t sync_ui_phase;  /* I1026: the indeterminate sweep step (UI clock / SYNC_SWEEP_STEP_MS); 0 while the bar is determinate */
+    int32_t sync_bar_fill;   /* I1026: the filled width the bar was last drawn with (determinate), or the sweep segment's left offset */
+    uint32_t sync_bar_kind, sync_bar_steps, sync_bar_last; /* I1026 test sentinels: 0 none / 1 determinate / 2 indeterminate; distinct bar states drawn; the last one */
     int toast_on;            /* 1 while a toast is on screen */
     int toast_out;           /* 1 while the toast fades out (toast_until is then the end of the fade) */
     uint32_t toast_until;    /* UI clock when the toast goes away */
@@ -635,6 +638,7 @@ static void desk_toast(desk* d, const char* text);
 static int desk_add_folder(desk* d);
 static sel_gui_rect toast_rect(desk* d);
 static sel_gui_rect sync_card_rect(desk* d);
+static sel_gui_rect sync_bar_rect(desk* d);
 static int desk_toast_tick(desk* d);
 static int overlay_refresh(desk* d);
 
@@ -7657,6 +7661,8 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d item_calls=%u lib_touch_calls=%u\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d), (unsigned)d->side_item_calls,
                      (unsigned)lib_touch_calls(d));
+        o = dump_put(d, o, "sync_bar kind=%u done=%u total=%u fill=%d width=%d steps=%u\n", (unsigned)d->sync_bar_kind, (unsigned)d->sync_ui.done,
+                     (unsigned)d->sync_ui.total, (int)d->sync_bar_fill, (int)sync_bar_rect(d).w, (unsigned)d->sync_bar_steps);
         o = dump_put(d, o, "sync_ui active=%u rows=%u queued=%u source=%s shown=%u draws=%u cancels=%u lib_deferred=%u\n", (unsigned)d->sync_ui.active,
                      (unsigned)d->sync_ui.rows, (unsigned)d->sync_ui.queued, d->sync_ui.source, (unsigned)d->sync_ui_shown, (unsigned)d->sync_ui_draws,
                      (unsigned)d->sync_ui_cancels, (unsigned)sel_engine_lib_deferred());
@@ -12401,6 +12407,46 @@ static void sync_card_text(const sel_sync_progress* sp, char* out, size_t cap) {
     }
 }
 
+enum { SYNC_SWEEP_STEP_MS = 60, SYNC_SWEEP_STEPS = 20 }; /* I1026: the indeterminate segment crosses the track in 20 steps of 60 ms */
+
+/* I1026: the bar under the card's text line, the track the text spans. A source that reported a total fills it by done/total;
+ * one that did not gets a segment (a fifth of the track) sweeping left to right with the UI clock. */
+static sel_gui_rect sync_bar_rect(desk* d) {
+    sel_gui_rect c = sync_card_rect(d);
+    return rect_of(c.x + lpx(d, 16), c.y + c.h - lpx(d, 14), c.w - lpx(d, 112), lpx(d, 4));
+}
+
+static uint32_t sync_phase_of(const desk* d, const sel_sync_progress* sp) {
+    return sp->active && sp->total == 0u ? (d->now_ms / (uint32_t)SYNC_SWEEP_STEP_MS) % (uint32_t)SYNC_SWEEP_STEPS + 1u : 0u;
+}
+
+static void sync_bar_draw(desk* d) {
+    sel_gui_rect bar = sync_bar_rect(d), seg;
+    const sel_sync_progress* sp = &d->sync_ui;
+    uint32_t state;
+    sel_gui_round_rect(d->canvas, bar, bar.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+    if (sp->total > 0u) {
+        uint32_t done = sp->done < sp->total ? sp->done : sp->total;
+        d->sync_bar_kind = 1u;
+        d->sync_bar_fill = (int32_t)((uint64_t)bar.w * done / sp->total);
+        state = done;
+        seg = rect_of(bar.x, bar.y, d->sync_bar_fill, bar.h);
+    } else {
+        int32_t sw = bar.w / 5, span = bar.w - sw;
+        d->sync_bar_kind = 2u;
+        d->sync_bar_fill = (int32_t)((uint64_t)span * (d->sync_ui_phase - 1u) / (uint32_t)(SYNC_SWEEP_STEPS - 1));
+        state = d->sync_ui_phase;
+        seg = rect_of(bar.x + d->sync_bar_fill, bar.y, sw, bar.h);
+    }
+    if (seg.w >= bar.h) {
+        sel_gui_round_rect(d->canvas, seg, bar.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+    }
+    if (state != d->sync_bar_last || d->sync_bar_steps == 0u) {
+        d->sync_bar_steps++;
+        d->sync_bar_last = state;
+    }
+}
+
 static void sync_card_draw(desk* d) {
     sel_gui_rect b = sync_card_rect(d);
     char line[128];
@@ -12409,7 +12455,8 @@ static void sync_card_draw(desk* d) {
     }
     sync_card_text(&d->sync_ui, line, sizeof line);
     sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
-    draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 112), b.h), line, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 112), b.h - lpx(d, 14)), line, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    sync_bar_draw(d);
     draw_button(d, sync_cancel_rect(d), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Cancel", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     sel_gui_dirty_add(d->canvas, b);
     d->sync_ui_draws++;
@@ -12421,15 +12468,19 @@ static int desk_sync_follow(desk* d) {
     sel_sync_progress sp;
     int changed;
     sel_engine_sync_progress(d->engine, &sp);
+    uint32_t phase = sync_phase_of(d, &sp);
     changed = sp.active != d->sync_ui.active || sp.rows != d->sync_ui.rows || sp.queued != d->sync_ui.queued
+        || sp.done != d->sync_ui.done || sp.total != d->sync_ui.total || phase != d->sync_ui_phase
         || strcmp(sp.source, d->sync_ui.source) != 0;
     if (!changed) {
         return 0;
     }
     if (sp.active && !d->sync_ui.active) {
         d->sync_ui_shown++;
+        d->sync_bar_steps = 0u;
     }
     d->sync_ui = sp;
+    d->sync_ui_phase = phase;
     overlay_refresh(d); /* a full frame, so a card that ends leaves no pixels behind */
     return 1;
 }
@@ -15689,6 +15740,9 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         int ev;
         uint32_t wait_ms;
         wait_ms = 1000u - d->now_ms % 1000u;
+        if (d->sync_ui.active && d->sync_ui.total == 0u && wait_ms > (uint32_t)SYNC_SWEEP_STEP_MS) { /* I1026: the indeterminate sweep steps while a sync gives no total */
+            wait_ms = (uint32_t)SYNC_SWEEP_STEP_MS;
+        }
         if (sel_gui_timeline_running(&d->tl) > 0u) { /* a tween runs: the next step is due in 16 ms (the frame itself is drawn at the top of the turn) */
             wait_ms = 16u;
         }

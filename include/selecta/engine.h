@@ -323,6 +323,7 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out);
  * Cancel asks the running sync to stop at its next batch and returns at once (the sync then reports sync_failed). */
 typedef struct sel_sync_progress {
     uint32_t active, rows, queued;
+    uint32_t done, total; /* I1026: the source's fetch progress, `done` of `total`; total 0 = the source gave none (indeterminate) */
     char source[40];
 } sel_sync_progress;
 void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out);

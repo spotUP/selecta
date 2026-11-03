@@ -67,6 +67,9 @@ typedef struct sel_catalogue {
      * state_set stores the blob (data NULL = delete the key); 1 when stored. Both need an open batch. */
     int (*state_get)(const sel_host* host, const char* key, void* buf, uint32_t cap, uint32_t* len);
     int (*state_set)(const sel_host* host, const char* key, const void* data, uint32_t len);
+    /* I1026: reports how far the fetch has come, `done` of `total` units (rows, files, bytes: the source's choice). The UI
+     * draws a progress bar from it; a source that never calls it (or passes total 0) shows an indeterminate sweep. */
+    void (*progress)(const sel_host* host, uint32_t done, uint32_t total);
 } sel_catalogue;
 
 SEL_EXTERN_C_END
