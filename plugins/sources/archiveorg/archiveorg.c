@@ -389,7 +389,8 @@ static void take_hit(void* ctx, rec* hit) {
     clean_part(hit->title);
     r->net->pause(r->host, PAUSE_MS);
     snprintf(url, sizeof url, "%s/metadata/%s", r->base, hit->id);
-    snprintf(path, sizeof path, "%s/meta.json", r->dir);
+    /* A search may run while a sync of this source is fetching: each keeps its own metadata file. */
+    snprintf(path, sizeof path, "%s/%s", r->dir, r->sink != NULL ? "search-meta.json" : "meta.json");
     r->items++;
     if (fetch(r->host, r->net, url, path, META_CAP, &r->requests, &r->bytes) != 200) {
         remove(path);
