@@ -373,9 +373,8 @@ typedef struct desk {
     uint32_t art_waits;      /* I906c: headless naps spent waiting for the background cover batches */
     uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
-    uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played */
+    uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
-    sel_gui_rect on_radio_rect;  /* the source's radio entry row of the last frame; w == 0 when none */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
@@ -5484,6 +5483,28 @@ static int src_toggle_send(desk* d, uint32_t flip);
 static int src_remote(const desk* d, uint32_t i);
 static int src_syncable(const desk* d, uint32_t i);
 
+typedef struct src_radio_entry {
+    const char* source;
+    const char* label;
+    const char* url;
+} src_radio_entry;
+
+/* A source's live radio station, a button on its source page (I1019h: it used to sit above the Search results); it is saved with
+ * STREAM_ADD (the Streams playlist) and played through the one stream path. Plan 2026-10-26-online-sources 5.2: Modules.pl listen.pls. */
+static const src_radio_entry src_radio[] = {
+    {"modulespl", "Modules.pl Radio", "http://radio.modules.pl:8500/listen.pls"},
+};
+
+static const src_radio_entry* src_radio_of(const char* key) {
+    size_t i;
+    for (i = 0; i < sizeof src_radio / sizeof src_radio[0]; i++) {
+        if (strcmp(src_radio[i].source, key) == 0) {
+            return &src_radio[i];
+        }
+    }
+    return NULL;
+}
+
 static uint32_t col_src_index(const desk* d) {
     uint32_t i;
     if (d->col_kind != (uint32_t)SEL_LIB_ITEM_SOURCE) {
@@ -5501,6 +5522,17 @@ static uint32_t col_src_index(const desk* d) {
 static sel_gui_rect col_src_row(desk* d, sel_gui_rect mn) {
     sel_gui_rect cv = pls_cover_rect(d, mn);
     return rect_of(mn.x, cv.y + lpx(d, 44) + lpx(d, page_title_h(d)), mn.w - lpx(d, HOME_MARGIN) + lpx(d, 16), lpx(d, 40));
+}
+
+/* The radio button of the page, left of the Sync slot; zero width when the entry has no station or is switched off. */
+static sel_gui_rect col_src_radio_rect(desk* d, sel_gui_rect mn) {
+    uint32_t i = col_src_index(d);
+    sel_gui_rect r = col_src_row(d, mn), sy = src_sync_rect(d, r);
+    int32_t w = lpx(d, 200);
+    if (i >= d->src_n || !d->src[i].enabled || src_radio_of(d->src[i].key) == NULL) {
+        return rect_of(0, 0, 0, 0);
+    }
+    return rect_of(sy.x - lpx(d, 16) - w, sy.y, w, sy.h);
 }
 
 static void col_src_status(const desk* d, uint32_t i, char* out, size_t cap) {
@@ -5525,7 +5557,11 @@ static void draw_col_src(desk* d, sel_gui_rect mn, uint32_t muted) {
     int32_t kd = tg.h - lpx(d, 6), tx = pls_cover_rect(d, mn).x + pls_cover_rect(d, mn).w + lpx(d, PLS_GAP);
     char line[64];
     col_src_status(d, i, line, sizeof line);
-    draw_text(d, rect_of(tx, r.y, src_sync_rect(d, r).x - tx, r.h), line, 0, 13, muted);
+    sel_gui_rect rd = col_src_radio_rect(d, mn);
+    draw_text(d, rect_of(tx, r.y, (rd.w > 0 ? rd.x : src_sync_rect(d, r).x) - tx, r.h), line, 0, 13, muted);
+    if (rd.w > 0) {
+        draw_button(d, rd, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), src_radio_of(d->src[i].key)->label, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    }
     if (i < d->src_n) {
         int on = d->src[i].enabled;
         if (src_syncable(d, i) && on) {
@@ -5540,8 +5576,19 @@ static void draw_col_src(desk* d, sel_gui_rect mn, uint32_t muted) {
 static int col_src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     uint32_t i = col_src_index(d);
     sel_gui_rect r = col_src_row(d, mn);
+    sel_gui_rect rd = col_src_radio_rect(d, mn);
     if (i >= d->src_n) {
         return 0;
+    }
+    if (rd.w > 0 && in_rect(rd, x, y)) { /* the station: saved to Streams, played through the one stream path */
+        const src_radio_entry* rad = src_radio_of(d->src[i].key);
+        char line[200];
+        snprintf(line, sizeof line, "STREAM_ADD %s", rad->url);
+        desk_send(d, line);
+        desk_play_path(d, rad->url);
+        d->on_radio_plays++;
+        desk_toast(d, "Saved to Streams");
+        return 1;
     }
     if (in_rect(src_toggle_rect(d, r), x, y)) {
         return src_toggle_send(d, i);
@@ -7201,7 +7248,6 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect cr = online_chip_rect(d, panel_rect(d, "main"), oi);
             o = dump_put(d, o, "online_chip %u %d %d %d %d\n", (unsigned)oi, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h);
         }
-        o = dump_put(d, o, "online_radio %d %d %d %d\n", (int)d->on_radio_rect.x, (int)d->on_radio_rect.y, (int)d->on_radio_rect.w, (int)d->on_radio_rect.h);
         for (oi = 0; oi < d->on_n && oi < 3u; oi++) {
             o = dump_put(d, o, "online_row %u %d %d %d %d %s\n", (unsigned)oi, (int)d->on_row[oi].rect.x, (int)d->on_row[oi].rect.y, (int)d->on_row[oi].rect.w, (int)d->on_row[oi].rect.h, d->on_row[oi].key);
         }
@@ -7330,15 +7376,15 @@ static const char* library_dump_build(desk* d) {
                              d->pls_name, (unsigned)d->col_year, (int)sh.x, (int)sh.y, (int)sh.w, (int)sh.h);
                 {
                     char khst[64];
-                    sel_gui_rect hrow = col_src_row(d, pmn), stg = src_toggle_rect(d, hrow), ssy = src_sync_rect(d, hrow);
+                    sel_gui_rect hrow = col_src_row(d, pmn), stg = src_toggle_rect(d, hrow), ssy = src_sync_rect(d, hrow), srd = col_src_radio_rect(d, pmn);
                     if (col_src_index(d) < d->src_n && !src_syncable(d, col_src_index(d))) {
                         ssy = rect_of(0, 0, 0, 0); /* I814: no Sync button for this source */
                     }
                     uint32_t si = col_src_index(d);
                     col_src_status(d, si, khst, sizeof khst);
-                    o = dump_put(d, o, "kindhead wordmark=%d played=%d source=%d status=[%s] toggle=%d,%d,%d,%d sync=%d,%d,%d,%d first=[%s]\n", col_wordmark(d),
+                    o = dump_put(d, o, "kindhead wordmark=%d played=%d source=%d status=[%s] toggle=%d,%d,%d,%d sync=%d,%d,%d,%d radio=%d,%d,%d,%d first=[%s]\n", col_wordmark(d),
                                  d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT, d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE, d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? khst : "",
-                                 (int)stg.x, (int)stg.y, (int)stg.w, (int)stg.h, (int)ssy.x, (int)ssy.y, (int)ssy.w, (int)ssy.h,
+                                 (int)stg.x, (int)stg.y, (int)stg.w, (int)stg.h, (int)ssy.x, (int)ssy.y, (int)ssy.w, (int)ssy.h, (int)srd.x, (int)srd.y, (int)srd.w, (int)srd.h,
                                  d->pls_n > 0u && d->pls_ord != NULL ? pls_key(d, d->pls_ord[0]) : "");
                 }
                 o = dump_put(d, o, "localicon side=%u head=%u folder=%u\n", (unsigned)d->local_icon_side, (unsigned)d->local_icon_head, (unsigned)SEL_GUI_ICON_FOLDER);
@@ -8604,28 +8650,6 @@ enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_WI
  * is the pref search.last_source: the engine writes it after every answered search and a chip pick writes it too. */
 static void desk_search_fire(desk* d);
 
-typedef struct online_radio_entry {
-    const char* source;
-    const char* label;
-    const char* url;
-} online_radio_entry;
-
-/* A source's live radio station, offered above its results; it is saved with STREAM_ADD (the Streams playlist) and played
- * through the one stream path. Plan 2026-10-26-online-sources 5.2: Modules.pl listen.pls. */
-static const online_radio_entry online_radio[] = {
-    {"modulespl", "Modules.pl Radio", "http://radio.modules.pl:8500/listen.pls"},
-};
-
-static const online_radio_entry* online_radio_of(const desk* d) {
-    size_t i;
-    for (i = 0; i < sizeof online_radio / sizeof online_radio[0]; i++) {
-        if (strcmp(online_radio[i].source, d->scope) == 0) {
-            return &online_radio[i];
-        }
-    }
-    return NULL;
-}
-
 static uint32_t online_scope_count(const desk* d) {
     uint32_t i, n = 1u; /* chip 0 is the library */
     for (i = 0; i < d->src_n && i < sizeof d->src / sizeof d->src[0]; i++) {
@@ -8745,24 +8769,15 @@ static void online_draw_chips(desk* d, sel_gui_rect mn) {
 
 /* The online results as a Spotify-style list: a 48 px row per hit, the title in the text colour over the muted artist and format. */
 static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
-    const online_radio_entry* rad = online_radio_of(d);
-    int32_t mg = lpx(d, HOME_MARGIN), rh = lpx(d, 48), ic = lpx(d, 20), top = y, bottom = mn.y + mn.h;
+    int32_t mg = lpx(d, HOME_MARGIN), rh = lpx(d, 48), top = y, bottom = mn.y + mn.h;
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t k;
     char sub[80];
-    d->on_radio_rect = rect_of(0, 0, 0, 0);
     d->on_drawn = 0u;
     for (k = 0; k < d->on_n; k++) {
         d->on_row[k].drawn = 0;
     }
     y -= lpx_q16(d, d->search_q16); /* the hits scroll inside the body under the chips */
-    if (rad != NULL && y + rh > top && y < bottom) {
-        d->on_radio_rect = rect_of(mn.x + mg, y, mn.w - 2 * mg, rh);
-        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(mn.x + mg, y + (rh - ic) / 2, ic, ic), ic, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        draw_text(d, rect_of(mn.x + mg + lpx(d, 36), y, mn.w - 2 * mg - lpx(d, 36), rh / 2 + lpx(d, 4)), rad->label, 1, 14, text);
-        draw_text(d, rect_of(mn.x + mg + lpx(d, 36), y + rh / 2, mn.w - 2 * mg - lpx(d, 36), rh / 2), "Live radio", 0, 12, muted);
-    }
-    y += rad != NULL ? rh : 0;
     if (d->on_state == 1u && d->on_n == 0u) {
         draw_empty_state(d, mn, y, "Searching");
         return;
@@ -8787,7 +8802,7 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
     }
 }
 
-/* A click in the Search page's main region: a scope chip, a hit (opens and plays it) or the radio entry. Returns 1 when used. */
+/* A click in the Search page's main region: a scope chip, a hit (opens and plays it). Returns 1 when used. */
 static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
     uint32_t k, n = online_scope_count(d);
     for (k = 0; n >= 2u && k < n; k++) {
@@ -8798,18 +8813,6 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
     }
     if (d->scope[0] == '\0') {
         return 0;
-    }
-    if (d->on_radio_rect.w > 0 && in_rect(d->on_radio_rect, x, y)) {
-        const online_radio_entry* rad = online_radio_of(d);
-        char line[200];
-        if (rad != NULL) {
-            snprintf(line, sizeof line, "STREAM_ADD %s", rad->url);
-            desk_send(d, line);
-            desk_play_path(d, rad->url);
-            d->on_radio_plays++;
-            desk_toast(d, "Saved to Streams");
-        }
-        return 1;
     }
     for (k = 0; k < d->on_n; k++) {
         if (d->on_row[k].drawn && in_rect(d->on_row[k].rect, x, y)) {
@@ -8991,7 +8994,7 @@ static int32_t search_content_h(desk* d) {
     int32_t h = 0;
     int show = 0;
     if (d->scope[0] != '\0') {
-        return (online_radio_of(d) != NULL ? lpx(d, 48) : 0) + (int32_t)d->on_n * lpx(d, 48);
+        return (int32_t)d->on_n * lpx(d, 48);
     }
     if (v == NULL || d->browse_filter || v->style == (uint32_t)SEL_VIEW_STYLE_GRID || v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW) {
         return 0;
@@ -10080,7 +10083,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     if (d->page == SEL_UIM_PG_SETTINGS && in_rect(mn, x, y)) {
         return settings_click(d, x, y);
     }
-    if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y) && online_click(d, panel_rect(d, "main"), x, y)) { /* a scope chip, an online hit or the radio entry (I406a) */
+    if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y) && online_click(d, panel_rect(d, "main"), x, y)) { /* a scope chip or an online hit (I406a) */
         return 1;
     }
     if (d->page == SEL_UIM_PG_SEARCH && d->scope[0] == '\0' && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups; without results it is kept for the next ones */

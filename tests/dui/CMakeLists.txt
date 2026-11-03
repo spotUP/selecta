@@ -195,7 +195,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-settings PROPERTIES LABELS "dui;settings" TIMEOUT 120) # I989e: the test of plan item DUI-P4-14, so it keeps the dui label that dui-ratchet counts
 endif()
 
-# dui-search-online (I406a): the Search page's Modules.pl scope, row click, remembered scope and radio row, against the net fixture.
+# dui-search-online (I406a): the Search page's Modules.pl scope, row click, remembered scope and the radio button on the source page (I1019h), against the net fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME dui-search-online
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
