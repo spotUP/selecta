@@ -56,6 +56,11 @@ uint32_t desk_sdl_ticks(void);
 /* Add Folder: opens the native folder dialog (SDL_ShowOpenFolderDialog); the chosen folder arrives later through
  * desk_sdl_next_input as a SEL_GUI_IN_DROP. Returns 0 when there is no window to attach it to. */
 int desk_sdl_open_folder_dialog(desk_sdl* b);
+/* I1039: hosts the system AirPlay picker (AVRoutePickerView) over the canvas rect x, y, w, h (canvas pixels) while show is
+ * set; a click there opens macOS's own route menu. 0 when this window cannot host it (headless, not macOS). */
+int desk_sdl_route_picker(desk_sdl* b, int32_t x, int32_t y, int32_t w, int32_t h, int show);
+/* Times macOS began presenting the route menu from that picker. */
+uint32_t desk_sdl_route_picker_presents(const desk_sdl* b);
 int desk_sdl_open_file_dialog(desk_sdl* b);
 /* I999: copies the first line of the system clipboard text into out (NUL-terminated, at most cap - 1 bytes). Returns the
  * byte count, 0 when the clipboard holds no text. */

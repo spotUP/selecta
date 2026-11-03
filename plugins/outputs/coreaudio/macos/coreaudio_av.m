@@ -101,4 +101,10 @@ static void av_start(void* av, int64_t pts) {
     [o.sync setRate:1 time:CMTimeMake(pts, o.rate)];
 }
 
-const ca_av_backend ca_av_real = {av_create, av_destroy, av_ready, av_enqueue, av_played, av_start};
+static void av_flush(void* av) {
+    SelAvOut* o = (__bridge SelAvOut*)av;
+    [o.sync setRate:0];
+    [o.renderer flush];
+}
+
+const ca_av_backend ca_av_real = {av_create, av_destroy, av_ready, av_enqueue, av_played, av_start, av_flush};

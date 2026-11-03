@@ -4,6 +4,9 @@
 #include <selecta/uimodel/keys.h>
 
 #include <SDL3/SDL.h>
+#ifdef __APPLE__
+#include "macos/route_picker.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +29,7 @@ struct desk_sdl {
     uint32_t upload_pixels;
     uint32_t presents;
     sel_gui_input_map_state map; /* press state of the pointer buttons */
+    void* route_picker;          /* I1039: the AVRoutePickerView host, made on first use (macOS, live window only) */
     sel_gui_input queue[DESK_SDL_QUEUE];
     uint32_t q_head, q_count;
     uint32_t drop_n;          /* files of the drop in progress so far (SDL_EVENT_DROP_BEGIN resets it) */
@@ -49,6 +53,11 @@ static int make_texture(desk_sdl* b, int32_t w, int32_t h) {
     }
     SDL_SetTextureBlendMode(t, SDL_BLENDMODE_NONE);
     SDL_SetTextureScaleMode(t, SDL_SCALEMODE_NEAREST);
+#ifdef __APPLE__
+    if (b->route_picker != NULL) {
+        sel_route_picker_free(b->route_picker);
+    }
+#endif
     if (b->texture != NULL) {
         SDL_DestroyTexture(b->texture);
     }
@@ -694,4 +703,44 @@ void desk_sdl_note_cost(desk_sdl* b, uint64_t start_ns) {
 /* Milliseconds since SDL started: the live UI clock (DUI-P3-5). */
 uint32_t desk_sdl_ticks(void) {
     return (uint32_t)SDL_GetTicks();
+}
+
+/* I1039: the system AirPlay picker over a canvas rect (canvas pixels). The canvas is scaled onto the window, so the rect
+ * maps to window points by the window size over the canvas size. Headless windows and other platforms have none. */
+int desk_sdl_route_picker(desk_sdl* b, int32_t x, int32_t y, int32_t w, int32_t h, int show) {
+#ifdef __APPLE__
+    void* win;
+    int ww = 0, wh = 0;
+    double sx, sy;
+    if (b == NULL || b->headless) {
+        return 0;
+    }
+    win = SDL_GetPointerProperty(SDL_GetWindowProperties(b->window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL);
+    if (win == NULL) {
+        return 0;
+    }
+    if (b->route_picker == NULL) {
+        if (!show) {
+            return 1;
+        }
+        b->route_picker = sel_route_picker_new();
+    }
+    SDL_GetWindowSize(b->window, &ww, &wh);
+    sx = b->w > 0 ? (double)ww / (double)b->w : 1.0;
+    sy = b->h > 0 ? (double)wh / (double)b->h : 1.0;
+    sel_route_picker_place(b->route_picker, win, x * sx, y * sy, w * sx, h * sy, show);
+    return 1;
+#else
+    (void)b; (void)x; (void)y; (void)w; (void)h; (void)show;
+    return 0;
+#endif
+}
+
+uint32_t desk_sdl_route_picker_presents(const desk_sdl* b) {
+#ifdef __APPLE__
+    return b != NULL && b->route_picker != NULL ? (uint32_t)sel_route_picker_presents(b->route_picker) : 0u;
+#else
+    (void)b;
+    return 0u;
+#endif
 }

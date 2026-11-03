@@ -15,6 +15,7 @@ typedef struct ca_av_backend {
     int (*enqueue)(void* av, const int16_t* pcm, uint32_t frames, int64_t pts); /* pts in frames; 1 = queued */
     int64_t (*played)(void* av);     /* the synchronizer clock in frames */
     void (*start)(void* av, int64_t pts); /* run the clock from media time `pts` (frames) now */
+    void (*flush)(void* av);         /* stop the clock and drop every queued buffer */
 } ca_av_backend;
 
 extern const ca_av_backend ca_av_real;

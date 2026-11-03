@@ -69,7 +69,7 @@ static uint32_t fake_latency(ca_out* o) {
 /* The AirPlay route path's renderer, faked (I1039): a synchronizer clock that advances 256 frames per idle step once
  * started, and counters for every call. */
 static struct {
-    uint32_t creates, destroys, enqueues, starts, live;
+    uint32_t creates, destroys, enqueues, starts, flushes, live;
     int64_t clock, last_start, queued_to;
     int running;
 } g_avf;
@@ -107,8 +107,14 @@ static void fake_av_start(void* av, int64_t pts) {
     g_avf.clock = pts;
     g_avf.running = 1;
 }
+static void fake_av_flush(void* av) {
+    (void)av;
+    g_avf.flushes++;
+    g_avf.running = 0;
+    g_avf.queued_to = g_avf.clock; /* the queue is gone: nothing ahead of the clock */
+}
 static const ca_av_backend g_fake_av = {fake_av_create, fake_av_destroy, fake_av_ready, fake_av_enqueue, fake_av_played,
-                                        fake_av_start};
+                                        fake_av_start, fake_av_flush};
 
 /* One device callback per idle step: 256 frames. */
 static void fake_idle(ca_out* o) {
@@ -266,6 +272,23 @@ int main(void) {
     n = g_avf.starts;
     CHECK(pump_fn(out, 256u) == 256u);
     CHECK(g_avf.starts == n + 1u && g_avf.last_start == co->av_pts - 256);
+
+    /* Seek or user song change (OUT_FLUSH): the renderer queue is dropped and the clock stops, so the next buffer
+     * re-anchors at once instead of playing after 200 ms of the old position. */
+    {
+        sel_out_flush_fn flush_fn = (sel_out_flush_fn)hook(hooks, SEL_OUT_FLUSH);
+        int64_t at;
+        CHECK(flush_fn != NULL);
+        CHECK(pump_fn(out, 2048u) == 2048u); /* fed: the clock runs with the queue ahead of it */
+        CHECK(co->av_anchored && g_avf.queued_to > g_avf.clock);
+        n = g_avf.starts;
+        flush_fn(out);
+        CHECK(g_avf.flushes == 1u && !g_avf.running && !co->av_anchored);
+        CHECK(hook(stats_fn(out), SEL_OUT_STAT_AV_FLUSHES) == 1u);
+        at = co->av_pts;
+        CHECK(pump_fn(out, 256u) == 256u);
+        CHECK(g_avf.starts == n + 1u && g_avf.last_start == at); /* re-anchored on the first new buffer */
+    }
 
     /* A HAL device is picked again: the renderer goes, HAL binds and starts. */
     before = g_fake.starts;

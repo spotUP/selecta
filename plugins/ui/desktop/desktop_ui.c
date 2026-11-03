@@ -465,6 +465,7 @@ typedef struct desk {
     sel_out_device dev[DESK_DEV_MAX];
     uint32_t dev_n, dev_clicks, dev_picks; /* devices listed, button clicks, picks sent as PREF_SET output.device */
     char dev_pick[SEL_OUT_DEVICE_UID_MAX]; /* the uid of the last pick ("" = System default) */
+    uint32_t dev_route_presents; /* I1039: system AirPlay route menu presentations already turned into a route pick */
     int search_keep;         /* 1 while the Home field click enters Search: the typed query stays */
     sel_gui_rect ring, field, caret; /* the last focus ring, the search field it hugs and the caret bar (stats line) */
     uint32_t caret_draws;
@@ -2814,6 +2815,46 @@ static sel_gui_rect song_menu_item_rect(const desk* d, int32_t k) {
     return rect_of(x, y + k * lpx(d, SONG_MENU_ITEM_H), w, lpx(d, SONG_MENU_ITEM_H));
 }
 
+/* I1039: sends a device pick (the pref the output plugin polls in its pump) and closes the device menu. */
+static void dev_pick_send(desk* d, const char* uid) {
+    char line[SEL_OUT_DEVICE_UID_MAX + 40];
+    snprintf(line, sizeof line, "PREF_SET output.device \"%s\"", uid);
+    desk_send(d, line);
+    snprintf(d->dev_pick, sizeof d->dev_pick, "%s", uid);
+    d->dev_picks++;
+    d->sm_open = 0;
+    d->uim.dirty |= SEL_UIM_DIRTY_VOLUME;
+    draw_home(d);
+}
+
+#ifdef SELECTA_DESKTOP_SDL
+/* I1039: while the device menu is open, the system AirPlay picker (AVRoutePickerView) covers the "AirPlay Speakers" row,
+ * so a click there opens macOS's own route menu; the route it picks reaches only the output's AVFoundation path, so a
+ * new presentation of that menu is the route pick. Elsewhere (mem backend, headless) the row stays a plain click. */
+static void dev_route_sync(desk* d) {
+    int32_t row = -1;
+    uint32_t k, seen;
+    if (d->sm_open && d->sm_step == 5) {
+        for (k = 0; k < d->dev_n; k++) {
+            if (strcmp(d->dev[k].uid, SEL_OUT_DEVICE_AIRPLAY_ROUTE) == 0) {
+                row = (int32_t)k + 1;
+            }
+        }
+    }
+    if (row >= 0) {
+        sel_gui_rect m = song_menu_item_rect(d, row);
+        desk_sdl_route_picker(d->sdl, m.x, m.y, m.w, m.h, 1);
+    } else {
+        desk_sdl_route_picker(d->sdl, 0, 0, 0, 0, 0);
+    }
+    seen = desk_sdl_route_picker_presents(d->sdl);
+    if (seen != d->dev_route_presents) {
+        d->dev_route_presents = seen;
+        dev_pick_send(d, SEL_OUT_DEVICE_AIRPLAY_ROUTE);
+    }
+}
+#endif
+
 static void song_menu_open(desk* d, int32_t x, int32_t y, const song_ref* ref) {
     d->sm_ref = *ref;
     d->sm_open = 1;
@@ -3414,15 +3455,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 continue;
             }
             if (d->sm_step == 5) { /* I1039: a device pick: the pref the output plugin polls in its pump */
-                char line[SEL_OUT_DEVICE_UID_MAX + 40];
-                const char* uid = k == 0 ? "" : d->dev[k - 1].uid;
-                snprintf(line, sizeof line, "PREF_SET output.device \"%s\"", uid);
-                desk_send(d, line);
-                snprintf(d->dev_pick, sizeof d->dev_pick, "%s", uid);
-                d->dev_picks++;
-                d->sm_open = 0;
-                d->uim.dirty |= SEL_UIM_DIRTY_VOLUME;
-                draw_home(d);
+                dev_pick_send(d, k == 0 ? "" : d->dev[k - 1].uid);
                 return 1;
             }
             if (d->sm_step == 3) { /* I647: Rename puts the name field into editing, Delete asks first */
@@ -15710,6 +15743,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             desk_resize(d, w, h);
         }
         desk_sdl_route(d);
+        dev_route_sync(d); /* I1039 */
         /* I442: the UI timers (toast, tooltip delay, search debounce) run here for the same reason as the tweens below: a
          * turn that returns early during playback would otherwise never reach them, and a toast stayed on screen for good. */
         if (d->live && desk_timers_tick(d)) {

@@ -186,6 +186,12 @@ endif()
 # gui headers only. The plugin sees it through SELECTA_DESKTOP_SDL.
 if(SELECTA_UI_DESKTOP)
   add_library(selecta_ui_desktop STATIC backend_sdl.c)
+  if(APPLE) # I1039: the system AirPlay picker (AVRoutePickerView) in the window
+    enable_language(OBJC)
+    target_sources(selecta_ui_desktop PRIVATE macos/route_picker.m)
+    target_compile_options(selecta_ui_desktop PRIVATE $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
+    target_link_libraries(selecta_ui_desktop PUBLIC "-framework AVKit" "-framework AppKit")
+  endif()
   target_include_directories(selecta_ui_desktop PRIVATE "${PROJECT_SOURCE_DIR}/include")
   target_link_libraries(selecta_ui_desktop PUBLIC SDL3::SDL3 selecta_gui)
   target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_ui_desktop)

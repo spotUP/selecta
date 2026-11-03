@@ -48,7 +48,7 @@ struct ca_out {
     int inited;         /* the unit is initialised: a device change must uninitialise it first */
     uint32_t callbacks; /* atomic */
     uint32_t frames;    /* atomic */
-    sel_tag stats[4];
+    sel_tag stats[5];
     char uid[SEL_OUT_DEVICE_UID_MAX]; /* the pref value the unit is bound to ("" = system default, followed) */
     AudioDeviceID dev;                /* the device the unit plays to */
     uint32_t default_changed;         /* atomic: the system default output moved since the last bind */
@@ -60,6 +60,7 @@ struct ca_out {
     int64_t av_pts;     /* frames queued so far: the presentation time of the next buffer */
     int16_t* av_buf;    /* CA_AV_CHUNK stereo frames, allocated at open */
     uint32_t av_buffers; /* atomic: sample buffers queued (the --stats sentinel out_av_buffers) */
+    uint32_t av_flushes; /* OUT_FLUSH calls that cleared the renderer queue (out_av_flushes) */
 };
 
 /* Queue ahead of the synchronizer clock: enough to ride out the pump's scheduling, small enough that a seek is heard soon. */
@@ -520,6 +521,19 @@ static uint32_t ca_av_pump(ca_out* o, uint32_t frames) {
     return done;
 }
 
+/* OUT_FLUSH: a seek or a user song change. On the AirPlay route path the renderer holds up to CA_AV_AHEAD_MS of the old
+ * position; drop it and stop the clock, so the next pump re-anchors the clock at the next buffer and the new position is
+ * heard at once. The HAL path queues nothing ahead of its render callback. Runs on the pump thread, like ca_av_pump. */
+static void ca_flush(void* state) {
+    ca_out* o = (ca_out*)state;
+    if (o->av == NULL) {
+        return;
+    }
+    av_be()->flush(o->av);
+    o->av_anchored = 0;
+    o->av_flushes++;
+}
+
 static uint32_t ca_pump(void* state, uint32_t frames) {
     ca_out* o = (ca_out*)state;
     uint32_t start;
@@ -562,8 +576,10 @@ static const sel_tag* ca_stats(void* state) {
     o->stats[1].value = __atomic_load_n(&o->callbacks, __ATOMIC_RELAXED);
     o->stats[2].tag = SEL_OUT_STAT_AV_BUFFERS;
     o->stats[2].value = __atomic_load_n(&o->av_buffers, __ATOMIC_RELAXED);
-    o->stats[3].tag = SEL_TAG_END;
-    o->stats[3].value = 0;
+    o->stats[3].tag = SEL_OUT_STAT_AV_FLUSHES;
+    o->stats[3].value = o->av_flushes;
+    o->stats[4].tag = SEL_TAG_END;
+    o->stats[4].value = 0;
     return o->stats;
 }
 
@@ -612,7 +628,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[8], SEL_OUT_STATS, SEL_TAG_FN(ca_stats));
     set(&g_hooks[9], SEL_OUT_DEVICES, SEL_TAG_FN(ca_devices));
     set(&g_hooks[10], SEL_OUT_LATENCY_QUERY, SEL_TAG_FN(ca_latency_query));
-    set(&g_hooks[11], SEL_TAG_END, 0);
+    set(&g_hooks[11], SEL_OUT_FLUSH, SEL_TAG_FN(ca_flush));
+    set(&g_hooks[12], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "coreaudio");
