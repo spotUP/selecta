@@ -29,6 +29,7 @@ SEL_PREF(OUTPUT_ID,          "output.id",          "",                          
 /* audio task priority; 30 is the default of the interrupt design (plan M2 D-M2-1) */
 SEL_PREF(AUDIO_PRIORITY,     "audio.priority",     "30",                                          SEL_PREF_PLAIN)
 /* output buffer in frames; 0: scaled from the machine */
+SEL_PREF(OUTPUT_DEVICE,      "output.device",      "",                                            SEL_PREF_PLAIN) /* uid of the picked output device; "" = follow the system default (I1039) */
 SEL_PREF(OUTPUT_BUFFER,      "output.buffer",      "0",                                           SEL_PREF_PLAIN)
 /* paula14 output buffer in frames (64 to 8192); empty: the built-in length (I729) */
 SEL_PREF(PAULA14_BUFFER,     "paula14.buffer",     "",                                            SEL_PREF_PLAIN)

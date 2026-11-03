@@ -3,6 +3,9 @@
  * tests can drive the whole render path with no audio device. */
 #include <selecta/output.h>
 
+#include <stdio.h>
+#include <string.h>
+
 #define NULL_BLOCK 512u
 
 typedef struct null_out {
@@ -94,9 +97,29 @@ static const sel_tag* null_stats(void* state) {
     return o->stats;
 }
 
+/* A fixed device list: the null output is the headless test sink, so the dui tests get a device picker with known rows
+ * (system default first, one AirPlay speaker) without a sound card (I1039). */
+static uint32_t null_devices(sel_out_device* out, uint32_t max) {
+    static const struct {
+        const char* uid;
+        const char* name;
+        uint32_t transport;
+    } fake[] = {{"null-builtin", "Built-in Speakers", SEL_OUT_TRANSPORT_BUILTIN},
+                {"null-homepod", "Living Room HomePod", SEL_OUT_TRANSPORT_AIRPLAY}};
+    uint32_t i;
+    for (i = 0; i < 2u && i < max; i++) {
+        memset(&out[i], 0, sizeof out[i]);
+        snprintf(out[i].uid, sizeof out[i].uid, "%s", fake[i].uid);
+        snprintf(out[i].name, sizeof out[i].name, "%s", fake[i].name);
+        out[i].transport = fake[i].transport;
+        out[i].is_default = i == 0;
+    }
+    return i;
+}
+
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[12];
+static sel_tag g_hooks[13];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -118,7 +141,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[7], SEL_OUT_PUMP, SEL_TAG_FN(null_pump));
     set(&g_hooks[8], SEL_OUT_STATS, SEL_TAG_FN(null_stats));
     set(&g_hooks[9], SEL_OUT_CLOCKLESS, 1);
-    set(&g_hooks[10], SEL_TAG_END, 0);
+    set(&g_hooks[10], SEL_OUT_DEVICES, SEL_TAG_FN(null_devices));
+    set(&g_hooks[11], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "null");

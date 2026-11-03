@@ -189,6 +189,15 @@ if(APPLE)
   set_tests_properties(coreaudio-play PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
 endif()
 
+# I1039: the CoreAudio output's device list, pick, default follow and latency through its plugin entry, on a fake device layer.
+if(APPLE)
+  add_executable(coreaudio_device_test coreaudio_device_test.c)
+  target_include_directories(coreaudio_device_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+  target_link_libraries(coreaudio_device_test PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")
+  add_test(NAME coreaudio-device COMMAND coreaudio_device_test)
+  set_tests_properties(coreaudio-device PROPERTIES PASS_REGULAR_EXPRESSION "coreaudio_device_ok")
+endif()
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/isolate_config.cmake")
 add_subdirectory(m0)
 add_subdirectory(nuade_ab)

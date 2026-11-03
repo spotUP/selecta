@@ -32,6 +32,7 @@ typedef struct sel_ui_open_args {
     const sel_tag* (*find_plugin)(uint32_t kind, const char* id);
     /* Refusal reason (I916): shell-owned buffer of why_cap bytes, NULL when the caller wants none. A UI that returns NULL from
      * UI_OPEN writes the reason it refused for here, and the shell's startup report carries it. */
+    const char* output_id; /* id of the output the shell opened (I1039): the UI asks that plugin for its device list; NULL = unknown */
     char* why;
     uint32_t why_cap;
 } sel_ui_open_args;

@@ -9,6 +9,8 @@
 #include <selecta/platform.h>
 #include <selecta/source.h>
 #include <selecta/ui.h>
+#include <selecta/output.h>
+
 #include <selecta/uimodel.h>
 
 #include "art.h"
@@ -142,6 +144,7 @@ typedef struct pls_meta_row {
 struct desk;
 static int desk_scope_online(const struct desk* d);
 #define DESK_VIZ_MAX 4u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope */
+#define DESK_DEV_MAX 16u /* I1039: output devices the picker lists */
 #define DESK_COVER_CACHE 12 /* I845: distinct covers on one screen (queue, shelves, grid) */
 
 typedef struct desk {
@@ -457,6 +460,11 @@ typedef struct desk {
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
     uint32_t nav_arrow_clicks; /* history arrow clicks */
     uint32_t vol_clicks, seek_clicks; /* footer bar clicks and drags sent as VOLUME and SEEK (I312) */
+    const char* output_id;      /* I1039: the id of the output the shell opened */
+    sel_out_devices_fn dev_fn;  /* I1039: the output plugin's device list hook, NULL when the output lists none */
+    sel_out_device dev[DESK_DEV_MAX];
+    uint32_t dev_n, dev_clicks, dev_picks; /* devices listed, button clicks, picks sent as PREF_SET output.device */
+    char dev_pick[SEL_OUT_DEVICE_UID_MAX]; /* the uid of the last pick ("" = System default) */
     int search_keep;         /* 1 while the Home field click enters Search: the typed query stays */
     sel_gui_rect ring, field, caret; /* the last focus ring, the search field it hugs and the caret bar (stats line) */
     uint32_t caret_draws;
@@ -1308,6 +1316,21 @@ static sel_gui_rect vol_bar_rect(const desk* d) {
                    lpx(d, 4));
 }
 
+/* I1039: the output devices button sits left of the volume speaker; it exists only when the output lists devices. */
+static sel_gui_rect dev_btn_rect(const desk* d) {
+    sel_gui_rect vb = vol_bar_rect(d);
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), ic = lpx(d, 16);
+    return rect_of(vb.x - 2 * (sp + ic), vb.y + vb.h / 2 - ic / 2, ic, ic);
+}
+
+/* I1039: reads the device list from the output plugin the shell opened (the registry hook SEL_OUT_DEVICES). */
+static void dev_load(desk* d) {
+    const sel_tag* desc = d->find_plugin != NULL && d->output_id != NULL ? d->find_plugin(SEL_PLUGIN_KIND_OUTPUT, d->output_id) : NULL;
+    const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    d->dev_fn = hooks != NULL ? (sel_out_devices_fn)sel_tag_find(hooks, SEL_OUT_DEVICES, 0) : NULL;
+    d->dev_n = d->dev_fn != NULL ? d->dev_fn(d->dev, DESK_DEV_MAX) : 0u;
+}
+
 /* The window-level overlays (the song menu and the dialog) float above every region, so a repaint of ANY region (the
  * sidebar hover fade, the queue widget) must end with this pass or it paints over the part of them it overlaps. */
 static void song_menu_draw(desk* d);
@@ -1373,6 +1396,13 @@ static void draw_widget(desk* d, uint32_t bit) {
         sel_gui_fill_rect(d->canvas, ir, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_VOLUME_2, ir, ic, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
         sel_gui_dirty_add(d->canvas, ir);
+        if (d->dev_n > 0u) {
+            sel_gui_rect br = dev_btn_rect(d);
+            sel_gui_fill_rect(d->canvas, br, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
+            sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_AIRPLAY, br, ic,
+                              ARGB(d->theme.token[d->sm_open && d->sm_step == 5 ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_TEXT_MUTED]));
+            sel_gui_dirty_add(d->canvas, br);
+        }
         draw_bar(d, vb, (uint32_t)v * 65536u / 100u, &d->vol_fill);
     } else if (bit == SEL_UIM_DIRTY_STATUS) {
         if (footer_one_row(d)) { /* the play or pause button already shows the state */
@@ -2747,6 +2777,9 @@ static int32_t song_menu_n(const desk* d) {
     if (d->sm_step == 2) {
         return 3;
     }
+    if (d->sm_step == 5) { /* I1039: System default plus every listed device */
+        return (int32_t)d->dev_n + 1;
+    }
     if (d->sm_step == 4) { /* I611: Sort by header, four sorts, separator, View as header, the view icon strip */
         return 8;
     }
@@ -2931,6 +2964,28 @@ static void song_menu_draw(desk* d) {
             const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k)
                               : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "No playlists";
             hover_reg(d, m);
+            if (d->sm_step == 5) { /* I1039: output devices: System default, then the list; the pick is checked, AirPlay rows carry the AirPlay icon */
+                const char* cur = desk_pref(d, "output.device", "");
+                const char* uid = k == 0 ? "" : d->dev[k - 1].uid;
+                int on = strcmp(cur, uid) == 0;
+                uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+                int air = k > 0 && d->dev[k - 1].transport == SEL_OUT_TRANSPORT_AIRPLAY;
+                if (lit) {
+                    sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h), lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
+                                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+                }
+                if (air) {
+                    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_AIRPLAY, rect_of(m.x + lpx(d, 8), m.y + (m.h - lpx(d, 16)) / 2, lpx(d, 16), lpx(d, 16)),
+                                      lpx(d, 16), on ? accent : ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+                }
+                sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 32), m.y + lpx(d, 4), m.w - lpx(d, 68), semi->line_height),
+                                  k == 0 ? "System default" : d->dev[k - 1].name, on ? accent : ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1, &d->text);
+                if (on) {
+                    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_CHECK, rect_of(m.x + m.w - lpx(d, 28), m.y + (m.h - lpx(d, 16)) / 2, lpx(d, 16), lpx(d, 16)),
+                                      lpx(d, 16), accent);
+                }
+                continue;
+            }
             if (d->sm_step == 4) { /* I611: section headers, the checked sort, a separator and the view icon strip */
                 uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
                 if (k == 0 || k == 6) {
@@ -3324,7 +3379,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (d->sm_open) {
-        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 ? song_menu_n(d) : 8;
+        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 || d->sm_step == 5 ? song_menu_n(d) : 8;
         int keep = 0;
         if (d->sm_step == 4) { /* I611: the library sort and view menu: sort rows pick a sort, the strip a view, headers and the separator stay */
             for (k = 0; k < 8; k++) {
@@ -3357,6 +3412,18 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         for (k = 0; k < n; k++) {
             if (!in_rect(song_menu_item_rect(d, k), ev->x, ev->y)) {
                 continue;
+            }
+            if (d->sm_step == 5) { /* I1039: a device pick: the pref the output plugin polls in its pump */
+                char line[SEL_OUT_DEVICE_UID_MAX + 40];
+                const char* uid = k == 0 ? "" : d->dev[k - 1].uid;
+                snprintf(line, sizeof line, "PREF_SET output.device \"%s\"", uid);
+                desk_send(d, line);
+                snprintf(d->dev_pick, sizeof d->dev_pick, "%s", uid);
+                d->dev_picks++;
+                d->sm_open = 0;
+                d->uim.dirty |= SEL_UIM_DIRTY_VOLUME;
+                draw_home(d);
+                return 1;
             }
             if (d->sm_step == 3) { /* I647: Rename puts the name field into editing, Delete asks first */
                 uint32_t act = sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k);
@@ -7759,6 +7826,11 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "footer vol_bar %d %d %d %d seek_bar %d %d %d %d vol_clicks=%u seek_clicks=%u seek_fill=%d\n", (int)vb.x,
                      (int)vb.y, (int)vb.w, (int)vb.h, (int)skb.x, (int)skb.y, (int)skb.w, (int)skb.h,
                      (unsigned)d->vol_clicks, (unsigned)d->seek_clicks, (int)d->seek_fill);
+        {
+            sel_gui_rect db = dev_btn_rect(d);
+            o = dump_put(d, o, "devices btn %d %d %d %d n=%u clicks=%u picks=%u pick=%s\n", (int)db.x, (int)db.y, (int)db.w, (int)db.h,
+                         (unsigned)d->dev_n, (unsigned)d->dev_clicks, (unsigned)d->dev_picks, d->dev_pick);
+        }
     }
     if (o + 200u < sizeof d->library_dump) { /* the hover state (I272) */
         o = dump_put(d, o,
@@ -13241,6 +13313,20 @@ static int footer_bar_pointer(desk* d, const sel_gui_input* ev) {
     if (!(ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) && ev->kind != SEL_GUI_IN_DRAG) {
         return 0;
     }
+    if (ev->kind == SEL_GUI_IN_CLICK && d->dev_n > 0u && in_rect(dev_btn_rect(d), ev->x, ev->y)) { /* I1039: the devices button opens the picker above itself */
+        sel_gui_rect br = dev_btn_rect(d);
+        dev_load(d);
+        d->sm_step = 5;
+        d->sm_open = 1;
+        d->menu_x = br.x;
+        d->menu_y = br.y - ((int32_t)d->dev_n + 1) * lpx(d, SONG_MENU_ITEM_H);
+        d->menus++;
+        d->dev_clicks++;
+        d->clicks++;
+        d->uim.dirty |= SEL_UIM_DIRTY_VOLUME;
+        draw_home(d);
+        return 1;
+    }
     for (uint32_t k = 0; k < 2u; k++) {
         sel_gui_rect b = bars[k];
         int32_t band = lpx(d, 16);
@@ -15229,6 +15315,8 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->host = a->host;
     d->find_plugin = a->find_plugin;
     viz_load(d);
+    d->output_id = a->output_id;
+    dev_load(d);
     d->input_consumed = a->input_consumed;
     d->hash = 2166136261u;
     if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format") != NULL ? desk_opt(a, "--format") : sel_uim_default_format(backend))) {
