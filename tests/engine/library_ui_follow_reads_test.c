@@ -95,6 +95,7 @@ static int i906f2e_sync(const sel_host* host, const char* arg, int64_t now, sel_
 static const sel_source g_sync_src = {
     "i906f2esrc", "I906f2e sync", "", "Syncs on demand.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, i906f2e_sync, SEL_SOURCE_SYNCS, NULL, NULL,
     NULL,
+    NULL, /* search_ready (I1037) */
 };
 
 /* I906f2f: like the I906f2e source, but its sync reports a "new this week" count and carries the flag, so sync_collect persists it. */
@@ -116,6 +117,7 @@ static int i906f2f_sync(const sel_host* host, const char* arg, int64_t now, sel_
 static const sel_source g_ntw_src = {
     "i906f2fsrc", "I906f2f sync", "", "Syncs with a new this week count.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, i906f2f_sync,
     SEL_SOURCE_SYNCS | SEL_SOURCE_NEW_THIS_WEEK, NULL, NULL, NULL,
+    NULL, /* search_ready (I1037) */
 };
 
 /* The id PLAYLIST_CREATE answers for the "addf" playlist (LIBRARY_RESULT key "playlist", name, value = id). */
@@ -145,6 +147,7 @@ static int pin_search(const sel_host* host, const char* query, sel_search_sink* 
 
 static const sel_source g_pin_src = {
     "i906f2src", "I906f2 pin source", "", "One search hit.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, pin_search,
+    NULL, /* search_ready (I1037) */
 };
 
 /* I906f2c: a replayer of one loud constant tone (extension "lvl") so a song opens for real and the adaptive leveler measures it. */

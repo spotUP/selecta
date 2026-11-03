@@ -639,6 +639,7 @@ static const sel_source g_local = {
     "local", "Local files", "", "Folders on this machine.", g_tags,
     NULL, NULL, NULL, local_url, local_url, NULL, NULL, NULL, 0, NULL, NULL,
     NULL, /* search (I406) */
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_source* sel_source_local(void) {

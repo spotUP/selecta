@@ -398,6 +398,7 @@ static const sel_source g_radiobrowser = {
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, rb_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     DEFAULT_BASE "/", rb_play_url,
     rb_search,
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

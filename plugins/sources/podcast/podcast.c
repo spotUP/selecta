@@ -432,6 +432,7 @@ static const sel_source g_podcast = {
     g_tags, NULL, parse, NULL, NULL, NULL, NULL, NULL, pc_sync,
     SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS | SEL_SOURCE_SEEKABLE, "https://podcastindex.org/", pc_play_url,
     NULL, /* search (I406) */
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

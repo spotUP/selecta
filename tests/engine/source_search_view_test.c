@@ -65,7 +65,7 @@ static int hook_d(const sel_host* host, const char* q, sel_search_sink* out) {
     return 0;
 }
 
-#define SRC(ID, NAME, HOOK) { ID, NAME, "", "I1019b stand-in.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, HOOK }
+#define SRC(ID, NAME, HOOK) { ID, NAME, "", "I1019b stand-in.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, HOOK, NULL }
 static const sel_source g_a = SRC("i1019va", "Fake Alpha", hook_a), g_c = SRC("i1019vc", "Fake Gamma", hook_c), g_d = SRC("i1019vd", "Fake Delta", hook_d);
 
 static void sink(void* ctx, const sel_message* evt) {

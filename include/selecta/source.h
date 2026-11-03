@@ -80,6 +80,10 @@ typedef struct sel_source {
      * artist, format) (path is the key part after "<id>:"). Returns the number of hits, or -1 when the service
      * cannot be reached. NULL for a source without a search. */
     int (*search)(const sel_host* host, const char* query, sel_search_sink* out);
+    /* I1037: NULL (always ready) or 1 when the search can run now, 0 when the source is not configured for it (no credentials). The
+     * All-sources fan-out leaves a source that answers 0 out (no bucket, no request, no section); a search naming that source still
+     * runs and reports its own failure. */
+    int (*search_ready)(const sel_host* host);
 } sel_source;
 enum {
     SEL_SOURCE_REMOTE = 1u,        /* songs live off the machine: fetched through the cache */
