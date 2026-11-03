@@ -1,0 +1,9 @@
+{"headers": {"status": "success", "code": 0, "results_count": 3},
+ "results": [
+  {"id": "301", "name": "Chip Dream", "artist_name": "jam_one", "license_ccurl": "http://creativecommons.org/licenses/by/3.0/",
+   "audio": "http://jam.search.test/audio/301.mp3", "shareurl": "https://www.jamendo.com/track/301"},
+  {"id": "302", "name": "Chip Night", "artist_name": "jam_two", "license_ccurl": "http://creativecommons.org/licenses/by-nc-sa/3.0/",
+   "audio": "http://jam.search.test/audio/302.mp3", "shareurl": "https://www.jamendo.com/track/302"},
+  {"id": "303", "name": "Chip No Audio", "artist_name": "jam_three", "license_ccurl": "http://creativecommons.org/licenses/by/3.0/",
+   "audio": "", "shareurl": "https://www.jamendo.com/track/303"}
+ ]}

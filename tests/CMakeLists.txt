@@ -2595,6 +2595,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(ccmixter-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "ccmixter_search_ok")
 
+  # I1024b: SOURCE_SEARCH jamendo over a local /tracks fixture: client id, audio filter, sink rows, -1 when unreachable or keyless.
+  add_test(NAME jamendo-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/jamendo_search.cmake")
+  set_tests_properties(jamendo-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "jamendo_search_ok")
+
   # I725f: the podcast source: RSS parse, Podcast Index search auth, Range playback and seek, User-Agent.
   add_test(NAME podcast
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"

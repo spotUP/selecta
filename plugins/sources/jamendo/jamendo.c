@@ -35,6 +35,7 @@
 #include "source/json_scan.h"
 #include "source/license_name.h"
 #include "source/sync_stat.h"
+#include "source/url_path.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -191,6 +192,8 @@ typedef struct run {
     const sel_host* host;
     const sel_catalogue* cat;
     uint32_t rows, skipped;
+    int stopped;
+    const sel_search_sink* sink; /* search: rows go to the sink and nothing is written to the catalogue; NULL: sync */
 } run;
 
 static void add_track(void* ctx, track* t) {
@@ -198,6 +201,9 @@ static void add_track(void* ctx, track* t) {
     char path[ID_MAX + 240u], format[128], lic[64];
     sel_catalogue_song song;
 
+    if (r->stopped) {
+        return; /* the search sink had enough */
+    }
     if (!id_ok(t->id) || t->name[0] == '\0' || t->audio[0] == '\0') {
         r->skipped++;
         return;
@@ -207,6 +213,13 @@ static void add_track(void* ctx, track* t) {
     snprintf(path, sizeof path, "%s/%s/%s", t->id, t->artist[0] != '\0' ? t->artist : "unknown", t->name);
     sel_license_name(t->license, lic, sizeof lic);
     snprintf(format, sizeof format, "Jamendo - %s", lic);
+    if (r->sink != NULL) {
+        r->rows++;
+        if (!r->sink->row(r->sink->ctx, path, t->name, t->artist, format)) {
+            r->stopped = 1; /* the sink asked to stop */
+        }
+        return;
+    }
     memset(&song, 0, sizeof song);
     song.path = path;
     song.format = format;
@@ -323,6 +336,42 @@ static int jm_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* 
     return ok;
 }
 
+#define SEARCH_ROWS 50u /* tracks a search asks for, best match first */
+
+/* Search: one GET <base>/tracks/?search=<query> with the client id (the sync's query). The rows go to the sink with the sync's
+ * key <id>/<artist>/<name>, the catalogue is not touched. No client id: no request, -1. Returns the row count, -1 when the
+ * service answers no 200. */
+static int jm_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    const sel_net* net = host != NULL && host->net != NULL ? host->net(host) : NULL;
+    const sel_catalogue* cat = host != NULL && host->catalogue != NULL ? host->catalogue(host) : NULL;
+    char cid[CLIENT_MAX], dir[URL_BYTES - 64u], enc[300], url[URL_BYTES], path[URL_BYTES];
+    uint32_t rq = 0;
+    unsigned long got = 0;
+    run r;
+    FILE* f;
+    int ok = 0;
+
+    memset(&r, 0, sizeof r);
+    r.host = host;
+    r.cat = cat;
+    r.sink = out;
+    if (net == NULL || cat == NULL || query == NULL || out == NULL || !client_id(host, cid, sizeof cid) ||
+        !cat->cache_dir(host, "jamendo", dir, sizeof dir) || !sel_url_query_encode(query, enc, sizeof enc)) {
+        return -1;
+    }
+    snprintf(url, sizeof url, "%s/tracks/?client_id=%s&format=json&audioformat=mp31&limit=%u&search=%s", api_base(), cid,
+             SEARCH_ROWS, enc);
+    /* A search may run while a sync of this source is fetching: each keeps its own file. */
+    snprintf(path, sizeof path, "%s/search.json", dir);
+    if (net->get_file(host, url, path, &rq, &got) == 200 && (f = fopen(path, "rb")) != NULL) {
+        read_results(f, add_track, &r);
+        fclose(f);
+        ok = 1;
+    }
+    remove(path);
+    return ok ? (int)r.rows : -1;
+}
+
 typedef struct pick {
     char audio[URL_BYTES - 64u];
 } pick;
@@ -419,7 +468,7 @@ static const sel_source g_jamendo = {
     "Creative Commons music streamed from Jamendo (non-commercial use; needs your own free API client id).",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, jm_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     SITE_HOME, jm_play_url,
-    NULL, /* search (I406) */
+    jm_search,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
