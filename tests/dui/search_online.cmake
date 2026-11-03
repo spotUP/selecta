@@ -41,12 +41,12 @@ function(so_online outvar dump)
   set(${outvar} "${CMAKE_MATCH_1};${CMAKE_MATCH_2};${CMAKE_MATCH_3};${CMAKE_MATCH_4};${CMAKE_MATCH_5};${CMAKE_MATCH_6};${CMAKE_MATCH_7}" PARENT_SCOPE)
 endfunction()
 
-# Pass 1: find the Modules.pl chip (chip 0 is the library, chip 1 the first searchable source).
+# Pass 1: find the Modules.pl chip (chip 0 is All sources, chip 1 the Library, chip 2 the first searchable source).
 file(REMOVE_RECURSE "${WORK}/cfg")
 file(REMOVE "${WORK}/library.db")
 so_run(base "wait 300\n")
-if(NOT "${base}" MATCHES "online_chip 1 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no online_chip 1 on the Search page:\n${base}")
+if(NOT "${base}" MATCHES "online_chip 2 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no online_chip 2 on the Search page:\n${base}")
 endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
@@ -100,19 +100,19 @@ if(NOT "${played}" MATCHES "song=([^\n]*)\n" OR NOT CMAKE_MATCH_1 MATCHES "${row
   message(FATAL_ERROR "the engine must open ${row_key}, got '${CMAKE_MATCH_1}':\n${played}")
 endif()
 
-# Pass 4: same config dir, no chip click: the scope comes back from the pref.
+# Pass 4 (I1019f): same config dir, no chip click: the source filter is not remembered, the page opens on All sources.
 so_run(again "wait 300\n")
 so_online(on "${again}")
 list(GET on 0 scope)
-if(NOT scope STREQUAL "modulespl")
-  message(FATAL_ERROR "the scope must come back as modulespl after a restart, got '${scope}':\n${again}")
+if(NOT scope STREQUAL "-")
+  message(FATAL_ERROR "I1019f: the scope must not be remembered, got '${scope}' after a restart:\n${again}")
 endif()
 
 # I406b: the pinned row survived the restart: the modulespl source holds 1 song, and this run searched nothing.
 if(NOT "${again}" MATCHES "source [0-9]+ modulespl\\|[^|]*\\|[^|]*\\|[0-9]+\\|1\n")
   message(FATAL_ERROR "I406b: after a restart the modulespl source must count the 1 pinned song:\n${again}")
 endif()
-if(NOT "${again}" MATCHES "online scope=modulespl searches=0 ")
+if(NOT "${again}" MATCHES "online scope=- searches=0 ")
   message(FATAL_ERROR "I406b: the restart run must not search:\n${again}")
 endif()
 
