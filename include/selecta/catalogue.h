@@ -61,6 +61,9 @@ typedef struct sel_catalogue {
     /* Writes `count` notes onto songs already in the library, after the queued rows. Returns the number of songs
      * annotated, or -1 when the batch is rejected. */
     int32_t (*annotate)(const sel_host* host, const sel_catalogue_note* notes, uint32_t count);
+    /* I1026: reports how far the fetch has come, `done` of `total` units (rows, files, bytes: the source's choice). The UI
+     * draws a progress bar from it; a source that never calls it (or passes total 0) shows an indeterminate sweep. */
+    void (*progress)(const sel_host* host, uint32_t done, uint32_t total);
 } sel_catalogue;
 
 SEL_EXTERN_C_END

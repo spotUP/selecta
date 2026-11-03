@@ -360,8 +360,16 @@ static int32_t cat_annotate(const sel_host* host, const sel_catalogue_note* note
     return matched;
 }
 
+static void cat_progress(const sel_host* host, uint32_t done, uint32_t total) {
+    sel_sync_ctx* c = ctx_of(host);
+
+    c->prog_done = done;
+    c->prog_total = total;
+}
+
 static const sel_catalogue g_catalogue = {cat_begin,    cat_song,      cat_remove,   cat_move,  cat_commit,
-                                          cat_abort,    cat_cache_dir, cat_list_dir, cat_now, cat_annotate};
+                                          cat_abort,    cat_cache_dir, cat_list_dir, cat_now, cat_annotate,
+                                          cat_progress};
 
 static const sel_catalogue* host_catalogue(const sel_host* host) {
     return ctx_of(host)->scfg.lib != NULL ? &g_catalogue : NULL;

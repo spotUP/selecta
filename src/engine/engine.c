@@ -4635,6 +4635,8 @@ void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out) {
     out->active = (uint32_t)(e->sync_running != 0);
     if (out->active) {
         out->rows = e->sync_ctx.rows_done;
+        out->done = e->sync_ctx.prog_done;
+        out->total = e->sync_ctx.prog_total;
         snprintf(out->source, sizeof out->source, "%s", e->sync_id);
     }
     out->queued = (uint32_t)e->sync_next_n;

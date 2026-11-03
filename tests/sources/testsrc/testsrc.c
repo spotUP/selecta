@@ -27,8 +27,20 @@ static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_
     if (cat == NULL || !cat->begin(host, "testsrc")) {
         return 0;
     }
-    if (getenv("SELECTA_TESTSRC_SLOW_MS") != NULL) { /* I782: the dui-sync-nowait test keeps the sync running while it clicks */
+    if (getenv("SELECTA_TESTSRC_SLOW_MS") != NULL && getenv("SELECTA_TESTSRC_TOTAL") == NULL) { /* I782: the dui-sync-nowait test keeps the sync running while it clicks */
         usleep((useconds_t)strtoul(getenv("SELECTA_TESTSRC_SLOW_MS"), NULL, 10) * 1000u);
+    }
+    if (getenv("SELECTA_TESTSRC_TOTAL") != NULL && cat->progress != NULL) { /* I1026: the dui-sync-bar test; reports 0, 1/4 .. 4/4 of the total, SLOW_MS/16 apart, then holds at the total for SLOW_MS */
+        uint32_t total = (uint32_t)strtoul(getenv("SELECTA_TESTSRC_TOTAL"), NULL, 10), k;
+        useconds_t gap = getenv("SELECTA_TESTSRC_SLOW_MS") != NULL ? (useconds_t)strtoul(getenv("SELECTA_TESTSRC_SLOW_MS"), NULL, 10) * 1000u / 16u : 0u;
+
+        for (k = 0; k <= 4u; k++) {
+            cat->progress(host, total / 4u * k, total);
+            usleep(gap);
+        }
+        if (getenv("SELECTA_TESTSRC_SLOW_MS") != NULL) {
+            usleep((useconds_t)strtoul(getenv("SELECTA_TESTSRC_SLOW_MS"), NULL, 10) * 1000u);
+        }
     }
     for (i = 0; i < 3; i++) {
         char path[16];
