@@ -39,7 +39,8 @@
     X(CHEVRON_UP, "chevron-up") \
     X(SQUARE, "square") \
     X(INFO, "info") \
-    X(FOLDER, "folder")
+    X(FOLDER, "folder") \
+    X(AIRPLAY, "airplay")
 
 typedef enum sel_gui_icon {
 #define X(id, file) SEL_GUI_ICON_##id,

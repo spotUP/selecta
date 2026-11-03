@@ -703,6 +703,7 @@ int main(int argc, char** argv)
     args.host = host;
     args.input_consumed = &input_consumed;
     args.find_plugin = sel_registry_find;
+    args.output_id = out_id;
     args.argc = argc;
     args.argv = (const char* const*)argv;
     args.why = ui_why;
