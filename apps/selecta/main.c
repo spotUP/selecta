@@ -53,6 +53,7 @@
 /* The open UIs (DUI-P1-2): every `--ui <id>` opens one, each sees every event and takes its turn in the wait loop.
  * Slot 0 is the primary UI; its stats fill the exit lines and UI_SWITCH replaces it (DUI-P1-1). */
 #define SHELL_MAX_UIS 4
+#define SHELL_MAX_ARGS 256 /* the default-backend argv copy (I1023) holds this many arguments */
 typedef struct shell_ui {
     const char* id;
     void* state;
@@ -273,6 +274,16 @@ static int scripted_run(int argc, char** argv, int has_keys, int out_is_null) {
 }
 #endif
 
+/* I1023: a launch with no --ui takes the machine default UI (the desktop UI on macOS) only when a person started it by
+ * double-click: no terminal on stdin or stdout, and none of the scripted-run markers (--keys, --console-frames, --size,
+ * --output). Anything else keeps the text UI, so test and terminal runs never open a window. --input is deliberately not a
+ * marker: it is the desktop UI's own script file, so a run that passes it is asking for the desktop. */
+static int default_ui_allowed(int argc, char** argv) {
+    return !isatty(0) && !isatty(1) && option(argc, argv, "--keys", NULL) == NULL &&
+           option(argc, argv, "--console-frames", NULL) == NULL && option(argc, argv, "--size", NULL) == NULL &&
+           option(argc, argv, "--output", NULL) == NULL;
+}
+
 /* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
 static int ui_resolve(const char* id, shell_ui* u) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_UI, id);
@@ -471,7 +482,7 @@ int main(int argc, char** argv)
     const sel_host* host = sel_host_default();
     const sel_tag* machine_tags = sel_machine_probe(host); /* probed once; the registry hides what it cannot run */
     const char* out_id;
-    const char* ui_id = option(argc, argv, "--ui", "text");
+    const char* ui_id = option(argc, argv, "--ui", NULL); /* NULL: the machine default (I1023), set after the registry is up */
     const char* start = option(argc, argv, "--start-dir", NULL);
     const char* catalogue = option(argc, argv, "--catalogue", NULL);
     sel_library* library = NULL;
@@ -551,6 +562,24 @@ int main(int argc, char** argv)
     sel_trace_load_address();
     sel_registry_init_machine(host, machine_tags);
     sel_trace(host, "registry init done");
+    if (ui_id == NULL) {
+        /* I1023: a launch with no --ui (a double-click on Selecta.app) takes the machine default UI, and its default backend. */
+        int user_launch = default_ui_allowed(argc, argv);
+        const char* dflt_backend = user_launch ? sel_registry_default_backend(machine_tags) : NULL;
+        static char* dflt_argv[SHELL_MAX_ARGS + 3];
+        ui_id = user_launch ? sel_registry_default_ui(machine_tags) : "text";
+        if (dflt_backend != NULL && option(argc, argv, "--backend", NULL) == NULL && argc <= SHELL_MAX_ARGS) {
+            int k;
+            for (k = 0; k < argc; k++) {
+                dflt_argv[k] = argv[k];
+            }
+            dflt_argv[argc] = (char*)"--backend";
+            dflt_argv[argc + 1] = (char*)dflt_backend;
+            dflt_argv[argc + 2] = NULL;
+            argv = dflt_argv;
+            argc += 2;
+        }
+    }
     out_id = option(argc, argv, "--output", sel_registry_default_output(machine_tags));
     is_null = strcmp(out_id, "null") == 0;
     int_id = option(argc, argv, "--integration",

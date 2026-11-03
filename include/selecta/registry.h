@@ -56,6 +56,11 @@ const sel_tag* sel_registry_find(uint32_t kind, const char* id);
  * SEL_MACHINE_AUDIO list ("paula,ahi") that is a registered output, else "null". Call after
  * sel_registry_init_machine; the string is the plugin's own PLUGIN_ID. */
 const char* sel_registry_default_output(const sel_tag* machine);
+/* UI a launch with no --ui opens (I1023): "desktop" on macOS when the desktop plugin is registered, else "text"
+ * (Amiga and every other host keep "text"). Call after sel_registry_init_machine. */
+const char* sel_registry_default_ui(const sel_tag* machine);
+/* Backend the default UI draws through when no --backend is given: "sdl" for the desktop default, else NULL. */
+const char* sel_registry_default_backend(const sel_tag* machine);
 /* The rate an app mixes and opens the output at: the output'"'"'s SEL_OUT_RATE_FOR answer for `machine`,
  * SEL_DEFAULT_OUTPUT_RATE (44100) when `hooks` has none. The one place the rate is chosen; the apps never hardcode it. */
 #define SEL_DEFAULT_OUTPUT_RATE 44100u
