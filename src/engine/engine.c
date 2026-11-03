@@ -1964,6 +1964,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     char cached[SEL_BROWSE_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
     char resolved[SEL_BROWSE_PATH_MAX];
+    int station = 0; /* I1031: the song is a station of a streams source */
     int seekable = 0; /* I725f: the song's source answers HTTP Range (podcast): the stream gets a length and seek */
     /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
     const sel_play_meta* pm = play_meta_find(e, path);
@@ -1992,6 +1993,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         }
         if (sr > 0) {
             path = resolved;
+            station = 1;
         }
     }
     if (e->lib != NULL && sel_cache_is_remote(path)) {
@@ -2050,6 +2052,9 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             copy[n] = 0;
             *size = n;
             *live = st;
+            if (station) {
+                sel_live_mark_station(st);
+            }
             return copy;
         }
     }
