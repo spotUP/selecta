@@ -55,6 +55,43 @@ if(NOT "${o}" MATCHES "searchrow [0-9]+ [^\n]*key=modulespl:")
   message(FATAL_ERROR "the From rows are not song rows of the shared loop (no searchrow with a modulespl: key):\n${o}")
 endif()
 
+# ---- I1030: a library that also matches the query (Johan's real library) fills the Songs, Albums and Artists groups (16 rows each),
+# so the From sections start past row 51 and Radio Browser, the last bucket, past row 64. The page draws the whole grouped result,
+# scrolled in pixels; a view window shorter than the search text hid the last source's section (VIEW_WINDOW 64). The sentinel: the
+# radiobrowser bucket ran and its 2 rows reached the From Radio Browser section with a full library above it.
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-search-all needs the sqlite3 command line tool to load the matching library")
+endif()
+set(full_db "${WORK}/full.db")
+file(REMOVE "${full_db}")
+dui_run(init --db "${full_db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+set(sql "BEGIN;\n")
+foreach(i RANGE 1 40)
+  string(APPEND sql "INSERT INTO songs(id, key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES(${i}, 'chipfx:${i}', 'local', 'chipfx/${i}.mod', 'Chip Tune ${i}', 'Chip Artist ${i}', 'Chip Album ${i}', 'mod', 1992, 'Chiptune', 120000, ${i});\n")
+endforeach()
+string(APPEND sql "COMMIT;\n")
+file(WRITE "${WORK}/full.sql" "${sql}")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${full_db}" INPUT_FILE "${WORK}/full.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "I1030: loading the matching library failed: ${err}")
+endif()
+file(REMOVE_RECURSE "${WORK}/cfg")
+file(WRITE "${WORK}/in.txt" "wait 300\nkey c\nkey h\nkey i\nkey p\nkey enter\n")
+foreach(i RANGE 1 40)
+  file(APPEND "${WORK}/in.txt" "wait 300\n")
+endforeach()
+dui_run(f --db "${full_db}" --ui desktop --backend mem --view search --canvas 1280x800 --clock fixed --stats
+  --input "${WORK}/in.txt")
+if(NOT "${f}" MATCHES "search groups songs=40 ")
+  message(FATAL_ERROR "I1030: the library must answer 40 songs for chip:\n${f}")
+endif()
+if(NOT "${f}" MATCHES "search_section [0-9]+ rows=2 From Radio Browser \\(2\\)\n")
+  string(REGEX MATCHALL "search_section [0-9]+ rows=[0-9]+ [^\n]*" fsec "${f}")
+  message(FATAL_ERROR "I1030: with a full library above, no 'From Radio Browser' section with 2 rows (sections: ${fsec}):\n${f}")
+endif()
+
 # ---- I1019f: the source chip row. Chips: All sources (0), Library (1), then each enabled searchable source (2 = Internet Archive, 3 = Modules.pl, I1024a).
 # The source row and the facet row are drawn always; a source pick never hides the facet row; the filter is not persisted.
 function(sa_run outvar input)

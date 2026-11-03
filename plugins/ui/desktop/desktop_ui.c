@@ -7926,7 +7926,7 @@ static uint32_t lib_grid_cols(const desk* d, sel_gui_rect mn) {
 /* Registers view row k of the Library page with the song menu when it is a song (I371, DUI-P4-16): a tree leaf or a column
  * song (queue kind, path from the engine), a Files row that is a file, a History row naming a song (home kind, album 0).
  * Folders, nodes, headings and albums are not songs. Only rows whose top is in the list are registered, so the registry
- * and the hover list hold the visible rows: the view window is at most 64 rows (SEARCH_WINDOW_ROWS), under SM_ROWS. */
+ * and the hover list hold the visible rows: rows outside the list are skipped and the registry stops at SM_ROWS. */
 static void lib_view_row_reg(desk* d, sel_gui_rect mn, const sel_state* st, uint32_t k, sel_gui_rect r) {
     const sel_view_row* vr = &st->view->rows[k];
     char path[sizeof((song_ref*)0)->path];
@@ -8693,7 +8693,11 @@ static int library_click(desk* d, int32_t x, int32_t y) {
 /* ---- Search (DUI-P4-6): the query field on top, facet chips, and the engine's QUERY rows grouped by type. The engine
  * does the search (LIBRARY_SEARCH, the query language incl. `format:mod`); the debounce reuses the tooltip delay pattern
  * (a UI clock stamp, a wait hint for the idle block, a tick that fires once). */
-enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_WINDOW_ROWS = 64 };
+enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4 };
+/* The Search page draws the whole grouped result (library groups, then one From section per source) and scrolls it in
+ * pixels, so its view window holds every row the search text can hold; a shorter window cut the last From sections off
+ * behind a library that matches the query (I1030: From Radio Browser missing on All sources). */
+enum { SEARCH_WINDOW_ROWS = SEL_VIEW_WINDOW_MAX };
 #define search_facet_name sel_uim_search_facets
 
 /* ---- I406a: searching an online source from the Search page. The scope chips pick the library or one source that has a
@@ -9157,7 +9161,7 @@ static void draw_search(desk* d) {
         /* I615b: the results follow the view mode the user picked. Grid and Cover Flow draw the entries of the shown facet as
          * artwork tiles, the same renderers as the Library; the group headings only feed the counts. Only song entries keep
          * their key, so only they open the song menu. */
-        sel_view_row tiles[SEARCH_WINDOW_ROWS];
+        static sel_view_row tiles[SEARCH_WINDOW_ROWS]; /* 256 rows: off the stack; the draw runs on the UI thread only */
         sel_view_state fv = *v;
         uint32_t group = 0, n = 0;
         int show = 0;
