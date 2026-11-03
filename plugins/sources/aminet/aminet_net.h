@@ -17,4 +17,11 @@ typedef struct sel_aminet_net_stats {
 int sel_aminet_net_sync(const sel_host* host, const char* base, sel_aminet_sync_stats* stats,
                         sel_aminet_net_stats* net);
 
+#define SEL_AMINET_SEARCH_PATH "/search?query=%s&path%%5B%%5D=mods&type=advanced&sort=name"
+
+/* I1024g: one GET `<base>/search?query=<query>&path[]=mods&type=advanced&sort=name`; the packages go to `out` as the
+ * sync's rows and the catalogue is not touched. The answer file is the search's own and is removed. Returns the rows
+ * (0 for no hit), -1 when the site answers no 200. */
+int sel_aminet_net_search(const sel_host* host, const char* base, const char* query, const sel_search_sink* out);
+
 #endif
