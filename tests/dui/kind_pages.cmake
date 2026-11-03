@@ -114,14 +114,26 @@ function(expect_kind dump kind label)
   endif()
 endfunction()
 
-set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1600) # 1600: the source row sits below the album, artist and composer rows
+set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}")
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
+# The sidebar lists every registered source (I1022: HVSC sat at y=1540, under the 1600px canvas's footer, so the click landed on the footer
+# and the app stayed on Home), and rows outside the sidebar view take no click. The canvas is therefore as tall as the row needs: the row's
+# bottom edge plus the footer.
+set(FOOTER_ROOM 140)
 # Each open touches Recents and reorders the sidebar, so the row is read from an idle run right before the run that clicks it.
 function(open_run out tag kind name script)
-  dui_run(idle_${tag} ${common} --input "${WORK}/idle.txt")
+  set(canvas 1280x1600)
+  dui_run(idle_${tag} ${common} --canvas ${canvas} --input "${WORK}/idle.txt")
   side_row(xy "${idle_${tag}}" ${kind} "${name}")
+  string(REGEX REPLACE "^[0-9]+ " "" cy "${xy}")
+  math(EXPR need "${cy} + ${FOOTER_ROOM}")
+  if(need GREATER 1600)
+    set(canvas 1280x${need})
+    dui_run(idle2_${tag} ${common} --canvas ${canvas} --input "${WORK}/idle.txt")
+    side_row(xy "${idle2_${tag}}" ${kind} "${name}")
+  endif()
   file(WRITE "${WORK}/${tag}.txt" "click ${xy}\nwait 100\n${script}")
-  dui_run(run_${tag} ${common} --input "${WORK}/${tag}.txt")
+  dui_run(run_${tag} ${common} --canvas ${canvas} --input "${WORK}/${tag}.txt")
   set(${out} "${run_${tag}}" PARENT_SCOPE)
 endfunction()
 
