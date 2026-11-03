@@ -67,7 +67,7 @@ if(NOT SEL_AMIGA)
     add_test(NAME ${tname}
       COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs" "-DBUILD_TYPE=${CMAKE_BUILD_TYPE}"
         "-DWORK=${PROJECT_BINARY_DIR}/tests/${tname}" "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden" "-DSQLITE3=$<TARGET_FILE:sel_sqlite3_shell>"
-        "-DSDL_BUILT=${SELECTA_UI_DESKTOP}" "-DSID_MODULES=${PROJECT_BINARY_DIR}/tests/fixtures/plugin_sidfeed/mod" "-DGENMOD=$<TARGET_FILE:gen_testmod>" "-DUNIT=$<TARGET_FILE:dui_draw_unit>" "-DTAGGED=${PROJECT_SOURCE_DIR}/tests/m3/stream" "-DGUISRC=${PROJECT_SOURCE_DIR}/src/gui" "-DGUIHDR=${PROJECT_SOURCE_DIR}/include/selecta/gui" -P "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake")
+        "-DSDL_BUILT=${SELECTA_UI_DESKTOP}" "-DKRK_BUILT=${SEL_HAVE_KRAKATOA}" "-DSID_MODULES=${PROJECT_BINARY_DIR}/tests/fixtures/plugin_sidfeed/mod" "-DGENMOD=$<TARGET_FILE:gen_testmod>" "-DUNIT=$<TARGET_FILE:dui_draw_unit>" "-DTAGGED=${PROJECT_SOURCE_DIR}/tests/m3/stream" "-DGUISRC=${PROJECT_SOURCE_DIR}/src/gui" "-DGUIHDR=${PROJECT_SOURCE_DIR}/include/selecta/gui" -P "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake")
     # Each test owns its default control socket path ($TMPDIR/selecta-<uid>.sock): two tests sharing
     # the per-user default collide under ctest -j ("selecta: already running"). TMPDIR, not
     # SELECTA_SOCKET, because SELECTA_SOCKET also forces the socket on and keeps --exec runs alive.
@@ -195,6 +195,15 @@ if(NOT SEL_AMIGA)
   # I906e: eight live SDL runs (six moved sites plus setup scans) take about 105 s; the shared 120 s leaves no margin.
   set_tests_properties(dui-direct-calls-async PROPERTIES TIMEOUT 300)
   set_tests_properties(dui-nav-turn-cost PROPERTIES TIMEOUT 300) # I959: three live SDL scenarios, each retried up to 3 times on a loaded machine
+  # viz-krakatoa-reach (I1052): Krakatoa Smoke through the real desktop entry point; ledger row, not a plan item, so
+  # label viz (dui-ratchet counts dui labels against the plan ids). Skips where viz_krakatoa is not built.
+  set(tmpdir "${PROJECT_BINARY_DIR}/tests/viz-krakatoa-reach.tmp")
+  file(MAKE_DIRECTORY "${tmpdir}")
+  add_test(NAME viz-krakatoa-reach
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/viz-krakatoa-reach"
+      "-DKRK_BUILT=${SEL_HAVE_KRAKATOA}" -P "${CMAKE_CURRENT_SOURCE_DIR}/krakatoa.cmake")
+  set_tests_properties(viz-krakatoa-reach PROPERTIES LABELS viz TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}"
+    SKIP_REGULAR_EXPRESSION "SELECTA_SKIP")
 endif()
 
 # dui-settings (I799a): the Settings entry in the top bar, one drawn row per shared pref row, an enum click written to prefs.conf.

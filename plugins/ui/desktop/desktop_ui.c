@@ -143,7 +143,7 @@ typedef struct pls_meta_row {
 #define SEARCH_SCOPE_LIBRARY "@library" /* I1019f: the scope of the Library source chip (the library alone, no From sections) */
 struct desk;
 static int desk_scope_online(const struct desk* d);
-#define DESK_VIZ_MAX 4u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope */
+#define DESK_VIZ_MAX 5u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope; I1052: Krakatoa (Mac) */
 #define DESK_DEV_MAX 16u /* I1039: output devices the picker lists */
 #define DESK_COVER_CACHE 12 /* I845: distinct covers on one screen (queue, shelves, grid) */
 
@@ -609,6 +609,7 @@ typedef struct desk {
     const sel_tag* (*find_plugin)(uint32_t kind, const char* id); /* registry lookup the app hands over (DUI-P4-11) */
     sel_viz_render_fn viz_fn[DESK_VIZ_MAX]; /* the viz plugins found at open: scope, levels, spectrum, sid registers */
     const char* viz_id[DESK_VIZ_MAX];
+    sel_viz_stats_fn viz_stats[DESK_VIZ_MAX]; /* I1052: optional VIZ_STATS hook, NULL when the plugin has none */
     const char* viz_name[DESK_VIZ_MAX];
     uint32_t viz_n, viz_sel;     /* plugins found, index of the one the Now Playing strip and the visual layout draw */
     uint32_t* viz_px;            /* RGBA32 target the plugins render into */
@@ -6555,7 +6556,7 @@ static int32_t si_max_q16(desk* d) {
 enum { VIZ_NONE = 0, VIZ_STRIP = 1, VIZ_PAGE = 2, VIZ_VISUAL = 3 };
 
 static void viz_load(desk* d) {
-    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs"};
+    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs", "viz_krakatoa"};
     uint32_t i;
     d->viz_n = 0u;
     for (i = 0; d->find_plugin != NULL && i < VIZ_MAX; i++) {
@@ -6568,6 +6569,7 @@ static void viz_load(desk* d) {
         d->viz_fn[d->viz_n] = (sel_viz_render_fn)fn;
         d->viz_id[d->viz_n] = ids[i];
         d->viz_name[d->viz_n] = (const char*)sel_tag_find(hooks, SEL_VIZ_NAME, 0);
+        d->viz_stats[d->viz_n] = (sel_viz_stats_fn)sel_tag_find(hooks, SEL_VIZ_STATS, 0);
         d->viz_n++;
     }
 }
@@ -7320,6 +7322,12 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
                           (unsigned)d->viz_n, (unsigned)d->uim.layout, (unsigned)d->viz_panes, (unsigned)d->viz_sigpath,
                           (unsigned)d->viz_prims, (unsigned)d->viz_visual_draws, d->np_viz.w > 0);
+    for (i = 0; i < d->viz_n; i++) { /* I1052: plugin counters through the optional VIZ_STATS hook */
+        char line[256];
+        if (d->viz_stats[i] != NULL && d->viz_stats[i](line, (uint32_t)sizeof line) > 0u) {
+            o = dump_put(d, o, "viz_stats %s %s\n", d->viz_id[i], line);
+        }
+    }
     o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d\n",
                           (unsigned)d->viz_clicks, (int)d->viz_btn[0][0].x, (int)d->viz_btn[0][0].y, (int)d->viz_btn[0][0].w,
                           (int)d->viz_btn[0][0].h, (int)d->viz_btn[1][0].x, (int)d->viz_btn[1][0].y, (int)d->viz_btn[1][0].w,
