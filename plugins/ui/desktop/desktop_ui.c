@@ -6215,6 +6215,13 @@ static size_t desk_clipboard(desk* d, char* out, size_t cap) {
  * Command held) appends, Command+V (Control+V elsewhere) pastes the clipboard's first line. Bytes outside 32..126 and the
  * `reject` byte (a field whose value travels in a quoted command line rejects '"'; 0 rejects nothing) are dropped.
  * Returns 0 for a key that is no edit, 1 for an edit key that left the text as it was, 2 when the text changed. */
+/* The keys field_edit owns: Backspace (any modifier), the paste chord, a printable key without Control or Option. A focused
+ * field gives these to field_edit before any binding, so a binding on one of them (Backspace @back) never steals an edit. */
+static int field_edit_key(const sel_gui_input* ev) {
+    return ev->code == 127u || ((ev->code == 'v' || ev->code == 'V') && (ev->mods & ~TXT_MOD_SHIFT) == TXT_MOD_CTRL) ||
+           (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u);
+}
+
 static int field_edit(desk* d, char* buf, size_t* len, size_t cap, char reject, const sel_gui_input* ev) {
     if (ev->code == 127u) {
         if (*len == 0u) {
@@ -13012,7 +13019,8 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return 1;
     }
     if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
-        const char* hist = txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
+        /* I1036: an edit key (Backspace is bound to @back) stays with the field */
+        const char* hist = field_edit_key(ev) ? NULL : txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
         if (hist != NULL && (strcmp(hist, "@back") == 0 || strcmp(hist, "@forward") == 0)) {
             /* I1012: the page history keys work with the field focused; the field has no edit for them and used to swallow them */
             d->nav_keys++;
