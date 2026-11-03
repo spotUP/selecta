@@ -168,6 +168,33 @@ if(NOT "${f4}" MATCHES "plpage id=[0-9]+ name=\\[gamma\\] songs=1 ")
   message(FATAL_ERROR "the added song did not reach the library in:\n${f4}")
 endif()
 
+# I1034: a result list whose row text changes with the same row count must repaint. "format:sid" and "format:xm" each match one song
+# (fixture:5, fixture:3), so the result shape (row_count, row_n) is identical; the dump's drawn0 is the first result key as last DRAWN,
+# live0 the key the engine holds now. A signature built from counts only leaves drawn0 on the old song.
+# the earlier cases filled gamma in find.db: a fresh database keeps the playlist empty, so the search field shows
+set(gdb "${WORK}/find_same_count.db")
+dui_run(g_init --db "${gdb}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "PLAYLIST_CREATE gamma")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${gdb}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE grc ERROR_VARIABLE gerr)
+if(NOT grc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${gerr}")
+endif()
+set(fcommon --ui desktop --backend mem --view home --clock fixed --stats --db "${gdb}" --canvas 1280x800)
+file(WRITE "${WORK}/find5.txt" "click ${fside}\nwait 100\nclick ${ffield}\nkey f\nkey o\nkey r\nkey m\nkey a\nkey t\nkey :\nkey s\nkey i\nkey d\nwait 600\n")
+dui_run(f5 ${fcommon} --input "${WORK}/find5.txt")
+if(NOT "${f5}" MATCHES "results=1 .* drawn0=\\[fixture:5\\] live0=\\[fixture:5\\]")
+  message(FATAL_ERROR "format:sid did not draw fixture:5 as the only result in:\n${f5}")
+endif()
+file(WRITE "${WORK}/find6.txt" "click ${fside}\nwait 100\nclick ${ffield}\nkey f\nkey o\nkey r\nkey m\nkey a\nkey t\nkey :\nkey s\nkey i\nkey d\nwait 600\nkey backspace\nkey backspace\nkey backspace\nkey x\nkey m\nwait 600\n")
+dui_run(f6 ${fcommon} --input "${WORK}/find6.txt")
+if(NOT "${f6}" MATCHES "live0=\\[fixture:3\\]")
+  message(FATAL_ERROR "format:xm did not reach the engine view in:\n${f6}")
+endif()
+if(NOT "${f6}" MATCHES "results=1 .* drawn0=\\[fixture:3\\] live0=\\[fixture:3\\]")
+  message(FATAL_ERROR "I1034: the panel kept the old result row after the text changed with the same row count in:\n${f6}")
+endif()
+
 # 6. I652b: the empty playlist page's Add from Library button opens the Library page in add mode for this playlist. The dump prints
 # `plfindbtn 0 x y w h` (the button) and, in add mode, `libadd id= name=[] adds= sent=`, `libaddback x y w h` and one `libaddrow i x y w h key=` per Add control.
 # Click the button: add mode names gamma and draws Add controls; click Add on a row: the playlist then has 1 song after Back.

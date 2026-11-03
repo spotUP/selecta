@@ -289,6 +289,7 @@ typedef struct desk {
     uint32_t pls_adds;       /* I652a: PLAYLIST_ADD_SONG lines sent from the empty-playlist search */
     uint32_t pls_find_sig;   /* I652a: signature of the search result last drawn under the empty playlist's field */
     int pls_find_shown;      /* I652a: result rows drawn under the empty playlist's search field */
+    char pls_find_key0[48];  /* I1034: key of the first result row as last drawn (dump sentinel: a stale panel shows the old key) */
     size_t pl_nlen;
     int tr_page;             /* --view tracker: the main region shows the Tracker page (DUI-P4-12) */
     uint32_t tr_tab, tr_draws, tr_rows, tr_cmds, tr_sig; /* tab, frames drawn (sentinel), rows in the last one, verbs sent, redraw hash */
@@ -5418,6 +5419,7 @@ static void draw_playlist_find(desk* d, sel_gui_rect mn) {
     draw_button(d, pls_find_btn_rect(d, mn, 1u), surf, "Import playlist file", 13, text);
     draw_button(d, pls_find_btn_rect(d, mn, 2u), surf, "Add Folder", 13, text);
     d->pls_find_shown = 0;
+    snprintf(d->pls_find_key0, sizeof d->pls_find_key0, "%s", pls_find_result(d, 0u) != NULL && pls_find_result(d, 0u)->key != NULL ? pls_find_result(d, 0u)->key : "");
     for (slot = 0; pls_find_row_visible(d, mn, slot); slot++) {
         const sel_view_row* r = pls_find_result(d, slot);
         sel_gui_rect rr = pls_find_row_rect(d, mn, slot);
@@ -7474,9 +7476,10 @@ static const char* library_dump_build(desk* d) {
         }
         if (d->pls_n == 0u) { /* I652a: the empty playlist's search field, its results and their Add buttons */
             sel_gui_rect pf = pls_find_field_rect(d, pmn);
-            o = dump_put(d, o, "plfind field %d %d %d %d results=%d adds=%u searches=%u on=%d vsrc=%d vrows=%u live=%d\n", (int)pf.x, (int)pf.y, (int)pf.w, (int)pf.h, d->pls_find_shown,
+            o = dump_put(d, o, "plfind field %d %d %d %d results=%d adds=%u searches=%u on=%d vsrc=%d vrows=%u live=%d drawn0=[%s] live0=[%s]\n", (int)pf.x, (int)pf.y, (int)pf.w, (int)pf.h, d->pls_find_shown,
                          (unsigned)d->pls_adds, (unsigned)d->lib_searches, d->search_on, sel_engine_state(d->engine)->view != NULL ? (int)sel_engine_state(d->engine)->view->source : -1,
-                         sel_engine_state(d->engine)->view != NULL ? (unsigned)sel_engine_state(d->engine)->view->row_n : 0u, pls_find_result(d, 0u) != NULL);
+                         sel_engine_state(d->engine)->view != NULL ? (unsigned)sel_engine_state(d->engine)->view->row_n : 0u, pls_find_result(d, 0u) != NULL, d->pls_find_key0,
+                         pls_find_result(d, 0u) != NULL && pls_find_result(d, 0u)->key != NULL ? pls_find_result(d, 0u)->key : "");
             for (j = 0; (int)j < d->pls_find_shown; j++) {
                 sel_gui_rect fa = pls_find_add_rect(d, pmn, j);
                 const sel_view_row* fr = pls_find_result(d, j);
