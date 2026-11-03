@@ -602,6 +602,7 @@ struct sel_engine {
         int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
         uint32_t n;
         uint32_t ms;                         /* I1044: wall time of this source's search */
+        sel_tag done_tags[4];                /* I1044: the search_done event points here; several sources can land in one pump */
         sel_search_hit hit[SEL_SEARCH_HITS_PER_SOURCE];
     } * search_bucket;
     struct sel_search_job* search_jobs;      /* I1044: one thread per source of the running fan-out (threaded builds) */
@@ -7790,6 +7791,11 @@ static void search_start_next(sel_engine* e) {
         if (e->search_bucket[b].state != SEARCH_QUEUED) {
             continue;
         }
+        for (j = e->search_jobs; j != NULL && strcmp(j->id, e->search_bucket[b].id) != 0; j = j->next) {
+        }
+        if (j != NULL) {
+            continue; /* a source runs one search at a time (its plugin reuses one cache file name): the superseded one is collected first */
+        }
         j = (struct sel_search_job*)e->host->mem_alloc(e->host, sizeof *j, SEL_MEM_FAST);
         if (j != NULL) {
             memset(j, 0, sizeof *j);
@@ -7986,16 +7992,16 @@ static void search_land(sel_engine* e, struct sel_search_job* j) {
     }
     e->search_bucket[b].n = j->n;
     e->search_bucket[b].state = SEARCH_DONE;
-    e->search_done_tags[0].tag = SEL_SRC_KEY;
-    e->search_done_tags[0].value = (uintptr_t)e->search_bucket[b].id;
-    e->search_done_tags[1].tag = SEL_SRC_KIND;
-    e->search_done_tags[1].value = (uintptr_t) "search_done";
-    e->search_done_tags[2].tag = SEL_SRC_COUNT;
-    e->search_done_tags[2].value = j->n;
-    e->search_done_tags[3].tag = SEL_TAG_END;
-    e->search_done_tags[3].value = 0;
+    e->search_bucket[b].done_tags[0].tag = SEL_SRC_KEY;
+    e->search_bucket[b].done_tags[0].value = (uintptr_t)e->search_bucket[b].id;
+    e->search_bucket[b].done_tags[1].tag = SEL_SRC_KIND;
+    e->search_bucket[b].done_tags[1].value = (uintptr_t) "search_done";
+    e->search_bucket[b].done_tags[2].tag = SEL_SRC_COUNT;
+    e->search_bucket[b].done_tags[2].value = j->n;
+    e->search_bucket[b].done_tags[3].tag = SEL_TAG_END;
+    e->search_bucket[b].done_tags[3].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
-    evt_tags(&r, e->search_done_tags);
+    evt_tags(&r, e->search_bucket[b].done_tags);
     emit(e, &r);
 }
 
@@ -8022,6 +8028,9 @@ static void search_collect(sel_engine* e) {
         search_job_free(e, j);
     }
     e->search_running = e->search_jobs != NULL;
+    if (search_queued(e)) {
+        search_start_next(e); /* a bucket held back behind its source's superseded search starts now */
+    }
     if (landed) {
         if (!e->search_running && !search_queued(e)) {
             e->search_wall_ms = (uint32_t)(search_now_ms() - e->search_t0_ms);
