@@ -6114,6 +6114,48 @@ static uint32_t search_pick_songs(const sel_engine* e, uint32_t* pick) {
     return n;
 }
 
+/* I1019b: one "H From <name> (n)" section per source of the current query, after the library groups. The rows are the source's hits
+ * as keyed song rows ("S <source:path>\t<title>  <artist>", the key VIEW_ACTIVATE plays and search_pin finds) or one keyless state
+ * row: Searching (queued or running), Could not reach <name> (failed), No results (done, no hits). A row that does not fit the text
+ * buffer is left out whole. Returns the new text length. */
+static size_t search_reload_sources(const sel_engine* e, char* text, size_t o, size_t cap) {
+    uint32_t b, i;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        const char* id = e->search_bucket[b].id;
+        const sel_source* src = sel_source_find(id);
+        const char* name = src != NULL && src->name != NULL ? src->name : id;
+        int state = e->search_bucket[b].state;
+        uint32_t n = state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+        int w = snprintf(text + o, cap - o, "H From %s (%u)\n", name, (unsigned)n);
+
+        if (w < 0 || (size_t)w >= cap - o) {
+            break;
+        }
+        o += (size_t)w;
+        if (state != SEARCH_DONE) {
+            w = snprintf(text + o, cap - o, state == SEARCH_FAILED ? "S Could not reach %s\n" : "S Searching\n", name);
+        } else if (n == 0u) {
+            w = snprintf(text + o, cap - o, "S No results\n");
+        } else {
+            w = 0;
+        }
+        if (w > 0 && (size_t)w < cap - o) {
+            o += (size_t)w;
+        }
+        for (i = 0; i < n; i++) {
+            const sel_search_hit* h = &e->search_bucket[b].hit[i];
+
+            w = snprintf(text + o, cap - o, "S %s\t%s  %s\n", h->key, h->title, h->artist);
+            if (w < 0 || (size_t)w >= cap - o) {
+                break;
+            }
+            o += (size_t)w;
+        }
+    }
+    return o;
+}
+
 static void search_reload(sel_engine* e) {
     char* text = e->view.htext;
     uint32_t albums[2u * SEARCH_DISTINCT_MAX], artists[2u * SEARCH_DISTINCT_MAX];
@@ -6170,6 +6212,7 @@ static void search_reload(sel_engine* e) {
         memcpy(text + o, art, lr);
         o += lr;
     }
+    o = search_reload_sources(e, text, o, cap);
     text[o < cap ? o : cap - 1u] = '\0';
     (void)sel_view_set_home(&e->view, text);
 }
@@ -7598,6 +7641,16 @@ static void search_task(void* ctx) {
     sel_sync_ctx_release(&e->search_ctx);
 }
 
+static void view_reread(sel_engine* e, uint32_t source);
+
+/* I1019b: the From sections follow the buckets; a shown Search view is rebuilt whenever a bucket changes. */
+static void search_view_changed(sel_engine* e) {
+    if (e->view.active && e->view.pub.source == SEL_VIEW_SEARCH) {
+        search_reload(e);
+        view_reread(e, SEL_VIEW_SEARCH);
+    }
+}
+
 /* Starts the library task for bucket `b` of the current query. */
 static void search_start(sel_engine* e, uint32_t b) {
     snprintf(e->search_source, sizeof e->search_source, "%s", e->search_bucket[b].id);
@@ -7691,6 +7744,7 @@ static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
         search_bucket_set(e, source);
     }
     search_start_next(e); /* busy slot (scan, sync or the superseded search): the pump starts it after that task's collect */
+    search_view_changed(e);
 }
 
 /* Pump side of SOURCE_SEARCH: the events go out from the pump thread only. */
@@ -7739,6 +7793,7 @@ static void search_collect(sel_engine* e) {
     scan_start_next(e);
     sync_start_next(e);
     search_start_next(e);
+    search_view_changed(e);
 }
 
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
