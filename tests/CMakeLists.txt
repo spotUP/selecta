@@ -939,6 +939,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_library_subtitle_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-library-subtitle COMMAND uim_library_subtitle_test)
   set_tests_properties(uim-library-subtitle PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_library_subtitle_ok")
+  # I1019d: the shared SOURCE_SEARCH * line and the search heading kinds.
+  add_executable(uim_search_group_test uimodel/search_group_test.c)
+  target_link_libraries(uim_search_group_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-search-group COMMAND uim_search_group_test)
+  set_tests_properties(uim-search-group PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_search_group_ok")
   # I831: the left button of the label control (Previous Filter or Clear Filter).
   add_executable(uim_libfilter_left_test uimodel/libfilter_left_test.c)
   target_link_libraries(uim_libfilter_left_test PRIVATE selecta_uimodel selecta_core)

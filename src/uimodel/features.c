@@ -4,13 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-size_t sel_uim_search_line(const char* text, char* out, size_t cap) {
+/* verb + space + the text quoted with backslash and quote escaped; 0 when it does not fit. */
+static size_t search_quoted_line(const char* verb, const char* text, char* out, size_t cap) {
     size_t n = 0;
     const char* p = text != NULL ? text : "";
     if (cap < 24u) {
         return 0;
     }
-    n += (size_t)snprintf(out, cap, "LIBRARY_SEARCH \"");
+    n += (size_t)snprintf(out, cap, "%s \"", verb);
     for (; *p != '\0' && n + 4u < cap; p++) {
         if (*p == '"' || *p == '\\') {
             out[n++] = '\\';
@@ -20,6 +21,30 @@ size_t sel_uim_search_line(const char* text, char* out, size_t cap) {
     out[n++] = '"';
     out[n] = '\0';
     return n;
+}
+
+size_t sel_uim_search_line(const char* text, char* out, size_t cap) {
+    return search_quoted_line("LIBRARY_SEARCH", text, out, cap);
+}
+
+size_t sel_uim_search_all_line(const char* text, char* out, size_t cap) {
+    return search_quoted_line("SOURCE_SEARCH *", text, out, cap);
+}
+
+uint32_t sel_uim_search_group(const char* heading) {
+    if (heading == NULL) {
+        return 0u;
+    }
+    if (strncmp(heading, "Songs", 5) == 0) {
+        return 1u;
+    }
+    if (strncmp(heading, "Albums", 6) == 0) {
+        return 2u;
+    }
+    if (strncmp(heading, "Artists", 7) == 0) {
+        return 3u;
+    }
+    return strncmp(heading, "From ", 5) == 0 ? 4u : 0u;
 }
 
 const char* sel_uim_song_menu_label(uint32_t item, int on_queue) {
