@@ -46,6 +46,11 @@
 #define SEARCH_CAP (256u * 1024u)
 #define META_CAP (2u * 1024u * 1024u)
 #define FILES_PER_ITEM 40u
+/* A search lists at most this many hits and asks /metadata for each (one request, PAUSE_MS apart, per hit) to get the
+ * track rows. 8 hits bound a search to 1 + 8 requests and ~4 s of pauses, which the user waits for while typing; the
+ * rest of the 25 hits advancedsearch returns would add up to 12 s more for rows the result list cannot show anyway. */
+#define SEARCH_ITEMS 8u
+#define SEARCH_ROWS 25u
 
 static const sel_tag g_tags[] = {
     {SEL_TAG_END, 0},
@@ -332,6 +337,8 @@ typedef struct run {
     char base[URL_BYTES];
     uint32_t rows, skipped, requests, items;
     unsigned long bytes;
+    int stopped;
+    const sel_search_sink* sink; /* search: rows go to the sink and nothing is written to the catalogue; NULL: sync */
 } run;
 
 static void add_row(run* r, const rec* hit, const rec* file, const char* lic) {
@@ -343,6 +350,13 @@ static void add_row(run* r, const rec* hit, const rec* file, const char* lic) {
     clean_part(artist);
     snprintf(path, sizeof path, "%s/%s/%s", hit->id, artist, title);
     snprintf(format, sizeof format, "Internet Archive - %s", lic);
+    if (r->sink != NULL) {
+        r->rows++;
+        if (!r->sink->row(r->sink->ctx, path, title, artist, format)) {
+            r->stopped = 1; /* the sink asked to stop */
+        }
+        return;
+    }
     memset(&song, 0, sizeof song);
     song.path = path;
     song.format = format;
@@ -368,6 +382,9 @@ static void take_hit(void* ctx, rec* hit) {
     if (!id_ok(hit->id) || !sel_license_is_open(hit->license)) {
         r->skipped++; /* no licence, or one that is not Creative Commons / public domain */
         return;
+    }
+    if (r->sink != NULL && (r->items >= SEARCH_ITEMS || r->stopped)) {
+        return; /* search: the metadata cap is reached */
     }
     clean_part(hit->title);
     r->net->pause(r->host, PAUSE_MS);
@@ -423,6 +440,53 @@ static void param_of(const char* query, const char* name, char* out, size_t n) {
             p++;
         }
     }
+}
+
+/* Search: one advancedsearch GET for titles or creators matching `query` (same licence gate as the sync), then the
+ * metadata of the first SEARCH_ITEMS hits for their track rows. The rows go to the sink, the catalogue is not touched.
+ * Returns the row count, -1 when the service answers no 200. */
+static int ao_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    char clean[96], enc[300], url[URL_BYTES], path[URL_BYTES];
+    uint32_t rq = 0;
+    unsigned long got = 0;
+    run r;
+    FILE* f;
+    size_t i, o = 0;
+    int ok = 0;
+
+    memset(&r, 0, sizeof r);
+    r.host = host;
+    r.net = host->net != NULL ? host->net(host) : NULL;
+    r.cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
+    r.sink = out;
+    if (r.net == NULL || r.net->request_ex == NULL || r.cat == NULL || query == NULL || out == NULL ||
+        !r.cat->cache_dir(host, "archiveorg", r.dir, sizeof r.dir)) {
+        return -1;
+    }
+    /* The term sits inside a quoted Lucene phrase: drop the characters that would end or escape it. */
+    for (i = 0; query[i] != '\0' && o + 1u < sizeof clean; i++) {
+        if (query[i] != '"' && query[i] != '\\') {
+            clean[o++] = query[i];
+        }
+    }
+    clean[o] = '\0';
+    if (o == 0 || !sel_url_query_encode(clean, enc, sizeof enc)) {
+        return -1;
+    }
+    snprintf(r.base, sizeof r.base, "%s", api_base());
+    snprintf(url, sizeof url,
+             "%s/advancedsearch.php?q=mediatype%%3Aaudio%%20AND%%20%%28title%%3A%%22%s%%22%%20OR%%20creator%%3A%%22%s%%22%%29"
+             "%%20AND%%20%%28licenseurl%%3A%%2Acreativecommons.org%%2A%%20OR%%20licenseurl%%3A%%2Apublicdomain%%2A%%29"
+             "&fl%%5B%%5D=identifier&fl%%5B%%5D=title&fl%%5B%%5D=creator&fl%%5B%%5D=licenseurl&rows=%u&output=json",
+             r.base, enc, enc, SEARCH_ROWS);
+    snprintf(path, sizeof path, "%s/query.json", r.dir);
+    if (fetch(host, r.net, url, path, SEARCH_CAP, &rq, &got) == 200 && (f = fopen(path, "rb")) != NULL) {
+        read_array(f, "response", "docs", take_hit, &r);
+        fclose(f);
+        ok = 1;
+    }
+    remove(path);
+    return ok ? (int)r.rows : -1;
 }
 
 static int ao_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
@@ -583,7 +647,7 @@ static const sel_source g_archiveorg = {
     "archiveorg", "Internet Archive", "https://archive.org/",
     "Creative Commons and public-domain audio streamed from the Internet Archive (scholarship and research use).",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, ao_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
-    SITE_HOME, ao_play_url, NULL,
+    SITE_HOME, ao_play_url, ao_search,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

@@ -4,6 +4,8 @@
 # -DSELECTA -DSONGS -DWORK -DNETWORK=<net fixture work dir>
 #  1. no chip click: `search_section` lines for From Modules.pl with rows == the fixture's hits (3, the sentinel that the fan-out ran
 #     and its answer reached the shared row loop), and the query reached the library too (`search groups` line present);
+#  1b. (I1024a) the same fan-out draws `From Internet Archive (8)`: archiveorg answers from the local advancedsearch fixture (11 hits,
+#     8 get a metadata request = the plugin's cap), the sentinel that its search hook is registered and ran;
 #  2. the From rows are song rows of the shared loop: `searchrow` lines carry their modulespl: keys.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -13,7 +15,8 @@ file(READ "${NETWORK}/port" port)
 string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
-set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx}")
+set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx},ia.search.test=${fx}")
+set(ENV{SELECTA_ARCHIVEORG_BASE} "http://ia.search.test")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
@@ -37,6 +40,9 @@ set(count "${CMAKE_MATCH_2}")
 if(NOT rows EQUAL 3 OR NOT count EQUAL 3)
   message(FATAL_ERROR "From Modules.pl: expected 3 rows and (3), got rows=${rows} (${count}):\n${o}")
 endif()
+if(NOT "${o}" MATCHES "search_section [0-9]+ rows=8 From Internet Archive \\(8\\)\n")
+  message(FATAL_ERROR "I1024a: no 'From Internet Archive' section with 8 rows:\n${o}")
+endif()
 if(NOT "${o}" MATCHES "search groups songs=")
   message(FATAL_ERROR "no library groups line in:\n${o}")
 endif()
@@ -44,7 +50,7 @@ if(NOT "${o}" MATCHES "searchrow [0-9]+ [^\n]*key=modulespl:")
   message(FATAL_ERROR "the From rows are not song rows of the shared loop (no searchrow with a modulespl: key):\n${o}")
 endif()
 
-# ---- I1019f: the source chip row. Chips: All sources (0), Library (1), then each enabled searchable source (2 = Modules.pl).
+# ---- I1019f: the source chip row. Chips: All sources (0), Library (1), then each enabled searchable source (2 = Internet Archive, 3 = Modules.pl, I1024a).
 # The source row and the facet row are drawn always; a source pick never hides the facet row; the filter is not persisted.
 function(sa_run outvar input)
   file(REMOVE "${WORK}/library.db")
@@ -81,8 +87,8 @@ sa_rows("start" "${s0}")
 if(NOT "${s0}" MATCHES "online scope=- ")
   message(FATAL_ERROR "start: the page must open on All sources (scope=-):\n${s0}")
 endif()
-if(NOT "${s0}" MATCHES "online_chip 2 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no Modules.pl chip (online_chip 2):\n${s0}")
+if(NOT "${s0}" MATCHES "online_chip 3 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no Modules.pl chip (online_chip 3):\n${s0}")
 endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")

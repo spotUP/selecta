@@ -2569,6 +2569,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(archiveorg PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_ok")
 
+  # I1024a: SOURCE_SEARCH archiveorg over a local advancedsearch/metadata fixture: licence gate, 8-hit metadata cap, -1 when unreachable.
+  add_test(NAME archiveorg-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/archiveorg_search.cmake")
+  set_tests_properties(archiveorg-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_search_ok")
+
   # I725f: the podcast source: RSS parse, Podcast Index search auth, Range playback and seek, User-Agent.
   add_test(NAME podcast
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"

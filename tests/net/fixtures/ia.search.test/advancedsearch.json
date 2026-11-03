@@ -1,0 +1,76 @@
+{
+ "responseHeader": {
+  "status": 0
+ },
+ "response": {
+  "numFound": 11,
+  "start": 0,
+  "docs": [
+   {
+    "identifier": "ia_none",
+    "title": "No Licence Chip",
+    "creator": "Nobody"
+   },
+   {
+    "identifier": "ia_s01",
+    "title": "Chip Album 01",
+    "creator": "Chip Artist 01",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s02",
+    "title": "Chip Album 02",
+    "creator": "Chip Artist 02",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s03",
+    "title": "Chip Album 03",
+    "creator": "Chip Artist 03",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s04",
+    "title": "Chip Album 04",
+    "creator": "Chip Artist 04",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s05",
+    "title": "Chip Album 05",
+    "creator": "Chip Artist 05",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s06",
+    "title": "Chip Album 06",
+    "creator": "Chip Artist 06",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s07",
+    "title": "Chip Album 07",
+    "creator": "Chip Artist 07",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s08",
+    "title": "Chip Album 08",
+    "creator": "Chip Artist 08",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s09",
+    "title": "Chip Album 09",
+    "creator": "Chip Artist 09",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "identifier": "ia_s10",
+    "title": "Chip Album 10",
+    "creator": "Chip Artist 10",
+    "licenseurl": "http://creativecommons.org/licenses/by/4.0/"
+   }
+  ]
+ }
+}
