@@ -10444,6 +10444,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         e->pin_rows_seen = sel_library_pin_rows(e->lib); /* I406b: pinned hits landed: open listings and the Sources count reload */
         e->library_changes++;
         e->state.library_serial = e->library_changes;
+        e->state.library_pins++; /* I1038: this change only pinned hits: the Search page that listed them keeps its results */
     }
     timer_pump(e);
     reclaim_slots(e);

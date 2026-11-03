@@ -251,6 +251,7 @@ typedef struct sel_state {
     uint32_t panel_serial;      /* I288: counts panel loads; a change means `panel` was read again (a rating or sticker write) */
     uint32_t search_serial;     /* I994b: the SOURCE_SEARCH hit list's version (list=hits); a change means the hits the UI shows are gone */
     uint32_t library_serial;    /* I348: counts library changes (a scan, sync or fetch finished); a change means library listings are stale */
+    uint32_t library_pins;      /* I1038: of the library_serial changes, those that only pinned played online hits (I406b); a result list showing those hits is not stale */
     uint32_t library_playlists; /* I906e: saved playlists, counted with library_songs on the same posted read */
     uint32_t library_songs;     /* DUI-P4-18: songs in the catalogue, re-counted when library_serial changes (the Clear Library dialog names it) */
     const char* stats;          /* I192: the stats screen is open: "label\0value\0" pairs read from the stats SQL views, then "\0"; NULL: closed */
