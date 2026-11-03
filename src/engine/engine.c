@@ -13,6 +13,7 @@
  * thread as its consumer, these two have the audio thread on one end. */
 #include <selecta/uimodel/browse.h>
 #include <selecta/engine.h>
+#include <selecta/format_label.h>
 #include <selecta/platform.h>
 #include <selecta/machine.h>
 
@@ -197,7 +198,7 @@
 #define SEL_SEARCH_QUERY_MAX 256
 #define SEL_SEARCH_TEXT_MAX 160
 #define SEL_SEARCH_ARTIST_MAX 96
-#define SEL_SEARCH_FORMAT_MAX 16
+#define SEL_SEARCH_FORMAT_MAX SEL_FORMAT_LABEL_MAX /* I1043: the longest label the format table produces; a hit keeps its whole format name */
 
 typedef struct sel_search_hit { /* one SOURCE_SEARCH hit; tags point into the same struct */
     char key[SEL_SEARCH_KEY_MAX];

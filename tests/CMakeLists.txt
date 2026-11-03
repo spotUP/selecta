@@ -2835,6 +2835,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME source-search-view COMMAND source_search_view_test)
   set_tests_properties(source-search-view PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_view_ok")
 
+  # I1043: a search hit keeps its whole format name (the longest table label), not 15 characters.
+  add_executable(source_search_format_test engine/source_search_format_test.c)
+  target_include_directories(source_search_format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(source_search_format_test PRIVATE selecta_library selecta_core)
+  add_test(NAME source-search-format COMMAND source_search_format_test)
+  set_tests_properties(source-search-format PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_format_ok")
+
   # I527: LIBRARY_SYNC runs on the library job thread; the pump returns while a blocking sync runs, a second sync and a scan queue.
   add_executable(library_sync_async_test engine/library_sync_async_test.c)
   target_include_directories(library_sync_async_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
