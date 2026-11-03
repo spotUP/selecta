@@ -15,7 +15,7 @@
 #include "local.h"
 #include "queue.h"
 
-#define SEL_VIEW_WINDOW_MAX 256u
+/* SEL_VIEW_WINDOW_MAX (the largest VIEW_WINDOW) lives in <selecta/engine.h>: the UIs size their windows by it (I1030). */
 #define SEL_VIEW_WINDOW_DEFAULT 20u
 #define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%[  Votes %votes%]"
 #define SEL_VIEW_VOTES_MAX 12u /* a vote count as text, NUL included */

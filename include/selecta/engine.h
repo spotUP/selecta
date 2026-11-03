@@ -109,6 +109,10 @@ typedef struct sel_view_row {
     uint32_t art_id;   /* grid, cover flow and compact queue rows: albums.id of the song's album (the artwork id), 0 none; a Home album tile: albums.id of that album (I678h2) */
 } sel_view_row;
 
+/* The largest view window (VIEW_WINDOW n, 1..SEL_VIEW_WINDOW_MAX); also the most rows a home or search text holds, so a
+ * page that draws a whole grouped result (the Search page) asks for this window and gets every row (I1030). */
+#define SEL_VIEW_WINDOW_MAX 256u
+
 /* rows[0..row_n) are the visible window: listing indices window_start and up.
  * Row and path pointers are valid until the next pump. */
 typedef struct sel_view_state {
