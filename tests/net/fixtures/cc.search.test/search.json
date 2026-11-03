@@ -1,0 +1,10 @@
+[
+ {"upload_id": 201, "upload_name": "Chip Remix", "user_name": "searcher_one", "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "files": [{"file_id": 1, "file_name": "chip.mp3", "download_url": "http://cc.search.test/content/chip.mp3"}]},
+ {"upload_id": 202, "upload_name": "Chip Sample Pack", "user_name": "searcher_two", "license_url": "http://creativecommons.org/licenses/by-nc/3.0/",
+  "files": [{"file_id": 2, "file_name": "pack.mp3", "download_url": "http://cc.search.test/content/pack.mp3"}]},
+ {"upload_id": 203, "upload_name": "Chip Closed", "user_name": "searcher_three", "license_url": "http://example.com/license",
+  "files": [{"file_id": 3, "file_name": "closed.mp3", "download_url": "http://cc.search.test/content/closed.mp3"}]},
+ {"upload_id": 204, "upload_name": "Chip Wav", "user_name": "searcher_four", "license_url": "http://creativecommons.org/licenses/by/3.0/",
+  "files": [{"file_id": 4, "file_name": "wav.wav", "download_url": "http://cc.search.test/content/wav.wav"}]}
+]

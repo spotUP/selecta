@@ -22,6 +22,8 @@ set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.te
 set(ENV{SELECTA_ARCHIVEORG_BASE} "http://fixture.test")
 # I1024d: radiobrowser searches too; same 404 = search_failed
 set(ENV{SELECTA_RADIO_BROWSER} "http://fixture.test")
+# I1024e: ccmixter searches too; same 404 = search_failed
+set(ENV{SELECTA_CCMIXTER_BASE} "http://fixture.test")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
@@ -74,8 +76,8 @@ if(NOT nmp EQUAL 3 OR NOT nlib GREATER 0 OR NOT n EQUAL want)
 endif()
 
 # 2. Modules.pl picked: three rows, three Modules.pl badges, no Library badge.
-if(NOT "${a}" MATCHES "online_chip 3 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no Modules.pl chip (online_chip 3):\n${a}")
+if(NOT "${a}" MATCHES "online_chip 4 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no Modules.pl chip (online_chip 4):\n${a}")
 endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")

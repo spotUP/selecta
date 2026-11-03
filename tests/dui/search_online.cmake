@@ -25,6 +25,8 @@ set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.te
 set(ENV{SELECTA_ARCHIVEORG_BASE} "http://fixture.test")
 # I1024d: radiobrowser searches too; same 404 = search_failed
 set(ENV{SELECTA_RADIO_BROWSER} "http://fixture.test")
+# I1024e: ccmixter searches too; same 404 = search_failed
+set(ENV{SELECTA_CCMIXTER_BASE} "http://fixture.test")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
@@ -46,12 +48,12 @@ function(so_online outvar dump)
   set(${outvar} "${CMAKE_MATCH_1};${CMAKE_MATCH_2};${CMAKE_MATCH_3};${CMAKE_MATCH_4};${CMAKE_MATCH_5};${CMAKE_MATCH_6};${CMAKE_MATCH_7}" PARENT_SCOPE)
 endfunction()
 
-# Pass 1: find the Modules.pl chip (chip 0 is All sources, chip 1 the Library, chip 2 Internet Archive, chip 3 Modules.pl (I1024a)).
+# Pass 1: find the Modules.pl chip (chip 0 is All sources, chip 1 the Library, chip 2 Internet Archive, chip 3 ccMixter (I1024e), chip 4 Modules.pl (I1024a)).
 file(REMOVE_RECURSE "${WORK}/cfg")
 file(REMOVE "${WORK}/library.db")
 so_run(base "wait 300\n")
-if(NOT "${base}" MATCHES "online_chip 3 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no online_chip 3 on the Search page:\n${base}")
+if(NOT "${base}" MATCHES "online_chip 4 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no online_chip 4 on the Search page:\n${base}")
 endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
