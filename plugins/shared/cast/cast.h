@@ -47,10 +47,17 @@ typedef struct sel_cast_status {
     int has_volume;
     double volume_level;     /* 0..1 */
     int volume_muted;
+    /* MEDIA_STATUS (I892e2): the first entry of the "status" array */
+    int media_count;         /* entries in the status array */
+    long media_session_id;   /* mediaSessionId of the first entry, 0 when absent */
+    char player_state[24];   /* "IDLE", "BUFFERING", "PLAYING", "PAUSED" */
+    char idle_reason[24];    /* "FINISHED", "ERROR", ... when IDLE */
+    double current_time;     /* seconds */
+    double duration;         /* seconds, 0 when unknown */
 } sel_cast_status;
 
 /* Parses a JSON payload: the top-level "type" and requestId, and for RECEIVER_STATUS the first application and the
- * volume. Reads through json_scan (plugins/shared/source). 0 on success, -1 on malformed JSON. */
+ * volume, and for MEDIA_STATUS the first media entry (state, currentTime, duration). Reads through json_scan (plugins/shared/source). 0 on success, -1 on malformed JSON. */
 int sel_cast_parse_status(const char* json, sel_cast_status* out);
 
 #endif

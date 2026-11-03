@@ -2575,6 +2575,15 @@ if(NOT SEL_AMIGA)
             "-DSRV=${SEL_NET_DIR}/cast_server.py" -P "${SEL_NET_DIR}/cast_session.cmake")
   set_tests_properties(cast-session PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_session_ok")
 
+  # I892e2: LAUNCH + LOAD of a URL served by the built-in HTTP file server (md5 of the fetched bytes equals the file).
+  add_executable(cast_load_test net/cast_load_test.c)
+  target_link_libraries(cast_load_test PRIVATE selecta_shared_cast selecta_library)
+  add_test(NAME cast-load
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:cast_load_test>" "-DWORK=${SEL_NET_WORK}"
+            "-DSRV=${SEL_NET_DIR}/cast_server.py" "-DFILE=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3"
+            -P "${SEL_NET_DIR}/cast_load.cmake")
+  set_tests_properties(cast-load PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_load_ok")
+
   # I892e1: Chromecast mDNS discovery (pure parser with name compression + browse against the loopback responder).
   add_executable(cast_discover_test net/cast_discover_test.c)
   target_link_libraries(cast_discover_test PRIVATE selecta_shared_cast selecta_library)
