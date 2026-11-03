@@ -11,6 +11,7 @@
 #define SEL_CAST_HTTP_PATH_MAX 512
 #define SEL_CAST_HTTP_TOKEN_LEN 32
 #define SEL_CAST_HTTP_E_FILE -100
+#define SEL_CAST_HTTP_E_ENTROPY -101 /* entropy pool not ready: no unguessable token, so no server */
 
 typedef struct sel_cast_http {
     int lh; /* listen handle, -1 when closed */
@@ -23,7 +24,7 @@ typedef struct sel_cast_http {
 } sel_cast_http;
 
 /* Starts listening on an ephemeral port and registers `file` with its MIME type. Returns 0, a negative SEL_NET_E_*
- * code, or SEL_CAST_HTTP_E_FILE when the file cannot be opened. */
+ * code, SEL_CAST_HTTP_E_FILE when the file cannot be opened, or SEL_CAST_HTTP_E_ENTROPY when the entropy pool is not ready. */
 int sel_cast_http_open(sel_cast_http* s, const char* file, const char* mime);
 
 /* "http://<ip>:<port>/<token>" for the receiver; ip is the local address on the link to the receiver

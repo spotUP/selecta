@@ -6,37 +6,43 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "md5.h"
+#include "entropy.h"
 #include "net/net.h"
 
 #define REQ_MAX 2048
 #define CHUNK 4096
 
-/* 128 random-looking bits as hex: /dev/urandom where it exists, mixed with the clock, a stack address and a counter
- * (the Amiga has no urandom; the clock and address still differ per run). The token is only a capability that keeps
- * other LAN hosts from guessing the URL. */
-static void token_make(char* out) {
-    static unsigned counter;
-    unsigned char seed[40];
-    sel_md5 m;
-    FILE* f = fopen("/dev/urandom", "rb");
-    unsigned long now = sel_net_now_ms();
-    char* where = out;
+/* 128 random bits as hex from the shared entropy pool (/dev/urandom on desktop, the timing pool on the Amiga). The token
+ * is a capability that keeps other LAN hosts from guessing the URL, so there is no fallback: -1 when the pool is not
+ * ready and the server must not start (I899a). */
+static int token_make(char* out) {
+    static const char hex[] = "0123456789abcdef";
+    unsigned char raw[SEL_CAST_HTTP_TOKEN_LEN / 2];
+    unsigned i;
 
-    memset(seed, 0, sizeof seed);
-    if (f != NULL) {
-        size_t got = fread(seed, 1, 16, f);
-
-        (void)got;
-        fclose(f);
+    if (sel_entropy_bytes(raw, sizeof raw) != 0) {
+        return -1;
     }
-    memcpy(seed + 16, &now, sizeof now);
-    memcpy(seed + 24, &where, sizeof where);
-    counter++;
-    memcpy(seed + 32, &counter, sizeof counter);
-    sel_md5_init(&m);
-    sel_md5_update(&m, seed, sizeof seed);
-    sel_md5_hex(&m, out);
+    for (i = 0; i < sizeof raw; i++) {
+        out[2 * i] = hex[raw[i] >> 4];
+        out[2 * i + 1] = hex[raw[i] & 15];
+    }
+    out[SEL_CAST_HTTP_TOKEN_LEN] = '\0';
+    return 0;
+}
+
+/* Constant-time compare of the request path against the token: no early exit on the first differing byte. */
+static int token_equal(const char* got, const char* token) {
+    unsigned char diff = 0;
+    unsigned i;
+
+    if (strlen(got) != SEL_CAST_HTTP_TOKEN_LEN) { /* the length is public */
+        return 0;
+    }
+    for (i = 0; i < SEL_CAST_HTTP_TOKEN_LEN; i++) {
+        diff |= (unsigned char)(got[i] ^ token[i]);
+    }
+    return diff == 0;
 }
 
 int sel_cast_http_open(sel_cast_http* s, const char* file, const char* mime) {
@@ -55,7 +61,9 @@ int sel_cast_http_open(sel_cast_http* s, const char* file, const char* mime) {
     fclose(f);
     snprintf(s->file, sizeof s->file, "%s", file);
     snprintf(s->mime, sizeof s->mime, "%s", mime);
-    token_make(s->token);
+    if (token_make(s->token) != 0) {
+        return SEL_CAST_HTTP_E_ENTROPY;
+    }
     s->lh = sel_net_listen(&port);
     if (s->lh < 0) {
         int rc = s->lh;
@@ -155,7 +163,7 @@ static int answer(sel_cast_http* s, int h, char* req) {
         reply_plain(h, 405, "Method Not Allowed", "Allow: GET, HEAD\r\n");
         return 0;
     }
-    if (target[0] != '/' || strcmp(target + 1, s->token) != 0) {
+    if (target[0] != '/' || !token_equal(target + 1, s->token)) {
         reply_plain(h, 404, "Not Found", "");
         return 0;
     }
