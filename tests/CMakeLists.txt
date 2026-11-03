@@ -2592,6 +2592,13 @@ if(NOT SEL_AMIGA)
             "-DSRV=${SEL_NET_DIR}/mdns_server.py" -P "${SEL_NET_DIR}/cast_discover.cmake")
   set_tests_properties(cast-discover PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cast_discover_ok")
 
+  # I899a: entropy pool (threshold, distinct output, seed file) and the cast HTTP server refusing to start unseeded.
+  add_executable(entropy_test net/entropy_test.c)
+  target_link_libraries(entropy_test PRIVATE selecta_shared_cast selecta_library)
+  target_include_directories(entropy_test PRIVATE "${PROJECT_SOURCE_DIR}/src/library")
+  add_test(NAME entropy COMMAND entropy_test "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(entropy PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "entropy_ok")
+
   # I894a1: UPnP MediaServer discovery (SSDP unicast to the fixture, HTTP description, ContentDirectory controlURL).
   add_executable(upnp_discover_test net/upnp_discover_test.c)
   target_link_libraries(upnp_discover_test PRIVATE selecta_shared_upnp selecta_library)

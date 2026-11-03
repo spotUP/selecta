@@ -7,6 +7,8 @@
 
 #include <selecta/machine.h>
 
+#include "../../library/entropy.h"
+
 #include <devices/timer.h>
 #include <exec/io.h>
 #include <exec/execbase.h>
@@ -74,6 +76,22 @@ const char* sel_clock_source(void) {
         clock_open();
     }
     return g_eclock_hz ? "eclock" : "datestamp";
+}
+
+/* I899a: one entropy sample for the shared pool, taken when the main loop wakes (input, UI, timers, network): the
+ * E-clock low bits jitter against the event, mixed with the raster beam position (VHPOSR). Without timer.device
+ * (vamos) there is no sample: the hardware registers are not emulated there either. */
+void sel_clock_entropy_sample(void) {
+    struct EClockVal ev;
+    volatile UWORD* vhposr = (volatile UWORD*)0xDFF006;
+
+    if (!g_tried) {
+        clock_open();
+    }
+    if (g_eclock_hz) {
+        ReadEClock(&ev);
+        sel_entropy_add(ev.ev_lo ^ ((uint32_t)*vhposr << 16) ^ ev.ev_hi);
+    }
 }
 
 uint32_t sel_host_clock_ms(const sel_host* h) {
