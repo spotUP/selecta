@@ -6,6 +6,7 @@
 #     and its answer reached the shared row loop), and the query reached the library too (`search groups` line present);
 #  1b. (I1024a) the same fan-out draws `From Internet Archive (8)`: archiveorg answers from the local advancedsearch fixture (11 hits,
 #     8 get a metadata request = the plugin's cap), the sentinel that its search hook is registered and ran;
+#  1c. (I1024d) the same fan-out draws `From Radio Browser (2)`: radiobrowser answers from the local stations fixture (3 stations, the AAC one dropped).
 #  2. the From rows are song rows of the shared loop: `searchrow` lines carry their modulespl: keys.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -15,8 +16,9 @@ file(READ "${NETWORK}/port" port)
 string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
-set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx},ia.search.test=${fx}")
+set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx},ia.search.test=${fx},rb.search.test=${fx}")
 set(ENV{SELECTA_ARCHIVEORG_BASE} "http://ia.search.test")
+set(ENV{SELECTA_RADIO_BROWSER} "http://rb.search.test") # I1024d
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
@@ -42,6 +44,9 @@ if(NOT rows EQUAL 3 OR NOT count EQUAL 3)
 endif()
 if(NOT "${o}" MATCHES "search_section [0-9]+ rows=8 From Internet Archive \\(8\\)\n")
   message(FATAL_ERROR "I1024a: no 'From Internet Archive' section with 8 rows:\n${o}")
+endif()
+if(NOT "${o}" MATCHES "search_section [0-9]+ rows=2 From Radio Browser \\(2\\)\n")
+  message(FATAL_ERROR "I1024d: no 'From Radio Browser' section with 2 rows:\n${o}")
 endif()
 if(NOT "${o}" MATCHES "search groups songs=")
   message(FATAL_ERROR "no library groups line in:\n${o}")
