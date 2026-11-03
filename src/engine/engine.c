@@ -9991,6 +9991,12 @@ void sel_engine_mark_audio_thread(sel_engine* e) {
     SEL_THREAD_MARK_AUDIO(e);
 }
 
+/* I1019c: buckets still queued (never started) when the last engine was destroyed; process-wide because the engine is gone when it is read. */
+static uint32_t g_quit_queue_dropped;
+uint32_t sel_engine_quit_queue_dropped(void) {
+    return g_quit_queue_dropped;
+}
+
 void sel_engine_destroy(sel_engine* e) {
     if (e) {
         SEL_THREAD_NOT_AUDIO(e);
@@ -10052,6 +10058,11 @@ void sel_engine_destroy(sel_engine* e) {
         if (e->rd_res_text) e->host->mem_free(e->host, e->rd_res_text);
         if (e->rd_res_meta) e->host->mem_free(e->host, e->rd_res_meta);
         if (e->rd_home_text) e->host->mem_free(e->host, e->rd_home_text);
+        g_quit_queue_dropped = 0;
+        for (i = 0; i < e->search_buckets; i++) {
+            g_quit_queue_dropped += e->search_bucket[i].state == SEARCH_QUEUED ? 1u : 0u;
+        }
+        /* I1019c: sentinel, read after destroy by `selecta --stats` */
         e->search_buckets = 0; /* I1019a: no queued source may start after the cancel below */
         if (e->scan_running || e->sync_running || e->search_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */

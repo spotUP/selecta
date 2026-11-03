@@ -365,6 +365,8 @@ void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx);
 
 sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg);
 void sel_engine_destroy(sel_engine* e);
+/* I1019c sentinel: search buckets still queued when sel_engine_destroy cleared the queue (the last destroy in this process). */
+uint32_t sel_engine_quit_queue_dropped(void);
 
 /* Enqueues a command. String and tag arguments are not copied: they must
  * stay valid until the next sel_engine_pump. Returns 0 when the queue is full. */
