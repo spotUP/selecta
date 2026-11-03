@@ -43,6 +43,16 @@ int sel_net_send(int h, const void* data, size_t len, unsigned timeout_ms);
  * timeout_ms, SEL_NET_E_CLOSED on peer shutdown, or another negative code. */
 int sel_net_recv(int h, void* buf, size_t cap, unsigned timeout_ms);
 void sel_net_close(int h);
+/* Listening TCP socket on all interfaces (I892e2: the Chromecast media server). *port 0 picks an ephemeral port and
+ * receives the bound port. Returns a handle (close it with sel_net_close) or a negative code. The environment guard
+ * does not apply: it judges connect targets only. */
+int sel_net_listen(unsigned* port);
+/* Waits up to timeout_ms for a connection on a listen handle. Returns the new connection handle (same table, same
+ * send/recv/close), SEL_NET_E_TIMEOUT, or another negative code. */
+int sel_net_accept(int lh, unsigned timeout_ms);
+/* Local address of a socket as dotted text; for a connected socket the interface its route uses (the address a peer on
+ * the LAN reaches this machine on). 0 on success. */
+int sel_net_local_ip(int h, char* out, size_t cap);
 /* Cancel generation of the calling thread: every connect, send and recv wait on this thread ends within ~50 ms (the
  * call fails with a negative code) once *gen differs from start, the value it had when the fetch began. A cancel is a
  * generation increment, so one that lands at any moment is seen; nothing is ever cleared. NULL clears the

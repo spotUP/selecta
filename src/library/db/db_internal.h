@@ -161,6 +161,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
 void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message* reply);
 void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply);
 void sel_library_meta(sel_library* lib, const sel_meta_op* op, sel_message* reply);
+void sel_library_srcstate(sel_library* lib, const sel_srcstate_op* op, sel_message* reply);
 void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply);
 
 /* art.c: SEL_LIB_REQ_ART. */

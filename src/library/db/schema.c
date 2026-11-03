@@ -267,9 +267,20 @@ static const char SCHEMA_V16[] =
     "CREATE INDEX IF NOT EXISTS songs_md5 ON songs(md5) WHERE md5 <> '';"
     "CREATE INDEX IF NOT EXISTS songs_source_path ON songs(source, path);";
 
+/* I894a6: per-source sync state (a source's own delta bookkeeping, e.g. the DLNA SystemUpdateID and walked container list).
+ * It describes the rows of the source, so it lives and dies with them: when the last songs row of a source goes, source_songs
+ * drops that source's row and this trigger drops its state. A db reset or another db therefore never carries a state that
+ * claims rows which are not there. */
+static const char SCHEMA_V17[] =
+    "CREATE TABLE IF NOT EXISTS source_state(source TEXT NOT NULL, key TEXT NOT NULL, value BLOB NOT NULL,"
+    " PRIMARY KEY(source, key)) WITHOUT ROWID;"
+    "CREATE TRIGGER IF NOT EXISTS source_songs_state_ad AFTER DELETE ON source_songs BEGIN "
+    "DELETE FROM source_state WHERE source = old.source;"
+    "END;";
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

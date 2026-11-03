@@ -370,7 +370,7 @@ int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel
 /* ---- I678f: the lists of a collection page (design doc section 8) ----
  * One statement per (kind, shelf). Every statement returns the five columns key, name, artist, year, number and binds the item key as ?1. */
 #define PLAYS "(SELECT COUNT(*) FROM history h WHERE h.key=s.key AND h.skipped=0)"
-#define SONG_COLS "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,'')," PLAYS " FROM songs s"
+#define SONG_COLS "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,'')," PLAYS ",s.added,IFNULL(s.duration_ms,0) FROM songs s"
 #define ALBUM_COLS \
     "SELECT CAST(a.id AS TEXT),a.name,IFNULL(a.artist,''),IFNULL(a.year,0)," \
     "(SELECT COUNT(*) FROM songs s WHERE s.album IS a.name AND s.artist IS a.artist) FROM albums a"
@@ -396,6 +396,12 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
         }
         if (kind == SEL_LIB_ITEM_LOCAL) return SONG_COLS " WHERE s.source='local' ORDER BY s.id";
         if (kind == SEL_LIB_ITEM_SOURCE) return SONG_COLS " WHERE s.source=?1 ORDER BY s.id";
+        if (kind == SEL_LIB_ITEM_PLAYLIST) { /* I994d3a: the entries in position order, the same columns as every song page */
+            /* I994d4: LEFT JOIN: an entry whose song is not (yet) a library row stays on the page, as the old key read showed it */
+            return "SELECT pe.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),"
+                   "(SELECT COUNT(*) FROM history h WHERE h.key=pe.key AND h.skipped=0),IFNULL(s.added,0),IFNULL(s.duration_ms,0)"
+                   " FROM playlist_entries pe LEFT JOIN songs s ON s.key=pe.key WHERE pe.playlist_id=CAST(?1 AS INTEGER) ORDER BY pe.pos";
+        }
         return NULL;
     case SEL_COLL_ALBUMS: return kind == SEL_LIB_ITEM_ARTIST ? ALBUM_COLS " WHERE a.artist=?1" NEWEST : NULL;
     case SEL_COLL_APPEARS:
@@ -407,7 +413,12 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
                    ? ALBUM_COLS " WHERE a.id<>CAST(?1 AS INTEGER) AND IFNULL(a.artist,'')<>''"
                                 " AND a.artist=(SELECT artist FROM albums WHERE id=CAST(?1 AS INTEGER))" NEWEST
                    : NULL;
-    case SEL_COLL_HEAD: return kind == SEL_LIB_ITEM_ALBUM ? ALBUM_COLS " WHERE a.id=CAST(?1 AS INTEGER)" : NULL;
+    case SEL_COLL_HEAD:
+        if (kind == SEL_LIB_ITEM_PLAYLIST) { /* I994d3a: the name of the playlist (the page title) */
+            return "SELECT CAST(p.id AS TEXT),p.name,'',0,(SELECT COUNT(*) FROM playlist_entries e WHERE e.playlist_id=p.id)"
+                   " FROM playlists p WHERE p.id=CAST(?1 AS INTEGER)";
+        }
+        return kind == SEL_LIB_ITEM_ALBUM ? ALBUM_COLS " WHERE a.id=CAST(?1 AS INTEGER)" : NULL;
     case SEL_COLL_SPELLINGS:
         return kind == SEL_LIB_ITEM_COMPOSER ? "SELECT display,display,'',0,n FROM composer_spellings WHERE canon=?1 ORDER BY n DESC, display"
                                              : NULL;
@@ -468,7 +479,7 @@ static int drill_op(sel_library* lib, const sel_genre_op* op, int* found, int64_
     sqlite3_bind_int64(st, 5, op->after > 0 ? (sqlite3_int64)op->after : 1000);
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         char count[24], size[24];
-        const char* f[6];
+        const char* f[8];
 
         num(count, sizeof count, st, 1);
         if (level == SEL_DRILL_FORMAT_SONGS || level == SEL_DRILL_ARTIST_SONGS) {
@@ -478,6 +489,7 @@ static int drill_op(sel_library* lib, const sel_genre_op* op, int* found, int64_
             f[0] = text(st, 0); f[1] = count; f[2] = size; f[3] = ""; f[4] = "";
         }
         f[5] = "";
+        f[6] = f[7] = "0"; /* I994d1: drill song rows carry no sort keys (a drill page has no order) */
         total++;
         (void)op->row(op->row_ctx, f);
     }
@@ -507,8 +519,8 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
     sqlite3_bind_text(st, 1, op->key, -1, SQLITE_TRANSIENT);
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         char year[24], number[24];
-        const char* f[6];
-        char fmt[16] = "";
+        const char* f[8];
+        char fmt[16] = "", added[24] = "0", dur[24] = "0";
 
         num(year, sizeof year, st, 3);
         num(number, sizeof number, st, 4);
@@ -521,6 +533,12 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
             sel_db_majority_format_cached(lib->db, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
         }
         f[5] = fmt;
+        if (op->mask == SEL_COLL_SONGS) { /* I994d1: the sort keys of the page order (songs.added, songs.duration_ms) */
+            num(added, sizeof added, st, 5);
+            num(dur, sizeof dur, st, 6);
+        }
+        f[6] = added;
+        f[7] = dur;
         total++;
         (void)op->row(op->row_ctx, f);
     }

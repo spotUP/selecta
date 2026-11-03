@@ -17,4 +17,7 @@ void sel_loop_notify(void);
  * and stops on SIGBREAKF_CTRL_C. */
 uint32_t sel_loop_turn(sel_engine* e, sel_event_sink sink, void* ctx);
 
+/* Takes one timing sample into the entropy pool (clock.c); the loop calls it on every wake-up. */
+void sel_clock_entropy_sample(void);
+
 #endif

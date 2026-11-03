@@ -59,6 +59,7 @@ typedef struct sel_route_entry {
     uint32_t kind;
     uint32_t id;    /* playlist id, else 0 */
     int32_t scroll; /* the page's scroll when it was left */
+    uint32_t aux;   /* page-private state kept when the page was left (Search: the facet chip); not part of the entry's identity */
     char key[SEL_ROUTE_KEY_MAX];
     char name[SEL_ROUTE_KEY_MAX];
     char sub[SEL_ROUTE_KEY_MAX];
@@ -75,6 +76,9 @@ void sel_route_hist_init(sel_route_hist* h);
 void sel_route_hist_seed(sel_route_hist* h, const sel_route_entry* cur);
 /* Remembers the scroll of the current entry (called before leaving it). */
 void sel_route_hist_scroll(sel_route_hist* h, int32_t scroll);
+/* I1012: the current entry keeps a page's own state when the page is left: Search stores its query (name), scope (sub) and facet (aux).
+ * None of them is identity (entry_same), so the Search door pushed again from the Search page is still not repeated. */
+void sel_route_hist_keep(sel_route_hist* h, const char* name, const char* sub, uint32_t aux);
 /* New navigation: drops the forward entries, appends `to` (not repeated when equal to the current entry), the oldest falls off at the
  * cap. Returns 1 when an entry was added. */
 int sel_route_hist_push(sel_route_hist* h, const sel_route_entry* to);
