@@ -1,5 +1,6 @@
 {
  "/json/stations/search": {
-  "file": "search.json"
+  "file": "search.json",
+  "delay_first_byte": 1.5
  }
 }

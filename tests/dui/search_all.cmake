@@ -81,6 +81,38 @@ if(NOT "${o}" MATCHES "searchrow [0-9]+ [^\n]*key=modulespl:")
   message(FATAL_ERROR "the From rows are not song rows of the shared loop (no searchrow with a modulespl: key):\n${o}")
 endif()
 
+# ---- I1044: the sources of one fan-out search at the same time, not one after another. The fixture delays modules.pl (4 s), ccMixter and
+# Radio Browser (1.5 s each) on their first byte. In parallel the whole fan-out takes about as long as the slowest source; one after
+# another it takes the sum of all of them (>= 7 s). `search_fanout peak` is the most searches in flight at once, `wall_ms` the span from
+# the first launch to the last landing, `search_src <id> ms=` each source's own time.
+if(NOT "${o}" MATCHES "search_fanout peak=([0-9]+) wall_ms=([0-9]+) sources=([0-9]+)\n")
+  message(FATAL_ERROR "I1044: no search_fanout line in the dump:\n${o}")
+endif()
+set(peak "${CMAKE_MATCH_1}")
+set(wall "${CMAKE_MATCH_2}")
+set(nsrc "${CMAKE_MATCH_3}")
+string(REGEX MATCHALL "search_src [a-z0-9_]+ ms=[0-9]+" srcs "${o}")
+message(STATUS "I1044 fan-out: peak=${peak} wall_ms=${wall} sources=${nsrc}: ${srcs}")
+set(sum 0)
+set(slowest 0)
+foreach(s IN LISTS srcs)
+  string(REGEX REPLACE ".* ms=([0-9]+)" "\\1" ms "${s}")
+  math(EXPR sum "${sum} + ${ms}")
+  if(ms GREATER slowest)
+    set(slowest "${ms}")
+  endif()
+endforeach()
+if(peak LESS 3)
+  message(FATAL_ERROR "I1044: at most ${peak} searches ran at once (want >= 3): the fan-out is serial:\n${o}")
+endif()
+if(slowest LESS 3500)
+  message(FATAL_ERROR "I1044: the slowest source took ${slowest} ms, the 4 s fixture delay did not apply:\n${o}")
+endif()
+math(EXPR serial_floor "${sum} - 1000")
+if(wall GREATER serial_floor)
+  message(FATAL_ERROR "I1044: the fan-out took ${wall} ms but its sources add up to ${sum} ms (slowest ${slowest} ms): they ran one after another")
+endif()
+
 # ---- I1030: a library that also matches the query (Johan's real library) fills the Songs, Albums and Artists groups (16 rows each),
 # so the From sections start past row 51 and Radio Browser, the last bucket, past row 64. The page draws the whole grouped result,
 # scrolled in pixels; a view window shorter than the search text hid the last source's section (VIEW_WINDOW 64). The sentinel: the
