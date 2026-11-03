@@ -2751,6 +2751,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-sync-dispatch COMMAND library_sync_dispatch_test)
   set_tests_properties(library-sync-dispatch PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sync_dispatch_ok")
 
+  # I1019a: SOURCE_SEARCH * fans out over every enabled searchable source in registry order; a newer query drops the stale task's hits.
+  add_executable(source_search_all_test engine/source_search_all_test.c)
+  target_include_directories(source_search_all_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(source_search_all_test PRIVATE selecta_library selecta_core)
+  add_test(NAME source-search-all COMMAND source_search_all_test)
+  set_tests_properties(source-search-all PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_all_ok")
+
   # I527: LIBRARY_SYNC runs on the library job thread; the pump returns while a blocking sync runs, a second sync and a scan queue.
   add_executable(library_sync_async_test engine/library_sync_async_test.c)
   target_include_directories(library_sync_async_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)

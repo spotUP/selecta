@@ -192,12 +192,24 @@
 #define SEL_RESULT_LINE_MAX 255u
 #define SEL_SYNC_QUEUE SEL_SOURCE_MAX /* LIBRARY_SYNCs waiting behind the running sync or scan (I527): one per source,
                                        * so the sync-all banner never loses a source to sync_busy */
-#define SEL_SEARCH_HITS 120
+#define SEL_SEARCH_HITS_PER_SOURCE 40 /* I1019a: one source's hit cap (today's single-source cap 120 shrinks; a site returns its best first) */
+#define SEL_SEARCH_SOURCES_MAX 4      /* I1019a: searchable sources one fan-out holds (registry order; the registry has one today, modulespl) */
 #define SEL_SEARCH_KEY_MAX 256
 #define SEL_SEARCH_QUERY_MAX 256
 #define SEL_SEARCH_TEXT_MAX 160
 #define SEL_SEARCH_ARTIST_MAX 96
 #define SEL_SEARCH_FORMAT_MAX 16
+
+typedef struct sel_search_hit { /* one SOURCE_SEARCH hit; tags point into the same struct */
+    char key[SEL_SEARCH_KEY_MAX];
+    char title[SEL_SEARCH_TEXT_MAX];
+    char artist[SEL_SEARCH_ARTIST_MAX];
+    char format[SEL_SEARCH_FORMAT_MAX];
+    sel_tag tags[7];
+} sel_search_hit;
+enum { SEARCH_NONE = 0, SEARCH_QUEUED, SEARCH_RUNNING, SEARCH_DONE, SEARCH_FAILED }; /* bucket states */
+struct sel_engine;
+static int search_queued(const struct sel_engine* e);
 #define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
 
 /* Events coalesced inside a batch: the latest value wins, emitted at END. */
@@ -581,23 +593,28 @@ struct sel_engine {
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
-    struct {                                 /* SOURCE_SEARCH hits (I406): stable until the next search, events point here */
-        char key[SEL_SEARCH_KEY_MAX];
-        char title[SEL_SEARCH_TEXT_MAX];
-        char artist[SEL_SEARCH_ARTIST_MAX];
-        char format[SEL_SEARCH_FORMAT_MAX];
-        sel_tag tags[7];
-    } search_hit[SEL_SEARCH_HITS];
-    char search_source[SEL_SOURCE_ID_MAX];
+    sel_search_hit search_hit[SEL_SEARCH_HITS_PER_SOURCE]; /* SOURCE_SEARCH landing (I406): the running task fills it, the events point here until the next task starts */
+    /* I1019a: SOURCE_SEARCH * fans out over the enabled searchable sources. One bucket per source, fixed (no allocation after start), in registry
+     * order; the collect of each finished task copies the landing into its bucket. The single-source form is one bucket. */
+    struct {
+        char id[SEL_SOURCE_ID_MAX];
+        int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
+        uint32_t n;
+        sel_search_hit hit[SEL_SEARCH_HITS_PER_SOURCE];
+    } search_bucket[SEL_SEARCH_SOURCES_MAX];
+    uint32_t search_buckets;                 /* buckets of the current query */
+    uint32_t search_cur;                     /* the bucket the running task fills */
+    uint32_t search_gen;                     /* bumped per query; a task of an older generation is dropped at its collect */
+    uint32_t search_task_gen;                /* the generation the running task started in */
+    uint32_t search_stale_drops;             /* collects dropped by the generation check (sentinel) */
+    char search_source[SEL_SOURCE_ID_MAX];   /* id of the running task's source */
     sel_tag search_done_tags[4];
     /* I406a: SOURCE_SEARCH runs on the library job thread (I782: the network never blocks the command thread). The task
      * owns search_* while search_running; one request that arrives while the slot is busy waits in search_wait_*. */
     int search_running;
     int search_rc;
     char search_query[SEL_SEARCH_QUERY_MAX];
-    int search_waiting;
-    char search_wait_source[SEL_SOURCE_ID_MAX];
-    char search_wait_query[SEL_SEARCH_QUERY_MAX];
+    char search_wait_query[SEL_SEARCH_QUERY_MAX]; /* the current query; queued buckets start from it, search_query belongs to the running task */
     sel_sync_ctx search_ctx;
     uint32_t source_searches;      /* searches started (STAT_SOURCE_SEARCHES) */
     uint32_t source_pins;          /* I406b: hits handed to the library (search_pin) */
@@ -960,7 +977,7 @@ static void copy_str(char* dst, size_t cap, const char* src) {
 }
 
 void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx) {
-    while (e->scan_running || e->sync_running || e->search_running || e->search_waiting) {
+    while (e->scan_running || e->sync_running || e->search_running || search_queued(e)) {
 #if defined(__unix__) || defined(__APPLE__)
         struct timespec ts;
         ts.tv_sec = 0;
@@ -2854,20 +2871,47 @@ static void wq_pin_done(sel_engine* e, sel_wq_op* op) {
     e->source_pins++;
 }
 
-static int search_pin(sel_engine* e, const char* key) {
-    uint32_t i;
+/* I1019a: the hits of the current query as one list, bucket by bucket in registry order (only finished buckets hold hits). */
+static uint32_t search_total(const sel_engine* e) {
+    uint32_t b, n = 0;
 
-    if (e->lib == NULL || e->search_running || key == NULL || e->search_source[0] == '\0') {
+    for (b = 0; b < e->search_buckets; b++) {
+        n += e->search_bucket[b].state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+    }
+    return n;
+}
+
+static const sel_search_hit* search_hit_at(const sel_engine* e, uint32_t idx, const char** source) {
+    uint32_t b;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        uint32_t n = e->search_bucket[b].state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+
+        if (idx < n) {
+            if (source != NULL) *source = e->search_bucket[b].id;
+            return &e->search_bucket[b].hit[idx];
+        }
+        idx -= n;
+    }
+    return NULL;
+}
+
+static int search_pin(sel_engine* e, const char* key) {
+    uint32_t i, total = search_total(e);
+
+    if (e->lib == NULL || e->search_running || key == NULL || total == 0) {
         return 0;
     }
-    for (i = 0; i < e->search_n && i < SEL_SEARCH_HITS; i++) {
-        if (strcmp(e->search_hit[i].key, key) == 0) {
-            const char* artist = e->search_hit[i].artist;
-            const char* format = e->search_hit[i].format;
+    for (i = 0; i < total; i++) {
+        const char* source = "";
+        const sel_search_hit* hit = search_hit_at(e, i, &source);
+
+        if (strcmp(hit->key, key) == 0) {
+            const char* artist = hit->artist;
+            const char* format = hit->format;
             size_t an = strlen(artist) + 1u, fn = strlen(format) + 1u;
             char* res = (char*)e->host->mem_alloc(e->host, an + fn, SEL_MEM_FAST);
-            sel_wq_op* op = res != NULL ? wq_new(e, wq_pin_run, wq_pin_done, e->search_source, key + strlen(e->search_source) + 1u,
-                                                 e->search_hit[i].title) : NULL;
+            sel_wq_op* op = res != NULL ? wq_new(e, wq_pin_run, wq_pin_done, source, key + strlen(source) + 1u, hit->title) : NULL;
 
             if (op == NULL) {
                 if (res != NULL) e->host->mem_free(e->host, res);
@@ -4658,7 +4702,7 @@ void sel_engine_sync_cancel(sel_engine* e) {
 }
 
 int sel_engine_scan_busy(const sel_engine* e) {
-    return e->scan_running || e->sync_running || e->search_running || e->search_waiting; /* the scan and the sync share the one library task slot (I527) */
+    return e->scan_running || e->sync_running || e->search_running || search_queued(e); /* the scan and the sync share the one library task slot (I527) */
 }
 
 static int scan_cancelled_cb(void* ctx) {
@@ -7498,34 +7542,41 @@ static void sync_start_next(sel_engine* e) {
 /* SOURCE_SEARCH <source> <query> (D-OS-3, row I406): asks the source's own search (its `search` hook, a site query, not
  * the local library) and answers one LIBRARY_RESULT per hit (SRC_KIND search; SRC_PATH is the song key `source:path`,
  * playable with OPEN), then one with SRC_KIND search_done and SRC_COUNT. The source is remembered as the pref
- * search.last_source. Runs on the command thread, like LIBRARY_FETCH. */
-static int search_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
-    sel_engine* e = ctx;
-    uint32_t i = e->search_n;
-    sel_tag* t;
+ * nothing is remembered (I1019a dropped search.last_source). Runs on the library job thread; source `*` fans out over every enabled
+ * searchable source, one task per source (search_bucket). */
+static void search_hit_tags(sel_search_hit* h, const char* source) {
+    sel_tag* t = h->tags;
 
-    if (i >= SEL_SEARCH_HITS) {
-        return 0;
-    }
-    snprintf(e->search_hit[i].key, sizeof e->search_hit[i].key, "%s:%s", e->search_source, path);
-    snprintf(e->search_hit[i].title, sizeof e->search_hit[i].title, "%s", title);
-    snprintf(e->search_hit[i].artist, sizeof e->search_hit[i].artist, "%s", artist);
-    snprintf(e->search_hit[i].format, sizeof e->search_hit[i].format, "%s", format);
-    t = e->search_hit[i].tags;
     t[0].tag = SEL_SRC_KEY;
-    t[0].value = (uintptr_t)e->search_source;
+    t[0].value = (uintptr_t)source;
     t[1].tag = SEL_SRC_KIND;
     t[1].value = (uintptr_t)"search";
     t[2].tag = SEL_SRC_PATH;
-    t[2].value = (uintptr_t)e->search_hit[i].key;
+    t[2].value = (uintptr_t)h->key;
     t[3].tag = SEL_SRC_NAME;
-    t[3].value = (uintptr_t)e->search_hit[i].title;
+    t[3].value = (uintptr_t)h->title;
     t[4].tag = SEL_SRC_ARTIST;
-    t[4].value = (uintptr_t)e->search_hit[i].artist;
+    t[4].value = (uintptr_t)h->artist;
     t[5].tag = SEL_SRC_FORMAT;
-    t[5].value = (uintptr_t)e->search_hit[i].format;
+    t[5].value = (uintptr_t)h->format;
     t[6].tag = SEL_TAG_END;
     t[6].value = 0;
+}
+
+static int search_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
+    sel_engine* e = ctx;
+    uint32_t i = e->search_n;
+    sel_search_hit* h;
+
+    if (i >= SEL_SEARCH_HITS_PER_SOURCE) {
+        return 0;
+    }
+    h = &e->search_hit[i];
+    snprintf(h->key, sizeof h->key, "%s:%s", e->search_source, path);
+    snprintf(h->title, sizeof h->title, "%s", title);
+    snprintf(h->artist, sizeof h->artist, "%s", artist);
+    snprintf(h->format, sizeof h->format, "%s", format);
+    search_hit_tags(h, e->search_source);
     e->search_n++;
     return 1;
 }
@@ -7547,9 +7598,13 @@ static void search_task(void* ctx) {
     sel_sync_ctx_release(&e->search_ctx);
 }
 
-static void search_start(sel_engine* e, const char* source, const char* query) {
-    snprintf(e->search_source, sizeof e->search_source, "%s", source);
-    snprintf(e->search_query, sizeof e->search_query, "%s", query);
+/* Starts the library task for bucket `b` of the current query. */
+static void search_start(sel_engine* e, uint32_t b) {
+    snprintf(e->search_source, sizeof e->search_source, "%s", e->search_bucket[b].id);
+    snprintf(e->search_query, sizeof e->search_query, "%s", e->search_wait_query);
+    e->search_cur = b;
+    e->search_task_gen = e->search_gen;
+    e->search_bucket[b].state = SEARCH_RUNNING;
     e->search_n = 0;
     e->search_serial++;
     e->search_rc = -1;
@@ -7563,64 +7618,122 @@ static void search_start(sel_engine* e, const char* source, const char* query) {
     e->search_running = 1;
     if (!sel_library_task_start(e->lib, search_task, e)) {
         e->search_running = 0;
-        sel_engine_report_error(e, "search_failed", source);
+        e->search_bucket[b].state = SEARCH_FAILED;
+        sel_engine_report_error(e, "search_failed", e->search_source);
     }
 }
 
+static int search_queued(const sel_engine* e) {
+    uint32_t b;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        if (e->search_bucket[b].state == SEARCH_QUEUED) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* One library task per source, one at a time: the first queued bucket of the current generation starts when the slot is free. */
 static void search_start_next(sel_engine* e) {
-    if (e->search_waiting && !e->scan_running && !e->sync_running && !e->search_running) {
-        e->search_waiting = 0;
-        search_start(e, e->search_wait_source, e->search_wait_query);
+    uint32_t b;
+
+    while (!e->scan_running && !e->sync_running && !e->search_running) {
+        for (b = 0; b < e->search_buckets && e->search_bucket[b].state != SEARCH_QUEUED; b++) {
+        }
+        if (b >= e->search_buckets) {
+            return;
+        }
+        search_start(e, b); /* a start that fails marks its bucket failed; the next queued one is tried */
     }
 }
 
+/* A new query supersedes the one in flight: the generation bump makes its collect a drop, the cancel request ends its network wait. */
+static void search_supersede(sel_engine* e) {
+    e->search_gen++;
+    e->search_buckets = 0;
+    e->search_serial++;
+    if (e->search_running) {
+        sel_library_task_cancel_request(e->lib); /* I782: returns at once; the job thread notices at its next poll slice */
+    }
+}
+
+static void search_bucket_set(sel_engine* e, const char* id) {
+    uint32_t b = e->search_buckets++;
+
+    snprintf(e->search_bucket[b].id, sizeof e->search_bucket[b].id, "%s", id);
+    e->search_bucket[b].state = SEARCH_QUEUED;
+    e->search_bucket[b].n = 0;
+}
+
+/* SOURCE_SEARCH <source> <query>; source `*` (I1019a) searches every enabled source that has a search hook, in registry order. */
 static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
+    const char* source = m->args[0].v.s;
+    const char* query = m->args[1].v.s;
+
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "SOURCE_SEARCH");
         return;
     }
-    if (!e->scan_running && !e->sync_running && !e->search_running) {
-        search_start(e, m->args[0].v.s, m->args[1].v.s);
-        return;
+    search_supersede(e);
+    snprintf(e->search_wait_query, sizeof e->search_wait_query, "%s", query);
+    if (strcmp(source, "*") == 0) {
+        uint32_t i;
+
+        for (i = 0; query[0] != '\0' && i < sel_source_count() && e->search_buckets < SEL_SEARCH_SOURCES_MAX; i++) {
+            const sel_source* src = sel_source_get(i);
+
+            if (src != NULL && src->search != NULL && !sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], src->id)) {
+                search_bucket_set(e, src->id);
+            }
+        }
+    } else {
+        search_bucket_set(e, source);
     }
-    snprintf(e->search_wait_source, sizeof e->search_wait_source, "%s", m->args[0].v.s);
-    snprintf(e->search_wait_query, sizeof e->search_wait_query, "%s", m->args[1].v.s);
-    e->search_waiting = 1; /* a newer request replaces the waiting one */
+    search_start_next(e); /* busy slot (scan, sync or the superseded search): the pump starts it after that task's collect */
 }
 
 /* Pump side of SOURCE_SEARCH: the events go out from the pump thread only. */
 static void search_collect(sel_engine* e) {
     sel_message r;
-    uint32_t i;
+    uint32_t i, b;
 
     if (!e->search_running || e->lib == NULL || !sel_library_task_take(e->lib)) {
         return;
     }
     e->search_running = 0;
-    e->search_serial++;
-    if (e->search_rc < 0) {
-        sel_engine_report_error(e, sel_source_find(e->search_source) == NULL ? "unknown_source" : "search_failed",
-                                e->search_source);
+    if (e->search_task_gen != e->search_gen) {
+        e->search_stale_drops++; /* a superseded query: no events, no view change, its buckets are gone */
     } else {
-        for (i = 0; i < e->search_n; i++) {
+        b = e->search_cur;
+        e->search_serial++;
+        if (e->search_rc < 0) {
+            e->search_bucket[b].state = SEARCH_FAILED;
+            sel_engine_report_error(e, sel_source_find(e->search_source) == NULL ? "unknown_source" : "search_failed",
+                                    e->search_source);
+        } else {
+            /* The events point into the bucket, not the landing: the next source's task starts below and rewrites the landing while these
+             * events still sit in the queue. A bucket is rewritten only by a later query's collect. */
+            for (i = 0; i < e->search_n; i++) {
+                e->search_bucket[b].hit[i] = e->search_hit[i];
+                search_hit_tags(&e->search_bucket[b].hit[i], e->search_bucket[b].id);
+                evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+                evt_tags(&r, e->search_bucket[b].hit[i].tags);
+                emit(e, &r);
+            }
+            e->search_bucket[b].n = e->search_n;
+            e->search_bucket[b].state = SEARCH_DONE;
+            e->search_done_tags[0].tag = SEL_SRC_KEY;
+            e->search_done_tags[0].value = (uintptr_t)e->search_bucket[b].id;
+            e->search_done_tags[1].tag = SEL_SRC_KIND;
+            e->search_done_tags[1].value = (uintptr_t)"search_done";
+            e->search_done_tags[2].tag = SEL_SRC_COUNT;
+            e->search_done_tags[2].value = e->search_n;
+            e->search_done_tags[3].tag = SEL_TAG_END;
+            e->search_done_tags[3].value = 0;
             evt_init(&r, SEL_EVT_LIBRARY_RESULT);
-            evt_tags(&r, e->search_hit[i].tags);
+            evt_tags(&r, e->search_done_tags);
             emit(e, &r);
-        }
-        e->search_done_tags[0].tag = SEL_SRC_KEY;
-        e->search_done_tags[0].value = (uintptr_t)e->search_source;
-        e->search_done_tags[1].tag = SEL_SRC_KIND;
-        e->search_done_tags[1].value = (uintptr_t)"search_done";
-        e->search_done_tags[2].tag = SEL_SRC_COUNT;
-        e->search_done_tags[2].value = e->search_n;
-        e->search_done_tags[3].tag = SEL_TAG_END;
-        e->search_done_tags[3].value = 0;
-        evt_init(&r, SEL_EVT_LIBRARY_RESULT);
-        evt_tags(&r, e->search_done_tags);
-        emit(e, &r);
-        (void)sel_prefs_set(&e->prefs, "search.last_source", e->search_source);
-        if (e->config_dir[0] != '\0') {
-            (void)sel_prefs_save(&e->prefs, e->config_dir);
         }
     }
     scan_start_next(e);
@@ -8936,7 +9049,7 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
                 songs_unstage(e);
                 return 0;
             }
-            s->count = e->search_n;
+            s->count = search_total(e);
             s->key_at = (const char**)calloc((size_t)s->count + 1u, sizeof *s->key_at);
             if (s->key_at == NULL) {
                 sel_engine_report_error(e, "no_memory", verb);
@@ -8944,7 +9057,7 @@ static int songs_open_ex(sel_engine* e, const char* verb, const char* list, uint
                 songs_unstage(e);
                 return 0;
             }
-            for (i = 0; i < s->count; i++) s->key_at[i] = e->search_hit[i].key;
+            for (i = 0; i < s->count; i++) s->key_at[i] = search_hit_at(e, i, NULL)->key;
             e->songs_hits_opens++;
         }
     } else {
@@ -9884,6 +9997,7 @@ void sel_engine_destroy(sel_engine* e) {
         if (e->rd_res_text) e->host->mem_free(e->host, e->rd_res_text);
         if (e->rd_res_meta) e->host->mem_free(e->host, e->rd_res_meta);
         if (e->rd_home_text) e->host->mem_free(e->host, e->rd_home_text);
+        e->search_buckets = 0; /* I1019a: no queued source may start after the cancel below */
         if (e->scan_running || e->sync_running || e->search_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
         }
