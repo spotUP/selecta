@@ -270,6 +270,8 @@ typedef struct run {
     const sel_host* host;
     const sel_catalogue* cat;
     uint32_t rows, skipped;
+    int stopped;
+    const sel_search_sink* sink; /* search: rows go to the sink and nothing is written to the catalogue; NULL: sync */
 } run;
 
 static void take_upload(void* ctx, rec* t) {
@@ -277,6 +279,9 @@ static void take_upload(void* ctx, rec* t) {
     char path[ID_MAX + 240u], format[128], lic[64];
     sel_catalogue_song song;
 
+    if (r->stopped) {
+        return; /* the search sink had enough */
+    }
     if (!id_ok(t->id) || t->file[0] == '\0' || !sel_license_is_open(t->license) || t->user[0] == '\0') {
         r->skipped++; /* no MP3, or a licence that is not Creative Commons / public domain */
         return;
@@ -286,6 +291,13 @@ static void take_upload(void* ctx, rec* t) {
     sel_license_name(t->license, lic, sizeof lic);
     snprintf(path, sizeof path, "%s/%s/%s", t->id, t->user, t->title);
     snprintf(format, sizeof format, "ccMixter - %s", lic);
+    if (r->sink != NULL) {
+        r->rows++;
+        if (!r->sink->row(r->sink->ctx, path, t->title, t->user, format)) {
+            r->stopped = 1; /* the sink asked to stop */
+        }
+        return;
+    }
     memset(&song, 0, sizeof song);
     song.path = path;
     song.format = format;
@@ -383,6 +395,40 @@ static int cc_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* 
     sel_sync_stat(stats, cap, SEL_SYNC_NET_BYTES, (uint32_t)got);
     sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, rq);
     return ok;
+}
+
+#define SEARCH_ROWS 50u /* uploads a search asks for, best rank first */
+
+/* Search: one GET /api/query?search=<query> (the sync's query, MP3 only, open licences only). The rows go to the sink with
+ * the sync's key <id>/<user>/<title>, the catalogue is not touched. Returns the row count, -1 when the service answers no 200. */
+static int cc_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    const sel_net* net = host != NULL && host->net != NULL ? host->net(host) : NULL;
+    const sel_catalogue* cat = host != NULL && host->catalogue != NULL ? host->catalogue(host) : NULL;
+    char dir[URL_BYTES - 64u], enc[300], url[URL_BYTES], path[URL_BYTES];
+    uint32_t rq = 0;
+    unsigned long got = 0;
+    run r;
+    FILE* f;
+    int ok = 0;
+
+    memset(&r, 0, sizeof r);
+    r.host = host;
+    r.cat = cat;
+    r.sink = out;
+    if (net == NULL || net->request_ex == NULL || cat == NULL || query == NULL || out == NULL ||
+        !cat->cache_dir(host, "ccmixter", dir, sizeof dir) || !sel_url_query_encode(query, enc, sizeof enc)) {
+        return -1;
+    }
+    snprintf(url, sizeof url, "%s/api/query?f=json&sort=rank&limit=%u&tags=mp3&search=%s", api_base(), SEARCH_ROWS, enc);
+    /* A search may run while a sync of this source is fetching: each keeps its own file. */
+    snprintf(path, sizeof path, "%s/search-query.json", dir);
+    if (fetch(host, net, url, path, &rq, &got) == 200 && (f = fopen(path, "rb")) != NULL) {
+        read_uploads(f, take_upload, &r);
+        fclose(f);
+        ok = 1;
+    }
+    remove(path);
+    return ok ? (int)r.rows : -1;
 }
 
 typedef struct found {
@@ -487,7 +533,7 @@ static const sel_source g_ccmixter = {
     "Creative Commons remixes and samples streamed from ccMixter; each upload shows its own licence.",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, cc_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     SITE_HOME, cc_play_url,
-    NULL, /* search (I406) */
+    cc_search,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

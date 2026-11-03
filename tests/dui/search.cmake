@@ -28,10 +28,11 @@ if(mod_count LESS 1)
   message(FATAL_ERROR "the fixture has no mod songs to count")
 endif()
 
+set(SEARCH_CANVAS 1280x800)
 function(search_run tag script)
   file(REMOVE_RECURSE "${WORK}/cfg")
   file(WRITE "${WORK}/${tag}.txt" "${script}")
-  dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 1280x800 --clock fixed --stats
+  dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas ${SEARCH_CANVAS} --clock fixed --stats
     --input "${WORK}/${tag}.txt")
   set(out "${o}\n${o_err}")
   dui_stat(hash "${o}" desktop canvas_hash)
@@ -91,14 +92,19 @@ expect("${burst_out}" "search groups songs=${mod_count} albums=${want_albums} ar
 math(EXPR want_all "3 + ${mod_count} + ${want_albums} + ${want_artists}")
 # I1019e: with no source chip the fan-out adds one "From <name>" section per searchable source after the library groups; each
 # is its heading plus its rows (a state row while the answer is pending or failed). Count them from the dump's section lines.
-string(REGEX MATCHALL "search_section [0-9]+ rows=[0-9]+" from_sections "${burst_out}")
+# I1024e: with five From sections the 800 px frame clips the last rows, so the drawn count is read from a canvas tall enough
+# for every row (the golden frame above stays 1280x800).
+set(SEARCH_CANVAS 1280x1400)
+search_run(tall "${typed}wait 600\n")
+set(SEARCH_CANVAS 1280x800)
+string(REGEX MATCHALL "search_section [0-9]+ rows=[0-9]+" from_sections "${tall_out}")
 set(from_drawn 0)
 foreach(sec IN LISTS from_sections)
   string(REGEX MATCH "rows=([0-9]+)" unused "${sec}")
   math(EXPR from_drawn "${from_drawn} + 1 + ${CMAKE_MATCH_1}")
 endforeach()
 math(EXPR want_all "${want_all} + ${from_drawn}")
-string(REGEX MATCH "facet=0 drawn=([0-9]+)" unused "${burst_out}")
+string(REGEX MATCH "facet=0 drawn=([0-9]+)" unused "${tall_out}")
 if(NOT CMAKE_MATCH_1 EQUAL want_all)
   message(FATAL_ERROR "All draws 3 headings and every entry: expected ${want_all} rows, got ${CMAKE_MATCH_1}")
 endif()

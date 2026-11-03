@@ -7,6 +7,7 @@
 #  1b. (I1024a) the same fan-out draws `From Internet Archive (8)`: archiveorg answers from the local advancedsearch fixture (11 hits,
 #     8 get a metadata request = the plugin's cap), the sentinel that its search hook is registered and ran;
 #  1c. (I1024d) the same fan-out draws `From Radio Browser (2)`: radiobrowser answers from the local stations fixture (3 stations, the AAC one dropped).
+#  1d. (I1024e) and `From ccMixter (2)`: ccmixter answers from the local /api/query fixture (4 uploads, closed licence and WAV-only dropped).
 #  2. the From rows are song rows of the shared loop: `searchrow` lines carry their modulespl: keys.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -16,9 +17,10 @@ file(READ "${NETWORK}/port" port)
 string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
-set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx},ia.search.test=${fx},rb.search.test=${fx}")
+set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx},ia.search.test=${fx},rb.search.test=${fx},cc.search.test=${fx}")
 set(ENV{SELECTA_ARCHIVEORG_BASE} "http://ia.search.test")
 set(ENV{SELECTA_RADIO_BROWSER} "http://rb.search.test") # I1024d
+set(ENV{SELECTA_CCMIXTER_BASE} "http://cc.search.test") # I1024e
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
@@ -30,7 +32,8 @@ file(WRITE "${WORK}/in.txt" "wait 300\nkey c\nkey h\nkey i\nkey p\nkey enter\n")
 foreach(i RANGE 1 40)
   file(APPEND "${WORK}/in.txt" "wait 300\n")
 endforeach()
-dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1280x800 --clock fixed --stats
+# I1024e: four From sections (8 + 2 + 3 + 2 rows and headings) do not fit 800 px; the frame is tall enough to draw them all.
+dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1280x1400 --clock fixed --stats
   --input "${WORK}/in.txt")
 string(REGEX MATCHALL "search_section [0-9]+ rows=[0-9]+ [^\n]*" sections "${o}")
 message(STATUS "sections: ${sections}")
@@ -47,6 +50,9 @@ if(NOT "${o}" MATCHES "search_section [0-9]+ rows=8 From Internet Archive \\(8\\
 endif()
 if(NOT "${o}" MATCHES "search_section [0-9]+ rows=2 From Radio Browser \\(2\\)\n")
   message(FATAL_ERROR "I1024d: no 'From Radio Browser' section with 2 rows:\n${o}")
+endif()
+if(NOT "${o}" MATCHES "search_section [0-9]+ rows=2 From ccMixter \\(2\\)\n")
+  message(FATAL_ERROR "I1024e: no 'From ccMixter' section with 2 rows:\n${o}")
 endif()
 if(NOT "${o}" MATCHES "search groups songs=")
   message(FATAL_ERROR "no library groups line in:\n${o}")
@@ -129,8 +135,8 @@ sa_rows("start" "${s0}")
 if(NOT "${s0}" MATCHES "online scope=- ")
   message(FATAL_ERROR "start: the page must open on All sources (scope=-):\n${s0}")
 endif()
-if(NOT "${s0}" MATCHES "online_chip 3 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no Modules.pl chip (online_chip 3):\n${s0}")
+if(NOT "${s0}" MATCHES "online_chip 4 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no Modules.pl chip (online_chip 4):\n${s0}")
 endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")

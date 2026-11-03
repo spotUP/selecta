@@ -22,15 +22,17 @@ set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.te
 set(ENV{SELECTA_ARCHIVEORG_BASE} "http://fixture.test")
 # I1024d: radiobrowser searches too; same 404 = search_failed
 set(ENV{SELECTA_RADIO_BROWSER} "http://fixture.test")
+# I1024e: ccmixter searches too; same 404 = search_failed
+set(ENV{SELECTA_CCMIXTER_BASE} "http://fixture.test")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
 set(ENV{SELECTA_CACHE_DIR} "${WORK}/cache")
-# I1019f: the source filter is not remembered, so the Modules.pl chip (chip 3 since I1024a put Internet Archive at 2) is clicked: its rect comes from an idle dump.
+# I1019f: the source filter is not remembered, so the Modules.pl chip (chip 4 since I1024a put Internet Archive at 2 and I1024e ccMixter at 3) is clicked: its rect comes from an idle dump.
 file(WRITE "${WORK}/in.txt" "wait 300\n")
 dui_run(chipdump --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1280x800 --clock fixed --stats --input "${WORK}/in.txt")
-if(NOT "${chipdump}" MATCHES "online_chip 3 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no online_chip 3 on the Search page:\n${chipdump}")
+if(NOT "${chipdump}" MATCHES "online_chip 4 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no online_chip 4 on the Search page:\n${chipdump}")
 endif()
 math(EXPR chip_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR chip_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
