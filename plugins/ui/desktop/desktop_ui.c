@@ -12830,6 +12830,12 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return 1;
     }
     if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
+        const char* hist = txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
+        if (hist != NULL && (strcmp(hist, "@back") == 0 || strcmp(hist, "@forward") == 0)) {
+            /* I1012: the page history keys work with the field focused; the field has no edit for them and used to swallow them */
+            d->nav_keys++;
+            return desk_page_walk(d, hist[1] == 'b' ? -1 : 1);
+        }
         if (ev->code == 27u) {
             d->search_pending = 0; /* Escape leaves without a search */
             d->focus = 0;

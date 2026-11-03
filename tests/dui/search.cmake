@@ -228,3 +228,34 @@ endif()
 if(NOT "${hist1_out}" MATCHES "search scroll y=${want_y} max=")
   message(FATAL_ERROR "Back to Search must restore the scroll offset ${want_y}:\n${hist1_out}")
 endif()
+
+# I1012 (Johan 2026-11-03 Mac, reopened): the search field keeps the keyboard focus through query, facet click and wheel, and it
+# swallowed the history keys (field_edit has no edit for them, so desk_key returned before the bindings). A single click on a Search
+# song row only selects and a double click plays in place, so neither opens a page; the swallow is the bug. With the field focused,
+# Alt+Left must walk back one entry, and Alt+Right must walk forward to Search again with the query, facet and offset.
+scroll_run(hist2 "${sq}${sfacet}key alt+left\nwait 600\n")
+if(NOT "${hist2_out}" MATCHES "route route_calls=[0-9]+ cur=([a-z_]+) n=([0-9]+) pos=([0-9]+) " OR CMAKE_MATCH_1 STREQUAL "search")
+  message(FATAL_ERROR "Alt+Left with the search field focused must leave Search for the previous history entry:\n${hist2_out}")
+endif()
+math(EXPR back_pos "${CMAKE_MATCH_3} + 2")
+if(NOT back_pos EQUAL CMAKE_MATCH_2)
+  message(FATAL_ERROR "Alt+Left with the search field focused must step one entry back (n=${CMAKE_MATCH_2} pos=${CMAKE_MATCH_3}):\n${hist2_out}")
+endif()
+scroll_run(hist2b "${sq}${sfacet}key alt+left\nwait 300\nkey alt+right\nwait 600\n")
+if(NOT "${hist2b_out}" MATCHES "route route_calls=[0-9]+ cur=search n=([0-9]+) pos=([0-9]+) ")
+  message(FATAL_ERROR "Alt+Left then Alt+Right with the search field focused must land on Search again:\n${hist2b_out}")
+endif()
+math(EXPR last_pos "${CMAKE_MATCH_2} + 1")
+if(NOT last_pos EQUAL CMAKE_MATCH_1 OR NOT "${hist2b_out}" MATCHES "nav page=search nav_clicks=0 nav_keys=2 "
+   OR NOT "${hist2b_out}" MATCHES "facet=1 drawn=[1-9]" OR NOT "${hist2b_out}" MATCHES "search scroll y=${want_y} max=")
+  message(FATAL_ERROR "Alt+Right back to Search must be the last entry with both keys counted, the Songs facet and offset ${want_y}:\n${hist2b_out}")
+endif()
+# Search, door page, Alt+Left (Search refocuses the field), Alt+Right: the walk forward lands on the door page again.
+scroll_run(hist3 "${sq}${sfacet}door 3\nwait 100\nkey alt+left\nwait 300\nkey alt+right\nwait 600\n")
+if(NOT "${hist3_out}" MATCHES "route route_calls=[0-9]+ cur=([a-z_]+) n=([0-9]+) pos=([0-9]+) " OR CMAKE_MATCH_1 STREQUAL "search")
+  message(FATAL_ERROR "Alt+Right with the search field focused must walk forward to the door page again (not search):\n${hist3_out}")
+endif()
+math(EXPR last_pos "${CMAKE_MATCH_3} + 1")
+if(NOT last_pos EQUAL CMAKE_MATCH_2)
+  message(FATAL_ERROR "Alt+Right must end on the last history entry (n=${CMAKE_MATCH_2} pos=${CMAKE_MATCH_3}):\n${hist3_out}")
+endif()
