@@ -250,6 +250,12 @@ endfunction()
 expect_pinned(liked 0 "Liked Songs" liked Playlist 1 0 0 "SELECT COUNT(*) FROM liked" "local:fixture/12.mod")
 expect_pinned(recent 1 "Recently Played" recent Playlist 1 1 0 "SELECT COUNT(DISTINCT h.key) FROM history h JOIN songs s ON s.key=h.key" "local:fixture/1.mod")
 expect_pinned(local 2 "Local Files" local Source 1 0 0 "SELECT COUNT(*) FROM songs WHERE source='local'" "local:fixture/1.mod")
+# I938: the Local Files sidebar tile and page header both draw the Lucide folder mark (dump line localicon); the Liked Songs and Recently Played headers keep the wordmark
+if(NOT "${pg}" MATCHES "localicon side=([0-9]+) head=([0-9]+) folder=([0-9]+)")
+  message(FATAL_ERROR "no localicon line in:\n${pg}")
+endif()
+expect_eq("Local Files sidebar tile icon" "${CMAKE_MATCH_1}" "${CMAKE_MATCH_3}")
+expect_eq("Local Files header icon" "${CMAKE_MATCH_2}" "${CMAKE_MATCH_3}")
 # I790: a source page opens its drill (formats, platforms, artists, new), never its song list: no song rows, no first song
 expect_pinned(src 7 "HVSC" source Source 0 0 1 "SELECT 0" "")
 kh_field(status "${pg}" status)
