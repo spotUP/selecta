@@ -92,6 +92,7 @@ static int hit_search(const sel_host* host, const char* query, sel_search_sink* 
 
 static const sel_source g_hit_src = {
     "i994bsrc", "I994b hit source", "", "Four search hits.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, hit_search,
+    NULL, /* search_ready (I1037) */
 };
 
 static void pump_until_serial_moves(sel_engine* e, uint32_t from) {

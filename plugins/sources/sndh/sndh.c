@@ -97,6 +97,7 @@ static const sel_source g_sndh = {
     "sndh", "SNDH", "https://sndh.atari.org/", "Atari ST music: the YM2149 chip's SNDH archive.", g_tags,
     NULL, sel_sndh_parse, NULL, url_of, path_in, NULL, NULL, sndh_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
     NULL, /* search (I406) */
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

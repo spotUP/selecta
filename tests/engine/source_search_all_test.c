@@ -99,7 +99,7 @@ static int hook_b(const sel_host* host, const char* q, sel_search_sink* out) {
     return 0;
 }
 
-#define SRC(ID, HOOK) { ID, ID, "", "I1019a stand-in.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, HOOK }
+#define SRC(ID, HOOK) { ID, ID, "", "I1019a stand-in.", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, HOOK, NULL }
 static const sel_source g_a = SRC("i1019a", hook_a), g_b = SRC("i1019b", hook_b), g_c = SRC("i1019c", hook_c), g_d = SRC("i1019d", hook_d),
                        g_e = SRC("i1019e", hook_e), g_f = SRC("i1019f", hook_f);
 

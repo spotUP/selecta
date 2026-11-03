@@ -241,7 +241,7 @@ static const char* api_base(void) {
 }
 
 /* The client id: pref sources.jamendo_client_id, else SELECTA_JAMENDO_CLIENT_ID. Letters and digits only. */
-static int client_id(const sel_host* host, char* out, size_t n) {
+static int client_id_find(const sel_host* host, char* out, size_t n, int quiet) {
     const char* v = host->config_get != NULL ? host->config_get(host, "sources.jamendo_client_id", NULL) : NULL;
     size_t i;
 
@@ -249,20 +249,31 @@ static int client_id(const sel_host* host, char* out, size_t n) {
         v = getenv("SELECTA_JAMENDO_CLIENT_ID");
     }
     if (v == NULL || v[0] == '\0') {
-        fputs("jamendo: no client id: set pref sources.jamendo_client_id (or SELECTA_JAMENDO_CLIENT_ID); get one at "
+        if (!quiet) fputs("jamendo: no client id: set pref sources.jamendo_client_id (or SELECTA_JAMENDO_CLIENT_ID); get one at "
               "https://devportal.jamendo.com/\n",
               stderr);
         return 0;
     }
     for (i = 0; v[i] != '\0'; i++) {
         if (!isalnum((unsigned char)v[i]) || i + 1 >= n) {
-            fputs("jamendo: the client id must be letters and digits only\n", stderr);
+            if (!quiet) fputs("jamendo: the client id must be letters and digits only\n", stderr);
             return 0;
         }
         out[i] = v[i];
     }
     out[i] = '\0';
     return 1;
+}
+
+static int client_id(const sel_host* host, char* out, size_t n) {
+    return client_id_find(host, out, n, 0);
+}
+
+/* I1037: the All-sources fan-out asks before it searches; no usable client id leaves Jamendo out, silently. */
+static int jm_search_ready(const sel_host* host) {
+    char cid[CLIENT_MAX];
+
+    return client_id_find(host, cid, sizeof cid, 1);
 }
 
 static int has_param(const char* query, const char* name) {
@@ -468,7 +479,7 @@ static const sel_source g_jamendo = {
     "Creative Commons music streamed from Jamendo (non-commercial use; needs your own free API client id).",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, jm_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     SITE_HOME, jm_play_url,
-    jm_search,
+    jm_search, jm_search_ready,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

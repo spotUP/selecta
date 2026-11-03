@@ -96,6 +96,7 @@ static const sel_source g_hippo = {
     "hippo", "HippoPlayer", "https://hippoplayer.se/", "Shared HippoPlayer playlists (.prg).", g_tags,
     NULL, parse, NULL, url_of, path_in, NULL, NULL, hippo_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
     NULL, /* search (I406) */
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_source* sel_source_hippo(void) {

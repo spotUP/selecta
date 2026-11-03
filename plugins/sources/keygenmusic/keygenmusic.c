@@ -92,6 +92,7 @@ static const sel_source g_keygenmusic = {
     "The music of keygens, cracks and trainers: tracker modules from release groups.", g_tags,
     NULL, parse, NULL, url_of, path_in, NULL, NULL, keygenmusic_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
     NULL, /* search (I406) */
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

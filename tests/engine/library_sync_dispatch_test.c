@@ -62,6 +62,7 @@ static const sel_source g_src = {
     "i517test", "I517 test", "", "Counts its sync calls.", NULL,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, test_sync, SEL_SOURCE_SYNCS, NULL, NULL,
     NULL, /* search (I406) */
+    NULL, /* search_ready (I1037) */
 };
 
 static unsigned g_results, g_errors;

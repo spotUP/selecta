@@ -133,6 +133,7 @@ static const sel_source g_modulespl = {
     "Tracker modules from the Modules.pl archive; found by searching the site, no catalogue to sync.",
     g_tags, NULL, parse, NULL, NULL, NULL, NULL, NULL, NULL, SEL_SOURCE_REMOTE | SEL_SOURCE_ZIPPED,
     NULL, NULL, ms_search,
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

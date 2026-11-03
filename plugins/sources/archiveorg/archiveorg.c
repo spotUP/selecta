@@ -649,6 +649,7 @@ static const sel_source g_archiveorg = {
     "Creative Commons and public-domain audio streamed from the Internet Archive (scholarship and research use).",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, ao_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     SITE_HOME, ao_play_url, ao_search,
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

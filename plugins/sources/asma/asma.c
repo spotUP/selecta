@@ -103,6 +103,7 @@ static const sel_source g_asma = {
     "asma", "ASMA", "https://asma.atari.org/", "Atari SAP Music Archive: music of the Atari 8-bit computers.", g_tags,
     NULL, parse, NULL, url_of, path_in, NULL, NULL, asma_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
     NULL, /* search (I406) */
+    NULL, /* search_ready (I1037) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

@@ -111,6 +111,7 @@ function(sa_run outvar input)
   dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1280x800 --clock fixed --stats
     --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
+  set(${outvar}_err "${o_err}" PARENT_SCOPE)
 endfunction()
 
 # Both rows' rects are present in the dump, the source row above the facet row (4 facets, >= 3 source chips).
@@ -175,4 +176,20 @@ sa_run(s3 "wait 300\n${typed}")
 file(REMOVE_RECURSE "${WORK}/cfg")
 if(NOT "${s3}" MATCHES "online scope=- " OR NOT "${s3}" MATCHES "search_section [0-9]+ rows=3 From Modules.pl")
   message(FATAL_ERROR "a stale search.last_source must open on All sources with the From section:\n${s3}")
+endif()
+
+# ---- I1037: no Jamendo client id (the default). The fan-out leaves Jamendo out: no From Jamendo section (it was a failed one), no
+# search request to it, no "no client id" line on stderr; the configured sources still draw their sections. The sentinel is the
+# other sections: the fan-out ran, only the unconfigured source was skipped. The earlier runs (client id set) keep From Jamendo (2).
+unset(ENV{SELECTA_JAMENDO_CLIENT_ID})
+sa_run(nj "wait 300\n${typed}")
+if(NOT "${nj}" MATCHES "search_section [0-9]+ rows=3 From Modules.pl \\(3\\)\n" OR
+   NOT "${nj}" MATCHES "search_section [0-9]+ rows=8 From Internet Archive \\(8\\)\n")
+  message(FATAL_ERROR "I1037: without a Jamendo client id the other From sections must stay:\n${nj}")
+endif()
+if("${nj}" MATCHES "From Jamendo")
+  message(FATAL_ERROR "I1037: no client id: a From Jamendo section is drawn (the source must be left out of the fan-out):\n${nj}")
+endif()
+if("${nj_err}" MATCHES "jamendo: no client id")
+  message(FATAL_ERROR "I1037: no client id: the fan-out printed the no-client-id line on stderr:\n${nj}")
 endif()
