@@ -2601,6 +2601,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(jamendo-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "jamendo_search_ok")
 
+  # I1024g: SOURCE_SEARCH aminet over the aminet.net fixture: search page request, the sync's row shape, -1 when unreachable.
+  add_test(NAME aminet-search
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/aminet_search.cmake")
+  set_tests_properties(aminet-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "aminet_search_ok")
+
   # I1024f: SOURCE_SEARCH zxart over the zxart.ee fixture: title filter request, the sync's row shape, -1 when unreachable.
   add_test(NAME zxart-search
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/zxart_search.cmake")

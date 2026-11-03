@@ -6,6 +6,7 @@
 #include <selecta/catalogue.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define UNKNOWN_ARTIST "- unknown"
@@ -209,4 +210,128 @@ int sel_aminet_sync(const sel_host* host, const char* dir, sel_aminet_sync_stats
         host->mem_free(host, s.row);
     }
     return ok;
+}
+
+/* ---- search answer (I1024g) ---- */
+
+#define SEARCH_PAGE_MAX (512u * 1024u)
+#define CELL_BYTES 256u
+
+/* Copies `src[0..len)` into `out` without markup and with the HTML entities of the site decoded. */
+static void cell_text(const char* src, size_t len, char* out, size_t n) {
+    static const struct {
+        const char* ent;
+        char ch;
+    } ents[] = {{"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&#39;", '\''}, {"&nbsp;", ' '}};
+    size_t i = 0, o = 0;
+    int tag = 0;
+
+    for (; i < len && o + 1u < n; i++) {
+        size_t k;
+
+        if (src[i] == '<') {
+            tag = 1;
+        } else if (src[i] == '>') {
+            tag = 0;
+        } else if (!tag) {
+            out[o] = src[i];
+            for (k = 0; src[i] == '&' && k < sizeof ents / sizeof ents[0]; k++) {
+                size_t el = strlen(ents[k].ent);
+
+                if (i + el <= len && memcmp(src + i, ents[k].ent, el) == 0) {
+                    out[o] = ents[k].ch;
+                    i += el - 1u;
+                    break;
+                }
+            }
+            o++;
+        }
+    }
+    out[o] = '\0';
+}
+
+/* The next `<a ...>text</a>` of [*p, end): its href start (NULL when none) and its text; advances `*p` past `</a>`. */
+static int next_anchor(const char** p, const char* end, const char** href, char* text, size_t n) {
+    const char* a = strstr(*p, "<a ");
+    const char *gt, *close;
+
+    if (a == NULL || a >= end || (gt = strchr(a, '>')) == NULL || (close = strstr(gt, "</a>")) == NULL || close > end) {
+        return 0;
+    }
+    *href = strstr(a, "href=\"");
+    *href = *href != NULL && *href < gt ? *href + 6 : NULL;
+    cell_text(gt + 1, (size_t)(close - gt - 1), text, n);
+    *p = close + 4;
+    return 1;
+}
+
+typedef struct search_state {
+    const sel_search_sink* sink;
+    sel_aminet_row* row;
+    int32_t given;
+} search_state;
+
+/* One `<tr>`: name, directory, size column and the package description anchor, as an INDEX line. */
+static int search_row(search_state* s, const char* from, const char* end) {
+    char name[CELL_BYTES], dir[CELL_BYTES], size[32], desc[CELL_BYTES], text[CELL_BYTES], line[LINE_MAX_BYTES];
+    const char *p = from, *href, *sc;
+
+    name[0] = dir[0] = desc[0] = size[0] = '\0';
+    if (!next_anchor(&p, end, &href, name, sizeof name) || !next_anchor(&p, end, &href, dir, sizeof dir)) {
+        return 1;
+    }
+    sc = strstr(p, "class=\"size_col\"");
+    sc = sc != NULL && sc < end ? strchr(sc, '>') : NULL;
+    sc = sc != NULL ? strchr(sc + 1, '>') : NULL; /* the <font> inside the cell */
+    if (sc != NULL && sc < end) {
+        const char* e = strchr(sc + 1, '<');
+
+        cell_text(sc + 1, e != NULL ? (size_t)(e - sc - 1) : 0, size, sizeof size);
+    }
+    while (next_anchor(&p, end, &href, text, sizeof text)) {
+        if (href != NULL && strncmp(href, "/package/", 9u) == 0) {
+            memcpy(desc, text, sizeof desc);
+            break;
+        }
+    }
+    snprintf(line, sizeof line, "%s %s %s 0 %s", name, dir, size[0] != '\0' ? size : "0", desc);
+    if (!sel_aminet_parse_line(line, s->row)) {
+        return 1; /* another directory or file type: like a sync's skipped row */
+    }
+    s->given++;
+    return s->sink->row(s->sink->ctx, s->row->path, s->row->name, s->row->artist, SEL_AMINET_FORMAT);
+}
+
+int32_t sel_aminet_search_file(const sel_host* host, const char* file, const sel_search_sink* out) {
+    search_state s;
+    char* page = host->mem_alloc(host, SEARCH_PAGE_MAX + 1u, SEL_MEM_FAST);
+    FILE* f;
+    size_t got;
+    const char* p;
+    int32_t n = -1;
+
+    s.sink = out;
+    s.given = 0;
+    s.row = host->mem_alloc(host, sizeof *s.row, SEL_MEM_FAST);
+    if (page != NULL && s.row != NULL && (f = fopen(file, "rb")) != NULL) {
+        got = fread(page, 1, SEARCH_PAGE_MAX, f);
+        fclose(f);
+        page[got] = '\0';
+        for (p = page; (p = strstr(p, "class=\"name_col\"")) != NULL;) {
+            const char* end = strstr(p, "</tr>");
+
+            if (end == NULL || !search_row(&s, p, end)) {
+                break;
+            }
+            p = end;
+        }
+        n = s.given;
+    }
+    if (page != NULL) {
+        host->mem_free(host, page);
+    }
+    if (s.row != NULL) {
+        host->mem_free(host, s.row);
+    }
+    return n;
 }

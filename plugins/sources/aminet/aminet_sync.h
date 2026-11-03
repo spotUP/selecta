@@ -15,6 +15,7 @@
 #define SELECTA_PLUGINS_SOURCES_AMINET_SYNC_H
 
 #include <selecta/host.h>
+#include <selecta/source.h>
 
 #include <stdint.h>
 
@@ -44,5 +45,11 @@ int sel_aminet_parse_line(const char* line, sel_aminet_row* row);
 /* Reads <dir>/INDEX into the catalogue. Returns 0 when the file cannot be read, memory runs out or the DB rejects a
  * batch. */
 int sel_aminet_sync(const sel_host* host, const char* dir, sel_aminet_sync_stats* stats);
+
+/* I1024g: reads one search answer `file` (the HTML table of https://aminet.net/search) and hands each package to `out`
+ * with the sync's own row: every table row becomes an INDEX line and goes through sel_aminet_parse_line, so a hit and a
+ * synced row share a key. The catalogue is not touched. Returns the rows given (0 for an answer without hits), -1 when
+ * the answer cannot be read. */
+int32_t sel_aminet_search_file(const sel_host* host, const char* file, const sel_search_sink* out);
 
 #endif
