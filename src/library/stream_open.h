@@ -56,6 +56,10 @@ const sel_byte_stream* sel_live_source(sel_live* s);
  * capped like sel_stream_read. NULL on failure, and at once for a radio stream (sel_http_res.radio, I1029): its
  * body has no end, so only a streaming replayer can play it. Call after sel_live_head returned bytes. */
 uint8_t* sel_live_drain(sel_live* s, size_t* size);
+/* I1031: the URL is a station of a streams source (radio-browser). Such a response with no Content-Length and an audio
+ * content type is endless even without ICY marks, so sel_live_drain fails at once. Files from other sources are never
+ * marked, so a chunked module download still drains. Call before sel_live_drain. */
+void sel_live_mark_station(sel_live* s);
 /* Sentinel: records bytes received so far and whether the download had finished, at the first audio frame. */
 void sel_live_note_audio(sel_live* s);
 void sel_live_close(sel_live* s);

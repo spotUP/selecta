@@ -241,6 +241,9 @@ uint8_t* sel_live_drain(sel_live* s, size_t* size) {
 void sel_live_note_audio(sel_live* s) {
     (void)s;
 }
+void sel_live_mark_station(sel_live* s) {
+    (void)s;
+}
 void sel_live_close(sel_live* s) {
     (void)s;
 }
@@ -313,6 +316,8 @@ struct sel_live {
     volatile unsigned status;       /* HTTP status of the response, stored before eof (0: no response) */
     volatile unsigned endless;      /* I1029: the response is a radio stream (sel_http_res.radio), stored before the
                                      * first body byte enters the ring */
+    volatile unsigned unbounded_audio; /* I1031: no Content-Length and an audio or application/ogg type; stored with endless */
+    volatile unsigned station;      /* I1031: the engine opened this URL as a station of a streams source (sel_live_mark_station) */
     const sel_http_res* res;        /* the download thread's response record: status is set before any body byte */
     volatile unsigned stop;         /* the thread's cancel generation (sel_net_set_cancel) and the sink's abort */
     unsigned long received;
@@ -490,12 +495,18 @@ static int feed_audio(sel_live* s, const uint8_t* p, size_t len) {
     return 1;
 }
 
+/* I1031: a body with no Content-Length (chunked or until close) labelled audio (audio/ or application/ogg): a live station that sent no ICY marks. */
+static unsigned res_unbounded_audio(const sel_http_res* r) {
+    return r->content_length < 0 && (strncmp(r->content_type, "audio/", 6) == 0 || strcmp(r->content_type, "application/ogg") == 0) ? 1u : 0u;
+}
+
 /* First body byte: learn icy-metaint, and in directory mode open the first file. */
 static void sink_start(sel_live* s) {
     s->icy_started = 1;
     if (s->res != NULL) {
         s->icy_metaint = s->res->icy_metaint;
         s->icy_left = s->icy_metaint;
+        st_store(&s->unbounded_audio, res_unbounded_audio(s->res));
         st_store(&s->endless, s->res->radio ? 1u : 0u);
     }
     if (s->rec_dir[0] != '\0') {
@@ -812,7 +823,7 @@ uint8_t* sel_live_drain(sel_live* s, size_t* size) {
     int ok = 1;
     memset(&b, 0, sizeof b);
     b.host = s->host;
-    if (ld(&s->endless) != 0u) {
+    if (ld(&s->endless) != 0u || (ld(&s->station) != 0u && ld(&s->unbounded_audio) != 0u)) {
         return NULL; /* I1029: a radio stream never ends; draining it would hold the engine thread until 256 MB */
     }
     while ((n = view_read_wait(s, chunk, sizeof chunk)) > 0) {
@@ -832,6 +843,10 @@ uint8_t* sel_live_drain(sel_live* s, size_t* size) {
     g_bytes = (uint32_t)b.len;
     g_reads++;
     return b.p;
+}
+
+void sel_live_mark_station(sel_live* s) {
+    st_store(&s->station, 1u);
 }
 
 void sel_live_note_audio(sel_live* s) {

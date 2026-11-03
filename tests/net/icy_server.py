@@ -90,7 +90,7 @@ def serve(c):
             uuid = target.rsplit("/", 1)[1]
             with open(port_file + ".requests", "a") as rq:
                 rq.write("rb_click=%s\n" % uuid)
-            url = "http://icy.test/endless" if uuid == "eeee-5555" else live
+            url = {"eeee-5555": "http://icy.test/endless", "eeee-6666": "http://icy.test/endless-plain"}.get(uuid, live)
             body = json.dumps({"ok": True, "message": "retrieved station url", "stationuuid": uuid, "url": url}).encode()
         c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
         time.sleep(0.2)
@@ -236,14 +236,26 @@ def serve(c):
         time.sleep(0.2)
         c.close()
         return
+    if target.startswith("/chunkmod"):  # I1031: a finite chunked download (no Content-Length) labelled audio/x-mod
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("chunkmod=1\n")
+        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: audio/x-mod\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
+        for i in range(0, len(audio), 1024):
+            part = audio[i:i + 1024]
+            c.sendall(b"%x\r\n" % len(part) + part + b"\r\n")
+        c.sendall(b"0\r\n\r\n")
+        time.sleep(0.2)
+        c.close()
+        return
     if target.startswith("/endless"):  # I1029: an endless radio stream no replayer can stream
         with open(port_file + ".requests", "a") as rq:
-            rq.write("endless=1\n")
+            rq.write("endless=1\n" if "plain" not in target else "endless_plain=1\n")
         metaint = 4096
         frame = b"\xff\xf1\x50\x80\x02\x1f\xfc" + bytes(249)  # ADTS AAC header, silent payload: no MP3 sync
-        chunk = (frame * (metaint // len(frame) + 1))[:metaint] + (b"\x00" if icy else b"")
-        head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nicy-name: Echo\r\nicy-br: 128\r\n"
-        if icy:
+        chunk = (frame * (metaint // len(frame) + 1))[:metaint] + (b"\x00" if icy and "plain" not in target else b"")
+        plain = "plain" in target  # I1031: no icy-* header at all, no Content-Length: only audio/mpeg marks it a stream
+        head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\n" + ("" if plain else "icy-name: Echo\r\nicy-br: 128\r\n")
+        if icy and not plain:
             head += "icy-metaint: %d\r\n" % metaint
         sent = 0
         try:
