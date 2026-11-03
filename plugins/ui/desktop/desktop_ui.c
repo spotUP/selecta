@@ -14295,6 +14295,7 @@ static int ctl_state(desk* d, char* reply, size_t cap) {
         ctl_put(reply, cap, &o, "route %u page=%s key=%s name=%s scroll=%d%s\n", (unsigned)i, ctl_route_page_name(e->page), e->key, e->name,
                 (int)e->scroll, i == d->rh.pos ? " *" : "");
     }
+    ctl_put(reply, cap, &o, "dialog=%d overlay=%d\n", d->dlg_open, (int)d->overlay); /* a modal dialog (3 = sync offer, 4 = quit) or overlay swallows pointer input */
     ctl_put(reply, cap, &o, "focus ring %d %d %d %d kb_list=%d\n", (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h, d->kb_list);
     ctl_put(reply, cap, &o, "scroll lib=%d queue=%d songs=%d\n", (int)(d->lib_q16 >> 16), (int)(d->queue_q16 >> 16), (int)(d->scroll_q16 >> 16));
     rows_at = o;

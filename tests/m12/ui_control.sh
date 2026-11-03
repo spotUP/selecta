@@ -3,7 +3,7 @@
 #   ui_control.sh <selecta> <selecta-cli> <fixture_library.sql> <workdir>
 # Drives the live desktop UI (SDL dummy video, no audio) through the control socket only: ui.state shows the Library page and its
 # first row, ui.input clicks that row's centre, ui.state (polled until input_pending=0) shows the route grew from 2 entries (home, library) to 3 and the
-# ctl lines sentinel is 3, ui.frame writes a PNG. QUIT then ends the shell, whose stats line must read ui_ctl lines=3 states>=2
+# ctl lines sentinel is 4 (the escape that dismisses the sync offer plus three), ui.frame writes a PNG. QUIT then ends the shell, whose stats line must read ui_ctl lines=4 states>=2
 # frames=1; the socket file is gone. An unknown ui verb gets ERROR and exit 1.
 SELECTA=$1
 CLI=$2
@@ -52,6 +52,21 @@ while [ $i -lt 100 ]; do
 done
 case "$st" in *page=library*) ;; *) fail "ui.state not on the library page: $st" ;; esac
 case "$st" in *"route n=2"*) ;; *) fail "ui.state route n=2 (home, library) missing: $st" ;; esac
+# The fixture has sources due, so the window opens with the sync offer (dialog=3), which swallows every click. ui.state reports it;
+# Escape ("Not now") through ui.input dismisses it, and ui.state must then report dialog=0.
+case "$st" in *"dialog=3"*)
+    r=$("$CLI" send "ui.input key escape")
+    [ $? = 0 ] || fail "ui.input key escape reply=$r"
+    i=0
+    while [ $i -lt 100 ]; do
+        st=$("$CLI" send ui.state 2>&1)
+        case "$st" in *"dialog=0"*) break ;; esac
+        sleep 0.1
+        i=$((i + 1))
+    done
+    case "$st" in *"dialog=0"*) ;; *) fail "the sync offer was not dismissed by ui.input key escape: $st" ;; esac
+    ;;
+esac
 row=$(printf '%s\n' "$st" | awk '$1 == "row" && $2 == "0" { print int($3 + $5 / 2), int($4 + $6 / 2); exit }')
 [ -n "$row" ] || fail "no row 0 in ui.state: $st"
 set -- $row
@@ -75,7 +90,7 @@ case "$st" in *"input_pending=0"*) ;; *) fail "input never finished: $st" ;; esa
 # entry), so the click is proved by the engine lines the UI sent, not by the route growing.
 sends1=$(printf '%s\n' "$st" | sed -n 's/.* sends=\([0-9]*\).*/\1/p')
 [ -n "$sends0" ] && [ -n "$sends1" ] && [ "$sends1" -gt "$sends0" ] || fail "the replayed click sent nothing to the engine (sends $sends0 -> $sends1): $st"
-case "$st" in *"ctl lines=3"*) ;; *) fail "ctl lines sentinel is not 3 (three replay lines fed): $st" ;; esac
+case "$st" in *"ctl lines=4"*) ;; *) fail "ctl lines sentinel is not 4 (escape + three replay lines fed): $st" ;; esac
 
 png="$WORK/frame.png"
 r=$("$CLI" send "ui.frame $png")
@@ -96,6 +111,6 @@ case "$r" in ERROR*) ;; *) fail "ui.nosuch reply: $r" ;; esac
 "$CLI" send QUIT >/dev/null
 wait $pid
 pid=
-grep -E '^ui_ctl lines=3 states=([2-9]|[0-9]{2,}) frames=1$' "$WORK/shell.out" >/dev/null || fail "no ui_ctl lines=3 states>=2 frames=1 line"
+grep -E '^ui_ctl lines=4 states=([2-9]|[0-9]{2,}) frames=1$' "$WORK/shell.out" >/dev/null || fail "no ui_ctl lines=4 states>=2 frames=1 line"
 [ ! -e "$SELECTA_SOCKET" ] || fail "socket file left behind"
 echo "ui-control-socket ok"
