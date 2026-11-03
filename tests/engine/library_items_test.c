@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
+#include "../../src/core/count.h"
 #include "db/db.h"
 #include "db/db_internal.h"
 #include "engine_test_db_lock.h"
@@ -76,6 +77,20 @@ static uint32_t calls(sel_engine* e) {
 
 /* I787d: library_items_calls is bumped by the job thread and by UI-thread sync calls at once; a plain increment loses counts. */
 enum { RACE_THREADS = 4, RACE_CALLS = 1500 };
+
+/* The counter macro itself under maximal contention: 4 threads x 400000 bumps of one word. A plain `+=` loses counts
+ * (the library call path above has a window of a few instructions, too narrow to show it reliably). */
+enum { HAMMER_THREADS = 4, HAMMER_BUMPS = 400000 };
+static uint32_t g_hammer;
+
+static void* hammer(void* arg) {
+    uint32_t i;
+    (void)arg;
+    for (i = 0; i < HAMMER_BUMPS; i++) {
+        SEL_COUNT_ADD(&g_hammer, 1u);
+    }
+    return NULL;
+}
 
 static void* race_caller(void* arg) {
     sel_engine_library_item row[1];
@@ -259,6 +274,9 @@ int main(void) {
         for (k = 0; k < RACE_THREADS; k++) CHECK(pthread_create(&th[k], NULL, race_caller, e) == 0);
         for (k = 0; k < RACE_THREADS; k++) pthread_join(th[k], NULL);
         CHECK(calls(e) - base == (uint32_t)RACE_THREADS * RACE_CALLS); /* I787d: no increment lost */
+        for (k = 0; k < HAMMER_THREADS; k++) CHECK(pthread_create(&th[k], NULL, hammer, NULL) == 0);
+        for (k = 0; k < HAMMER_THREADS; k++) pthread_join(th[k], NULL);
+        CHECK(SEL_COUNT_GET(&g_hammer) == (uint32_t)HAMMER_THREADS * HAMMER_BUMPS); /* I787d: the macro is atomic */
     }
 
     sel_engine_destroy(e);
