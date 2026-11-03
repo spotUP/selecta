@@ -40,13 +40,16 @@ include(cmake/selecta_desktop.cmake)
 
 add_subdirectory(src)
 add_subdirectory(plugins)
-if(SEL_BUILD_TESTS)
-  add_subdirectory(tests/sources/testsrc) # the source plugin reachability probe (I517 phase 3)
-endif()
 include(cmake/selecta_registry.cmake)
 add_subdirectory(apps)
 
 if(SEL_BUILD_TESTS)
   enable_testing()
+  # I1025: the source plugin reachability probe (I517 phase 3) is a loadable module, never linked into selecta.
+  # Tests that need it put SEL_TESTSRC_PLUGIN_DIR on $SELECTA_PLUGIN_PATH.
+  if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+    set(SEL_TESTSRC_PLUGIN_DIR "${PROJECT_BINARY_DIR}/test_modules")
+    add_subdirectory(tests/sources/testsrc)
+  endif()
   add_subdirectory(tests)
 endif()

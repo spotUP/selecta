@@ -1,5 +1,5 @@
 /* I517 phase 3 reachability (plan 2026-10-26-source-plugins.md, Reachability): a source that exists only as a plugin
- * (tests/sources/testsrc) reaches the product through the engine command channel. The library walks the plugin
+ * (tests/sources/testsrc, a loadable module found through $SELECTA_PLUGIN_PATH) reaches the product through the engine command channel. The library walks the plugin
  * registry in sel_source_register_builtin; nothing else in core names the source.
  *   SOURCES lists testsrc with its name and kind; LIBRARY_SYNC testsrc x runs the plugin's sync (sentinel 1) and
  *   writes 3 songs through the catalogue service; SOURCES then counts 3.
@@ -15,9 +15,22 @@
 #include "source.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-extern unsigned sel_testsrc_sync_calls;
+/* The sentinel: the module appends one byte to $SELECTA_TESTSRC_CALLS per sync call (it is a separate image). */
+static long sync_calls(void) {
+    const char* f = getenv("SELECTA_TESTSRC_CALLS");
+    FILE* fp = f != NULL ? fopen(f, "rb") : NULL;
+    long n = 0;
+
+    if (fp != NULL) {
+        fseek(fp, 0, SEEK_END);
+        n = ftell(fp);
+        fclose(fp);
+    }
+    return n;
+}
 
 static unsigned g_errors, g_results, g_test_rows;
 static char g_name[64], g_kind[16];
@@ -81,14 +94,14 @@ int main(int argc, char** argv) {
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
 
-    CHECK(sel_testsrc_sync_calls == 0);
+    CHECK(sync_calls() == 0);
     CHECK(run(e, "SOURCES"));
     CHECK(g_test_rows == 1 && strcmp(g_name, "Test Source") == 0 && strcmp(g_kind, "remote") == 0);
     CHECK(g_enabled == 1 && g_count == 0);
 
     CHECK(run(e, "LIBRARY_SYNC testsrc x 1"));
     CHECK(g_errors == 0);
-    CHECK(sel_testsrc_sync_calls == 1);
+    CHECK(sync_calls() == 1);
 
     CHECK(run(e, "SOURCES"));
     CHECK(g_test_rows == 1 && g_count == 3);

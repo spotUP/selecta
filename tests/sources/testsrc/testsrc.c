@@ -6,11 +6,21 @@
 #include <selecta/source.h>
 #include "source/descriptor.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-unsigned sel_testsrc_sync_calls;
+/* The module is a separate image, so the sentinel is a file: each sync call appends one byte to $SELECTA_TESTSRC_CALLS. */
+static void testsrc_count_call(void) {
+    const char* f = getenv("SELECTA_TESTSRC_CALLS");
+    FILE* fp = f != NULL ? fopen(f, "ab") : NULL;
+
+    if (fp != NULL) {
+        fputc('x', fp);
+        fclose(fp);
+    }
+}
 
 static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
     static const char* const names[3] = {"one", "two", "three"};
@@ -20,7 +30,7 @@ static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_
     (void)arg;
     (void)now;
     (void)cap;
-    sel_testsrc_sync_calls++;
+    testsrc_count_call();
     if (getenv("SELECTA_TESTSRC_FAIL") != NULL) { /* I582: the dui-sync-banner test makes this source fail like a source without network */
         return 0;
     }
