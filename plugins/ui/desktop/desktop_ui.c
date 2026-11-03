@@ -317,6 +317,7 @@ typedef struct desk {
     } qg;
     uint32_t drops;          /* files and folders dropped on the window or chosen in Add Folder: STAT_DROPS (DUI-P5-11) */
     uint32_t lib_serial_seen; /* I348: sel_state.library_serial the page was last loaded for (UINT32_MAX: not seen yet) */
+    uint32_t lib_pins_seen, lib_pin_keeps; /* I1038: sel_state.library_pins at that load; pin-only changes the Search page kept its results through */
     uint32_t lib_reloads;    /* I348: page reloads the library serial caused (stats line library_reloads) */
     uint32_t scans;          /* LIBRARY_SCAN answers seen: STAT_SCANS */
     const char* dialog_answer; /* --dialog-answer <path>: what the folder dialog answers in a test (DUI-P5-11) */
@@ -7777,7 +7778,8 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)lt.cost_med_us, (unsigned)lt.cost_p95_us, (unsigned)lt.cost_max_us);
         }
 #endif
-        o = dump_put(d, o, "library_serial=%u library_reloads=%u\n", (unsigned)sel_engine_state(d->engine)->library_serial, (unsigned)d->lib_reloads);
+        o = dump_put(d, o, "library_serial=%u library_reloads=%u library_pins=%u pin_keeps=%u\n", (unsigned)sel_engine_state(d->engine)->library_serial, (unsigned)d->lib_reloads,
+                     (unsigned)sel_engine_state(d->engine)->library_pins, (unsigned)d->lib_pin_keeps);
         {
             static const char* const rn[] = {"", "sidebar", "main", "detail", "player"};
             int hr = hover_region_of(d, d->hover_box);
@@ -13877,12 +13879,18 @@ static int desk_scan_active(const desk* d) {
 /* I348: the engine's library serial moved (a scan, sync or fetch finished, whoever asked): the page lists what the library holds now.
  * LIBRARY_RESULT is no signal for this: searches and browses answer with the same event. */
 static void desk_library_follow(desk* d) {
-    uint32_t serial = sel_engine_state(d->engine)->library_serial;
+    uint32_t serial = sel_engine_state(d->engine)->library_serial, pins = sel_engine_state(d->engine)->library_pins;
+    int pins_only = d->lib_serial_seen != UINT32_MAX && serial - d->lib_serial_seen == pins - d->lib_pins_seen;
 
     if (d->lib_serial_seen == serial) {
         return;
     }
-    if (d->lib_serial_seen != UINT32_MAX) {
+    d->lib_pins_seen = pins;
+    if (pins_only && d->page == SEL_UIM_PG_SEARCH) {
+        /* I1038: playing a Search hit pins it (I406b). The results already list it: reloading the page would send the query again
+         * and open the results at the top under the pointer. A scan or sync (not pins only) still reloads them (I296). */
+        d->lib_pin_keeps++;
+    } else if (d->lib_serial_seen != UINT32_MAX) {
         d->lib_reloads++;
         art_forget_misses(d->art); /* I689: a title that found no album before the scan made it must be looked up again */
         desk_page_load(d, d->page); /* I316: a drilldown stays (I302) */
