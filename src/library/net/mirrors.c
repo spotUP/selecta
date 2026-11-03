@@ -11,9 +11,9 @@
 
 /* https wherever TLS is compiled in (every build but the Amiga, SEL_NO_TLS, see tls.c); the login sends a password. */
 #ifdef SEL_NO_TLS
-#define DEVILBOX_DEFAULT "http://devilbox.uprough.net"
+#define DEVILBOX_DEFAULT "http://hippoplayer.se"
 #else
-#define DEVILBOX_DEFAULT "https://devilbox.uprough.net"
+#define DEVILBOX_DEFAULT "https://hippoplayer.se"
 #endif
 #define ENV_PREFIX "SELECTA_MIRRORS_"
 
