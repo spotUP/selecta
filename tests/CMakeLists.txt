@@ -2553,6 +2553,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(radio-browser PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "radio_browser_ok")
 
+  # I1029: a station whose endless stream no replayer can stream fails the open at once instead of being drained.
+  add_test(NAME radio-endless
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DICY=${SEL_NET_DIR}/icy_server.py"
+            -P "${SEL_NET_DIR}/radio_endless.cmake")
+  set_tests_properties(radio-endless PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "radio_endless_ok")
+
   # I725e: the Jamendo source: popular-tracks sync, missing client id, streamed playback, no audio file cached.
   add_test(NAME jamendo
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"

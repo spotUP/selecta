@@ -71,6 +71,9 @@ typedef struct sel_http_res {
                                        * body bytes (I196a); 0 when the server sent none (request header Icy-MetaData: 1) */
     unsigned long retry_after_s;      /* Retry-After header in seconds (I725d); 0 when absent or an HTTP-date */
     char content_type[40];            /* media type of the final response without parameters, lower case, or empty */
+    int radio;                        /* I1029: the server named itself a radio stream (an "ICY" status line or an
+                                       * icy-metaint, icy-name or icy-br header): the body has no end, so a caller
+                                       * must never read it whole; set before the first body byte reaches the sink */
 } sel_http_res;
 
 /* Body bytes for the final response; return 0 to abort. */
