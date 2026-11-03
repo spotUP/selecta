@@ -69,8 +69,9 @@ if(textok MATCHES "unsupported_style")
 endif()
 
 # Row artwork id follows a rescan: the rows are read (ids 1 2 3 4 1), then LIBRARY_SCAN stores a song, and a trigger on that
-# insert moves every fixture song to an album that no albums row names (the scan changing the catalogue). The dumped ids
-# must follow to 0; a row cache keyed by queue entry id alone keeps the stale 1 2 3 4 1.
+# insert moves every fixture song to the album 'Renamed' (the scan changing the catalogue). Since I687 (365b696f) the schema's
+# songs_album_au trigger gives every (album, artist) an albums row, so each song lands on a new albums row of its artist. The
+# dumped ids must follow to those rows, read back from the db; a row cache keyed by queue entry id alone keeps the stale 1 2 3 4 1.
 set(scandir "${WORK}/scandir")
 file(MAKE_DIRECTORY "${scandir}")
 file(COPY "${HERE}/../m3/genre/ambient.mod" DESTINATION "${scandir}")
@@ -85,8 +86,18 @@ dui_run(rs --db "${db}" --ui desktop --backend mem --canvas 900x600 --clock fixe
   --exec "VIEW_SOURCE queue" --exec "VIEW_WINDOW 8" --exec "VIEW_STYLE grid" --exec "LIBRARY_SCAN \"${scandir}\""
   --input "${WORK}/in.txt")
 set(rs "${rs}\n${rs_err}")
-foreach(i 0 1 2 3 4)
-  if(NOT rs MATCHES "srow ${i} 0\\|")
-    message(FATAL_ERROR "row ${i} artwork id should follow the rescan to 0:\n${rs}")
+set(arts 1 2 3 4 1) # the pre-scan ids, checked above
+set(i 0)
+foreach(p 1.mod 2.mod 3.xm 4.it 5.sid)
+  execute_process(COMMAND "${SQLITE3}" "${db}"
+    "SELECT a.id FROM songs s JOIN albums a ON a.name = s.album AND a.artist IS NULLIF(s.artist,'') WHERE s.path = 'fixture/${p}' AND s.album = 'Renamed' ORDER BY a.id LIMIT 1;"
+    OUTPUT_VARIABLE want OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE rc)
+  list(GET arts ${i} old)
+  if(NOT rc EQUAL 0 OR NOT want MATCHES "^[0-9]+$" OR want EQUAL old)
+    message(FATAL_ERROR "fixture/${p} should sit on a new 'Renamed' albums row after the rescan (got '${want}', pre-scan ${old})")
   endif()
+  if(NOT rs MATCHES "srow ${i} ${want}\\|")
+    message(FATAL_ERROR "row ${i} artwork id should follow the rescan to albums row ${want}:\n${rs}")
+  endif()
+  math(EXPR i "${i} + 1")
 endforeach()
