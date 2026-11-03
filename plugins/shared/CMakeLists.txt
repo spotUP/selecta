@@ -60,7 +60,7 @@ target_include_directories(selecta_shared_mdns PUBLIC "${CMAKE_CURRENT_SOURCE_DI
 target_include_directories(selecta_shared_mdns PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
 target_link_libraries(selecta_shared_mdns PUBLIC selecta_shared_upnp) # the UDP socket shim lives there (upnp_sock.h)
 
-add_library(selecta_shared_cast STATIC cast/cast.c cast/cast_session.c cast/cast_discover.c)
+add_library(selecta_shared_cast STATIC cast/cast.c cast/cast_session.c cast/cast_discover.c cast/cast_http.c)
 target_include_directories(selecta_shared_cast PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(selecta_shared_cast PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
 target_link_libraries(selecta_shared_cast PUBLIC selecta_shared_source selecta_shared_mdns)

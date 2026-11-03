@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
@@ -290,4 +292,84 @@ void sel_net_close(int h) {
         pthread_mutex_unlock(&g_lock);
         close(fd);
     }
+}
+
+/* ---- Listening side (I892e2). Same slot table, same wait helper. ---- */
+
+static int reserve_slot(int fd) {
+    int slot;
+    pthread_mutex_lock(&g_lock);
+    table_init();
+    for (slot = 0; slot < SEL_NET_MAX_CONN && g_fd[slot] != -1; slot++) {
+    }
+    if (slot < SEL_NET_MAX_CONN) {
+        g_fd[slot] = fd;
+    }
+    pthread_mutex_unlock(&g_lock);
+    return slot < SEL_NET_MAX_CONN ? slot : SEL_NET_E_TABLE;
+}
+
+int sel_net_listen(unsigned* port) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    int one = 1, slot;
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (s < 0) {
+        return SEL_NET_E_CONNECT;
+    }
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(INADDR_ANY);
+    sa.sin_port = htons((unsigned short)*port);
+    if (bind(s, (struct sockaddr*)&sa, sizeof sa) != 0 || listen(s, 4) != 0 ||
+        getsockname(s, (struct sockaddr*)&sa, &sl) != 0) {
+        close(s);
+        return SEL_NET_E_IO;
+    }
+    fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
+    slot = reserve_slot(s);
+    if (slot < 0) {
+        close(s);
+        return slot;
+    }
+    *port = ntohs(sa.sin_port);
+    return slot;
+}
+
+int sel_net_accept(int lh, unsigned timeout_ms) {
+    int w, c, slot;
+
+    if (lh < 0 || lh >= SEL_NET_MAX_CONN || g_fd[lh] < 0) {
+        return SEL_NET_E_IO;
+    }
+    w = wait_fd(g_fd[lh], POLLIN, timeout_ms);
+    if (w == 0) {
+        return SEL_NET_E_TIMEOUT;
+    }
+    if (w < 0) {
+        return SEL_NET_E_IO;
+    }
+    c = accept(g_fd[lh], NULL, NULL);
+    if (c < 0) {
+        return errno == EAGAIN || errno == EINTR ? SEL_NET_E_TIMEOUT : SEL_NET_E_IO;
+    }
+    fcntl(c, F_SETFL, fcntl(c, F_GETFL, 0) | O_NONBLOCK);
+    slot = reserve_slot(c);
+    if (slot < 0) {
+        close(c);
+    }
+    return slot;
+}
+
+int sel_net_local_ip(int h, char* out, size_t cap) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+
+    if (h < 0 || h >= SEL_NET_MAX_CONN || g_fd[h] < 0 || getsockname(g_fd[h], (struct sockaddr*)&sa, &sl) != 0 ||
+        sa.sin_family != AF_INET) {
+        return SEL_NET_E_IO;
+    }
+    return inet_ntop(AF_INET, &sa.sin_addr, out, (socklen_t)cap) != NULL ? 0 : SEL_NET_E_IO;
 }

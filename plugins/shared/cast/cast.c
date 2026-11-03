@@ -153,6 +153,7 @@ int sel_cast_decode(const unsigned char* b, size_t len, sel_cast_msg* out) {
 typedef struct walk {
     sel_cast_status* st;
     int in_app; /* inside the first application record */
+    int in_media; /* inside the first MEDIA_STATUS entry */
 } walk;
 
 static int read_number(FILE* f, int first, double* out, int* end) {
@@ -217,6 +218,10 @@ static int walk_value(FILE* f, int c, const char* key, int depth, walk* w, int* 
             st->app_count++;
             w->in_app = st->app_count == 1;
         }
+        if (depth == 3 && strcmp(key, "status") == 0) {
+            st->media_count++;
+            w->in_media = st->media_count == 1;
+        }
         return walk_container(f, '}', depth, w, key, end);
     }
     if (c == '[') {
@@ -230,6 +235,12 @@ static int walk_value(FILE* f, int c, const char* key, int depth, walk* w, int* 
         }
         if (depth == 2 && strcmp(key, "type") == 0) {
             snprintf(st->type, sizeof st->type, "%s", v);
+        } else if (depth == 4 && w->in_media) {
+            if (strcmp(key, "playerState") == 0) {
+                snprintf(st->player_state, sizeof st->player_state, "%s", v);
+            } else if (strcmp(key, "idleReason") == 0) {
+                snprintf(st->idle_reason, sizeof st->idle_reason, "%s", v);
+            }
         } else if (depth == 5 && w->in_app) {
             if (strcmp(key, "appId") == 0) {
                 snprintf(st->app_id, sizeof st->app_id, "%s", v);
@@ -252,6 +263,12 @@ static int walk_value(FILE* f, int c, const char* key, int depth, walk* w, int* 
         }
         if (depth == 2 && strcmp(key, "requestId") == 0) {
             st->request_id = (long)d;
+        } else if (depth == 4 && w->in_media && strcmp(key, "mediaSessionId") == 0) {
+            st->media_session_id = (long)d;
+        } else if (depth == 4 && w->in_media && strcmp(key, "currentTime") == 0) {
+            st->current_time = d;
+        } else if (depth == 5 && w->in_media && strcmp(key, "duration") == 0) {
+            st->duration = d;
         } else if (strcmp(key, "level") == 0) {
             st->has_volume = 1;
             st->volume_level = d;

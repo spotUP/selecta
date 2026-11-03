@@ -245,6 +245,72 @@ void sel_net_close(int h) {
     }
 }
 
+/* ---- Listening side (I892e2): the Chromecast media server. Same handle table. ---- */
+
+int sel_net_listen(unsigned* port) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    long s, nb = 1, one = 1;
+    int slot;
+
+    if (!stack_ready()) {
+        return SEL_NET_E_CONNECT;
+    }
+    for (slot = 0; slot < SEL_NET_MAX_CONN && g_sock[slot] >= 0; slot++) {
+    }
+    if (slot == SEL_NET_MAX_CONN) {
+        return SEL_NET_E_TABLE;
+    }
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        return SEL_NET_E_CONNECT;
+    }
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&one, sizeof one);
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = INADDR_ANY;
+    sa.sin_port = htons((unsigned short)*port);
+    if (bind(s, (struct sockaddr*)&sa, sizeof sa) != 0 || listen(s, 4) != 0 ||
+        getsockname(s, (struct sockaddr*)&sa, &sl) != 0) {
+        CloseSocket(s);
+        return SEL_NET_E_IO;
+    }
+    IoctlSocket(s, FIONBIO, (char*)&nb);
+    g_sock[slot] = s;
+    *port = ntohs(sa.sin_port);
+    return slot;
+}
+
+int sel_net_accept(int lh, unsigned timeout_ms) {
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    long w, c, nb = 1;
+    int slot;
+
+    if (lh < 0 || lh >= SEL_NET_MAX_CONN || g_sock[lh] < 0) {
+        return SEL_NET_E_IO;
+    }
+    for (slot = 0; slot < SEL_NET_MAX_CONN && g_sock[slot] >= 0; slot++) {
+    }
+    if (slot == SEL_NET_MAX_CONN) {
+        return SEL_NET_E_TABLE;
+    }
+    w = wait_sock(g_sock[lh], 0, timeout_ms);
+    if (w == 0) {
+        return SEL_NET_E_TIMEOUT;
+    }
+    if (w < 0) {
+        return SEL_NET_E_IO;
+    }
+    c = accept(g_sock[lh], (struct sockaddr*)&sa, &sl);
+    if (c < 0) {
+        return Errno() == EWOULDBLOCK ? SEL_NET_E_TIMEOUT : SEL_NET_E_IO;
+    }
+    IoctlSocket(c, FIONBIO, (char*)&nb);
+    g_sock[slot] = c;
+    return slot;
+}
+
 /* ---- UDP and address helpers for the UPnP and RAOP socket shims (I1004). Same handle table, same stack opening. ---- */
 
 static int udp_slot(long s) {
