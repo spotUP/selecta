@@ -2045,6 +2045,18 @@ if(NOT SEL_AMIGA)
       set_tests_properties(xmp-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xmp_decode_ok"
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
+
+    # I430: Furnace/DefleMask/FamiTracker/TFM modules play through the render entry point (furnace module). The fixture is
+    # one 32-row pattern at speed 6, 60 Hz: 192 ticks = 3.2 s, the expected length the script checks within 1%.
+    if(TARGET sel_module_furnace)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/furnace-decode)
+      add_test(NAME furnace-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/furnace_decode.sh $<TARGET_FILE:selecta-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/furnace_test.fur 3.2
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/furnace-decode)
+      set_tests_properties(furnace-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "furnace_decode_ok"
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
   endif()
 
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.

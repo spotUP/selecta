@@ -1,0 +1,16 @@
+Selecta Furnace replayer module (plugins/replayers/furnace)
+============================================================
+
+This module statically links the headless Furnace engine (tildearrow/furnace v0.6.8.3), so the combined module is
+distributed under the GNU General Public License, version 2 or (at your option) any later version. Verified from the
+upstream LICENSE (third_party/furnace/LICENSE): GPL-2.0-or-later. The GPLv3 ASIO SDK named upstream is not used. It is
+built only with -DSELECTA_GPL_PLUGINS=ON as a separate loadable module; the Selecta core never links it and stays MIT.
+The adapter and shim sources in this directory are MIT like the core and usable under the GPL as part of this module.
+
+Vendored code notes (third_party/furnace, see REVISION):
+
+  - Engine and platform sources: GPL-2.0-or-later.
+  - QSound and Supervision cores: no licence stated upstream. Removed (like bbmp); songs on those chips are silent there.
+  - YM2608 ADPCM ROM and rss ROM: replaced by silence arrays; YM2608 drum samples are silent. Open item.
+  - extern/adpcm (superctr): Unlicense, public domain. extern/fmt: MIT. Other chip cores keep their own licence files.
+  - Furnace demo songs are all rights reserved and are not vendored; the test fixture is original.
