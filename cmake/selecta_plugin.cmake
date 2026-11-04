@@ -29,6 +29,32 @@
 #   sel_incheck_<name>   resolves every quoted include and rejects any outside the plugin's own directory,
 #                        include/selecta, plugins/shared and THIRD_PARTY_INCLUDES (I228)
 
+# I427f (design 2026-10-30-plugin-loader-sdk D6): SELECTA_PLUGIN_LINK picks how every sel_add_plugin links its plugin.
+# MODULE (desktop default) builds a loadable library sel_<name>.dylib / .so in ${PROJECT_BINARY_DIR}/modules that the
+# runtime loader finds; the core binaries hold engine, registry and loaders only. STATIC (Amiga, web, windows until its
+# loader lands, and any build that must link a plugin directly) keeps the generated static registry. The STATIC keyword
+# of sel_add_plugin pins one plugin static in either mode (tests that link it directly).
+if(SEL_AMIGA OR EMSCRIPTEN OR WIN32)
+  set(_sel_link_default STATIC)
+else()
+  set(_sel_link_default MODULE)
+endif()
+set(SELECTA_PLUGIN_LINK "${_sel_link_default}" CACHE STRING "How plugins link: MODULE (loadable libraries) or STATIC (registry)")
+set_property(CACHE SELECTA_PLUGIN_LINK PROPERTY STRINGS MODULE STATIC)
+if(NOT SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND NOT SELECTA_PLUGIN_LINK STREQUAL "STATIC")
+  message(FATAL_ERROR "SELECTA_PLUGIN_LINK must be MODULE or STATIC, got '${SELECTA_PLUGIN_LINK}'")
+endif()
+if(SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND (SEL_AMIGA OR EMSCRIPTEN OR WIN32))
+  message(FATAL_ERROR "SELECTA_PLUGIN_LINK=MODULE needs the POSIX loader: Amiga, web and Windows builds stay STATIC")
+endif()
+if(SELECTA_PLUGIN_LINK STREQUAL "MODULE")
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON) # every static library a module absorbs must be position independent
+  set(SEL_BUILTIN_MODULE_DIR "${PROJECT_BINARY_DIR}/modules")
+endif()
+
+define_property(GLOBAL PROPERTY SEL_BUILTIN_MODULES
+  BRIEF_DOCS "Built-in plugin modules (SELECTA_PLUGIN_LINK=MODULE): target names"
+  FULL_DOCS "Built-in plugin modules (SELECTA_PLUGIN_LINK=MODULE): target names")
 define_property(GLOBAL PROPERTY SEL_PLUGINS
   BRIEF_DOCS "Names of plugins registered with sel_add_plugin"
   FULL_DOCS "Names of plugins registered with sel_add_plugin")
@@ -37,40 +63,63 @@ add_custom_target(sdk-isolation
   COMMENT "Every plugin compiles with include/ as its only project include path")
 
 function(sel_add_plugin name kind)
-  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE" "" "THIRD_PARTY_INCLUDES")
+  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE;STATIC" "" "THIRD_PARTY_INCLUDES")
   set(sources ${SELP_UNPARSED_ARGUMENTS})
   if(NOT sources)
     message(FATAL_ERROR "sel_add_plugin(${name}): no sources")
   endif()
 
+  set(link_module OFF)
+  set(builtin OFF)
   if(SELP_MODULE)
-    add_library(sel_module_${name} MODULE ${sources})
-    target_include_directories(sel_module_${name} PRIVATE "${PROJECT_SOURCE_DIR}/include")
-    target_compile_definitions(sel_module_${name} PRIVATE SEL_PLUGIN_KIND_BUILD=${kind})
-    if(SELP_THIRD_PARTY_INCLUDES)
-      target_include_directories(sel_module_${name} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
-    endif()
-    set_target_properties(sel_module_${name} PROPERTIES
-      PREFIX "" OUTPUT_NAME "sel_${name}")
-    if(APPLE)
-      set_target_properties(sel_module_${name} PROPERTIES SUFFIX ".dylib")
-      target_link_options(sel_module_${name} PRIVATE "-Wl,-exported_symbol,_sel_plugin_entry")
+    set(link_module ON)
+  elseif(SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND NOT SELP_STATIC)
+    set(link_module ON)
+    set(builtin ON)
+  endif()
+  if(link_module)
+    if(builtin)
+      set(mod sel_plugin_${name}) # same target name as the static form: per-plugin target_link_libraries calls keep working
     else()
-      set_target_properties(sel_module_${name} PROPERTIES SUFFIX ".so")
-      target_link_options(sel_module_${name} PRIVATE
-        "-Wl,--version-script=${PROJECT_SOURCE_DIR}/cmake/sel_module.map")
+      set(mod sel_module_${name})
     endif()
-    if(SEL_MODULE_OUTPUT_DIR)
-      set_target_properties(sel_module_${name} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${SEL_MODULE_OUTPUT_DIR}")
+    add_library(${mod} MODULE ${sources})
+    target_include_directories(${mod} PRIVATE "${PROJECT_SOURCE_DIR}/include")
+    target_compile_definitions(${mod} PRIVATE SEL_PLUGIN_KIND_BUILD=${kind})
+    if(SELP_THIRD_PARTY_INCLUDES)
+      target_include_directories(${mod} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
     endif()
-    return()
+    set_target_properties(${mod} PROPERTIES PREFIX "" OUTPUT_NAME "sel_${name}")
+    if(APPLE)
+      set_target_properties(${mod} PROPERTIES SUFFIX ".dylib")
+      target_link_options(${mod} PRIVATE "-Wl,-exported_symbol,_sel_plugin_entry")
+    else()
+      set_target_properties(${mod} PROPERTIES SUFFIX ".so")
+      target_link_options(${mod} PRIVATE "-Wl,--version-script=${PROJECT_SOURCE_DIR}/cmake/sel_module.map")
+    endif()
+    if(builtin)
+      set_target_properties(${mod} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${SEL_BUILTIN_MODULE_DIR}")
+      # A plugin's own directory and plugins/shared are visible to it, as in the static form.
+      target_include_directories(${mod} PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared")
+      # A module is self-contained: the host-side helpers a plugin calls (sel_tag_find, ...) come from its own copy of
+      # selecta_core, the same archive the static form pulls in at the executable's link.
+      target_link_libraries(${mod} PRIVATE selecta_core)
+      set_property(GLOBAL APPEND PROPERTY SEL_BUILTIN_MODULES ${mod})
+    elseif(SEL_MODULE_OUTPUT_DIR)
+      set_target_properties(${mod} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${SEL_MODULE_OUTPUT_DIR}")
+    endif()
+    if(NOT builtin)
+      return()
+    endif()
   endif()
 
-  add_library(sel_plugin_${name} STATIC ${sources})
-  target_include_directories(sel_plugin_${name} PRIVATE "${PROJECT_SOURCE_DIR}/include")
-  target_compile_definitions(sel_plugin_${name} PRIVATE
-    SEL_PLUGIN_ENTRY=sel_plugin_entry_${name}
-    SEL_PLUGIN_KIND_BUILD=${kind})
+  if(NOT builtin)
+    add_library(sel_plugin_${name} STATIC ${sources})
+    target_include_directories(sel_plugin_${name} PRIVATE "${PROJECT_SOURCE_DIR}/include")
+    target_compile_definitions(sel_plugin_${name} PRIVATE
+      SEL_PLUGIN_ENTRY=sel_plugin_entry_${name}
+      SEL_PLUGIN_KIND_BUILD=${kind})
+  endif()
 
   add_library(sel_sdkcheck_${name} OBJECT EXCLUDE_FROM_ALL ${sources})
   set_target_properties(sel_sdkcheck_${name} PROPERTIES INCLUDE_DIRECTORIES "")
@@ -79,12 +128,15 @@ function(sel_add_plugin name kind)
     SEL_PLUGIN_ENTRY=sel_plugin_entry_${name}
     SEL_PLUGIN_KIND_BUILD=${kind})
   if(SELP_THIRD_PARTY_INCLUDES)
-    target_include_directories(sel_plugin_${name} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
     target_include_directories(sel_sdkcheck_${name} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
+    if(NOT builtin)
+      target_include_directories(sel_plugin_${name} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
+    endif()
   endif()
-  foreach(t sel_plugin_${name} sel_sdkcheck_${name})
-    target_include_directories(${t} PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared")
-  endforeach()
+  target_include_directories(sel_sdkcheck_${name} PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared")
+  if(NOT builtin)
+    target_include_directories(sel_plugin_${name} PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared")
+  endif()
   add_dependencies(sdk-isolation sel_sdkcheck_${name})
 
   # Own directory: plugins/<kind>/<name> for a plugin under plugins/, else the first source's directory.
@@ -122,5 +174,7 @@ function(sel_add_plugin name kind)
     VERBATIM COMMENT "Include isolation of plugin ${name}")
   add_dependencies(sdk-isolation sel_incheck_${name})
 
-  set_property(GLOBAL APPEND PROPERTY SEL_PLUGINS ${name})
+  if(NOT builtin)
+    set_property(GLOBAL APPEND PROPERTY SEL_PLUGINS ${name})
+  endif()
 endfunction()

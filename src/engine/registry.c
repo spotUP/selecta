@@ -23,11 +23,12 @@ static uint32_t g_count;
 static sel_registry_stats g_stats;
 
 /* Dynamic entries (plugin loader, I427a): added by a loader before init, walked after the static array. */
-#define SEL_DYN_MAX 32
+#define SEL_DYN_MAX 96
 #define SEL_ORIGIN_MAX 512
 static struct {
     sel_plugin_entry_fn fn;
     char origin[SEL_ORIGIN_MAX];
+    int builtin;
 } g_dyn[SEL_DYN_MAX];
 static uint32_t g_dyn_count;
 static uint32_t g_load_rejected; /* rejects a loader reported before init; they persist for the process */
@@ -36,14 +37,40 @@ static const char* g_origin[SEL_REGISTRY_MAX];
 static int g_scanned;
 #endif
 
-int sel_registry_add_entry(sel_plugin_entry_fn fn, const char* origin) {
+#define SEL_BUILTIN_MISSING_MAX 64
+static char g_missing[SEL_BUILTIN_MISSING_MAX][96];
+static uint32_t g_missing_n;
+
+static void reject_line(const char* path, const char* reason);
+
+static int add_dyn(sel_plugin_entry_fn fn, const char* origin, int builtin) {
     if (fn == NULL || g_dyn_count >= SEL_DYN_MAX) {
         return 0;
     }
+    g_dyn[g_dyn_count].builtin = builtin;
     g_dyn[g_dyn_count].fn = fn;
     snprintf(g_dyn[g_dyn_count].origin, sizeof g_dyn[g_dyn_count].origin, "%s", origin != NULL ? origin : "?");
     g_dyn_count++;
     return 1;
+}
+
+int sel_registry_add_entry(sel_plugin_entry_fn fn, const char* origin) {
+    return add_dyn(fn, origin, 0);
+}
+
+int sel_registry_add_builtin_entry(sel_plugin_entry_fn fn, const char* origin) {
+    return add_dyn(fn, origin, 1);
+}
+
+void sel_registry_note_builtin_missing(const char* file_name) {
+    if (g_missing_n < SEL_BUILTIN_MISSING_MAX) {
+        snprintf(g_missing[g_missing_n++], sizeof g_missing[0], "%s", file_name);
+    }
+    reject_line(file_name, "built-in module missing or not loadable");
+}
+
+const char* sel_registry_builtin_missing_name(uint32_t index) {
+    return index < g_missing_n ? g_missing[index] : NULL;
 }
 
 static void reject_line(const char* path, const char* reason) {
@@ -145,6 +172,7 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
     g_count = 0;
     memset(&g_stats, 0, sizeof g_stats);
     g_stats.dyn_rejected = g_load_rejected;
+    g_stats.builtin_missing = g_missing_n;
     for (i = 0; i < sel_registry_entry_count; i++) {
         const sel_tag* d = sel_registry_entries[i](SEL_API_VERSION);
         if (!d) {
@@ -184,7 +212,11 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
             continue;
         }
         seen[seen_n++] = id;
-        g_stats.dyn_loaded++;
+        if (g_dyn[i].builtin) {
+            g_stats.builtin_loaded++;
+        } else {
+            g_stats.dyn_loaded++;
+        }
         keep(d, g_dyn[i].origin, machine);
     }
     return g_count;

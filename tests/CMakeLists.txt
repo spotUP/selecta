@@ -1214,8 +1214,11 @@ endif()
 # T47 (rows I99, I100): crossfeed DSP. Unit half through the plugin ABI, render
 # half through selecta-cli --dsp.
 if(NOT SEL_AMIGA)
-  add_executable(crossfeed_test dsp/crossfeed_test.c)
-  target_link_libraries(crossfeed_test PRIVATE selecta_core sel_plugin_crossfeed)
+  # I427f: the plugin is a module on desktop; the unit half compiles its source in directly.
+  add_executable(crossfeed_test dsp/crossfeed_test.c "${PROJECT_SOURCE_DIR}/plugins/dsp/crossfeed/crossfeed.c")
+  target_include_directories(crossfeed_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/shared")
+  target_compile_definitions(crossfeed_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_crossfeed SEL_PLUGIN_KIND_BUILD=3)
+  target_link_libraries(crossfeed_test PRIVATE selecta_core)
   add_test(NAME crossfeed-unit COMMAND crossfeed_test)
   add_test(NAME crossfeed-render
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
@@ -3054,3 +3057,16 @@ add_test(NAME library-gen-bench COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-
 set_tests_properties(library-gen-bench PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_gen_bench_ok")
 
 sel_isolate_config()
+
+# I427f: built-ins are modules (SELECTA_PLUGIN_LINK=MODULE): no sel_plugin_* symbol in the binary, modules render, a
+# missing module is reported. Own label so dui-ratchet does not count it.
+if(SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
+  find_program(SEL_NM nm)
+  if(SEL_NM)
+    add_test(NAME builtin-modules
+      COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DNM=${SEL_NM}" "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/gme_test.nsf"
+        "-DMODDIR=${SEL_BUILTIN_MODULE_DIR}" "-DWORK=${CMAKE_BINARY_DIR}/tests/builtin-modules"
+        -P "${PROJECT_SOURCE_DIR}/tests/dui/builtin_modules.cmake")
+    set_tests_properties(builtin-modules PROPERTIES LABELS builtin-modules TIMEOUT 180)
+  endif()
+endif()

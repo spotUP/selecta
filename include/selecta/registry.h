@@ -25,6 +25,8 @@ typedef struct sel_registry_stats {
     uint32_t hidden_chip;        /* SEL_OUT_MEM_CHIP above chip RAM */
     uint32_t dyn_loaded;         /* dynamic modules accepted (I427a) */
     uint32_t dyn_rejected;       /* dynamic modules skipped: no entry symbol, NULL entry, bad descriptor, duplicate id */
+    uint32_t builtin_loaded;     /* built-in modules accepted (SELECTA_PLUGIN_LINK=MODULE, I427f); not counted in dyn_loaded */
+    uint32_t builtin_missing;    /* built-in modules this build expects but the loader could not load */
 } sel_registry_stats;
 
 /* Calls every entry once; keeps the plugins the machine can run (a sel_machine tag list, NULL =
@@ -35,6 +37,13 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
  * then these, through the same machine filter; a module whose plugin id is already registered is rejected
  * (static wins) and counted in dyn_rejected. Returns 0 when the table is full. */
 int sel_registry_add_entry(sel_plugin_entry_fn entry, const char* origin);
+/* Same as sel_registry_add_entry for a built-in module (shipped with the app, I427f): counted in builtin_loaded,
+ * not in dyn_loaded. */
+int sel_registry_add_builtin_entry(sel_plugin_entry_fn entry, const char* origin);
+/* The loader reports a built-in module file it expected and could not load (absent, dlopen failure, bad entry). */
+void sel_registry_note_builtin_missing(const char* file_name);
+/* Name of missing built-in module `index` (0..builtin_missing-1 from the last scan); NULL out of range. */
+const char* sel_registry_builtin_missing_name(uint32_t index);
 /* A loader's own reject (dlopen failure, missing entry symbol): logs one line with path and reason through the
  * host and counts it in dyn_rejected. */
 void sel_registry_note_rejected(const char* path, const char* reason);

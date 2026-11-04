@@ -29,3 +29,19 @@ if(APPLE)
     MACOSX_BUNDLE_ICON_FILE Selecta.icns
     OUTPUT_NAME Selecta)
 endif()
+
+# I427f: the bundle carries the built-in modules in Contents/PlugIns, where the loader looks first after the env
+# override. A target of its own, built with ALL, so a rebuilt module never leaves a stale copy behind.
+if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
+  get_property(_sel_bundle_mods GLOBAL PROPERTY SEL_BUILTIN_MODULES)
+  set(_sel_plugins_dir "$<TARGET_BUNDLE_CONTENT_DIR:selecta>/PlugIns")
+  add_custom_target(selecta_bundle_modules ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_sel_plugins_dir}"
+    VERBATIM)
+  foreach(_m IN LISTS _sel_bundle_mods)
+    add_custom_command(TARGET selecta_bundle_modules POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${_m}>" "${_sel_plugins_dir}/"
+      VERBATIM)
+  endforeach()
+  add_dependencies(selecta_bundle_modules selecta ${_sel_bundle_mods})
+endif()

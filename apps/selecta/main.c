@@ -839,6 +839,17 @@ int main(int argc, char** argv)
         }
     }
     apply_option_words(e, argc, argv);
+    {
+        /* I427f: a built-in module the loader could not load is an error the UI shows (toast path); reported here, after the startup send_line pumps (ctlexec drops events), so the first sink pump delivers it, never a silent gap */
+        const sel_registry_stats* rs = sel_registry_get_stats();
+        uint32_t mi;
+        for (mi = 0; mi < rs->builtin_missing; mi++) {
+            const char* mname = sel_registry_builtin_missing_name(mi);
+            if (mname != NULL) {
+                sel_engine_report_error(e, "plugin_module_missing", mname);
+            }
+        }
+    }
     pump_turn(e, clockless, sink, ctx);
     for (a = 1; a < argc; a++) { /* `selecta <share link>` opens the song, playlist or view the link names (I180) */
         if (sel_share_is_link(argv[a])) {
