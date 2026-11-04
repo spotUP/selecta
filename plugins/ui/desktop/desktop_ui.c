@@ -13298,6 +13298,11 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         draw_home(d);
         return 1;
     }
+    if (d->focus == (int32_t)d->layout.count && ev->code == TXT_KEY_DOWN && ev->mods == 0u) {
+        /* I1009: Enter no longer drops the field's focus, so Down is the way into the results: it hands the keyboard to the
+         * list and falls through to the list key handling below for this same press (Enter on a row then opens it) */
+        d->focus = 0;
+    }
     if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
         /* I1036: an edit key (Backspace is bound to @back) stays with the field */
         const char* hist = field_edit_key(ev) ? NULL : txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
@@ -13316,13 +13321,12 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
             desk_play_path(d, d->query);
             d->qlen = 0u;
             d->query[0] = '\0';
-            desk_search_fire(d); /* empty query: leaves the search view and repaints */
-            d->focus = 0;
+            desk_search_fire(d); /* empty query: leaves the search view and repaints; the field keeps the keyboard (I1009) */
         } else if (ev->code == 13u) { /* Enter searches at once, unless the debounce already sent this query */
             if (d->search_pending) {
                 desk_search_fire(d);
             }
-            d->focus = 0;
+            /* I1009: Enter runs the search and the field keeps the keyboard, so typing goes on; Escape or a click leaves it */
         } else {
             int r = field_edit(d, d->query, &d->qlen, sizeof d->query, 0, ev);
             if (r == 0) {
