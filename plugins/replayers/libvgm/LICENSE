@@ -1,0 +1,21 @@
+Selecta libvgm plugin (plugins/replayers/libvgm)
+================================================
+
+This directory is its own module and is licensed GPL-2.0-or-later. Selecta's core stays MIT
+(see /LICENSE) and never links this code: the plugin builds only as a loadable module when
+SELECTA_GPL_PLUGINS=ON.
+
+Components
+- adapter.c, shim.cpp, shim.h: Selecta's adapter and the wrapper over the libvgm player API
+  (the sequence follows libvgm's vgm2wav.cpp sample).
+- third_party/libvgm: libvgm by Valley Bell and contributors, pinned in third_party/libvgm/REVISION.
+  libvgm has no top-level licence file; each source file carries its own header. Count of the
+  sound-core headers under emu/cores at the pin: 33 BSD-3-Clause, 10 GPL-2.0-or-later, 1 GPL-2.0,
+  6 LGPL-2.1-or-later, 2 MIT. The GPL-2.0-or-later cores include fmopl.c, fmopn.c, ym2413.c,
+  ym2151.c, ymf262.c, nes_apu.c, msm5232.c and nukedopll.c; ymf278b.c is GPL-2.0. Linking them
+  makes the module GPL. The module is therefore GPL-2.0-or-later (read as GPL-2.0-only for the
+  ymf278b.c part: the combined module stays distributable under GPL-2.0 terms, version 2 or any
+  later version where all parts allow it).
+- zlib (system) reads VGZ; zlib licence.
+
+The full text of the GNU General Public License is at https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
