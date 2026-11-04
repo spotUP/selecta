@@ -1964,6 +1964,17 @@ if(NOT SEL_AMIGA)
     set_tests_properties(sid-no-replayer PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_no_replayer_ok")
   endif()
 
+  # I432: a CHIPNSFX song plays through the render entry point (chipnsfx module). GPL module, opt-in.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/chipnsfx-decode)
+    add_test(NAME chipnsfx-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/chipnsfx_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/chp_test.chp
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/chipnsfx-decode)
+    set_tests_properties(chipnsfx-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "chipnsfx_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I434: a SID (C64) file plays through the render entry point (sid replayer, libsidplayfp). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)

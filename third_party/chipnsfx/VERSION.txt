@@ -1,0 +1,5 @@
+CHIPNSFX tracker, Cesar Nicolas-Gonzalez / CNGSOFT, build 20241231 (MY_DATE in CHIPNSFX.C).
+License: GPL-3.0-or-later (notice at the top of CHIPNSFX.C, full text in COPYING).
+Upstream: http://cngsoft.no-ip.org/chipnsfx.zip
+CHIPNSFX.C is copied unchanged from bbmp (csrc/chipnsfx/CHIPNSFX.C, creep-ltx/bbmp commit 19d87098b3716156d80224d22dc49ca22884d1b7).
+Built without its user interface (-DDEBUG) by plugins/replayers/chipnsfx; GPL, so only as a loadable module (SELECTA_GPL_PLUGINS).
