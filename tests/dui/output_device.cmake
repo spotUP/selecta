@@ -5,7 +5,8 @@
 # 1. Without a click: the button exists (n=2) and nothing is counted.
 # 2. A click on the button opens the list: clicks=1, picks=0.
 # 3. A second click on the AirPlay row (second device row, under the System default row) picks it:
-#    picks=1 and pick=null-homepod, the uid sent as PREF_SET output.device.
+#    picks=1 and pick=null-homepod, the uid sent as PREF_SET output.device (I1042: the engine pref holds it, prefs.conf
+#    saves it, and a fresh run on the same config dir starts with that pref).
 # 4. A click outside the button counts nothing.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -14,11 +15,23 @@ file(MAKE_DIRECTORY "${WORK}")
 configure_file("${SONGS}/selecta-test-mk.mod" "${WORK}/song.mod" COPYONLY)
 
 function(dev_run outvar input)
-  file(REMOVE_RECURSE "${WORK}/cfg")
+  if(NOT KEEP_CFG)
+    file(REMOVE_RECURSE "${WORK}/cfg")
+  endif()
   file(WRITE "${WORK}/in.txt" "wait 2\n${input}wait 1\n")
   dui_run(o --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
     --exec "QUEUE_ADD ${WORK}/song.mod" --exec "PLAY" --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+
+# I1042: the engine-side pref (the "devices pref=" line) after a run.
+function(dev_pref_expect out want)
+  if(NOT "${out}" MATCHES "devices pref=([^\n]*)")
+    message(FATAL_ERROR "no 'devices pref=' line in:\n${out}")
+  endif()
+  if(NOT "${CMAKE_MATCH_1}" STREQUAL "${want}")
+    message(FATAL_ERROR "engine pref output.device is '${CMAKE_MATCH_1}', expected '${want}' (the pick did not reach PREF_SET, or did not survive the restart) in:\n${out}")
+  endif()
 endfunction()
 
 function(dev_expect out n clicks picks pick)
@@ -51,6 +64,19 @@ dev_expect("${opened}" 2 1 0 "")
 math(EXPR ry "${by} - 12") # menu_y = by - 3 rows of 24; the third row spans by-24 .. by, its middle is by-12
 dev_run(picked "click ${cx} ${cy}\nclick ${cx} ${ry}\n")
 dev_expect("${picked}" 2 1 1 "null-homepod")
+# I1042: the pick went through PREF_SET to the engine, and the engine wrote it to prefs.conf.
+dev_pref_expect("${picked}" "null-homepod")
+file(READ "${WORK}/cfg/prefs.conf" saved)
+if(NOT saved MATCHES "output\\.device *= *null-homepod")
+  message(FATAL_ERROR "prefs.conf does not hold output.device=null-homepod after the pick:\n${saved}")
+endif()
+
+# 3b. A fresh run on the same config dir starts on the picked device: no click in this run, the engine pref is the pick.
+set(KEEP_CFG ON)
+dev_run(restarted "")
+dev_expect("${restarted}" 2 0 0 "")
+dev_pref_expect("${restarted}" "null-homepod")
+set(KEEP_CFG OFF)
 
 # 4. A click far from the button opens nothing.
 math(EXPR fx "${bx} - 300")

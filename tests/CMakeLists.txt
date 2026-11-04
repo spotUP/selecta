@@ -44,7 +44,13 @@ sel_cli_test(m0-null-output "play-null --rate 44100 --frames 4410"
 # I216: `play --output null` pulls on the command thread, which also destroys the engine; the debug-build thread
 # assertion in sel_engine_destroy must not fire (it aborted with exit 134).
 sel_cli_test(play-null-output "play ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream/sine.mp3 --output null --seconds 1"
-  "-DEXPECT_REGEX=^callbacks=[0-9]+ frames=44100$")
+  "-DEXPECT_REGEX=^callbacks=[0-9]+ frames=44100 out_latency_ms=[0-9]+ viz_delay_blocks=[0-9]+$")
+
+# I1042 reachability: `play` is the product's output entry. The null output queries a distinct 340 ms (the coreaudio
+# plugin's nominal tag is 20), the engine must hold the visual frames back by that many 20 ms blocks (17), not by the
+# nominal value (1 block) or by nothing.
+sel_cli_test(play-output-latency "play ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream/sine.mp3 --output null --seconds 1"
+  "-DEXPECT_REGEX=^callbacks=[0-9]+ frames=44100 out_latency_ms=340 viz_delay_blocks=17$")
 
 # T8: the ratchet of unimplemented verbs.
 add_test(NAME ratchet

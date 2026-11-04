@@ -25,6 +25,11 @@ static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
     return sel_cli_engine_pull(ctx, stereo, frames);
 }
 
+static void play_sink(void* ctx, const sel_message* evt) {
+    (void)ctx;
+    (void)evt;
+}
+
 int sel_cli_play(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     sel_cli_output o;
@@ -82,6 +87,7 @@ int sel_cli_play(int argc, char** argv) {
     }
     g_mark_audio = sel_tag_find(o.hooks, SEL_OUT_CLOCKLESS, 0) == 0;
     o.set_source(out, audio_pull, e);
+    sel_engine_output_opened(e, out);
 
     total = (uint32_t)(seconds * rate);
     while (played < total) {
@@ -98,7 +104,13 @@ int sel_cli_play(int argc, char** argv) {
             callbacks = (uint32_t)st->value;
         }
     }
-    printf("callbacks=%u frames=%u\n", (unsigned)callbacks, (unsigned)frames);
+    (void)sel_engine_pump(e, play_sink, NULL); /* applies the visual delay the output latency asks for (I1042) */
+    {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("callbacks=%u frames=%u out_latency_ms=%u viz_delay_blocks=%u\n", (unsigned)callbacks, (unsigned)frames,
+               (unsigned)es.out_latency_ms, (unsigned)es.viz_delay_blocks);
+    }
     o.close(out);
     sel_engine_destroy(e);
     return played == total ? 0 : 1;

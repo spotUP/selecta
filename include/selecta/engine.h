@@ -422,6 +422,9 @@ void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler);
  * turns the crossfeed on unless the pref dsp.crossfeed is "off". Call after
  * sel_engine_set_mix and the registry hook-up, before the song starts. */
 void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks);
+/* The shell calls this after every successful open of that output (also a reopen on another device): the engine asks
+ * SEL_OUT_LATENCY_QUERY for the real latency and delays the scope / visual frames by it (I1042). */
+void sel_engine_output_opened(sel_engine* e, void* out);
 /* An output that plays voices itself (SEL_OUT_VOICE_BACKEND) hands its backend here before the song starts;
  * the replayer's voice calls then reach it instead of the mixer. NULL restores the mixer. */
 void sel_engine_set_voice_sink(sel_engine* e, const sel_voices* sink);
@@ -569,6 +572,8 @@ typedef struct sel_engine_stats {
     uint32_t dsp_blocks;             /* render blocks that ran at least one DSP plugin (T47) */
     uint32_t xfade_frames;           /* frames mixed with two songs at once (T44) */
     uint32_t slots_mixed;            /* most songs mixed at once so far */
+    uint32_t out_latency_ms;         /* the open output's real latency (SEL_OUT_LATENCY_QUERY), 0 without one (I1042) */
+    uint32_t viz_delay_blocks;       /* blocks the visual frames are held back: out_latency_ms / 20 ms (I1042 sentinel) */
     uint32_t mixed_path;             /* 1: the engine mixes, 0: the output owns voices */
     uint32_t mutes;                  /* mute mask changes (MUTE, SOLO) (T39) */
     uint32_t fades;                  /* end fades started (loop count, max length) (T39) */

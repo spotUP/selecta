@@ -197,6 +197,7 @@ static int shell_handover(void* ctx, uint32_t release) {
         }
         g_marked = 0; /* a new pull thread marks itself on its first call */
         so->set_source(so->out, audio_pull, so->engine);
+        sel_engine_output_opened(so->engine, so->out);
     }
     return 1; /* so->paced is the same output's: a reopen keeps it */
 }
@@ -239,6 +240,7 @@ static int shell_switch_output(void* ctx, const char* id) {
     }
     g_marked = 0; /* a new pull thread marks itself on its first call */
     source_fn(out, audio_pull, so->engine);
+    sel_engine_output_opened(so->engine, out);
     so->rate = rate;
     so->open = open_fn;
     so->close = close_fn;
@@ -684,6 +686,7 @@ int main(int argc, char** argv)
     }
     g_mark_audio = !clockless;
     out_set_source(out, audio_pull, e);
+    sel_engine_output_opened(e, out);
     so.rate = rate;
     so.open = out_open;
     so.close = out_close;
