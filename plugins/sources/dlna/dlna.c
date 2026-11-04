@@ -47,6 +47,7 @@ static const sel_tag g_tags[] = {
 #define MAX_SUBS 512u
 #define MAX_CHANGED 256u
 #define STATE_MAGIC "selecta-dlna-state 1"
+#define DLNA_HOME "http://www.upnp.org/"
 
 typedef struct hset {
     uint64_t* t; /* open addressing set of 64 bit hashes (0 = empty slot) */
@@ -796,7 +797,10 @@ static int dl_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* 
     r.host = host;
     r.cat = cat;
     r.subs = (char(*)[SEL_UPNP_ID_BYTES])malloc(MAX_SUBS * SEL_UPNP_ID_BYTES);
-    if (strcmp(arg, "discover") == 0) {
+    /* The UI's Sync button sends the source home (DLNA_HOME, from the
+       SOURCES reply): like an empty arg it means "find the servers on the
+       network", the same as an explicit "discover" (I1072). */
+    if (arg[0] == '\0' || strcmp(arg, "discover") == 0 || strcmp(arg, DLNA_HOME) == 0) {
         const char* env = getenv("SELECTA_DLNA_SSDP");
         char ip[48] = "";
         unsigned port = 0;
@@ -898,10 +902,10 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
 }
 
 static const sel_source g_dlna = {
-    "dlna", "DLNA", "http://www.upnp.org/",
+    "dlna", "DLNA", DLNA_HOME,
     "Music from a UPnP / DLNA media server on your network (Synology Media Server, Minidlna, ...).",
     g_tags, NULL, parse, NULL, NULL, NULL, NULL, NULL, dl_sync,
-    SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS | SEL_SOURCE_SEEKABLE, "http://www.upnp.org/", dl_play_url,
+    SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS | SEL_SOURCE_SEEKABLE, DLNA_HOME, dl_play_url,
     NULL, /* search (I406) */
     NULL, /* search_ready (I1037) */
 };

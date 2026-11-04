@@ -55,6 +55,16 @@ if(NOT src2 EQUAL 0 OR NOT so2 MATCHES "listing_rows=153 " OR NOT so2 MATCHES "d
    OR NOT se2 MATCHES "dlna: server Fixture Media & Music control http://127.0.0.1:${HTTP}/upnp/cd/control")
   message(FATAL_ERROR "I894a3: discover scan failed rc=${src2}\n${so2}${se2}")
 endif()
+# 2b. I1072: the UI's Sync button sends the source home (LIBRARY_SYNC dlna
+#     "http://www.upnp.org/", sel_uim_sync_line). The home means discover:
+#     same 153 rows, and the discover server line on stderr is the sentinel.
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/s2h")
+execute_process(COMMAND "${CLI}" library sync --db "${DB2}-home" --now 2000 dlna "http://www.upnp.org/"
+  OUTPUT_VARIABLE soh ERROR_VARIABLE seh RESULT_VARIABLE srch TIMEOUT 60)
+if(NOT srch EQUAL 0 OR NOT soh MATCHES "listing_rows=153 " OR NOT soh MATCHES "db_songs=153"
+   OR NOT seh MATCHES "dlna: server Fixture Media & Music control http://127.0.0.1:${HTTP}/upnp/cd/control")
+  message(FATAL_ERROR "I1072: sync with the source home did not discover rc=${srch}\n${soh}${seh}")
+endif()
 file(READ "${PORT}.requests" rq)
 if(NOT rq MATCHES "ssdp_search=urn:schemas-upnp-org:device:MediaServer:1")
   message(FATAL_ERROR "I894a3: no M-SEARCH reached the fixture\n${rq}")
