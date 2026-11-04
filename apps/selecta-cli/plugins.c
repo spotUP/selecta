@@ -93,10 +93,11 @@ int sel_cli_plugins(int argc, char** argv) {
     if (stats) {
         const sel_registry_stats* st = sel_registry_get_stats();
         printf("registry_total=%u\nfiltered=%u\nhidden_min_cpu=%u\nhidden_needs_float=%u\n"
-               "hidden_memory=%u\nhidden_chip=%u\ndyn_loaded=%u\ndyn_rejected=%u\n",
+               "hidden_memory=%u\nhidden_chip=%u\ndyn_loaded=%u\ndyn_rejected=%u\nbuiltin_loaded=%u\nbuiltin_missing=%u\n",
                (unsigned)st->total, (unsigned)st->filtered, (unsigned)st->hidden_min_cpu,
                (unsigned)st->hidden_needs_float, (unsigned)st->hidden_memory,
-               (unsigned)st->hidden_chip, (unsigned)st->dyn_loaded, (unsigned)st->dyn_rejected);
+               (unsigned)st->hidden_chip, (unsigned)st->dyn_loaded, (unsigned)st->dyn_rejected,
+               (unsigned)st->builtin_loaded, (unsigned)st->builtin_missing);
     }
     return 0;
 }

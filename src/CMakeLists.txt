@@ -2,7 +2,16 @@
 # selecta_library and selecta_gui so neither depends on the other.
 add_library(selecta_platform STATIC platform/platform.c)
 target_include_directories(selecta_platform PUBLIC ${PROJECT_SOURCE_DIR}/include)
-add_library(selecta_core STATIC
+# I427f (design 2026-10-30-plugin-loader-sdk D6): with SELECTA_PLUGIN_LINK=MODULE the core is ONE shared library per process.
+# The executable and every plugin module link it, so the source registry, plugin registry, engine and library state exist
+# once. A static core would be embedded in each module and each copy would keep its own empty statics. The static libraries
+# it absorbs are folded into it whole (cmake/selecta_core_shared.cmake). STATIC mode (Amiga, web, static test builds) is unchanged.
+if(SELECTA_PLUGIN_LINK STREQUAL "MODULE")
+  set(SEL_CORE_KIND SHARED)
+else()
+  set(SEL_CORE_KIND STATIC)
+endif()
+add_library(selecta_core ${SEL_CORE_KIND}
   core/version.c
   core/tag.c
   core/codec.c
@@ -121,7 +130,7 @@ if(SEL_AMIGA)
   # count. One line per checked target: name@source dir@binary dir@source prefix filter (regex)@sources (comma separated).
   # D-M3-3: SQLite (selecta_sqlite) and the R128 analyser are library-worker code where double is allowed;
   # they are excluded by target, simply by not being listed here. Everything listed must stay float-free.
-  set(SEL_NOFLOAT_TARGETS selecta_core selecta_mixer sel_plugin_wav sel_plugin_null selecta_library selecta_shared_source selecta_shared_archive sel_plugin_sndh sel_plugin_asma sel_plugin_keygenmusic sel_plugin_aminet sel_plugin_hvsc)
+  set(SEL_NOFLOAT_TARGETS selecta_core selecta_mixer sel_plugin_wav sel_plugin_null selecta_library selecta_shared_source selecta_shared_archive sel_plugin_sndh_source sel_plugin_asma sel_plugin_keygenmusic sel_plugin_aminet sel_plugin_hvsc)
   set(_nf "")
   foreach(_t IN LISTS SEL_NOFLOAT_TARGETS)
     if(_t STREQUAL "selecta_core")

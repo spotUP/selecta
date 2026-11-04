@@ -600,6 +600,8 @@ typedef struct desk {
     uint32_t toasts;         /* toasts shown */
     uint32_t open_fail_toasts; /* I695b sentinel: failed opens (any play, not only a drop) that raised their toast */
     char open_fail_text[96]; /* I695b: the text of the last one */
+    uint32_t module_missing_toasts; /* I427f sentinel: built-in modules the loader could not load, each reported with a toast */
+    char module_missing_text[96];   /* I427f: the text of the last one */
     sel_sync_progress sync_ui; /* I782: the running sync as the last frame drew it; the card shows while active */
     uint32_t sync_ui_draws, sync_ui_shown, sync_ui_cancels; /* test sentinels: cards drawn, times it appeared, Cancel clicks */
     uint32_t sync_ui_phase;  /* I1026: the indeterminate sweep step (UI clock / SYNC_SWEEP_STEP_MS); 0 while the bar is determinate */
@@ -7954,6 +7956,7 @@ static const char* library_dump_build(desk* d) {
                               (int)d->labels[i].box.x, (int)d->labels[i].box.y, (int)d->labels[i].box.w, (int)d->labels[i].box.h,
                               (int)d->labels[i].ink_x, (int)d->labels[i].ink_w, d->labels[i].text);
     }
+    o = dump_put(d, o, "module_missing toasts=%u text=\"%s\"\n", (unsigned)d->module_missing_toasts, d->module_missing_text);
     if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
         uint32_t k;
         o = dump_put(d, o,
@@ -15796,6 +15799,12 @@ static void desk_on_event(void* state, const sel_message* evt) {
         if (strcmp(code, "open_failed") == 0 || strcmp(code, "no_replayer") == 0 || strcmp(code, "unsupported_kind") == 0 ||
             strcmp(code, "replayer_incomplete") == 0) { /* I695e: a replayer that cannot run is a failed open too */
             desk_open_fail_toast(d, code, detail);
+        }
+        if (strcmp(code, "plugin_module_missing") == 0) { /* I427f: a built-in module is absent; never a silent gap */
+            snprintf(d->module_missing_text, sizeof d->module_missing_text, "Plugin module missing: %.60s", detail);
+            d->module_missing_toasts++;
+            desk_toast(d, d->module_missing_text);
+            d->repaint = 1;
         }
         d->drop_playing = 0;
     }

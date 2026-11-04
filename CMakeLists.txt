@@ -42,6 +42,7 @@ add_subdirectory(src)
 add_subdirectory(plugins)
 include(cmake/selecta_registry.cmake)
 add_subdirectory(apps)
+include(cmake/selecta_core_shared.cmake)
 
 if(SEL_BUILD_TESTS)
   enable_testing()
