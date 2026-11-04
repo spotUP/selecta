@@ -18,7 +18,7 @@ plus query is looked up in fixtures/<host>/routes.json first (exact key
 "<path>?<query>" then "<path>"), else the file fixtures/<host>/<path> (a
 directory serves index.json, else index.html). Route entry keys:
   file, status, headers{}, redirect (Location), chunked (bool),
-  delay_first_byte (s), delay_body (s, sleep between body halves), body (inline str).
+  fail_first (N requests answer fail_status, default 503, before the route serves), delay_first_byte (s), delay_body (s, sleep between body halves), body (inline str).
 Range: single "bytes=a-b" ranges answer 206. Control endpoints (never logged):
   GET /__fixture/log    JSON array of logged requests
   POST /__fixture/reset clears the log
@@ -54,6 +54,7 @@ LOG_LOCK = threading.Lock()
 LOG_FILE = None
 VOTES = {}  # (mkey, token) -> r, the HippoPlayer vote store (row I174)
 VOTE_MODE = {"missing": False}  # POST /__fixture/votes_missing makes both vote endpoints answer 404 (T80)
+FAIL_SEEN = {}  # route key -> requests answered with fail_status so far (cleared by reset)
 RATINGS = {}  # (token, source, itemKey) -> stars, the DEViLBOX rating store (row I173)
 KEEP_HEADERS = ("range", "authorization", "content-type", "content-length", "user-agent")
 
@@ -105,6 +106,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with LOG_LOCK:
                 LOG.clear()
                 RATINGS.clear()
+                FAIL_SEEN.clear()
             return self.send_bytes(200, b"{}", {"Content-Type": "application/json"})
         if parsed.path == "/__fixture/votes_missing":
             VOTE_MODE["missing"] = True
@@ -262,6 +264,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if isinstance(route, list):  # one entry per method: the first whose key_method matches (I188)
             route = next((x for x in route if x.get("key_method", self.command) == self.command), None)
         route = dict(route) if route else {}
+        if route.get("fail_first"):  # the first N requests answer fail_status (default 503), then the route serves
+            with LOG_LOCK:
+                seen = FAIL_SEEN.get((host, key_q), 0)
+                FAIL_SEEN[(host, key_q)] = seen + 1
+            if seen < route["fail_first"]:
+                return self.send_bytes(route.get("fail_status", 503), b"Fetching from the upstream - try again\n",
+                                       {"Content-Type": "text/plain"})
         if "key_method" in route and route["key_method"] != self.command:
             route = {}
         if route.get("redirect"):
