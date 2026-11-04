@@ -7,8 +7,16 @@
  * sleeps until the requested frames have been rendered, so the front end paces itself on the device clock.
  * Every CoreAudio call outside the render callback goes through ca_backend, so the host test drives the same code with
  * a fake device list and a counter instead of a sound card (tests/coreaudio_device_test.c).
+ *
+ * AirPlay route mode (I1039, research row D of thoughts/shared/research/2026-11-01-airplay-chromecast.md): HAL output
+ * never reaches a HomePod the app picks in AVRoutePickerView; an AVSampleBufferAudioRenderer does. OUT_DEVICES lists
+ * one extra entry, SEL_OUT_DEVICE_AIRPLAY_ROUTE. When the pref names it, ca_bind stops the HAL unit and the pump feeds
+ * the renderer instead (coreaudio_av.m, through ca_av_backend so the test fakes it). Any other pick returns to the HAL
+ * unit. HAL stays the default: it has the lower latency and the direct device pick; the AV path only runs on the pick.
  * OS headers are allowed here by RULES.md rule 3 (plugins, os subdirectory). */
 #include <selecta/output.h>
+
+#include "coreaudio_av.h"
 
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
@@ -40,15 +48,31 @@ struct ca_out {
     int inited;         /* the unit is initialised: a device change must uninitialise it first */
     uint32_t callbacks; /* atomic */
     uint32_t frames;    /* atomic */
-    sel_tag stats[3];
+    sel_tag stats[5];
     char uid[SEL_OUT_DEVICE_UID_MAX]; /* the pref value the unit is bound to ("" = system default, followed) */
     AudioDeviceID dev;                /* the device the unit plays to */
     uint32_t default_changed;         /* atomic: the system default output moved since the last bind */
     uint32_t binds;                   /* how many times the unit was bound to a device (the first open counts) */
     uint32_t latency_ms;              /* real latency of the bound device */
+    /* AirPlay route mode: the pump pulls on its own thread and queues sample buffers ahead of the synchronizer clock. */
+    void* av;           /* the renderer while the AirPlay route entry is picked, else NULL */
+    int av_anchored;    /* the synchronizer clock runs */
+    int64_t av_pts;     /* frames queued so far: the presentation time of the next buffer */
+    int16_t* av_buf;    /* CA_AV_CHUNK stereo frames, allocated at open */
+    uint32_t av_buffers; /* atomic: sample buffers queued (the --stats sentinel out_av_buffers) */
+    uint32_t av_flushes; /* OUT_FLUSH calls that cleared the renderer queue (out_av_flushes) */
 };
 
+/* Queue ahead of the synchronizer clock: enough to ride out the pump's scheduling, small enough that a seek is heard soon. */
+#define CA_AV_AHEAD_MS 200u
+#define CA_AV_CHUNK 1024u
+
 static const ca_backend* g_be;
+static const ca_av_backend* g_av; /* a test fake; NULL = AVFoundation */
+
+static const ca_av_backend* av_be(void) {
+    return g_av != NULL ? g_av : &ca_av_real;
+}
 
 static OSStatus ca_render(void* ref, AudioUnitRenderActionFlags* flags, const AudioTimeStamp* ts,
                           UInt32 bus, UInt32 frames, AudioBufferList* io) {
@@ -286,13 +310,40 @@ static const char* ca_wanted_uid(const sel_host* host) {
     return v != NULL ? v : "";
 }
 
-/* Binds the unit to `uid`. A running unit is stopped and uninitialised first (CurrentDevice cannot change under it). */
+static int ca_is_route(const char* uid) {
+    return strcmp(uid, SEL_OUT_DEVICE_AIRPLAY_ROUTE) == 0;
+}
+
+static void ca_av_drop(ca_out* o) {
+    if (o->av != NULL) {
+        av_be()->destroy(o->av);
+        o->av = NULL;
+    }
+    o->av_anchored = 0;
+    o->av_pts = 0;
+}
+
+/* Binds the unit to `uid`. A running unit is stopped and uninitialised first (CurrentDevice cannot change under it).
+ * The AirPlay route entry stops the unit and creates the renderer; any other uid drops the renderer. */
 static int ca_bind(ca_out* o, const char* uid) {
     int was_started = o->started;
     if (was_started) {
         be()->stop(o);
         o->started = 0;
     }
+    if (ca_is_route(uid)) {
+        if (o->av == NULL) {
+            o->av = av_be()->create(o->rate);
+            if (o->av == NULL) {
+                return 0;
+            }
+        }
+        snprintf(o->uid, sizeof o->uid, "%s", uid);
+        o->binds++;
+        o->latency_ms = CA_AV_AHEAD_MS;
+        return 1;
+    }
+    ca_av_drop(o);
     if (!be()->bind(o, uid)) {
         return 0;
     }
@@ -303,6 +354,13 @@ static int ca_bind(ca_out* o, const char* uid) {
         o->started = 1;
     }
     return 1;
+}
+
+static void ca_free(ca_out* o) {
+    const sel_host* host = o->host;
+    ca_av_drop(o);
+    host->mem_free(host, o->av_buf);
+    host->mem_free(host, o);
 }
 
 static int ca_has_output_device(void) {
@@ -326,9 +384,14 @@ static void* ca_open(const sel_host* host, uint32_t rate, uint32_t channels) {
     memset(o, 0, sizeof *o);
     o->host = host;
     o->rate = rate;
+    o->av_buf = (int16_t*)host->mem_alloc(host, (size_t)CA_AV_CHUNK * 2u * sizeof(int16_t), SEL_MEM_FAST);
+    if (o->av_buf == NULL) {
+        host->mem_free(host, o);
+        return NULL;
+    }
     if (g_be != NULL) { /* a test backend owns the device layer: no AudioUnit */
         if (!ca_bind(o, ca_wanted_uid(host))) {
-            host->mem_free(host, o);
+            ca_free(o);
             return NULL;
         }
         g_be->watch_default(o, 1);
@@ -340,11 +403,11 @@ static void* ca_open(const sel_host* host, uint32_t rate, uint32_t channels) {
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     comp = AudioComponentFindNext(NULL, &desc);
     if (comp == NULL) {
-        host->mem_free(host, o);
+        ca_free(o);
         return NULL;
     }
     if (AudioComponentInstanceNew(comp, &o->unit) != noErr) {
-        host->mem_free(host, o);
+        ca_free(o);
         return NULL;
     }
     memset(&fmt, 0, sizeof fmt);
@@ -372,19 +435,20 @@ static void* ca_open(const sel_host* host, uint32_t rate, uint32_t channels) {
                              sizeof cb) != noErr ||
         AudioUnitInitialize(o->unit) != noErr) {
         AudioComponentInstanceDispose(o->unit);
-        host->mem_free(host, o);
+        ca_free(o);
         return NULL;
     }
     o->inited = 1;
     be()->watch_default(o, 1);
-    o->latency_ms = be()->latency_ms(o);
+    if (o->av == NULL) {
+        o->latency_ms = be()->latency_ms(o);
+    }
     return o;
 }
 
 static void ca_close(void* state) {
     ca_out* o = (ca_out*)state;
     if (o) {
-        const sel_host* host = o->host;
         be()->watch_default(o, 0);
         if (o->started) {
             be()->stop(o);
@@ -393,7 +457,7 @@ static void ca_close(void* state) {
             AudioUnitUninitialize(o->unit);
             AudioComponentInstanceDispose(o->unit);
         }
-        host->mem_free(host, o);
+        ca_free(o);
     }
 }
 
@@ -414,6 +478,62 @@ static void ca_retarget(ca_out* o) {
     }
 }
 
+/* AirPlay route mode: pull on the pump thread and queue sample buffers up to CA_AV_AHEAD_MS ahead of the synchronizer
+ * clock, so the front end paces itself on the route's clock as it does on the HAL device clock. The clock starts at the
+ * first queued buffer and is re-anchored when it ran past everything queued (an underrun, or a pause that stopped the
+ * pump), so the next buffer is heard instead of dropped as late. Volume is the engine's software gain on the pulled PCM. */
+static uint32_t ca_av_pump(ca_out* o, uint32_t frames) {
+    const ca_av_backend* av = av_be();
+    int64_t ahead = (int64_t)o->rate * CA_AV_AHEAD_MS / 1000;
+    uint32_t done = 0;
+    uint32_t idle_ms = 0;
+    while (done < frames && idle_ms < 2000u) {
+        int64_t played = av->played(o->av);
+        int64_t pts = o->av_pts;
+        uint32_t n = frames - done;
+        uint32_t got;
+        if ((o->av_anchored && played < pts && pts - played >= ahead) || !av->ready(o->av)) {
+            be()->idle(o);
+            idle_ms++;
+            continue;
+        }
+        if (n > CA_AV_CHUNK) {
+            n = CA_AV_CHUNK;
+        }
+        got = o->pull(o->pull_ctx, o->av_buf, n);
+        if (got < n) {
+            memset(o->av_buf + (size_t)got * 2u, 0, (size_t)(n - got) * 2u * sizeof(int16_t));
+        }
+        if (!av->enqueue(o->av, o->av_buf, n, pts)) {
+            break;
+        }
+        o->av_pts = pts + n;
+        if (!o->av_anchored || played >= pts) {
+            av->start(o->av, pts);
+            o->av_anchored = 1;
+        }
+        done += n;
+        idle_ms = 0;
+        __atomic_fetch_add(&o->frames, n, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&o->callbacks, 1u, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&o->av_buffers, 1u, __ATOMIC_RELAXED);
+    }
+    return done;
+}
+
+/* OUT_FLUSH: a seek or a user song change. On the AirPlay route path the renderer holds up to CA_AV_AHEAD_MS of the old
+ * position; drop it and stop the clock, so the next pump re-anchors the clock at the next buffer and the new position is
+ * heard at once. The HAL path queues nothing ahead of its render callback. Runs on the pump thread, like ca_av_pump. */
+static void ca_flush(void* state) {
+    ca_out* o = (ca_out*)state;
+    if (o->av == NULL) {
+        return;
+    }
+    av_be()->flush(o->av);
+    o->av_anchored = 0;
+    o->av_flushes++;
+}
+
 static uint32_t ca_pump(void* state, uint32_t frames) {
     ca_out* o = (ca_out*)state;
     uint32_t start;
@@ -423,6 +543,9 @@ static uint32_t ca_pump(void* state, uint32_t frames) {
         return 0;
     }
     ca_retarget(o);
+    if (o->av != NULL) {
+        return ca_av_pump(o, frames);
+    }
     start = __atomic_load_n(&o->frames, __ATOMIC_RELAXED);
     if (!o->started) {
         if (!be()->start(o)) {
@@ -451,16 +574,31 @@ static const sel_tag* ca_stats(void* state) {
     o->stats[0].value = __atomic_load_n(&o->frames, __ATOMIC_RELAXED);
     o->stats[1].tag = SEL_OUT_STAT_CALLBACKS;
     o->stats[1].value = __atomic_load_n(&o->callbacks, __ATOMIC_RELAXED);
-    o->stats[2].tag = SEL_TAG_END;
-    o->stats[2].value = 0;
+    o->stats[2].tag = SEL_OUT_STAT_AV_BUFFERS;
+    o->stats[2].value = __atomic_load_n(&o->av_buffers, __ATOMIC_RELAXED);
+    o->stats[3].tag = SEL_OUT_STAT_AV_FLUSHES;
+    o->stats[3].value = o->av_flushes;
+    o->stats[4].tag = SEL_TAG_END;
+    o->stats[4].value = 0;
     return o->stats;
 }
 
+/* The HAL devices, then the AirPlay route entry (always last, so the list keeps the HAL order users know). */
 static uint32_t ca_devices(sel_out_device* out, uint32_t max) {
-    return be()->list(out, max);
+    uint32_t n;
+    if (max == 0u) {
+        return 0u;
+    }
+    n = be()->list(out, max - 1u);
+    memset(&out[n], 0, sizeof out[n]);
+    snprintf(out[n].uid, sizeof out[n].uid, "%s", SEL_OUT_DEVICE_AIRPLAY_ROUTE);
+    snprintf(out[n].name, sizeof out[n].name, "%s", "AirPlay Speakers");
+    out[n].transport = SEL_OUT_TRANSPORT_AIRPLAY;
+    return n + 1u;
 }
 
-/* The live latency of the bound device, re-read after every bind. */
+/* The live latency of the bound device, re-read after every bind; on the AirPlay route the queue ahead of the clock
+ * (the route's own buffering is not public, I1042). */
 static uint32_t ca_latency_query(void* state) {
     return ((ca_out*)state)->latency_ms;
 }
@@ -490,7 +628,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[8], SEL_OUT_STATS, SEL_TAG_FN(ca_stats));
     set(&g_hooks[9], SEL_OUT_DEVICES, SEL_TAG_FN(ca_devices));
     set(&g_hooks[10], SEL_OUT_LATENCY_QUERY, SEL_TAG_FN(ca_latency_query));
-    set(&g_hooks[11], SEL_TAG_END, 0);
+    set(&g_hooks[11], SEL_OUT_FLUSH, SEL_TAG_FN(ca_flush));
+    set(&g_hooks[12], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "coreaudio");

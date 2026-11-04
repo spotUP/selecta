@@ -439,6 +439,11 @@ uint32_t sel_engine_voice_route(uint32_t voice_count, int has_sink, uint32_t voi
  * runs sel_engine_render itself by the wall clock, so position, pause and end of song keep working. */
 typedef int (*sel_engine_handover_fn)(void* ctx, uint32_t release);
 void sel_engine_set_handover(sel_engine* e, sel_engine_handover_fn fn, void* ctx);
+/* Output flush (I1039). After a user song change (open, seek, subsong, previous, restart) has started, the engine calls
+ * fn(ctx) on the pump thread: the app passes it to the open output's OUT_FLUSH, so audio queued ahead of the device is
+ * dropped and the change is heard at once. Gapless song ends do not flush. */
+typedef void (*sel_engine_flush_fn)(void* ctx);
+void sel_engine_set_flush(sel_engine* e, sel_engine_flush_fn fn, void* ctx);
 /* Output swap (I532, design section 5). A song routed to the mixer needs a PCM sink; when the open output only
  * plays voices (SEL_OUT_VOICES, Paula) it would discard the PCM. Before such a song starts the engine picks a PCM
  * output (ahi when the machine lists it, else paula14) and calls fn(ctx, id): the app closes its output, opens `id`
@@ -682,6 +687,9 @@ uint32_t sel_engine_lib_deferred(void);
  * pull callback on its first run). Debug builds then assert that
  * sel_engine_render runs only there and send/pump/destroy never do. */
 void sel_engine_mark_audio_thread(sel_engine* e);
+/* Clears the mark: the output now renders from the pump on the calling thread (the CoreAudio AirPlay route
+ * path, I1039), so no output thread exists until a pull thread marks itself again. */
+void sel_engine_unmark_audio_thread(sel_engine* e);
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
 /* The running end fade of the playing song: 1 and its position and length in frames, else 0. */

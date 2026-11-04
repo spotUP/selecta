@@ -808,6 +808,8 @@ struct sel_engine {
     uint32_t voice_max;           /* most voices voice_sink plays (SEL_OUT_VOICE_MAX); 0: no limit */
     sel_engine_handover_fn handover; /* app hook that closes and reopens the output (I219), or NULL */
     void* handover_ctx;
+    sel_engine_flush_fn flush;    /* app hook to the output's OUT_FLUSH after a user song change (I1039), or NULL */
+    void* flush_ctx;
     uint32_t handed_over;         /* 1: the output is closed, a HW-kind replayer owns the hardware */
     uint32_t hw_stepped;          /* 1: the app steps a handed-over song itself (sel_engine_hw_step), hw_clock stands down */
     uint32_t hw_clock_ms;         /* host clock_ms of the last self-clocked render while handed over */
@@ -2842,6 +2844,9 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
     play_meta_drop(e, path);
     e->cur = idx;
     e->song_over = 0;
+    if (e->flush != NULL) {
+        e->flush(e->flush_ctx); /* I1039: audio the output queued ahead belongs to the old position */
+    }
     if (kind == SEL_BEGIN_OPEN) {
         hist_end(e, 1); /* a song still open here was replaced by the user */
         hist_begin(e, path);
@@ -10295,6 +10300,10 @@ void sel_engine_mark_audio_thread(sel_engine* e) {
     SEL_THREAD_MARK_AUDIO(e);
 }
 
+void sel_engine_unmark_audio_thread(sel_engine* e) {
+    SEL_THREAD_UNMARK_AUDIO(e);
+}
+
 /* I1019c: buckets still queued (never started) when the last engine was destroyed; process-wide because the engine is gone when it is read. */
 static uint32_t g_quit_queue_dropped;
 uint32_t sel_engine_quit_queue_dropped(void) {
@@ -10853,6 +10862,11 @@ void sel_engine_set_output_switch(sel_engine* e, sel_engine_output_switch_fn fn,
 void sel_engine_set_handover(sel_engine* e, sel_engine_handover_fn fn, void* ctx) {
     e->handover = fn;
     e->handover_ctx = ctx;
+}
+
+void sel_engine_set_flush(sel_engine* e, sel_engine_flush_fn fn, void* ctx) {
+    e->flush = fn;
+    e->flush_ctx = ctx;
 }
 
 uint32_t sel_engine_handed_over(const sel_engine* e) {

@@ -34,6 +34,9 @@ typedef uint32_t (*sel_out_rate_for_fn)(const sel_tag* machine);
 #define SEL_OUT_TRANSPORT_BLUETOOTH 3u
 #define SEL_OUT_TRANSPORT_HDMI 4u
 #define SEL_OUT_TRANSPORT_AIRPLAY 5u
+/* The uid of the AirPlay route entry: not a hardware device but the route the system AirPlay picker chose for the app.
+ * An output that lists it plays through a path that follows that route (CoreAudio: AVSampleBufferAudioRenderer). */
+#define SEL_OUT_DEVICE_AIRPLAY_ROUTE "selecta:airplay-route"
 
 typedef struct sel_out_device {
     char uid[SEL_OUT_DEVICE_UID_MAX];
@@ -46,6 +49,9 @@ typedef struct sel_out_device {
 typedef uint32_t (*sel_out_devices_fn)(sel_out_device* out, uint32_t max);
 /* OUT_LATENCY_QUERY: the open output's real latency in milliseconds (device + stream + safety offset + buffer). */
 typedef uint32_t (*sel_out_latency_query_fn)(void* state);
+/* OUT_FLUSH (I1039): the shell calls it on its pump thread after a seek or a user song change, so audio queued ahead
+ * of the device (the AirPlay route path queues up to 200 ms) is dropped instead of heard before the new position. */
+typedef void (*sel_out_flush_fn)(void* state);
 
 SEL_EXTERN_C_END
 

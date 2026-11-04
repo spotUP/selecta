@@ -162,6 +162,9 @@ static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
     if (g_mark_audio && !g_marked && !g_pumping) { /* a clockless output pumps on the main thread */
         sel_engine_mark_audio_thread((sel_engine*)ctx);
         g_marked = 1;
+    } else if (g_marked && g_pumping) { /* I1039: the output moved its pulls onto the pump (AirPlay route path) */
+        sel_engine_unmark_audio_thread((sel_engine*)ctx);
+        g_marked = 0;
     }
     return sel_engine_render((sel_engine*)ctx, stereo, frames);
 }
@@ -173,6 +176,7 @@ typedef struct shell_output {
     sel_out_close_fn close;
     sel_out_set_source_fn set_source;
     sel_out_pump_fn pump;
+    sel_out_flush_fn flush; /* OUT_FLUSH of the open output, or NULL (I1039) */
     const sel_tag* machine;
     const sel_host* host;
     sel_engine* engine;
@@ -199,6 +203,14 @@ static int shell_handover(void* ctx, uint32_t release) {
         so->set_source(so->out, audio_pull, so->engine);
     }
     return 1; /* so->paced is the same output's: a reopen keeps it */
+}
+
+/* I1039: a seek or user song change drops what the output queued ahead of the device. */
+static void shell_flush(void* ctx) {
+    shell_output* so = (shell_output*)ctx;
+    if (so->out != NULL && so->flush != NULL) {
+        so->flush(so->out);
+    }
 }
 
 static const sel_tag* hooks_of(uint32_t kind, const char* id) {
@@ -244,6 +256,7 @@ static int shell_switch_output(void* ctx, const char* id) {
     so->close = close_fn;
     so->set_source = source_fn;
     so->pump = pump_fn;
+    so->flush = (sel_out_flush_fn)sel_tag_find(oh, SEL_OUT_FLUSH, 0);
     so->paced = sel_tag_find(oh, SEL_OUT_UNPACED, 0) == 0;
     so->out = out;
     return 1;
@@ -694,7 +707,9 @@ int main(int argc, char** argv)
     so.engine = e;
     so.out = out;
     so.paced = sel_tag_find(oh, SEL_OUT_UNPACED, 0) == 0;
+    so.flush = (sel_out_flush_fn)sel_tag_find(oh, SEL_OUT_FLUSH, 0);
     sel_engine_set_handover(e, shell_handover, &so);
+    sel_engine_set_flush(e, shell_flush, &so);
     sel_engine_set_hw_stepped(e, clockless); /* scripted time steps a handed-over song (no wall clock in a clockless run) */
     sel_engine_set_output_switch(e, shell_switch_output, &so);
 
@@ -932,8 +947,11 @@ int main(int argc, char** argv)
         sel_out_stats_fn ostats = (sel_out_stats_fn)sel_tag_find(oh, SEL_OUT_STATS, 0);
         const sel_tag* os = ostats != NULL && so.out != NULL ? ostats(so.out) : NULL;
 
-        printf("replayer_render_calls=%u rendered_frames=%u out_peak=%u\n", (unsigned)est.replayer_render_calls,
-               (unsigned)est.rendered_frames, os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_PEAK, 0) : 0u);
+        printf("replayer_render_calls=%u rendered_frames=%u out_peak=%u out_av_buffers=%u out_av_flushes=%u\n",
+               (unsigned)est.replayer_render_calls, (unsigned)est.rendered_frames,
+               os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_PEAK, 0) : 0u,
+               os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_AV_BUFFERS, 0) : 0u,
+               os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_AV_FLUSHES, 0) : 0u);
     }
     if (has_stats) { /* the song the engine has open, for the mouse test (DUI-P3-2) */
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
