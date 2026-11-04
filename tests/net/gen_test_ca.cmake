@@ -5,11 +5,18 @@ if(NOT OPENSSL)
   message(STATUS "net fixtures: openssl not found, TLS listener disabled")
   return()
 endif()
-if(EXISTS "${CA_DIR}/server.pem")
-  return()
+# The server certificate must carry every host name the fixtures serve. A
+# build dir configured before a name was added keeps its old certificate, so
+# reuse it only when the stored SAN list matches the wanted one.
+set(SAN "subjectAltName=DNS:localhost,DNS:zxart.ee,IP:127.0.0.1\n")
+if(EXISTS "${CA_DIR}/server.pem" AND EXISTS "${CA_DIR}/san.cnf")
+  file(READ "${CA_DIR}/san.cnf" have_san)
+  if(have_san STREQUAL SAN)
+    return()
+  endif()
 endif()
 file(MAKE_DIRECTORY "${CA_DIR}")
-file(WRITE "${CA_DIR}/san.cnf" "subjectAltName=DNS:localhost,DNS:zxart.ee,IP:127.0.0.1\n")
+file(WRITE "${CA_DIR}/san.cnf" "${SAN}")
 foreach(step
   "req;-x509;-newkey;rsa:2048;-nodes;-days;3650;-subj;/CN=Selecta Test CA;-keyout;${CA_DIR}/ca.key;-out;${CA_DIR}/ca.pem"
   "req;-newkey;rsa:2048;-nodes;-subj;/CN=localhost;-keyout;${CA_DIR}/server.key;-out;${CA_DIR}/server.csr"
