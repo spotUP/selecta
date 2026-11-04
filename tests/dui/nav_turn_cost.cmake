@@ -112,6 +112,9 @@ if(NOT "${idle0}" MATCHES "topbar draws=[0-9]+ shown=1 home [-0-9]+ [-0-9]+ [-0-
 endif()
 math(EXPR browse_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR browse_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+string(REGEX MATCH "field ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) browse" fld "${idle0}")
+math(EXPR field_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR field_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 set(chip_steps "")
 foreach(k RANGE 1 5)
   string(APPEND chip_steps "click ${chip_x} ${chip_y}\nwait 100\n")
@@ -143,3 +146,8 @@ check_turns("browse-then-format-tile" "${b} ${m} q@15000" "search draws [0-9]+ r
 # 3. Topbar Browse, then the Modland source tile (browserect 481 548 217 88): the source page, no search.
 click(m 589 592 8000)
 check_turns("browse-then-source-tile" "${b} ${m} q@12000" "collection kind=source opens=1 ")
+
+# 4. (I906h) Topbar Browse, the Modland source tile (the source page), then a query typed in the top bar field: the search a person starts
+# from a source page. Debounce 250 ms, then LIBRARY_SEARCH, SOURCE_SEARCH *, VIEW_SOURCE search.
+click(f ${field_x} ${field_y} 12000)
+check_turns("source-page-topbar-search" "${b} ${m} ${f} tSong@13000 q@20000" "search draws [0-9]+ rows [0-9]+ query Song")
