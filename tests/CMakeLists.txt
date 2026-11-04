@@ -2284,6 +2284,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "zxart_net_ok")
 endif()
 
+# Row I1057: a zxart song key renders through selecta-cli; the download URL comes from the source's url hook (GPL zxtune).
+if(NOT SEL_AMIGA AND TARGET sel_module_zxtune)
+  add_test(NAME zxart-play-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DCA_FILE=${SEL_NET_CA}/ca.pem"
+      "-DPLUGINS=${CMAKE_BINARY_DIR}/modules" -P "${SEL_NET_DIR}/zxart_play.cmake")
+  set_tests_properties(zxart-play-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "zxart_play_ok")
+endif()
+
 # Row I406: SOURCE_SEARCH modulespl chip over the www.modules.pl fixture, then OPEN + PLAY a result (a zip around one mod).
 if(NOT SEL_AMIGA)
   add_test(NAME source-modulespl-net

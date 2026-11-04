@@ -9,7 +9,7 @@ if(EXISTS "${CA_DIR}/server.pem")
   return()
 endif()
 file(MAKE_DIRECTORY "${CA_DIR}")
-file(WRITE "${CA_DIR}/san.cnf" "subjectAltName=DNS:localhost,IP:127.0.0.1\n")
+file(WRITE "${CA_DIR}/san.cnf" "subjectAltName=DNS:localhost,DNS:zxart.ee,IP:127.0.0.1\n")
 foreach(step
   "req;-x509;-newkey;rsa:2048;-nodes;-days;3650;-subj;/CN=Selecta Test CA;-keyout;${CA_DIR}/ca.key;-out;${CA_DIR}/ca.pem"
   "req;-newkey;rsa:2048;-nodes;-subj;/CN=localhost;-keyout;${CA_DIR}/server.key;-out;${CA_DIR}/server.csr"

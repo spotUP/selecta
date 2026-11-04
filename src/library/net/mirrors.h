@@ -27,6 +27,9 @@ typedef struct sel_mirror_set {
     unsigned ttfb_ms[SEL_MIRROR_MAX];              /* 0 until measured */
     unsigned failures[SEL_MIRROR_MAX];
     unsigned home;                                 /* 1 when base[0] is the home mirror */
+    /* I1057: set for a source with no env list and no built-in mirror whose descriptor has a `url` hook (zxart): the
+     * set then holds that one entry and its fetch URL is url(path), not base + path. NULL for every other set. */
+    int (*url)(const char* path, char* out, size_t n);
     unsigned count;
 } sel_mirror_set;
 

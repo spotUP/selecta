@@ -4,6 +4,7 @@
 #include "ftp.h"
 #include "http.h"
 #include "net.h"
+#include "../source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,6 +112,17 @@ unsigned sel_mirrors_init(sel_mirror_set* s, const char* source, int amiga_route
     for (i = 0; i < sizeof BUILTIN / sizeof BUILTIN[0]; i++) {
         if (strcmp(BUILTIN[i].source, source) == 0) {
             add_list(s, BUILTIN[i].bases);
+        }
+    }
+    if (s->count == 0) {
+        /* I1057: a source with no mirror list but a canonical-URL hook (zxart, plugin kind 7) downloads from that URL. */
+        const sel_source* src;
+        const char* label;
+
+        src = sel_source_find(source);
+        label = src != NULL && src->home != NULL && src->home[0] != '\0' ? src->home : source;
+        if (src != NULL && src->url != NULL && add_base(s, label, strlen(label))) {
+            s->url = src->url; /* the entry's base is only a label: fetch URLs come from the hook */
         }
     }
     return s->count;
@@ -254,7 +266,13 @@ int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror
         if (k > 0 && restart != NULL) {
             restart(ctx);
         }
-        snprintf(res->url, sizeof res->url, "%s%s", s->base[i], enc);
+        if (s->url != NULL) {
+            if (!s->url(path, res->url, sizeof res->url)) {
+                return 0;
+            }
+        } else {
+            snprintf(res->url, sizeof res->url, "%s%s", s->base[i], enc);
+        }
         a.sink = sink;
         a.ctx = ctx;
         a.start = sel_net_now_ms();
