@@ -2432,6 +2432,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(net_cancel_send_test PRIVATE selecta_library)
   add_test(NAME net-cancel-send COMMAND net_cancel_send_test)
   set_tests_properties(net-cancel-send PROPERTIES LABELS m3 TIMEOUT 20 PASS_REGULAR_EXPRESSION "net_cancel_send_ok")
+  # I1044: the connection table holds every searchable source's search thread plus stream, prefetch, sync and DLNA at once.
+  add_executable(net_table_fanout_test net_table_fanout_test.c)
+  target_include_directories(net_table_fanout_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(net_table_fanout_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME net-table-fanout COMMAND net_table_fanout_test)
+  set_tests_properties(net-table-fanout PROPERTIES LABELS m3 TIMEOUT 20 PASS_REGULAR_EXPRESSION "net_table_fanout_ok")
   # I196d: the recording split walker cuts at MP3 frame and Ogg page starts.
   # I168b: the no-thread prefetch downloads in resumable slices; one test per defect, named after the symptom.
   add_executable(cache_slice_test library/cache_slice_test.c)
