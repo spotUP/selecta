@@ -92,9 +92,9 @@ expect("${burst_out}" "search groups songs=${mod_count} albums=${want_albums} ar
 math(EXPR want_all "3 + ${mod_count} + ${want_albums} + ${want_artists}")
 # I1019e: with no source chip the fan-out adds one "From <name>" section per searchable source after the library groups; each
 # is its heading plus its rows (a state row while the answer is pending or failed). Count them from the dump's section lines.
-# I1024e: with five From sections the 800 px frame clips the last rows, so the drawn count is read from a canvas tall enough
+# I1024e, I1053: with every From section (unsynced archive sources draw a Sync row too) the 800 px frame clips the last rows, so the drawn count is read from a canvas tall enough
 # for every row (the golden frame above stays 1280x800).
-set(SEARCH_CANVAS 1280x1400)
+set(SEARCH_CANVAS 1280x2600)
 search_run(tall "${typed}wait 600\n")
 set(SEARCH_CANVAS 1280x800)
 string(REGEX MATCHALL "search_section [0-9]+ rows=[0-9]+" from_sections "${tall_out}")
@@ -120,8 +120,8 @@ function(chip_click label want_facet want_drawn)
   string(REGEX MATCH "label (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)" unused "${last}")
   math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
   math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
-  # The tall canvas, like the All run above: with six From sections the 800 px frame clips the last rows (the chip row sits at the same place).
-  set(SEARCH_CANVAS 1280x1400)
+  # The tall canvas, like the All run above: with every From section the 800 px frame clips the last rows (the chip row sits at the same place).
+  set(SEARCH_CANVAS 1280x2600)
   search_run(chip_${label} "${typed}wait 600\nclick ${cx} ${cy}\nwait 100\n")
   set(SEARCH_CANVAS 1280x800)
   expect("${chip_${label}_out}" "search groups songs=${mod_count} albums=${want_albums} artists=${want_artists} facet=${want_facet} drawn=${want_drawn}\n" "clicking ${label}")

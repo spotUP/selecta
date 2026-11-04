@@ -4,7 +4,8 @@
 # sends SOURCE_SEARCH *), the desktop dump is the oracle. -DSELECTA -DSQLITE3 -DWORK
 #  1. seeded DB: modland 3 rows, hippo 2, asma 2, hvsc 1, local 1 carry the word "zorkmid"; sndh and keygenmusic have no rows.
 #     `search_section` lines carry the exact hit counts (the sentinel that every catalogue hook ran through sel_catalogue_search
-#     and the library FTS scoped to its source id): From Modland (3), From Hippo (2), From ASMA (2), From HVSC (1), From Local (1).
+#     and the library FTS scoped to its source id): From Modland (3), From Hippo (2), From ASMA (2), From HVSC (1). The local row
+#     draws no From Local files section: the Library section above the fan-out already lists it (I1009r, Johan 2026-11-04).
 #  2. the two unsynced sources draw "Not synced yet" (no search_failed) and one `search_sync` button each, no auto-download:
 #     sources_synced stays 0 and the dump shows sync_ui active=0 before any click.
 #  3. clicking the sndh Sync button sends LIBRARY_SYNC for sndh only: `search_sync ... clicks=1` and the sync UI names sndh.
@@ -40,7 +41,7 @@ endforeach()
 dui_run(o ${common} --input "${WORK}/in.txt")
 string(REGEX MATCHALL "search_section [0-9]+ rows=[0-9]+ [^\n]*" sections "${o}")
 message(STATUS "sections: ${sections}")
-foreach(spec "Modland:3" "HippoPlayer:2" "ASMA:2" "HVSC:1" "Local files:1")
+foreach(spec "Modland:3" "HippoPlayer:2" "ASMA:2" "HVSC:1")
   string(REPLACE ":" ";" pair "${spec}")
   list(GET pair 0 nm)
   list(GET pair 1 cnt)
@@ -48,6 +49,10 @@ foreach(spec "Modland:3" "HippoPlayer:2" "ASMA:2" "HVSC:1" "Local files:1")
     message(FATAL_ERROR "I1053a: expected 'From ${nm} (${cnt})' from the seeded synced rows:\n${sections}")
   endif()
 endforeach()
+
+if("${o}" MATCHES "search_section [0-9]+ rows=[0-9]+ From Local files")
+  message(FATAL_ERROR "I1009r: All sources must not repeat the Library rows as a From Local files section:\n${sections}")
+endif()
 
 # 2. the unsynced catalogue sources: a Not synced section with a Sync button each, nothing downloaded
 foreach(nm "SNDH" "Keygen Music")
@@ -82,8 +87,8 @@ if(NOT "${c}" MATCHES "sync_ui [^\n]*source=sndh")
 endif()
 
 # The script's `exec VIEW_CURSOR` waits for the engine's answer (a bare run of `key down` lines races it), so the cursor is on the row
-# when Enter arrives. Row 40 is the Keygen Music Sync row of this seed (clicks counts every Sync action, one per run).
-file(WRITE "${WORK}/enter.txt" "${typed}key down\nexec VIEW_CURSOR 40\nkey enter\nwait 600\n")
+# when Enter arrives. Row 38 is the Keygen Music Sync row of this seed (no From Local files section above it since I1009r) (clicks counts every Sync action, one per run).
+file(WRITE "${WORK}/enter.txt" "${typed}key down\nexec VIEW_CURSOR 38\nkey enter\nwait 600\n")
 dui_run(en ${common} --input "${WORK}/enter.txt")
 if(NOT "${en}" MATCHES "search_sync [0-9]+ keygenmusic [^\n]* clicks=1\n" OR NOT "${en}" MATCHES "sync_ui [^\n]*source=keygenmusic" OR "${en}" MATCHES "row_plays=[1-9]")
   message(FATAL_ERROR "I1053b: Enter on the Keygen Music Sync row must start that sync like the click (clicks=1, no song played):\n${en}")

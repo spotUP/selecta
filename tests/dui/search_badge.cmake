@@ -49,7 +49,7 @@ function(sb_run outvar input)
     message(FATAL_ERROR "adding the library songs failed: ${err}")
   endif()
   file(WRITE "${WORK}/in.txt" "${input}")
-  dui_run(o --db "${db}" --ui desktop --backend mem --view search --canvas 1280x1000 --clock fixed --stats --input "${WORK}/in.txt")
+  dui_run(o --db "${db}" --ui desktop --backend mem --view search --canvas 1280x2600 --clock fixed --stats --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
 endfunction()
 

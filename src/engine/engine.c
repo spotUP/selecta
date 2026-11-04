@@ -7977,7 +7977,9 @@ static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
         for (i = 0; query[0] != '\0' && i < sel_source_count() && e->search_buckets < e->search_bucket_cap; i++) {
             const sel_source* src = sel_source_get(i);
 
-            if (src != NULL && src->search != NULL && !sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], src->id) &&
+            /* I1009r: the local source is the Library the UI searches next to the fan-out, so a From Local files
+             * section would repeat every library row (Johan 2026-11-04); naming "local" alone still searches it */
+            if (src != NULL && src->search != NULL && strcmp(src->id, "local") != 0 && !sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], src->id) &&
                 (src->search_ready == NULL || src->search_ready(&e->pl_host))) { /* I1037: an unconfigured source is left out */
                 search_bucket_set(e, src->id);
             }
