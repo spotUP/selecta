@@ -11,6 +11,8 @@ extern "C" {
 
 typedef struct zx_shim zx_shim;
 
+/* Cheap probe (I1078): 1 when a ZXTune player takes the start of `data`; reads at most a 1 MiB window, no raw scan. */
+int zx_shim_probe(const uint8_t* data, size_t size);
 /* Runs ZXTune's detection over a copy of the image. NULL when no tracker module is found. */
 zx_shim* zx_shim_open(const uint8_t* data, size_t size);
 /* Number of modules (subsongs) found. */

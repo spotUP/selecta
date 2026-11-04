@@ -24,17 +24,11 @@ typedef struct zx_state {
 } zx_state;
 
 static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    zx_shim* s;
     (void)name;
     if (size < 16u) {
         return SEL_PROBE_NO;
     }
-    s = zx_shim_open(data, size);
-    if (s == NULL) {
-        return SEL_PROBE_NO;
-    }
-    zx_shim_close(s);
-    return SEL_PROBE_YES;
+    return zx_shim_probe(data, size) ? SEL_PROBE_YES : SEL_PROBE_NO;
 }
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {

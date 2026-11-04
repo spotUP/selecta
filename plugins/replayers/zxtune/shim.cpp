@@ -7,6 +7,9 @@
 #include "core/data_location.h"
 #include "core/plugin.h"
 #include "core/service.h"
+#include "core/plugin_attrs.h"
+#include "core/plugins/archive_plugin.h"
+#include "core/src/location.h"
 #include "module/attributes.h"
 #include "parameters/container.h"
 #include "sound/chunk.h"
@@ -38,6 +41,36 @@ namespace
     std::vector<Module::Holder::Ptr> Tracks;
   };
 
+  // Probe callback: any module, or any nested data an archive plugin unpacked, counts as recognised. It does not
+  // recurse, so the work stays inside the probe window.
+  class Recognise : public ZXTune::ArchiveCallback
+  {
+  public:
+    Parameters::Container::Ptr CreateInitialProperties(StringView) const override
+    {
+      return Parameters::Container::Create();
+    }
+
+    void ProcessModule(const ZXTune::DataLocation&, const ZXTune::Plugin&, Module::Holder::Ptr) override
+    {
+      Hit = true;
+    }
+
+    void ProcessUnknownData(const ZXTune::DataLocation&) override {}
+
+    Log::ProgressCallback* GetProgress() const override
+    {
+      return nullptr;
+    }
+
+    void ProcessData(ZXTune::DataLocation::Ptr) override
+    {
+      Hit = true;
+    }
+
+    bool Hit = false;
+  };
+
   std::string Attr(const Parameters::Accessor& props, StringView name)
   {
     Parameters::StringType value;
@@ -58,6 +91,58 @@ struct zx_shim
   uint32_t DurationMs = 0;
   uint32_t Rate = 0;
 };
+
+// Probe (I1078): is `data` a module, or a container holding one, that ZXTune takes at the start of the data?
+// OpenModule asks every player plugin to recognise the start of the data; then every archive plugin except the raw
+// scanner (Raw::Scaner, which walks the whole buffer byte by byte looking for modules embedded at any offset) gets to
+// unpack the start (.trd, .scl, .tap, hrip, ...). Everything is limited to a 1 MiB window, so the cost does not grow
+// with the file size. zx_shim_open (playback) keeps DetectModules.
+extern "C" int zx_shim_probe(const uint8_t* data, size_t size)
+{
+  constexpr size_t WINDOW = 1u << 20;
+  try
+  {
+    const auto params = Parameters::Container::Create();
+    const auto service = ZXTune::Service::Create(params);
+    const auto window = Binary::CreateContainer(Binary::View(data, size < WINDOW ? size : WINDOW));
+    try
+    {
+      if (service->OpenModule(window, StringView(), Parameters::Container::Create()))
+      {
+        return 1;
+      }
+    }
+    catch (...)
+    {
+    }
+    for (const auto& plugin : ZXTune::ArchivePlugin::Enumerate())
+    {
+      if ((plugin->Capabilities() & ZXTune::Capabilities::Category::MASK) != ZXTune::Capabilities::Category::CONTAINER
+          || (plugin->Capabilities() & ZXTune::Capabilities::Container::Type::MASK)
+                 == ZXTune::Capabilities::Container::Type::SCANER)
+      {
+        continue;
+      }
+      Recognise found;
+      try
+      {
+        plugin->Detect(*params, ZXTune::CreateLocation(window), found);
+      }
+      catch (...)
+      {
+      }
+      if (found.Hit)
+      {
+        return 1;
+      }
+    }
+    return 0;
+  }
+  catch (...)
+  {
+    return 0;
+  }
+}
 
 extern "C" zx_shim* zx_shim_open(const uint8_t* data, size_t size)
 {

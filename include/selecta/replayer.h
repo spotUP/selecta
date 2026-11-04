@@ -60,6 +60,12 @@ typedef struct sel_tick_result {
     uint32_t flags;  /* SEL_TICK_* */
 } sel_tick_result;
 
+/* Probe contract (I1078): the engine offers every opened file to every replayer's probe, on the UI thread, so a
+ * probe is cheap and bounded. Time is independent of `size` beyond a header window (a few KiB; at most 1 MiB for
+ * formats that must parse a whole small module); no scan of the whole buffer (no byte-by-byte signature search, no
+ * "find a module anywhere inside"); no allocation proportional to `size`; no I/O. Answer SEL_PROBE_NO as soon as the
+ * header window rules the format out. A 50 MB buffer of foreign data must be rejected within milliseconds
+ * (tests/engine/replayer_probe_bound_test.c). */
 typedef int (*sel_rp_probe_fn)(const uint8_t* data, size_t size, const char* name); /* RP_PROBE */
 /* RP_OPEN: returns the replayer state or NULL; fills `info`. */
 typedef void* (*sel_rp_open_fn)(const sel_song_source* src, const sel_host* host, sel_rp_info* info);
