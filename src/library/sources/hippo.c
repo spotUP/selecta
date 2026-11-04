@@ -5,6 +5,7 @@
 #include "hippo_net.h"
 #include "hippo_sync.h"
 #include "sync_host.h"
+#include <selecta/catalogue.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -92,13 +93,19 @@ static int hippo_sync_host(const sel_host* host, const char* arg, int64_t now, s
     return ok;
 }
 
+/* I1053a: the All sources section comes from the synced rows (one shared catalogue search). */
+static int hippo_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    return sel_catalogue_search(host, "hippo", query, out);
+}
+
 static const sel_source g_hippo = {
     "hippo", "HippoPlayer", "https://hippoplayer.se/", "Shared HippoPlayer playlists (.prg).", g_tags,
     NULL, parse, NULL, url_of, path_in, NULL, NULL, hippo_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
-    NULL, /* search (I406) */
+    hippo_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };
 
 const sel_source* sel_source_hippo(void) {
     return &g_hippo;
 }
+

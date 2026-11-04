@@ -7,6 +7,7 @@
 #include "hvsc_net.h"
 #include "hvsc_sync.h"
 
+#include <selecta/catalogue.h>
 #include <selecta/plugin.h>
 #include <selecta/source.h>
 #include "source/descriptor.h"
@@ -155,10 +156,15 @@ static int hvsc_sync_host(const sel_host* host, const char* arg, int64_t now, se
     return ok;
 }
 
+/* I1053a: the All sources section comes from the synced rows (one shared catalogue search). */
+static int hvsc_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    return sel_catalogue_search(host, "hvsc", query, out);
+}
+
 static const sel_source g_hvsc = {
     "hvsc", "HVSC", "https://hvsc.de/download/", "High Voltage SID Collection, served through Modland.", g_tags,
     NULL, sel_hvsc_parse, NULL, url_of, path_in, NULL, NULL, hvsc_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
-    NULL, /* search (I406) */
+    hvsc_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };
 

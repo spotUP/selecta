@@ -4,6 +4,7 @@
 #include "asma_net.h"
 #include "asma_sync.h"
 
+#include <selecta/catalogue.h>
 #include <selecta/plugin.h>
 #include <selecta/source.h>
 #include "source/descriptor.h"
@@ -99,10 +100,15 @@ static int asma_sync_host(const sel_host* host, const char* arg, int64_t now, se
     return ok;
 }
 
+/* I1053a: the All sources section comes from the synced rows (one shared catalogue search). */
+static int asma_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    return sel_catalogue_search(host, "asma", query, out);
+}
+
 static const sel_source g_asma = {
     "asma", "ASMA", "https://asma.atari.org/", "Atari SAP Music Archive: music of the Atari 8-bit computers.", g_tags,
     NULL, parse, NULL, url_of, path_in, NULL, NULL, asma_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
-    NULL, /* search (I406) */
+    asma_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };
 

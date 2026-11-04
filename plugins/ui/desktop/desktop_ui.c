@@ -389,7 +389,8 @@ typedef struct desk {
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
-    char search_sec_head[8][72]; uint32_t search_sec_rows[8], search_sec_n; int32_t search_sec_y[8]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
+    struct { char id[64]; sel_gui_rect rect; } search_sync[16]; uint32_t search_sync_n, search_sync_clicks; /* I1053b: the Sync buttons of the Not synced sections the last frame drew */
+    char search_sec_head[16][72]; uint32_t search_sec_rows[16], search_sec_n; int32_t search_sec_y[16]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
@@ -7434,6 +7435,10 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
     {
         uint32_t si;
+        for (si = 0; si < d->search_sync_n; si++) { /* I1053b: one line per Sync button of a Not synced section */
+            o = dump_put(d, o, "search_sync %u %s %d %d %d %d clicks=%u\n", (unsigned)si, d->search_sync[si].id, (int)d->search_sync[si].rect.x,
+                         (int)d->search_sync[si].rect.y, (int)d->search_sync[si].rect.w, (int)d->search_sync[si].rect.h, (unsigned)d->search_sync_clicks);
+        }
         for (si = 0; si < d->search_sec_n; si++) { /* I1019e: one line per From section the list frame drew */
             o = dump_put(d, o, "search_section %u rows=%u %s\n", (unsigned)si, (unsigned)d->search_sec_rows[si], d->search_sec_head[si]);
             o = dump_put(d, o, "search_section_y %u %d\n", (unsigned)si, (int)d->search_sec_y[si]); /* I1041: heading top */
@@ -9244,6 +9249,7 @@ static void draw_search(desk* d) {
     sel_gui_clip_push(d->canvas, rect_of(mn.x, y, mn.w, mn.y + mn.h - y));
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
     d->search_sec_n = 0;
+    d->search_sync_n = 0;
     if (desk_scope_online(d)) { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
         d->search_drawn = d->on_drawn;
@@ -9322,7 +9328,7 @@ static void draw_search(desk* d) {
                 if (show && heads++ > 0u) { /* I1041: a gap above every section heading but the first */
                     y += lpx(d, SEARCH_SECTION_GAP);
                 }
-                if (group == 4u && d->search_sec_n < 8u) { /* the dump's per-section line */
+                if (group == 4u && d->search_sec_n < 16u) { /* the dump's per-section line */
                     snprintf(d->search_sec_head[d->search_sec_n], sizeof d->search_sec_head[0], "%s", t);
                     d->search_sec_y[d->search_sec_n] = y;
                     d->search_sec_rows[d->search_sec_n++] = 0;
@@ -9346,6 +9352,17 @@ static void draw_search(desk* d) {
                 {
                     int pl = (group == 1u || group == 4u) && !r->album && r->key != NULL && song_playing(d, r->key); /* I690 */
                     int32_t bw = 0;
+                    if (group == 4u && r->key != NULL && strncmp(r->key, "sync:", 5) == 0) { /* I1053b: the Sync button of a Not synced section, no song row */
+                        sel_gui_rect br = rect_of(mn.x + mg, y + lpx(d, 4), lpx(d, 120), rh - lpx(d, 8));
+                        if (d->search_sync_n < 16u) {
+                            snprintf(d->search_sync[d->search_sync_n].id, sizeof d->search_sync[0].id, "%s", r->key + 5);
+                            d->search_sync[d->search_sync_n++].rect = br;
+                        }
+                        draw_button(d, br, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Sync", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+                        y += lpx(d, SEARCH_ROW_H);
+                        drawn_all++;
+                        continue;
+                    }
                     if (group >= 1u && group <= 3u ? 1 : (group == 4u && r->key != NULL)) { /* I1020: every result row names its source; a note row has none */
                         bw = search_badge_w(d, src) + lpx(d, 16);
                         search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), src);
@@ -10136,6 +10153,7 @@ static void desk_page_load(desk* d, desk_page pg) {
         desk_send(d, "VIEW_WINDOW 64");
         d->folder_opens++;
     } else if (pg == SEL_UIM_PG_SEARCH) {
+        desk_send(d, "SOURCES"); /* I1053b: the source rows (key, path) the Sync button of a Not synced section sends LIBRARY_SYNC for */
         if (d->qlen > 0u) { /* the kept query shows its results again */
             d->search_pending = 1;
             d->search_since = d->now_ms;
@@ -10297,6 +10315,21 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     }
     if (d->page == SEL_UIM_PG_SETTINGS && in_rect(mn, x, y)) {
         return settings_click(d, x, y);
+    }
+    if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* I1053b: the Sync button of a Not synced catalogue section starts that source's sync */
+        for (i = 0; i < d->search_sync_n; i++) {
+            if (in_rect(d->search_sync[i].rect, x, y)) {
+                uint32_t k;
+                for (k = 0; k < d->src_n; k++) {
+                    if (strcmp(d->src[k].key, d->search_sync[i].id) == 0) {
+                        d->search_sync_clicks++;
+                        src_sync_send(d, k);
+                        d->repaint = 1;
+                        return 1;
+                    }
+                }
+            }
+        }
     }
     if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y) && online_click(d, panel_rect(d, "main"), x, y)) { /* a scope chip or an online hit (I406a) */
         return 1;

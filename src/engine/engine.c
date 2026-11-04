@@ -11,6 +11,7 @@
  * The audio thread therefore never opens, closes or allocates a song. The
  * rings are sel_spsc instances of their own: the command ring has the pump
  * thread as its consumer, these two have the audio thread on one end. */
+#include <selecta/catalogue.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/engine.h>
 #include <selecta/format_label.h>
@@ -207,7 +208,7 @@ typedef struct sel_search_hit { /* one SOURCE_SEARCH hit; tags point into the sa
     char format[SEL_SEARCH_FORMAT_MAX];
     sel_tag tags[7];
 } sel_search_hit;
-enum { SEARCH_NONE = 0, SEARCH_QUEUED, SEARCH_RUNNING, SEARCH_DONE, SEARCH_FAILED }; /* bucket states */
+enum { SEARCH_NONE = 0, SEARCH_QUEUED, SEARCH_RUNNING, SEARCH_DONE, SEARCH_FAILED, SEARCH_NOT_SYNCED }; /* bucket states; NOT_SYNCED (I1053b): a catalogue source with no synced rows */
 struct sel_engine;
 static int search_queued(const struct sel_engine* e);
 #define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
@@ -6143,7 +6144,9 @@ static size_t search_reload_sources(const sel_engine* e, char* text, size_t o, s
             break;
         }
         o += (size_t)w;
-        if (state != SEARCH_DONE) {
+        if (state == SEARCH_NOT_SYNCED) { /* I1053b: a state row plus a keyed row the UI draws as the Sync button (key sync:<id>) */
+            w = snprintf(text + o, cap - o, "S Not synced yet\nS sync:%s\tSync\n", id);
+        } else if (state != SEARCH_DONE) {
             w = snprintf(text + o, cap - o, state == SEARCH_FAILED ? "S Could not reach %s\n" : "S Searching\n", name);
         } else if (n == 0u) {
             w = snprintf(text + o, cap - o, "S No results\n");
@@ -7810,7 +7813,10 @@ static void search_collect(sel_engine* e) {
     } else {
         b = e->search_cur;
         e->search_serial++;
-        if (e->search_rc < 0) {
+        if (e->search_rc == SEL_CATALOGUE_NOT_SYNCED) { /* I1053b: not a failure, no error event; the section offers the sync */
+            e->search_bucket[b].n = 0u;
+            e->search_bucket[b].state = SEARCH_NOT_SYNCED;
+        } else if (e->search_rc < 0) {
             e->search_bucket[b].state = SEARCH_FAILED;
             sel_engine_report_error(e, sel_source_find(e->search_source) == NULL ? "unknown_source" : "search_failed",
                                     e->search_source);

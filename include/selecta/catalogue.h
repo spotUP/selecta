@@ -4,6 +4,7 @@
 #define SELECTA_CATALOGUE_H
 
 #include <selecta/host.h>
+#include <selecta/source.h>
 
 SEL_EXTERN_C_BEGIN
 
@@ -70,7 +71,20 @@ typedef struct sel_catalogue {
     /* I1026: reports how far the fetch has come, `done` of `total` units (rows, files, bytes: the source's choice). The UI
      * draws a progress bar from it; a source that never calls it (or passes total 0) shows an indeterminate sweep. */
     void (*progress)(const sel_host* host, uint32_t done, uint32_t total);
+    /* I1053a: searches the synced rows of `source_id` (FTS scoped to that source) for `query`; every hit goes to `out` like a live
+     * source's. Returns the hits delivered, SEL_CATALOGUE_NOT_SYNCED (I1053b) when the source has no rows yet, -1 on a failure.
+     * Needs no open batch; it runs through the library's serialised request path, so it is safe on the job thread. */
+    int (*search)(const sel_host* host, const char* source_id, const char* query, sel_search_sink* out);
 } sel_catalogue;
+
+#define SEL_CATALOGUE_NOT_SYNCED (-2)
+
+/* The one search hook body of every catalogue source (I1053a): the descriptor's `search` calls this with its own id. */
+static inline int sel_catalogue_search(const sel_host* host, const char* source_id, const char* query, sel_search_sink* out) {
+    const sel_catalogue* c = host != NULL && host->catalogue != NULL ? host->catalogue(host) : NULL;
+
+    return c != NULL && c->search != NULL ? c->search(host, source_id, query, out) : -1;
+}
 
 SEL_EXTERN_C_END
 

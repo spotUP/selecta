@@ -12,6 +12,7 @@
 
 #include "../../../plugins/shared/stream/flac_meta.h"
 
+#include <selecta/catalogue.h>
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 #include <stdio.h>
@@ -635,10 +636,15 @@ static int local_url(const char* path, char* out, size_t n) {
     return path != NULL && strlen(path) < n && (strcpy(out, path), 1);
 }
 
+/* I1053a: the All sources section comes from the synced rows (one shared catalogue search). */
+static int local_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    return sel_catalogue_search(host, "local", query, out);
+}
+
 static const sel_source g_local = {
     "local", "Local files", "", "Folders on this machine.", g_tags,
     NULL, NULL, NULL, local_url, local_url, NULL, NULL, NULL, 0, NULL, NULL,
-    NULL, /* search (I406) */
+    local_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };
 
