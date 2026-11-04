@@ -1,0 +1,20 @@
+Furnace v0.6.8.3 (https://github.com/tildearrow/furnace, tag v0.6.8.3, commit f2619dbd988c92bf9c7173648d191648f60aecbf),
+the headless engine only. Licence: GPL-2.0-or-later (LICENSE). Submodule extern/adpcm (superctr/adpcm, Unlicense) was
+initialised and copied too, because the tag ships it empty.
+
+Copied: src/ (engine, audio, top-level) without src/gui and src/cli; extern/ adpcm, adpcm-xq-s, blip_buf, emu2413,
+ESFMu, itcompress, Nuked-OPLL, Nuked-PSG, opl, opm, opn, pwrnoise, SAASound, vgsound_emu-modified, YM2608-LLE,
+YM3812-LLE, YMF262-LLE, YMF276-LLE, IconFontCppHeaders, fmt (include and src), LICENSE.
+Dropped: GUI, CLI, SDL/JACK/PortAudio/RtMidi/libsndfile glue, demos (all rights reserved, not GPL), docs, tools, build files.
+
+Local changes (same precedent as bbmp):
+  - src/engine/dispatchContainer.cpp: QSound and Supervision cases and includes removed; those two cores carry no
+    licence, so their files are not vendored. Songs using those chips play silent on those chips.
+  - src/engine/platform/sound/rss.h and extern/YM2608-LLE/fmopna_rom.h: ROM data replaced by 0x80 silence arrays
+    (not freely licensed). YM2608 ADPCM drums and the rss samples are silent.
+  - src/engine/engine.h and src/engine/engine.cpp: added public DivEngine::preInitHeadless(), which sets
+    configLoaded=true and registers the systems and ROM exports without the config file and GUI.
+
+Additional notes:
+- src/icon/furIcons.h was also copied from the upstream tree (pce.cpp includes it).
+- extern/adpcm was populated from the upstream submodule at the pinned commit.

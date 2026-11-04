@@ -137,3 +137,9 @@ endif()
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/adplug)
 endif()
+
+# Furnace, DefleMask, FamiTracker and TFM Music Maker modules via the Furnace engine (I430): GPL-2.0-or-later engine
+# linked statically, own opt-in module, host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/furnace)
+endif()
