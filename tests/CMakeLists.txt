@@ -2034,6 +2034,17 @@ if(NOT SEL_AMIGA)
       set_tests_properties(adplug-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_decode_ok"
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
+
+    # I697: Megatracker plays through the render entry point (libxmp module); the format list is reported.
+    if(TARGET sel_module_xmp)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/xmp-decode)
+      add_test(NAME xmp-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/xmp_decode.sh $<TARGET_FILE:selecta-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/xmp_test.mgt
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/xmp-decode)
+      set_tests_properties(xmp-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xmp_decode_ok"
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
   endif()
 
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.

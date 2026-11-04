@@ -1,0 +1,18 @@
+xmp replayer module: licence verdict (row I697)
+
+Module code (adapter.c, CMakeLists.txt): MIT, same as the rest of Selecta.
+
+Vendored engine: libxmp 4.6.3 (commit bed660f8e530d399c38f27a5a7732f4e79740585), third_party/libxmp. libxmp is MIT
+(third_party/libxmp/COPYING) with a few permissive parts: public domain (md5.c, loaders/itsex.c, miniz.h), BSD-style
+(Paula mixer based on reference code by Antti S. Lankila) and ISC.
+
+GPL check, done on the files in third_party/libxmp/src and include (the set that is built):
+  - files naming GPL, LGPL or "General Public" in any header: 0
+  - the only GPL-adjacent tree in the upstream release is src/bitrot (experimental code). It was NOT vendored.
+  - the depackers (src/depackers, which carry third-party unpacker code) were NOT vendored; the build defines
+    LIBXMP_NO_DEPACKERS.
+  - files in the built set without the MIT notice in their own header: 40 of them are pure headers or glue with no
+    notice (covered by the project COPYING), plus the 3 public-domain files and the BSD-style Paula mixer. None is GPL.
+
+Verdict: MIT. Non-GPL file count in the built set: all; GPL file count: 0. The module therefore builds in the normal
+plugin set on the host and does not need SELECTA_GPL_PLUGINS=ON. Not built for SEL_AMIGA, EMSCRIPTEN or WIN32.
