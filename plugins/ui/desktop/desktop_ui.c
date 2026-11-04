@@ -13322,10 +13322,8 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
             d->qlen = 0u;
             d->query[0] = '\0';
             desk_search_fire(d); /* empty query: leaves the search view and repaints; the field keeps the keyboard (I1009) */
-        } else if (ev->code == 13u) { /* Enter searches at once, unless the debounce already sent this query */
-            if (d->search_pending) {
-                desk_search_fire(d);
-            }
+        } else if (ev->code == 13u) { /* Enter always submits the query, also after the debounce already sent it (I1009r) */
+            desk_search_fire(d);
             /* I1009: Enter runs the search and the field keeps the keyboard, so typing goes on; Escape or a click leaves it */
         } else {
             int r = field_edit(d, d->query, &d->qlen, sizeof d->query, 0, ev);
