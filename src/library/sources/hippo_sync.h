@@ -25,9 +25,17 @@ typedef struct sel_hippo_sync_stats {
     uint32_t prg_entries, prg_dividers, prg_stealth, prg_subsongs; /* summed over those files */
 } sel_hippo_sync_stats;
 
-/* I1058: calls fn(user, filename) for every list record of <dir>/hippo_list.json and <dir>/uhcplaylists.tsv that has a
- * plain filename. Reads the lists with the parsers of the sync; writes nothing. */
-void sel_hippo_each_file(const sel_host* host, const char* dir, void (*fn)(void* user, const char* file), void* user);
+/* I1058: calls fn(user, filename, title) for every list record of <dir>/hippo_list.json and <dir>/uhcplaylists.tsv that
+ * has a plain filename. Reads the lists with the parsers of the sync; writes nothing. fn returns 0 to stop. */
+void sel_hippo_each_file(const sel_host* host, const char* dir, int (*fn)(void* user, const char* file, const char* title),
+                         void* user);
+
+/* I1058a: the title of playlist `id` when it sits directly under the HippoPlayer folder of the Playlists tree. */
+int sel_hippo_playlist_title(sel_library* lib, const sel_host* host, uint32_t id, char* title, size_t cap);
+
+/* I1058a: the song keys of the prg file at `path` (NUL separated, extra NUL at the end) into out[cap]. 0 when the file
+ * is missing, empty or not a HiPPrg. The one prg reader of the sync and of the lazy open. */
+int sel_hippo_file_keys(const sel_host* host, const char* path, char* out, size_t cap);
 
 /* Applies <dir>/hippo_list.json and/or <dir>/uhcplaylists.tsv (at least one must exist), then every
  * every .prg in <dir>. Returns 0 when no list can be read, memory runs out or the DB rejects a batch. */

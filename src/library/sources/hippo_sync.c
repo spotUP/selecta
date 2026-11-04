@@ -44,7 +44,7 @@ typedef struct sync_state {
     int failed;
     /* Playlists pass (I1058): the second read of the list files; each list becomes a playlist of the HippoPlayer folder. */
     int lists_pass;
-    void (*each)(void* user, const char* file); /* sel_hippo_each_file: only report the filenames */
+    int (*each)(void* user, const char* file, const char* title); /* sel_hippo_each_file: only report the records */
     void* each_user;
     const char* dir;
     uint32_t folder;
@@ -142,14 +142,86 @@ static uint32_t ensure_folder(sync_state* s) {
     return sel_library_folder_add(s->cfg->lib, FOLDER_NAME, 0, &id) == SEL_FOLDER_OK ? id : 0;
 }
 
+int sel_hippo_file_keys(const sel_host* host, const char* path, char* out, size_t cap) {
+    FILE* f = fopen(path, "rb");
+    long size;
+    char* bytes = NULL;
+    int ok = 0;
+
+    if (f == NULL) {
+        return 0;
+    }
+    if (fseek(f, 0, SEEK_END) == 0 && (size = ftell(f)) > 0 && (unsigned long)size <= PRG_MAX_BYTES &&
+        fseek(f, 0, SEEK_SET) == 0) {
+        bytes = host->mem_alloc(host, (size_t)size, SEL_MEM_FAST);
+        if (bytes != NULL && fread(bytes, 1, (size_t)size, f) == (size_t)size) {
+            ok = sel_hippo_prg_keys(host, bytes, (size_t)size, out, cap) > 0;
+        }
+        if (bytes != NULL) {
+            host->mem_free(host, bytes);
+        }
+    }
+    fclose(f);
+    return ok;
+}
+
+int sel_hippo_playlist_title(sel_library* lib, const sel_host* host, uint32_t id, char* title, size_t cap) {
+    char* tree = host->mem_alloc(host, TREE_BYTES, SEL_MEM_FAST);
+    const char* l;
+    uint32_t count = 0, folder = 0;
+    int found = 0;
+    size_t fl = sizeof FOLDER_NAME - 1u;
+
+    if (tree == NULL) {
+        return 0;
+    }
+    tree[0] = '\0';
+    if (sel_library_folder_tree(lib, tree, TREE_BYTES, &count) != SEL_FOLDER_OK) {
+        host->mem_free(host, tree);
+        return 0;
+    }
+    for (l = tree; *l != '\0' && !found;) {
+        const char* e = strchr(l, '\n');
+        size_t indent = 0;
+        const char* p;
+        char* after;
+
+        if (e == NULL) {
+            e = l + strlen(l);
+        }
+        while (l[indent] == ' ') {
+            indent++;
+        }
+        p = l + indent;
+        if (indent == 0) {
+            folder = 0;
+            if (p[0] == 'F' && p[1] == ' ') {
+                unsigned long fid = strtoul(p + 2, &after, 10);
+
+                if (*after == ' ' && (size_t)(e - (after + 1)) == fl && memcmp(after + 1, FOLDER_NAME, fl) == 0) {
+                    folder = (uint32_t)fid;
+                }
+            }
+        } else if (folder != 0 && indent == 2u && p[0] == 'P' && p[1] == ' ') {
+            unsigned long pid = strtoul(p + 2, &after, 10);
+            size_t nl = (size_t)(e - (after + 1));
+
+            if (*after == ' ' && (uint32_t)pid == id && nl < cap) {
+                memcpy(title, after + 1, nl);
+                title[nl] = '\0';
+                found = 1;
+            }
+        }
+        l = *e == '\n' ? e + 1 : e;
+    }
+    host->mem_free(host, tree);
+    return found;
+}
+
 /* One list of the feed becomes a playlist called after its title: the songs of its fetched .prg, none when the file is
  * missing. The playlist of the same name from the previous sync is replaced, so a sync never duplicates. */
 static int make_playlist(sync_state* s, const list_item* it) {
     char path[SEL_BROWSE_PATH_MAX];
-    const sel_host* host = s->cfg->host;
-    FILE* f;
-    long size;
-    char* bytes = NULL;
     uint32_t old, id = 0;
 
     if (it->file[0] == '\0' || strchr(it->file, '/') != NULL || it->title[0] == '\0') {
@@ -176,18 +248,8 @@ static int make_playlist(sync_state* s, const list_item* it) {
         }
     }
     s->keys[0] = '\0';
-    if (sel_browse_join(path, sizeof path, s->dir, it->file) && (f = fopen(path, "rb")) != NULL) {
-        if (fseek(f, 0, SEEK_END) == 0 && (size = ftell(f)) > 0 && (unsigned long)size <= PRG_MAX_BYTES &&
-            fseek(f, 0, SEEK_SET) == 0) {
-            bytes = host->mem_alloc(host, (size_t)size, SEL_MEM_FAST);
-            if (bytes != NULL && fread(bytes, 1, (size_t)size, f) == (size_t)size) {
-                (void)sel_hippo_prg_keys(host, bytes, (size_t)size, s->keys, KEYS_BYTES);
-            }
-        }
-        if (bytes != NULL) {
-            host->mem_free(host, bytes);
-        }
-        fclose(f);
+    if (sel_browse_join(path, sizeof path, s->dir, it->file)) {
+        (void)sel_hippo_file_keys(s->cfg->host, path, s->keys, KEYS_BYTES);
     }
     old = tree_playlist(s->tree, s->folder, it->title);
     if (old != 0 && sel_library_playlist_del(s->cfg->lib, old) != SEL_FOLDER_OK) {
@@ -210,8 +272,9 @@ static int commit_item(sync_state* s) {
     uint32_t k = 0;
 
     if (s->each != NULL) {
-        if (it->file[0] != '\0' && strchr(it->file, '/') == NULL) {
-            s->each(s->each_user, it->file);
+        if (it->file[0] != '\0' && strchr(it->file, '/') == NULL && !s->each(s->each_user, it->file, it->title)) {
+            s->failed = 1; /* the caller found its record: stops both parses */
+            return 0;
         }
         return 1;
     }
@@ -508,7 +571,8 @@ static int apply_prg(sync_state* s, const char* name, const char* file) {
     return ok;
 }
 
-void sel_hippo_each_file(const sel_host* host, const char* dir, void (*fn)(void* user, const char* file), void* user) {
+void sel_hippo_each_file(const sel_host* host, const char* dir, int (*fn)(void* user, const char* file, const char* title),
+                         void* user) {
     sync_state s;
     sel_hippo_sync_stats st;
     char path[SEL_BROWSE_PATH_MAX];

@@ -16,9 +16,9 @@ static int export_sink(void* ctx, const char* bytes, uint32_t len) {
 }
 
 /* I178: writes every playlist under `folder` (0 = all, sub-folders included) as one file per playlist into `dir`,
- * named <playlist id>-<name>.<ext>; returns the number of files written, or -1 on failure. */
-static int folder_export(sel_library* lib, uint32_t folder, const char* dir, const char* ext) {
-    char list[8192];
+ * named <playlist id>-<name>.<ext> (only the playlist called `only` when it is not NULL); returns the number of files written, or -1 on failure. */
+static int folder_export(sel_library* lib, uint32_t folder, const char* dir, const char* ext, const char* only) {
+    char list[65536];
     char keys[16384];
     char probe[32];
     sel_pl_format fmt;
@@ -43,6 +43,9 @@ static int folder_export(sel_library* lib, uint32_t folder, const char* dir, con
         size_t i, n = 0;
 
         p = name + strlen(name) + 1;
+        if (only != NULL && strcmp(only, name) != 0) {
+            continue;
+        }
         for (i = 0; name[i] != '\0' && n + 1 < sizeof clean; i++) {
             char c = name[i];
             clean[n++] = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_' ? c : '_';
@@ -74,12 +77,14 @@ static int folder_export(sel_library* lib, uint32_t folder, const char* dir, con
     return fail ? -1 : (int)written;
 }
 
-/* library export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u|m3u8|pls|xspf|prg] */
+/* library export-folder --db <path> --dir <dir> [--folder <id>] [--name <playlist name>] [--count] [--format m3u|m3u8|pls|xspf|prg] */
 int sel_cli_library_export_folder(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const char* db_path = NULL;
     const char* dir = NULL;
     const char* ext = "m3u";
+    const char* only = NULL;
+    int count_only = 0;
     uint32_t folder = 0;
     sel_library* lib;
     int i, n;
@@ -91,6 +96,10 @@ int sel_cli_library_export_folder(int argc, char** argv) {
             dir = argv[++i];
         } else if (strcmp(argv[i], "--folder") == 0 && i + 1 < argc) {
             folder = (uint32_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--count") == 0) {
+            count_only = 1;
+        } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
+            only = argv[++i];
         } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
             ext = argv[++i];
         } else {
@@ -98,8 +107,8 @@ int sel_cli_library_export_folder(int argc, char** argv) {
             break;
         }
     }
-    if (db_path == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u|m3u8|pls|xspf|prg]\n", stderr);
+    if (db_path == NULL || (dir == NULL && !count_only)) {
+        fputs("usage: selecta-cli library export-folder --db <path> --dir <dir> [--folder <id>] [--name <playlist name>] [--count] [--format m3u|m3u8|pls|xspf|prg]\n", stderr);
         return 2;
     }
     sel_registry_init(host);
@@ -108,7 +117,16 @@ int sel_cli_library_export_folder(int argc, char** argv) {
         puts("db_open=0");
         return 1;
     }
-    n = folder_export(lib, folder, dir, ext);
+    if (count_only) { /* playlists under the folder, read without opening any (a lazy list stays unfetched) */
+        char list[65536];
+        uint32_t count = 0;
+
+        n = sel_library_folder_playlists(lib, folder, list, sizeof list, &count) == SEL_FOLDER_OK ? (int)count : -1;
+        printf("playlists=%d folder=%u\n", n, (unsigned)folder);
+        sel_library_close(lib);
+        return n < 0 ? 1 : 0;
+    }
+    n = folder_export(lib, folder, dir, ext, only);
     printf("exported=%d folder=%u\n", n, (unsigned)folder);
     sel_library_close(lib);
     return n < 0 ? 1 : 0;

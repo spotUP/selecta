@@ -2,6 +2,8 @@
 #include "hippo_net.h"
 
 #include "sync_host.h"
+#include "../db/db.h"
+#include "../source.h"
 
 #include <selecta/catalogue.h>
 #include <selecta/net.h>
@@ -60,29 +62,123 @@ static int prg_ok(const char* path) {
     return c != EOF && c != '<';
 }
 
-typedef struct prg_fetch {
-    const sel_host* host;
-    const sel_net* net;
-    const char* base; /* without trailing '/' */
-    int base_len;
-    const char* dir;
-    sel_hippo_net_stats* stats;
-} prg_fetch;
+/* I1058a: finds the list record whose title is `title` and keeps its filename. */
+typedef struct title_find {
+    const char* title;
+    char file[PATH_BYTES / 2];
+    int found;
+} title_find;
 
-/* GET <base>/api/v1/playlists/<filename> into <dir>/<filename>; the sync reads it from there. */
-static void fetch_prg(void* user, const char* file) {
-    prg_fetch* p = user;
-    char url[URL_BYTES];
+static int find_title(void* user, const char* file, const char* title) {
+    title_find* f = user;
+
+    if (strcmp(title, f->title) != 0 || strlen(file) >= sizeof f->file) {
+        return 1;
+    }
+    memcpy(f->file, file, strlen(file) + 1u);
+    f->found = 1;
+    return 0;
+}
+
+#define OPEN_KEYS_BYTES (1024u * 1024u)
+#define BASE_FILE "hippo_base.txt" /* the server the lists came from, kept next to them: a later open asks the same one */
+
+static void base_save(const char* dir, const char* base, size_t n) {
     char path[PATH_BYTES];
-    unsigned long got = 0;
+    FILE* out;
 
-    if (snprintf(url, sizeof url, "%.*s/" SEL_HIPPO_API_PATH "/%s", p->base_len, p->base, file) >= (int)sizeof url ||
-        snprintf(path, sizeof path, "%s/%s", p->dir, file) >= (int)sizeof path) {
+    if (snprintf(path, sizeof path, "%s/%s", dir, BASE_FILE) >= (int)sizeof path || (out = fopen(path, "wb")) == NULL) {
         return;
     }
-    if (p->net->get_file_checked(p->host, url, path, prg_ok, &p->stats->prg_requests, &got) == 200) {
-        p->stats->prg_files++;
+    fwrite(base, 1, n, out);
+    fclose(out);
+}
+
+/* The saved server base (no trailing slash) into out; the source home when the sync saved none. */
+static void base_load(const char* dir, char* out, size_t cap) {
+    char path[PATH_BYTES];
+    FILE* in;
+    size_t n = 0;
+
+    out[0] = '\0';
+    if (snprintf(path, sizeof path, "%s/%s", dir, BASE_FILE) < (int)sizeof path && (in = fopen(path, "rb")) != NULL) {
+        n = fread(out, 1, cap - 1u, in);
+        fclose(in);
+        out[n] = '\0';
     }
+    while (n > 0 && out[n - 1] == '/') {
+        out[--n] = '\0';
+    }
+    if (n == 0) {
+        snprintf(out, cap, "%s", sel_source_hippo()->home);
+        n = strlen(out);
+        while (n > 0 && out[n - 1] == '/') {
+            out[--n] = '\0';
+        }
+    }
+}
+
+int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id) {
+    sel_sync_ctx ctx;
+    sel_host host;
+    const sel_net* net_svc;
+    const sel_catalogue* cat;
+    char title[256];
+    char dir[PATH_BYTES - 64u];
+    char path[PATH_BYTES];
+    char url[URL_BYTES];
+    unsigned long got = 0;
+    uint32_t requests = 0;
+    title_find f;
+    char* keys;
+    const char* k;
+    int rc = -1;
+
+    if (!sel_hippo_playlist_title(lib, base, id, title, sizeof title)) {
+        return 0; /* not a list of the HippoPlayer folder */
+    }
+    memset(&ctx, 0, sizeof ctx);
+    ctx.scfg.host = base;
+    ctx.scfg.lib = lib;
+    sel_sync_host_bind(&host, base, &ctx);
+    net_svc = host.net(&host);
+    cat = host.catalogue(&host);
+    if (net_svc == NULL || cat == NULL || !cat->cache_dir(&host, "hippo", dir, sizeof dir)) {
+        return -1;
+    }
+    memset(&f, 0, sizeof f);
+    f.title = title;
+    sel_hippo_each_file(&host, dir, find_title, &f);
+    if (!f.found) {
+        return 0; /* a playlist the user made in that folder: nothing to fetch */
+    }
+    if (snprintf(path, sizeof path, "%s/%s", dir, f.file) >= (int)sizeof path) {
+        return -1;
+    }
+    keys = base->mem_alloc(base, OPEN_KEYS_BYTES, SEL_MEM_FAST);
+    if (keys == NULL) {
+        return -1;
+    }
+    keys[0] = '\0';
+    if (!sel_hippo_file_keys(base, path, keys, OPEN_KEYS_BYTES)) {
+        /* GET <source url>api/v1/playlists/<filename> once; a 404 or a network failure leaves the list empty and retryable. */
+        char server[URL_BYTES - 256u];
+
+        base_load(dir, server, sizeof server);
+        if (snprintf(url, sizeof url, "%s/" SEL_HIPPO_API_PATH "/%s", server, f.file) < (int)sizeof url &&
+            net_svc->get_file_checked(&host, url, path, prg_ok, &requests, &got) == 200) {
+            (void)sel_hippo_file_keys(base, path, keys, OPEN_KEYS_BYTES);
+        }
+    }
+    for (k = keys; *k != '\0'; k += strlen(k) + 1u) {
+        rc = 1;
+        if (sel_library_playlist_add_song(lib, id, k) != SEL_FOLDER_OK) {
+            rc = -1;
+            break;
+        }
+    }
+    base->mem_free(base, keys);
+    return rc;
 }
 
 int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_stats* stats, sel_hippo_net_stats* net) {
@@ -118,16 +214,6 @@ int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_st
     if (!have_json && !have_tsv) {
         return 0;
     }
-    {
-        prg_fetch p;
-
-        p.host = host;
-        p.net = net_svc;
-        p.base = base;
-        p.base_len = (int)n;
-        p.dir = dir;
-        p.stats = net;
-        sel_hippo_each_file(host, dir, fetch_prg, &p);
-    }
+    base_save(dir, base, n);
     return sel_hippo_sync(sel_sync_cfg(host), dir, stats);
 }

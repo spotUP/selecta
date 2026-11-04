@@ -17,12 +17,15 @@ typedef struct sel_hippo_net_stats {
     uint32_t json_bytes; /* JSON list downloaded and accepted */
     uint32_t tsv_bytes;  /* TSV list downloaded and accepted */
     uint32_t http_requests; /* the two list requests */
-    uint32_t prg_requests;  /* I1058: one GET <base>/api/v1/playlists/<filename> per listed file */
-    uint32_t prg_files;     /* of those, the bodies kept (not an HTML error page) */
 } sel_hippo_net_stats;
 
 /* `base` is the server root (a trailing '/' is ignored). Returns 0 when neither list could be fetched and
  * accepted, or the sync fails. `stats` and `net` are filled either way. */
 int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_stats* stats, sel_hippo_net_stats* net);
+
+/* I1058a: lazy fill. Playlist `id` is empty. When it is a list of the HippoPlayer folder whose file is not cached, GETs
+ * `<source url>api/v1/playlists/<file>` once, then adds the prg's songs to the playlist. Returns 1 filled, 0 not a
+ * HippoPlayer list (nothing done), -1 failed (404, network, no songs): the list stays empty, so the next open retries. */
+int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id);
 
 #endif
