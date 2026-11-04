@@ -30,6 +30,22 @@ typedef struct gme_state {
     sel_tag meta[8];
 } gme_state;
 
+/* 1 when libgme was built with the emulator for the header name `type` ("NSF", "VGZ", ...). */
+static int type_compiled_in(const char* type) {
+    gme_type_t const* t;
+    for (t = gme_type_list(); *t != NULL; t++) {
+        const char* ext = gme_type_extension(*t);
+        size_t i = 0;
+        while (type[i] != '\0' && ext[i] != '\0' && (type[i] | 0x20) == (ext[i] | 0x20)) {
+            i++;
+        }
+        if (type[i] == '\0' && ext[i] == '\0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int rp_probe(const uint8_t* data, size_t size, const char* name) {
     const char* type;
     (void)name;
@@ -37,7 +53,12 @@ static int rp_probe(const uint8_t* data, size_t size, const char* name) {
         return SEL_PROBE_NO;
     }
     type = gme_identify_header(data);
-    return type != NULL && type[0] != '\0' ? SEL_PROBE_YES : SEL_PROBE_NO;
+    if (type == NULL || type[0] == '\0') {
+        return SEL_PROBE_NO;
+    }
+    /* I862: gme_identify_header names every format libgme knows ("VGM", "VGZ" for the gzip magic) whether or not
+     * its emulator is compiled in; only a type in gme_type_list() can be opened. VGM/VGZ belong to libvgm (I431). */
+    return type_compiled_in(type) ? SEL_PROBE_YES : SEL_PROBE_NO;
 }
 
 static void copy_text(char* dst, const char* src) {
