@@ -132,3 +132,8 @@ endif()
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/libvgm)
 endif()
+
+# OPL/AdLib songs via AdPlug (I696): LGPL-2.1-or-later engine linked statically, own opt-in module, host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/adplug)
+endif()

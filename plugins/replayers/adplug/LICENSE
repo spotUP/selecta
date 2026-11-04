@@ -1,0 +1,22 @@
+Selecta AdPlug replayer module (plugins/replayers/adplug)
+=========================================================
+
+This module statically links AdPlug and libbinio, so the combined module is distributed under the GNU Lesser General
+Public License, version 2.1 or (at your option) any later version. It is built only with -DSELECTA_GPL_PLUGINS=ON as a
+separate loadable module; the Selecta core never links it and stays MIT. The adapter and shim sources in this directory
+are MIT like the core and are also usable under the LGPL as part of this module.
+
+Licence count of the vendored code (third_party/adplug, third_party/libbinio), checked file by file:
+
+  - AdPlug player sources (src/*.cpp, *.h): LGPL-2.1-or-later. Count of files with a GPL-only licence: 0.
+  - adl.cpp / adl.h (Westwood ADL, derived from ScummVM): dual GPL-2.0-or-later / LGPL; taken under the LGPL.
+  - jbm.cpp: LGPL header, but a comment says "Released under the terms of the GNU General Public License". Either
+    reading is compatible with this GPL-opt-in module.
+  - depack.c / depack.h (aPLib depacker, Joergen Ibsen): the header says only "Copyright (c) 1998-2014 Joergen Ibsen,
+    All Rights Reserved" with no licence text; aPLib itself is freeware (free use and redistribution, commercial
+    included, per its own licence file which is not vendored). Unresolved: confirm before any non-GPL-opt-in use.
+  - Nuked OPL3 (nukedopl.c / nukedopl.h, Nuke.YKT): LGPL-2.1-or-later. This is the only OPL emulator built in.
+  - libbinio (src/*.cpp, *.h): LGPL-2.1-or-later.
+
+Full texts: third_party/adplug/COPYING and third_party/libbinio/COPYING. Authors: third_party/adplug/AUTHORS and
+third_party/libbinio/AUTHORS. Pinned revisions: third_party/adplug/REVISION and third_party/libbinio/REVISION.
