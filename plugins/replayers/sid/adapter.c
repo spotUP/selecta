@@ -1,7 +1,8 @@
-/* SID replayer (design doc "Format coverage rule", row I434): a RENDER-kind adapter over libsidplayfp with the
- * reSIDfp engine (third_party/libsidplayfp + third_party/libresidfp, GPL-2), the same engine bbmp uses. PSID and RSID
- * files, the HVSC format. The file has no length: the song plays until the host stops it (the song length database,
- * I605, supplies HVSC lengths). Seek renders and discards, as SID state cannot be jumped. */
+/* SID replayer (design doc "Format coverage rule", row I434): a RENDER-kind adapter over
+ * libsidplayfp with the reSIDfp engine (third_party/libsidplayfp + third_party/libresidfp, GPL-2),
+ * the same engine bbmp uses. PSID and RSID files, the HVSC format. The file has no length: the song
+ * plays until the host stops it (the song length database, I605, supplies HVSC lengths). Seek
+ * renders and discards, as SID state cannot be jumped. */
 #include "shim.h"
 
 #include <selecta/plugin.h>
@@ -11,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SID_TEXT 128u
+#define SID_TEXT        128u
 #define SID_SKIP_FRAMES 4096u
 
 typedef struct sid_state {
@@ -21,7 +22,8 @@ typedef struct sid_state {
     uint64_t played;
     char title[SID_TEXT], author[SID_TEXT], release[SID_TEXT], format[SID_TEXT];
     sel_tag meta[8];
-    uint8_t kernal[8192], basic[8192], chargen[4096]; /* config-dir overrides, valid when the matching have_* is 1 */
+    uint8_t kernal[8192], basic[8192],
+        chargen[4096]; /* config-dir overrides, valid when the matching have_* is 1 */
     int have_kernal, have_basic, have_chargen;
 } sid_state;
 
@@ -36,7 +38,8 @@ static int load_rom(const char* dir, const char* name, uint8_t* out, size_t size
     FILE* f;
     size_t n;
     int ok;
-    if (dir == NULL || dir[0] == '\0' || snprintf(path, sizeof path, "%s/%s", dir, name) >= (int)sizeof path) {
+    if (dir == NULL || dir[0] == '\0' ||
+        snprintf(path, sizeof path, "%s/%s", dir, name) >= (int)sizeof path) {
         return 0;
     }
     f = fopen(path, "rb");
@@ -49,8 +52,8 @@ static int load_rom(const char* dir, const char* name, uint8_t* out, size_t size
     return ok;
 }
 
-/* The chip, clock, filter and ROM settings of this start (MPS-1). A ROM file in the config directory beats the
- * embedded OpenROMs image. */
+/* The chip, clock, filter and ROM settings of this start (MPS-1). A ROM file in the config
+ * directory beats the embedded OpenROMs image. */
 static void make_cfg(sid_state* s, sid_shim_cfg* c) {
     const sel_host* h = s->host;
     const char* v;
@@ -73,7 +76,9 @@ static void make_cfg(sid_state* s, sid_shim_cfg* c) {
     c->chargen = s->have_chargen ? s->chargen : sid_shim_builtin_chargen();
 }
 
-static uint32_t rp_cfg_applied(void* state) { return sid_shim_cfg_applied(((sid_state*)state)->shim); }
+static uint32_t rp_cfg_applied(void* state) {
+    return sid_shim_cfg_applied(((sid_state*)state)->shim);
+}
 
 static int rp_probe(const uint8_t* data, size_t size, const char* name) {
     (void)name;
@@ -110,8 +115,8 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     copy_text(s->author, sid_shim_info(s->shim, 1));
     copy_text(s->release, sid_shim_info(s->shim, 2));
     copy_text(s->format, sid_shim_format(s->shim));
-    /* Four mute channels per chip: voices 0-2, then the chip's digi samples. RENDER kind, so no engine voices:
-     * the count sizes SOLO and the mute mask only. */
+    /* Four mute channels per chip: voices 0-2, then the chip's digi samples. RENDER kind, so no
+     * engine voices: the count sizes SOLO and the mute mask only. */
     info->voice_count = 4u * sid_shim_chips(s->shim);
     info->subsong_count = s->subsongs > 0u ? s->subsongs : 1u;
     info->default_subsong = s->default_subsong > 0u ? s->default_subsong - 1u : 0u;
@@ -210,10 +215,10 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "sid");
+    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t)"sid");
     set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
     set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "sid,psid");
+    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t)"sid,psid");
     set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
     set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
     set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
@@ -226,7 +231,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[13], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
-    set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "sid");
+    set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t)"sid");
     set(&g_desc[2], SEL_PLUGIN_VERSION, 1);
     set(&g_desc[3], SEL_PLUGIN_TAGS, (uintptr_t)g_hooks);
     set(&g_desc[4], SEL_TAG_END, 0);

@@ -10,9 +10,10 @@ extern "C" {
 
 typedef struct sid_shim sid_shim;
 
-/* Chip and ROM configuration applied at every start (MPS-1). model: 0 auto (tune), 1 MOS 6581, 2 MOS 8580;
- * clock: 0 auto (tune), 1 PAL, 2 NTSC; filter: 1 on, 0 off; digiboost: 0 auto (on for an 8580), 1 on, 2 off.
- * Each ROM pointer is NULL (libsidplayfp stub) or a full image: kernal and basic 8192 bytes, chargen 4096. */
+/* Chip and ROM configuration applied at every start (MPS-1). model: 0 auto (tune), 1 MOS 6581, 2
+ * MOS 8580; clock: 0 auto (tune), 1 PAL, 2 NTSC; filter: 1 on, 0 off; digiboost: 0 auto (on for an
+ * 8580), 1 on, 2 off. Each ROM pointer is NULL (libsidplayfp stub) or a full image: kernal and
+ * basic 8192 bytes, chargen 4096. */
 typedef struct sid_shim_cfg {
     int model, clock, filter, digiboost;
     const uint8_t *kernal, *basic, *chargen;
@@ -37,7 +38,8 @@ const uint8_t* sid_shim_builtin_basic(void);
 const uint8_t* sid_shim_builtin_chargen(void);
 /* SID chips in the tune (1 to 3). */
 uint32_t sid_shim_chips(const sid_shim* s);
-/* Mutes (1) or unmutes (0) voice 0-2 of a chip, or voice 3 (its digi samples). The setting survives a restart. */
+/* Mutes (1) or unmutes (0) voice 0-2 of a chip, or voice 3 (its digi samples). The setting survives
+ * a restart. */
 void sid_shim_mute(sid_shim* s, uint32_t chip, uint32_t voice, uint32_t muted);
 void sid_shim_close(sid_shim* s);
 
