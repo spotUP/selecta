@@ -664,6 +664,7 @@ struct sel_engine {
 #endif
     /* I961c: the playlist page's key read as a posted read, same pattern as br_*: pk_state 0 idle, 1 running, 2 result ready. */
     int pk_state;
+    int pk_filled; /* I1058e: the worker fetched an unfetched Hippo list; the pump reloads the folder rows when it takes the answer */
     uint32_t pk_id, pk_n;
     char* pk_out;
     size_t pk_cap;
@@ -9210,7 +9211,7 @@ static void playlist_keys_read(sel_engine* e) {
     uint32_t n = 0;
 
     /* I1058a: fetch an unfetched HippoPlayer list on this worker thread before reading its keys. */
-    if (e->lib != NULL) (void)sel_hippo_ensure_playlist(e->lib, e->pk_id);
+    e->pk_filled = e->lib != NULL && sel_hippo_ensure_playlist(e->lib, e->pk_id) == 1;
     e->pk_ok = e->lib != NULL && sel_library_playlist_keys(e->lib, e->pk_id, e->pk_out, (uint32_t)e->pk_cap, &n) == SEL_FOLDER_OK;
     e->pk_n = e->pk_ok ? n : 0u;
     __atomic_store_n(&e->pk_state, 2, __ATOMIC_RELEASE);
@@ -9255,6 +9256,10 @@ int sel_engine_playlist_keys_take(sel_engine* e, uint32_t* id, char* out, size_t
     if (ok != NULL) *ok = e->pk_ok;
     free(e->pk_out);
     e->pk_out = NULL;
+    if (e->pk_filled) { /* I1058e: the list now has songs, so the tree count is stale; posted, never read here (I829) */
+        e->pk_filled = 0;
+        folders_reload_posted(e);
+    }
     __atomic_store_n(&e->pk_state, 0, __ATOMIC_RELEASE);
     return 1;
 }
