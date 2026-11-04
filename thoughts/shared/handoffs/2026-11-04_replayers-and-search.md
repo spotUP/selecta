@@ -21,6 +21,10 @@ Trust thoughts/spot/todos.md over this note. Rows named here: I698, I906j, I906k
   For each: `git -C <worktree> log --oneline -3` and `git -C <worktree> status --short`. Committed and green: review, cherry-pick to main, build + affected tests behind gate, `git worktree unlock`, `git worktree remove --force`, `git branch -D`, tick ledger. Dirty or no commit: brief a NEW agent from the ledger row (never resume the old one).
 - Other worktrees not from this session's open work: agent-a2141694eab04fe20, agent-a773155596f908acb, agent-ad309b9c77bae5eb3. Owner unknown; do not delete without asking.
 
+## PUSH BLOCKED
+
+Main build passed but 4 search tests fail (dui-search, dui-search-badge, dui-search-online-live, dui-search-online-quit). Ledger row I1009r has the failure lines and the plan; first suspect efecabdb (I1009). Fix before push.
+
 ## Unverified
 
 - Queued main test runs (background shells in old session; may die with it). Re-run on main if logs incomplete:
