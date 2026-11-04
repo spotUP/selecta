@@ -31,6 +31,8 @@ set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
 set(ENV{SELECTA_CACHE_DIR} "${WORK}/cache")
+# I1073: the clicks start at 1.5 s like the other live dui tests (hover_instant, collection_open_touch): at 100 ms under load the
+# async SOURCES answer has not drawn the chips yet, so the click hit nothing and the search never ran (scope=- searches=0).
 # I1019f: the source filter is not remembered, so the Modules.pl chip (picked by its scope=modulespl dump key, never by index) is clicked: its rect comes from an idle dump.
 file(WRITE "${WORK}/in.txt" "wait 300\n")
 dui_run(chipdump --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 2000x800 --clock fixed --stats --input "${WORK}/in.txt")
@@ -42,7 +44,7 @@ math(EXPR chip_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 file(REMOVE "${WORK}/library.db")
 set(ENV{SDL_VIDEODRIVER} dummy)
 set(ENV{SELECTA_SDL_TEST_LIVE} 1)
-set(ENV{SELECTA_SDL_TEST_TIMED} "m${chip_x},${chip_y}@100 d1,${chip_x},${chip_y}@150 u1,${chip_x},${chip_y}@200 tchip@300 kd@400 q@9000")
+set(ENV{SELECTA_SDL_TEST_TIMED} "m${chip_x},${chip_y}@1500 d1,${chip_x},${chip_y}@1550 u1,${chip_x},${chip_y}@1600 tchip@1700 kd@1800 q@9000")
 file(MAKE_DIRECTORY "${WORK}/cfg")
 file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
 dui_run(o --db "${WORK}/library.db" --ui desktop --backend sdl --view search --canvas 2000x800 --stats)
