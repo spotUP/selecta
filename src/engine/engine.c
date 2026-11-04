@@ -1857,6 +1857,7 @@ static uint32_t song_length_ms(sel_engine* e, sel_slot* sl) {
     uint32_t ms = 0u;
     if (sl->rp_state != NULL && sl->rp_metadata != NULL) ms = (uint32_t)sel_tag_find(sl->rp_metadata(sl->rp_state), SEL_META_DURATION_MS, 0);
     if (ms == 0u) ms = songlen_db_ms(e, sl);
+    if (ms == 0u) catalogue_length_read(e, sl); /* I434: every replayer kind, not only the hardware path */
     if (ms == 0u && sl->cat_sub == sl->subsong + 1u) ms = sl->cat_ms;
     return ms;
 }
@@ -1864,8 +1865,8 @@ static uint32_t song_length_ms(sel_engine* e, sel_slot* sl) {
 /* Hardware kind: tell the replayer the song length once the catalogue read has landed. Called after rp_start and again when a
  * deferred read arrives (the replayer then ends the tune on its next poll when the clock is already past the length). */
 static void hw_length_apply(sel_engine* e, sel_slot* sl) {
+    catalogue_length_read(e, sl); /* I434: also for a render-kind replayer, whose duration comes from song_length_ms */
     if (sl->rp_hw_length == NULL) return;
-    catalogue_length_read(e, sl);
     if (sl->cat_retry == 0u) sl->rp_hw_length(sl->rp_state, song_length_ms(e, sl));
 }
 

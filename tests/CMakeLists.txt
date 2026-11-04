@@ -896,6 +896,13 @@ if(NOT SEL_AMIGA)
   target_link_libraries(songlen_engine_test PRIVATE selecta_core selecta_library selecta_songlen_bake)
   add_test(NAME engine-song-length-from-database COMMAND songlen_engine_test)
   set_tests_properties(engine-song-length-from-database PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "songlen_engine_ok")
+
+  # I434: a render-kind replayer's length comes from the catalogue lengths_ms sticker (song_length_ms).
+  add_executable(catalogue_length_render_test engine/catalogue_length_render_test.c)
+  target_include_directories(catalogue_length_render_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(catalogue_length_render_test PRIVATE selecta_core selecta_library)
+  add_test(NAME engine-catalogue-length-render COMMAND catalogue_length_render_test)
+  set_tests_properties(engine-catalogue-length-render PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "catalogue_length_render_ok")
   add_executable(hw_prepare_test engine/hw_prepare_test.c)
   target_link_libraries(hw_prepare_test PRIVATE selecta_core)
   # I732: the native kplayer adapter's tracker hooks, through the engine's own lookup (host stub for the 68k call).
@@ -1917,6 +1924,16 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/ym_test.ym
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ym-decode)
   set_tests_properties(ym-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "ym_decode_ok")
+
+  # I434: without the GPL plugins a SID file has no replayer and OPEN answers the exact no_replayer error.
+  if(NOT SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-no-replayer)
+    add_test(NAME sid-no-replayer
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_no_replayer.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_test.sid
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-no-replayer)
+    set_tests_properties(sid-no-replayer PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_no_replayer_ok")
+  endif()
 
   # I434: a SID (C64) file plays through the render entry point (sid replayer, libsidplayfp). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
