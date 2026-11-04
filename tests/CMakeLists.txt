@@ -2260,6 +2260,17 @@ if(NOT SEL_AMIGA)
   set_tests_properties(source-hippo PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "source_hippo_ok")
 endif()
 
+# I1064: HippoPlayer is a Playlists group, never a Sources row (engine SOURCES rows skip SEL_SOURCE_PLAYLISTS_ONLY).
+if(NOT SEL_AMIGA)
+  add_executable(hippo_not_a_source_test engine/hippo_not_a_source_test.c)
+  target_include_directories(hippo_not_a_source_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(hippo_not_a_source_test PRIVATE selecta_library selecta_core)
+  add_test(NAME hippo-not-a-source
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/hippo_not_a_source.sh $<TARGET_FILE:selecta-cli> $<TARGET_FILE:hippo_not_a_source_test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3)
+  set_tests_properties(hippo-not-a-source PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_not_a_source_ok")
+endif()
+
 # M3 Phase 5 (I168a): T77 part 2. A foreground fetch during a slow prefetch returns within a stated bound.
 if(NOT SEL_AMIGA)
   add_test(NAME prefetch-preempt
