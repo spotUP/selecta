@@ -1,0 +1,1 @@
+zxtune_test.pt2 is samples/chiptunes/AY-3-8910/pt2/PITON.pt2 from https://github.com/vitamin-caig/zxtune at commit e36902fe1cc06d9e73116db644b688708a7745d4, 3831 bytes, a Pro Tracker 2 module shipped in ZXTune's sample corpus. The ZXTune repository is licensed LGPL-3.0; the file carries no separate license. Used only as the zxtune-decode test fixture (row I421).
