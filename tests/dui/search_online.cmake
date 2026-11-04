@@ -36,7 +36,7 @@ set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
 set(ENV{SELECTA_CACHE_DIR} "${WORK}/cache")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E true)
 
-set(SO_CANVAS 1280x800)
+set(SO_CANVAS 2000x800) # I1053a: the archive sources are searchable now, so the chip row reaches past 1280 px (wrap: I1054)
 function(so_run outvar input)
   file(WRITE "${WORK}/in.txt" "${input}")
   dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas ${SO_CANVAS} --clock fixed --stats
@@ -134,7 +134,7 @@ list(GET on 6 rp0)
 if(NOT rp0 EQUAL 0)
   message(FATAL_ERROR "I1019h: Search must never count a radio play, got radio_plays=${rp0}:\n${played}")
 endif()
-set(SO_CANVAS 1280x1600) # the Modules.pl sidebar row sits below 800 px
+set(SO_CANVAS 2000x1600) # the Modules.pl sidebar row sits below 800 px
 so_run(side "wait 300\n")
 if(NOT "${side}" MATCHES "sidelib_row [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=7 [Mm]odules[^\n]*\n")
   message(FATAL_ERROR "I1019h: no modulespl source row in the sidebar:\n${side}")

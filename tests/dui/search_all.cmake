@@ -36,7 +36,7 @@ foreach(i RANGE 1 40)
   file(APPEND "${WORK}/in.txt" "wait 300\n")
 endforeach()
 # I1024e: four From sections (8 + 2 + 3 + 2 rows and headings) do not fit 800 px; the frame is tall enough to draw them all.
-dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1280x1400 --clock fixed --stats
+dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1280x2400 --clock fixed --stats
   --input "${WORK}/in.txt")
 string(REGEX MATCHALL "search_section [0-9]+ rows=[0-9]+ [^\n]*" sections "${o}")
 message(STATUS "sections: ${sections}")
@@ -155,7 +155,7 @@ endif()
 function(sa_run outvar input)
   file(REMOVE "${WORK}/library.db")
   file(WRITE "${WORK}/in.txt" "${input}")
-  dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1280x800 --clock fixed --stats
+  dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view search --canvas 1800x800 --clock fixed --stats
     --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
   set(${outvar}_err "${o_err}" PARENT_SCOPE)

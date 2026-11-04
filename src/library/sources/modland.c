@@ -5,6 +5,7 @@
 #include "../source.h"
 #include "modland_net.h"
 #include "sync_host.h"
+#include <selecta/catalogue.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -208,13 +209,19 @@ static int modland_sync_host(const sel_host* host, const char* arg, int64_t now,
     return ok;
 }
 
+/* I1053a: the All sources section comes from the synced rows (one shared catalogue search). */
+static int modland_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    return sel_catalogue_search(host, "modland", query, out);
+}
+
 static const sel_source g_modland = {
     "modland", "Modland", "https://modland.com/", "The largest tracker module archive.", g_tags,
     NULL, parse, NULL, url_of, path_in, NULL, NULL, modland_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_NEW_THIS_WEEK, NULL, NULL,
-    NULL, /* search (I406) */
+    modland_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };
 
 const sel_source* sel_source_modland(void) {
     return &g_modland;
 }
+

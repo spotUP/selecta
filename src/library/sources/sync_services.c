@@ -4,6 +4,8 @@
 
 #include "../cache.h"
 #include "../local.h"
+#include "../query.h"
+#include "../source.h"
 #include "../net/backoff.h"
 #include "../net/http.h"
 #include "sync_net.h"
@@ -14,6 +16,7 @@
 #include <selecta/net.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define BATCH_ROWS 128u
 #define BATCH_ARENA (BATCH_ROWS * 384u)
@@ -406,9 +409,80 @@ static void cat_progress(const sel_host* host, uint32_t done, uint32_t total) {
     c->prog_total = total;
 }
 
+/* I1053a: the catalogue search of every archive source. One query text, scoped to the source with the exact-match key
+ * (source:=id), through sel_library_run: the same serialised call-lock path the sync's batches use, so the fan-out's job
+ * thread never touches the database handle. The hits are the library search's own (FTS), not a second engine. */
+#define CAT_SEARCH_HITS 40u
+#define CAT_SEARCH_KEY_BYTES 256u
+#define CAT_SEARCH_META_BYTES 512u
+
+static int cat_search(const sel_host* host, const char* source_id, const char* query, sel_search_sink* out) {
+    sel_sync_ctx* c = ctx_of(host);
+    sel_library* lib = c->scfg.lib;
+    const sel_source* src;
+    sel_lib_job job;
+    char text[SEL_QUERY_TEXT_MAX];
+    char* keys;
+    char* meta;
+    const char* k;
+    const char* m;
+    int delivered = 0;
+    uint32_t i;
+    size_t idlen;
+
+    if (lib == NULL || source_id == NULL || query == NULL || out == NULL || out->row == NULL) {
+        return -1;
+    }
+    src = sel_source_find(source_id);
+    if (src != NULL && (src->flags & SEL_SOURCE_SYNCS) != 0u && sel_library_source_songs(lib, source_id) <= 0) {
+        return SEL_CATALOGUE_NOT_SYNCED; /* I1053b: nothing to search until the user syncs */
+    }
+    if (snprintf(text, sizeof text, "source:=%s (%s)", source_id, query) >= (int)sizeof text) {
+        text[sizeof text - 1u] = '\0';
+    }
+    keys = host->mem_alloc(host, CAT_SEARCH_HITS * CAT_SEARCH_KEY_BYTES, SEL_MEM_FAST);
+    meta = host->mem_alloc(host, CAT_SEARCH_HITS * CAT_SEARCH_META_BYTES, SEL_MEM_FAST);
+    if (keys == NULL || meta == NULL) {
+        if (keys != NULL) host->mem_free(host, keys);
+        if (meta != NULL) host->mem_free(host, meta);
+        return -1;
+    }
+    memset(&job, 0, sizeof job);
+    job.text = text;
+    job.now = (long long)time(NULL);
+    job.out = keys;
+    job.out_cap = CAT_SEARCH_HITS * CAT_SEARCH_KEY_BYTES;
+    job.scan_max = CAT_SEARCH_HITS;
+    job.meta = meta;
+    job.meta_cap = CAT_SEARCH_HITS * CAT_SEARCH_META_BYTES;
+    if (!sel_library_run(lib, SEL_LIB_REQ_SEARCH, &job)) {
+        delivered = -1;
+    } else if (job.error[0] == '\0') {
+        idlen = strlen(source_id);
+        for (i = 0, k = keys, m = meta; i < job.count && i < CAT_SEARCH_HITS; i++) {
+            const char* title = m;
+            const char* artist = title + strlen(title) + 1u;
+            const char* format = artist + strlen(artist) + 1u;
+            const char* path = strncmp(k, source_id, idlen) == 0 && k[idlen] == ':' ? k + idlen + 1u : k;
+
+            if (!out->row(out->ctx, path, title, artist, format)) {
+                break;
+            }
+            delivered++;
+            m = format + strlen(format) + 1u; /* past the duration and album fields */
+            m += strlen(m) + 1u;
+            m += strlen(m) + 1u;
+            k += strlen(k) + 1u;
+        }
+    }
+    host->mem_free(host, keys);
+    host->mem_free(host, meta);
+    return delivered;
+}
+
 static const sel_catalogue g_catalogue = {cat_begin,    cat_song,      cat_remove,   cat_move,  cat_commit,
                                           cat_abort,    cat_cache_dir, cat_list_dir, cat_now, cat_annotate,
-                                          cat_state_get, cat_state_set, cat_progress};
+                                          cat_state_get, cat_state_set, cat_progress, cat_search};
 
 static const sel_catalogue* host_catalogue(const sel_host* host) {
     return ctx_of(host)->scfg.lib != NULL ? &g_catalogue : NULL;
