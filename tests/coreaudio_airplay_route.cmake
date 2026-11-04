@@ -10,7 +10,7 @@ file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}/cfg")
 file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
 configure_file("${MOD}" "${WORK}/song.mod" COPYONLY)
-file(WRITE "${WORK}/in.txt" "wait 1000\nexec SEEK 1000\nwait 2000\n")
+file(WRITE "${WORK}/in.txt" "sleep 1000\nexec SEEK 1000\nsleep 1000\n")
 string(TIMESTAMP t0 "%s")
 execute_process(
   COMMAND "${SELECTA}" --output coreaudio --size 80x25 --config-dir "${WORK}/cfg" --ui desktop --backend mem --view home

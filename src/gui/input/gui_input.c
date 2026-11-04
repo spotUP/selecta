@@ -177,6 +177,10 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev) {
         ev->kind = SEL_GUI_IN_WAIT;
         return sscanf(a, "%u", &ev->ms) == 1;
     }
+    if (strcmp(verb, "sleep") == 0 && n == 2) {
+        ev->kind = SEL_GUI_IN_SLEEP;
+        return sscanf(a, "%u", &ev->ms) == 1;
+    }
     ev->kind = SEL_GUI_IN_NONE;
     return 0;
 }

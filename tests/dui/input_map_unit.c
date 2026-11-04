@@ -81,6 +81,11 @@ int main(void) {
     CHECK(map(&st, SEL_GUI_RAW_SWIPE, 0, 0, 0, 0, 5, 0, 0, &in) && in.kind == SEL_GUI_IN_SWIPE && in.x == 1);
     CHECK(map(&st, SEL_GUI_RAW_SWIPE, 0, 0, 0, 0, -5, 0, 0, &in) && in.kind == SEL_GUI_IN_SWIPE && in.x == -1);
     CHECK(sel_gui_input_parse("swipe left", &scripted) && scripted.x == in.x);
+    /* I1039: `sleep <ms>` is its own kind (real time), apart from the virtual-clock `wait` */
+    CHECK(sel_gui_input_parse("sleep 750", &scripted) && scripted.kind == SEL_GUI_IN_SLEEP && scripted.ms == 750u);
+    CHECK(sel_gui_input_parse("wait 750", &scripted) && scripted.kind == SEL_GUI_IN_WAIT);
+    CHECK(!sel_gui_input_parse("sleep", &scripted) && !sel_gui_input_parse("sleep abc", &scripted));
+    CHECK(!sel_gui_input_parse("snooze 5", &scripted));
     CHECK(!map(&st, SEL_GUI_RAW_SWIPE, 0, 0, 0, 0, 0, 0, 0, &in));
     CHECK(map(&st, SEL_GUI_RAW_BUTTON_UP, 0, 0, 4, 1, 0, 0, 0, &in) && in.kind == SEL_GUI_IN_SWIPE && in.x == 1);
     CHECK(map(&st, SEL_GUI_RAW_BUTTON_UP, 0, 0, 5, 1, 0, 0, 0, &in) && in.kind == SEL_GUI_IN_SWIPE && in.x == -1);

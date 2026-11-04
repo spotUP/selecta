@@ -20,7 +20,8 @@ typedef enum sel_gui_input_kind {
     SEL_GUI_IN_WAIT,   /* ms */
     SEL_GUI_IN_MOVE,   /* x, y: the pointer moved; code 1 while the primary button is held, then x2, y2 is the press point */
     SEL_GUI_IN_DRAG,   /* x, y to x2, y2: press, move, release */
-    SEL_GUI_IN_SWIPE   /* x = +1 swipe right (Back), -1 swipe left (Forward) */
+    SEL_GUI_IN_SWIPE,  /* x = +1 swipe right (Back), -1 swipe left (Forward) */
+    SEL_GUI_IN_SLEEP   /* ms of real wall-clock time (`wait` moves the virtual UI clock only) */
 } sel_gui_input_kind;
 
 #define SEL_GUI_INPUT_PATH 256u

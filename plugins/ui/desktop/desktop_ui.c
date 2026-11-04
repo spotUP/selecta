@@ -559,6 +559,8 @@ typedef struct desk {
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
     sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 13];
+    int sleeping;           /* a `sleep` script line is waiting for its wall-clock deadline */
+    uint32_t sleep_until;   /* host clock_ms at which it ends */
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[24576]; /* the Library page as text for the stats (DUI-P4-3); 8 KB past the composer rows are reserved for the sources and nag lines (I789) */
@@ -14325,6 +14327,25 @@ static int desk_replay_lines(desk* d, char* line) {
         } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_WAIT) {
             desk_advance(d, ev.ms);
             pointer_sent = d->sends != sent; /* a timer that fired in the wait (the search debounce) sent a line: resume on its answer */
+        } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_SLEEP) {
+            /* I1039: real wall-clock time (`wait` is a virtual clock). The deadline is set on the first visit; until it
+             * passes the turn naps 1 ms and returns with this very line saved, so the shell keeps pumping the engine
+             * and the output (the AV path queues its buffers from that pump) while the script sleeps. */
+            uint32_t t = d->host->clock_ms(d->host);
+            if (!d->sleeping) {
+                d->sleeping = 1;
+                d->sleep_until = t + ev.ms;
+            }
+            if ((int32_t)(d->sleep_until - t) > 0) {
+                if (nl != NULL) {
+                    *nl = '\n'; /* the saved line carries the rest of the script */
+                }
+                d->input_at = line;
+                d->input_done = 0;
+                desk_nap();
+                return 1;
+            }
+            d->sleeping = 0;
         } else if (sel_gui_input_parse(line, &ev) &&
                    (ev.kind == SEL_GUI_IN_CLICK || ev.kind == SEL_GUI_IN_MOVE || ev.kind == SEL_GUI_IN_DRAG)) {
             opened |= desk_route_input(d, &ev);
