@@ -2303,6 +2303,18 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_net_ok")
 endif()
 
+# I1058e: the posted playlist-keys read fills an unfetched Hippo list (1 prg request) and the pump's take reloads the folder rows.
+if(NOT SEL_AMIGA)
+  add_executable(hippo_lazy_open_test engine/hippo_lazy_open_test.c)
+  target_include_directories(hippo_lazy_open_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(hippo_lazy_open_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME hippo-lazy-open
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DTEST=$<TARGET_FILE:hippo_lazy_open_test>" "-DWORK=${SEL_NET_WORK}"
+      -P "${SEL_NET_DIR}/hippo_lazy_open.cmake")
+  set_tests_properties(hippo-lazy-open PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_lazy_open_ok")
+endif()
+
 # Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).
 if(NOT SEL_AMIGA)
   add_test(NAME source-aminet-net

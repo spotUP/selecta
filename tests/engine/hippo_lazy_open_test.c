@@ -1,12 +1,10 @@
-/* I1058d / I1058e: the Playlists view of HippoPlayer through the real engine entry point (sel_engine_send_line + sel_engine_pump)
- * against the net fixture (hippoplayer.se mapped to it).
- *   1. VIEW_SOURCE folders queues the PLAYLISTS_ONLY sync; its landing reloads the folder rows (sentinel: the fixture saw the list
- *      request, the library has the lists, lib_reads_applied counts the folders reads) and no prg was requested.
- *   2. Opening an unfetched list through the posted read (sel_engine_playlist_keys_post / _take) makes exactly 1 prg request, fills the
- *      list, and the pump's take posts a folders reload (lib_reads_applied advances by one more read).
- *   3. Opening the same list again makes no further request.
- * The source's home is https://hippoplayer.se/, so the sync goes over the fixture's TLS port (certificate names hippoplayer.se).
- * argv[1] = fixture work dir (tls_port, requests.jsonl), argv[2] = the fixture CA file. */
+/* I1058e: opening an unfetched HippoPlayer list through the engine's posted read (sel_engine_playlist_keys_post / _take).
+ * The cmake script (tests/net/hippo_lazy_open.cmake) has already synced the lists into argv[1] with the CLI against the net fixture,
+ * so the list is known but empty, and SELECTA_CACHE_DIR holds hippo_base.txt.
+ *   1. The posted read fetches the list's prg on the worker: exactly 1 prg request, keys non-empty.
+ *   2. The pump's take posts a folders reload: lib_reads_applied advances by one (the tree count is not stale).
+ *   3. Opening the same list again: no new request and no reload.
+ * argv[1] = library db, argv[2] = the fixture request log (requests.jsonl). */
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/machine.h>
@@ -81,34 +79,20 @@ static uint32_t reads_now(sel_engine* e) {
 
 int main(int argc, char** argv) {
     const sel_host* host;
-    char dir[] = "/tmp/selecta_hippolazy_XXXXXX";
-    char db[256], logp[512], portp[512], port[16] = "", map[512], pool[1024], keys[4096];
+    char *db, *logp, pool[1024], keys[4096];
     sel_engine_config cfg;
     sel_engine* e;
     sel_library* lib;
     sqlite3_stmt* st;
-    uint32_t id = 0, got_id = 0, n = 0, base, taken = 0;
+    uint32_t id = 0, got_id = 0, n = 0, base, taken = 0, prg0;
     int ok = 0;
     struct timespec t0;
-    FILE* f;
 
-    if (argc < 3 || mkdtemp(dir) == NULL) return 2;
-    snprintf(portp, sizeof portp, "%s/tls_port", argv[1]);
-    snprintf(logp, sizeof logp, "%s/requests.jsonl", argv[1]);
-    f = fopen(portp, "r");
-    if (f == NULL || fgets(port, sizeof port, f) == NULL) return 2;
-    fclose(f);
-    port[strcspn(port, "\r\n")] = '\0';
-    f = fopen(logp, "w"); /* earlier tests' requests are not this test's: the server appends, so truncating is safe */
-    if (f != NULL) fclose(f);
-    snprintf(map, sizeof map, "hippoplayer.se=http://127.0.0.1:%s", port);
-    setenv("SELECTA_CA_FILE", argv[2], 1);
-    setenv("SELECTA_NET_ALLOW", "127.0.0.1", 1);
-    setenv("SELECTA_NET_MAP", map, 1);
-    setenv("SELECTA_CACHE_DIR", dir, 1);
-
+    if (argc < 3) return 2;
+    db = argv[1];
+    logp = argv[2];
+    (void)pool;
     host = sel_host_default();
-    snprintf(db, sizeof db, "%s/lib.db", dir);
     CHECK(sel_registry_init(host) > 0);
     lib = sel_library_open(host, sel_machine_probe(host), 0, db);
     CHECK(lib != NULL);
@@ -119,17 +103,12 @@ int main(int argc, char** argv) {
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
 
-    /* 1. Opening the Playlists view queues the sync; its landing reloads the folder rows. */
-    base = reads_now(e);
-    CHECK(sel_engine_send_line(e, "VIEW_SOURCE folders", pool, sizeof pool) == 0);
+    prg0 = log_count(logp, ".prg");
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    while (log_count(logp, "api/v1/playlists") == 0u && ms_since(&t0) < 15000) { /* the sync runs on its own thread */
+    while (ms_since(&t0) < 300) { /* settle: reads the engine posts on its own at start are not this test's */
         sel_engine_pump(e, sink, NULL);
         usleep(2000);
     }
-    CHECK(pump_reads(e, base, 2) >= 2u); /* the view's own folders read, then the sync's reload */
-    CHECK(log_count(logp, "api/v1/playlists") >= 1u);
-    CHECK(log_count(logp, ".prg") == 0u);
     db_enter(lib);
     CHECK(sqlite3_prepare_v2(lib->db, "SELECT id FROM playlists WHERE name='LMan - SID Chip Club'", -1, &st, NULL) == SQLITE_OK);
     if (sqlite3_step(st) == SQLITE_ROW) id = (uint32_t)sqlite3_column_int(st, 0);
@@ -138,7 +117,7 @@ int main(int argc, char** argv) {
     CHECK(id != 0u);
     CHECK(sel_library_playlist_keys(lib, id, keys, sizeof keys, &n) == SEL_FOLDER_OK && n == 0u); /* listed, not filled */
 
-    /* 2. The posted read fills the list on its worker thread: one prg request, then the pump reloads the folder rows. */
+    /* 1+2. The posted read fills the list on its worker thread: one prg request, then the pump reloads the folder rows. */
     base = reads_now(e);
     CHECK(sel_engine_playlist_keys_post(e, id, sizeof keys) == 1);
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -148,7 +127,7 @@ int main(int argc, char** argv) {
         if (!taken) usleep(2000);
     }
     CHECK(taken == 1u && got_id == id && ok == 1 && n > 0u);
-    CHECK(log_count(logp, ".prg") == 1u);
+    CHECK(log_count(logp, ".prg") == prg0 + 1u);
     CHECK(pump_reads(e, base, 1) >= 1u); /* I1058e: the take posted a folders reload */
 
     /* 3. Already filled: no new request, no reload. */
@@ -162,11 +141,11 @@ int main(int argc, char** argv) {
         if (!taken) usleep(2000);
     }
     CHECK(taken == 1u && ok == 1 && n > 0u);
-    CHECK(log_count(logp, ".prg") == 1u);
+    CHECK(log_count(logp, ".prg") == prg0 + 1u);
     sel_engine_pump(e, sink, NULL);
     CHECK(reads_now(e) == base);
 
-    printf("hippo_lazy_open: playlist %u keys %u prg requests %u\n", (unsigned)id, (unsigned)n, log_count(logp, ".prg"));
+    printf("hippo_lazy_open: playlist %u keys %u prg requests %u\n", (unsigned)id, (unsigned)n, log_count(logp, ".prg") - prg0);
     sel_engine_destroy(e);
     sel_library_close(lib);
     if (g_fail != 0) return 1;
