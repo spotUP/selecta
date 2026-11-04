@@ -1941,6 +1941,20 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-config)
     set_tests_properties(sid-config PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_config_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-seek)
+    add_test(NAME sid-seek
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_seek.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_test.sid
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-seek)
+    set_tests_properties(sid-seek PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_seek_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-subsong)
+    add_test(NAME sid-subsong
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_subsong.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_subsongs.sid
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-subsong)
+    set_tests_properties(sid-subsong PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_subsong_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.
