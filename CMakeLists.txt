@@ -33,6 +33,7 @@ option(SEL_BUILD_TESTS "Build and register the ctest suite" ${SEL_BUILD_TESTS_DE
 option(SELECTA_GPL_PLUGINS "Build the GPL-3 plugin modules (sndh) as loadable libraries" OFF)
 option(SEL_TEST_BAD_PLUGIN "Compile a deliberately broken plugin descriptor (T5 negative path)" OFF)
 
+include(cmake/selecta_submodules.cmake)
 include(cmake/selecta_defs.cmake)
 include(cmake/selecta_plugin.cmake)
 include(cmake/selecta_lint.cmake)

@@ -815,7 +815,7 @@ endif()
 # T23: the nuade adapter lists every player in third_party/nuade/players.
 add_test(NAME nuade-players
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
-    "-DNUADE_DIR=${PROJECT_SOURCE_DIR}/third_party/nuade"
+    "-DNUADE_DIR=${SELECTA_NUADE_DIR}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/nuade_players.cmake")
 
 # T29: playlist codecs (Hippo .prg, M3U, PLS, XSPF), src/library/playlist.

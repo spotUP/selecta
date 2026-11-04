@@ -12,7 +12,7 @@
 enable_language(CXX)
 include("${PROJECT_SOURCE_DIR}/cmake/openmpt_sources.cmake")
 
-set(OPENMPT_DIR "${PROJECT_SOURCE_DIR}/third_party/libopenmpt")
+set(OPENMPT_DIR "${SELECTA_OPENMPT_DIR}")
 selecta_openmpt_sources("${OPENMPT_DIR}" SEL_OPENMPT_CXX_SOURCES)
 
 # sample_table.cpp (RP_SAMPLE_GET) reads libopenmpt internals; it is our file, not a vendored one.

@@ -1,7 +1,8 @@
 # T15 nuade-ab. Stock nuade (own float mixer, host only) is built here as
 # its own library, apart from selecta_nuade, so symbols never collide. Only
 # the protracker4 player is compiled in.
-set(NUADE_DIR "${PROJECT_SOURCE_DIR}/third_party/nuade")
+set(NUADE_DIR "${SELECTA_NUADE_DIR}")
+sel_require_submodule(SELECTA_NUADE_DIR third_party/nuade cmake/nuade_players.cmake)
 set(NUADE_PLAYERS "protracker4")
 include("${NUADE_DIR}/cmake/nuade_players.cmake")
 add_library(nuade_stock STATIC

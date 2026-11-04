@@ -13,7 +13,7 @@
 function(selecta_openmpt_sources OPENMPT_DIR OUT_VAR)
   set(_makefile "${OPENMPT_DIR}/Makefile")
   if(NOT EXISTS "${_makefile}")
-    message(FATAL_ERROR "libopenmpt submodule missing: run `git submodule update --init third_party/libopenmpt`")
+    message(FATAL_ERROR "libopenmpt submodule missing: run `git submodule update --init third_party/libopenmpt` in the main checkout, or pass -DSELECTA_OPENMPT_DIR=<path>")
   endif()
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_makefile}")
   # Whole-file regex, not file(STRINGS): Makefile lines carry ; and [ ] which

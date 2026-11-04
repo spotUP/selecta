@@ -6,7 +6,8 @@
 # the mixer, the song source and the I/O; see design doc section 4).
 # Also built for the 68k cross target (C11 on gcc 6.5, Phase 5).
 
-set(NUADE_DIR "${PROJECT_SOURCE_DIR}/third_party/nuade")
+set(NUADE_DIR "${SELECTA_NUADE_DIR}")
+sel_require_submodule(SELECTA_NUADE_DIR third_party/nuade cmake/nuade_players.cmake)
 set(NUADE_PLAYERS "all")
 include("${NUADE_DIR}/cmake/nuade_players.cmake")
 
