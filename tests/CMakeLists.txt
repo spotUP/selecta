@@ -1935,6 +1935,14 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/gme-decode)
   set_tests_properties(gme-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "gme_decode_ok")
 
+  # I862: a .vgz / .vgm file is never open_failed (the gme probe claimed the gzip and Vgm magics without a VGM core).
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/vgz-no-open-failed)
+  add_test(NAME vgz-no-open-failed
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/vgz_no_open_failed.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/vgm_test.vgz ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/vgm_test.vgm
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/vgz-no-open-failed)
+  set_tests_properties(vgz-no-open-failed PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "vgz_no_open_failed_ok")
+
   # I428: a YM (Atari ST chip music) file plays through the render entry point (ym replayer, StSound).
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ym-decode)
   add_test(NAME ym-decode
@@ -2002,6 +2010,18 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-subsong)
     set_tests_properties(sid-subsong PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_subsong_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+
+    # I431: VGM and VGZ play through the render entry point (libvgm module); the format list is reported.
+    if(TARGET sel_module_libvgm)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/libvgm-decode)
+      add_test(NAME libvgm-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/libvgm_decode.sh $<TARGET_FILE:selecta-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/vgm_test.vgm
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/vgm_test.vgz
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/libvgm-decode)
+      set_tests_properties(libvgm-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "libvgm_decode_ok"
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
   endif()
 
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.

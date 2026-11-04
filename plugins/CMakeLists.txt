@@ -127,3 +127,8 @@ endif()
 if(SEL_AMIGA)
   sel_add_plugin(arexx 9 scripting/arexx/arexx_plugin.c scripting/arexx/arexx_core.c scripting/arexx/arexx_amiga.c)
 endif()
+
+# VGM/S98/DRO/GYM via libvgm (I431): GPL-2.0-or-later module (GPL sound cores), loadable module only, opt-in, host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/libvgm)
+endif()

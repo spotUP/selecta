@@ -1,0 +1,4 @@
+libvgm (ValleyBell): https://github.com/ValleyBell/libvgm
+commit 61b62d64455e039de2a1d01498afa9e9b5f1cb88
+Copied: CMakeLists.txt cmake/ emu/ player/ utils/ common_def.h stdtype.h _stdbool.h. Dropped: audio/ (output drivers),
+libs/ (Windows prebuilt headers), vcxproj/sln files, test and sample programs. Not modified.
