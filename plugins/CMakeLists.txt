@@ -132,3 +132,8 @@ endif()
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/libvgm)
 endif()
+
+# Tracker formats libopenmpt and UADE do not play, via libxmp (I697): MIT module, loadable module only, host only.
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/xmp)
+endif()

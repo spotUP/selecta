@@ -1,0 +1,5 @@
+libxmp (Extended Module Player library): https://github.com/libxmp/libxmp
+commit bed660f8e530d399c38f27a5a7732f4e79740585 (release libxmp-4.6.3)
+Copied: include/ src/ (without src/bitrot [the only GPL-adjacent tree], src/lite, src/depackers, test and build files) cmake/libxmp-sources.cmake, COPYING
+(docs/COPYING). Dropped: depackers (archive unpackers, built with LIBXMP_NO_DEPACKERS), lite player, bitrot, tests, docs, autotools/other build files.
+Not modified.
