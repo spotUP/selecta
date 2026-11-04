@@ -5588,6 +5588,7 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     int songs, enabled;
     int64_t synced, snoozed, notice;
     if (f->n >= SEL_SOURCE_MAX) return;
+    if (sel_source_find(id) != NULL && (sel_source_find(id)->flags & SEL_SOURCE_PLAYLISTS_ONLY) != 0u) return; /* I1058: a Playlists group, not a Sources row */
     t = e->src_tags[f->n++];
     songs = e->lib != NULL ? sel_library_source_songs(e->lib, id) : 0;
     t[0].tag = SEL_SRC_KEY;
@@ -8113,6 +8114,21 @@ static void search_collect(sel_engine* e) {
 
 #endif
 
+static void sync_request(sel_engine* e, const char* id, const char* arg, int64_t now) {
+    if (!e->scan_running && !e->sync_running) {
+        sync_start(e, id, arg, now);
+        return;
+    }
+    if (e->sync_next_n >= SEL_SYNC_QUEUE) {
+        sel_engine_report_error(e, "sync_busy", id);
+        return;
+    }
+    snprintf(e->sync_next[e->sync_next_n].id, sizeof e->sync_next[0].id, "%s", id);
+    snprintf(e->sync_next[e->sync_next_n].arg, sizeof e->sync_next[0].arg, "%s", arg);
+    e->sync_next[e->sync_next_n].now = now;
+    e->sync_next_n++;
+}
+
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     const sel_source* src;
     int64_t now;
@@ -8128,18 +8144,30 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         return;
     }
     now = m->argc > 2 ? (int64_t)m->args[2].v.u : (int64_t)time(NULL);
-    if (!e->scan_running && !e->sync_running) {
-        sync_start(e, m->args[0].v.s, m->args[1].v.s, now);
+    sync_request(e, m->args[0].v.s, m->args[1].v.s, now);
+}
+
+/* I1058: opening the Playlists view syncs every PLAYLISTS_ONLY source that is enabled and due, the way a Sync click on its old
+ * Sources row did; its lists land in the tree as a read-only folder. */
+static void lists_sync_row(void* ctx, const char* id, const char* name, const char* home, int remote) {
+    sel_engine* e = ctx;
+    const sel_source* src = sel_source_find(id);
+    int64_t synced, snoozed;
+
+    (void)name;
+    if (src == NULL || (src->flags & SEL_SOURCE_PLAYLISTS_ONLY) == 0u || src->sync == NULL || !remote || e->lib == NULL ||
+        sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id)) {
         return;
     }
-    if (e->sync_next_n >= SEL_SYNC_QUEUE) {
-        sel_engine_report_error(e, "sync_busy", m->args[0].v.s);
-        return;
+    synced = sync_time_get(e, id);
+    snoozed = sel_source_snooze_at(e->prefs.value[SEL_PREF_LIBRARY_SYNC_SNOOZED], id);
+    if (sel_source_sync_due(synced, snoozed, (int64_t)time(NULL), (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10))) {
+        sync_request(e, id, home != NULL ? home : "", (int64_t)time(NULL));
     }
-    snprintf(e->sync_next[e->sync_next_n].id, sizeof e->sync_next[0].id, "%s", m->args[0].v.s);
-    snprintf(e->sync_next[e->sync_next_n].arg, sizeof e->sync_next[0].arg, "%s", m->args[1].v.s);
-    e->sync_next[e->sync_next_n].now = now;
-    e->sync_next_n++;
+}
+
+static void lists_sync_due(sel_engine* e) {
+    (void)sel_source_each(lists_sync_row, e);
 }
 
 /* Pump side of LIBRARY_SYNC: everything the synchronous command did after the sync runs here, on the shell thread,
@@ -8161,6 +8189,9 @@ static void sync_collect(sel_engine* e) {
         sel_engine_report_error(e, "sync_failed", e->sync_arg);
     } else {
         emit_library_path(e, e->sync_arg, e->sync_info.listing_rows);
+        if ((e->sync_src->flags & SEL_SOURCE_PLAYLISTS_ONLY) != 0u) {
+            folders_reload_posted(e); /* I1058: its lists are playlists now */
+        }
     }
     scan_start_next(e);
     sync_start_next(e);
@@ -8756,6 +8787,7 @@ static void view_source_apply(sel_engine* e, const sel_message* m) {
             return;
         }
         lib_read_post(e, &e->rd_folders, folders_read_run);
+        lists_sync_due(e);
     } else if (strcmp(what, "queue") != 0 && strcmp(what, "browse") != 0) {
         sel_engine_report_error(e, "unsupported", "VIEW_SOURCE");
         return;

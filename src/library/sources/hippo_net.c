@@ -47,6 +47,44 @@ static int tsv_ok(const char* path) {
     return ok;
 }
 
+/* A HiPPrg body is binary and never opens with markup. */
+static int prg_ok(const char* path) {
+    FILE* in = fopen(path, "rb");
+    int c;
+
+    if (in == NULL) {
+        return 0;
+    }
+    c = fgetc(in);
+    fclose(in);
+    return c != EOF && c != '<';
+}
+
+typedef struct prg_fetch {
+    const sel_host* host;
+    const sel_net* net;
+    const char* base; /* without trailing '/' */
+    int base_len;
+    const char* dir;
+    sel_hippo_net_stats* stats;
+} prg_fetch;
+
+/* GET <base>/api/v1/playlists/<filename> into <dir>/<filename>; the sync reads it from there. */
+static void fetch_prg(void* user, const char* file) {
+    prg_fetch* p = user;
+    char url[URL_BYTES];
+    char path[PATH_BYTES];
+    unsigned long got = 0;
+
+    if (snprintf(url, sizeof url, "%.*s/" SEL_HIPPO_API_PATH "/%s", p->base_len, p->base, file) >= (int)sizeof url ||
+        snprintf(path, sizeof path, "%s/%s", p->dir, file) >= (int)sizeof path) {
+        return;
+    }
+    if (p->net->get_file_checked(p->host, url, path, prg_ok, &p->stats->prg_requests, &got) == 200) {
+        p->stats->prg_files++;
+    }
+}
+
 int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_stats* stats, sel_hippo_net_stats* net) {
     const sel_net* net_svc = host->net != NULL ? host->net(host) : NULL;
     const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
@@ -79,6 +117,17 @@ int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_st
     net->tsv_bytes = have_tsv ? (uint32_t)got : 0u;
     if (!have_json && !have_tsv) {
         return 0;
+    }
+    {
+        prg_fetch p;
+
+        p.host = host;
+        p.net = net_svc;
+        p.base = base;
+        p.base_len = (int)n;
+        p.dir = dir;
+        p.stats = net;
+        sel_hippo_each_file(host, dir, fetch_prg, &p);
     }
     return sel_hippo_sync(sel_sync_cfg(host), dir, stats);
 }

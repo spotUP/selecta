@@ -2,6 +2,7 @@
 #include "hippo_sync.h"
 
 #include "source/latin1.h"
+#include "../db/db.h"
 #include "../local.h"
 #include "../source.h"
 #include "hippo_prg.h"
@@ -19,6 +20,10 @@
 #define F_ID 16u
 #define FORMAT_NAME "Hippo - Playlists"
 #define PRG_MAX_BYTES (4u * 1024u * 1024u)
+#define FOLDER_NAME "HippoPlayer" /* the Playlists folder that holds the published lists (I1058) */
+#define TREE_BYTES (512u * 1024u)
+#define KEYS_BYTES (1024u * 1024u)
+#define MADE_BYTES (64u * 1024u)
 
 typedef struct list_item {
     char file[F_FILE];
@@ -37,6 +42,16 @@ typedef struct sync_state {
     sel_annotation* notes;
     uint32_t n;
     int failed;
+    /* Playlists pass (I1058): the second read of the list files; each list becomes a playlist of the HippoPlayer folder. */
+    int lists_pass;
+    void (*each)(void* user, const char* file); /* sel_hippo_each_file: only report the filenames */
+    void* each_user;
+    const char* dir;
+    uint32_t folder;
+    char* tree; /* sel_library_folder_tree text: finds the playlists of the previous sync */
+    char* keys;
+    char* made; /* "\nfile" per list already made this sync: the JSON feed wins when the TSV names the same file with another title */
+    size_t made_len;
 } sync_state;
 
 static int send_request(sync_state* s, uint32_t req, const void* payload) {
@@ -66,12 +81,143 @@ static int flush_items(sync_state* s) {
     return send_request(s, SEL_LIB_REQ_ANNOTATE, &a);
 }
 
+/* Id of the playlist called `name` directly under folder `folder_id` in the tree text ("F id name" / "P id name" lines, two
+ * spaces of indent per level), 0 when none. */
+static uint32_t tree_playlist(const char* tree, uint32_t folder_id, const char* name) {
+    const char* l = tree;
+    int inside = 0;
+    size_t nl = strlen(name);
+
+    while (*l != '\0') {
+        const char* e = strchr(l, '\n');
+        size_t indent = 0;
+        const char* p;
+
+        if (e == NULL) {
+            e = l + strlen(l);
+        }
+        while (l[indent] == ' ') {
+            indent++;
+        }
+        p = l + indent;
+        if (indent == 0) {
+            inside = p[0] == 'F' && p[1] == ' ' && (uint32_t)strtoul(p + 2, NULL, 10) == folder_id;
+        } else if (inside && indent == 2u && p[0] == 'P' && p[1] == ' ') {
+            char* after;
+            unsigned long id = strtoul(p + 2, &after, 10);
+
+            if (*after == ' ' && (size_t)(e - (after + 1)) == nl && memcmp(after + 1, name, nl) == 0) {
+                return (uint32_t)id;
+            }
+        }
+        l = *e == '\n' ? e + 1 : e;
+    }
+    return 0;
+}
+
+/* Id of the top level folder FOLDER_NAME, made when missing; 0 on failure. Leaves the tree text in s->tree. */
+static uint32_t ensure_folder(sync_state* s) {
+    const char* l = s->tree;
+    uint32_t count = 0, id = 0;
+    size_t fl = sizeof FOLDER_NAME - 1u;
+
+    s->tree[0] = '\0';
+    if (sel_library_folder_tree(s->cfg->lib, s->tree, TREE_BYTES, &count) != SEL_FOLDER_OK) {
+        return 0;
+    }
+    while (l != NULL && *l != '\0') {
+        if (l[0] == 'F' && l[1] == ' ') {
+            char* after;
+            unsigned long fid = strtoul(l + 2, &after, 10);
+
+            if (*after == ' ' && strncmp(after + 1, FOLDER_NAME, fl) == 0 && (after[1 + fl] == '\n' || after[1 + fl] == '\0')) {
+                return (uint32_t)fid;
+            }
+        }
+        l = strchr(l, '\n');
+        if (l != NULL) {
+            l++;
+        }
+    }
+    return sel_library_folder_add(s->cfg->lib, FOLDER_NAME, 0, &id) == SEL_FOLDER_OK ? id : 0;
+}
+
+/* One list of the feed becomes a playlist called after its title: the songs of its fetched .prg, none when the file is
+ * missing. The playlist of the same name from the previous sync is replaced, so a sync never duplicates. */
+static int make_playlist(sync_state* s, const list_item* it) {
+    char path[SEL_BROWSE_PATH_MAX];
+    const sel_host* host = s->cfg->host;
+    FILE* f;
+    long size;
+    char* bytes = NULL;
+    uint32_t old, id = 0;
+
+    if (it->file[0] == '\0' || strchr(it->file, '/') != NULL || it->title[0] == '\0') {
+        return 1;
+    }
+    {
+        size_t fl = strlen(it->file);
+        char mark[SEL_BROWSE_PATH_MAX + 2];
+
+        if (fl + 3u > sizeof mark) {
+            return 1;
+        }
+        mark[0] = '\n';
+        memcpy(mark + 1, it->file, fl);
+        mark[fl + 1u] = '\n';
+        mark[fl + 2u] = '\0';
+        if (strstr(s->made, mark) != NULL) {
+            return 1; /* the other feed already made this file's playlist */
+        }
+        if (s->made_len + fl + 2u < MADE_BYTES) { /* made starts as "\n" */
+            memcpy(s->made + s->made_len, mark + 1, fl + 1u);
+            s->made_len += fl + 1u;
+            s->made[s->made_len] = '\0';
+        }
+    }
+    s->keys[0] = '\0';
+    if (sel_browse_join(path, sizeof path, s->dir, it->file) && (f = fopen(path, "rb")) != NULL) {
+        if (fseek(f, 0, SEEK_END) == 0 && (size = ftell(f)) > 0 && (unsigned long)size <= PRG_MAX_BYTES &&
+            fseek(f, 0, SEEK_SET) == 0) {
+            bytes = host->mem_alloc(host, (size_t)size, SEL_MEM_FAST);
+            if (bytes != NULL && fread(bytes, 1, (size_t)size, f) == (size_t)size) {
+                (void)sel_hippo_prg_keys(host, bytes, (size_t)size, s->keys, KEYS_BYTES);
+            }
+        }
+        if (bytes != NULL) {
+            host->mem_free(host, bytes);
+        }
+        fclose(f);
+    }
+    old = tree_playlist(s->tree, s->folder, it->title);
+    if (old != 0 && sel_library_playlist_del(s->cfg->lib, old) != SEL_FOLDER_OK) {
+        s->failed = 1;
+        return 0;
+    }
+    if (sel_library_playlist_add(s->cfg->lib, it->title, s->folder, s->keys, &id) != SEL_FOLDER_OK) {
+        s->failed = 1;
+        return 0;
+    }
+    s->st->playlists++;
+    return 1;
+}
+
 /* Slot s->n holds a parsed record: counts it and queues its row and stickers. */
 static int commit_item(sync_state* s) {
     list_item* it = &s->items[s->n];
     sel_scan_row* r = &s->rows[s->n];
     sel_annotation* a = &s->notes[s->n];
     uint32_t k = 0;
+
+    if (s->each != NULL) {
+        if (it->file[0] != '\0' && strchr(it->file, '/') == NULL) {
+            s->each(s->each_user, it->file);
+        }
+        return 1;
+    }
+    if (s->lists_pass) {
+        return make_playlist(s, it);
+    }
 
     if (it->file[0] == '\0' || strchr(it->file, '/') != NULL) {
         s->st->skipped++;
@@ -362,6 +508,29 @@ static int apply_prg(sync_state* s, const char* name, const char* file) {
     return ok;
 }
 
+void sel_hippo_each_file(const sel_host* host, const char* dir, void (*fn)(void* user, const char* file), void* user) {
+    sync_state s;
+    sel_hippo_sync_stats st;
+    char path[SEL_BROWSE_PATH_MAX];
+
+    memset(&s, 0, sizeof s);
+    memset(&st, 0, sizeof st);
+    s.st = &st;
+    s.each = fn;
+    s.each_user = user;
+    s.items = host->mem_alloc(host, sizeof *s.items, SEL_MEM_FAST);
+    if (s.items == NULL) {
+        return;
+    }
+    if (sel_browse_join(path, sizeof path, dir, SEL_HIPPO_LIST_JSON)) {
+        (void)sync_json(&s, path);
+    }
+    if (sel_browse_join(path, sizeof path, dir, SEL_HIPPO_LIST_TSV)) {
+        (void)sync_tsv(&s, path);
+    }
+    host->mem_free(host, s.items);
+}
+
 int sel_hippo_sync(const sel_local_scan_config* cfg, const char* dir, sel_hippo_sync_stats* stats) {
     sync_state s;
     const sel_host* host = cfg->host;
@@ -399,6 +568,37 @@ int sel_hippo_sync(const sel_local_scan_config* cfg, const char* dir, sel_hippo_
                 }
             }
             sel_browse_free(&br, host);
+        }
+        /* I1058: the same lists again, now as playlists of the HippoPlayer folder (prgs are on disk by now). The tree text is
+         * read again per feed so a list in both feeds replaces itself. */
+        s.tree = host->mem_alloc(host, TREE_BYTES, SEL_MEM_FAST);
+        s.keys = host->mem_alloc(host, KEYS_BYTES, SEL_MEM_FAST);
+        s.made = host->mem_alloc(host, MADE_BYTES, SEL_MEM_FAST);
+        if (ok && (s.tree == NULL || s.keys == NULL || s.made == NULL)) {
+            ok = 0;
+        }
+        if (ok) {
+            s.lists_pass = 1;
+            s.made[0] = '\n';
+            s.made[1] = '\0';
+            s.made_len = 1u;
+            s.dir = dir;
+            if (sel_browse_join(path, sizeof path, dir, SEL_HIPPO_LIST_JSON) && (s.folder = ensure_folder(&s)) != 0) {
+                (void)sync_json(&s, path);
+            }
+            if (!s.failed && sel_browse_join(path, sizeof path, dir, SEL_HIPPO_LIST_TSV) && (s.folder = ensure_folder(&s)) != 0) {
+                (void)sync_tsv(&s, path);
+            }
+            ok = !s.failed && s.folder != 0;
+        }
+        if (s.tree != NULL) {
+            host->mem_free(host, s.tree);
+        }
+        if (s.made != NULL) {
+            host->mem_free(host, s.made);
+        }
+        if (s.keys != NULL) {
+            host->mem_free(host, s.keys);
         }
     }
     if (s.items != NULL) {
