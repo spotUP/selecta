@@ -38,6 +38,7 @@ include(cmake/selecta_defs.cmake)
 include(cmake/selecta_plugin.cmake)
 include(cmake/selecta_lint.cmake)
 include(cmake/selecta_desktop.cmake)
+include(cmake/selecta_sdk.cmake)
 
 add_subdirectory(src)
 add_subdirectory(plugins)

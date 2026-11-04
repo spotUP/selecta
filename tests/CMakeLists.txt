@@ -3082,6 +3082,14 @@ set_tests_properties(library-gen-bench PROPERTIES LABELS m3 PASS_REGULAR_EXPRESS
 
 sel_isolate_config()
 
+# I427c: the installed SDK builds examples/plugin-sine out of tree and selecta-cli loads and renders it (sentinel inside).
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_test(NAME sdk-example
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/sdk/sdk_example.sh" $<TARGET_FILE:selecta-cli> "${CMAKE_COMMAND}"
+            "${PROJECT_SOURCE_DIR}" "${PROJECT_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/sdk-example")
+  set_tests_properties(sdk-example PROPERTIES LABELS sdk TIMEOUT 300 PASS_REGULAR_EXPRESSION "sdk_example_ok")
+endif()
+
 # I427f: built-ins are modules (SELECTA_PLUGIN_LINK=MODULE): no sel_plugin_* symbol in the binary, modules render, a
 # missing module is reported. Own label so dui-ratchet does not count it.
 if(SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
