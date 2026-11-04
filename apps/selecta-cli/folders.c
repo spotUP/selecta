@@ -4,6 +4,7 @@
 #include <selecta/registry.h>
 #include "cli.h"
 #include "db.h"
+#include "sources/hippo_net.h"
 #include "playlist/playlist.h"
 
 #include <stdio.h>
@@ -51,7 +52,9 @@ static int folder_export(sel_library* lib, uint32_t folder, const char* dir, con
             clean[n++] = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_' ? c : '_';
         }
         clean[n] = '\0';
-        if (sel_library_playlist_keys(lib, id, keys, sizeof keys, &nkeys) != SEL_FOLDER_OK) {
+        /* I1058a: a HippoPlayer list is fetched on its first open; the DB read itself never fetches. */
+        if (sel_hippo_ensure_playlist(lib, id) < 0 ||
+            sel_library_playlist_keys(lib, id, keys, sizeof keys, &nkeys) != SEL_FOLDER_OK) {
             fail = 1;
             break;
         }

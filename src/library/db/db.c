@@ -4,7 +4,6 @@
  * further libraries (other accounts) share it. */
 #include "db_internal.h"
 #include "schema.h"
-#include "../sources/hippo_net.h"
 
 #include <selecta/machine.h>
 
@@ -778,21 +777,7 @@ int sel_library_folder_playlists(sel_library* lib, uint32_t folder, char* out, u
 }
 
 int sel_library_playlist_keys(sel_library* lib, uint32_t playlist, char* out, uint32_t cap, uint32_t* count) {
-    int rc = folder_text_call(lib, SEL_USER_PLAYLIST_KEYS, playlist, out, cap, count);
-
-    /* I1058a: a HippoPlayer list is listed empty by the sync and filled on its first open: every open path (engine play,
-     * posted read, songs_open, export) reads its keys here. A failed fetch leaves it empty, so the next open retries. */
-    if (rc == SEL_FOLDER_OK && *count == 0u && lib->host != NULL) {
-        int filled = sel_hippo_open_playlist(lib, lib->host, playlist);
-
-        if (filled < 0) {
-            return SEL_FOLDER_ERR_FAILED;
-        }
-        if (filled > 0) {
-            rc = folder_text_call(lib, SEL_USER_PLAYLIST_KEYS, playlist, out, cap, count);
-        }
-    }
-    return rc;
+    return folder_text_call(lib, SEL_USER_PLAYLIST_KEYS, playlist, out, cap, count);
 }
 
 int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t* count) {

@@ -3,6 +3,7 @@
 
 #include "sync_host.h"
 #include "../db/db.h"
+#include "../db/db_internal.h"
 #include "../source.h"
 
 #include <selecta/catalogue.h>
@@ -179,6 +180,19 @@ int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id)
     }
     base->mem_free(base, keys);
     return rc;
+}
+
+int sel_hippo_ensure_playlist(sel_library* lib, uint32_t id) {
+    char keys[64];
+    uint32_t count = 0;
+
+    if (lib == NULL || lib->host == NULL) {
+        return 0;
+    }
+    if (sel_library_playlist_keys(lib, id, keys, sizeof keys, &count) != SEL_FOLDER_OK || count != 0u) {
+        return 0; /* unreadable (the caller's own read reports it) or already filled */
+    }
+    return sel_hippo_open_playlist(lib, lib->host, id);
 }
 
 int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_stats* stats, sel_hippo_net_stats* net) {

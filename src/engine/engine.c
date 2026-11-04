@@ -42,6 +42,7 @@
 #include "song_key.h"
 #include "songlen.h"
 #include "export/export.h"
+#include "sources/hippo_net.h"
 #include "prefs.h"
 #include "view.h"
 #include "../core/pal.h"
@@ -6916,6 +6917,8 @@ static void wq_playlist_play_run(sel_library* lib, sel_wq_op* op) {
     uint32_t n = 0;
 
     keys[0] = '\0';
+    /* I1058a: a HippoPlayer list is fetched here on the worker, never on the pump (I829). A failed fetch leaves it empty and retryable. */
+    op->u2 = sel_hippo_ensure_playlist(lib, op->u1) > 0 ? 1u : 0u;
     op->rc = sel_library_playlist_keys(lib, op->u1, keys, PLAYLIST_KEYS_CAP, &n) == SEL_FOLDER_OK;
 }
 
@@ -6923,6 +6926,7 @@ static void wq_playlist_play_done(sel_engine* e, sel_wq_op* op) {
     uint32_t before = e->queue.count;
     const char* k;
 
+    if (op->u2) folders_reload_posted(e); /* a HippoPlayer list was just filled: refresh the song counts */
     if (!op->rc) return;
     for (k = (const char*)op->res; *k != '\0'; k += strlen(k) + 1u) queue_insert(e, e->queue.count, k, op->s[0]);
     if (e->queue.count > before) queue_start(e, before);
@@ -9205,6 +9209,8 @@ int sel_engine_song_briefs_take(sel_engine* e, char* out, size_t cap, uint32_t* 
 static void playlist_keys_read(sel_engine* e) {
     uint32_t n = 0;
 
+    /* I1058a: fetch an unfetched HippoPlayer list on this worker thread before reading its keys. */
+    if (e->lib != NULL) (void)sel_hippo_ensure_playlist(e->lib, e->pk_id);
     e->pk_ok = e->lib != NULL && sel_library_playlist_keys(e->lib, e->pk_id, e->pk_out, (uint32_t)e->pk_cap, &n) == SEL_FOLDER_OK;
     e->pk_n = e->pk_ok ? n : 0u;
     __atomic_store_n(&e->pk_state, 2, __ATOMIC_RELEASE);

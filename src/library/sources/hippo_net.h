@@ -28,4 +28,9 @@ int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_st
  * HippoPlayer list (nothing done), -1 failed (404, network, no songs): the list stays empty, so the next open retries. */
 int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id);
 
+/* I1058a: worker-thread entry. When playlist `id` has no songs and is an unfetched HippoPlayer list, fetches it through
+ * sel_hippo_open_playlist (the library's own host). Returns <0 failed, 0 nothing to do, >0 filled. May block on HTTP:
+ * call it only from a worker or CLI thread, never from the pump (I829). The DB layer never calls it. */
+int sel_hippo_ensure_playlist(sel_library* lib, uint32_t id);
+
 #endif
