@@ -1,0 +1,7 @@
+TIATracker song and replay code (Atari 2600 TIA music, .ttt) with Stella's TIA sound, as packaged by bbmp.
+License: GPL-2.0-only (TIATracker; the Stella parts are GPL-2.0-or-later). Full text in license.txt, provenance of each file in README.txt.
+Upstream: dionoid/tiatracker on GitHub, commit f523802160735969f984fc7db01d1ad40e1d5e6d.
+Packaged by: creep-ltx/bbmp on GitHub, commit 19d87098b3716156d80224d22dc49ca22884d1b7, folder csrc/tiatracker.
+Vendored unchanged from bbmp: track/, tiasound/, emulation/, shim/ (the Qt stand-in), license.txt, README.txt.
+emulation/player.h carries bbmp's three accessors (bbmpPlaying, bbmpSound, bbmpFrame).
+Not vendored: bbmp-tiatracker.cpp (the stdout-protocol program); plugins/replayers/tiatracker/engine.cpp is its in-process replacement.
