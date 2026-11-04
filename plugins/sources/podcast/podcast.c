@@ -14,6 +14,10 @@
  * Index key, search off" on stderr and does nothing; subscribing by feed URL needs no key. SELECTA_PODCAST_INDEX_API
  * replaces the API base (default https://api.podcastindex.org; tests point it at a fixture).
  *
+ * A sync with the source home (PODCAST_HOME) or an empty argument reads the curated default list (g_default_feeds, no
+ * key); with a key and secret set it also reads Podcast Index trending. A reply that is not RSS/Atom, or a sync that
+ * reads 0 episodes, fails (sync_failed); it never commits 0 rows as success.
+ *
  * A "sync" takes one argument: a feed URL (the feed's episodes become the source's rows) or `search:<term>` (Podcast
  * Index /api/1.0/search/byterm, the first matching feed is then read like a feed URL). A song key is
  * `podcast:<show>/<episode>/<enclosure url>`; play_url returns the enclosure URL and the engine streams it with HTTP
@@ -35,6 +39,7 @@
 #include <time.h>
 
 #define DEFAULT_API "https://api.podcastindex.org"
+#define PODCAST_HOME "https://podcastindex.org/"
 #define USER_AGENT "Selecta-Podcast/1 (+https://github.com/spotUP/Selecta)"
 #define FEED_CAP (2u * 1024u * 1024u)
 #define URL_BYTES 1100u
@@ -263,19 +268,30 @@ static void url_encode(const char* s, char* out, size_t n) {
     out[o] = '\0';
 }
 
-/* Podcast Index search: the first result feed's "url" value. 0 when there is no key or no hit. */
-static int search_feed(const sel_host* host, const sel_net* net, const char* term, char* feed, size_t n, uint32_t* rq,
-                       unsigned long* bytes, int64_t now) {
+/* Curated default feeds (I1072a): chiptune, demoscene and tracker-music shows, each checked live as RSS on
+ * 2026-11-04. A Sync with the source home (or an empty argument) reads all of them, no key needed.
+ * SELECTA_PODCAST_DEFAULT_FEEDS (comma separated URLs) replaces the list; tests point it at a fixture. */
+static const char* const g_default_feeds[] = {
+    "https://rss.libsyn.com/shows/60318/destinations/232497.xml", /* This Week in Chiptune */
+    "https://rss.libsyn.com/shows/107052/destinations/579232.xml", /* Chiptune Tech */
+    "https://feeds.simplecast.com/PW3aLaJp", /* What Happened to Chiptune? */
+    "https://amigavibes.lepodcast.fr/rss", /* Amigavibes (Amiga and demoscene music) */
+    "https://www.retrounlim.com/feed/podcast/odd-pod-retro-game-music/", /* Odd Pod's Retro Game Music */
+    "https://pixelatedaudio.com/feed/podcast/", /* Pixelated Audio (game and tracker music) */
+    "https://feeds.soundcloud.com/users/soundcloud:users:706424005/sounds.rss", /* Radio64 */
+};
+
+/* One authenticated Podcast Index GET (path + query below the API base). Returns the HTTP status, or 0 when there is
+ * no key and secret (a message goes to stderr). */
+static int pi_request(const sel_host* host, const sel_net* net, const char* path, char* buf, uint32_t cap,
+                      uint32_t* rq, unsigned long* bytes, int64_t now) {
     const char* key = secret_of(host, "sources.podcast_index_key", "SELECTA_PODCAST_INDEX_KEY");
     const char* secret = secret_of(host, "sources.podcast_index_secret", "SELECTA_PODCAST_INDEX_SECRET");
-    char date[24], hash[41], h1[160], h2[64], h3[96], q[300], url[600];
+    char date[24], hash[41], h1[160], h2[64], h3[96], url[700];
     const char* hdr[4];
-    char* buf;
     uint32_t got = 0;
     sha1 s;
-    int status, ok = 0;
-    const char* u;
-    size_t i;
+    int status;
 
     if (key == NULL || key[0] == '\0' || secret == NULL || secret[0] == '\0') {
         fputs("podcast: no Podcast Index key, search off (set prefs sources.podcast_index_key and "
@@ -296,43 +312,138 @@ static int search_feed(const sel_host* host, const sel_net* net, const char* ter
     hdr[1] = h2;
     hdr[2] = h3;
     hdr[3] = NULL;
-    url_encode(term, q, sizeof q);
-    snprintf(url, sizeof url, "%s/api/1.0/search/byterm?q=%s", api_base(), q);
-    buf = (char*)malloc(256u * 1024u);
+    snprintf(url, sizeof url, "%s%s", api_base(), path);
+    status = net->request_ex(host, url, USER_AGENT, hdr, buf, cap - 1u, &got, rq);
+    *bytes += got;
+    buf[got] = '\0';
+    return status;
+}
+
+/* The idx-th feed "url" value in a Podcast Index JSON reply (0 = first). 0 when there is none. */
+static int json_feed_url(const char* json, unsigned idx, char* feed, size_t n) {
+    const char* u = json;
+    size_t i = 0;
+
+    for (;;) {
+        u = strstr(u, "\"url\"");
+        if (u == NULL) {
+            return 0;
+        }
+        u += 5;
+        if (idx-- == 0) {
+            break;
+        }
+    }
+    for (; *u == ' ' || *u == ':'; u++) {
+    }
+    for (u += *u == '"' ? 1 : 0; *u != '\0' && *u != '"' && i + 1 < n; u++) {
+        if (u[0] == '\\' && u[1] == '/') {
+            continue;
+        }
+        feed[i++] = *u;
+    }
+    feed[i] = '\0';
+    return i > 0;
+}
+
+/* Podcast Index search: the first result feed's "url" value. 0 when there is no key or no hit. */
+static int search_feed(const sel_host* host, const sel_net* net, const char* term, char* feed, size_t n, uint32_t* rq,
+                       unsigned long* bytes, int64_t now) {
+    char q[300], path[400];
+    char* buf = (char*)malloc(256u * 1024u);
+    int ok = 0;
+
     if (buf == NULL) {
         return 0;
     }
-    status = net->request_ex(host, url, USER_AGENT, hdr, buf, 256u * 1024u - 1u, &got, rq);
-    *bytes += got;
-    if (status == 200) {
-        buf[got] = '\0';
-        u = strstr(buf, "\"url\"");
-        if (u != NULL) {
-            for (u += 5; *u == ' ' || *u == ':'; u++) {
-            }
-            for (u += *u == '"' ? 1 : 0, i = 0; *u != '\0' && *u != '"' && i + 1 < n; u++) {
-                if (u[0] == '\\' && u[1] == '/') {
-                    continue;
-                }
-                feed[i++] = *u;
-            }
-            feed[i] = '\0';
-            ok = i > 0;
-        }
+    url_encode(term, q, sizeof q);
+    snprintf(path, sizeof path, "/api/1.0/search/byterm?q=%s", q);
+    if (pi_request(host, net, path, buf, 256u * 1024u, rq, bytes, now) == 200) {
+        ok = json_feed_url(buf, 0, feed, n);
     }
     free(buf);
     return ok;
+}
+
+/* True when the reply is an RSS or Atom document and not the HTML of a web page. */
+static int looks_like_feed(const char* body) {
+    const char* root = strstr(body, "<rss");
+    const char* atom = strstr(body, "<feed");
+    const char* html = strstr(body, "<html");
+
+    if (root == NULL || (atom != NULL && atom < root)) {
+        root = atom;
+    }
+    return root != NULL && (html == NULL || root < html);
+}
+
+/* Fetch one feed URL and add its episodes. 0 (message on stderr) when the request failed or the reply is not RSS. */
+static int sync_feed(run* r, const sel_net* net, const char* feed, char* buf, uint32_t* rq, unsigned long* bytes) {
+    uint32_t got = 0;
+    int status = net->request_ex(r->host, feed, USER_AGENT, NULL, buf, FEED_CAP - 1u, &got, rq);
+
+    *bytes += got;
+    if (status != 200) {
+        fprintf(stderr, "podcast: %s answered HTTP %d, feed skipped\n", feed, status);
+        return 0;
+    }
+    buf[got] = '\0';
+    if (!looks_like_feed(buf)) {
+        fprintf(stderr, "podcast: %s is not an RSS or Atom feed, skipped\n", feed);
+        return 0;
+    }
+    read_feed(r, buf, got);
+    return 1;
+}
+
+static int is_home(const char* arg) {
+    return arg[0] == '\0' || strcmp(arg, PODCAST_HOME) == 0;
+}
+
+/* The home sync: the curated default list, plus Podcast Index trending when a key and secret are set. */
+static int sync_home(run* r, const sel_host* host, const sel_net* net, char* buf, uint32_t* rq, unsigned long* bytes,
+                     int64_t now) {
+    const char* env = getenv("SELECTA_PODCAST_DEFAULT_FEEDS");
+    char list[1100], feed[URL_BYTES];
+    char* tok;
+    char* js;
+    size_t i;
+    unsigned k;
+    int ok = 0;
+
+    fputs("podcast: default feed list\n", stderr);
+    if (env != NULL && env[0] != '\0' && strlen(env) < sizeof list) {
+        snprintf(list, sizeof list, "%s", env);
+        for (tok = strtok(list, ","); tok != NULL; tok = strtok(NULL, ",")) {
+            ok += sync_feed(r, net, tok, buf, rq, bytes);
+        }
+    } else {
+        for (i = 0; i < sizeof g_default_feeds / sizeof g_default_feeds[0]; i++) {
+            ok += sync_feed(r, net, g_default_feeds[i], buf, rq, bytes);
+        }
+    }
+    if (secret_of(host, "sources.podcast_index_key", "SELECTA_PODCAST_INDEX_KEY") != NULL) {
+        js = (char*)malloc(256u * 1024u);
+        if (js != NULL && pi_request(host, net, "/api/1.0/podcasts/trending?max=10", js, 256u * 1024u, rq, bytes, now) == 200) {
+            fputs("podcast: Podcast Index trending\n", stderr);
+            for (k = 0; k < 10 && json_feed_url(js, k, feed, sizeof feed); k++) {
+                ok += sync_feed(r, net, feed, buf, rq, bytes);
+            }
+        }
+        free(js);
+    }
+    return ok > 0;
 }
 
 static int pc_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
     const sel_net* net = host->net != NULL ? host->net(host) : NULL;
     const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
     char feed[URL_BYTES];
-    uint32_t rq = 0, got = 0;
+    uint32_t rq = 0;
     unsigned long bytes = 0;
     char* buf;
     run r;
-    int status, ok = 0;
+    int ok;
 
     if (net == NULL || net->request_ex == NULL || cat == NULL || arg == NULL) {
         return 0;
@@ -341,10 +452,11 @@ static int pc_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* 
         if (!search_feed(host, net, arg + 7, feed, sizeof feed, &rq, &bytes, now)) {
             return 0;
         }
-    } else if (strlen(arg) < sizeof feed) {
+    } else if (!is_home(arg)) {
+        if (strlen(arg) >= sizeof feed) {
+            return 0;
+        }
         snprintf(feed, sizeof feed, "%s", arg);
-    } else {
-        return 0;
     }
     memset(&r, 0, sizeof r);
     r.host = host;
@@ -354,14 +466,14 @@ static int pc_sync(const sel_host* host, const char* arg, int64_t now, sel_tag* 
         free(buf);
         return 0;
     }
-    status = net->request_ex(host, feed, USER_AGENT, NULL, buf, FEED_CAP - 1u, &got, &rq);
-    bytes += got;
-    if (status == 200) {
-        buf[got] = '\0';
-        read_feed(&r, buf, got);
-        ok = 1;
-    }
+    ok = is_home(arg) ? sync_home(&r, host, net, buf, &rq, &bytes, now) : sync_feed(&r, net, feed, buf, &rq, &bytes);
     free(buf);
+    if (ok && r.rows == 0) {
+        fputs("podcast: the feeds hold no episodes, sync failed\n", stderr);
+        ok = 0;
+    } else if (!ok) {
+        fputs("podcast: no RSS or Atom feed could be read, sync failed\n", stderr);
+    }
     if (ok) {
         ok = cat->commit(host);
     } else {
@@ -427,10 +539,10 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
 }
 
 static const sel_source g_podcast = {
-    "podcast", "Podcast", "https://podcastindex.org/",
+    "podcast", "Podcast", PODCAST_HOME,
     "Podcast episodes from an RSS feed URL or Podcast Index search (search needs your own free key).",
     g_tags, NULL, parse, NULL, NULL, NULL, NULL, NULL, pc_sync,
-    SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS | SEL_SOURCE_SEEKABLE, "https://podcastindex.org/", pc_play_url,
+    SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS | SEL_SOURCE_SEEKABLE, PODCAST_HOME, pc_play_url,
     NULL, /* search (I406) */
     NULL, /* search_ready (I1037) */
 };

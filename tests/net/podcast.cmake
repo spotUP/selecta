@@ -68,6 +68,48 @@ if(NOT hrc EQUAL 0)
   message(FATAL_ERROR "I725f: Authorization is not SHA-1(key+secret+date): ${sauth} date ${sdate}")
 endif()
 
+# 2b. I1072a: the UI Sync sends the source home. It syncs the default feed list (here the fixture feeds through
+# SELECTA_PODCAST_DEFAULT_FEEDS; one of them is an HTML page and is skipped) with no key: 3 rows, sentinel on stderr.
+# With a key and secret Podcast Index trending is added (+1 row). An HTML-only list fails the sync, 0 rows committed.
+unset(ENV{SELECTA_PODCAST_INDEX_KEY})
+unset(ENV{SELECTA_PODCAST_INDEX_SECRET})
+set(ENV{SELECTA_PODCAST_DEFAULT_FEEDS} "http://pod.test/pod/home.html,http://pod.test/pod/feed.xml")
+set(HDB "${WORK}/pod-home.db")
+file(REMOVE "${HDB}")
+execute_process(COMMAND "${CLI}" library sync --db "${HDB}" --now 2000 --dump podcast "https://podcastindex.org/"
+  OUTPUT_VARIABLE so4 ERROR_VARIABLE se4 RESULT_VARIABLE src4 TIMEOUT 40)
+if(NOT src4 EQUAL 0 OR NOT so4 MATCHES "listing_rows=3" OR NOT se4 MATCHES "podcast: default feed list"
+   OR NOT se4 MATCHES "pod.test/pod/home.html is not an RSS or Atom feed")
+  message(FATAL_ERROR "I1072a: home sync must read the default list (3 rows) and skip the HTML page (rc=${src4})\n${so4}${se4}")
+endif()
+if(se4 MATCHES "Podcast Index trending")
+  message(FATAL_ERROR "I1072a: trending must stay off without a key\n${se4}")
+endif()
+set(ENV{SELECTA_PODCAST_INDEX_KEY} "testkey")
+set(ENV{SELECTA_PODCAST_INDEX_SECRET} "testsecret")
+file(REMOVE "${HDB}")
+execute_process(COMMAND "${CLI}" library sync --db "${HDB}" --now 2000 --dump podcast "https://podcastindex.org/"
+  OUTPUT_VARIABLE so5 ERROR_VARIABLE se5 RESULT_VARIABLE src5 TIMEOUT 40)
+if(NOT src5 EQUAL 0 OR NOT so5 MATCHES "listing_rows=4" OR NOT se5 MATCHES "Podcast Index trending"
+   OR NOT so5 MATCHES "Trend-Show/Trend One/")
+  message(FATAL_ERROR "I1072a: home sync with a key must add trending (4 rows) (rc=${src5})\n${so5}${se5}")
+endif()
+unset(ENV{SELECTA_PODCAST_INDEX_KEY})
+unset(ENV{SELECTA_PODCAST_INDEX_SECRET})
+set(ENV{SELECTA_PODCAST_DEFAULT_FEEDS} "http://pod.test/pod/home.html")
+file(REMOVE "${HDB}")
+execute_process(COMMAND "${CLI}" library sync --db "${HDB}" --now 2000 podcast "https://podcastindex.org/"
+  OUTPUT_VARIABLE so6 ERROR_VARIABLE se6 RESULT_VARIABLE src6 TIMEOUT 40)
+if(src6 EQUAL 0 OR NOT (so6 MATCHES "sync_failed" OR se6 MATCHES "sync_failed") OR NOT se6 MATCHES "sync failed")
+  message(FATAL_ERROR "I1072a: an HTML reply must fail the sync with sync_failed (rc=${src6})\n${so6}${se6}")
+endif()
+if(so6 MATCHES "db_songs=[1-9]")
+  message(FATAL_ERROR "I1072a: an HTML reply must commit no rows\n${so6}")
+endif()
+unset(ENV{SELECTA_PODCAST_DEFAULT_FEEDS})
+set(ENV{SELECTA_PODCAST_INDEX_KEY} "testkey")
+set(ENV{SELECTA_PODCAST_INDEX_SECRET} "testsecret")
+
 # 3. Descriptive User-Agent on every request.
 string(REGEX MATCHALL "pod_ua=" ua_all "${rq}")
 string(REGEX MATCHALL "pod_ua=selecta-podcast/1 " ua_ok "${rq}")

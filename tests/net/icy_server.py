@@ -138,7 +138,7 @@ def serve(c):
         time.sleep(0.2)
         c.close()
         return
-    if target.startswith(("/pod/", "/api/1.0/search/byterm")):  # I725f: podcast RSS feed, Podcast Index search, Range audio
+    if target.startswith(("/pod/", "/api/1.0/search/byterm", "/api/1.0/podcasts/trending")):  # I725f: podcast RSS feed, Podcast Index search, Range audio
         ua = [l for l in req.split("\r\n") if l.startswith("user-agent:")]
         uas = ua[0].split(":", 1)[1].strip() if ua else "none"
         hdrs = {l.split(":", 1)[0]: l.split(":", 1)[1].strip() for l in req.split("\r\n")[1:] if ":" in l}
@@ -153,6 +153,18 @@ def serve(c):
                 rq.write("pod_auth=%s\n" % hdrs.get("authorization", ""))
             body = json.dumps({"status": "true", "feeds": [{"id": 1, "title": "Fixture Show", "url": "http://pod.test/pod/feed.xml"}],
                                "count": 1}).encode()
+        elif target.startswith("/api/1.0/podcasts/trending"):  # I1072a: Podcast Index trending, one fixture feed
+            with open(port_file + ".requests", "a") as rq:
+                rq.write("pod_trending key=%s auth=%d\n" % (hdrs.get("x-auth-key", ""), len(hdrs.get("authorization", ""))))
+            body = json.dumps({"status": "true", "feeds": [{"id": 2, "title": "Trend Show", "url": "http://pod.test/pod/trend.xml"}],
+                               "count": 1}).encode()
+        elif target.startswith("/pod/home.html"):  # I1072a: a web page where a feed is expected
+            ctype = "text/html"
+            body = b"<!DOCTYPE html><html><head><title>Podcast Index</title></head><body>not a feed</body></html>"
+        elif target.startswith("/pod/trend.xml"):
+            ctype = "application/rss+xml"
+            body = (b'<?xml version="1.0"?><rss version="2.0"><channel><title>Trend-Show</title><item><title>Trend One</title>'
+                    b'<enclosure url="http://icy.test/pod/tr1.mp3" length="1" type="audio/mpeg"/></item></channel></rss>')
         elif target.startswith("/pod/feed.xml"):
             with open(port_file + ".requests", "a") as rq:
                 rq.write("pod_feed=1\n")
