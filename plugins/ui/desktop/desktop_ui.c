@@ -4457,9 +4457,15 @@ static void draw_queue(desk* d) {
         int divider = (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u;
         int playing = st->queue[i].id == st->queue_playing;
         sel_gui_rect nx = queue_next_rect(d, mn, i), dl = queue_del_rect(d, mn, i);
-        uint32_t qink = divider ? muted : row_ink(d, r, playing ? accent : text), qmuted = divider ? muted : row_ink(d, r, muted);
-        if ((int32_t)i == d->q_focus) { /* the keyboard focus row (I498) */
-            sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        uint32_t qink = divider ? muted : row_ink(d, r, playing ? accent : text);
+        if (!divider) {
+            hover_reg(d, r); /* I1015 */
+        }
+        {
+            uint32_t qf = divider ? ((int32_t)i == d->q_focus ? list_row_fill(d, r, 1) : 0u) : list_row_fill(d, r, (int32_t)i == d->q_focus); /* focus (I498), hover, or both */
+            if (qf != 0u) {
+                sel_gui_fill_rect(d->canvas, r, qf);
+            }
         }
         if (!divider) {
             song_row_set_list(d, song_row_reg(d, rect_of(r.x, r.y, nx.x - r.x, r.h), st->queue_text + st->queue[i].path_offset, st->queue[i].id, 1, 0), SEL_UIM_LIST_QUEUE, 0u, st->queue_version, i);
@@ -4472,9 +4478,11 @@ static void draw_queue(desk* d) {
                 sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(r.x, r.y + (r.h - ic) / 2, ic, ic), ic, accent);
             }
             draw_text(d, rect_of(r.x + ic + lpx(d, 12), r.y, nx.x - r.x - ic - lpx(d, 12), r.h), buf, playing, 14, qink);
-            draw_text(d, nx, "Play Next", 1, 12, qmuted);
+            hover_reg(d, nx); /* I1015 */
+            draw_text(d, nx, "Play Next", 1, 12, row_ink(d, nx, muted));
         }
-        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(dl.x + (dl.w - ic) / 2, dl.y + (dl.h - ic) / 2, ic, ic), ic, qmuted);
+        hover_reg(d, dl); /* I1015 */
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(dl.x + (dl.w - ic) / 2, dl.y + (dl.h - ic) / 2, ic, ic), ic, row_ink(d, dl, muted));
     }
     if (d->qdrag_from >= 0 && d->qdrag_from < (int32_t)st->queue_count) { /* I258e: the lifted row at the pointer and the insertion line */
         uint32_t f = (uint32_t)d->qdrag_from, g = (uint32_t)d->qdrag_gap;
@@ -8146,8 +8154,9 @@ static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
             sel_gui_round_rect(d->canvas, rect_of(t.x - 2, t.y - 2, t.w + 4, t.h + 4),
                                lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]) + 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         }
+        hover_reg(d, t); /* I1015: albums and songs alike repaint on a pointer move */
         sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
-                           sel ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) : panel);
+                           hover_fill_of(d, t, sel ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) : panel));
         grid_row_cover(d, ar, r, lib_reg ? i : UINT32_MAX, &d->pc_grid);
         lib_tile_text(d, ar, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), 0);
@@ -8249,6 +8258,12 @@ static void draw_flow_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
             sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SCRIM]) & 0xFFFFFFu, (uint32_t)alpha);
         }
         if (j + 1u == n) {
+            hover_reg(d, r); /* I1015: the front cover is the click target; the pointer on it lightens the art */
+            if (hover_weight(d, r) > 0) {
+                sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_HOVER_LIGHT]) & 0xFFFFFFu, 48u);
+                d->hover_fill = ARGB(d->theme.token[SEL_GUI_TOKEN_HOVER_LIGHT]);
+                d->hover_paints++;
+            }
             if (lib_reg) {
                 lib_view_row_reg(d, mn, sel_engine_state(d->engine), (uint32_t)(cv[j].g - (int64_t)v->window_start), r);
             } else if (row->key != NULL) {
@@ -8316,13 +8331,13 @@ static void draw_library(desk* d) {
                 draw_button_pad(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), tname, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]),
                                 lib_tab_pad(d));
             } else { /* I547: the centring pad is the tab's own pad, so a tab squeezed below 8 px still shows its whole label */
-                draw_text_centered_pad(d, tr, tname, 0, 14, muted, lib_tab_pad(d)); /* centred as on the active pill (I445) */
+                draw_text_centered_pad(d, tr, tname, 0, 14, row_ink(d, tr, muted), lib_tab_pad(d)); /* centred as on the active pill (I445); I1015: the label warms under the pointer */
             }
         }
         if (lib_view_on(d, st) && d->lib_mode == 2u && st->view->drill_n > 0u) {
             char crumb[160];
             snprintf(crumb, sizeof crumb, "Back from %s", st->view->drill[st->view->drill_n - 1u]);
-            draw_text(d, lib_crumb_rect(d, mn), crumb, 0, 14, muted);
+            draw_text(d, lib_crumb_rect(d, mn), crumb, 0, 14, row_ink(d, lib_crumb_rect(d, mn), muted)); /* I1015 */
         }
         if (lib_grid_on(st)) {
             if (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID) {
@@ -8340,8 +8355,12 @@ static void draw_library(desk* d) {
                 int node = vr->kind == (uint32_t)SEL_ROW_NODE;
                 int head = vr->kind == (uint32_t)SEL_ROW_HEADING || vr->kind == (uint32_t)SEL_ROW_DIR;
                 int32_t ind = (int32_t)vr->depth * lpx(d, 24);
-                if (d->kb_list && st->view->window_start + k == st->view->cursor) { /* the keyboard focus row */
-                    sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+                hover_reg(d, r); /* I1015: a pointer move repaints the row */
+                {
+                    uint32_t lf = list_row_fill(d, r, d->kb_list && st->view->window_start + k == st->view->cursor); /* focus, hover, or both */
+                    if (lf != 0u) {
+                        sel_gui_fill_rect(d->canvas, r, lf);
+                    }
                 }
                 {   /* I690: a song row of the list whose song plays takes the accent ink */
                     char lp[sizeof((song_ref*)0)->path];
@@ -8373,8 +8392,12 @@ static void draw_library(desk* d) {
             sel_gui_rect r = lib_row_rect(d, mn, i);
             char line[48];
             if (r.y + r.h > lib_list_top(d, mn, st) && r.y < mn.y + mn.h) { /* only the rows in view are drawn (I310) */
-                if ((int32_t)i == d->lib_focus) { /* the keyboard focus row (I498) */
-                    sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+                hover_reg(d, r); /* I1015 */
+                {
+                    uint32_t lf = list_row_fill(d, r, (int32_t)i == d->lib_focus); /* the keyboard focus row (I498), the hovered row, or both */
+                    if (lf != 0u) {
+                        sel_gui_fill_rect(d->canvas, r, lf);
+                    }
                 }
                 draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, row_ink(d, r, text));
                 snprintf(line, sizeof line, "%s songs", cnt);
@@ -9027,6 +9050,13 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
         }
         d->on_row[k].rect = sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top));
         d->on_row[k].drawn = 1;
+        hover_reg(d, d->on_row[k].rect); /* I1015: a pointer move onto the row repaints it (the fill alone only follows a redraw) */
+        {
+            uint32_t rf = list_row_fill(d, d->on_row[k].rect, 0);
+            if (rf != 0u) {
+                sel_gui_fill_rect(d->canvas, d->on_row[k].rect, rf);
+            }
+        }
         bw = search_badge_w(d, online_scope_name(d)) + lpx(d, 16);
         search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), online_scope_name(d));
         draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg - bw, rh / 2 + lpx(d, 4)), d->on_row[k].title, 1, 14, text);
@@ -9155,7 +9185,8 @@ static void draw_browse(desk* d) {
             r = rect_of(mn.x + margin + (int32_t)col * (tw + gap), y, tw, th);
             pad = lpx(d, 12);
             if (r.y < mn.y + mn.h && r.y + r.h > mn.y) {
-                sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), ARGB(d->theme.token[browse_palette[i % BROWSE_PALETTE]]));
+                hover_reg(d, r); /* I1015 */
+                sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), hover_fill_of(d, r, ARGB(d->theme.token[browse_palette[i % BROWSE_PALETTE]])));
                 draw_text(d, rect_of(r.x + pad, r.y + pad, r.w - 2 * pad, lpx(d, 28)), t[i].label, 1, 18, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
                 snprintf(sub, sizeof sub, t[i].kind == 3u ? "Tree and Columns" : "%u songs", (unsigned)t[i].count);
                 draw_text(d, rect_of(r.x + pad, r.y + r.h - pad - lpx(d, 18), r.w - 2 * pad, lpx(d, 18)), sub, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
@@ -11511,8 +11542,12 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         if (r.y + r.h <= v.y || r.y >= v.y + v.h) {
             continue;
         }
-        if (open) {
-            sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        hover_reg(d, r); /* I1015 */
+        {
+            uint32_t sf = list_row_fill(d, r, open); /* the open item, the hovered item, or both */
+            if (sf != 0u) {
+                sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), sf);
+            }
         }
         if (labels && side_view_of(d) >= SEL_UIM_LVIEW_SMALL) { /* I611: grid cells: the cover fills the cell, the large grid names it below */
             int32_t g = lpx(d, 4), cs = r.w - 2 * g;
