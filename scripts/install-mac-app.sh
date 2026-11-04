@@ -34,6 +34,10 @@ cp "$BIN" "$C/MacOS/selecta-bin"
 # Loadable plugin modules; skip test fixtures.
 find "$BUILD_DIR" -name 'sel_*.dylib' -not -path '*/tests/*' -exec cp {} "$C/PlugIns/" \;
 
+# D6: the shared core (install name @rpath/libselecta_core.dylib) is one copy per process: the binary and every module use it.
+CORE=$(find "$BUILD_DIR" -name 'libselecta_core.dylib' -not -path '*/tests/*' | head -n 1)
+[ -n "$CORE" ] && cp "$CORE" "$C/Frameworks/libselecta_core.dylib"
+
 # Copy non-system dylibs the binary links and point the binary at the bundled copies.
 otool -L "$C/MacOS/selecta-bin" | awk 'NR > 1 { print $1 }' | while read -r lib; do
     case "$lib" in

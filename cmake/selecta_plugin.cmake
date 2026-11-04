@@ -101,8 +101,9 @@ function(sel_add_plugin name kind)
       set_target_properties(${mod} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${SEL_BUILTIN_MODULE_DIR}")
       # A plugin's own directory and plugins/shared are visible to it, as in the static form.
       target_include_directories(${mod} PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared")
-      # A module is self-contained: the host-side helpers a plugin calls (sel_tag_find, ...) come from its own copy of
-      # selecta_core, the same archive the static form pulls in at the executable's link.
+      # D6: core statics (source registry, plugin registry, engine, library state) exist once per process. A module links the
+      # shared selecta_core the executable links, never a private static copy (that copy kept its own empty registries). The
+      # host-side helpers a plugin calls (sel_tag_find, ...) resolve there.
       target_link_libraries(${mod} PRIVATE selecta_core)
       set_property(GLOBAL APPEND PROPERTY SEL_BUILTIN_MODULES ${mod})
     elseif(SEL_MODULE_OUTPUT_DIR)

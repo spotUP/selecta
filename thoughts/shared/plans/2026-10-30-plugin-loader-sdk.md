@@ -52,6 +52,12 @@ core binary holds engine, registry and loaders only. The static registry stays f
 modules (68000 Amiga until I427e, web port) and for tests that link a plugin directly: CMake option
 `SELECTA_PLUGIN_LINK` = `MODULE` (desktop default) or `STATIC` (Amiga, web, test builds). Missing built-in
 modules at start are an error the UI reports, not a silent empty registry.
+One core per process: engine, source registry, plugin registry and library state exist exactly once. With
+`SELECTA_PLUGIN_LINK=MODULE`, `selecta_core` is a SHARED library (`libselecta_core.dylib` / `.so`) that the
+executable and every module link; the static libraries it absorbs are folded in whole (`cmake/selecta_core_shared.cmake`)
+so no module pulls a private copy. A module that linked a static core kept its own empty registries (sidebar showed raw
+source ids). The macOS bundle carries the library in `Contents/Frameworks`. STATIC mode is unchanged. Guard:
+`builtin-modules` runs nm on every module and fails if one defines `sel_source_each` / `sel_engine_library_items`.
 
 D7. SDK. `install(DIRECTORY include/selecta)` plus an exported CMake package `SelectaSDK` with an INTERFACE
 target `Selecta::sdk` (headers + the module compile flags). `examples/plugin-sine/` is an out-of-tree replayer

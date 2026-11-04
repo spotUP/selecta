@@ -38,6 +38,13 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
   add_custom_target(selecta_bundle_modules ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_sel_plugins_dir}"
     VERBATIM)
+  # D6: the shared selecta_core travels with the bundle in Contents/Frameworks; the executable finds it through @rpath.
+  set(_sel_frameworks_dir "$<TARGET_BUNDLE_CONTENT_DIR:selecta>/Frameworks")
+  add_custom_command(TARGET selecta_bundle_modules POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_sel_frameworks_dir}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:selecta_core>" "${_sel_frameworks_dir}/"
+    VERBATIM)
+  set_property(TARGET selecta APPEND PROPERTY BUILD_RPATH "@executable_path/../Frameworks")
   foreach(_m IN LISTS _sel_bundle_mods)
     add_custom_command(TARGET selecta_bundle_modules POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${_m}>" "${_sel_plugins_dir}/"
