@@ -19,7 +19,16 @@ esac
 
 if [ ! -d "$WORK/src" ]; then
   mkdir -p "$WORK"
-  tar -C "$SRC" --exclude=.git --exclude=samples --exclude=regression --exclude=lib --exclude=obj -cf - . | tar -C "$WORK" -xf -
+  # Skip the sample corpus, regression data and the build output of an already built checkout. Only top-level names
+  # are skipped: a tar --exclude=lib would also drop 3rdparty/lhasa/lib, which the LHA decoder needs.
+  set --
+  for entry in "$SRC"/*; do
+    case "${entry##*/}" in
+      samples|regression|lib|obj) ;;
+      *) set -- "$@" "${entry##*/}" ;;
+    esac
+  done
+  tar -C "$SRC" --exclude=.git -cf - "$@" | tar -C "$WORK" -xf -
   for p in pt2-player pt2-patterns pt3-byte-sums no-z80ex no-ps2-bios no-rar-vgmstream no-libvgm no-shared-ptr-unique; do
     patch -d "$WORK" -p1 -s -i "$PLUGIN/patches/$p.patch"
   done

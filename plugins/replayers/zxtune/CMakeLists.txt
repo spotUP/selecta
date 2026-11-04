@@ -30,12 +30,18 @@ set(SEL_ZXTUNE_LIBS
   formats_archived_multitrack formats_chiptune formats_packed formats_multitrack io l10n_stub module module_conversion
   module_properties parameters platform platform_version sound strings tools hvl lazyusf2 v2m lhasa lzma)
 
+set(SEL_ZXTUNE_ARCHIVES "")
+foreach(lib ${SEL_ZXTUNE_LIBS})
+  list(APPEND SEL_ZXTUNE_ARCHIVES "${SEL_ZXTUNE_LIBDIR}/lib${lib}.a")
+endforeach()
 file(GLOB SEL_ZXTUNE_BUILD_INPUTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/patches/*.patch")
 list(APPEND SEL_ZXTUNE_BUILD_INPUTS "${CMAKE_CURRENT_SOURCE_DIR}/build_zxtune.sh"
   "${CMAKE_CURRENT_SOURCE_DIR}/trim_players.py" "${CMAKE_CURRENT_SOURCE_DIR}/app.Makefile" "${CMAKE_CURRENT_SOURCE_DIR}/lazyusf2.Makefile")
 add_custom_command(OUTPUT "${SEL_ZXTUNE_STAMP}"
   COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/build_zxtune.sh" "${SELECTA_ZXTUNE_SRC}" "${SEL_ZXTUNE_WORK}"
     "${CMAKE_CURRENT_SOURCE_DIR}" "${SEL_ZXTUNE_STAMP}"
+  # The archives are link inputs of the module: Ninja refuses a clean build unless a rule names them as outputs.
+  BYPRODUCTS ${SEL_ZXTUNE_ARCHIVES}
   DEPENDS ${SEL_ZXTUNE_BUILD_INPUTS}
   COMMENT "Building the ZXTune libraries (long on a first build)"
   VERBATIM)
@@ -50,10 +56,6 @@ target_compile_options(sel_module_zxtune PRIVATE
   $<$<COMPILE_LANGUAGE:CXX>:-std=c++20 -funsigned-char -fvisibility=hidden -w
   -D_LIBCPP_ENABLE_CXX20_REMOVED_FEATURES -isystem /opt/homebrew/include
   -include "${CMAKE_CURRENT_SOURCE_DIR}/stdint-both.h">)
-set(SEL_ZXTUNE_ARCHIVES "")
-foreach(lib ${SEL_ZXTUNE_LIBS})
-  list(APPEND SEL_ZXTUNE_ARCHIVES "${SEL_ZXTUNE_LIBDIR}/lib${lib}.a")
-endforeach()
 if(APPLE)
   target_link_libraries(sel_module_zxtune PRIVATE ${SEL_ZXTUNE_ARCHIVES} z ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
 else()
