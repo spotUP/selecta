@@ -3102,3 +3102,18 @@ if(SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
     set_tests_properties(builtin-modules PROPERTIES LABELS builtin-modules TIMEOUT 180)
   endif()
 endif()
+
+# I427d: the macOS bundle starts with its modules from Contents/PlugIns (no env override), GPL modules are not in it,
+# and the GPL-3 SNDH archive lists COPYING, the module and the sc68 source. Own label, not counted by dui-ratchet.
+if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
+  set(_bp_gpl "")
+  if(SELECTA_GPL_PLUGINS AND TARGET sel_module_sndh)
+    set(_bp_gpl "-DGPL_MODULE=$<TARGET_FILE:sel_module_sndh>" "-DGPL_SOURCE=${PROJECT_SOURCE_DIR}/third_party/sc68"
+      "-DGPL_ARCHIVE=${CMAKE_BINARY_DIR}/tests/bundle-plugins/selecta-sndh-gpl3.tar.gz")
+  endif()
+  add_test(NAME bundle-plugins
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/gme_test.nsf"
+      "-DWORK=${CMAKE_BINARY_DIR}/tests/bundle-plugins" "-DGPL_SCRIPT=${PROJECT_SOURCE_DIR}/cmake/gpl_archive.cmake" ${_bp_gpl}
+      -P "${PROJECT_SOURCE_DIR}/tests/dui/bundle_plugins.cmake")
+  set_tests_properties(bundle-plugins PROPERTIES LABELS builtin-modules TIMEOUT 180 PASS_REGULAR_EXPRESSION "bundle_plugins_ok")
+endif()

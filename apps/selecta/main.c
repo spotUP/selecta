@@ -967,6 +967,18 @@ int main(int argc, char** argv)
                os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_AV_BUFFERS, 0) : 0u,
                os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_AV_FLUSHES, 0) : 0u);
     }
+    if (has_stats && est.replayer != NULL) { /* I427d: where the open song's replayer module was loaded from */
+        uint32_t ri;
+
+        for (ri = 0; ri < sel_registry_count(); ri++) {
+            const char* rid = (const char*)sel_tag_find(sel_registry_get(ri), SEL_PLUGIN_ID, 0);
+
+            if (rid != NULL && strcmp(rid, est.replayer) == 0) {
+                printf("replayer_origin=%s\n", sel_registry_origin(ri));
+                break;
+            }
+        }
+    }
     if (has_stats) { /* the song the engine has open, for the mouse test (DUI-P3-2) */
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
     }
