@@ -2022,6 +2022,18 @@ if(NOT SEL_AMIGA)
       set_tests_properties(libvgm-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "libvgm_decode_ok"
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
+
+    # I696: OPL/AdLib songs (HSC, RAW) play through the render entry point (adplug module); the format list is reported.
+    if(TARGET sel_module_adplug)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-decode)
+      add_test(NAME adplug-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/adplug_decode.sh $<TARGET_FILE:selecta-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/adplug_test.hsc
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/adplug_test.raw
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-decode)
+      set_tests_properties(adplug-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_decode_ok"
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
   endif()
 
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.

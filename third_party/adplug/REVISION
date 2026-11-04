@@ -1,0 +1,5 @@
+AdPlug 2.4 (https://github.com/adplug/adplug, tag adplug-2.4), source snapshot as vendored in
+/Users/spot/Code/DEViLBOX/adplug-wasm (adplug-adplug-2.4 tarball). Copied: src/ (players, adplug.cpp, database, depack,
+fprovide, nemuopl + nukedopl, opl.h, silentopl.h), COPYING, AUTHORS. Dropped: every other OPL emulator core
+(emuopl, kemuopl, wemuopl, temuopl, surroundopl, fmopl, WoodyOPL), hardware outputs (realopl, diskopl, analopl),
+and the build system, docs, test and tools directories. Local changes: none to the sources.

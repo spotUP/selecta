@@ -1,0 +1,3 @@
+libbinio 1.5 (https://github.com/adplug/libbinio), source snapshot as vendored in
+/Users/spot/Code/DEViLBOX/adplug-wasm (libbinio-1.5 tarball). Copied: src/{binio,binfile,binstr,binwrap}.{cpp,h},
+COPYING, AUTHORS. Local changes: none.
