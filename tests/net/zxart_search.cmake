@@ -40,7 +40,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "I1024f: script rc=${rc}\n${raw}")
 endif()
 need("sentinel: the search ran" "${raw}" "SOURCESEARCH runs=[1-9]")
-# the engine cuts a search row format to 15 characters (SEL_SEARCH_FORMAT_MAX), so "Spectrum - Pro" is what shows
+# the row keeps its whole format name (I1043); the pattern checks the "Spectrum - Pro" prefix of it
 need("row in the sync key shape, with title, artist, format" "${raw}"
   "zxart:19636/MmcM_-_Beyond_Time_\\(2013\\)[^\n]*Beyond Time[^\n]*MmcM[^\n]*Spectrum - Pro")
 need("second row" "${raw}" "zxart:19717/Scalesmann_-_")

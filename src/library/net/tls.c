@@ -5,6 +5,9 @@
 #include "net.h"
 
 #include <stdlib.h>
+#if !defined(__amigaos__)
+#include <pthread.h>
+#endif
 #include <string.h>
 
 #ifdef SEL_NO_TLS
@@ -82,7 +85,7 @@ static void load_trust(void) {
     }
 }
 
-static int tls_init(void) {
+static int tls_init_once(void) {
     if (g_init_state != 0) {
         return g_init_state > 0 ? 0 : -1;
     }
@@ -107,6 +110,21 @@ static int tls_init(void) {
     mbedtls_ssl_conf_authmode(&g_conf_noverify, MBEDTLS_SSL_VERIFY_NONE);
     g_init_state = 1;
     return 0;
+}
+
+/* I1044: parallel searches and a sync may all be the first TLS user; the lazy init of the shared config runs once. */
+static int tls_init(void) {
+    int rc;
+#if !defined(__amigaos__)
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
+    pthread_mutex_lock(&lock);
+    rc = tls_init_once();
+    pthread_mutex_unlock(&lock);
+#else
+    rc = tls_init_once();
+#endif
+    return rc;
 }
 
 /* BIO callbacks: ctx is the slot; the socket handle is the slot index. */
@@ -159,7 +177,7 @@ static int tls_open(int h, const char* host, unsigned timeout_ms, int verify) {
     for (;;) {
         rc = mbedtls_ssl_handshake(&s->ssl);
         if (rc == 0) {
-            g_handshakes++;
+            __atomic_add_fetch(&g_handshakes, 1u, __ATOMIC_RELAXED);
             return SEL_TLS_OK;
         }
         if ((rc == MBEDTLS_ERR_SSL_WANT_READ || rc == MBEDTLS_ERR_SSL_WANT_WRITE) && !s->timed_out &&

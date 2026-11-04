@@ -7468,6 +7468,15 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
     {
+        sel_engine_stats fes; /* I1044: the fan-out's timing: peak > 1 means the sources searched in parallel */
+        uint32_t fi;
+        sel_engine_stats_get(d->engine, &fes);
+        o = dump_put(d, o, "search_fanout peak=%u wall_ms=%u sources=%u\n", (unsigned)fes.search_peak, (unsigned)fes.search_wall_ms, (unsigned)fes.search_src_n);
+        for (fi = 0; fi < fes.search_src_n; fi++) {
+            o = dump_put(d, o, "search_src %s ms=%u\n", fes.search_src_id[fi], (unsigned)fes.search_src_ms[fi]);
+        }
+    }
+    {
         uint32_t si;
         for (si = 0; si < d->search_sec_n; si++) { /* I1019e: one line per From section the list frame drew */
             o = dump_put(d, o, "search_section %u rows=%u %s\n", (unsigned)si, (unsigned)d->search_sec_rows[si], d->search_sec_head[si]);

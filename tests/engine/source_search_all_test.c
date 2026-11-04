@@ -15,6 +15,7 @@
 #include "db/db.h"
 #include "source.h"
 
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,10 +37,45 @@ static void nap(long ms) {
     nanosleep(&ts, NULL);
 }
 
-static void log_call(const char* id, const char* q) {
-    size_t n = strlen(g_log);
+static pthread_mutex_t g_log_lock = PTHREAD_MUTEX_INITIALIZER;
 
+static void log_call(const char* id, const char* q) { /* I1044: the hooks run on parallel threads */
+    size_t n;
+
+    pthread_mutex_lock(&g_log_lock);
+    n = strlen(g_log);
     snprintf(g_log + n, sizeof g_log - n, "%s:%s;", id, q);
+    pthread_mutex_unlock(&g_log_lock);
+}
+
+/* 1 when `log` holds exactly the ';'-terminated tokens of `want` (a ';'-terminated list), each once, in any order. */
+static int same_tokens(const char* log, const char* want) {
+    char tok[64];
+    const char* p = want;
+
+    if (strlen(log) != strlen(want)) return 0;
+    while (*p != '\0') {
+        const char* end = strchr(p, ';');
+        size_t n = (size_t)(end - p) + 1u;
+        const char* hit;
+
+        memcpy(tok, p, n);
+        tok[n] = '\0';
+        hit = strstr(log, tok);
+        if (hit == NULL || strstr(hit + 1, tok) != NULL || (hit != log && hit[-1] != ';')) return 0;
+        p += n;
+    }
+    return 1;
+}
+
+/* I1044: every source runs at once, so for the "slow" query all of them hold until released (none lands before the newer query). */
+static void hold_if_slow(const char* q) {
+    int waited = 0;
+
+    while (strcmp(q, "slow") == 0 && !atomic_load(&g_release) && waited < 3000) {
+        nap(1);
+        waited++;
+    }
 }
 
 static int hook_a(const sel_host* host, const char* q, sel_search_sink* out) {
@@ -68,6 +104,7 @@ static int hook_c(const sel_host* host, const char* q, sel_search_sink* out) {
     (void)host;
     (void)out;
     log_call("i1019c", q);
+    hold_if_slow(q);
     return -1;
 }
 
@@ -75,6 +112,7 @@ static int hook_d(const sel_host* host, const char* q, sel_search_sink* out) {
     (void)host;
     (void)out;
     log_call("i1019d", q);
+    hold_if_slow(q);
     return 0;
 }
 
@@ -83,12 +121,14 @@ static int hook_d(const sel_host* host, const char* q, sel_search_sink* out) {
 static int hook_e(const sel_host* host, const char* q, sel_search_sink* out) {
     (void)host;
     log_call("i1019e", q);
+    hold_if_slow(q);
     return out->row(out->ctx, "e/1", "Title", "Artist", "mod") ? 1 : 0;
 }
 
 static int hook_f(const sel_host* host, const char* q, sel_search_sink* out) {
     (void)host;
     log_call("i1019f", q);
+    hold_if_slow(q);
     return out->row(out->ctx, "f/1", "Title", "Artist", "mod") ? 1 : 0;
 }
 
@@ -178,9 +218,9 @@ int main(void) {
     /* Order, disabled skipped, failed and empty buckets. */
     CHECK(send_line(e, "SOURCE_SEARCH * \"abc\""));
     drain(e);
-    CHECK(strcmp(g_log, "i1019a:abc;i1019c:abc;i1019d:abc;i1019e:abc;i1019f:abc;") == 0); /* registry order; i1019b (disabled) and modulespl never ran */
+    CHECK(same_tokens(g_log, "i1019a:abc;i1019c:abc;i1019d:abc;i1019e:abc;i1019f:abc;")); /* I1044: all start at once, order is arrival; i1019b (disabled) and modulespl never ran */
     CHECK(g_rows_a == 2);
-    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0); /* the unreachable source gives no search_done */
+    CHECK(same_tokens(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;")); /* the unreachable source gives no search_done */
     CHECK(g_failed == 1);
 
     /* Cancel mid-search: a new query while the first query's task blocks. */
@@ -197,8 +237,8 @@ int main(void) {
     atomic_store(&g_release, 1);
     drain(e);
     CHECK(g_stale_seen == 0); /* the stale task's hits were dropped */
-    CHECK(strcmp(g_log, "i1019a:slow;i1019a:fast;i1019c:fast;i1019d:fast;i1019e:fast;i1019f:fast;") == 0); /* the stale query's queued sources never ran */
-    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0 && g_rows_a == 2);
+    CHECK(same_tokens(g_log, "i1019a:slow;i1019c:slow;i1019d:slow;i1019e:slow;i1019f:slow;i1019a:fast;i1019c:fast;i1019d:fast;i1019e:fast;i1019f:fast;")); /* I1044: the stale query's sources all started at once; none of their answers landed */
+    CHECK(same_tokens(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;") && g_rows_a == 2);
     CHECK(g_failed == 1);
 
     sel_engine_destroy(e);
