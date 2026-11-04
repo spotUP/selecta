@@ -1,0 +1,5 @@
+mdxmini, Sharp X68000 MDX/PDX player library (YM2151 + PCM8 emulation).
+License: GPL-2.0-or-later (notice at the top of src/mdxmini.c, full text in COPYING; YM2151 core ported from MAME by Jarek Burczynski).
+Upstream: https://github.com/mistydemeo/mdxmini, pinned commit 003531a471c1955f4ed4357d0e2a6cba809c34a0.
+Vendored: the src/ directory (Doxyfile dropped), COPYING and AUTHORS, unchanged. No binary data in the tree (tables are text .dat files).
+Built by plugins/replayers/mdxmini as a plain C static library without USE_NLG; GPL, so only as a loadable module (SELECTA_GPL_PLUGINS).

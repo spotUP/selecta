@@ -94,6 +94,11 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/chipnsfx)
 endif()
 
+# mdxmini (I699): GPL-2 module over the mdxmini library, loadable module only, opt-in, host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/mdxmini)
+endif()
+
 # ZXTune via bbmp's patched build (I421): GPL-3 module, loadable module only, opt-in, host only. Needs
 # SELECTA_ZXTUNE_SRC (a zxtune checkout); without it the subdirectory prints a notice and builds nothing.
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

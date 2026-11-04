@@ -1975,6 +1975,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I699: an MDX song plays through the render entry point (mdxmini module). GPL module, opt-in.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/mdxmini-decode)
+    add_test(NAME mdxmini-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/mdxmini_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/mdx_test.mdx
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/mdxmini-decode)
+    set_tests_properties(mdxmini-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "mdxmini_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I434: a SID (C64) file plays through the render entry point (sid replayer, libsidplayfp). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)
