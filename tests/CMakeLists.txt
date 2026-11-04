@@ -3155,8 +3155,20 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
     set(_bp_gpl "-DGPL_MODULE=$<TARGET_FILE:sel_module_sndh>" "-DGPL_SOURCE=${PROJECT_SOURCE_DIR}/third_party/sc68"
       "-DGPL_ARCHIVE=${CMAKE_BINARY_DIR}/tests/bundle-plugins/selecta-sndh-gpl3.tar.gz")
   endif()
+  # The expected bundle is the list the bundle itself is built from (apps/selecta/CMakeLists.txt), never a hand list.
+  get_property(_bp_bundled GLOBAL PROPERTY SEL_BUNDLED_MODULES)
+  get_property(_bp_left_out GLOBAL PROPERTY SEL_LEFT_OUT_MODULES)
+  set(_bp_want "")
+  foreach(_m IN LISTS _bp_bundled)
+    list(APPEND _bp_want "$<TARGET_FILE_NAME:${_m}>")
+  endforeach()
+  set(_bp_absent "")
+  foreach(_m IN LISTS _bp_left_out)
+    list(APPEND _bp_absent "$<TARGET_FILE_NAME:${_m}>")
+  endforeach()
   add_test(NAME bundle-plugins
-    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/gme_test.nsf"
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWANT=${_bp_want}" "-DABSENT=${_bp_absent}"
+      "-DRELEASE=${SELECTA_RELEASE_MIT_ONLY}" "-DGPL_BUILT=${SELECTA_GPL_PLUGINS}" "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/gme_test.nsf"
       "-DWORK=${CMAKE_BINARY_DIR}/tests/bundle-plugins" "-DGPL_SCRIPT=${PROJECT_SOURCE_DIR}/cmake/gpl_archive.cmake" ${_bp_gpl}
       -P "${PROJECT_SOURCE_DIR}/tests/dui/bundle_plugins.cmake")
   set_tests_properties(bundle-plugins PROPERTIES LABELS builtin-modules TIMEOUT 180 PASS_REGULAR_EXPRESSION "bundle_plugins_ok")

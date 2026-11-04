@@ -34,6 +34,17 @@ endif()
 # override. A target of its own, built with ALL, so a rebuilt module never leaves a stale copy behind.
 if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
   get_property(_sel_bundle_mods GLOBAL PROPERTY SEL_BUILTIN_MODULES)
+  # I1075: every standalone module (sel_add_plugin ... MODULE) ships too; a release build keeps only the MIT ones (I427d D5).
+  get_property(_sel_standalone_mods GLOBAL PROPERTY SEL_STANDALONE_MODULES)
+  foreach(_m IN LISTS _sel_standalone_mods)
+    get_target_property(_mit ${_m} SEL_MODULE_MIT)
+    if(NOT SELECTA_RELEASE_MIT_ONLY OR _mit)
+      list(APPEND _sel_bundle_mods ${_m})
+    else()
+      set_property(GLOBAL APPEND PROPERTY SEL_LEFT_OUT_MODULES ${_m}) # tests/dui/bundle_plugins.cmake: these must not be in the bundle
+    endif()
+  endforeach()
+  set_property(GLOBAL PROPERTY SEL_BUNDLED_MODULES ${_sel_bundle_mods}) # tests/dui/bundle_plugins.cmake counts the bundle from this
   set(_sel_plugins_dir "$<TARGET_BUNDLE_CONTENT_DIR:selecta>/PlugIns")
   add_custom_target(selecta_bundle_modules ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_sel_plugins_dir}"

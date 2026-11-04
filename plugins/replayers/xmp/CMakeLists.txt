@@ -19,3 +19,4 @@ target_compile_options(xmp_engine PRIVATE -w)
 set(SEL_MODULE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
 sel_add_plugin(xmp 1 MODULE adapter.c THIRD_PARTY_INCLUDES "${LIBXMP_DIR}/include")
 target_link_libraries(sel_module_xmp PRIVATE xmp_engine)
+set_property(TARGET sel_module_xmp PROPERTY SEL_MODULE_MIT ON) # stays in a SELECTA_RELEASE_MIT_ONLY bundle

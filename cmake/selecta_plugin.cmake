@@ -55,6 +55,9 @@ endif()
 define_property(GLOBAL PROPERTY SEL_BUILTIN_MODULES
   BRIEF_DOCS "Built-in plugin modules (SELECTA_PLUGIN_LINK=MODULE): target names"
   FULL_DOCS "Built-in plugin modules (SELECTA_PLUGIN_LINK=MODULE): target names")
+define_property(GLOBAL PROPERTY SEL_STANDALONE_MODULES
+  BRIEF_DOCS "Standalone plugin modules (sel_add_plugin ... MODULE): target names, bundled next to the built-ins (I1075)"
+  FULL_DOCS "Standalone plugin modules (sel_add_plugin ... MODULE): target names, bundled next to the built-ins (I1075)")
 define_property(GLOBAL PROPERTY SEL_PLUGINS
   BRIEF_DOCS "Names of plugins registered with sel_add_plugin"
   FULL_DOCS "Names of plugins registered with sel_add_plugin")
@@ -108,6 +111,9 @@ function(sel_add_plugin name kind)
       set_property(GLOBAL APPEND PROPERTY SEL_BUILTIN_MODULES ${mod})
     elseif(SEL_MODULE_OUTPUT_DIR)
       set_target_properties(${mod} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${SEL_MODULE_OUTPUT_DIR}")
+    endif()
+    if(NOT builtin AND SELP_MODULE)
+      set_property(GLOBAL APPEND PROPERTY SEL_STANDALONE_MODULES ${mod})
     endif()
     if(NOT builtin)
       return()

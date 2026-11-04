@@ -30,7 +30,11 @@ else()
 endif()
 option(SEL_BUILD_TESTS "Build and register the ctest suite" ${SEL_BUILD_TESTS_DEFAULT})
 # GPL-3 plugin modules (I427b): vendored GPL code builds only as loadable modules, never into the core binaries.
-option(SELECTA_GPL_PLUGINS "Build the GPL-3 plugin modules (sndh) as loadable libraries" OFF)
+# I1075: dev and test builds carry every player, so the GPL modules build by default. They stay loadable modules, never linked into
+# the core binaries.
+option(SELECTA_GPL_PLUGINS "Build the GPL plugin modules (sndh, sid, ...) as loadable libraries" ON)
+# I1075 / I427d D5: a release app is MIT. This leaves the GPL modules out of the app bundle (they still build, for the GPL archive).
+option(SELECTA_RELEASE_MIT_ONLY "Release build: the macOS bundle holds only the MIT modules" OFF)
 option(SEL_TEST_BAD_PLUGIN "Compile a deliberately broken plugin descriptor (T5 negative path)" OFF)
 
 include(cmake/selecta_submodules.cmake)

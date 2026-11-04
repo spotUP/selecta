@@ -2,7 +2,7 @@
 # Wrap a desktop build of selecta in a macOS app bundle and install it.
 #
 # Usage: scripts/install-mac-app.sh [build-dir] [destination]
-#   build-dir    default build/app (configure with -DSELECTA_UI_DESKTOP=ON, Release; GPL plugins optional)
+#   build-dir    default build/app (configure with -DSELECTA_UI_DESKTOP=ON, Release; every player is bundled, -DSELECTA_RELEASE_MIT_ONLY=ON for the MIT-only app)
 #   destination  default /Applications
 #
 # Bundle layout:
@@ -31,8 +31,9 @@ mkdir -p "$C/MacOS" "$C/PlugIns" "$C/Frameworks"
 
 cp "$BIN" "$C/MacOS/selecta-bin"
 
-# Loadable plugin modules; skip test fixtures.
-find "$BUILD_DIR" -name 'sel_*.dylib' -not -path '*/tests/*' -exec cp {} "$C/PlugIns/" \;
+# Loadable plugin modules: exactly the set the build put in its own bundle (I1075: every player, or only the MIT ones when
+# configured with SELECTA_RELEASE_MIT_ONLY), so a release install never picks up a GPL module from build/modules.
+cp "$BUILD_DIR/apps/selecta/Selecta.app/Contents/PlugIns/"sel_*.dylib "$C/PlugIns/"
 
 # D6: the shared core (install name @rpath/libselecta_core.dylib) is one copy per process: the binary and every module use it.
 CORE=$(find "$BUILD_DIR" -name 'libselecta_core.dylib' -not -path '*/tests/*' | head -n 1)
