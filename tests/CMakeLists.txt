@@ -973,6 +973,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_library_subtitle_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-library-subtitle COMMAND uim_library_subtitle_test)
   set_tests_properties(uim-library-subtitle PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_library_subtitle_ok")
+  # I1079a: the shared column splitter for row text widths.
+  add_executable(uim_cols_test uimodel/cols_test.c)
+  target_link_libraries(uim_cols_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-cols COMMAND uim_cols_test)
+  set_tests_properties(uim-cols PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_cols_ok")
   # I1019d: the shared SOURCE_SEARCH * line and the search heading kinds.
   add_executable(uim_search_group_test uimodel/search_group_test.c)
   target_link_libraries(uim_search_group_test PRIVATE selecta_uimodel selecta_core)
