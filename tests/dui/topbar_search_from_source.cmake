@@ -32,7 +32,7 @@ set(ENV{SELECTA_CACHE_DIR} "${WORK}/cache")
 function(ts_run outvar view input)
   file(WRITE "${WORK}/in.txt" "${input}")
   file(REMOVE "${WORK}/library.db")
-  dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view ${view} --canvas 1280x1400 --clock fixed --stats
+  dui_run(o --db "${WORK}/library.db" --ui desktop --backend mem --view ${view} --canvas 2000x1400 --clock fixed --stats
     --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
 endfunction()

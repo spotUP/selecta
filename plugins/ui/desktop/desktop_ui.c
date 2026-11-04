@@ -8451,6 +8451,21 @@ static void src_sync_send(desk* d, uint32_t i) {
     desk_send(d, line);
 }
 
+/* I1053b: starts the sync of the source a Not synced search section names; the click on its Sync button and Enter on its row
+ * both come here. 0 when no such source is known. */
+static int search_sync_start(desk* d, const char* id) {
+    uint32_t k;
+    for (k = 0; k < d->src_n; k++) {
+        if (strcmp(d->src[k].key, id) == 0) {
+            d->search_sync_clicks++;
+            src_sync_send(d, k);
+            d->repaint = 1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* The row of src[] whose pending (or failed) sync the engine named: ERROR sync_failed carries the path sent in LIBRARY_SYNC,
  * sync_busy the key, and the success LIBRARY_RESULT the path. -1 when no such row. */
 static int sync_row_find(const desk* d, uint32_t mask, const char* name) {
@@ -9166,6 +9181,9 @@ static int desk_search_out(const desk* d) {
     const sel_view_state* v = st != NULL && st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     uint32_t k;
 
+    if (v == NULL && d->search_on && d->qlen > 0u && d->page == SEL_UIM_PG_SEARCH && !desk_scope_online(d)) { /* I1053b: the query is out and the engine has not built the Search view yet (an online scope never builds one) */
+        return 1;
+    }
     for (k = 0; v != NULL && d->search_on && k < v->row_n; k++) {
         if (v->rows[k].kind != SEL_ROW_HEADING && v->rows[k].text != NULL && strcmp(v->rows[k].text, "Searching") == 0) {
             return 1;
@@ -10319,14 +10337,8 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* I1053b: the Sync button of a Not synced catalogue section starts that source's sync */
         for (i = 0; i < d->search_sync_n; i++) {
             if (in_rect(d->search_sync[i].rect, x, y)) {
-                uint32_t k;
-                for (k = 0; k < d->src_n; k++) {
-                    if (strcmp(d->src[k].key, d->search_sync[i].id) == 0) {
-                        d->search_sync_clicks++;
-                        src_sync_send(d, k);
-                        d->repaint = 1;
-                        return 1;
-                    }
+                if (search_sync_start(d, d->search_sync[i].id)) {
+                    return 1;
                 }
             }
         }
@@ -13220,6 +13232,10 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
             return 0;
         }
         d->kb_list = 1; /* the engine cursor is the focus row (I498) */
+        if (ev->code == 13u && sr != NULL && sr->key != NULL && strncmp(sr->key, "sync:", 5) == 0 && search_sync_start(d, sr->key + 5)) { /* I1053b: Enter on the Sync row = the click */
+            d->kb_activates++;
+            return 1;
+        }
         if (ev->code == 13u && sr != NULL && sr->kind != (uint32_t)SEL_ROW_HEADING && !sr->album && sr->key != NULL) {
             d->kb_activates++;
             d->row_plays++;

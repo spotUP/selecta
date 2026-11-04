@@ -67,7 +67,7 @@ if("${o}" MATCHES "search_failed")
   message(FATAL_ERROR "I1053b: an unsynced source must not raise search_failed:\n${o}")
 endif()
 
-# 3. click the sndh Sync button
+# 3. click the sndh Sync button; step 4 presses Enter on the same row
 string(REGEX MATCH "search_sync [0-9]+ sndh (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) clicks=0\n" _b "${o}")
 math(EXPR bx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR by "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
@@ -79,4 +79,12 @@ if(NOT "${c}" MATCHES "search_sync [0-9]+ sndh [^\n]* clicks=1\n")
 endif()
 if(NOT "${c}" MATCHES "sync_ui [^\n]*source=sndh")
   message(FATAL_ERROR "I1053b: the Sync click must start the sndh sync (sync_ui source=sndh):\n${c}")
+endif()
+
+# The script's `exec VIEW_CURSOR` waits for the engine's answer (a bare run of `key down` lines races it), so the cursor is on the row
+# when Enter arrives. Row 40 is the Keygen Music Sync row of this seed (clicks counts every Sync action, one per run).
+file(WRITE "${WORK}/enter.txt" "${typed}key down\nexec VIEW_CURSOR 40\nkey enter\nwait 600\n")
+dui_run(en ${common} --input "${WORK}/enter.txt")
+if(NOT "${en}" MATCHES "search_sync [0-9]+ keygenmusic [^\n]* clicks=1\n" OR NOT "${en}" MATCHES "sync_ui [^\n]*source=keygenmusic" OR "${en}" MATCHES "row_plays=[1-9]")
+  message(FATAL_ERROR "I1053b: Enter on the Keygen Music Sync row must start that sync like the click (clicks=1, no song played):\n${en}")
 endif()

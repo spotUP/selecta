@@ -180,7 +180,7 @@ int main(void) {
     drain(e);
     CHECK(strcmp(g_log, "i1019a:abc;i1019c:abc;i1019d:abc;i1019e:abc;i1019f:abc;") == 0); /* registry order; i1019b (disabled) and modulespl never ran */
     CHECK(g_rows_a == 2);
-    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0); /* the unreachable source gives no search_done */
+    CHECK(strcmp(g_done_log, "local=0;i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0); /* the unreachable source gives no search_done; local (I1053a) now searches its catalogue and reports 0 */
     CHECK(g_failed == 1);
 
     /* Cancel mid-search: a new query while the first query's task blocks. */
@@ -190,7 +190,10 @@ int main(void) {
     g_failed = 0;
     CHECK(send_line(e, "SOURCE_SEARCH * \"slow\""));
     sel_engine_pump(e, sink, NULL);
-    for (i = 0; i < 2000 && !atomic_load(&g_in_slow); i++) nap(1);
+    for (i = 0; i < 2000 && !atomic_load(&g_in_slow); i++) { /* local (I1053a) searches first; its done event starts the next bucket at a pump */
+        sel_engine_pump(e, sink, NULL);
+        nap(1);
+    }
     CHECK(atomic_load(&g_in_slow) == 1);
     CHECK(send_line(e, "SOURCE_SEARCH * \"fast\""));
     sel_engine_pump(e, sink, NULL);
@@ -198,7 +201,7 @@ int main(void) {
     drain(e);
     CHECK(g_stale_seen == 0); /* the stale task's hits were dropped */
     CHECK(strcmp(g_log, "i1019a:slow;i1019a:fast;i1019c:fast;i1019d:fast;i1019e:fast;i1019f:fast;") == 0); /* the stale query's queued sources never ran */
-    CHECK(strcmp(g_done_log, "i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0 && g_rows_a == 2);
+    CHECK(strcmp(g_done_log, "local=0;local=0;i1019a=2;i1019d=0;i1019e=1;i1019f=1;") == 0 && g_rows_a == 2); /* local finished for the stale query before the cancel, and again for the new one */
     CHECK(g_failed == 1);
 
     sel_engine_destroy(e);
