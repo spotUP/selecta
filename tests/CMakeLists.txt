@@ -1952,6 +1952,18 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-config)
     set_tests_properties(sid-config PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_config_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I421: Pro Tracker 3 and 2 modules play through the render entry point (zxtune module). Registered only when
+    # the plugin was configured (SELECTA_ZXTUNE_SRC set); the module is a dependency of selecta-cli's test run.
+    if(TARGET sel_module_zxtune)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/zxtune-decode)
+      add_test(NAME zxtune-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/zxtune_decode.sh $<TARGET_FILE:selecta-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/zxtune_test.pt3
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/zxtune_test.pt2
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/zxtune-decode)
+      set_tests_properties(zxtune-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "zxtune_decode_ok"
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
   endif()
 
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.
