@@ -160,6 +160,27 @@ static void test_spectrum(void) {
     for (i = 0; i < SEL_VIZ_BANDS; i++) CHECK(band[i] == 0, "silence band %u = %d", (unsigned)i, band[i]);
 }
 
+/* I1042: with a visual delay of 2 blocks the shown frame is 2 blocks old AND carries its analysis (spectrum, correlation);
+ * the analysis once went to the newest frame while the UI drew the held-back copy, so the spectrum stayed blank. */
+static void test_delay(void) {
+    static sel_viz_tap t;
+    static int16_t buf[882u * 2u];
+    uint32_t i, b;
+    const sel_viz_frame* f = NULL;
+    sel_viz_tap_init(&t);
+    CHECK(sel_viz_set_delay(&t, 2u) == 2u, "delay not set");
+    for (i = 0; i < 882u; i++) {
+        buf[i * 2] = buf[i * 2 + 1] = (int16_t)lrint(30000.0 * sin(2.0 * 3.14159265358979 * 1000.0 * i / 44100.0));
+    }
+    for (b = 0; b < 6u; b++) f = run_block(&t, buf, 882u, 44100u);
+    CHECK(f->seq != 0 && f->seq + 2u == t.frames[t.read_idx].seq, "shown seq %u, newest %u: want 2 blocks behind",
+          (unsigned)f->seq, (unsigned)t.frames[t.read_idx].seq);
+    CHECK(f->spectrum_valid == 1, "shown frame has no spectrum");
+    CHECK(argmax(f->band) == 8, "shown 1000 Hz frame peaks in band %d, want 8", argmax(f->band));
+    CHECK(f->correlation > 30000, "shown frame correlation %d, want mono (about 32767)", f->correlation);
+    sel_viz_tap_free(&t);
+}
+
 int main(int argc, char** argv) {
     int i;
     for (i = 1; i < argc; i++) {
@@ -167,6 +188,7 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "vu") == 0) test_vu();
         else if (strcmp(argv[i], "sidglow") == 0) test_sid_glow();
         else if (strcmp(argv[i], "spectrum") == 0) test_spectrum();
+        else if (strcmp(argv[i], "delay") == 0) test_delay();
         else {
             printf("unknown mode %s\n", argv[i]);
             return 2;

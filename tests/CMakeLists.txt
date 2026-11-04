@@ -1170,6 +1170,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME viz-vu COMMAND phase_test vu)
   add_test(NAME viz-sid-glow COMMAND phase_test sidglow)
   add_test(NAME viz-spectrum COMMAND phase_test spectrum)
+  add_test(NAME viz-delay COMMAND phase_test delay) # I1042: the delayed frame carries its analysis
   # I434j2: SID PatternScope surface test (the plugin source is included, its tables are static).
   add_executable(sidregs_test viz/sidregs_test.c)
   target_include_directories(sidregs_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/shared")

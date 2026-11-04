@@ -124,6 +124,11 @@ void sel_viz_tap_free(sel_viz_tap* t) {
     t->delay = 0;
 }
 
+/* The frame the UI sees: the newest one, or with a visual delay the held-back one (I1042). */
+static sel_viz_frame* shown_frame(sel_viz_tap* t) {
+    return t->delay != 0 ? &t->queue[t->delay + 1u] : &t->frames[t->read_idx];
+}
+
 int sel_viz_acquire(sel_viz_tap* t) {
     uint32_t old;
     sel_viz_frame* shown;
@@ -147,7 +152,7 @@ int sel_viz_acquire(sel_viz_tap* t) {
 }
 
 const sel_viz_frame* sel_viz_current(const sel_viz_tap* t) {
-    return t->delay != 0 ? &t->queue[t->delay + 1u] : &t->frames[t->read_idx];
+    return shown_frame((sel_viz_tap*)t);
 }
 
 /* Integer square root, rounded down. */
@@ -264,7 +269,7 @@ void sel_viz_spectrum(const int16_t* stereo, uint32_t frames, uint32_t rate, int
 }
 
 void sel_viz_analyse(sel_viz_tap* t, int with_spectrum) {
-    sel_viz_frame* f = &t->frames[t->read_idx];
+    sel_viz_frame* f = shown_frame(t); /* the shown frame, not the newest: with a visual delay they differ (I1042) */
     if (f->seq == 0) return;
     f->correlation = (int16_t)sel_viz_correlation(f->pcm, SEL_VIZ_PCM_FRAMES);
     if (with_spectrum) {
