@@ -267,6 +267,7 @@ typedef struct desk {
     uint32_t row_hover_fill; /* I690b: the fill the list row under the pointer was last painted with, 0 when none (dump line plhover) */
     uint32_t link_hover;     /* I690b: 1 artist or 2 album link of a track row is underlined under the pointer, 0 none (dump line pllink) */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
+    sel_gui_rect col_more_drawn; /* I1065: where the last frame drew Show more (all zero when it did not) */
     uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
     uint32_t local_icon_side, local_icon_head; /* I938: the icon the Local Files sidebar tile and the Local Files page header last drew (dump line localicon) */
@@ -5173,6 +5174,24 @@ static sel_gui_rect col_more_rect(desk* d, sel_gui_rect mn) { /* the Show more r
     return rect_of(r.x, r.y + ((int32_t)col_song_rows(d) - (int32_t)d->pls_scroll) * lpx(d, SONG_ROW_H), lpx(d, 160), lpx(d, SONG_ROW_H));
 }
 
+/* I1065: the page's content height in row slots (col_rows) against the slots the list area shows: the one bound of pls_scroll on a kind page, so a page
+ * that fits (or is empty) has max 0 and the wheel never scrolls past the last row. A playlist keeps its old bound (the last row at the top). */
+static uint32_t col_vis_slots(desk* d, sel_gui_rect mn) {
+    uint32_t vis = 0u;
+    while (pls_row_visible(d, mn, vis)) {
+        vis++;
+    }
+    return vis;
+}
+
+static uint32_t col_scroll_max(desk* d, sel_gui_rect mn) {
+    uint32_t rows = col_rows(d), vis = col_vis_slots(d, mn);
+    if (d->col_kind == 0u) {
+        return rows > 0u ? rows - 1u : 0u;
+    }
+    return rows > vis ? rows - vis : 0u;
+}
+
 static void desk_quoted_request(char* line, size_t cap, const char* head, const char* arg);
 static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* name, const char* sub, int restore) {
     pls_open(d, COL_KIND_ID, name);
@@ -5330,10 +5349,14 @@ static uint32_t drl_crumbs(const desk* d, char (*label)[96], char (*path)[160]) 
 static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t muted) {
     uint32_t sh, i;
     char buf[160];
+    sel_gui_rect top = pls_row_rect(d, mn, 0u), lst = rect_of(mn.x, top.y, mn.w, mn.y + mn.h - top.y);
+    d->col_more_drawn = rect_of(0, 0, 0, 0);
+    sel_gui_clip_push(d->canvas, lst); /* I1065: Show more and the shelves scroll under the header like the Popular rows, never over it */
     if (col_show_more(d)) {
         sel_gui_rect r = col_more_rect(d, mn);
-        if (r.y + r.h <= mn.y + mn.h) {
+        if (r.y >= top.y && r.y + r.h <= mn.y + mn.h) {
             draw_text(d, rect_of(r.x + lpx(d, 12), r.y, r.w, r.h), "Show more", 1, 14, text);
+            d->col_more_drawn = r;
         }
     }
     for (sh = 0; sh < 4u; sh++) {
@@ -5372,6 +5395,7 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
             draw_text(d, rect_of(cr.x, cr.y + cr.h + lpx(d, 22), cr.w, lpx(d, 18)), yr, 0, 12, muted);
         }
     }
+    sel_gui_clip_pop(d->canvas);
 }
 
 /* A click on a card opens that album's page; on Show more extends Popular to 10. Returns 1 when it took the click. */
@@ -7566,6 +7590,8 @@ static const char* library_dump_build(desk* d) {
                          (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws);
             if (d->col_kind != 0u) { /* I678f: the kind page's shelves, the Popular limit and the geometry a script clicks */
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
+                o = dump_put(d, o, "kindscroll scroll=%u max=%u listtop=%d moredrawn=%d,%d,%d,%d\n", (unsigned)d->pls_scroll, (unsigned)col_scroll_max(d, pmn),
+                             (int)pls_row_rect(d, pmn, 0u).y, (int)d->col_more_drawn.x, (int)d->col_more_drawn.y, (int)d->col_more_drawn.w, (int)d->col_more_drawn.h);
                 o = dump_put(d, o, "kindpage label=%s key=[%s] sub=[%s] queries=%u popular=%u rows=%u shelf albums=%u appears=%u more=%u spellings=%u showmore=%d,%d,%d,%d albumcard=%d,%d,%d,%d morecard=%d,%d,%d,%d name=[%s] year=%u shuffle=%d,%d,%d,%d\n",
                              col_kind_label(d), d->col_key, d->col_sub, (unsigned)cst.collection_queries, (unsigned)d->col_popular, (unsigned)col_song_rows(d),
                              (unsigned)d->col_shelf_total[0], (unsigned)d->col_shelf_total[1], (unsigned)d->col_shelf_total[2], (unsigned)d->col_shelf_total[3],
@@ -13179,9 +13205,7 @@ static int col_list_key(desk* d, const sel_gui_input* ev) {
     if (ev->mods != 0u || d->col_kind == 0u || d->pls_id == 0u || d->dlg_open || d->col_search || n == 0) {
         return 0;
     }
-    while (pls_row_visible(d, mn, (uint32_t)vis)) {
-        vis++;
-    }
+    vis = (int32_t)col_vis_slots(d, mn);
     if (ev->code == 13u) {
         if (d->col_focus < 0 || d->col_focus >= n) {
             return 0;
@@ -13984,7 +14008,7 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             return 1;
         }
         if (d->pl_page && d->pls_id != 0u && ev->dy != 0) { /* I633: the playlist's songs scroll a row a notch */
-            if (ev->dy < 0 && d->pls_scroll + 1u < col_rows(d)) {
+            if (ev->dy < 0 && d->pls_scroll < col_scroll_max(d, region_rect(d, "main"))) {
                 d->pls_scroll++;
             } else if (ev->dy > 0 && d->pls_scroll > 0u) {
                 d->pls_scroll--;
