@@ -820,7 +820,7 @@ add_test(NAME nuade-players
 
 # T29: playlist codecs (Hippo .prg, M3U, PLS, XSPF), src/library/playlist.
 add_executable(playlist_test playlist/playlist_test.c)
-target_link_libraries(playlist_test PRIVATE selecta_library)
+target_link_libraries(playlist_test PRIVATE selecta_library selecta_core)
 target_include_directories(playlist_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/playlist)
 add_test(NAME playlist-codecs COMMAND playlist_test)
 
@@ -2378,7 +2378,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(format-label-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "format_label_ok")
   add_executable(xxh32_test xxh32_test.c)
   target_include_directories(xxh32_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(xxh32_test PRIVATE selecta_library)
+  target_link_libraries(xxh32_test PRIVATE selecta_library selecta_core)
   add_test(NAME xxh32-unit COMMAND xxh32_test)
   set_tests_properties(xxh32-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xxh32_ok")
   # I227: the library heap falls back to a smaller block when fast RAM is fragmented.
@@ -2450,12 +2450,12 @@ if(NOT SEL_AMIGA)
   # T93 (row I193): lyrics from a .lrc, a tracker song message and the DEViLBOX endpoint, current line in the snapshot.
   add_executable(lyrics_unit_test lyrics_unit_test.c)
   target_include_directories(lyrics_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(lyrics_unit_test PRIVATE selecta_library)
+  target_link_libraries(lyrics_unit_test PRIVATE selecta_library selecta_core)
   add_test(NAME lrc-unit COMMAND lyrics_unit_test)
   # I420: the DEViLBOX default base is https on every build with TLS (this block is the non-Amiga build).
   add_executable(devilbox_base_test net/devilbox_base_test.c)
   target_include_directories(devilbox_base_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(devilbox_base_test PRIVATE selecta_library)
+  target_link_libraries(devilbox_base_test PRIVATE selecta_library selecta_core)
   add_test(NAME devilbox-default-https COMMAND devilbox_base_test)
   # I413: the asma list reader, artist rule and source descriptor, on the recorded asmadb.js excerpt.
   add_executable(asma_unit_test asma_unit_test.c)
@@ -2531,7 +2531,7 @@ if(NOT SEL_AMIGA)
   # I266: a cancelled job thread's send is SEL_NET_E_IO, not a timeout (TLS retried until its deadline).
   add_executable(net_cancel_send_test net_cancel_send_test.c)
   target_include_directories(net_cancel_send_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(net_cancel_send_test PRIVATE selecta_library)
+  target_link_libraries(net_cancel_send_test PRIVATE selecta_library selecta_core)
   add_test(NAME net-cancel-send COMMAND net_cancel_send_test)
   set_tests_properties(net-cancel-send PROPERTIES LABELS m3 TIMEOUT 20 PASS_REGULAR_EXPRESSION "net_cancel_send_ok")
   # I1044: the connection table holds every searchable source's search thread plus stream, prefetch, sync and DLNA at once.
@@ -2549,7 +2549,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(cache-slice PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_slice_ok")
   add_executable(record_cut_unit_test record_cut_unit_test.c)
   target_include_directories(record_cut_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(record_cut_unit_test PRIVATE selecta_library)
+  target_link_libraries(record_cut_unit_test PRIVATE selecta_library selecta_core)
   add_test(NAME record-cut COMMAND record_cut_unit_test)
   set_tests_properties(record-cut PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "record_cut_unit_ok")
   add_test(NAME lyrics
@@ -2561,7 +2561,7 @@ if(NOT SEL_AMIGA)
   # I419: the server answers 404 {"error":"unknown md5"} for a hash without lyrics; any 404 is SEL_DVB_LYRICS_UNKNOWN.
   add_executable(lyrics_status_test lyrics_status_test.c)
   target_include_directories(lyrics_status_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(lyrics_status_test PRIVATE selecta_library)
+  target_link_libraries(lyrics_status_test PRIVATE selecta_library selecta_core)
   add_test(NAME lyrics-status
     COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:lyrics_status_test>" "-DWORK=${SEL_NET_WORK}"
             -P "${SEL_NET_DIR}/lyrics_status.cmake")
