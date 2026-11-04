@@ -1,4 +1,8 @@
 {
+  "/api/mirror/modland/Protracker/test/retry503.mod": {
+    "file": "/api/mirror/modland/Protracker/test/song.mod",
+    "fail_first": 1
+  },
   "/api/genre/c077578a1816": {
     "status": 503,
     "body": "{\"error\":\"queue full\"}"

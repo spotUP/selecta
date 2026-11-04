@@ -5,6 +5,7 @@
 #include "http.h"
 #include "net.h"
 #include "../source.h"
+#include "../../core/pal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -247,6 +248,9 @@ static int try_one(const char* url, attempt* a, const sel_mirror_opts* o) {
     }
 }
 
+/* A 503 from one base is retried this many times in all (waits of 1 s, then 2 s). */
+#define SEL_MIRROR_503_TRIES 3u
+
 int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror_opts* o, sel_mirror_sink sink,
                            sel_mirror_restart restart, sel_mirror_verify verify, void* ctx, sel_mirror_res* res) {
     char enc[SEL_MIRROR_PATH_MAX];
@@ -263,6 +267,8 @@ int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror
     for (k = 0; k < s->count && (o == NULL || o->max_tries == 0 || k < o->max_tries); k++) {
         unsigned i = res->order[k];
         attempt a;
+        int ok;
+        unsigned wait;
         if (k > 0 && restart != NULL) {
             restart(ctx);
         }
@@ -285,7 +291,26 @@ int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror
         a.checked = 0;
         a.status = 0;
         res->tries++;
-        if (try_one(res->url, &a, o) && (verify == NULL || verify(ctx) || (res->rejected++, 0))) {
+        ok = try_one(res->url, &a, o);
+        /* 503 means "fetching from the upstream, try again" (hippoplayer.se mirror fill, row I1059): retry the same
+         * base after a short wait; every other error moves on to the next entry. */
+        for (wait = 0; !ok && a.status == 503 && wait < SEL_MIRROR_503_TRIES - 1u &&
+                       !(o != NULL && o->yielded != NULL && *o->yielded);
+             wait++) {
+            sel_pal_sleep_ms(1000u << wait);
+            if (restart != NULL) {
+                restart(ctx);
+            }
+            a.start = sel_net_now_ms();
+            a.ttfb = 0;
+            a.bytes = 0;
+            a.hr = NULL;
+            a.checked = 0;
+            a.status = 0;
+            res->tries++;
+            ok = try_one(res->url, &a, o);
+        }
+        if (ok && (verify == NULL || verify(ctx) || (res->rejected++, 0))) {
             if (a.ttfb > 0) {
                 s->ttfb_ms[i] = a.ttfb;
             }

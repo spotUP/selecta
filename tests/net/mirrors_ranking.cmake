@@ -134,3 +134,17 @@ hits(amiga_list fast.mirror.test "/mods/${rel}")
 expect("amiga ignores the list" "${amiga_list}" 0)
 file(SHA256 "${out_dir}/amiga.bin" got_sha)
 expect("amiga body sha256" "${got_sha}" "${want_sha}")
+
+# 503 retry (row I1059): the hippoplayer.se mirror answers 503 "try again" while it fills a file. The single-entry
+# Amiga route retries the same base: the fixture answers 503 once, then the file; the CLI fetch succeeds with
+# 2 tries (1 retry) and the server saw exactly two requests.
+set(rel503 "Protracker/test/retry503.mod")
+reset_log()
+mfetch(retry503 modland:${rel503} --machine a1200)
+expect("503 retry exit code" "${retry503_rc}" 0)
+expect("503 retry tries" "${retry503_mirror_tries}" 2)
+expect("503 retry retries" "${retry503_mirror_retries}" 1)
+hits(retry503_hits devilbox.uprough.net "/api/mirror/modland/${rel503}")
+expect("server saw the 503 and the retry" "${retry503_hits}" 2)
+file(SHA256 "${out_dir}/retry503.bin" got_sha)
+expect("503 retry body sha256" "${got_sha}" "${want_sha}")
