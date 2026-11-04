@@ -18,6 +18,7 @@ Trust thoughts/spot/todos.md over this note. Rows named here: I698, I906j, I906k
      Scope: turn_ms_max stops counting the desk_sdl_poll AppKit pump at the top of desk_wait_turn (desktop_ui.c ~15873, subtraction ~16049); paint figure stops spanning SEARCH_DEBOUNCE_MS (frame_t0 :671 opened at input :14396, closed at desk_flush ~714); a dui test with real clock so a typed search fires (nav_turn_cost uses --clock fixed, searches=0).
   2. I698 libkss finish: worktree .claude/worktrees/agent-add0094be2e665ef3 (base commit 4dbc87ba).
      Scope: `--subsong <n>` option on selecta-cli render (apps/selecta-cli/render.c, Johan's choice 2026-11-04, no product change), kss-decode tests .mgs default + .kss song 1, red proof, then deletes scratchpad kssbuild (122 MB) and kssw.
+     REPORTED NOT GREEN: work is UNCOMMITTED in the worktree (do not remove it). Ledger row I698 lists what is done and the 5 open steps. Scratchpad kssbuild lives in /private/tmp and may be gone; then rebuild (~20 min).
   For each: `git -C <worktree> log --oneline -3` and `git -C <worktree> status --short`. Committed and green: review, cherry-pick to main, build + affected tests behind gate, `git worktree unlock`, `git worktree remove --force`, `git branch -D`, tick ledger. Dirty or no commit: brief a NEW agent from the ledger row (never resume the old one).
 - Other worktrees not from this session's open work: agent-a2141694eab04fe20, agent-a773155596f908acb, agent-ad309b9c77bae5eb3. Owner unknown; do not delete without asking.
 
