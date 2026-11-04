@@ -56,6 +56,16 @@ int32_t sel_uim_lfilter_chips_total(const int32_t* widths, uint32_t n, int32_t g
 
 int sel_uim_lfilter_chips_single(int bitmap, int32_t total, int32_t band) { return bitmap || total > band; }
 
+uint32_t sel_uim_lfilter_chips_first_max(const int32_t* widths, uint32_t n, int32_t gap, int32_t band) {
+    uint32_t first;
+    for (first = 0; first + 1u < n; first++) {
+        if (sel_uim_lfilter_chips_total(widths + first, n - first, gap) <= band) {
+            return first;
+        }
+    }
+    return n != 0u ? n - 1u : 0u;
+}
+
 int sel_uim_viz_tabs_fit(const int32_t* label_w, uint32_t n, int32_t gap, int32_t avail) {
     return n != 0u && sel_uim_lfilter_chips_total(label_w, n, gap) <= avail;
 }

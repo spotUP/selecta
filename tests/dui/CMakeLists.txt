@@ -240,6 +240,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-search-badge PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-badge.tmp")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-badge.tmp")
+  # I1073: the Search source chips scroll sideways with chevrons; at 1280 px Modules.pl is scrolled in and picked.
+  add_test(NAME dui-search-chip-scroll
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-chip-scroll" "-DNETWORK=${SEL_NET_WORK}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/search_chip_scroll.cmake")
+  set_tests_properties(dui-search-chip-scroll PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-chip-scroll.tmp")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-chip-scroll.tmp")
   # I832: quitting during the fixture's 4 s first-byte delay returns well under the delay (the search task's net wait sees the cancel).
   add_test(NAME dui-search-online-quit
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}"

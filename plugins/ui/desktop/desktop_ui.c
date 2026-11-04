@@ -388,6 +388,7 @@ typedef struct desk {
     uint32_t art_waits;      /* I906c: headless naps spent waiting for the background cover batches */
     uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
+    uint32_t on_chip_first, on_chip_scrolls; /* I1073: the source chip that leads the scrolled chip row, chevron scrolls that moved it (sentinel) */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
     struct { char id[64]; sel_gui_rect rect; } search_sync[16]; uint32_t search_sync_n, search_sync_clicks; /* I1053b: the Sync buttons of the Not synced sections the last frame drew */
@@ -1119,6 +1120,16 @@ static void draw_button(desk* d, sel_gui_rect box, uint32_t base, const char* la
 static void draw_chip(desk* d, sel_gui_rect box, const char* label, int selected, int off_token) {
     draw_button(d, box, ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_ACCENT : off_token]), label, 13,
                 ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
+}
+
+/* The round chevron button at an end of a chip row (the sidebar library chips of I610/I669, the Search source chips of I1073):
+ * a raised round fill with the hover state and the baked Lucide chevron, in the text colour while it can move the row (can),
+ * muted at the row's end. */
+static void draw_chevron_button(desk* d, sel_gui_rect cv, int right, int can) {
+    hover_reg(d, cv);
+    sel_gui_round_rect(d->canvas, cv, cv.h / 2, hover_fill_of(d, cv, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED])));
+    sel_gui_icon_draw(d->canvas, &d->icons, right ? SEL_GUI_ICON_CHEVRON_RIGHT : SEL_GUI_ICON_CHEVRON_LEFT, rect_of(cv.x + cv.w / 4, cv.y + cv.h / 4, cv.w / 2, cv.h / 2),
+                      cv.w / 2, ARGB(d->theme.token[can ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
 }
 
 /* I1020: the source badge at the right end of a Search result row: a small rounded label naming where the hit came from. Same
@@ -7206,6 +7217,8 @@ static uint32_t online_scope_count(const desk* d);
 static int desk_scope_online(const desk* d);
 static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k);
 static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k);
+static sel_gui_rect online_chip_chevron(desk* d, sel_gui_rect mn, int right);
+static int online_chip_overflow(desk* d, sel_gui_rect mn);
 static const char* online_chip_scope(const desk* d, uint32_t k);
 
 static size_t dump_put(desk* d, size_t o, const char* fmt, ...) {
@@ -7439,6 +7452,13 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect cr = online_chip_rect(d, panel_rect(d, "main"), oi);
             const char* csc = online_chip_scope(d, oi); /* the source key the chip stands for ("-" for All sources): tests pick a chip by it, never by index */
             o = dump_put(d, o, "online_chip %u %d %d %d %d scope=%s\n", (unsigned)oi, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h, csc[0] != '\0' ? csc : "-");
+        }
+        { /* I1073: the chip row's chevrons (0 0 0 0 while the chips fit) and the chevron scrolls that moved it */
+            sel_gui_rect pm = panel_rect(d, "main");
+            int ov = online_chip_overflow(d, pm);
+            sel_gui_rect lc = ov ? online_chip_chevron(d, pm, 0) : rect_of(0, 0, 0, 0), rc = ov ? online_chip_chevron(d, pm, 1) : rect_of(0, 0, 0, 0);
+            o = dump_put(d, o, "online_chips overflow=%d scrolls=%u lead=%u left %d %d %d %d right %d %d %d %d\n", ov, (unsigned)d->on_chip_scrolls,
+                         (unsigned)d->on_chip_first, (int)lc.x, (int)lc.y, (int)lc.w, (int)lc.h, (int)rc.x, (int)rc.y, (int)rc.w, (int)rc.h);
         }
         for (oi = 0; oi < 4u; oi++) { /* I1019f: the facet row (SEARCH_FACETS), always drawn */
             sel_gui_rect fr = search_facet_rect(d, panel_rect(d, "main"), oi);
@@ -9013,26 +9033,123 @@ static int online_event(desk* d, const sel_tag* t) {
     return 0;
 }
 
-/* The k-th source chip. The source row sits under the search field, always drawn, above the facet row (I1019f). */
-static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
+/* I1073: the source chip row scrolls sideways by whole chips, the sidebar chip row's band and chevrons (I610/I669): one row under
+ * the search field, above the facet row (I1019f); when the chips overflow it a round chevron button at each end takes its square
+ * and the chips between are clipped to the band. */
+enum { ONLINE_CHIP_PAD = 14, ONLINE_CHIP_GAP = 8, ONLINE_CHIPS_MAX = 2 + SEL_SOURCE_MAX };
+
+static int32_t online_chip_w(desk* d, uint32_t k) {
     const sel_gui_atlas* chip = desk_font(d, 1, 13);
-    int32_t x = mn.x + lpx(d, HOME_MARGIN), w = 40;
-    uint32_t i;
-    for (i = 0; i <= k && chip != NULL; i++) {
-        const char* nm = online_chip_name(d, i);
-        w = sel_gui_text_width(chip, nm, strlen(nm)) + 2 * lpx(d, 14);
-        if (i < k) {
-            x += w + lpx(d, 8);
-        }
-    }
-    return rect_of(x, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16), w, lpx(d, HOME_CHIP_H));
+    const char* nm = online_chip_name(d, k);
+    return (chip != NULL ? sel_gui_text_width(chip, nm, strlen(nm)) : 40) + 2 * lpx(d, ONLINE_CHIP_PAD);
 }
 
-/* The source chips; the selected one is filled like the active facet. */
-static void online_draw_chips(desk* d, sel_gui_rect mn) {
+/* The chips' widths into w (at most ONLINE_CHIPS_MAX); returns the count. */
+static uint32_t online_chip_widths(desk* d, int32_t* w) {
     uint32_t k, n = online_scope_count(d);
+    n = n < (uint32_t)ONLINE_CHIPS_MAX ? n : (uint32_t)ONLINE_CHIPS_MAX;
     for (k = 0; k < n; k++) {
-        draw_chip(d, online_chip_rect(d, mn, k), online_chip_name(d, k), strcmp(online_chip_scope(d, k), d->scope) == 0, SEL_GUI_TOKEN_SURFACE);
+        w[k] = online_chip_w(d, k);
+    }
+    return n;
+}
+
+/* The whole row under the search field, margin to margin. */
+static sel_gui_rect online_chip_row(desk* d, sel_gui_rect mn) {
+    int32_t mg = lpx(d, HOME_MARGIN);
+    return rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16), mn.w - 2 * mg, lpx(d, HOME_CHIP_H));
+}
+
+/* The scrolling band of the chips: the row, less a chevron square and gap at each end when the chips overflow it. */
+static sel_gui_rect online_chip_band(desk* d, sel_gui_rect mn, int* overflow) {
+    int32_t w[ONLINE_CHIPS_MAX], cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
+    sel_gui_rect r = online_chip_row(d, mn);
+    uint32_t n = online_chip_widths(d, w);
+    *overflow = sel_uim_lfilter_chips_single(0, sel_uim_lfilter_chips_total(w, n, lpx(d, ONLINE_CHIP_GAP)), r.w);
+    return *overflow ? rect_of(r.x + cv + gap, r.y, r.w - 2 * (cv + gap), r.h) : r;
+}
+
+static int online_chip_overflow(desk* d, sel_gui_rect mn) {
+    int ov;
+    online_chip_band(d, mn, &ov);
+    return ov;
+}
+
+/* The left (right = 0) or right chevron button at the row's ends. */
+static sel_gui_rect online_chip_chevron(desk* d, sel_gui_rect mn, int right) {
+    sel_gui_rect r = online_chip_row(d, mn);
+    int32_t cv = lpx(d, HOME_CHIP_H);
+    return rect_of(right ? r.x + r.w - cv : r.x, r.y, cv, cv);
+}
+
+/* The chip that leads the band: the scroll position, clamped so the last chip never leaves the right end (a wider window or a
+ * shorter source list pulls it back). */
+static uint32_t online_chip_lead(desk* d, sel_gui_rect mn) {
+    int ov;
+    int32_t w[ONLINE_CHIPS_MAX];
+    sel_gui_rect b = online_chip_band(d, mn, &ov);
+    uint32_t n = online_chip_widths(d, w), last;
+    if (!ov) {
+        return 0u;
+    }
+    last = sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w);
+    return d->on_chip_first < last ? d->on_chip_first : last;
+}
+
+/* The k-th chip as laid out on the scrolled row (it may lie outside the band). */
+static sel_gui_rect online_chip_place(desk* d, sel_gui_rect mn, uint32_t k) {
+    int ov;
+    sel_gui_rect b = online_chip_band(d, mn, &ov);
+    uint32_t i, lead = online_chip_lead(d, mn);
+    int32_t x = b.x, gap = lpx(d, ONLINE_CHIP_GAP);
+    for (i = lead; i < k; i++) {
+        x += online_chip_w(d, i) + gap;
+    }
+    for (i = k; i < lead; i++) {
+        x -= online_chip_w(d, i) + gap;
+    }
+    return rect_of(x, b.y, online_chip_w(d, k), lpx(d, HOME_CHIP_H));
+}
+
+/* The k-th source chip's visible part: the placed chip cut to the band, empty when it is scrolled out (the hit rect and the dump). */
+static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
+    int ov;
+    return sel_gui_rect_intersect(online_chip_place(d, mn, k), online_chip_band(d, mn, &ov));
+}
+
+/* A chevron press: one chip back or on, stopping at both ends. Returns 1 when the row moved. */
+static int online_chip_scroll(desk* d, sel_gui_rect mn, int dir) {
+    int ov;
+    int32_t w[ONLINE_CHIPS_MAX];
+    sel_gui_rect b = online_chip_band(d, mn, &ov);
+    uint32_t n = online_chip_widths(d, w), lead = online_chip_lead(d, mn), last = sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w);
+    if (!ov || (dir < 0 && lead == 0u) || (dir > 0 && lead >= last)) {
+        return 0;
+    }
+    d->on_chip_first = dir < 0 ? lead - 1u : lead + 1u;
+    d->on_chip_scrolls++;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return 1;
+}
+
+/* The source chips, clipped to the band; the selected one is filled like the active facet. With an overflow the chevrons at the
+ * ends show in the text colour while they can move the row, muted at its ends. */
+static void online_draw_chips(desk* d, sel_gui_rect mn) {
+    int ov;
+    int32_t w[ONLINE_CHIPS_MAX];
+    sel_gui_rect b = online_chip_band(d, mn, &ov);
+    uint32_t k, n = online_chip_widths(d, w), lead = online_chip_lead(d, mn);
+    sel_gui_clip_push(d->canvas, b);
+    for (k = 0; k < n; k++) {
+        if (online_chip_rect(d, mn, k).w > 0) {
+            draw_chip(d, online_chip_place(d, mn, k), online_chip_name(d, k), strcmp(online_chip_scope(d, k), d->scope) == 0, SEL_GUI_TOKEN_SURFACE);
+        }
+    }
+    sel_gui_clip_pop(d->canvas);
+    if (ov) {
+        draw_chevron_button(d, online_chip_chevron(d, mn, 0), 0, lead > 0u);
+        draw_chevron_button(d, online_chip_chevron(d, mn, 1), 1, lead < sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w));
     }
 }
 
@@ -9095,6 +9212,16 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
 /* A click in the Search page's main region: a scope chip, a hit (opens and plays it). Returns 1 when used. */
 static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
     uint32_t k, n = online_scope_count(d);
+    if (online_chip_overflow(d, pm)) { /* I1073: a chevron scrolls the chip row (at an end it still takes the click) */
+        if (in_rect(online_chip_chevron(d, pm, 0), x, y)) {
+            online_chip_scroll(d, pm, -1);
+            return 1;
+        }
+        if (in_rect(online_chip_chevron(d, pm, 1), x, y)) {
+            online_chip_scroll(d, pm, 1);
+            return 1;
+        }
+    }
     for (k = 0; k < n; k++) {
         if (in_rect(online_chip_rect(d, pm, k), x, y)) {
             online_scope_pick(d, k);
@@ -11523,13 +11650,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         }
         if (ov) {
             for (k = side_chip_left_clear(d) ? 1u : 0u; k < 2u; k++) {
-                sel_gui_rect cv = side_chip_chevron(d, (int)k);
-                int can = k == 0u ? d->side_chip > 0u : d->side_chip < (uint32_t)SIDE_CHIPS;
-                hover_reg(d, cv);
-                sel_gui_round_rect(d->canvas, cv, cv.h / 2, hover_fill_of(d, cv, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED])));
-                sel_gui_icon_draw(d->canvas, &d->icons, k == 0u ? SEL_GUI_ICON_CHEVRON_LEFT : SEL_GUI_ICON_CHEVRON_RIGHT,
-                                  rect_of(cv.x + cv.w / 4, cv.y + cv.h / 4, cv.w / 2, cv.h / 2), cv.w / 2,
-                                  ARGB(d->theme.token[can ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+                draw_chevron_button(d, side_chip_chevron(d, (int)k), (int)k, k == 0u ? d->side_chip > 0u : d->side_chip < (uint32_t)SIDE_CHIPS);
             }
         }
         sel_gui_dirty_add(d->canvas, cr);

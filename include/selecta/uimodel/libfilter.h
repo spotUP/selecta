@@ -28,6 +28,10 @@ uint32_t sel_uim_lfilter_pass(sel_engine* e, uint32_t filter, sel_engine_library
  * measure their chip widths in their own units and ask here. total is the chips' summed width with gaps, band the width they may use. */
 int32_t sel_uim_lfilter_chips_total(const int32_t* widths, uint32_t n, int32_t gap);
 int sel_uim_lfilter_chips_single(int bitmap, int32_t total, int32_t band);
+/* I1073: a chip row that scrolls sideways by whole chips (the Search page source chips). The last chip that may lead the row: the
+ * smallest first index from which the chips first..n-1 fit band, so the right chevron stops once the last chip is in view. 0 when
+ * the whole row fits. */
+uint32_t sel_uim_lfilter_chips_first_max(const int32_t* widths, uint32_t n, int32_t gap, int32_t band);
 /* I918: the visualizer chooser. A tab row with every full plugin label when the labels (label_w[0..n), gap between) fit avail,
  * else one "< label >" chooser. Returns 1 for tabs. Both UIs measure their labels in their own units and ask here. */
 int sel_uim_viz_tabs_fit(const int32_t* label_w, uint32_t n, int32_t gap, int32_t avail);
