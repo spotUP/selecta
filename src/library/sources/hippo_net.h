@@ -16,7 +16,9 @@
 typedef struct sel_hippo_net_stats {
     uint32_t json_bytes; /* JSON list downloaded and accepted */
     uint32_t tsv_bytes;  /* TSV list downloaded and accepted */
-    uint32_t http_requests;
+    uint32_t http_requests; /* the two list requests */
+    uint32_t prg_requests;  /* I1058: one GET <base>/api/v1/playlists/<filename> per listed file */
+    uint32_t prg_files;     /* of those, the bodies kept (not an HTML error page) */
 } sel_hippo_net_stats;
 
 /* `base` is the server root (a trailing '/' is ignored). Returns 0 when neither list could be fetched and

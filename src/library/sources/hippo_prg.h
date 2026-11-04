@@ -18,4 +18,7 @@ typedef struct sel_hippo_prg_stats {
 /* 1 when the codec accepted the bytes (memory comes from the host). */
 int sel_hippo_prg_scan(const sel_host* host, const char* bytes, size_t len, sel_hippo_prg_stats* out);
 
+/* Song keys of a .prg, newline separated, into `out` (dividers and stealth entries left out). Returns the bytes written. */
+size_t sel_hippo_prg_keys(const sel_host* host, const char* bytes, size_t len, char* out, size_t cap);
+
 #endif

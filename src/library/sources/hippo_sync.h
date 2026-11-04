@@ -20,9 +20,14 @@ typedef struct sel_hippo_sync_stats {
     uint32_t lists;     /* playlist rows parsed from the list(s) and written to the catalogue */
     uint32_t skipped;   /* list records without a filename */
     uint32_t batches;   /* SEL_LIB_REQ_SCAN_BATCH requests sent */
+    uint32_t playlists; /* I1058: playlists written to the HippoPlayer folder of the Playlists tree */
     uint32_t prg_files; /* fetched .prg files the Hippo codec accepted */
     uint32_t prg_entries, prg_dividers, prg_stealth, prg_subsongs; /* summed over those files */
 } sel_hippo_sync_stats;
+
+/* I1058: calls fn(user, filename) for every list record of <dir>/hippo_list.json and <dir>/uhcplaylists.tsv that has a
+ * plain filename. Reads the lists with the parsers of the sync; writes nothing. */
+void sel_hippo_each_file(const sel_host* host, const char* dir, void (*fn)(void* user, const char* file), void* user);
 
 /* Applies <dir>/hippo_list.json and/or <dir>/uhcplaylists.tsv (at least one must exist), then every
  * every .prg in <dir>. Returns 0 when no list can be read, memory runs out or the DB rejects a batch. */
