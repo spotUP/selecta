@@ -14,8 +14,8 @@ crossings() {
 }
 render_sub() {
     rm -f "ss_$1.wav"
-    printf 'OPEN %s\nSUBSONG %s\nPLAY\n' "$sid" "$1" > "ss_$1.script"
-    out=$("$cli" render --script "ss_$1.script" --output "ss_$1.wav" --seconds 2 --rate 44100 2>/dev/null) ||
+    printf 'SUBSONG %s\n' "$1" > "ss_$1.script"
+    out=$("$cli" render "$sid" --script "ss_$1.script" --output "ss_$1.wav" --seconds 2 --rate 44100 2>/dev/null) ||
         fail "render subsong $1 failed"
     [ "$(field "$out" replayer)" = "sid" ] || fail "replayer=$(field "$out" replayer), want sid"
     crossings "ss_$1.wav"
