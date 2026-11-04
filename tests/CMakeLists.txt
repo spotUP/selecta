@@ -1986,6 +1986,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I698: MSX songs (plain .kss, MGSDRV .mgs) play through the render entry point; libkss must win over gme for .kss.
+  if(SELECTA_KSS_DRIVERS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/kss-decode)
+    add_test(NAME kss-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/kss_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/kss_test.kss ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/kss_test.mgs
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/kss-decode)
+    set_tests_properties(kss-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "kss_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/tiatracker-decode)
