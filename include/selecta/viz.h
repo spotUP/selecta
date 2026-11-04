@@ -60,9 +60,20 @@ typedef struct sel_viz_tap {
     int16_t pcm[SEL_VIZ_PCM_FRAMES * 2u];
     int16_t vu[SEL_VIZ_MAX_VOICES];
     sel_viz_sid_chip sid_state[SEL_VIZ_SID_CHIPS]; /* audio private: previous block, for the afterglow */
+    /* Pump private: the visual delay (I1042). `delay` blocks of latency hold back the frames the UI sees, so the scope
+     * matches what the output is playing. `queue` has delay + 1 slots (oldest first from `q_head`) and a last slot,
+     * `shown`, that holds the frame handed out as current. NULL while delay is 0. */
+    sel_viz_frame* queue;
+    uint32_t delay, q_head, q_count;
 } sel_viz_tap;
 
 void sel_viz_tap_init(sel_viz_tap* t);
+/* Pump thread. Holds the frames the pump sees back by `blocks` blocks (0: none; at most SEL_VIZ_MAX_DELAY_BLOCKS), the
+ * output latency in blocks. Returns the delay now in force. Allocates the queue; sel_viz_tap_free releases it. */
+#define SEL_VIZ_MAX_DELAY_BLOCKS 250u
+uint32_t sel_viz_set_delay(sel_viz_tap* t, uint32_t blocks);
+uint32_t sel_viz_delay(const sel_viz_tap* t);
+void sel_viz_tap_free(sel_viz_tap* t);
 
 /* Audio thread. Frames of the open block still to render; opens a block of
  * `rate / 50` frames (at least 1) when none is open. */

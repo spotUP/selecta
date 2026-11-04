@@ -1,9 +1,10 @@
 /* Visualisation taps (design doc section 8, plan M1.3 Phase 1).
  * Audio thread: block bookkeeping, the post-mix ring, the triple buffer
  * writer. Pump thread: the triple buffer reader, correlation and spectrum.
- * Integer only, no allocation, no locks. */
+ * Integer only, no locks; the only allocation is the visual delay queue (I1042). */
 #include <selecta/viz.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "viz_table.h"
@@ -99,16 +100,54 @@ void sel_viz_sid_glow(sel_viz_sid_chip* now, const uint8_t prev_reg[SEL_VIZ_SID_
     }
 }
 
+uint32_t sel_viz_set_delay(sel_viz_tap* t, uint32_t blocks) {
+    if (blocks > SEL_VIZ_MAX_DELAY_BLOCKS) blocks = SEL_VIZ_MAX_DELAY_BLOCKS;
+    if (blocks == t->delay) return t->delay;
+    free(t->queue);
+    t->queue = NULL;
+    t->q_head = t->q_count = 0;
+    t->delay = 0;
+    if (blocks > 0) {
+        t->queue = (sel_viz_frame*)calloc((size_t)blocks + 2u, sizeof(sel_viz_frame));
+        if (t->queue != NULL) t->delay = blocks;
+    }
+    return t->delay;
+}
+
+uint32_t sel_viz_delay(const sel_viz_tap* t) {
+    return t->delay;
+}
+
+void sel_viz_tap_free(sel_viz_tap* t) {
+    free(t->queue);
+    t->queue = NULL;
+    t->delay = 0;
+}
+
 int sel_viz_acquire(sel_viz_tap* t) {
     uint32_t old;
+    sel_viz_frame* shown;
     if (!(t->middle & 4u)) return 0;
     old = swap_middle(&t->middle, t->read_idx);
     t->read_idx = old & 3u;
+    if (t->delay == 0) return 1;
+    /* Delayed: queue the new frame; the oldest one is shown once more than `delay` blocks are held. */
+    shown = &t->queue[t->delay + 1u];
+    if (t->q_count == t->delay + 1u) { /* full: drop the oldest */
+        t->q_head = (t->q_head + 1u) % (t->delay + 1u);
+        t->q_count--;
+    }
+    t->queue[(t->q_head + t->q_count) % (t->delay + 1u)] = t->frames[t->read_idx];
+    t->q_count++;
+    if (t->q_count <= t->delay) return 0;
+    *shown = t->queue[t->q_head];
+    t->q_head = (t->q_head + 1u) % (t->delay + 1u);
+    t->q_count--;
     return 1;
 }
 
 const sel_viz_frame* sel_viz_current(const sel_viz_tap* t) {
-    return &t->frames[t->read_idx];
+    return t->delay != 0 ? &t->queue[t->delay + 1u] : &t->frames[t->read_idx];
 }
 
 /* Integer square root, rounded down. */

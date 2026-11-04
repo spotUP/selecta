@@ -7889,6 +7889,9 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect db = dev_btn_rect(d);
             o = dump_put(d, o, "devices btn %d %d %d %d n=%u clicks=%u picks=%u pick=%s\n", (int)db.x, (int)db.y, (int)db.w, (int)db.h,
                          (unsigned)d->dev_n, (unsigned)d->dev_clicks, (unsigned)d->dev_picks, d->dev_pick);
+            /* I1042: the engine's own pref value (host config_get), so a pick that never reached PREF_SET, or did not survive
+             * a restart, shows here whatever the UI remembered locally. */
+            o = dump_put(d, o, "devices pref=%s\n", desk_pref(d, "output.device", ""));
         }
     }
     if (o + 200u < sizeof d->library_dump) { /* the hover state (I272) */

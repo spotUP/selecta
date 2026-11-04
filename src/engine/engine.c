@@ -15,6 +15,7 @@
 #include <selecta/uimodel/browse.h>
 #include <selecta/engine.h>
 #include <selecta/format_label.h>
+#include <selecta/output.h>
 #include <selecta/platform.h>
 #include <selecta/machine.h>
 
@@ -790,6 +791,8 @@ struct sel_engine {
     uint32_t lib_err_slot;
     sel_view view;
     sel_viz_tap viz;       /* visualisation taps; the audio thread writes, the pump reads */
+    const sel_tag* out_hooks;        /* hooks of the chosen output (sel_engine_set_output) */
+    volatile uint32_t out_latency_ms; /* real latency of the open output, SEL_OUT_LATENCY_QUERY (I1042); 0 when it has none */
     uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
     sel_dsp_chain dsp;
     sel_mix_stage stage; /* LED filter and stereo width, before the DSP chain (I127, I128) */
@@ -10325,6 +10328,7 @@ void sel_engine_destroy(sel_engine* e) {
     if (e) {
         SEL_THREAD_NOT_AUDIO(e);
         uint32_t i;
+        sel_viz_tap_free(&e->viz);
         if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) { /* I787: end the in-flight sidebar read */
 #if defined(SEL_LI_THREAD)
             (void)pthread_join(e->li_thread, NULL);
@@ -10537,6 +10541,7 @@ static void refresh_snapshot(sel_engine* e) {
     sel_song_state* song = &e->state.song;
     e->state.view = &e->view.pub;
     e->state.mixed_path = e->mixed_path;
+    (void)sel_viz_set_delay(&e->viz, (e->out_latency_ms * 50u + 500u) / 1000u); /* one block is 20 ms */
     if (sel_viz_acquire(&e->viz)) {
         sel_viz_analyse(&e->viz, (int)e->viz_spectrum);
     }
@@ -10888,7 +10893,14 @@ uint32_t sel_engine_routed_direct(const sel_engine* e) {
     return e->route_direct;
 }
 
+void sel_engine_output_opened(sel_engine* e, void* out) {
+    sel_out_latency_query_fn query =
+        e->out_hooks != NULL ? (sel_out_latency_query_fn)sel_tag_find(e->out_hooks, SEL_OUT_LATENCY_QUERY, 0) : NULL;
+    e->out_latency_ms = query != NULL && out != NULL ? query(out) : 0u;
+}
+
 void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks) {
+    e->out_hooks = out_hooks;
     e->mixed_path = sel_tag_find(out_hooks, SEL_OUT_VOICES, 0) == 0;
     e->voice_max = (uint32_t)sel_tag_find(out_hooks, SEL_OUT_VOICE_MAX, 0);
     if (sel_tag_find(out_hooks, SEL_OUT_PAULA_HW, 0) != 0) {
@@ -10920,6 +10932,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->rp_mute_calls = sl ? sl->rp_mute_calls : 0;
     out->rp_cfg_applied = sl && sl->rp_cfg_applied != NULL && sl->rp_state != NULL ? sl->rp_cfg_applied(sl->rp_state) : 0;
     out->rendered_frames = sl ? sl->rendered_frames : 0;
+    out->out_latency_ms = e->out_latency_ms;
+    out->viz_delay_blocks = sel_viz_delay(&e->viz);
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;

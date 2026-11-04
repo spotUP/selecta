@@ -97,6 +97,14 @@ static const sel_tag* null_stats(void* state) {
     return o->stats;
 }
 
+/* The headless sink reports a distinct, fixed latency so a test can see the engine take the queried value instead of the
+ * nominal one (I1042). */
+#define NULL_TEST_LATENCY_MS 340u
+static uint32_t null_latency_query(void* state) {
+    (void)state;
+    return NULL_TEST_LATENCY_MS;
+}
+
 /* A fixed device list: the null output is the headless test sink, so the dui tests get a device picker with known rows
  * (system default first, one AirPlay speaker) without a sound card (I1039). */
 static uint32_t null_devices(sel_out_device* out, uint32_t max) {
@@ -142,7 +150,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[8], SEL_OUT_STATS, SEL_TAG_FN(null_stats));
     set(&g_hooks[9], SEL_OUT_CLOCKLESS, 1);
     set(&g_hooks[10], SEL_OUT_DEVICES, SEL_TAG_FN(null_devices));
-    set(&g_hooks[11], SEL_TAG_END, 0);
+    set(&g_hooks[11], SEL_OUT_LATENCY_QUERY, SEL_TAG_FN(null_latency_query));
+    set(&g_hooks[12], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "null");
