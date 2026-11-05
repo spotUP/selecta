@@ -11,10 +11,11 @@ if(plan_count EQUAL 0)
   message(FATAL_ERROR "no DUI ids parsed from ${PLAN}")
 endif()
 
-execute_process(COMMAND "${CTEST}" --test-dir "${BUILD_DIR}" -L dui -N
+# -L takes a regex: anchor it, so a label that only contains dui (dui-red, dui-perf) is not counted on its own.
+execute_process(COMMAND "${CTEST}" --test-dir "${BUILD_DIR}" -L "^dui$" -N
   OUTPUT_VARIABLE listing RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0 OR NOT listing MATCHES "Total Tests: ([0-9]+)")
-  message(FATAL_ERROR "ctest -L dui -N failed (${rc}):\n${listing}")
+  message(FATAL_ERROR "ctest -L ^dui$ -N failed (${rc}):\n${listing}")
 endif()
 set(test_count "${CMAKE_MATCH_1}")
 if(NOT test_count EQUAL plan_count)

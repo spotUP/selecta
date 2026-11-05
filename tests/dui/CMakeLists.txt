@@ -137,6 +137,8 @@ if(NOT SEL_AMIGA)
       set(tlabel playing-mark)
     elseif(tname STREQUAL "dui-collection-page") # I678e: a playlist opens as the collection page through COLLECTION_OPEN; ledger row, not a plan item
       set(tlabel collection-page)
+    elseif(tname STREQUAL "dui-search-catalogue") # I1053a: archive sources answer Search from the catalogue FTS, Not synced plus Sync; ledger row, not a plan item
+      set(tlabel search-catalogue)
     elseif(tname STREQUAL "dui-output-device") # I1039: the devices button and picker; ledger row, not a plan item
       set(tlabel output-device)
     elseif(tname STREQUAL "dui-sidebar-recents") # I678c: Recents order follows last play or page open through LIBRARY_TOUCH; ledger row, not a plan item

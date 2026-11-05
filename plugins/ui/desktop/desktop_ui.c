@@ -15221,7 +15221,8 @@ static int ctl_state(desk* d, char* reply, size_t cap) {
         ctl_put(reply, cap, &o, "%s", rows);
     }
     d->ctl_states++; /* counts this reply, so the ctl line below already includes it */
-    snprintf(tail, sizeof tail, "input_pending=%d\nui_frames=%u\nctl lines=%u states=%u frames=%u clicks=%u sends=%u", d->input != NULL && !d->input_done, (unsigned)d->frames, (unsigned)d->ctl_lines,
+    ctl_put(reply, cap, &o, "ui_frames=%u\n", (unsigned)d->frames); /* I1082a: own put; tail[96] has no room for it (cut sends=) */
+    snprintf(tail, sizeof tail, "input_pending=%d\nctl lines=%u states=%u frames=%u clicks=%u sends=%u", d->input != NULL && !d->input_done, (unsigned)d->ctl_lines,
              (unsigned)d->ctl_states, (unsigned)d->ctl_frames, (unsigned)d->clicks, (unsigned)d->sends);
     ctl_put(reply, cap, &o, "%s", tail);
     if (o < cap) {
