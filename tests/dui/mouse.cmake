@@ -42,6 +42,25 @@ endfunction()
 mouse_run(base "move 5 5\n")
 expect("${base}" playlist_entries 3)
 
+# I1079d: the songs table columns come from sel_uim_cols_split (design 2026-11-05-I1079 section 3.1): the splitter ran, Title takes the row width
+# minus the fixed Format column, Format ends at the row width, the two do not overlap.
+if(NOT "${base}" MATCHES "songscols_calls ([0-9]+)\nsongscols row_w=([0-9]+) title=([0-9]+):([0-9]+) format=([0-9]+):([0-9]+)")
+  message(FATAL_ERROR "no songscols lines in:\n${base}")
+endif()
+if(CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the songs table never ran sel_uim_cols_split (songscols_calls ${CMAKE_MATCH_1})")
+endif()
+set(sc_rw ${CMAKE_MATCH_2})
+set(sc_tx ${CMAKE_MATCH_3})
+set(sc_tw ${CMAKE_MATCH_4})
+set(sc_fx ${CMAKE_MATCH_5})
+set(sc_fw ${CMAKE_MATCH_6})
+math(EXPR sc_end "${sc_fx} + ${sc_fw}")
+math(EXPR sc_tsum "${sc_tx} + ${sc_tw}")
+if(NOT sc_tx EQUAL 0 OR NOT sc_fx EQUAL sc_tsum OR NOT sc_end EQUAL sc_rw OR sc_fw LESS 1)
+  message(FATAL_ERROR "songs columns do not tile the row: row_w=${sc_rw} title=${sc_tx}:${sc_tw} format=${sc_fx}:${sc_fw}")
+endif()
+
 # I448: the drop targets sit inside the songs content and never touch the rail (logo and Home row).
 if(NOT "${base}" MATCHES "rail (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
   message(FATAL_ERROR "no rail line in:\n${base}")

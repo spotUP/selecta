@@ -177,6 +177,7 @@ typedef struct mui_state {
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
     mui_aalist_cols main_cols;       /* I667i2: weights and fixed-width samples of the shown columns */
+    uint32_t cell_n;                 /* I1079d: how many of cell[] hold the rows now listed (the absent-column rule reads them) */
     char lyric_line[256];            /* I667i2: the lyrics line handed to the lyrics AAList */
     char col_fmt[128];               /* the shown column set as MUI format text (mui_columns_format), the rig read-back */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
@@ -1213,6 +1214,11 @@ static void mui_subsong_sync(mui_state* s, const sel_uim_frame* f) {
  * (title row on). The columns shown are mui_columns_for(breakpoint): the rest are hidden by width. */
 static struct Hook g_list_hook;
 static uint32_t g_list_hook_calls;
+/* The text of column `col` of a row's cells. */
+static const char* mui_cell_col(const mui_cells* cells, uint8_t col) {
+    return col == MUI_COL_TITLE ? cells->title : col == MUI_COL_ARTIST ? cells->artist : col == MUI_COL_ALBUM ? cells->extra.album : col == MUI_COL_LENGTH ? cells->extra.length : cells->extra.format;
+}
+
 static ULONG mui_list_display(struct Hook* hook, char** array, mui_cells* cells) {
     static const char* const titles[MUI_COL_COUNT] = {"Title", "Artist", "Album", "Length", "Format"};
     uint8_t cols[MUI_COL_COUNT];
@@ -1220,7 +1226,7 @@ static ULONG mui_list_display(struct Hook* hook, char** array, mui_cells* cells)
     (void)hook;
     g_list_hook_calls++;
     for (k = 0; k < n; k++) {
-        const char* t = cells == NULL ? titles[cols[k]] : cols[k] == MUI_COL_TITLE ? cells->title : cols[k] == MUI_COL_ARTIST ? cells->artist : cols[k] == MUI_COL_ALBUM ? cells->extra.album : cols[k] == MUI_COL_LENGTH ? cells->extra.length : cells->extra.format;
+        const char* t = cells == NULL ? titles[cols[k]] : mui_cell_col(cells, cols[k]);
         array[k] = (char*)t;
     }
     return 0;
@@ -1363,8 +1369,10 @@ static Object* mui_tool_group(mui_state* s) {
     return g;
 }
 
-/* I667i2: the main list's columns (weights and fixed-width samples) for a breakpoint. */
-static void mui_main_cols_fill(uint32_t bp, mui_aalist_cols* out) {
+/* I667i2: the main list's columns (weights and fixed-width samples) for a breakpoint. I1079d: a column no listed row has text for (the
+ * Artist or Album of a podcast list) is absent, as in the desktop (design 2026-11-05-I1079 section 3.4): weight 0 and no sample, so the shared
+ * splitter gives it width 0 and no gap. The Title column is never dropped, and an empty list keeps every column. */
+static void mui_main_cols_fill(uint32_t bp, mui_aalist_cols* out, const mui_cells* cells, uint32_t cell_n) {
     static const char* const sample[MUI_COL_COUNT] = {NULL, NULL, NULL, "00:00:00", "Format"};
     uint8_t cols[MUI_COL_COUNT];
     uint32_t k, n;
@@ -1372,8 +1380,21 @@ static void mui_main_cols_fill(uint32_t bp, mui_aalist_cols* out) {
     n = mui_columns_for(bp, cols);
     out->n = (int)mui_columns_weights(bp, out->weight);
     for (k = 0; k < n && k < MUI_AALIST_COLS; k++) {
-        out->sample[k] = sample[cols[k]];
+        uint32_t r, has = cell_n == 0u || cols[k] == MUI_COL_TITLE;
+        for (r = 0; !has && r < cell_n; r++) {
+            has = *mui_cell_col(&cells[r], cols[k]) != '\0';
+        }
+        out->sample[k] = has ? sample[cols[k]] : NULL;
+        if (!has) {
+            out->weight[k] = 0;
+        }
     }
+}
+
+/* Refill the main list's columns from the rows now listed and hand them to the list (the only place the columns attribute is set). */
+static void mui_main_cols_push(mui_state* s) {
+    mui_main_cols_fill(s->col_bp, &s->main_cols, s->cell, s->cell_n);
+    set(s->list, AAL_Columns, (ULONG)&s->main_cols);
 }
 
 /* I667i2: the AAList cell callback of the main list; the display hook stays the one source of the texts (row -1: the column titles). */
@@ -1570,7 +1591,7 @@ static Object* mui_main_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     s->col_bp = SEL_UIM_BP_COUNT;
     mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
-    mui_main_cols_fill(s->col_bp, &s->main_cols);
+    mui_main_cols_fill(s->col_bp, &s->main_cols, s->cell, s->cell_n);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
     s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
@@ -2226,8 +2247,7 @@ static void mui_refresh(mui_state* s) {
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
             mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
-            mui_main_cols_fill(s->col_bp, &s->main_cols);
-            set(s->list, AAL_Columns, (ULONG)&s->main_cols);
+            mui_main_cols_push(s);
         }
         {
             uint32_t drill = v->style == SEL_VIEW_STYLE_DRILLDOWN; /* MUI-P3-3: the breadcrumb line, drilldown only */
@@ -2311,6 +2331,8 @@ static void mui_refresh(mui_state* s) {
                 s->entry_ptr[i] = (const char*)&s->cell[i];
             }
             s->entry_ptr[n] = NULL;
+            s->cell_n = (uint32_t)n;
+            mui_main_cols_push(s); /* I1079d: a column empty for the whole list drops out */
             s->list_active_set = active;
             SetAttrs(s->list, AAL_Count, (ULONG)n, AAL_Playing, (ULONG)playing, AAL_Active, (ULONG)(active < 0 ? -1L : (long)active), TAG_DONE);
         }

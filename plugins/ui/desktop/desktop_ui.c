@@ -260,6 +260,7 @@ typedef struct desk {
     char* pls_buf;           /* its song keys, NUL separated, in playlist order */
     uint32_t* pls_off;       /* offset of each key in pls_buf */
     char (*pls_title)[96];   /* the catalogue title of each song, read once per reload */
+    int32_t songs_fmt_w;     /* I1079d: the measured width of the widest Format label of the songs table (header and rows), 0 = stale */
     uint32_t pls_cols_ok, pls_has_artist, pls_has_album, pls_has_tail; /* I1079c: which collection page columns have content (cached) */
     pls_meta_row* pls_meta;  /* I678h3: the artist and album of each song, read once per reload */
     sel_gui_rect si_composer; /* I678h3: the Song Information composer link, zero width when the page has no composer row */
@@ -1880,11 +1881,45 @@ static int32_t songs_top(const desk* d) {
     return mn.y + sp + lpx(d, 48) + sp;
 }
 
-static sel_gui_rect songs_header_col(const desk* d, uint32_t col) {
+/* I1079d: the songs table is two columns on the shared splitter sel_uim_cols_split (design 2026-11-05-I1079 section 3.2): Title takes weight 3 of
+ * the room, Format is fixed at the measured widest Format label (the longest row label or the sorted header) plus the cell padding. The measure
+ * is cached until the next draw_songs, which clears it. */
+enum { SONGS_C_TITLE, SONGS_C_FORMAT, SONGS_C_N };
+
+static int32_t songs_format_w(desk* d) {
+    if (d->songs_fmt_w <= 0) {
+        const sel_state* st = sel_engine_state(d->engine);
+        const sel_gui_atlas* semi = desk_font(d, 1, 13);
+        uint32_t i, n = st->queue_count < 512u ? st->queue_count : 512u;
+        int32_t mx = 0, tw;
+        char label[SEL_FORMAT_LABEL_MAX];
+        if (semi == NULL) {
+            return 0;
+        }
+        mx = sel_gui_text_width(semi, "Format (descending)", strlen("Format (descending)"));
+        for (i = 0; i < n; i++) {
+            queue_format(st, i, label, sizeof label);
+            tw = sel_gui_text_width(semi, label, strlen(label));
+            mx = tw > mx ? tw : mx;
+        }
+        d->songs_fmt_w = mx + 2 * lpx(d, 8);
+    }
+    return d->songs_fmt_w;
+}
+
+static void songs_cols(desk* d, int32_t row_w, int32_t* x, int32_t* w) {
+    sel_uim_col c[SONGS_C_N];
+    memset(c, 0, sizeof c);
+    c[SONGS_C_TITLE].weight = 3;
+    c[SONGS_C_FORMAT].fixed = songs_format_w(d);
+    (void)sel_uim_cols_split(row_w, 0, c, SONGS_C_N, x, w);
+}
+
+static sel_gui_rect songs_header_col(desk* d, uint32_t col) {
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t split = mn.w * 3 / 4;
-    return col == 0u ? rect_of(mn.x, songs_top(d), split, lpx(d, SONG_HEADER_H))
-                     : rect_of(mn.x + split, songs_top(d), mn.w - split, lpx(d, SONG_HEADER_H));
+    int32_t x[SONGS_C_N], w[SONGS_C_N];
+    songs_cols(d, mn.w, x, w);
+    return rect_of(mn.x + x[col], songs_top(d), w[col], lpx(d, SONG_HEADER_H));
 }
 
 static sel_gui_rect songs_row_rect(const desk* d, uint32_t row) {
@@ -1972,6 +2007,7 @@ static void draw_songs(desk* d) {
     if (d->order_n != st->queue_count) {
         songs_resort(d);
     }
+    d->songs_fmt_w = 0; /* I1079d: measure the Format labels again for this frame */
     sel_gui_clip_push(d->canvas, mn);
     sel_gui_fill_rect(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.h), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     for (c = 0; c < 2u; c++) {
@@ -3982,6 +4018,47 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     int32_t w = mn.w - 2 * mg;
     return rect_of(mn.x + mg, mn.y + lib_body_y(d, sel_engine_state(d->engine)) + (int32_t)i * lpx(d, LIB_ROW_H) - lib_off_px(d, sel_engine_state(d->engine)),
                    w > 0 ? w : 0, lpx(d, LIB_ROW_H));
+}
+
+/* I1079d: a Library tree row is the name and, when some row has one, the count ("N songs" on a node, "Folder" on a directory). The shared
+ * splitter sel_uim_cols_split (design 2026-11-05-I1079 section 3.2): the name is a flex column (min 120 points), the count is fixed at the
+ * measured widest count text; a list with no count text (leaf-only rows) has the count column absent, width 0 and no gap. */
+enum { LIB_C_NAME, LIB_C_COUNT, LIB_C_N };
+
+static int lib_count_text(const sel_view_row* vr, char* out, size_t cap) {
+    if (vr->kind == (uint32_t)SEL_ROW_NODE) {
+        snprintf(out, cap, "%u songs", (unsigned)vr->count);
+        return 1;
+    }
+    if (vr->kind == (uint32_t)SEL_ROW_DIR) {
+        snprintf(out, cap, "Folder");
+        return 1;
+    }
+    return 0;
+}
+
+/* The widest count text of the engine's tree rows (0 when no row has one). */
+static int32_t lib_view_count_w(desk* d, const sel_state* st) {
+    const sel_gui_atlas* at = desk_font(d, 0, 14);
+    uint32_t k;
+    int32_t mx = 0;
+    char line[48];
+    for (k = 0; at != NULL && k < st->view->row_n; k++) {
+        if (lib_count_text(&st->view->rows[k], line, sizeof line)) {
+            int32_t tw = sel_gui_text_width(at, line, strlen(line));
+            mx = tw > mx ? tw : mx;
+        }
+    }
+    return mx;
+}
+
+static void lib_tree_cols(const desk* d, int32_t row_w, int32_t count_w, int32_t* x, int32_t* w) {
+    sel_uim_col c[LIB_C_N];
+    memset(c, 0, sizeof c);
+    c[LIB_C_NAME].weight = 1;
+    c[LIB_C_NAME].min_w = lpx(d, 120);
+    c[LIB_C_COUNT].fixed = count_w;
+    (void)sel_uim_cols_split(row_w, count_w > 0 ? lpx(d, 8) : 0, c, LIB_C_N, x, w);
 }
 
 /* The Statistics strip of the Library page, across the top of the main region between the tab row and the rows or the tile
@@ -7342,6 +7419,13 @@ static const char* library_dump_build(desk* d) {
                                   (unsigned)vr->expanded, vr->text != NULL ? vr->text : "");
             o = dump_put(d, o, "vrect %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
         }
+        {   /* I1079d: the name/count split of the tree rows, from the same lib_tree_cols the draw uses */
+            int32_t tx[LIB_C_N], tw[LIB_C_N];
+            int32_t rw = lib_row_rect(d, panel_rect(d, "main"), 0u).w;
+            lib_tree_cols(d, rw, lib_view_count_w(d, st), tx, tw);
+            o = dump_put(d, o, "libcols_calls %u\nlibcols row_w=%d name=%d:%d count=%d:%d\n", (unsigned)sel_uim_cols_calls(), (int)rw, (int)tx[0],
+                         (int)tw[0], (int)tx[1], (int)tw[1]);
+        }
     }
     if (st->view != NULL && st->view->style >= SEL_VIEW_STYLE_GRID) { /* grid, cover flow, compact: the rows and their artwork ids */
         const sel_view_state* v = st->view;
@@ -7412,6 +7496,12 @@ static const char* library_dump_build(desk* d) {
     for (uint32_t tg = 0; tg <= SONG_PLAYLIST_TARGETS; tg += SONG_PLAYLIST_TARGETS) { /* I448: first and last drop target, then the rail */
         sel_gui_rect tr = songs_target_rect(d, tg);
         o = dump_put(d, o, "songs_target %u %d %d %d %d\n", (unsigned)tg, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
+    }
+    {   /* I1079d: the songs table split (header columns and the row width), from the same songs_cols the draw uses */
+        int32_t sx[SONGS_C_N], sw[SONGS_C_N];
+        songs_cols(d, region_rect(d, "main").w, sx, sw);
+        o = dump_put(d, o, "songscols_calls %u\nsongscols row_w=%d title=%d:%d format=%d:%d\n", (unsigned)sel_uim_cols_calls(), (int)region_rect(d, "main").w,
+                     (int)sx[0], (int)sw[0], (int)sx[1], (int)sw[1]);
     }
     {
         sel_gui_rect rl = region_rect(d, "sidebar");
@@ -8436,6 +8526,8 @@ static void draw_library(desk* d) {
             p = NULL;
         } else if (lib_view_on(d, st)) { /* the engine's tree or column rows: node rows with their song count, songs indented */
             uint32_t k;
+            int32_t tcx[LIB_C_N], tcw[LIB_C_N];
+            lib_tree_cols(d, lib_row_rect(d, mn, 0u).w, lib_view_count_w(d, st), tcx, tcw); /* I1079d: one split for every row */
             for (k = 0; k < st->view->row_n; k++) {
                 const sel_view_row* vr = &st->view->rows[k];
                 sel_gui_rect r = lib_row_rect(d, mn, k);
@@ -8454,14 +8546,11 @@ static void draw_library(desk* d) {
                     char lp[sizeof((song_ref*)0)->path];
                     int pl = !node && !head && (vr->kind == (uint32_t)SEL_ROW_HOME ? vr->album == 0u && song_playing(d, vr->key)
                                                                                      : sel_engine_view_row_path(d->engine, k, lp, sizeof lp) && song_playing(d, lp));
-                    draw_text(d, rect_of(r.x + ind, r.y, r.w * 2 / 3 - ind, r.h), vr->text != NULL ? vr->text : "", node || head || pl, 15,
+                    draw_text(d, rect_of(r.x + ind, r.y, tcw[LIB_C_NAME] > ind ? tcw[LIB_C_NAME] - ind : 0, r.h), vr->text != NULL ? vr->text : "", node || head || pl, 15,
                               row_ink(d, r, pl || (node && vr->expanded) ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : vr->kind == (uint32_t)SEL_ROW_HEADING ? muted : text));
                 }
-                if (node) {
-                    snprintf(line, sizeof line, "%u songs", (unsigned)vr->count);
-                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, row_ink(d, r, muted));
-                } else if (vr->kind == (uint32_t)SEL_ROW_DIR) {
-                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), "Folder", 0, 14, row_ink(d, r, muted));
+                if (lib_count_text(vr, line, sizeof line)) {
+                    draw_text(d, rect_of(r.x + tcx[LIB_C_COUNT], r.y, tcw[LIB_C_COUNT], r.h), line, 0, 14, row_ink(d, r, muted));
                 }
                 sel_gui_dirty_add(d->canvas, r);
                 lib_view_row_reg(d, mn, st, k, r);
@@ -8473,7 +8562,21 @@ static void draw_library(desk* d) {
             }
             p = NULL;
         } else {
+        int32_t lcx[LIB_C_N], lcw[LIB_C_N];
         sel_gui_clip_push(d->canvas, rect_of(mn.x, lib_list_top(d, mn, st), mn.w, mn.y + mn.h - lib_list_top(d, mn, st)));
+        {   /* I1079d: the same name/count split for the composer rows; every row has the "N songs" count, so the widest is measured once */
+            const sel_gui_atlas* at14 = desk_font(d, 0, 14);
+            const char* q;
+            int32_t cmx = 0;
+            for (q = lib_rows_first(st); at14 != NULL && q != NULL && *q != '\0'; q = lib_rows_next(st, q)) {
+                char ln[48];
+                int32_t tw;
+                snprintf(ln, sizeof ln, "%s songs", lib_next(lib_next(q)));
+                tw = sel_gui_text_width(at14, ln, strlen(ln));
+                cmx = tw > cmx ? tw : cmx;
+            }
+            lib_tree_cols(d, lib_row_rect(d, mn, 0u).w, cmx, lcx, lcw);
+        }
         for (p = lib_rows_first(st); p != NULL && *p != '\0'; i++) {
             const char* disp = lib_next(p);
             const char* cnt = lib_next(disp);
@@ -8487,9 +8590,9 @@ static void draw_library(desk* d) {
                         sel_gui_fill_rect(d->canvas, r, lf);
                     }
                 }
-                draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, row_ink(d, r, text));
+                draw_text(d, rect_of(r.x, r.y, lcw[LIB_C_NAME], r.h), disp, 1, 15, row_ink(d, r, text));
                 snprintf(line, sizeof line, "%s songs", cnt);
-                draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, row_ink(d, r, muted));
+                draw_text(d, rect_of(r.x + lcx[LIB_C_COUNT], r.y, lcw[LIB_C_COUNT], r.h), line, 0, 14, row_ink(d, r, muted));
                 sel_gui_dirty_add(d->canvas, r);
             }
             p = lib_rows_next(st, p);
