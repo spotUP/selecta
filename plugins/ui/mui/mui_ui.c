@@ -986,9 +986,12 @@ static void mui_side_button(Object* g, const char* label, LONG id) {
 static void mui_lib_press(mui_state* s, int dir, int chip);
 static Object* mui_sidebar_dyn(const mui_sidebar_model* m);
 
-/* I669: the dynamic part of the sidebar, S5 to S9, built from the model alone. */
+/* I669: the dynamic part of the sidebar, S5 to S9, built from the model alone. I1092c: the part is a scrolled virtual group: a plain
+ * group asks for the height of every library row, so with a few playlists the sidebar alone pushed the full layout's minimum to
+ * 638 rows and the 800x600 screen refused it (the open ladder fell to the mini layout). A scrolled group asks for scroll bars only. */
 static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
-    Object* d = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* d = MUI_NewObject((char*)MUIC_Virtgroup, TAG_DONE);
+    Object* sg;
     uint32_t i;
     if (d == NULL) {
         return NULL;
@@ -1024,7 +1027,11 @@ static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
         mui_side_button(d, m->card_button, CTL_SIDE_BASE + MUI_SIDE_CARD);
     }
     DoMethod(d, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
-    return d;
+    sg = MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, d, TAG_DONE);
+    if (sg == NULL) {
+        MUI_DisposeObject(d);
+    }
+    return sg;
 }
 
 /* The model of the sidebar for the filter in force: the rows are s->side_items, passed by sel_uim_lfilter_pass (mui_sidebar_fill). */
