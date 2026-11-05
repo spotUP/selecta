@@ -2060,6 +2060,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I705a: a generated SNSF (hand-assembled 65816 + SPC700 boot handshake) plays through the render entry point (snsf module).
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-decode)
+    add_test(NAME snsf-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/snsf_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/snsf_test.snsf
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-decode)
+    set_tests_properties(snsf-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "snsf_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I704b: a real Capcom game set (Mega Man: The Power Battle, CPS-2 Kabuki key and ROM banks in the .qsflib) renders
   # through the same entry point. Length tag 0:21, fade 0: exactly 21 s, so 21 s minimum and 22 s maximum.
   if(SELECTA_GPL_PLUGINS)
