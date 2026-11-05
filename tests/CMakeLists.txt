@@ -3050,29 +3050,31 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-sync-dispatch COMMAND library_sync_dispatch_test)
   set_tests_properties(library-sync-dispatch PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sync_dispatch_ok")
 
+  # I1089: selecta_core (shared, MODULE mode) must come BEFORE selecta_library: ld takes the first definition, so the other order links a private
+  # copy of the source registry into the test and the stand-in sources it registers never reach the engine.
   # I1019a: SOURCE_SEARCH * fans out over every enabled searchable source in registry order; a newer query drops the stale task's hits.
   add_executable(source_search_all_test engine/source_search_all_test.c)
   target_include_directories(source_search_all_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(source_search_all_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(source_search_all_test PRIVATE selecta_core selecta_library)
   add_test(NAME source-search-all COMMAND source_search_all_test)
   set_tests_properties(source-search-all PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_all_ok")
   add_executable(search_keeps_sync_test engine/search_keeps_sync_test.c)
   target_include_directories(search_keeps_sync_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(search_keeps_sync_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(search_keeps_sync_test PRIVATE selecta_core selecta_library)
   add_test(NAME search-keeps-sync COMMAND search_keeps_sync_test)
   set_tests_properties(search-keeps-sync PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "search_keeps_sync_ok")
 
   # I1019b: the Search view lists a From section per source after Artists; Enter on a From row plays its source:path key.
   add_executable(source_search_view_test engine/source_search_view_test.c)
   target_include_directories(source_search_view_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(source_search_view_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(source_search_view_test PRIVATE selecta_core selecta_library)
   add_test(NAME source-search-view COMMAND source_search_view_test)
   set_tests_properties(source-search-view PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_view_ok")
 
   # I1043: a search hit keeps its whole format name (the longest table label), not 15 characters.
   add_executable(source_search_format_test engine/source_search_format_test.c)
   target_include_directories(source_search_format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(source_search_format_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(source_search_format_test PRIVATE selecta_core selecta_library)
   add_test(NAME source-search-format COMMAND source_search_format_test)
   set_tests_properties(source-search-format PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_search_format_ok")
 
