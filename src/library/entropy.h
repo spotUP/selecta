@@ -26,6 +26,9 @@ int sel_entropy_seed_load(const char* path);
  * when not ready or no path. */
 int sel_entropy_seed_save(void);
 
+/* SHA-256 of a buffer (I751 support files); the digest the pool already uses. */
+void sel_sha256(const void* data, size_t n, uint8_t out[32]);
+
 /* Test hook: 0 normal, 1 force "not ready", 2 force the pool backend on a POSIX host. Also clears the pool. */
 void sel_entropy_test_mode(int mode);
 

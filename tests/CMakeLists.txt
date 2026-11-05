@@ -2321,6 +2321,15 @@ if(NOT SEL_AMIGA AND SELECTA_UI_DESKTOP)
   add_test(NAME open-fail-toast
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/open-fail-toast"
       "-DNETWORK=${SEL_NET_WORK}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/open_fail_toast.cmake")
+# I751 support-file downloader: consent, SHA-256 check, cut pieces, offline from the cache (selecta-cli support).
+if(NOT SEL_AMIGA)
+  add_test(NAME support-dl
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/support_dl.cmake")
+  set_tests_properties(support-dl PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    PASS_REGULAR_EXPRESSION "support_dl_ok" TIMEOUT 60)
+endif()
+
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/open-fail-toast.tmp")
   set_tests_properties(open-fail-toast PROPERTIES LABELS open-fail-toast FIXTURES_REQUIRED net-fixture
     RESOURCE_LOCK net-fixture TIMEOUT 120 ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/open-fail-toast.tmp")

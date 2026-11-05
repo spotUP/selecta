@@ -66,6 +66,7 @@ static int usage(FILE* to) {
           "  devilbox login <user> [--password-stdin] [--config-dir <dir>]  log in to DEViLBOX, store the token (password from stdin) (I173)\n"
           "  lastfm login [--config-dir <dir>]  authorise the last.fm scrobbler, store the session key in prefs.conf (I177b)\n"
           "  record <url> <file> [--bytes N] [--seconds S]  stream-to-disk: write the raw stream bytes as they arrive\n"
+          "  support list|get <id|all>|path <file> --cache-dir <d> [--config-dir <d>]  maker-owned support files, opt-in, SHA-256 checked (I751)\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
           "  share make song|playlist|view ...  build a share link, print both forms and the parse round trip (T84)\n"
           "  share parse <link>         parse a selecta:// or DEViLBOX link, print its parts (exit 2: ERROR bad_link)\n"
@@ -1127,6 +1128,9 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "lastfm") == 0) {
         return sel_cli_lastfm(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "support") == 0) {
+        return sel_cli_support(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "fetch") == 0) {
         return sel_cli_fetch(argc - 2, argv + 2);

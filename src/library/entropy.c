@@ -99,6 +99,13 @@ static void sha_final(sha256* c, uint8_t out[32]) {
     }
 }
 
+void sel_sha256(const void* data, size_t n, uint8_t out[32]) {
+    sha256 c;
+    sha_init(&c);
+    sha_update(&c, data, n);
+    sha_final(&c, out);
+}
+
 static uint8_t g_pool[32];
 static unsigned g_samples;
 static uint32_t g_out_counter;
