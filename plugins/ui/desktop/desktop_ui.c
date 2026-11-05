@@ -12930,13 +12930,10 @@ static void desk_draw_focus(desk* d) {
 
 /* Sends one protocol line to the engine; 1 when it parsed. */
 static int desk_send(desk* d, const char* line) {
-    /* A decoded string argument points into the pool and the engine reads it on its next pump, after this returns: the
-     * pool outlives the call, a ring so several lines queued before one pump keep their text. */
-    static char ring[16][512];
-    static uint32_t next;
+    /* The pool is decode scratch only: the engine copies string arguments into its command slot on send (I1082b). */
+    char pool[512];
     d->sends++;
-    char* pool = ring[next++ % 16u];
-    return sel_engine_send_line(d->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+    return sel_engine_send_line(d->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
 }
 
 /* A click on transport slot i fires the action the button names: its table line, or for the subsong buttons the line

@@ -3099,6 +3099,12 @@ if(NOT SEL_AMIGA)
   add_test(NAME source-sync-due COMMAND source_sync_due_test)
   set_tests_properties(source-sync-due PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_sync_due_ok")
 
+  # I1082b: command string arguments are copied into the queue slot on send (64 lines through a 16-entry pool, one pump).
+  add_executable(cmd_arena_test engine/cmd_arena_test.c)
+  target_link_libraries(cmd_arena_test PRIVATE selecta_core)
+  add_test(NAME engine-cmd-arena COMMAND cmd_arena_test)
+  set_tests_properties(engine-cmd-arena PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cmd_arena_ok")
+
   # I195c: STOP sends racing the pump never lose their net cancel (threads, many iterations).
   add_executable(cancel_race_test engine/cancel_race_test.c)
   target_link_libraries(cancel_race_test PRIVATE selecta_core ${CMAKE_THREAD_LIBS_INIT})

@@ -47,6 +47,9 @@
 #include "view.h"
 #include "../core/pal.h"
 #include "../core/count.h"
+
+/* I1082b: bytes of string arguments one queued command may carry; sel_engine_send copies them into its slot. */
+#define SEL_CMD_ARENA_BYTES 1024u
 #if !defined(__amigaos__) && !defined(AMIGA)
 #include <pthread.h>
 #include <sched.h>
@@ -481,7 +484,7 @@ struct sel_engine {
      * newer canceller sits in the queue. Nothing is cleared, so a send landing between any two pump steps is seen. On
      * Amiga jobs run inline and the cancel is a no-op (decided later with I199). */
     volatile unsigned cancel_gen;
-    unsigned cancel_served;
+    volatile unsigned cancel_served;
     uint32_t net_cancels;                   /* URL fetches abandoned for a newer STOP or OPEN (I195a sentinel) */
     uint32_t net_cancel_lost;               /* canceller dispatched while another sat queued behind it with no cancel pending (I195c sentinel, must stay 0) */
     sel_spsc evt_q;
@@ -2047,11 +2050,11 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         const char* rec = e->state.options[SEL_OPT_RECORD_TO];
         sel_live* st = NULL;
         if (seekable && rec[0] == '\0') {
-            st = sel_live_open_seekable(e->host, path, &e->cancel_gen, e->cancel_served);
+            st = sel_live_open_seekable(e->host, path, &e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served));
         }
         if (st == NULL) {
-            st = rec[0] != '\0' ? sel_live_open_record_dir(e->host, path, &e->cancel_gen, e->cancel_served, rec)
-                                : sel_live_open(e->host, path, &e->cancel_gen, e->cancel_served);
+            st = rec[0] != '\0' ? sel_live_open_record_dir(e->host, path, &e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served), rec)
+                                : sel_live_open(e->host, path, &e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served));
         }
         if (st != NULL) {
             uint8_t first[10];
@@ -2062,7 +2065,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
              * of KB) is skipped as it streams: the ring never holds it and the probe sees the first frames behind it.
              * A short tag stays in the head (the title reader needs it). */
             if (!sel_live_head(st, first, sizeof first, &nfirst)) {
-                if (e->cancel_gen != e->cancel_served) {
+                if (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
                     e->net_cancels++;
                 }
                 e->open_status = sel_live_status(st);
@@ -2071,7 +2074,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             }
             tag = sel_id3v2_len(first, nfirst);
             if (tag + SEL_ID3_PROBE_ROOM > SEL_STREAM_HEAD && !sel_live_skip(st, tag)) {
-                if (e->cancel_gen != e->cancel_served) {
+                if (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
                     e->net_cancels++;
                 }
                 e->open_status = sel_live_status(st);
@@ -2079,7 +2082,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
                 return NULL;
             }
             if (!sel_live_head(st, head, sizeof head, &n)) {
-                if (e->cancel_gen != e->cancel_served) {
+                if (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
                     e->net_cancels++;
                 }
                 e->open_status = sel_live_status(st);
@@ -2104,7 +2107,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     if (sel_stream_is_url(path) || sel_stream_is_pipe(path)) {
         uint8_t* data = sel_stream_read(e->host, path, size); /* I195: URL or pipe, the whole stream in memory */
         e->open_status = data == NULL && sel_stream_is_url(path) ? sel_stream_status() : 0;
-        if (data == NULL && e->cancel_gen != e->cancel_served) {
+        if (data == NULL && SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
             e->net_cancels++; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
         }
         return data;
@@ -2625,7 +2628,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         /* The replayer needs the whole file: finish the same download, then probe again. */
         size_t whole = 0;
         uint8_t* all = sel_live_drain(live, &whole);
-        if (e->cancel_gen != e->cancel_served && all == NULL) {
+        if (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served) && all == NULL) {
             e->net_cancels++;
         }
         e->open_status = all == NULL ? sel_live_status(live) : 0;
@@ -10409,7 +10412,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->cur = SEL_SLOT_NONE;
     e->audio_slot = SEL_SLOT_NONE;
     e->act = SEL_SLOT_NONE;
-    if (!sel_spsc_init(&e->cmd_q, host, cmd_depth) || !sel_spsc_init(&e->evt_q, host, evt_depth) ||
+    if (!sel_spsc_init_arena(&e->cmd_q, host, cmd_depth, SEL_CMD_ARENA_BYTES) || !sel_spsc_init(&e->evt_q, host, evt_depth) ||
         !sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
@@ -10589,7 +10592,7 @@ void sel_engine_destroy(sel_engine* e) {
 int sel_engine_send(sel_engine* e, const sel_message* cmd) {
     SEL_THREAD_NOT_AUDIO(e);
     if (cmd->kind == SEL_MSG_CMD && (cmd->id == SEL_CMD_STOP || cmd->id == SEL_CMD_OPEN)) {
-        e->cancel_gen++; /* a pump blocked in a URL fetch gives up (I195a); counted before the push so the pump sees it */
+        SEL_ATOMIC_INC_REL(&e->cancel_gen); /* a pump blocked in a URL fetch gives up (I195a); counted before the push so the pump sees it */
     }
     return sel_spsc_push(&e->cmd_q, cmd);
 }
@@ -10836,12 +10839,12 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     if (e->handed_over) {
         hw_clock(e);
     }
-    sel_net_set_cancel(&e->cancel_gen, e->cancel_served); /* this thread's net waits end when send counts a newer STOP or OPEN (I195a) */
+    sel_net_set_cancel(&e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)); /* this thread's net waits end when send counts a newer STOP or OPEN (I195a) */
     while (sel_spsc_pop(&e->cmd_q, &m)) {
         if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN)) {
-            e->cancel_served++; /* this canceller is being served: its own fetch starts at this generation and runs */
-            sel_net_set_cancel(&e->cancel_gen, e->cancel_served);
-            if (sel_spsc_count(&e->cmd_q) > 0 && e->cancel_gen == e->cancel_served) {
+            SEL_ATOMIC_INC_REL(&e->cancel_served); /* this canceller is being served: its own fetch starts at this generation and runs */
+            sel_net_set_cancel(&e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served));
+            if (sel_spsc_count(&e->cmd_q) > 0 && SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) == SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
                 e->net_cancel_lost++; /* a canceller is queued behind this one yet no cancel is pending */
             }
         }
@@ -10924,6 +10927,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     }
     e->result_used = 0; /* every RESULT line was delivered */
     e->result_overflow = 0;
+    sel_spsc_release(&e->cmd_q); /* the popped commands' strings (events may point at them) are done with (I1082b) */
     return delivered;
 }
 

@@ -442,14 +442,11 @@ static Object* mui_menu_strip(void) {
     return strip;
 }
 
-/* Sends one command line. A decoded string argument points into the pool and the engine reads it on its next pump, after
- * this returns (the engine does not copy it): the pool outlives the call, a ring so several lines queued before one pump
- * keep their text. A stack pool left "VIEW_SOURCE search" with an empty source and the engine refused it (I569). */
+/* Sends one command line. The pool is decode scratch only: the engine copies string arguments into its command slot on
+ * send (I1082b; before that a stack pool left "VIEW_SOURCE search" with an empty source, I569). */
 static int mui_engine_line(mui_state* s, const char* line) {
-    static char ring[16][512];
-    static uint32_t next;
-    char* pool = ring[next++ % 16u];
-    int ok = line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+    char pool[512];
+    int ok = line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
     if (line != NULL && !ok) {
         fprintf(stderr, "selecta mui: engine refused line \"%s\"\n", line); /* I791: a refused line is not silent */
     }

@@ -132,7 +132,7 @@ static int wait_fd(int fd, short ev, unsigned ms) {
         unsigned long now = sel_net_now_ms();
         unsigned slice = now >= end ? 0u : (unsigned)(end - now);
         if (t_cancel != NULL) {
-            if (*t_cancel != t_cancel_start) {
+            if (__atomic_load_n(t_cancel, __ATOMIC_ACQUIRE) != t_cancel_start) {
                 return -1;
             }
             if (slice > NET_CANCEL_SLICE_MS) {

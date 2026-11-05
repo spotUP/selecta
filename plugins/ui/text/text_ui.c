@@ -26,7 +26,6 @@
 #include "term.h"
 #include <selecta/uimodel/theme.h>
 
-#define TUI_POOLS 4u
 #define TUI_POOL_BYTES 1024u
 #define TUI_DEFAULT_COLS 80u
 #define TUI_DEFAULT_ROWS 24u
@@ -74,8 +73,6 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    uint32_t pool_next;
-    char pool[TUI_POOLS][TUI_POOL_BYTES];
     sel_tag stats[18];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
@@ -91,12 +88,10 @@ typedef struct tui {
 
 /* ---- commands ---- */
 
-/* Sends one command line. String arguments live in a rotating pool until the
- * shell's next pump (the engine does not copy them). */
+/* Sends one command line. The pool is decode scratch only: the engine copies string arguments on send (I1082b). */
 static void tui_send(tui* u, const char* line) {
-    char* pool = u->pool[u->pool_next];
-    u->pool_next = (u->pool_next + 1u) % TUI_POOLS;
-    sel_engine_send_line(u->engine, line, pool, TUI_POOL_BYTES);
+    char pool[TUI_POOL_BYTES];
+    sel_engine_send_line(u->engine, line, pool, sizeof pool);
 }
 
 static void tui_sendf(tui* u, const char* fmt, const char* a) {
