@@ -1,9 +1,12 @@
 /* 98fmplayer replayer (row I700, design 2026-10-26-online-sources section 2a): a RENDER-kind adapter over takamichih's
  * 98fmplayer (third_party/98fmplayer, BSD-2-Clause, plain C99) for PC-98 FM songs: PMD (.m, .m2, .mz) and FMP/PLAY6
  * (.ovi, .opi, .ozi). The driver is emulated on a YM2608 (libopna) at its fixed 55467 Hz; the adapter resamples by
- * straight lines to the host rate. A song plays until the driver reports its first loop (or stops). Not loaded: the
- * companion PCM banks (.PPC/.PVI/.PZI, found next to the song by the original player) and the OPNA drum ROM
- * (proprietary), so ADPCM and rhythm-part drums are silent. */
+ * straight lines to the host rate. A song plays until the driver reports its first loop (or stops). Companion PCM banks (I1127):
+ * the driver names them (PMD .PPC and .PZI, FMP .PVI and .PZI) and the adapter reads them from the directory of
+ * src->path, as the original player does and as the other render adapters do (mdxmini PDX, kss). Local songs have them
+ * next to the file; library songs need the host cache to fetch them first (open: names derived from the song bytes).
+ * A missing bank leaves that PCM silent. Not loaded: the OPNA drum ROM (proprietary, no free source: the YM2608 rhythm
+ * samples are Yamaha's), so rhythm-part drums are silent. */
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
@@ -14,6 +17,7 @@
 #include "libopna/opnaadpcm.h"
 #include "libopna/opnatimer.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -46,6 +50,11 @@ typedef struct fmp98_state {
     int16_t prev[2], cur[2];
     int16_t chunk[FMP98_CHUNK * 2];
     unsigned chunk_at, chunk_n;
+    struct {
+        uint8_t* data;
+        uint32_t size;
+        int16_t* decode; /* PZI/PVI decode buffer the PPZ8 keeps pointing at */
+    } bank[FMDRIVER_PCMCOUNT];
     char title[256];
     sel_tag meta[8];
     char format[8];
@@ -119,6 +128,11 @@ static void rp_close(void* state) {
     fmp98_state* s = (fmp98_state*)state;
     if (s != NULL) {
         const sel_host* host = s->host;
+        int i;
+        for (i = 0; i < FMDRIVER_PCMCOUNT; i++) {
+            host->mem_free(host, s->bank[i].data);
+            host->mem_free(host, s->bank[i].decode);
+        }
         host->mem_free(host, s->data);
         host->mem_free(host, s);
     }
@@ -178,6 +192,106 @@ static void opna_mix_cb(void* user, int16_t* buf, unsigned samples) {
     ppz8_mix((struct ppz8*)user, buf, samples);
 }
 
+/* Bank file extension for a driver PCM type, NULL when the slot has no file. */
+static const char* bank_ext(const char* type) {
+    if (strcmp(type, "PPC") == 0) return ".PPC";
+    if (strcmp(type, "PVI") == 0) return ".PVI";
+    if (strncmp(type, "PPZ", 3) == 0) return ".PZI";
+    return NULL;
+}
+
+/* PPZ8 buffer of a PCM type: FMP "PPZ" and PMD "PPZ1" use buffer 0, PMD "PPZ2" buffer 1. */
+static unsigned bank_ppz_buf(const char* type) {
+    return type[3] == '2' ? 1u : 0u;
+}
+
+/* Reads `<dir of path><name><ext>` trying the case as written, lower and upper case (the archive's case is not the
+ * driver's). Returns the host buffer or NULL. */
+static uint8_t* read_bank(const sel_host* host, const char* path, const char* name, const char* ext, uint32_t* size) {
+    char full[1100];
+    size_t dir = 0, n = strlen(name), i, pass;
+    const char* slash = strrchr(path, '/');
+    *size = 0;
+    if (slash != NULL) {
+        dir = (size_t)(slash - path) + 1u;
+    }
+    if (n == 0u || n > 8u || dir + n + 5u > sizeof full || strchr(name, '/') != NULL) {
+        return NULL;
+    }
+    for (pass = 0; pass < 3u; pass++) {
+        FILE* f;
+        long len;
+        uint8_t* buf;
+        memcpy(full, path, dir);
+        for (i = 0; i < n; i++) {
+            char c = name[i];
+            full[dir + i] = pass == 1u ? (char)((c >= 'A' && c <= 'Z') ? c | 0x20 : c) : c;
+        }
+        for (i = 0; ext[i] != '\0'; i++) {
+            full[dir + n + i] = pass == 1u ? (char)(ext[i] | 0x20) : ext[i];
+        }
+        full[dir + n + i] = '\0';
+        f = fopen(full, "rb");
+        if (f == NULL) {
+            continue;
+        }
+        len = (fseek(f, 0, SEEK_END) == 0) ? ftell(f) : -1;
+        buf = (len > 0 && len <= 0x1000000L && fseek(f, 0, SEEK_SET) == 0) ? (uint8_t*)host->mem_alloc(host, (size_t)len, SEL_MEM_FAST) : NULL;
+        if (buf != NULL && fread(buf, 1, (size_t)len, f) != (size_t)len) {
+            host->mem_free(host, buf);
+            buf = NULL;
+        }
+        fclose(f);
+        if (buf != NULL) {
+            *size = (uint32_t)len;
+            return buf;
+        }
+    }
+    return NULL;
+}
+
+/* Reads the banks the freshly initialised driver names (work.pcmtype/pcmname). */
+static void load_banks(fmp98_state* s, const char* path) {
+    int i;
+    for (i = 0; i < FMDRIVER_PCMCOUNT; i++) {
+        const char* ext = bank_ext(s->work.pcmtype[i]);
+        char name[9];
+        size_t n;
+        memcpy(name, s->work.pcmname[i], 8);
+        name[8] = '\0';
+        for (n = strlen(name); n > 0u && (name[n - 1u] == ' ' || name[n - 1u] == '\0'); n--) {
+            name[n - 1u] = '\0'; /* the driver pads names with spaces */
+        }
+        if (ext != NULL && n > 0u && !(i == 3 && strcmp(s->work.pcmtype[3], "PPC") == 0)) {
+            s->bank[i].data = read_bank(s->host, path, name, ext, &s->bank[i].size);
+        }
+    }
+}
+
+/* Feeds the loaded banks to the driver; runs after every driver init, because the chip and PPZ8 were just reset. */
+static void apply_banks(fmp98_state* s) {
+    int i;
+    for (i = 0; i < FMDRIVER_PCMCOUNT; i++) {
+        const char* type = s->work.pcmtype[i];
+        if (s->bank[i].data == NULL) {
+            continue;
+        }
+        if (strcmp(type, "PPC") == 0) {
+            (void)pmd_ppc_load(&s->work, s->bank[i].data, s->bank[i].size);
+        } else if (strcmp(type, "PVI") == 0) {
+            (void)fmp_adpcm_load(&s->work, s->bank[i].data, s->bank[i].size);
+        } else if (strncmp(type, "PPZ", 3) == 0) {
+            uint32_t samples = ppz8_pzi_decodebuf_samples(s->bank[i].size);
+            if (s->bank[i].decode == NULL && samples > 0u) {
+                s->bank[i].decode = (int16_t*)s->host->mem_alloc(s->host, (size_t)samples * 2u, SEL_MEM_FAST);
+            }
+            if (s->bank[i].decode != NULL) {
+                (void)ppz8_pzi_load(&s->ppz8, (uint8_t)bank_ppz_buf(type), s->bank[i].data, s->bank[i].size, s->bank[i].decode);
+            }
+        }
+    }
+}
+
 /* Resets the chip and starts the driver from the top (mirrors fmplayer_init_work_opna + fmplayer_file_load). */
 static void reset_song(fmp98_state* s) {
     opna_reset(&s->opna);
@@ -198,6 +312,7 @@ static void reset_song(fmp98_state* s) {
     } else {
         pmd_init(&s->work, &s->drv.pmd);
     }
+    apply_banks(s);
     s->src_frames = 0;
     s->ended = 0;
     s->chunk_at = s->chunk_n = 0;
@@ -232,6 +347,10 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     s->is_fmp = kind;
     reset_song(s);
+    if (src->path != NULL) {
+        load_banks(s, src->path);
+        reset_song(s);
+    }
     take_title(s);
     info->voice_count = 0;
     info->subsong_count = 1;

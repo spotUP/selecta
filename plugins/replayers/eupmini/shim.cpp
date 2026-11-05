@@ -32,7 +32,9 @@ struct eupshim {
 
 extern "C" {
 
-struct eupshim* eupshim_open(const uint8_t* song, uint32_t size, uint32_t rate) {
+// fmb/pmb: the companion banks named in the header (0x6E2 FM voices, 0x6EA PCM set), size 0 = absent.
+struct eupshim* eupshim_open(const uint8_t* song, uint32_t size, uint32_t rate, const uint8_t* fmb, uint32_t fmb_size,
+                             const uint8_t* pmb, uint32_t pmb_size) {
     if (size < kHeader + 6u) {
         return nullptr;
     }
@@ -62,9 +64,14 @@ struct eupshim* eupshim_open(const uint8_t* song, uint32_t size, uint32_t rate) 
     for (int i = 0; i < 6; i++) s->dev->assignFmDeviceToChannel(buf[0x6D4 + i]);
     for (int i = 0; i < 8; i++) s->dev->assignPcmDeviceToChannel(buf[0x6DA + i]);
     s->player->tempo(buf[0x805] + 30);
-    // No companion banks (.FMB/.PMB are not loaded): every FM slot keeps eupplay's default voice, PCM stays empty.
+    // As eupplay does: every FM slot gets the default voice, the FMB overwrites slots from offset 8 in 48-byte voices, the
+    // PMB is the PCM instrument set. An absent bank leaves the default voice / empty PCM.
     for (int n = 0; n < 128; n++) s->dev->setFmInstrumentParameter(n, kDefaultFm);
+    if (fmb != nullptr && fmb_size > 8) {
+        for (uint32_t n = 0; n < (fmb_size - 8) / 48 && n < 128; n++) s->dev->setFmInstrumentParameter(static_cast<int>(n), fmb + 8 + 48 * n);
+    }
     memset(&pcm, 0, sizeof pcm);
+    if (pmb != nullptr && pmb_size > 8 + 128 * 32) s->dev->setPcmInstrumentParameters(pmb, pmb_size);
     s->player->startPlaying(s->data + kHeader + 6);
     return s;
 }

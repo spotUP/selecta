@@ -1,15 +1,20 @@
 /* EUPPlayer replayer (row I701): a RENDER-kind adapter over eupmini (third_party/eupmini, GPL-2.0) for FM Towns Euphony
  * songs (.eup). The Towns FM/PCM device is emulated at the host rate by the library (shim.cpp is the C ABI). A song plays
- * until the player reports its end; the safety stop is 20 minutes. Not loaded: the companion banks (.FMB FM voices, .PMB
- * PCM sets) named in the song header, so FM parts use the default voice and PCM parts are silent. */
+ * until the player reports its end; the safety stop is 20 minutes. Companion banks (I1127): the header names an FM voice
+ * bank (.FMB, offset 0x6E2) and a PCM set (.PMB, offset 0x6EA), 8 characters each, kept next to the song. Like the
+ * other render adapters (mdxmini PDX, kss) the adapter reads them from the directory of src->path: for a local song
+ * they are just there. A cached remote song still lacks them: the generic SEL_RP_COMPANIONS rules only see the song's
+ * file name, the bank names live in the song bytes (open, row I1127). A missing bank leaves FM parts on the default voice and PCM parts silent. */
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 struct eupshim;
-struct eupshim* eupshim_open(const uint8_t* song, uint32_t size, uint32_t rate);
+struct eupshim* eupshim_open(const uint8_t* song, uint32_t size, uint32_t rate, const uint8_t* fmb, uint32_t fmb_size,
+                             const uint8_t* pmb, uint32_t pmb_size);
 uint32_t eupshim_render(struct eupshim* s, int16_t* out, uint32_t frames);
 void eupshim_close(struct eupshim* s);
 
@@ -20,6 +25,10 @@ typedef struct eup_state {
     const sel_host* host;
     uint8_t* data;
     size_t size;
+    uint8_t* fmb;
+    uint32_t fmb_size;
+    uint8_t* pmb;
+    uint32_t pmb_size;
     struct eupshim* shim;
     uint32_t rate;
     uint64_t frames;
@@ -47,8 +56,62 @@ static void rp_close(void* state) {
         const sel_host* host = s->host;
         eupshim_close(s->shim);
         host->mem_free(host, s->data);
+        host->mem_free(host, s->fmb);
+        host->mem_free(host, s->pmb);
         host->mem_free(host, s);
     }
+}
+
+/* Reads `<dir of path><8-char header name><ext>` (name trimmed at NUL or space). Tries the name as written, then lower and
+ * upper case, because the bank file's case on disk is the archive's, not the header's. Returns the host buffer or NULL. */
+static uint8_t* read_bank(const sel_host* host, const char* path, const uint8_t* hdr_name, const char* ext, uint32_t* size) {
+    char name[9];
+    char full[1100];
+    size_t dir = 0, n = 0, pass;
+    const char* slash = path != NULL ? strrchr(path, '/') : NULL;
+    *size = 0;
+    if (slash != NULL) {
+        dir = (size_t)(slash - path) + 1u;
+    }
+    while (n < 8u && hdr_name[n] != 0u && hdr_name[n] != ' ' && hdr_name[n] > 0x20u && hdr_name[n] < 0x7Fu && hdr_name[n] != '/') {
+        name[n] = (char)hdr_name[n];
+        n++;
+    }
+    name[n] = '\0';
+    if (n == 0u || dir + n + 5u > sizeof full) {
+        return NULL;
+    }
+    for (pass = 0; pass < 3u; pass++) {
+        size_t i;
+        FILE* f;
+        long len;
+        uint8_t* buf;
+        memcpy(full, path, dir);
+        for (i = 0; i < n; i++) {
+            char c = name[i];
+            full[dir + i] = pass == 1u ? (char)((c >= 'A' && c <= 'Z') ? c | 0x20 : c) : pass == 2u ? (char)((c >= 'a' && c <= 'z') ? c & ~0x20 : c) : c;
+        }
+        for (i = 0; ext[i] != '\0'; i++) {
+            full[dir + n + i] = pass == 2u ? (char)(ext[i] & ~0x20) : ext[i];
+        }
+        full[dir + n + i] = '\0';
+        f = fopen(full, "rb");
+        if (f == NULL) {
+            continue;
+        }
+        len = (fseek(f, 0, SEEK_END) == 0) ? ftell(f) : -1;
+        buf = (len > 0 && len <= 0x1000000L && fseek(f, 0, SEEK_SET) == 0) ? (uint8_t*)host->mem_alloc(host, (size_t)len, SEL_MEM_FAST) : NULL;
+        if (buf != NULL && fread(buf, 1, (size_t)len, f) != (size_t)len) {
+            host->mem_free(host, buf);
+            buf = NULL;
+        }
+        fclose(f);
+        if (buf != NULL) {
+            *size = (uint32_t)len;
+            return buf;
+        }
+    }
+    return NULL;
 }
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
@@ -69,6 +132,10 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     memcpy(s->data, src->data, src->size);
     s->size = src->size;
+    if (src->path != NULL) {
+        s->fmb = read_bank(host, src->path, s->data + 0x6E2, ".fmb", &s->fmb_size);
+        s->pmb = read_bank(host, src->path, s->data + 0x6EA, ".pmb", &s->pmb_size);
+    }
     info->voice_count = 0;
     info->subsong_count = 1;
     info->default_subsong = 0;
@@ -78,7 +145,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
 
 static int restart(eup_state* s) {
     eupshim_close(s->shim);
-    s->shim = eupshim_open(s->data, (uint32_t)s->size, s->rate);
+    s->shim = eupshim_open(s->data, (uint32_t)s->size, s->rate, s->fmb, s->fmb_size, s->pmb, s->pmb_size);
     s->frames = 0;
     s->ended = 0;
     return s->shim != NULL;
