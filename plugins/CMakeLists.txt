@@ -212,6 +212,11 @@ if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))
   add_subdirectory(replayers/sunvox)
 endif()
 
+# klystron (I708a): Klystrack songs (.kt) over the MIT klystron engine (third_party/klystron, SDL shim). Core plugin: host module and static Amiga plugin.
+if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))
+  add_subdirectory(replayers/klystron)
+endif()
+
 # sunvox_lib (I706b): the same songs through the official precompiled SunVox Library, desktop only; wins over the BSD plugin above.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/sunvox_lib)
