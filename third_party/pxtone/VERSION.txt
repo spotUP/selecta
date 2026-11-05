@@ -1,0 +1,5 @@
+pxtone, Studio Pixel's (Daisuke Amaya) "pxtone play sample" source release 2022-09-10a (pxtone/ folder, vendored unchanged apart from
+dropping the Visual Studio project files). Upstream: https://studiopixel.jp/ (pxtone source code 220910a, ReadMe[JP].txt).
+Licence (translated from ReadMe[JP].txt, section "License"): the playback source code (pxtone folder) is free to use and modify,
+no permission is needed, crediting is up to the user, no liability for any problem caused by its use. No COPYING file exists
+upstream; this note is the licence record. Ogg Vorbis woices (pxINCLUDE_OGGVORBIS) are left disabled.

@@ -178,3 +178,8 @@ endif()
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/eupmini)
 endif()
+
+# pxtone (I702): PiSTOL Collage songs (.ptcop, .pttune), permissively licensed play sample sources. Host only (C++ engine).
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/pxtone)
+endif()

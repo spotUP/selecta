@@ -2031,6 +2031,15 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I702: a pxtone song plays through the render entry point (pxtone module).
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/pxtone-decode)
+  add_test(NAME pxtone-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/pxtone_decode.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/pxtone_test.ptcop
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/pxtone-decode)
+  set_tests_properties(pxtone-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "pxtone_decode_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/tiatracker-decode)
