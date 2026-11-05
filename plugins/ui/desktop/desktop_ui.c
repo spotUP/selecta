@@ -23,6 +23,7 @@
 #include <selecta/gui/gui_text.h>
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
+#include <selecta/uimodel/about.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/cols.h>
 #include <selecta/uimodel/libfilter.h>
@@ -378,6 +379,8 @@ typedef struct desk {
     char rom_err[SEL_UIM_ROM_COUNT][96]; /* MPS-1c: why the last ROM pick of that slot was refused */
     uint32_t rom_loads, rom_resets, rom_refused; /* MPS-1c sentinels: ROM files installed, resets, picks refused for size or read errors */
     int rom_wait;            /* MPS-1c: a ROM file dialog is open for this slot + 1, its answer arrives as a drop */
+    sel_uim_about about;     /* I706d: the credits of the bundled modules, read once when the Settings page first draws */
+    int about_loaded;
     sel_gui_rect set_rect[24]; /* I799a: the control rect of every row of the last frame (hit test and the dump) */
     sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
@@ -7659,6 +7662,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "settings draws=%u rows=%u table=%u sets=%u clicks=%u entry_clicks=%u entry %d %d %d %d\n", (unsigned)d->set_draws, (unsigned)d->set_rows,
                      (unsigned)sel_uim_pref_row_count(), (unsigned)d->set_sets, (unsigned)d->set_clicks, (unsigned)d->set_entry_clicks, (int)se.x, (int)se.y,
                      (int)se.w, (int)se.h);
+        o = dump_put(d, o, "about credits=%u first=%s\n", (unsigned)d->about.count, d->about.count > 0u ? d->about.credit[0].title : "");
         o = dump_put(d, o, "rom loads=%u resets=%u refused=%u\n", (unsigned)d->rom_loads, (unsigned)d->rom_resets, (unsigned)d->rom_refused);
         for (si = 0; si < SEL_UIM_ROM_COUNT; si++) {
             o = dump_put(d, o, "rom_row %u source=%s err=%s\n", (unsigned)si,
@@ -9881,7 +9885,7 @@ static void draw_search(desk* d) {
  * Settings window walks too): the label at the left, the control at the right. A cycle row is a button that steps to the next
  * choice, a check row a switch, a slider row a bar, a string row a text field. Every change sends the same PREF_SET line the MUI
  * window sends (sel_uim_pref_line), so the engine writes prefs.conf. ---- */
-enum { SET_ROW_H = 52, SET_CTL_W = 240, SET_HEAD_H = 56 };
+enum { SET_ROW_H = 52, SET_CTL_W = 240, SET_HEAD_H = 56, SET_CREDIT_H = 88 };
 
 /* The nth choice of a cycle row's comma list, copied to out; returns the list length. */
 static uint32_t set_choice(const char* choices, uint32_t n, char* out, size_t cap) {
@@ -9944,6 +9948,7 @@ static void set_commit(desk* d) {
 static int32_t set_max_q16(const desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t over = lpx(d, 16 + SET_HEAD_H) + (int32_t)sel_uim_pref_row_count() * lpx(d, SET_ROW_H) + lpx(d, 16) - mn.h;
+    over += d->about.count > 0u ? lpx(d, 2 * SET_HEAD_H) + (int32_t)d->about.count * lpx(d, SET_CREDIT_H) : lpx(d, SET_HEAD_H);
     return over > 0 ? (int32_t)(((int64_t)over << 16) / (lpx(d, 1) > 0 ? lpx(d, 1) : 1)) : 0;
 }
 
@@ -9952,6 +9957,10 @@ static void draw_settings(desk* d) {
     uint32_t n = sel_uim_pref_row_count(), i;
     int32_t margin = lpx(d, LIB_MARGIN), rh = lpx(d, SET_ROW_H), cw = lpx(d, SET_CTL_W), y;
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    if (!d->about_loaded) {
+        sel_uim_about_load(&d->about);
+        d->about_loaded = 1;
+    }
     if (d->set_y_q16 > set_max_q16(d)) {
         d->set_y_q16 = set_max_q16(d);
     }
@@ -10034,6 +10043,26 @@ static void draw_settings(desk* d) {
         d->set_rect[i] = c;
         d->set_rows++;
         y += rh;
+    }
+    /* I706d: About and Credits under the rows, one card per bundled module that credits its upstream (its CREDITS.txt). */
+    y += lpx(d, 8);
+    draw_text(d, rect_of(mn.x + margin, y, mn.w - 2 * margin, lpx(d, SET_HEAD_H)), sel_uim_about_heading(), 1, 24, text);
+    y += lpx(d, SET_HEAD_H);
+    if (d->about.count > 0u) {
+        draw_text(d, rect_of(mn.x + margin, y - lpx(d, 12), mn.w - 2 * margin, lpx(d, 28)), sel_uim_about_credits_heading(), 0, 14, muted);
+        y += lpx(d, 28);
+    }
+    for (i = 0; i < d->about.count; i++) {
+        const sel_uim_credit* cr = &d->about.credit[i];
+        sel_gui_rect card = rect_of(mn.x + margin, y, mn.w - 2 * margin, lpx(d, SET_CREDIT_H) - lpx(d, 12)), in;
+        sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        in = rect_of(card.x + lpx(d, 16), card.y + lpx(d, 8), card.w - lpx(d, 32), lpx(d, 24));
+        draw_text(d, in, cr->title, 0, 15, text);
+        in.y += lpx(d, 24);
+        draw_text(d, in, cr->copyright, 0, 13, muted);
+        in.y += lpx(d, 22);
+        draw_text(d, in, cr->licence, 0, 13, muted);
+        y += lpx(d, SET_CREDIT_H);
     }
     d->set_draws++;
     sel_gui_clip_pop(d->canvas);

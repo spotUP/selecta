@@ -1,5 +1,6 @@
 Powered by SunVox (modular synth & tracker)
 Copyright (c) 2008 - 2026, Alexander Zolotov <nightradio@gmail.com>, WarmPlace.ru
+Licence: free to use in own products; the SunVox Library itself is MIT licensed
 
 Selecta plays .sunvox songs with the SunVox Library (https://warmplace.ru/soft/sunvox/sunvox_lib.php).
 The library's licence texts sit beside this file (LICENSE.txt, sundog.txt, tremor.txt, libflac.txt, LICENSE-sunvox_lib-MIT).

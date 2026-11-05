@@ -56,3 +56,7 @@ endif()
 set(SEL_MODULE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
 sel_add_plugin(sunvox_lib 1 MODULE adapter.c)
 target_link_libraries(sel_module_sunvox_lib PRIVATE ${CMAKE_DL_LIBS})
+# I706d: the staged library folder travels into Selecta.app/Contents/PlugIns/sunvox_lib (apps/selecta/CMakeLists.txt).
+if(EXISTS "${SVL_STAGE}/${SVL_FILE}")
+  set_target_properties(sel_module_sunvox_lib PROPERTIES SEL_MODULE_DATA_DIR "${SVL_STAGE}")
+endif()

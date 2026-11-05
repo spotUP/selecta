@@ -16,7 +16,6 @@
 #include <unistd.h>
 
 #ifdef __APPLE__
-#include <mach-o/dyld.h>
 #define SEL_MODULE_SUFFIX ".dylib"
 #else
 #define SEL_MODULE_SUFFIX ".so"
@@ -105,38 +104,6 @@ static void scan_dir(const char* dir) {
     }
 }
 
-/* The app plugin folder next to the running executable; 0 when the executable path is unknown. */
-static int app_plugin_dir(char* out, size_t cap) {
-    char exe[PATH_MAX_SEL];
-    char* slash;
-    int n;
-#ifdef __APPLE__
-    uint32_t sz = (uint32_t)sizeof exe;
-    if (_NSGetExecutablePath(exe, &sz) != 0) {
-        return 0;
-    }
-#else
-    ssize_t r = readlink("/proc/self/exe", exe, sizeof exe - 1u);
-    if (r <= 0) {
-        return 0;
-    }
-    exe[r] = '\0';
-#endif
-    slash = strrchr(exe, '/');
-    if (slash == NULL) {
-        return 0;
-    }
-    *slash = '\0'; /* exe now holds the executable's directory */
-    slash = strrchr(exe, '/');
-    if (slash != NULL && strcmp(slash, "/MacOS") == 0) {
-        *slash = '\0'; /* .../Contents */
-        n = snprintf(out, cap, "%s/PlugIns", exe);
-    } else {
-        n = snprintf(out, cap, "%s/plugins", exe);
-    }
-    return n > 0 && (size_t)n < cap;
-}
-
 /* Built-in modules (I427f): every file name this build expects is looked up in, first hit wins,
  * $SELECTA_BUILTIN_MODULES_DIR (when set it is the only folder), else the app plugin folder, then the build-tree folder
  * baked in at configure time. A name
@@ -153,7 +120,7 @@ static void load_builtin_modules(void) {
     if (env != NULL && *env != '\0') {
         dirs[nd++] = env; /* exclusive: an explicit folder is the whole built-in set (tests, relocated installs) */
     } else {
-        if (app_plugin_dir(app, sizeof app)) {
+        if (sel_app_plugin_dir(app, sizeof app)) {
             dirs[nd++] = app;
         }
         if (sel_registry_builtin_dir != NULL) {
@@ -192,7 +159,7 @@ void sel_loader_scan(void) {
         }
         env = e != NULL ? e + 1 : NULL;
     }
-    if (app_plugin_dir(dir, sizeof dir)) {
+    if (sel_app_plugin_dir(dir, sizeof dir)) {
         scan_dir(dir);
     }
     if (sel_config_dir(dir, sizeof dir - 16u)) {

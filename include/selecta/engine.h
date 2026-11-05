@@ -356,6 +356,9 @@ void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out);
  * ENVARC:Selecta on the Amiga. Writes the path to `out`; 0 when it cannot be
  * determined or does not fit. The directory is not created. */
 int sel_config_dir(char* out, size_t cap);
+/* The app plugin folder beside the running executable (Contents/PlugIns in a macOS bundle, else <exe dir>/plugins);
+ * 0 when unknown or it does not fit (always on the Amiga). The module loader and the About view read this one folder. */
+int sel_app_plugin_dir(char* out, size_t cap);
 
 /* The default library DB: PROGDIR:library.db on the Amiga, else library.db in the config directory (created when
  * missing). NULL when no location is known. The shell and selecta-cli library scan share it. */
