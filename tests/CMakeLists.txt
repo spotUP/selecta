@@ -2539,6 +2539,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(archive_stream_test PRIVATE selecta_core selecta_shared_archive)
   add_test(NAME archive-stream COMMAND archive_stream_test)
   set_tests_properties(archive-stream PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "archive_stream_ok")
+  # I433a: the AT3 (.aks) importer parses the Arkos Tracker 3 example song into the model; corrupt input fails cleanly.
+  add_executable(at3_song_test m3/at3_song_test.c)
+  target_link_libraries(at3_song_test PRIVATE selecta_arkos)
+  add_test(NAME at3-song COMMAND at3_song_test ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/arkos_lopears.aks)
+  set_tests_properties(at3-song PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "at3_song_ok")
   # I819: the one format label (sel_format_label) every UI shows.
   add_executable(format_label_test format_label_test.c)
   target_link_libraries(format_label_test PRIVATE selecta_formats)
