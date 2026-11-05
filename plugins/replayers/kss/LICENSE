@@ -1,0 +1,3 @@
+The adapter in this directory (adapter.c, CMakeLists.txt) is part of Selecta. It links libkss
+(third_party/libkss; see LICENSE.md there: MIT, with the caveat that the MSX driver binaries in
+modules/drivers carry no redistribution grant, hence the SELECTA_KSS_DRIVERS option).

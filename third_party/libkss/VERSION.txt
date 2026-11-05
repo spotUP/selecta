@@ -1,0 +1,21 @@
+libkss, MSX/KSS music player library (plain C): KSS rips plus the MSX sound drivers' own formats (MGSDRV .mgs, MoonBlaster .mbm,
+MuSICA .bgm, OPLLDRV .opx, MPK .mpk), which libkss wraps in a KSS image together with the driver.
+License: ISC-style permissive (LICENSE.md; the notes in bbmp-libkss-notes.md are bbmp's licence note). See "Drivers" below.
+Upstream: https://github.com/digital-sound-antiques/libkss, pinned commit 15fb77fbb949d9d679df7e9652723b2c41b9f46e (the one bbmp pins).
+Submodules vendored under modules/ (their own LICENSE files kept), pinned commits:
+  modules/drivers  e8032da38ea8439caca699954fce82b5050bf86f  (kss-drivers: the MSX driver binaries as C headers)
+  modules/emu2149  1ca770bf7bd480251eee6608b4a3e5caddea931e  (1.43)
+  modules/emu2212  ee35dbe099f7242253e9b5b2a93847161a355c7b
+  modules/emu2413  2e4f6f9752f43cc33572c6636ca31a647600732c  (1.6.2)
+  modules/emu76489 36a784abd7d64fcf89be35015059531a154e5a9a
+  modules/emu8950  fb129b18432c9a3255fdb87d87d968e79ab75e1c  (1.2.1)
+  modules/kmz80    86f9e79db4557360db42efe2f760a94b685f2ee9
+Vendored: src/ and modules/ minus upstream build files, tests, examples, tool scripts, .git metadata.
+Patch applied: libkss-opx-size.patch (from bbmp, csrc/chip/): OPX converter refuses songs over 0x7F00 bytes (heap overflow otherwise).
+
+Drivers: modules/drivers/*.h are the MSX sound driver binaries (MGSDRV, MoonBlaster MBR143, MuSICA kinrou5, MPK 1.03 and 1.06,
+OPLLDRV opx4kss). They are copyrighted by their authors (see modules/drivers/README.md) and carry no redistribution grant;
+bbmp therefore builds libkss with EXCLUDE_DRIVER_KINROU, _MPK106, _OPX4KSS and downloads them on request. Johan decided
+2026-11-04 to ship them all; the plugin is behind the CMake option SELECTA_KSS_DRIVERS (default = SELECTA_GPL_PLUGINS) so a
+build without the option contains neither the plugin nor these binaries.
+Built by plugins/replayers/kss as a static C library; kssload.c (needs zlib) and kss2vgm.c (a converter tool) are excluded.

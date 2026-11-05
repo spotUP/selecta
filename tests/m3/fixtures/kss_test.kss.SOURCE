@@ -1,0 +1,1 @@
+kss_test.kss is "circus charlie.kss", a Konami arcade conversion (KSS rip) from Johan's local KSS corpus, taken 2026-11-04. The tune belongs to its composer and Konami; the file is used unchanged, only as a kss-decode test fixture (row I698): the plain KSS path, which libkss must win over gme.

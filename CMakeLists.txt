@@ -34,6 +34,8 @@ option(SEL_BUILD_TESTS "Build and register the ctest suite" ${SEL_BUILD_TESTS_DE
 # the core binaries.
 option(SELECTA_GPL_PLUGINS "Build the GPL plugin modules (sndh, sid, ...) as loadable libraries" ON)
 # I1075 / I427d D5: a release app is MIT. This leaves the GPL modules out of the app bundle (they still build, for the GPL archive).
+# MSX driver binaries (I698): libkss wraps MGSDRV/MoonBlaster/MuSICA/OPLLDRV/MPK songs with driver binaries that carry no redistribution grant.
+option(SELECTA_KSS_DRIVERS "Build the libkss replayer module, which ships the MSX driver binaries (MGSDRV, MoonBlaster, MuSICA, OPLLDRV, MPK, Kinrou)" ${SELECTA_GPL_PLUGINS})
 option(SELECTA_RELEASE_MIT_ONLY "Release build: the macOS bundle holds only the MIT modules" OFF)
 option(SEL_TEST_BAD_PLUGIN "Compile a deliberately broken plugin descriptor (T5 negative path)" OFF)
 

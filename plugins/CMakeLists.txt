@@ -99,6 +99,11 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/mdxmini)
 endif()
 
+# libkss (I698): MSX music (.kss and driver formats); ships the driver binaries, so it has its own option. Host only.
+if(SELECTA_KSS_DRIVERS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/kss)
+endif()
+
 # TIATracker (I429): GPL-2 module over TIATracker's replay code and Stella's TIA sound, loadable module only, opt-in, host only.
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/tiatracker)
