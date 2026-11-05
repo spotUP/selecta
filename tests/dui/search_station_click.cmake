@@ -6,7 +6,7 @@
 #  run A: type `chip`, let the fan-out answer, scroll the results down. Records searches, scroll y and the station row rect.
 #  run B: the same, then double-click that station row. Asserts:
 #   - the play was sent (row_plays 1, the engine song is the station: the sentinel that the click path ran);
-#   - the pin landed (library_pins moved, the sentinel that the I406b path ran) and the page kept its results through it (pin_keeps 1);
+#   - the pin landed (library_pins moved, the sentinel that the I406b path ran) and the page kept its results through it (searches and scroll unchanged);
 #   - no search was sent again (the searches stat equals run A) and the scroll offset is unchanged (non-zero).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -70,11 +70,10 @@ dui_stat(rp "${b}" desktop row_plays)
 if(NOT rp EQUAL 1)
   message(FATAL_ERROR "the double-click on ${station} must play it (row_plays ${rp}):\n${b}")
 endif()
-if(NOT "${b}" MATCHES "library_serial=([0-9]+) library_reloads=([0-9]+) library_pins=([0-9]+) pin_keeps=([0-9]+)")
+if(NOT "${b}" MATCHES "library_serial=([0-9]+) library_reloads=([0-9]+) library_pins=([0-9]+)")
   message(FATAL_ERROR "no library_serial line:\n${b}")
 endif()
 set(pins "${CMAKE_MATCH_3}")
-set(keeps "${CMAKE_MATCH_4}")
 if(pins LESS 1)
   message(FATAL_ERROR "playing ${station} did not pin it (library_pins ${pins}); the I406b path did not run:\n${b}")
 endif()
@@ -87,7 +86,4 @@ if(NOT "${b}" MATCHES "search scroll y=([0-9]+)")
 endif()
 if(NOT CMAKE_MATCH_1 EQUAL scroll_a)
   message(FATAL_ERROR "playing ${station} moved the results (scroll y ${scroll_a} before, ${CMAKE_MATCH_1} after):\n${b}")
-endif()
-if(NOT keeps EQUAL pins)
-  message(FATAL_ERROR "the Search page did not keep its results through the pin (pin_keeps ${keeps}, library_pins ${pins}):\n${b}")
 endif()

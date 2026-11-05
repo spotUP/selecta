@@ -9074,6 +9074,9 @@ static void lib_models_follow(sel_engine* e) {
         coll_post(e);
     }
     lib_read_post(e, &e->rd_folders, folders_read_run);
+    /* I1086: the Home shelves are a model too: re-read in place (lib_reads_collect applies the answer and view_reread rebuilds the window when
+     * Home is the view source); no client has to re-enter the page for it. */
+    if (e->view.pub.source == SEL_VIEW_HOME || e->home_rows > 0) home_reload(e);
     if (e->formats != NULL) lib_read_post(e, &e->rd_formats, formats_read_run);
     if (e->composers_open) composers_post(e);
     if (e->stats_open) lib_read_post(e, &e->rd_stats, stats_read_run);
