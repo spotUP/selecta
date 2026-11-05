@@ -195,6 +195,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/eupmini)
 endif()
 
+# bbmp_ay (I709a): ZX Spectrum Flash Tracker (.fls), Fuxoft AY Language (.fxm, .amad) and Sound Tracker AY files (.strc), GPL-3.0 bbmp
+# engines on the MIT Ayumi chip, behind the GPL-plugin gate. Host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_ay)
+endif()
+
 # pxtone (I702): PiSTOL Collage songs (.ptcop, .pttune), permissively licensed play sample sources. C++ engine: host module
 # and static Amiga plugin (I702a, bebbo m68k-amigaos-c++).
 if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))

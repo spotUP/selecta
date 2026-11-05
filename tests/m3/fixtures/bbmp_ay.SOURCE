@@ -1,0 +1,12 @@
+ZX Spectrum AY-chip songs used by tests/m3/bbmp_ay_decode.sh (I709a). One real song per format, fetched by checksum, never
+committed (the repo is public; the songs are the composers' work with no stated redistribution licence):
+  simpletongift1.fls  sha256 c97891632224db086c03573f878c052a1a30caa5fb39a43e55c2c43b90613611  Flash Tracker, KVS
+    https://modland.com/pub/modules/Spectrum/Flash%20Tracker/KVS/simpletongift1.fls
+  belegost.fxm        sha256 96b874b8254d5ad6a6a5527d85ecf4967d00c00a3545f8d5ae2dfcdc6bce5f38  Fuxoft AY Language, Fuxoft
+    https://modland.com/pub/modules/Spectrum/Fuxoft%20AY%20Language/Fuxoft/belegost.fxm
+  belegost.amad       sha256 ae6df48f75986cd8f5a1ce49d356aaee84fe4e74c1e868e377f5365e7ced8fe0  AY Amadeus (ZXAYAMAD), Frantisek Fuka
+    https://modland.com/pub/modules/AY%20Amadeus/Frantisek%20Fuka/belegost.amad
+  mega_mix_1.strc     sha256 5dcae12c0ea0125127954fd785a66acd42a4f0dc2aac68d6da9df5dfa87ef9ed  Sound Tracker (ZXAYSTRC)
+    https://modland.com/pub/modules/AY%20STRC/_unknown/mega%20mix%201.strc
+The test fetches them through tests/m3/fetch_fixture.sh into tests/m3/fixtures/.cache (git-ignored), checks the sha256, and
+skips (exit 77) offline.
