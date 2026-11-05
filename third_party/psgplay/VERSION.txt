@@ -1,0 +1,17 @@
+PSG play, Atari ST / STE SNDH player and emulator (Musashi 68000, YM2149 cf2149, MFP 68901 cf68901, STE DMA sound cf300588).
+Copyright (C) Fredrik Noring. License: GPL-2.0 (COPYING; SPDX headers per file; Musashi MIT, toslibc LGPL-2.1, texts in licence/).
+Upstream: https://github.com/frno7/psgplay (main 6f1c39ff). Vendored from the DEViLBOX copy
+(~/Code/DEViLBOX/third-party/psgplay at commit 1a434e8aea692140bc6aa98d9b6372cc5ca95171; generated/ from DEViLBOX
+psgplay-wasm/generated, commit d663c3703).
+Vendored: include/, licence/, README.md and the library sources used by the player core (lib/ice, lib/psgplay,
+lib/internal, lib/atari, lib/cf2149, lib/cf68901, lib/cf300588, lib/m68k, lib/toslibc/include and unicode-*.c).
+Not vendored: system/, script/, lib/audio, lib/text, lib/vt, lib/graph, lib/tos and the rest of toslibc (front ends and the
+TOS source), doc/, test/.
+generated/ holds what upstream's Makefile generates, committed so the normal build needs no m68k-elf-gcc:
+  generated/m68k/m68kops.{c,h}  Musashi opcode tables, written by lib/m68k/m68kmake
+  generated/tos/tos.h           the precompiled TOS replacement image (lib/tos/tos, built with m68k-elf-gcc) as a C array
+Regenerate after updating the sources: copy a full upstream checkout to a scratch dir and run
+  make include/m68k/m68kops.h include/tos/tos.h
+then copy include/m68k/m68kops.h and lib/m68k/m68kops.c to generated/m68k/ and include/tos/tos.h to generated/tos/.
+(Needs m68k-elf-gcc and vasmm68k_mot; DEViLBOX psgplay-wasm/regen-generated.sh does exactly this.)
+Built as a GPL loadable module only (plugins/replayers/psgplay), second SNDH backend behind sc68 (priority -10).

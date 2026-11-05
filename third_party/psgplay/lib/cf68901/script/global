@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+for f in "$@"
+do
+	readelf --extra-sym-info --wide --syms --dyn-syms --lto-syms "$f" |
+	awk -v "f=$f" '
+		$0 ~ /^File: / { f = $2; next }
+
+		!($1 ~ /^[0-9a-fA-F]+:$/) { next }
+
+		$4 == "FILE"    ||
+		$4 == "FUNC"    ||
+		$4 == "NOTYPE"  ||
+		$4 == "SECTION"  \
+		{ next }
+
+		$7 == "ABS" ||
+		$7 == "UND"  \
+		{ next }
+
+		$8 == "(.rodata)"            ||
+		$8 == "(.data.rel.ro)"       ||
+		$8 == "(.data.rel.ro.local)"  \
+		{ next }
+
+		{ printf("%-40s  %-20s  %s\n", f, $8, $9) }
+		{ n++ }
+
+		END { exit(n != 0) }
+	' | column -t
+done

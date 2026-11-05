@@ -85,6 +85,11 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/sndh)
 endif()
 
+# PSG play (I707): GPL-2 module over psgplay, a second SNDH backend; sc68 stays the default through SEL_RP_PRIORITY. Host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/psgplay)
+endif()
+
 # SID via libsidplayfp (I434): GPL-2, loadable module only, opt-in, host only (Amiga SID is row I434a).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/sid)
@@ -194,6 +199,11 @@ endif()
 # and static Amiga plugin (I702a, bebbo m68k-amigaos-c++).
 if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))
   add_subdirectory(replayers/pxtone)
+endif()
+
+# sunvox (I706a): SunVox songs (.sunvox) over the BSD 2009 engine (third_party/sunvox_bsd). Core plugin: host module and static Amiga plugin.
+if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))
+  add_subdirectory(replayers/sunvox)
 endif()
 
 # organya (I703, I703a): Organya songs (.org, Cave Story) via organya.h (ISC-style licence), MIT module on the host, static soft-float plugin on the Amiga.

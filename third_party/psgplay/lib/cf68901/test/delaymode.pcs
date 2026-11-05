@@ -1,0 +1,186 @@
+CLK=4000000		-- 4.000000 MHz CLK
+XTAL1=2457600		-- 2.457600 MHz XTAL1
+
+RESET_L=0 #4
+RESET_L=1 #4
+
+#2 VR=0x40		-- Vector base 0x40 with SEI=0
+#1 IMRA=0b00100000	-- Timer A mask enable
+#1 IERA=0b00100000	-- Timer A enable
+#1 TADR=192		-- Data counter 192 with prescale 64 is 200 Hz
+#1 TACR=5		-- Control mode 5 is prescale 64, starting the timer
+
+-- Assert that a timer A interrupt is requested after
+-- exactly 64*192=12288 XTAL1 cycles = 20000 CLK cycles (200 Hz)
+#19999 IRQ_L!1		-- An interrupt is not yet asserted
+    #1 VECTOR!0x4d	-- Acknowledge timer A interrupt on channel 13 (0xd)
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+-- ... The timer repeats indefinitely in 20000 CLK cycles (200 Hz) ...
+
+-- Wait an arbitrary number of cycles, then set the data counter to 96,
+-- with the prescale remaining 64, for 400 Hz that is to be updated when
+-- data counter transitions from 1 to 0.
+#7919 TADR=96
+
+#19999-7919 IRQ_L!1
+    #1 VECTOR!0x4d
+
+-- Assert that a timer A interrupt is requested after
+-- exactly 64*192=6144 XTAL1 cycles = 10000 CLK cycles (400 Hz)
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#1171  IERA=0b00000000	-- Timer A disable
+#50000 IERA=0b00100000	-- Timer A enable after 5*10000 CLK cycles
+
+#9999-1171 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#4937 TACR=0		-- Wait an arbitrary number of cycles, stop the timer
+ #170 TACR=5		-- Reset mode 5 for prescale 64, restarting the timer
+
+#9999-4937 IRQ_L!1	-- Timer is delayed 170 CLK cycles when resumed
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+-- ... The timer repeats indefinitely in 10000 CLK cycles (400 Hz) ...
+
+#542 TACR=0		-- Wait an arbitrary number of cycles, stop the timer
+  #1 TADR=192		-- Data counter 192 with prescale 16 is 800 Hz
+  #1 TACR=3		-- Control mode 3 is prescale 16, starting the timer
+
+-- Assert that a timer A interrupt is requested after
+-- exactly 16*192=3072 XTAL1 cycles = 5000 CLK cycles (800 Hz)
+
+#4999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#4999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#4999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#4999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#4999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+-- ... The timer repeats indefinitely in 5000 CLK cycles (800 Hz) ...
+
+#1777 TACR=5		-- Wait an arbitrary number of cycles, and set
+			-- control mode 5 for prescale 64 and 200 Hz
+
+-- Switching prescale for active timers is somewhat involved. First
+-- compute the data counter at this point: (1-1777/5000)*192 = 123.763.
+-- Then compute the remaining XTAL1 cycles with the new prescale: 64*123=7872.
+-- Finally add prescale switch delay model of 100 XTAL1 cycles (7972),
+-- to obtain 7972*(4/2.4576)=12975.3 CLK cycles.
+#12975 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+#19999 IRQ_L!1
+    #1 VECTOR!0x4d
+
+-- ... The timer repeats indefinitely in 20000 CLK cycles (200 Hz) ...
+
+-- Wait an arbitrary number of cycles, then set the data counter to 96,
+-- as well as switch prescale from 64 to 16, for 400 Hz and finally 1600 Hz
+-- that is to be updated when data counter transitions from 1 to 0. Again,
+-- the computations are: (1-((4231+17)/20000))*192=151.219, so
+-- 16*151+100=2516.5 and therefore 2516.5*(4/2.4576)=4095.87 CLK cycles.
+#4231 TADR=96
+  #17 TACR=3
+
+#4094 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#2499 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#2499 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#2499 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#2499 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#2499 IRQ_L!1
+   #1 VECTOR!0x4d
+
+-- ... The timer repeats indefinitely in 2500 CLK cycles (1600 Hz) ...
+
+-- Wait an arbitrary number of cycles, then switch prescale from 16 to 64.
+-- Again, the computations are: (1-((757)/2500))*96=66.9312, so
+-- 16*66+100=4324 and therefore 4324*(4/2.4576)=7037.76 CLK cycles.
+-- Notice that the duration of the stopped timer does not matter.
+ #757 TACR=0
+#1741 TACR=5
+
+#7037 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+#9999 IRQ_L!1
+   #1 VECTOR!0x4d
+
+-- ... The timer repeats indefinitely in 10000 CLK cycles (400 Hz) ...

@@ -2020,6 +2020,16 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I707: an SNDH tune plays on the psgplay module (second SNDH backend); sc68 stays the default. Same gate as the other GPL modules.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/psgplay-decode)
+    add_test(NAME psgplay-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/psgplay_decode.sh $<TARGET_FILE:selecta-cli> ${CMAKE_BINARY_DIR}/modules
+              ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sndh/oculus_ice.sndh
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/psgplay-decode)
+    set_tests_properties(psgplay-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "psgplay_decode_ok")
+  endif()
+
   # I701: an FM Towns Euphony song plays through the render entry point (eupmini module, GPL-2.0). Same gate as the other GPL modules.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/eup-decode)
@@ -2038,6 +2048,15 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/pxtone_test.ptcop
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/pxtone-decode)
   set_tests_properties(pxtone-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "pxtone_decode_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+
+  # I706a: a SunVox song plays through the render entry point (sunvox module); a newer-version song is refused.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-decode)
+  add_test(NAME sunvox-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sunvox_decode.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sunvox_tune.sunvox
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-decode)
+  set_tests_properties(sunvox-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sunvox_refusal_ok"
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
   # I703: an Organya song plays through the render entry point (organya module); a wave100.wdb beside it must change the sound.
@@ -2069,6 +2088,16 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-decode)
     set_tests_properties(snsf-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "snsf_decode_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I705b: real Modland sets (game ROM data, fetched at test time by m3/fetch_fixture.sh, never in git; exit 77 = SKIP).
+    # Default length 180 s + 10 s fade = 190 s. wolfenstein = HiROM, blackthorne = LoROM.
+    foreach(game wolfenstein blackthorne)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-real-${game})
+      add_test(NAME snsf-real-${game}
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/snsf_real_decode.sh $<TARGET_FILE:selecta-cli> ${game}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-real-${game})
+      set_tests_properties(snsf-real-${game} PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "snsf_decode_ok" SKIP_RETURN_CODE 77
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endforeach()
   endif()
 
   # I704b: a real Capcom game set (Mega Man: The Power Battle, CPS-2 Kabuki key and ROM banks in the .qsflib) renders
@@ -2081,16 +2110,6 @@ if(NOT SEL_AMIGA)
     # I704c: the game set is fetched at test time (m3/fetch_fixture.sh); exit 77 = offline = SKIP.
     set_tests_properties(qsf-real-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "qsf_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
-    # I705b: real Modland sets (game ROM data, fetched at test time by m3/fetch_fixture.sh, never in git; exit 77 = SKIP).
-    # Default length 180 s + 10 s fade = 190 s. wolfenstein = HiROM, blackthorne = LoROM.
-    foreach(game wolfenstein blackthorne)
-      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-real-${game})
-      add_test(NAME snsf-real-${game}
-        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/snsf_real_decode.sh $<TARGET_FILE:selecta-cli> ${game}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-real-${game})
-      set_tests_properties(snsf-real-${game} PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "snsf_decode_ok" SKIP_RETURN_CODE 77
-        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
-    endforeach()
   endif()
 
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
