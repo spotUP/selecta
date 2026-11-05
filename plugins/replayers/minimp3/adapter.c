@@ -110,8 +110,8 @@ static int file_mode(const mp3_state* s) {
 static int open_live(mp3_state* s, const sel_song_source* src, mp3dec_frame_info_t* fi) {
     const sel_byte_stream* in = s->in;
     size_t skip = id3v2_len(src->data, src->size);
-    s->start_off = skip;
-    s->base = skip;
+    s->start_off = in->origin + skip; /* origin: a tag the stream already skipped (I1080), so file offsets stay absolute */
+    s->base = s->start_off;
     while (skip > 0u) {
         uint8_t junk[512];
         size_t n = in->read_wait(in->ctx, junk, skip < sizeof junk ? skip : sizeof junk);

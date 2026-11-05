@@ -229,6 +229,11 @@ int sel_live_head(sel_live* s, uint8_t* dst, size_t want, size_t* n) {
     (void)n;
     return 0;
 }
+int sel_live_skip(sel_live* s, size_t n) {
+    (void)s;
+    (void)n;
+    return 0;
+}
 const sel_byte_stream* sel_live_source(sel_live* s) {
     (void)s;
     return NULL;
@@ -812,6 +817,25 @@ int sel_live_head(sel_live* s, uint8_t* dst, size_t want, size_t* n) {
     return *n > 0;
 }
 
+int sel_live_skip(sel_live* s, size_t n) {
+    size_t left = n;
+    while (left > 0u) {
+        unsigned r = ld(&s->rd), avail = ld(&s->wr) - r;
+        size_t take = left < avail ? left : avail;
+        if (take > 0u) {
+            st_store(&s->rd, r + (unsigned)take);
+            left -= take;
+            continue;
+        }
+        if (ld(&s->eof) != 0u || cancelled(s)) {
+            return 0;
+        }
+        usleep(1000);
+    }
+    s->view.origin += n;
+    return 1;
+}
+
 const sel_byte_stream* sel_live_source(sel_live* s) {
     return &s->view;
 }
@@ -959,18 +983,22 @@ static int file_seek(void* ctx, uint64_t pos) {
     return 1;
 }
 
-/* Bytes the probe needs: SEL_STREAM_HEAD, or for a stream that starts with an ID3v2 tag the whole tag plus room for
- * the first frames behind it (cover art makes tags of several hundred KB common), capped at `cap` and at `size`
- * (0 = length unknown). Shared by the file path (cap SEL_FILE_HEAD_MAX) and the live path (cap SEL_LIVE_HEAD_MAX). */
-size_t sel_stream_head_want(const uint8_t* h, size_t n, uint64_t size, size_t cap) {
-    size_t want = SEL_STREAM_HEAD;
+size_t sel_id3v2_len(const uint8_t* h, size_t n) {
+    if (n < 10u || h[0] != 'I' || h[1] != 'D' || h[2] != '3' || ((h[6] | h[7] | h[8] | h[9]) & 0x80u) != 0u) {
+        return 0;
+    }
+    return 10u + (((size_t)h[6] << 21) | ((size_t)h[7] << 14) | ((size_t)h[8] << 7) | h[9]) +
+           ((h[5] & 0x10u) != 0u ? 10u : 0u);
+}
 
-    if (n >= 10u && h[0] == 'I' && h[1] == 'D' && h[2] == '3' && ((h[6] | h[7] | h[8] | h[9]) & 0x80u) == 0u) {
-        size_t tag = 10u + (((size_t)h[6] << 21) | ((size_t)h[7] << 14) | ((size_t)h[8] << 7) | h[9]) +
-                     ((h[5] & 0x10u) != 0u ? 10u : 0u);
-        if (tag + SEL_STREAM_HEAD > want) {
-            want = tag + SEL_STREAM_HEAD;
-        }
+/* Bytes the file probe needs: SEL_STREAM_HEAD, or for a file that starts with an ID3v2 tag the whole tag plus room for
+ * the first frames behind it (cover art makes tags of several hundred KB common), capped at `cap` and at `size`
+ * (0 = length unknown). A live stream skips the tag instead (sel_live_skip): its ring cannot hold one. */
+size_t sel_stream_head_want(const uint8_t* h, size_t n, uint64_t size, size_t cap) {
+    size_t want = SEL_STREAM_HEAD, tag = sel_id3v2_len(h, n);
+
+    if (tag + SEL_STREAM_HEAD > want) {
+        want = tag + SEL_STREAM_HEAD;
     }
     if (want > cap) {
         want = cap;

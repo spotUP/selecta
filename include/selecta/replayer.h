@@ -36,6 +36,9 @@ typedef struct sel_byte_stream {
     /* 1 when the bytes come over the network (I725f, HTTP Range): a seek is one new request, but reading is only as
      * fast as the link, so a replayer must not walk the file from the start to find a position. 0 for a local file. */
     int network;
+    /* Bytes the stream consumed from the front of the source before the first byte a reader sees (an ID3v2 tag a live
+     * stream skipped, sel_live_skip): the first byte read lies at this file offset; seek positions stay absolute. */
+    uint64_t origin;
 } sel_byte_stream;
 
 /* The whole song in memory. `data` stays valid until RP_CLOSE returns. With `stream` set (SEL_RP_STREAMING

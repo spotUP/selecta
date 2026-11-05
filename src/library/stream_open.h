@@ -39,9 +39,13 @@ typedef struct sel_live sel_live;
 
 #define SEL_STREAM_HEAD 16384u /* bytes handed to the format probe before the rest has arrived */
 
-/* A live head must fit the ring (SEL_STREAM_RING, 256 KB) with room left for the download to keep moving. */
-#define SEL_LIVE_HEAD_MAX (240u * 1024u)
-/* Head size the format probe needs from bytes h[0..n) (the first 10 are enough): see stream_open.c. */
+#define SEL_ID3_PROBE_ROOM 4096u /* frame bytes the MP3 probe needs behind an ID3v2 tag (minimp3 adapter rp_probe) */
+
+/* Length of the ID3v2 tag at the start of h[0..n) (header, body and footer), 0 when there is none; the first 10 bytes
+ * are enough. Shared by the file head sizing (sel_stream_head_want) and the live skip (sel_live_skip). */
+size_t sel_id3v2_len(const uint8_t* h, size_t n);
+/* Head size the file probe needs from bytes h[0..n): SEL_STREAM_HEAD, or the whole ID3v2 tag plus SEL_STREAM_HEAD,
+ * capped at `cap` and at `size` (0 = unknown). */
 size_t sel_stream_head_want(const uint8_t* h, size_t n, uint64_t size, size_t cap);
 
 /* Starts the download. `gen`/`start` (the engine's cancel generation) end the head wait below when a newer
@@ -55,6 +59,10 @@ sel_live* sel_live_open_seekable(const sel_host* host, const char* url, const vo
 /* Waits until `want` bytes arrived or the stream ended, then copies up to `want` of the first bytes WITHOUT
  * consuming them (*n = how many). Returns 0 when the download failed before any byte or the wait was cancelled. */
 int sel_live_head(sel_live* s, uint8_t* dst, size_t want, size_t* n);
+/* I1080: consumes the first `n` bytes (an ID3v2 tag, which can be far longer than the ring) as they arrive, so the ring
+ * never holds them; the view's `origin` grows by n and the next head starts behind them. Cancel-aware. Returns 0 when
+ * the stream ended or was cancelled first. Call before any reader consumed a byte. */
+int sel_live_skip(sel_live* s, size_t n);
 /* The consumer view handed to a SEL_RP_STREAMING replayer; valid until sel_live_close. */
 const sel_byte_stream* sel_live_source(sel_live* s);
 /* Reads the rest of the stream into one host buffer (the replayer cannot stream): memory grows with the file,

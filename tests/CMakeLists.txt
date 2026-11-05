@@ -2691,13 +2691,21 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
 
   # I195d: the same for Ogg Vorbis (stb_vorbis pushdata path); one long file, no repeat (chained Ogg streams).
-  # I1080: a podcast MP3 opens with a 200 KB ID3v2 tag; the head is sized past it and the MP3 replayer streams.
-  add_test(NAME stream-live-id3
-    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
-            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DSLOW=${SEL_NET_DIR}/slow_server.py"
-            -DREPEAT=400 -DTAG_KB=200 -P "${SEL_NET_DIR}/stream_live.cmake")
-  set_tests_properties(stream-live-id3 PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
-    TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
+  # I1080: a podcast MP3 opens with an ID3v2 tag larger than the 256 KB ring (620 KB, like the real Pixelated Audio feed):
+  # the live open skips the tag as it streams. The 200 KB case is a tag that fits the ring but not the 16 KB head.
+  foreach(_kb 620 200)
+    if(_kb EQUAL 620)
+      set(_name stream-live-id3)
+    else()
+      set(_name stream-live-id3-small)
+    endif()
+    add_test(NAME ${_name}
+      COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+              "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DSLOW=${SEL_NET_DIR}/slow_server.py"
+              -DREPEAT=400 -DTAG_KB=${_kb} -P "${SEL_NET_DIR}/stream_live.cmake")
+    set_tests_properties(${_name} PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+      TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
+  endforeach()
 
   add_test(NAME stream-live-ogg
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"

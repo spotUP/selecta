@@ -11,8 +11,9 @@ endif()
 if(NOT DEFINED EXT)
   set(EXT mp3)
 endif()
-# I1080: -DTAG_KB=<n> puts an ID3v2 tag of n KB (podcast cover art) in front of the audio. The head must be sized past
-# the tag, so the MP3 replayer streams it; otherwise the engine drains the whole (stalled) body on its own thread.
+# I1080: -DTAG_KB=<n> puts an ID3v2 tag of n KB (podcast cover art) in front of the audio. A tag the head cannot hold must be
+# skipped as it streams (sel_live_skip), so the MP3 replayer streams it; otherwise the engine drains the whole
+# (stalled) body on its own thread.
 if(DEFINED TAG_KB)
   set(tagged "${WORK}/tagged-live.mp3")
   execute_process(COMMAND python3 -I -c "
