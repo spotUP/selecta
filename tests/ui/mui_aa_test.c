@@ -925,7 +925,8 @@ static void test_list_cols(void) {
     mui_aa_list_metrics(13, &m);
     mui_aa_list_col_widths(&m, 600, 3, weight, fixed, out);
     sum = out[0] + out[1] + out[2];
-    CHECK(out[0] > out[1] && out[1] == out[2] && sum <= 600 && sum >= 500, "weighted widths %d %d %d (sum %d)", out[0], out[1], out[2], sum);
+    /* I1079b: the shared splitter hands the integer remainder to the last weighted column, so the row is filled to the pixel. */
+    CHECK(out[0] > out[1] && out[2] >= out[1] && out[2] - out[1] <= 2 && sum + 2 * (2 * m.gap + 1) + 2 * m.pad_x == 600, "weighted widths %d %d %d (sum %d)", out[0], out[1], out[2], sum);
     mui_aa_list_col_widths(&m, 600, 5, wf, ff, o5);
     CHECK(o5[3] == 56 && o5[4] == 48 && o5[0] > o5[1] && o5[0] + o5[1] + o5[3] + o5[4] <= 600, "fixed columns keep their width: %d %d %d", o5[0], o5[3], o5[4]);
     mui_aa_list_col_widths(&m, 20, 3, weight, fixed, out);

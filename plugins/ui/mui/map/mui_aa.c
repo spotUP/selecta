@@ -1,5 +1,6 @@
 #include "mui_aa.h"
 
+#include <selecta/uimodel/cols.h>
 #include <string.h>
 
 static int isqrt(int v) {
@@ -675,7 +676,9 @@ int mui_aa_list_col_x(const mui_aa_list_t* m, int col, const int* w) {
     int x = m->pad_x, k;
     g_list_calls++;
     for (k = 0; k < col && w != NULL; k++) {
-        x += w[k] + 2 * m->gap + 1;
+        if (w[k] > 0) { /* an absent column (width 0) takes no gap, as in sel_uim_cols_split */
+            x += w[k] + 2 * m->gap + 1;
+        }
     }
     return x;
 }
@@ -774,22 +777,21 @@ void mui_aa_list_row_rgb(const uint32_t* token, int row_state, int playing, uint
     }
 }
 
+/* I1079b: a thin wrapper over the shared splitter sel_uim_cols_split (design 2026-11-05-I1079 section 3.4). A column with
+ * neither weight nor fixed width is absent: width 0 and no gap (mui_aa_list_col_x skips it the same way). */
 void mui_aa_list_col_widths(const mui_aa_list_t* m, int total, int n, const int* weight, const int* fixed, int* out) {
-    int k, avail, wsum = 0;
+    sel_uim_col c[SEL_UIM_COLS_MAX];
+    int32_t x[SEL_UIM_COLS_MAX], w[SEL_UIM_COLS_MAX];
+    int k, cnt = n < SEL_UIM_COLS_MAX ? n : SEL_UIM_COLS_MAX;
     g_list_calls++;
-    avail = total - 2 * m->pad_x - (n > 1 ? (n - 1) * (2 * m->gap + 1) : 0);
-    for (k = 0; k < n; k++) {
-        if (weight[k] > 0) {
-            wsum += weight[k];
-        } else {
-            avail -= fixed[k];
-        }
+    memset(c, 0, sizeof c);
+    for (k = 0; k < cnt; k++) {
+        c[k].weight = weight[k] > 0 ? weight[k] : 0;
+        c[k].fixed = weight[k] > 0 ? 0 : fixed[k];
     }
-    if (avail < 0) {
-        avail = 0;
-    }
+    (void)sel_uim_cols_split(total - 2 * m->pad_x, 2 * m->gap + 1, c, (uint32_t)cnt, x, w);
     for (k = 0; k < n; k++) {
-        out[k] = weight[k] > 0 ? avail * weight[k] / wsum : fixed[k];
+        out[k] = k < cnt ? w[k] : 0;
     }
 }
 
