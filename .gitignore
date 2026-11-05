@@ -9,3 +9,8 @@ build/
 # Johan's personal MUI keyfile: lives only in the rig master disk SYS:S/, never in the repo or a Selecta kit
 MUI.key
 *.key
+
+# I704c: game-ROM fixtures are fetched at test time (tests/m3/fetch_fixture.sh), never committed
+tests/m3/fixtures/.cache/
+tests/m3/fixtures/mm1_title.miniqsf
+tests/m3/fixtures/*.qsflib
