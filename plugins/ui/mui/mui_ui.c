@@ -3259,6 +3259,13 @@ static void* mui_open(const sel_ui_open_args* a) {
                     (unsigned long)step, (long)_minwidth(s->root), (long)_minheight(s->root), (long)_maxheight(s->root),
                     (long)_maxheight(s->slot[MUI_SLOT_SIDEBAR]), (long)_maxheight(s->slot[MUI_SLOT_MAIN]), (long)_maxheight(s->slot[MUI_SLOT_DETAIL]),
                     scr != NULL ? (int)scr->Width : 0, scr != NULL ? (int)scr->Height : 0, (unsigned long)open);
+            {   /* I1092c: the minimum height of every slot at this step (a hidden slot must not count) */
+                uint32_t sl;
+                for (sl = 0; sl < MUI_SLOT_COUNT; sl++) {
+                    fprintf(stderr, "selecta mui: ladder step %lu slot %lu show %lu min %ldx%ld\n", (unsigned long)step, (unsigned long)sl,
+                            (unsigned long)s->lay.show[sl], (long)_minwidth(s->slot[sl]), (long)_minheight(s->slot[sl]));
+                }
+            }
             if (s->main_pages != NULL) {
                 /* I963 (Johan: sidebar clicks redraw slowly at 640x256): each main page's min/max height next to the slot height, so
                  * a page whose minimum exceeds the slot (MUI relayouts on each switch) shows in the --log. */
