@@ -1,0 +1,8 @@
+bsnes (bsnes-emu/bsnes, GPL-3.0-or-later; COPYING is GPLv3.txt of upstream)
+Upstream commit: 78474e5d39f58872dc21aca18cf9eb583b147fe7 (2026-10-07)
+Taken: nall/, libco/ (without doc/), bsnes/emulator, bsnes/sfc, bsnes/processor.
+Not taken: gb/ (SameBoy), hiro/ruby/target-*, filter, lzma, Database, heuristics.
+Local changes: the Super Game Boy ICD coprocessor is removed (sfc/coprocessor/icd, all icd/has.ICD uses, the gb/ includes
+in sfc.hpp) so SameBoy is not needed. Every sfc unit (emulator, interface, system, cartridge, cpu, smp, dsp, ppu, ppu-fast,
+controller, memory, expansion, coprocessor, slot) compiles with c++ -std=c++17 -I. -I.. on macOS arm64.
+Use: SNSF replayer (plugins/replayers/snsf, ledger I705), GPL module behind SELECTA_GPL_PLUGINS.
