@@ -2049,6 +2049,16 @@ if(NOT SEL_AMIGA)
   set_tests_properties(organya-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "organya_decode_ok"
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
+  # I704: a QSF song plays through the render entry point (qsf module). GPL module, opt-in.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/qsf-decode)
+    add_test(NAME qsf-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/qsf_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/qsf_test.qsf
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/qsf-decode)
+    set_tests_properties(qsf-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "qsf_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
 
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)

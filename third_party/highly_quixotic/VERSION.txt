@@ -1,0 +1,7 @@
+Highly Quixotic, the QSound (Capcom CPS1/CPS2 sound board) core by Neill Corlett, QSound DSP emulation (qsound_ctr.c, DL-1425)
+by superctr (Ian Karlsson), maintained by Christopher Snowhill (kode54).
+Upstream: https://github.com/kode54/Highly_Quixotic, commit 1150a17696dbd044f215f823166a5f2b6519cd5f (2018-05-20), directory Core/.
+Licence: GPL-3.0 (upstream LICENSE.TXT, kept here as COPYING). Individual files carry no header. Readme.txt (upstream) says the
+Z80 core (z80.c) is based on MAME's, so it keeps MAME's lineage; the repository as a whole is distributed under GPL-3.0.
+Consequence: GPL module behind SELECTA_GPL_PLUGINS, never in the MIT core; not built for Amiga (GPL gate, ledger row I704).
+Vendored: Core/*.c, *.h, Readme.txt. Not vendored: the Qt/MSVC project files.
