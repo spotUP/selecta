@@ -3116,6 +3116,12 @@ if(NOT SEL_AMIGA)
   add_test(NAME engine-cmd-arena COMMAND cmd_arena_test)
   set_tests_properties(engine-cmd-arena PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cmd_arena_ok")
 
+  # I1082c: engine -> UI event ring: 10 000 events from a producer thread, on_event on the UI thread, none lost, strings and tag lists copied.
+  add_executable(evt_ring_test engine/evt_ring_test.c)
+  target_link_libraries(evt_ring_test PRIVATE selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME engine-evt-ring COMMAND evt_ring_test)
+  set_tests_properties(engine-evt-ring PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "evt_ring_ok")
+
   # I195c: STOP sends racing the pump never lose their net cancel (threads, many iterations).
   add_executable(cancel_race_test engine/cancel_race_test.c)
   target_link_libraries(cancel_race_test PRIVATE selecta_core ${CMAKE_THREAD_LIBS_INIT})

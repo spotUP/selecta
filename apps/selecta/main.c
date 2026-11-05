@@ -39,6 +39,7 @@
 #include "db.h"
 #include "local.h"
 #include "share.h"
+#include "../../src/engine/evtring.h"
 #include "../../src/engine/options.h"
 
 #include <stdio.h>
@@ -147,12 +148,35 @@ static int g_marked; /* the output's pull thread is marked as the audio thread *
  * folders) lands before the next turn; a paced run never waits for the library (the pump posts and applies the answer on a later turn). */
 static uint32_t g_pump_ms_max; /* I906a: longest pump_turn in host clock ms; sees library waits inside cmd_* handlers, which turn_ms_max (desk_wait only) does not */
 static uint32_t g_engine_pumps; /* I1082a: pumps run on the engine thread (0 until I1082f moves the pump there) */
+/* I1082c: pump events go through the engine -> UI event ring: the sink pushes (strings and tag lists copied into a slot), the UI side of
+ * this turn drains it and calls on_event. Today both sides run on this thread (inline_drain: a full ring is drained on the spot, an event
+ * too big for a slot is delivered directly); I1082f moves the pump to the engine thread and the drain stays here. */
+static sel_evt_ring g_evt_ring;
+static int g_evt_ring_state; /* 0: not opened, 1: open, -1: no memory (events go straight to on_event) */
+static uint32_t g_evt_ring_events; /* events that crossed the ring (sentinel evt_ring_events=) */
+
 static void pump_turn(sel_engine* e, int clockless, sel_event_sink on_event, void* ctx) {
     const sel_host* ph = sel_engine_plugin_host(e);
     uint32_t t0 = ph->clock_ms(ph), dt;
+    sel_event_sink pump_sink = on_event;
+    void* pump_ctx = ctx;
 
-    if (clockless) (void)sel_engine_pump_reads(e, on_event, ctx, 60000u);
-    else (void)sel_engine_pump(e, on_event, ctx);
+    if (g_evt_ring_state == 0) {
+        g_evt_ring_state = sel_evt_ring_init(&g_evt_ring, ph, 256u, 2048u, on_event, ctx) ? 1 : -1;
+        g_evt_ring.inline_drain = 1;
+    }
+    if (g_evt_ring_state > 0 && on_event != NULL) {
+        g_evt_ring.ui = on_event;
+        g_evt_ring.ui_ctx = ctx;
+        pump_sink = sel_evt_ring_sink;
+        pump_ctx = &g_evt_ring;
+    }
+    if (clockless) (void)sel_engine_pump_reads(e, pump_sink, pump_ctx, 60000u);
+    else (void)sel_engine_pump(e, pump_sink, pump_ctx);
+    if (pump_sink != on_event) {
+        sel_evt_ring_drain(&g_evt_ring);
+        g_evt_ring_events = g_evt_ring.pushed;
+    }
     dt = ph->clock_ms(ph) - t0;
     if (dt > g_pump_ms_max) g_pump_ms_max = dt;
 }
@@ -964,7 +988,7 @@ int main(int argc, char** argv)
     printf("skip_excluded=%u\n", (unsigned)est.skip_excluded); /* I906g: skip-flagged rows the random order left out */
     printf("radio_appends=%u\n", (unsigned)est.radio_appends); /* I906g: songs the posted radio draw appended */
     printf("shell_wait_ms_min=%u shell_wait_ms_max=%u\n", (unsigned)(wait_ms_min == 0xFFFFFFFFu ? 0u : wait_ms_min), (unsigned)wait_ms_max); /* what the shell asked the UI to wait (I684c) */
-    printf("ui_gap_ms_max=%u engine_thread=%d engine_pumps=%u\n", (unsigned)gap_ms_max, engine_thread, (unsigned)g_engine_pumps); /* I1082a */
+    printf("ui_gap_ms_max=%u engine_thread=%d engine_pumps=%u evt_ring_events=%u\n", (unsigned)gap_ms_max, engine_thread, (unsigned)g_engine_pumps, (unsigned)g_evt_ring_events); /* I1082a, I1082c */
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
     printf("hw_handovers=%u hw_starts=%u replayer=%s\n", (unsigned)est.hw_handovers, (unsigned)est.hw_starts,

@@ -3,6 +3,8 @@
 #include "../core/count.h"
 #include "../core/pal.h"
 
+#include <selecta/tags.h>
+
 #include <string.h>
 
 /* Head/tail publications so far (sentinel spsc_publishes=). */
@@ -61,6 +63,39 @@ uint32_t sel_spsc_count(const sel_spsc* q) {
 
 /* Copies every string argument of `src` (already in *dst) into `buf` of `cap` bytes and repoints dst at the copies.
  * 0 when they do not fit. */
+/* Copies a tag list (MORE and SKIP followed) into buf at *used as a flat END-terminated array, string-typed values
+ * included. PTR and INT values stay as they are (a PTR points into engine memory that outlives the event). */
+static int copy_tags(sel_arg* dst, const sel_tag* src, char* buf, uint32_t cap, uint32_t* used) {
+    uint32_t n = sel_tag_count(src), off = (*used + (uint32_t)sizeof(uintptr_t) - 1u) & ~((uint32_t)sizeof(uintptr_t) - 1u), i = 0, len;
+    sel_tag* out;
+    const sel_tag* it = src;
+    const sel_tag* t;
+    sel_tag_type ty;
+
+    if (off > cap || (cap - off) / (uint32_t)sizeof(sel_tag) < n + 1u) {
+        return 0;
+    }
+    out = (sel_tag*)(void*)(buf + off);
+    *used = off + (n + 1u) * (uint32_t)sizeof(sel_tag);
+    while ((t = sel_tag_next(&it)) != NULL && i < n) {
+        out[i] = *t;
+        if (t->value != 0 && sel_tag_type_of(t->tag, &ty) && ty == SEL_TT_STR) {
+            len = (uint32_t)strlen((const char*)t->value) + 1u;
+            if (len > cap - *used) {
+                return 0;
+            }
+            memcpy(buf + *used, (const char*)t->value, len);
+            out[i].value = (uintptr_t)(buf + *used);
+            *used += len;
+        }
+        i++;
+    }
+    out[i].tag = SEL_TAG_END;
+    out[i].value = 0;
+    dst->v.t = out;
+    return 1;
+}
+
 static int copy_strings(sel_message* dst, const sel_message* src, char* buf, uint32_t cap) {
     uint32_t used = 0, i, n;
     for (i = 0; i < src->argc && i < SEL_MAX_ARGS; i++) {
@@ -72,6 +107,9 @@ static int copy_strings(sel_message* dst, const sel_message* src, char* buf, uin
             memcpy(buf + used, src->args[i].v.s, n);
             dst->args[i].v.s = buf + used;
             used += n;
+        } else if (src->args[i].type == SEL_ARG_TAGS && src->args[i].v.t != NULL &&
+                   !copy_tags(&dst->args[i], src->args[i].v.t, buf, cap, &used)) {
+            return 0;
         }
     }
     return 1;
