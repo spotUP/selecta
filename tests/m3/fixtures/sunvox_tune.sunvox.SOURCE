@@ -1,0 +1,5 @@
+sunvox_tune.sunvox = sunvox_api_examples/interactive_sound/make/tune.sunvox from the public SunVox engine source release
+"sunvox_sources" (Alex Zolotov / warmplace.ru; local copy ~/Code/DEViLBOX/third-party/sunvox_sources-master).
+Song file version field: VERS 1 (old format the 2009 engine reads).
+Licence: shipped as the example tune inside the BSD-licensed source package (engine licence: third_party/sunvox_bsd/
+LICENSE-sunvox_engine.txt); the package has no separate licence line for the tune. Johan decides if it stays public.
