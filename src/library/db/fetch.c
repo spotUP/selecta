@@ -74,6 +74,7 @@ static void stats_add(sel_cache_stats* to, const sel_cache_stats* from, int smar
     to->content_companions += from->content_companions;
     to->content_rejected += from->content_rejected;
     to->content_missing += from->content_missing;
+    to->companion_missing += from->companion_missing;
     to->md5_mismatches += from->md5_mismatches;
     to->mirror_tries += from->mirror_tries;
     if (smart) {
@@ -502,6 +503,19 @@ int sel_library_fetch_status(sel_library* lib) {
     return st;
 }
 
+int sel_library_fetch_banks_missing(sel_library* lib) {
+    sel_cache* c = cache_get(lib);
+    int m;
+
+    if (c == NULL) {
+        return 0;
+    }
+    cache_lock(lib);
+    m = c->last_banks_missing;
+    cache_unlock(lib);
+    return m;
+}
+
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files) {
     char source[24];
     char path[SEL_CACHE_PATH_MAX];
@@ -563,8 +577,8 @@ void sel_library_cache_report(const sel_library* lib) {
     if (sel_library_cache_stats(lib, &s)) {
         printf("cache_hits=%u\nfetches=%u\ncompanions=%u\nmd5_mismatches=%u\nmirror_tries=%u\n"
                "trim_runs=%u\nprefetches=%u\nprefetch_fetches=%u\nsmart_requests=%u\nsmart_fetches=%u\n"
-               "smart_skipped=%u\nzip_members=%u\nzip_requests=%u\ncontent_companions=%u\ncontent_rejected=%u\ncontent_missing=%u\n",
+               "smart_skipped=%u\nzip_members=%u\nzip_requests=%u\ncontent_companions=%u\ncontent_rejected=%u\ncontent_missing=%u\ncompanion_missing=%u\n",
                s.cache_hits, s.fetches, s.companions, s.md5_mismatches, s.mirror_tries, s.trim_runs, s.prefetches,
-               s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped, s.zip_members, s.zip_requests, s.content_companions, s.content_rejected, s.content_missing);
+               s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped, s.zip_members, s.zip_requests, s.content_companions, s.content_rejected, s.content_missing, s.companion_missing);
     }
 }

@@ -2778,6 +2778,16 @@ if(NOT SEL_AMIGA)
       COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
         "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures" "-DPLUGINS=${CMAKE_BINARY_DIR}/modules" -P "${SEL_NET_DIR}/remote_eup_banks.cmake")
     set_tests_properties(remote-eup-banks-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture TIMEOUT 120)
+    # I1127c: the same song with its banks on no mirror plays and Now Playing carries the "Sample bank not found" flag.
+    if(SELECTA_UI_DESKTOP)
+      set(SEL_MISSING_BANK_UI desktop)
+    else()
+      set(SEL_MISSING_BANK_UI text)
+    endif()
+    add_test(NAME remote-eup-missing-bank-net
+      COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}"
+        "-DUI=${SEL_MISSING_BANK_UI}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures" "-DPLUGINS=${CMAKE_BINARY_DIR}/modules" -P "${SEL_NET_DIR}/remote_eup_missing_bank.cmake")
+    set_tests_properties(remote-eup-missing-bank-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture TIMEOUT 120)
   endif()
   add_executable(record_cut_unit_test record_cut_unit_test.c)
   target_include_directories(record_cut_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)

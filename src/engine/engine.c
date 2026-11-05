@@ -262,6 +262,7 @@ typedef struct sel_slot {
     sel_rp_hw_pause_fn rp_hw_pause;           /* optional, HW kind */
     sel_rp_hw_release_fn rp_hw_release;       /* optional, HW kind */
     sel_rp_cfg_applied_fn rp_cfg_applied;     /* optional: starts that applied the configuration (MPS-1 sentinel) */
+    uint32_t bank_missing;                    /* I1127c: a companion bank of this remote song was on no mirror */
     sel_rp_seekable_fn rp_seekable;           /* optional: 0 = the song cannot be seeked (I434e) */
     sel_rp_hw_poll_fn rp_hw_poll;             /* optional, HW kind: song end flags (I219b) */
     sel_rp_hw_length_fn rp_hw_length;         /* optional, HW kind: catalogue length of the started subsong (I434f) */
@@ -495,6 +496,7 @@ struct sel_engine {
     SEL_THREAD_FIELDS
     uint32_t error_slot;
     int open_failed; /* 1 right after an OPEN whose song failed: the PLAY that follows it must not start the queue (I695e) */
+    int open_bank_missing; /* I1127c: read_song found a companion bank on no mirror (prepare_slot copies it to the slot) */
     int open_status; /* HTTP status of the last failed URL read in read_song, 0 when none (I195g) */
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
@@ -1990,6 +1992,7 @@ static uint8_t* read_whole_file(sel_engine* e, const char* path, size_t* size) {
 static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_live** live, sel_file_stream** fs,
                           char* file_path) {
     e->open_status = 0;
+    e->open_bank_missing = 0;
     file_path[0] = '\0';
     char cached[SEL_BROWSE_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
@@ -2035,6 +2038,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             e->open_status = sel_library_fetch_status(e->lib); /* I695b: the 404 of a file the mirror does not serve */
             return NULL;
         }
+        e->open_bank_missing = sel_library_fetch_banks_missing(e->lib);
         path = cached;
         snprintf(file_path, SEL_BROWSE_PATH_MAX, "%s", cached); /* I1127b: the replayer looks for companion banks beside this file */
     }
@@ -2748,6 +2752,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->cat_sub = 0;
     sl->cat_ms = 0;
     sl->cat_retry = 0;
+    sl->bank_missing = (uint32_t)e->open_bank_missing;
     sl->path = e->host->mem_alloc(e->host, strlen(path) + 1u, SEL_MEM_FAST);
     if (sl->path != NULL) {
         memcpy(sl->path, path, strlen(path) + 1u);
@@ -10832,6 +10837,7 @@ static void refresh_snapshot(sel_engine* e) {
         }
         song->duration_ms = song_length_ms(e, &e->slot[e->cur]);
         song->path = sl->path;
+        song->bank_missing = sl->bank_missing;
         if (sl->path != NULL && strncmp(sl->path, e->lyr_for, sizeof e->lyr_for) != 0) {
             snprintf(e->lyr_for, sizeof e->lyr_for, "%s", sl->path);
             lyrics_open(e, sl, song->meta);

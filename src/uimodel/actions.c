@@ -161,6 +161,11 @@ const char* sel_uim_tip_like(int liked) {
     return liked ? "Remove from Liked Songs" : "Add to Liked Songs";
 }
 
+/* I1127c: the one-line note under the open song's metadata, shared by both Now Playing panels. NULL: no note. */
+const char* sel_uim_np_note(const sel_song_state* song) {
+    return song != NULL && song->path != NULL && song->bank_missing != 0u ? "Sample bank not found" : NULL;
+}
+
 const char* sel_uim_tip_np_panel(int hidden) {
     return hidden ? "Show Now Playing Panel" : "Hide Now Playing Panel";
 }

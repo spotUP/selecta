@@ -231,6 +231,8 @@ void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32
  * Hide / Show Now Playing button. */
 const char* sel_uim_tip_like(int liked);
 const char* sel_uim_tip_np_panel(int hidden);
+/* I1127c: the note line of the Now Playing panels ("Sample bank not found" when a companion bank of the open remote song was on no mirror), NULL: none. */
+const char* sel_uim_np_note(const sel_song_state* song);
 /* I668: the sidebar `side` wide mid-tween; the main region takes the rest. */
 void sel_uim_layout_set_side_width(sel_uim_layout* l, uint32_t side);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);

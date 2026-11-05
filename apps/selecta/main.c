@@ -1171,6 +1171,7 @@ int main(int argc, char** argv)
     printf("play_reads play_meta_reads=%u vote_reads=%u\n", (unsigned)est.play_meta_reads, (unsigned)est.vote_reads); /* I906g sentinel */
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
+    printf("song_note bank_missing=%u\n", (unsigned)sel_engine_state(e)->song.bank_missing); /* I1127c sentinel */
 
 #ifdef __amigaos__
     {
