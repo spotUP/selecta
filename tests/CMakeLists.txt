@@ -2041,6 +2041,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I709a: ZX Spectrum AY songs (Flash Tracker, Fuxoft AY Language, AY Amadeus, Sound Tracker) play through the render entry point
+  # (bbmp_ay module, GPL-3.0). Songs are fetched by checksum, exit 77 = skip. Same gate as the other GPL modules.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/bbmp-ay-decode)
+    add_test(NAME bbmp-ay-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/bbmp_ay_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/bbmp-ay-decode)
+    set_tests_properties(bbmp-ay-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "bbmp_ay_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I702: a pxtone song plays through the render entry point (pxtone module).
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/pxtone-decode)
   add_test(NAME pxtone-decode

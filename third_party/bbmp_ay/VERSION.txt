@@ -1,0 +1,3 @@
+bbmp_ay: aychip.{h,cpp}, engine.h, fls_engine.cpp, fxm_engine.cpp, stc_cr.cpp from github.com/creep-ltx/bbmp csrc/ay,
+commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged. License GPL-3.0-or-later (COPYING; Ay_Emul credit there).
+Not vendored: bbmp-ay.cpp (stdio front end), beepola_engine.cpp (row I709b), the sks/aks/vt2 front ends.

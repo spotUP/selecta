@@ -1,0 +1,2 @@
+ayumi, AY-3-8910 / YM2149 chip emulator by Peter Sovietov. License: MIT (COPYING).
+Upstream: https://github.com/true-grue/ayumi, commit 07c08b4874c359169e4a028edf73f046d8b763e2. Vendored: ayumi.c, ayumi.h unchanged.
