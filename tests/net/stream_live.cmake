@@ -51,6 +51,15 @@ endif()
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
 set(ENV{SELECTA_NET_MAP} "slow.test=http://127.0.0.1:${sp}")
 file(WRITE "${WORK}/live.sel" "@dump ${WORK}/live.raw\nOPEN http://slow.test/long.${EXT}\nPLAY\n@render 22050\n@stream_live\nSTOP\n")
+# I1083: a rebuild relinks libselecta_core.dylib and all 45 module dylibs; macOS scans each new file on its first load
+# (about 0.12 s per module, 6 s total, 12-13 s on a busy machine), and the script loads every module at start. That OS cost
+# is not the STOP the 8 s limit below guards, so pay it here, untimed, with a script that opens and plays nothing.
+file(WRITE "${WORK}/warm.sel" "STOP\n")
+string(TIMESTAMP w0 "%s")
+execute_process(COMMAND "${CLI}" script "${WORK}/warm.sel" OUTPUT_QUIET ERROR_QUIET TIMEOUT 60)
+string(TIMESTAMP w1 "%s")
+math(EXPR warm "${w1} - ${w0}")
+message(STATUS "I1083 module warm-up took ${warm} s (first load after a rebuild)")
 string(TIMESTAMP t0 "%s")
 execute_process(COMMAND "${CLI}" script "${WORK}/live.sel" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc
   TIMEOUT 25)
