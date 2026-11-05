@@ -212,6 +212,11 @@ if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))
   add_subdirectory(replayers/sunvox)
 endif()
 
+# sunvox_lib (I706b): the same songs through the official precompiled SunVox Library, desktop only; wins over the BSD plugin above.
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/sunvox_lib)
+endif()
+
 # organya (I703, I703a): Organya songs (.org, Cave Story) via organya.h (ISC-style licence), MIT module on the host, static soft-float plugin on the Amiga.
 if(NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/organya)
