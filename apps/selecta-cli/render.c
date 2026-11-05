@@ -113,6 +113,7 @@ int sel_cli_render(int argc, char** argv) {
     const char* out_id = NULL;
     const sel_voices* sink = NULL;
     const char* seek_ms = NULL;
+    const char* subsong = NULL;
     const char* rp_global = NULL;
     const char* rp_song = NULL;
     const char* viz_dump = NULL;
@@ -162,6 +163,8 @@ int sel_cli_render(int argc, char** argv) {
             script = argv[i + 1];
         } else if (strcmp(argv[i], "--dsp") == 0) {
             dsp = argv[i + 1];
+        } else if (strcmp(argv[i], "--subsong") == 0) {
+            subsong = argv[i + 1];
         } else if (strcmp(argv[i], "--seek-ms") == 0) {
             seek_ms = argv[i + 1];
         } else if (strcmp(argv[i], "--rp-config") == 0) {
@@ -270,6 +273,12 @@ int sel_cli_render(int argc, char** argv) {
     if (script != NULL && !run_script(e, &ctx, script)) {
         sel_engine_destroy(e);
         return 1;
+    }
+    if (subsong != NULL) { /* the engine's SUBSONG command line, as the transport buttons and --script send it */
+        char sub_line[48], sub_pool[64];
+        snprintf(sub_line, sizeof sub_line, "SUBSONG %s", subsong);
+        sel_engine_send_line(e, sub_line, sub_pool, sizeof sub_pool);
+        sel_engine_pump(e, render_sink, &ctx);
     }
     if (seek_ms != NULL) {
         sel_message msg;
