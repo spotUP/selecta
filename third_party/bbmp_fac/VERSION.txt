@@ -1,0 +1,4 @@
+bbmp_fac: fac_cr.cpp from github.com/creep-ltx/bbmp csrc/fac, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged.
+License GPL-3.0-or-later (SPDX line in the file, COPYING). Written for bbmp in a clean room from a description of the format
+only (bbmp docs/replayers.md, "FAC SoundTracker"). Chips: emu8950 (Y8950) and emu2413 (YM2413), MIT, reused from
+third_party/libkss/modules (the same emulators bbmp links). Compiled with FAC_NO_MAIN: the stdio front end is not used.

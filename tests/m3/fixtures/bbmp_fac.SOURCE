@@ -1,0 +1,5 @@
+FAC SoundTracker test songs for tests/m3/fac_decode.sh (bbmp_fac module, I710ak). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/FAC%20SoundTracker/Coen%20van%20der%20Geest/fmusic%204/2nd%20Rendez-Vous.MUS  6f54a2c717c7df2b726c370c160967d1d21a7c89ffaf5bbc15737de7435da417  (kit 2NDR-V.SM1 a74fe283..., 2NDR-V.SM2 c6d15417...)
+https://modland.com/pub/modules/FAC%20SoundTracker/A.C.E%20%28J.A.%20Koets%29/Jarredisk/Equinoxe%20IV%20%281978%29.MUS  80d54bd3d7aab7ef03e410e77dee67625a3faddcc5e4812ffbaec9c1fd991e8e
+Engine licence: GPL-3.0-or-later (bbmp csrc/fac/fac_cr.cpp, third_party/bbmp_fac).
