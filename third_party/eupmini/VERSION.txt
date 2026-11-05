@@ -1,0 +1,6 @@
+eupmini, EUPPlayer for FM Towns Euphony (.eup) songs: Tomoaki Hayasaka's EUPPlayer (Copyright 1995-1997, 2000 Tomoaki Hayasaka),
+Win32 ports by IIJIMA Hiromitsu (Delmonta) and K., SDL port by Giangiacomo Zaffini. License: GPL-2.0 (COPYING).
+Upstream: https://github.com/gzaffin/eupmini. Vendored: the player sources (eupplayer*, sintbl*), taken from the DEViLBOX copy
+(eupmini-wasm/src/eupmini, commit 28e92ca07), which adds the Towns device's 16-channel mute guard. Not vendored: eupplay.cpp
+(SDL front end), sample songs, docs. sdl_shim/SDL.h is a local stub (SDL_Delay no-op) so the tick-by-tick FILE output never
+waits on SDL. Companion banks (.FMB FM voices, .PMB PCM sets) are not loaded: FM uses eupplay's default voice, PCM stays empty.

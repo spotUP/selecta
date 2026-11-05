@@ -173,3 +173,8 @@ endif()
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/98fmplayer)
 endif()
+
+# eupmini (I701): FM Towns Euphony (.eup) songs, GPL-2.0 EUPPlayer behind the GPL-plugin gate. Host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/eupmini)
+endif()
