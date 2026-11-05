@@ -523,6 +523,7 @@ typedef struct sel_engine_stats {
     uint32_t home_item_shelves;   /* I678j sentinel: Home item shelves (quick access, recents, albums, playlists) the engine sent */
     uint32_t home_rows;           /* entries the home view source built: plays + albums to resume + new this week (I191 sentinel) */
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
+    uint32_t hidden_read_drops;   /* I1091: Home/Folders answers that landed while another source was shown and were not written (sentinel) */
     uint32_t lib_reads_applied;   /* I829: posted library reads (home, search, folders) whose answer the pump applied */
     uint32_t lib_writes_done;     /* I906f: queued library writes whose done callback the pump ran (sentinel that the write queue ran) */
     uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */

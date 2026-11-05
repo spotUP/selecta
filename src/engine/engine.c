@@ -412,6 +412,7 @@ struct sel_engine {
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t lib_reads_applied;                /* I829: posted library reads the pump applied */
+    uint32_t hidden_read_drops;                /* I1091: Home/Folders answers collected while another source was shown, not written (sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
     uint32_t stream_adds;                      /* STREAM_ADD URLs saved (I725a) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
@@ -608,6 +609,7 @@ struct sel_engine {
         char id[SEL_SOURCE_ID_MAX];
         int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
         uint32_t n;
+        int held;                            /* I1091: the last answer (n, hit) stays published while the same query re-runs (search_refresh) */
         uint32_t ms;                         /* I1044: wall time of this source's search */
         sel_tag done_tags[4];                /* I1044: the search_done event points here; several sources can land in one pump */
         sel_search_hit hit[SEL_SEARCH_HITS_PER_SOURCE];
@@ -2929,11 +2931,16 @@ static void wq_pin_done(sel_engine* e, sel_wq_op* op) {
 }
 
 /* I1019a: the hits of the current query as one list, bucket by bucket in registry order (only finished buckets hold hits). */
+/* I1091: the hits a bucket publishes: its finished answer, or the previous answer held while the same query re-runs (search_refresh). */
+static uint32_t search_bucket_shown(const struct sel_search_bucket* bk) {
+    return bk->state == SEARCH_DONE || bk->held ? bk->n : 0u;
+}
+
 static uint32_t search_total(const sel_engine* e) {
     uint32_t b, n = 0;
 
     for (b = 0; b < e->search_buckets; b++) {
-        n += e->search_bucket[b].state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+        n += search_bucket_shown(&e->search_bucket[b]);
     }
     return n;
 }
@@ -2942,7 +2949,7 @@ static const sel_search_hit* search_hit_at(const sel_engine* e, uint32_t idx, co
     uint32_t b;
 
     for (b = 0; b < e->search_buckets; b++) {
-        uint32_t n = e->search_bucket[b].state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+        uint32_t n = search_bucket_shown(&e->search_bucket[b]);
 
         if (idx < n) {
             if (source != NULL) *source = e->search_bucket[b].id;
@@ -6204,8 +6211,8 @@ static size_t search_reload_sources(const sel_engine* e, char* text, size_t o, s
         const char* id = e->search_bucket[b].id;
         const sel_source* src = sel_source_find(id);
         const char* name = src != NULL && src->name != NULL ? src->name : id;
-        int state = e->search_bucket[b].state;
-        uint32_t n = state == SEARCH_DONE ? e->search_bucket[b].n : 0u;
+        int state = e->search_bucket[b].held ? SEARCH_DONE : e->search_bucket[b].state; /* I1091: a held answer draws as landed */
+        uint32_t n = search_bucket_shown(&e->search_bucket[b]);
         int w = snprintf(text + o, cap - o, "H From %s (%u)\n", name, (unsigned)n);
 
         if (w < 0 || (size_t)w >= cap - o) {
@@ -7928,10 +7935,17 @@ static void search_start_next(sel_engine* e) {
 
 #endif
 
-/* A new query supersedes the one in flight: the generation bump makes its collect a drop, the cancel request ends its network wait. */
+static void search_cancel_flight(sel_engine* e);
+
+/* A new query supersedes the one in flight: its buckets go, and search_cancel_flight drops its collect. */
 static void search_supersede(sel_engine* e) {
-    e->search_gen++;
     e->search_buckets = 0;
+    search_cancel_flight(e);
+}
+
+/* The generation bump drops the collect of every search in flight; the cancel request ends its network wait. The buckets stay. */
+static void search_cancel_flight(sel_engine* e) {
+    e->search_gen++;
     e->search_serial++;
 #if defined(SEL_LI_THREAD)
     {
@@ -7990,6 +8004,14 @@ static void search_bucket_set(sel_engine* e, const char* id) {
     snprintf(e->search_bucket[b].id, sizeof e->search_bucket[b].id, "%s", id);
     e->search_bucket[b].state = SEARCH_QUEUED;
     e->search_bucket[b].n = 0;
+    e->search_bucket[b].held = 0;
+}
+
+/* 1 when the `*` fan-out asks `src`. I1009r: the local source is the Library the UI searches next to the fan-out, so a From Local files
+ * section would repeat every library row (Johan 2026-11-04); naming "local" alone still searches it. I1037: an unconfigured source is left out. */
+static int search_fanout_wants(sel_engine* e, const sel_source* src) {
+    return src != NULL && src->search != NULL && strcmp(src->id, "local") != 0 && !sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], src->id) &&
+           (src->search_ready == NULL || src->search_ready(&e->pl_host));
 }
 
 /* SOURCE_SEARCH <source> <query>; source `*` (I1019a) searches every enabled source that has a search hook, in registry order. */
@@ -8012,10 +8034,7 @@ static void search_run(sel_engine* e, const char* source, const char* query, con
         for (i = 0; query[0] != '\0' && i < sel_source_count() && e->search_buckets < e->search_bucket_cap; i++) {
             const sel_source* src = sel_source_get(i);
 
-            /* I1009r: the local source is the Library the UI searches next to the fan-out, so a From Local files
-             * section would repeat every library row (Johan 2026-11-04); naming "local" alone still searches it */
-            if (src != NULL && src->search != NULL && strcmp(src->id, "local") != 0 && !sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], src->id) &&
-                (src->search_ready == NULL || src->search_ready(&e->pl_host))) { /* I1037: an unconfigured source is left out */
+            if (search_fanout_wants(e, src)) {
                 search_bucket_set(e, src->id);
             }
         }
@@ -8024,6 +8043,44 @@ static void search_run(sel_engine* e, const char* source, const char* query, con
     }
     search_start_next(e); /* busy slot (scan, sync or the superseded search): the pump starts it after that task's collect */
     search_view_changed(e);
+}
+
+/* I1091 (I1038, I1086b): the library moved under the shown query. A re-run must never publish an empty intermediate state: with the same
+ * bucket set, every bucket re-runs with its last answer held (search_bucket_shown), so the page keeps its hits and its scroll until each new
+ * answer lands in place (search_land). A different bucket set (a source got configured or switched off) is a new answer: search_run. */
+static void search_refresh(sel_engine* e) {
+    uint32_t i, b = 0;
+    int same = 1;
+
+    sel_source_register_builtin();
+    if (strcmp(e->search_wait_source, "*") == 0) {
+        for (i = 0; same && i < sel_source_count(); i++) {
+            const sel_source* src = sel_source_get(i);
+
+            if (search_fanout_wants(e, src)) {
+                same = b < e->search_buckets && strcmp(e->search_bucket[b].id, src->id) == 0;
+                b++;
+            }
+        }
+    } else {
+        b = e->search_buckets == 1u && strcmp(e->search_bucket[0].id, e->search_wait_source) == 0 ? 1u : 0u;
+    }
+    if (!same || b != e->search_buckets || b == 0u) {
+        char src[SEL_SOURCE_ID_MAX], qry[SEL_SEARCH_QUERY_MAX];
+
+        snprintf(src, sizeof src, "%s", e->search_wait_source); /* the copies keep search_run's writes from aliasing its arguments */
+        snprintf(qry, sizeof qry, "%s", e->search_wait_query);
+        search_run(e, src, qry, "SOURCE_SEARCH");
+        return;
+    }
+    search_cancel_flight(e);
+    for (b = 0; b < e->search_buckets; b++) {
+        struct sel_search_bucket* bk = &e->search_bucket[b];
+
+        bk->held = bk->held || bk->state == SEARCH_DONE;
+        bk->state = SEARCH_QUEUED;
+    }
+    search_start_next(e); /* nothing visible changed, so no search_view_changed; each landing rebuilds the view */
 }
 
 static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
@@ -8037,6 +8094,7 @@ static void search_land(sel_engine* e, struct sel_search_job* j) {
     uint32_t i, b = j->b;
 
     e->search_serial++;
+    e->search_bucket[b].held = 0; /* I1091: the new answer replaces the held one, whatever it is */
     e->search_bucket[b].ms = j->ms;
     if (j->rc == SEL_CATALOGUE_NOT_SYNCED) { /* I1053b: not a failure, no error event; the section offers the sync */
         e->search_bucket[b].n = 0u;
@@ -8120,6 +8178,7 @@ static void search_collect(sel_engine* e) {
     } else {
         b = e->search_cur;
         e->search_serial++;
+        e->search_bucket[b].held = 0; /* I1091: the new answer replaces the held one, whatever it is */
         if (e->search_rc == SEL_CATALOGUE_NOT_SYNCED) { /* I1053b: not a failure, no error event; the section offers the sync */
             e->search_bucket[b].n = 0u;
             e->search_bucket[b].state = SEARCH_NOT_SYNCED;
@@ -8900,8 +8959,14 @@ static void lib_reads_collect(sel_engine* e) {
     wq_collect(e);
     if (lib_read_take(&e->rd_home)) {
         e->lib_reads_applied++;
-        home_apply(e, e->rd_home_text);
-        view_reread(e, SEL_VIEW_HOME);
+        /* I1091 (I1038): Home, Folders and Search share one text-backed row store (view ftext/frows). A model's answer writes it only while
+         * that model is the shown source; entering Home posts a fresh read (view_source_apply), so a dropped answer is never missed. */
+        if (e->view.pub.source == SEL_VIEW_HOME) {
+            home_apply(e, e->rd_home_text);
+            view_reread(e, SEL_VIEW_HOME);
+        } else {
+            e->hidden_read_drops++;
+        }
         if (e->rd_home.again) home_reload(e);
     }
     if (lib_read_take(&e->rd_search)) {
@@ -9017,8 +9082,12 @@ static void lib_reads_collect(sel_engine* e) {
     }
     if (lib_read_take(&e->rd_folders)) {
         e->lib_reads_applied++;
-        e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
-        view_reread(e, SEL_VIEW_FOLDERS);
+        if (e->view.pub.source == SEL_VIEW_FOLDERS) { /* I1091: the shared row store, see the Home landing; VIEW_SOURCE folders posts a fresh read */
+            e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
+            view_reread(e, SEL_VIEW_FOLDERS);
+        } else {
+            e->hidden_read_drops++;
+        }
         if (e->rd_folders.again) lib_read_post(e, &e->rd_folders, folders_read_run);
         if (e->collection_kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && e->coll.kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) { /* I994d3: the open playlist page follows the playlist */
             e->rdc_next_kind = e->collection_kind;
@@ -9077,18 +9146,14 @@ static void lib_models_follow(sel_engine* e) {
         coll_post(e);
     }
     lib_read_post(e, &e->rd_folders, folders_read_run);
-    /* I1086b: the Search hits are a model too: the shown query runs again through the same path as SOURCE_SEARCH, no client resend. The copies
-     * keep search_run's own writes to the buffers from aliasing its arguments. */
+    /* I1086b: the Search hits are a model too: the shown query runs again, no client resend. I1091: in place (search_refresh), so a write at a
+     * click (a pin, the history row of the play) never publishes an empty Search page under the scrolled results. */
     if (e->view.active && e->view.pub.source == SEL_VIEW_SEARCH && e->search_wait_query[0] != '\0' && e->search_wait_source[0] != '\0') {
-        char src[SEL_SOURCE_ID_MAX], qry[SEL_SEARCH_QUERY_MAX];
-
-        snprintf(src, sizeof src, "%s", e->search_wait_source);
-        snprintf(qry, sizeof qry, "%s", e->search_wait_query);
-        search_run(e, src, qry, "SOURCE_SEARCH");
+        search_refresh(e);
     }
     /* I1086: the Home shelves are a model too: re-read in place (lib_reads_collect applies the answer and view_reread rebuilds the window when
      * Home is the view source); no client has to re-enter the page for it. */
-    if (e->view.pub.source == SEL_VIEW_HOME || e->home_rows > 0) home_reload(e);
+    if (e->view.pub.source == SEL_VIEW_HOME) home_reload(e);
     if (e->formats != NULL) lib_read_post(e, &e->rd_formats, formats_read_run);
     if (e->composers_open) composers_post(e);
     if (e->stats_open) lib_read_post(e, &e->rd_stats, stats_read_run);
@@ -11181,6 +11246,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->home_rows = e->home_rows;
     out->home_item_shelves = e->home_item_shelves;
     out->folder_view_rows = e->folder_view_rows;
+    out->hidden_read_drops = e->hidden_read_drops;
     out->panel_loads = e->panel_loads;
     out->panel_reads = e->panel_reads;
     out->play_meta_reads = e->play_meta_reads;
