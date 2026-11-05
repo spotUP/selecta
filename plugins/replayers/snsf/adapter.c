@@ -2,7 +2,9 @@
  * (third_party/bsnes, GPL-3.0; this plugin is a GPL module) and psflib (third_party/psflib, MIT). A .snsf song is a PSF
  * container (version 0x23): the exe section is {u32 ROM offset, u32 size, data} (later sections of a .snsflib chain
  * overwrite earlier ones), the reserved section optionally carries battery RAM as {u32 type, u32 size, data} records
- * (type 0 = SRAM). Layouts are from memory and tolerant; the real-file check is I705b. The song is a whole cartridge
+ * (type 0 = SRAM). The exe layout is checked against real Modland sets (I705b: Wolfenstein 3D HiROM, Blackthorne
+ * LoROM; a lib carries 4 trailing bytes after its one record, a .minisnsf is a one byte patch record); the reserved
+ * SRAM records are not seen in those sets. The song is a whole cartridge
  * ROM: the 65816 starts it, it uploads its sound driver to the SPC700 and the S-DSP makes the audio. bsnes resamples
  * the DSP output (about 32040 Hz) itself to the host rate. Picture output is off and the picture processor is bsnes'
  * fast PPU. Length and fade come from the tags (default 3 minutes plus a 10 second fade). Open needs `src->path` for
