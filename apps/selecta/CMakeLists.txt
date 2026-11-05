@@ -61,5 +61,9 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${_m}>" "${_sel_plugins_dir}/"
       VERBATIM)
   endforeach()
-  add_dependencies(selecta_bundle_modules selecta ${_sel_bundle_mods})
+  # I1129: `--target selecta` must refresh the copies too. The copy target depends on the core and every module, and selecta
+  # depends on the copy target (not the reverse), so building selecta alone runs the copies; the old reverse edge left an
+  # ALL-only target that --target selecta never reached, and ctest ran against a stale Frameworks/libselecta_core.dylib.
+  add_dependencies(selecta_bundle_modules selecta_core ${_sel_bundle_mods})
+  add_dependencies(selecta selecta_bundle_modules)
 endif()

@@ -3395,4 +3395,13 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
       "-DWORK=${CMAKE_BINARY_DIR}/tests/bundle-plugins" "-DGPL_SCRIPT=${PROJECT_SOURCE_DIR}/cmake/gpl_archive.cmake" ${_bp_gpl}
       -P "${PROJECT_SOURCE_DIR}/tests/dui/bundle_plugins.cmake")
   set_tests_properties(bundle-plugins PROPERTIES LABELS builtin-modules TIMEOUT 180 PASS_REGULAR_EXPRESSION "bundle_plugins_ok")
+  # I1129: the bundle copies match the build output (a stale core let red proofs pass).
+  set(_bf_mods "")
+  foreach(_m IN LISTS _bp_bundled)
+    list(APPEND _bf_mods "$<TARGET_FILE:${_m}>")
+  endforeach()
+  add_test(NAME bundle-fresh
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DCORE=$<TARGET_FILE:selecta_core>" "-DMODULES=${_bf_mods}"
+      -P "${PROJECT_SOURCE_DIR}/tests/dui/bundle_fresh.cmake")
+  set_tests_properties(bundle-fresh PROPERTIES LABELS builtin-modules TIMEOUT 60 PASS_REGULAR_EXPRESSION "bundle_fresh_ok")
 endif()

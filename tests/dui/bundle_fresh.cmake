@@ -1,0 +1,28 @@
+# bundle-fresh (I1129): the bundle copies of the core and every bundled module are byte-identical to the build output.
+# -DSELECTA=<Selecta.app/Contents/MacOS/Selecta> -DCORE=<libselecta_core> -DMODULES=<module files, ;-separated>
+# A stale Contents/Frameworks/libselecta_core.dylib made ctest run old code and red proofs pass. This test only reads the
+# build tree, so it is red after `cmake --build --target selecta` exactly when that target left a stale copy.
+get_filename_component(macos "${SELECTA}" DIRECTORY)
+get_filename_component(contents "${macos}" DIRECTORY)
+get_filename_component(contents "${contents}" REALPATH)
+set(bad "")
+function(check_copy built dir)
+  get_filename_component(n "${built}" NAME)
+  if(NOT EXISTS "${contents}/${dir}/${n}")
+    set(bad "${bad}  missing ${dir}/${n}\n" PARENT_SCOPE)
+    return()
+  endif()
+  file(SHA256 "${built}" a)
+  file(SHA256 "${contents}/${dir}/${n}" b)
+  if(NOT a STREQUAL b)
+    set(bad "${bad}  stale ${dir}/${n} (build output ${built} differs)\n" PARENT_SCOPE)
+  endif()
+endfunction()
+check_copy("${CORE}" Frameworks)
+foreach(m IN LISTS MODULES)
+  check_copy("${m}" PlugIns)
+endforeach()
+if(bad)
+  message(FATAL_ERROR "bundle copies are not the build output:\n${bad}")
+endif()
+message("bundle_fresh_ok")
