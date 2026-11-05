@@ -64,6 +64,8 @@ int desk_rtg_open_folder_dialog(desk_rtg* b);
 #define desk_sdl_ticks desk_rtg_ticks
 #define desk_sdl_open_file_dialog(b) ((void)(b), 0) /* I652c: no playlist file dialog on the Amiga yet */
 #define desk_sdl_clipboard(b, out, cap) ((void)(b), (void)(out), (void)(cap), (size_t)0) /* I999: no Amiga clipboard read yet */
+#define desk_sdl_route_picker(b, x, y, w, h, show) ((void)(b), (void)(x), (void)(y), (void)(w), (void)(h), (void)(show)) /* I1039: AirPlay route picker is macOS only */
+#define desk_sdl_route_picker_presents(b) ((void)(b), (uint32_t)0)
 #define desk_sdl_open_folder_dialog desk_rtg_open_folder_dialog
 #define desk_sdl_next_input desk_rtg_next_input
 #define desk_sdl_now_ns() ((uint64_t)0u) /* wheel cost timing (I291) is SDL only */
