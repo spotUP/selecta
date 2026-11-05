@@ -1,0 +1,8 @@
+klystron sound engine (snd/ directory), kometbomb/klystron
+Origin: https://github.com/kometbomb/klystron  commit 989fafc4fffb1bb881ab677fe52eb34527e08129 (2020-09-26)
+Licence: MIT (Tero Lindeman); see COPYING and the per-file headers. klystrack itself (kometbomb/klystrack) is MIT too.
+Vendored unchanged: src/snd/*.c, src/snd/*.h and src/macros.h. UPSTREAM_README.md is the repository README.
+sdl_shim/ is Selecta's own (not upstream): SDL types, no-op mutex and a byte-swapping SDL_endian so the engine builds without SDL.
+Build defines: NOSDL_MIXER (no SDL_mixer), STEREOOUTPUT. USESDL_RWOPS stays undefined, so the engine's own RWops reads songs from memory.
+
+Local patch: cydfm.c, `const int MUL = 2;` became `enum { MUL = 2 };` (strict-C constant expression for gcc 6 on the Amiga). sdl_shim/SDL.h defines M_PI when the libm omits it.

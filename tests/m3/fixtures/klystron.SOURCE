@@ -1,0 +1,6 @@
+Klystrack song used by tests/m3/klystron_decode.sh (I708a):
+  ringmod.kt  sha256 b79cb551c216338b873b992a29772b9618f43c8ec21c017eb947a1ed124ba9f1
+  https://raw.githubusercontent.com/kometbomb/klystrack/master/examples/songs/ringmod.kt  (kometbomb/klystrack, examples/songs)
+Licence: the klystrack repository is MIT, but its LICENSE does not name the example songs and several are covers or
+third-party tunes. Treated as unclear: NOT committed. The test fetches it through tests/m3/fetch_fixture.sh into
+tests/m3/fixtures/.cache (git-ignored), checks the sha256, and skips (exit 77) offline.
