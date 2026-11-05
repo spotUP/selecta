@@ -8164,6 +8164,7 @@ static const char* library_dump_build(desk* d) {
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
         o = dump_put(d, o, "hover_ink=%d\n", (int)d->ink_in);
+        o = dump_put(d, o, "hover_boxes n=%u cap=%u\n", (unsigned)d->hbox_n, (unsigned)(sizeof d->hbox / sizeof d->hbox[0]));
         o = dump_put(d, o, "turns idle=%u present=%u scan=%u input=%u viz=%u bits song=%u queue=%u transport=%u progress=%u volume=%u status=%u\n",
                      (unsigned)d->turn_why[0], (unsigned)d->turn_why[1], (unsigned)d->turn_why[2], (unsigned)d->turn_why[3],
                      (unsigned)d->turn_why[4], (unsigned)d->turn_bits[0], (unsigned)d->turn_bits[1], (unsigned)d->turn_bits[2],
@@ -15385,6 +15386,12 @@ static int desk_present(desk* d) {
         d->seek_fill = -1;
         d->vol_fill = -1;
         d->seek_length[0] = '\0';
+        /* I1067: every region is drawn afresh and lists its controls again, so the hit-test list starts empty. Kept across a
+         * resize or zoom, the boxes of the old layout stayed (only the main region prunes, and only boxes inside its new rect),
+         * filled the list to its cap, and the rows of the new layout were dropped: a pointer move then found no row and repainted
+         * nothing, until a wheel turn repainted the list from the pointer position. */
+        d->hbox_n = 0u;
+        d->label_n = 0u;
         sel_gui_fill_rect(d->canvas, rect_of(0, 0, d->canvas->w, cvh(d)),
                           ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
         sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, cvh(d)));
