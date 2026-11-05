@@ -13,6 +13,9 @@ static sel_cache* cache_get(sel_library* lib) {
             memset(lib->cache, 0, sizeof *lib->cache);
             sel_cache_init(lib->cache, NULL, sel_net_amiga_route());
             lib->cache->unzip_host = lib->host;
+            lib->cache->registry_count = lib->registry_count;
+            lib->cache->registry_get = lib->registry_get;
+            lib->cache->hook_host = lib->host;
         }
     }
     return lib->cache;
@@ -68,6 +71,9 @@ static void stats_add(sel_cache_stats* to, const sel_cache_stats* from, int smar
     to->cache_hits += from->cache_hits;
     to->fetches += from->fetches;
     to->companions += from->companions;
+    to->content_companions += from->content_companions;
+    to->content_rejected += from->content_rejected;
+    to->content_missing += from->content_missing;
     to->md5_mismatches += from->md5_mismatches;
     to->mirror_tries += from->mirror_tries;
     if (smart) {
@@ -149,6 +155,9 @@ static int thread_start(sel_library* lib) {
         lib->pf_cache->part_tag = ".pf";
         lib->pf_cache->unzip_host = lib->host;
         lib->pf_cache->cancel = &lib->pf_cancel;
+        lib->pf_cache->registry_count = lib->registry_count;
+        lib->pf_cache->registry_get = lib->registry_get;
+        lib->pf_cache->hook_host = lib->host;
     }
     return sel_job_start(lib);
 }
@@ -444,6 +453,23 @@ void sel_library_set_rules(sel_library* lib, const char* rules) {
     snprintf(lib->rules, sizeof lib->rules, "%s", rules != NULL ? rules : "");
 }
 
+void sel_library_set_registry(sel_library* lib, uint32_t (*count)(void), const sel_tag* (*get)(uint32_t)) {
+    lib->registry_count = count;
+    lib->registry_get = get;
+    if (lib->cache != NULL) {
+        lib->cache->registry_count = count;
+        lib->cache->registry_get = get;
+        lib->cache->hook_host = lib->host;
+    }
+#if !defined(SEL_LIBRARY_NO_THREAD)
+    if (lib->pf_cache != NULL) {
+        lib->pf_cache->registry_count = count;
+        lib->pf_cache->registry_get = get;
+        lib->pf_cache->hook_host = lib->host;
+    }
+#endif
+}
+
 void sel_library_set_budget(sel_library* lib, uint32_t budget) {
     lib->cache_budget = budget;
 }
@@ -537,8 +563,8 @@ void sel_library_cache_report(const sel_library* lib) {
     if (sel_library_cache_stats(lib, &s)) {
         printf("cache_hits=%u\nfetches=%u\ncompanions=%u\nmd5_mismatches=%u\nmirror_tries=%u\n"
                "trim_runs=%u\nprefetches=%u\nprefetch_fetches=%u\nsmart_requests=%u\nsmart_fetches=%u\n"
-               "smart_skipped=%u\nzip_members=%u\nzip_requests=%u\n",
+               "smart_skipped=%u\nzip_members=%u\nzip_requests=%u\ncontent_companions=%u\ncontent_rejected=%u\ncontent_missing=%u\n",
                s.cache_hits, s.fetches, s.companions, s.md5_mismatches, s.mirror_tries, s.trim_runs, s.prefetches,
-               s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped, s.zip_members, s.zip_requests);
+               s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped, s.zip_members, s.zip_requests, s.content_companions, s.content_rejected, s.content_missing);
     }
 }

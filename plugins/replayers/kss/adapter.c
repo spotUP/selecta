@@ -11,6 +11,7 @@
 #include "kssplay.h"
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #define KSS_SILENT_LIMIT_MS 12000u
@@ -228,7 +229,39 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[13];
+/* RP_CONTENT_COMPANIONS (I1127b): a MoonBlaster .mbm needs its sample kit (.MBK). libkss searches `<stem>.MBK`, then the
+ * 8-character name at MBM header offset 0x140 (stop at space or NUL) + ".MBK" (mbm2kss.c:155). Parsed here, never through
+ * KSS_autoload_mbk (static path buffer: not reentrant). Local open keeps KSS_autoload_mbk. */
+static unsigned rp_content_companions(const char* name, const uint8_t* data, size_t size, char out[][SEL_RP_COMPANION_NAME_MAX],
+                                      unsigned max, const sel_host* host) {
+    size_t nl = strlen(name), stem, i, n = 0;
+    unsigned k = 0;
+    (void)host;
+    if (nl < 5u || name[nl - 4u] != '.' || (name[nl - 3u] | 0x20) != 'm' || (name[nl - 2u] | 0x20) != 'b' || (name[nl - 1u] | 0x20) != 'm') {
+        return 0;
+    }
+    if (data == NULL) {
+        return 1;
+    }
+    stem = nl - 4u;
+    if (stem + 5u <= SEL_RP_COMPANION_NAME_MAX && k < max) {
+        memcpy(out[k], name, stem);
+        memcpy(out[k] + stem, ".MBK", 5u);
+        k++;
+    }
+    if (size >= 0x148u && k < max) {
+        for (i = 0; i < 8u && data[0x140u + i] != 0u && data[0x140u + i] != ' '; i++) {
+            out[k][n++] = (char)data[0x140u + i];
+        }
+        if (n != 0u) {
+            memcpy(out[k] + n, ".MBK", 5u);
+            k++;
+        }
+    }
+    return k;
+}
+
+static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -252,7 +285,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_PRIORITY, 10); /* above gme (0), which also claims .kss */
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[12], SEL_RP_CONTENT_COMPANIONS, SEL_TAG_FN(rp_content_companions));
+    set(&g_hooks[13], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "libkss");

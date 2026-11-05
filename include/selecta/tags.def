@@ -86,6 +86,10 @@ SEL_TAG(RP, VIZ_SID,           0x1023, PTR)
 /* CFG_APPLIED (MPS-1): optional. Returns how many starts of the open song applied the replayer's configuration
  * (sel_rp_cfg_applied_fn); a test sentinel published as sel_engine_stats.rp_cfg_applied. */
 SEL_TAG(RP, CFG_APPLIED,       0x1024, PTR)
+/* CONTENT_COMPANIONS (I1127b): optional. Names companion files that the song bytes name (banks, sample sets), for the
+ * library cache to fetch beside a remote song (sel_rp_content_companions_fn). SEL_RP_COMPANIONS covers names derived
+ * from the file name; this covers names inside the file. */
+SEL_TAG(RP, CONTENT_COMPANIONS, 0x1025, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

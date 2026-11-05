@@ -1984,11 +1984,13 @@ static uint8_t* read_whole_file(sel_engine* e, const char* path, size_t* size) {
     return buf;
 }
 
-/* Reads a song for prepare_slot. With `live` and an http(s) URL on the desktop only the head is read and *live gets
+/* Reads a song for prepare_slot. `file_path` (SEL_BROWSE_PATH_MAX bytes) gets the cached file of a remote key, else "". With `live` and an http(s) URL on the desktop only the head is read and *live gets
  * the running download (I195b). With `fs` a local file is opened as a file-backed stream and only its head is read (I184d); the caller keeps the
  * stream for a SEL_RP_STREAMING replayer and closes it before reading the whole file for any other. */
-static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_live** live, sel_file_stream** fs) {
+static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_live** live, sel_file_stream** fs,
+                          char* file_path) {
     e->open_status = 0;
+    file_path[0] = '\0';
     char cached[SEL_BROWSE_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
     char resolved[SEL_BROWSE_PATH_MAX];
@@ -2034,6 +2036,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             return NULL;
         }
         path = cached;
+        snprintf(file_path, SEL_BROWSE_PATH_MAX, "%s", cached); /* I1127b: the replayer looks for companion banks beside this file */
     }
     if (sel_stream_is_url(path)) {
         /* I725a: a .pls / .m3u URL names the real stream; play the first http(s) entry it lists. */
@@ -2620,8 +2623,9 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sel_file_stream* fs = NULL;
     sel_message sw;
     uintptr_t kind;
+    char file_path[SEL_BROWSE_PATH_MAX];
 
-    data = read_song(e, path, &size, &live, &fs);
+    data = read_song(e, path, &size, &live, &fs, file_path);
     if (data == NULL) {
         report_open_failed(e, err_detail);
         return 0;
@@ -2725,7 +2729,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     }
     src.data = data;
     src.size = size;
-    src.path = path;
+    src.path = file_path[0] != '\0' ? file_path : path; /* a remote key opens as its cached file, so sibling banks resolve (I1127b) */
     src.stream = live != NULL ? sel_live_source(live) : (fs != NULL ? sel_file_stream_source(fs) : NULL);
     memset(&sl->rp_info, 0, sizeof sl->rp_info);
     sl->rp_state = open(&src, &e->rp_host, &sl->rp_info);
@@ -10455,6 +10459,9 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         e->registry_get = cfg->registry_get;
         sel_source_set_plugins(cfg->registry_count, cfg->registry_get, host);
         e->lib = cfg->library;
+        if (e->lib != NULL) {
+            sel_library_set_registry(e->lib, cfg->registry_count, cfg->registry_get);
+        }
         e->write_gen_seen = sel_library_write_gen(e->lib); /* I1077c: commits made before the engine existed (open, migrate) are not changes */
         e->pin_gen_seen = sel_library_pin_gen(e->lib);
     }

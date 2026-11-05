@@ -158,6 +158,18 @@ typedef int (*sel_rp_seekable_fn)(void* state);
 /* RP_CFG_APPLIED (MPS-1): optional. Count of starts that applied the replayer's configuration; test sentinel. */
 typedef uint32_t (*sel_rp_cfg_applied_fn)(void* state);
 
+#define SEL_RP_COMPANION_NAME_MAX 64 /* bytes incl. NUL of one name a CONTENT_COMPANIONS hook returns */
+
+/* RP_CONTENT_COMPANIONS (I1127b): optional. name: base name of the song (no directory), never NULL. data/size: the
+ * first bytes of the song, read-only. data == NULL (size 0) is the claim probe: return 1 when `name` is a format this
+ * replayer would read names from, else 0, without looking at any bytes. Otherwise write up to `max` NUL-terminated
+ * base names into out[] and return how many. A short `size` (truncated head) means "no names", never a read past
+ * data + size. data is borrowed for the call; the hook must be reentrant (job thread and engine thread), does no I/O,
+ * writes no globals; `host` is for scratch memory only, freed before return. */
+typedef unsigned (*sel_rp_content_companions_fn)(const char* name, const uint8_t* data, size_t size,
+                                                 char out[][SEL_RP_COMPANION_NAME_MAX], unsigned max,
+                                                 const sel_host* host);
+
 /* One sample of the open song (RP_SAMPLE_GET). `data` points at `length` frames
  * of `channels` interleaved signed PCM, 8-bit (`bits` 8) or 16-bit native
  * endian (`bits` 16), owned by the replayer and valid until the song closes.

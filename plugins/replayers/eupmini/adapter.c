@@ -62,6 +62,43 @@ static void rp_close(void* state) {
     }
 }
 
+/* The one reader of a header bank name (offset 0x6E2 / 0x6EA): 8 bytes trimmed at NUL or space into name[9]. Shared by
+ * read_bank (local lookup) and the CONTENT_COMPANIONS hook (library cache), so the two never disagree. Returns the length. */
+static size_t eup_bank_name(const uint8_t* hdr_name, char name[9]) {
+    size_t n = 0;
+    while (n < 8u && hdr_name[n] != 0u && hdr_name[n] != ' ' && hdr_name[n] > 0x20u && hdr_name[n] < 0x7Fu && hdr_name[n] != '/') {
+        name[n] = (char)hdr_name[n];
+        n++;
+    }
+    name[n] = '\0';
+    return n;
+}
+
+/* RP_CONTENT_COMPANIONS (I1127b): the FM and PCM bank names of a .eup, in the header's spelling. */
+static unsigned rp_content_companions(const char* name, const uint8_t* data, size_t size, char out[][SEL_RP_COMPANION_NAME_MAX],
+                                      unsigned max, const sel_host* host) {
+    size_t nl = strlen(name);
+    unsigned k = 0, b;
+    static const char* const exts[2] = {".fmb", ".pmb"};
+    (void)host;
+    if (nl < 4u || (name[nl - 4u] != '.') || (name[nl - 3u] | 0x20) != 'e' || (name[nl - 2u] | 0x20) != 'u' || (name[nl - 1u] | 0x20) != 'p') {
+        return 0;
+    }
+    if (data == NULL) {
+        return 1;
+    }
+    if (size < 0x6F2u) {
+        return 0;
+    }
+    for (b = 0; b < 2u && k < max; b++) {
+        char bn[9];
+        if (eup_bank_name(data + 0x6E2 + 8u * b, bn) != 0u) {
+            snprintf(out[k++], SEL_RP_COMPANION_NAME_MAX, "%s%s", bn, exts[b]);
+        }
+    }
+    return k;
+}
+
 /* Reads `<dir of path><8-char header name><ext>` (name trimmed at NUL or space). Tries the name as written, then lower and
  * upper case, because the bank file's case on disk is the archive's, not the header's. Returns the host buffer or NULL. */
 static uint8_t* read_bank(const sel_host* host, const char* path, const uint8_t* hdr_name, const char* ext, uint32_t* size) {
@@ -73,11 +110,7 @@ static uint8_t* read_bank(const sel_host* host, const char* path, const uint8_t*
     if (slash != NULL) {
         dir = (size_t)(slash - path) + 1u;
     }
-    while (n < 8u && hdr_name[n] != 0u && hdr_name[n] != ' ' && hdr_name[n] > 0x20u && hdr_name[n] < 0x7Fu && hdr_name[n] != '/') {
-        name[n] = (char)hdr_name[n];
-        n++;
-    }
-    name[n] = '\0';
+    n = eup_bank_name(hdr_name, name);
     if (n == 0u || dir + n + 5u > sizeof full) {
         return NULL;
     }
@@ -203,7 +236,7 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[13];
+static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -227,7 +260,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_PRIORITY, 10);
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[12], SEL_RP_CONTENT_COMPANIONS, SEL_TAG_FN(rp_content_companions));
+    set(&g_hooks[13], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "eupmini");

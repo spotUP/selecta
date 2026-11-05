@@ -26,6 +26,7 @@
 #define SEL_CACHE_PATH_MAX 1100
 #define SEL_CACHE_SETS 4
 #define SEL_CACHE_COMPANIONS_MAX 8
+#define SEL_CACHE_CONTENT_HEAD 65536u /* bytes of a song a CONTENT_COMPANIONS hook sees (I1127b) */
 
 typedef enum sel_cache_result {
     SEL_CACHE_OK = 1,
@@ -49,6 +50,9 @@ typedef struct sel_cache_stats {
     unsigned smart_skipped;    /* requests dropped because the cache was at its budget */
     unsigned zip_members;      /* songs the mirrors lacked, taken from the source's zip by Range request (I695d sentinel) */
     unsigned zip_requests;     /* HTTP requests those zip fetches sent */
+    unsigned content_companions; /* banks delivered because a CONTENT_COMPANIONS hook named them (I1127b sentinel) */
+    unsigned content_rejected;   /* hook names the sanitiser dropped (I1127b) */
+    unsigned content_missing;    /* hook names no mirror had (I1127b: a "bank missing" note can read this later) */
 } sel_cache_stats;
 
 /* The state of a download that stopped at its time budget (I168b): the partial body stays in `<file>.part` and the
@@ -78,6 +82,9 @@ typedef struct sel_cache {
     int last_status;        /* HTTP status of the last failed fetch (404 for a file the mirror does not serve), 0 when none (I695b) */
     const sel_host* unzip_host; /* non-NULL: a freshly fetched file of a SEL_SOURCE_ZIPPED source is unpacked to its one
                              * module member in place, here at fetch and prefetch, never when a song is read (I406a) */
+    uint32_t (*registry_count)(void);       /* non-NULL with registry_get: CONTENT_COMPANIONS hooks are asked (I1127b) */
+    const sel_tag* (*registry_get)(uint32_t);
+    const sel_host* hook_host;              /* scratch memory for the hooks */
     volatile int* cancel;   /* non-NULL: a download stops at its next body chunk once *cancel is set (I168a) */
 } sel_cache;
 
@@ -95,6 +102,12 @@ unsigned sel_companion_paths(const char* rules, const char* path, char out[][SEL
 /* The SEL_RP_COMPANIONS rules of every registered replayer, joined with ';'. */
 void sel_companion_rules(uint32_t (*registry_count)(void), const sel_tag* (*registry_get)(uint32_t), char* out,
                          size_t cap);
+/* Names a CONTENT_COMPANIONS hook finds in the song's first bytes, sanitised (rejects `/ \\ :`, `..`, a leading dot,
+ * `.part`, bytes outside 0x20..0x7E, 64+ characters, the song's own name), joined with the song's directory and
+ * deduplicated case-insensitively. data == NULL: the claim probe, returns 1 when any hook claims the base name of
+ * `path`, else 0. Counts stats.content_rejected. Reentrant per cache handle. */
+unsigned sel_content_companion_names(sel_cache* c, const char* path, const uint8_t* data, size_t size,
+                                     char out[][SEL_CACHE_PATH_MAX], unsigned max);
 /* The song and its companions. Companions the mirrors lack are skipped (a song may work without
  * its sample set); the song itself decides the result. */
 sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const char* path, const char* md5,

@@ -250,21 +250,45 @@ static uint8_t* read_bank(const sel_host* host, const char* path, const char* na
     return NULL;
 }
 
-/* Reads the banks the freshly initialised driver names (work.pcmtype/pcmname). */
-static void load_banks(fmp98_state* s, const char* path) {
+/* The one reader of the bank names a freshly initialised driver wants (work.pcmtype/pcmname), as file names with the
+ * extension. Skips the slot load_banks skips (PPC in slot 3). Shared by load_banks (local lookup) and the
+ * CONTENT_COMPANIONS hook (library cache). Returns how many names were written. */
+static unsigned bank_names_from_work(const struct fmdriver_work* w, char out[][SEL_RP_COMPANION_NAME_MAX], unsigned max,
+                                     int slot_of[FMDRIVER_PCMCOUNT]) {
+    unsigned k = 0;
     int i;
-    for (i = 0; i < FMDRIVER_PCMCOUNT; i++) {
-        const char* ext = bank_ext(s->work.pcmtype[i]);
+    for (i = 0; i < FMDRIVER_PCMCOUNT && k < max; i++) {
+        const char* ext = bank_ext(w->pcmtype[i]);
         char name[9];
         size_t n;
-        memcpy(name, s->work.pcmname[i], 8);
+        memcpy(name, w->pcmname[i], 8);
         name[8] = '\0';
         for (n = strlen(name); n > 0u && (name[n - 1u] == ' ' || name[n - 1u] == '\0'); n--) {
             name[n - 1u] = '\0'; /* the driver pads names with spaces */
         }
-        if (ext != NULL && n > 0u && !(i == 3 && strcmp(s->work.pcmtype[3], "PPC") == 0)) {
-            s->bank[i].data = read_bank(s->host, path, name, ext, &s->bank[i].size);
+        if (ext != NULL && n > 0u && !(i == 3 && strcmp(w->pcmtype[3], "PPC") == 0)) {
+            snprintf(out[k], SEL_RP_COMPANION_NAME_MAX, "%s%s", name, ext);
+            if (slot_of != NULL) {
+                slot_of[k] = i;
+            }
+            k++;
         }
+    }
+    return k;
+}
+
+/* Reads the banks the freshly initialised driver names. */
+static void load_banks(fmp98_state* s, const char* path) {
+    char names[FMDRIVER_PCMCOUNT][SEL_RP_COMPANION_NAME_MAX];
+    int slot[FMDRIVER_PCMCOUNT];
+    unsigned k, n = bank_names_from_work(&s->work, names, FMDRIVER_PCMCOUNT, slot);
+    for (k = 0; k < n; k++) {
+        char* dot = strrchr(names[k], '.');
+        char base[SEL_RP_COMPANION_NAME_MAX];
+        size_t bl = (size_t)(dot - names[k]);
+        memcpy(base, names[k], bl);
+        base[bl] = '\0';
+        s->bank[slot[k]].data = read_bank(s->host, path, base, dot, &s->bank[slot[k]].size);
     }
 }
 
@@ -319,6 +343,43 @@ static void reset_song(fmp98_state* s) {
     s->pos = 0.0;
     memset(s->prev, 0, sizeof s->prev);
     memset(s->cur, 0, sizeof s->cur);
+}
+
+/* RP_CONTENT_COMPANIONS (I1127b): runs the same load + init as rp_open on a scratch state and reads the names the
+ * driver wants. The scratch state is freed before return. */
+static unsigned rp_content_companions(const char* name, const uint8_t* data, size_t size, char out[][SEL_RP_COMPANION_NAME_MAX],
+                                      unsigned max, const sel_host* host) {
+    fmp98_state* s;
+    unsigned k = 0;
+    int kind;
+    if (!name_is_fmp(name) && !name_is_pmd(name)) {
+        return 0;
+    }
+    if (data == NULL) {
+        return 1;
+    }
+    if (size < 16u || size > 0xFFFFu || host == NULL) {
+        return 0;
+    }
+    s = (fmp98_state*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
+    if (s == NULL) {
+        return 0;
+    }
+    memset(s, 0, sizeof *s);
+    s->host = host;
+    s->data = (uint8_t*)host->mem_alloc(host, size, SEL_MEM_FAST);
+    if (s->data != NULL) {
+        memcpy(s->data, data, size);
+        s->size = size;
+        kind = load_driver(s, s->data, s->size, name);
+        if (kind >= 0) {
+            s->is_fmp = kind;
+            reset_song(s);
+            k = bank_names_from_work(&s->work, out, max, NULL);
+        }
+    }
+    rp_close(s);
+    return k;
 }
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
@@ -440,7 +501,7 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[13];
+static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -464,7 +525,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_PRIORITY, 10);
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[12], SEL_RP_CONTENT_COMPANIONS, SEL_TAG_FN(rp_content_companions));
+    set(&g_hooks[13], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "98fmplayer");
