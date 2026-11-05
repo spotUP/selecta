@@ -2070,6 +2070,17 @@ if(NOT SEL_AMIGA)
   set_tests_properties(sunvox-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sunvox_refusal_ok"
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
+  # I706b: modern SunVox songs play through the precompiled SunVox Library module (sunvox_lib); it wins over the BSD plugin and falls back without the library.
+  if(TARGET sel_module_sunvox_lib AND EXISTS ${CMAKE_BINARY_DIR}/modules/sunvox_lib)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-lib-decode)
+    add_test(NAME sunvox-lib-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sunvox_lib_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sunvox_tune.sunvox ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sunvox_tune_modern.sunvox
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-lib-decode)
+    set_tests_properties(sunvox-lib-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sunvox_lib_fallback_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I703: an Organya song plays through the render entry point (organya module); a wave100.wdb beside it must change the sound.
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/organya-decode)
   add_test(NAME organya-decode

@@ -11,6 +11,16 @@ cli=$1
 shift
 field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }
 fail() { echo "FAIL: $*"; exit 1; }
+# I706b: the I706a test covers the BSD engine alone, so it runs with a plugin folder that holds only sel_sunvox.* (the
+# sunvox_lib module would otherwise win on desktop).
+iso=sv_bsd_only
+rm -rf "$iso"
+mkdir "$iso" || fail "mkdir $iso"
+for dir in $(printf '%s' "${SELECTA_PLUGIN_PATH:-}" | tr ':' ' '); do
+    for m in "$dir"/sel_sunvox.*; do [ -f "$m" ] && cp "$m" "$iso/"; done
+done
+SELECTA_PLUGIN_PATH="$PWD/$iso"
+export SELECTA_PLUGIN_PATH
 rate=44100
 for f in "$@"; do
     rm -f fd_sv.wav

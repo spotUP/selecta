@@ -1,0 +1,4 @@
+sunvox_tune_modern.sunvox = tests/m3/fixtures/sunvox_tune.sunvox loaded and re-saved with the official SunVox Library 2.1.4d
+(sv_load + sv_save), so the song file version field is the modern VERS 2.1.4.3 that the 2009 BSD engine (I706a) refuses.
+Derived from the example tune of the public SunVox engine source release (see sunvox_tune.sunvox.SOURCE for its origin and
+licence note); Johan decides if it stays public.
