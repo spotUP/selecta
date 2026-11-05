@@ -68,6 +68,7 @@ add_subdirectory(replayers/nuade)
 add_subdirectory(replayers/minimp3)
 add_subdirectory(replayers/stb_vorbis)
 add_subdirectory(replayers/dr_flac) # I436: FLAC, integer decoder
+add_subdirectory(replayers/arkos) # I433a: Arkos Tracker 3 song model + .aks importer (MIT, C, all targets)
 
 # Game Music Emu (I426): C++ library, desktop first (no 68k build yet).
 if(NOT SEL_AMIGA)
