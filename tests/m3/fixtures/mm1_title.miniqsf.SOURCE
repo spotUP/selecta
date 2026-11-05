@@ -1,0 +1,6 @@
+mm1_title.miniqsf is "01 - title.miniqsf" and "Mega Man - The Power Battle.qsflib" is its library, from Modland, folder
+Capcom Q-Sound Format / Hideki OK / Megaman 1 - The Power Battle (qsf by Neill Corlett's format; ripped by Hideki OK):
+https://modland.antarctica.no/pub/modules/Capcom%20Q-Sound%20Format/Hideki%20OK/Megaman%201%20-%20The%20Power%20Battle/
+(mirrors: modland.com, ftp.amigascne.org/mirrors/ftp.modland.com). Song length tag 0:21, fade 0.
+Licence: the .qsflib holds Capcom's CPS-2 sound ROM data (copyright 1995 Capcom). Not redistributable as a release asset:
+this is a test fixture only and must be excluded from release packages and any public mirror of the repository.

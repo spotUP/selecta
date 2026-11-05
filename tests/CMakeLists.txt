@@ -2060,6 +2060,18 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I704b: a real Capcom game set (Mega Man: The Power Battle, CPS-2 Kabuki key and ROM banks in the .qsflib) renders
+  # through the same entry point. Length tag 0:21, fade 0: exactly 21 s, so 21 s minimum and 22 s maximum.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/qsf-real-decode)
+    add_test(NAME qsf-real-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/qsf_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/mm1_title.miniqsf
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/qsf-real-decode)
+    set_tests_properties(qsf-real-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "qsf_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules;QSF_LIB=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/Mega Man - The Power Battle.qsflib;QSF_MIN_SECONDS=21;QSF_MAX_SECONDS=22;QSF_ENERGY_MIN=1000000000000")
+  endif()
+
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/tiatracker-decode)
