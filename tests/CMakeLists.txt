@@ -2737,6 +2737,19 @@ if(NOT SEL_AMIGA)
   target_link_libraries(cache_slice_test PRIVATE selecta_core)
   add_test(NAME cache-slice COMMAND cache_slice_test)
   set_tests_properties(cache-slice PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_slice_ok")
+  # I1127b: content companions. U1/U2 sanitiser + trim exemption (unit); the reachability test fetches a remote .eup
+  # through the library cache and asserts the banks arrived (net-fixture).
+  add_executable(content_companions_test m3/content_companions_test.c)
+  target_include_directories(content_companions_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(content_companions_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME content-companions COMMAND content_companions_test)
+  set_tests_properties(content-companions PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "content_companions_ok")
+  if(SELECTA_GPL_PLUGINS)
+    add_test(NAME remote-eup-banks-net
+      COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+        "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures" "-DPLUGINS=${CMAKE_BINARY_DIR}/modules" -P "${SEL_NET_DIR}/remote_eup_banks.cmake")
+    set_tests_properties(remote-eup-banks-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture TIMEOUT 120)
+  endif()
   add_executable(record_cut_unit_test record_cut_unit_test.c)
   target_include_directories(record_cut_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(record_cut_unit_test PRIVATE selecta_library selecta_core)

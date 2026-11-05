@@ -94,6 +94,8 @@ struct sel_library {
     unsigned mir_dirty_songs; /* the update hook saw a songs row change; worker only */
     int mir_index;           /* has_index the songs part was computed for */
     unsigned task_done;      /* a task ended and _task_take has not collected it */
+    uint32_t (*registry_count)(void); /* I1127b: copied into cache and pf_cache */
+    const sel_tag* (*registry_get)(uint32_t);
 #if defined(SEL_LIBRARY_NO_THREAD)
     char pf_cur[160];        /* the request the poll is working on across ticks (I168b); "" = none */
     int pf_cur_smart;

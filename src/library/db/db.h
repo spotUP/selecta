@@ -492,6 +492,8 @@ int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags
 int sel_library_mark(sel_library* lib, const char* table, const char* key);
 /* Companion rules (sel_companion_rules) the trim honours; every LIBRARY_FETCH sets them. */
 void sel_library_set_rules(sel_library* lib, const char* rules);
+/* The plugin registry the cache asks for CONTENT_COMPANIONS hooks (I1127b); set once after plugin load. */
+void sel_library_set_registry(sel_library* lib, uint32_t (*count)(void), const sel_tag* (*get)(uint32_t));
 /* Overrides the machine-scaled cache budget of this handle (tests). */
 void sel_library_set_budget(sel_library* lib, uint32_t budget);
 /* Prefetch (I168): fetches `spec` ("<source>:<path>") and its companions into the cache on a low-priority

@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 void sel_cache_init(sel_cache* c, const char* dir, int amiga_route) {
     const char* env;
@@ -438,17 +439,187 @@ void sel_companion_rules(uint32_t (*registry_count)(void), const sel_tag* (*regi
     }
 }
 
+/* ---- content companions (I1127b) -------------------------------------- */
+
+static const char* path_base(const char* path) {
+    const char* b = strrchr(path, '/');
+    return b != NULL ? b + 1 : path;
+}
+
+/* A name read from song bytes is attacker-controlled: accept it or drop it, never rewrite it. */
+static int content_name_ok(const char* name, const char* own_base) {
+    size_t n = strlen(name), i;
+
+    if (n == 0 || n >= SEL_RP_COMPANION_NAME_MAX || name[0] == '.' || name[0] == ' ' || name[n - 1u] == ' ') {
+        return 0;
+    }
+    for (i = 0; i < n; i++) {
+        unsigned char ch = (unsigned char)name[i];
+
+        if (ch < 0x20 || ch > 0x7E || ch == '/' || ch == '\\' || ch == ':' || (ch == '.' && name[i + 1u] == '.' && i + 1u < n)) {
+            return 0;
+        }
+    }
+    if (n >= 5u && ci_eq(name + n - 5u, ".part", 5u)) {
+        return 0;
+    }
+    return !(strlen(own_base) == n && ci_eq(own_base, name, n));
+}
+
+static const sel_tag* content_hook_list(const sel_cache* c, uint32_t i) {
+    const sel_tag* desc = c->registry_get(i);
+
+    if (desc == NULL || sel_tag_find(desc, SEL_PLUGIN_KIND, 0) != SEL_PLUGIN_KIND_REPLAYER) {
+        return NULL;
+    }
+    return (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+}
+
+unsigned sel_content_companion_names(sel_cache* c, const char* path, const uint8_t* data, size_t size,
+                                     char out[][SEL_CACHE_PATH_MAX], unsigned max) {
+    const char* base = path_base(path);
+    size_t dirlen = (size_t)(base - path), blen = strlen(base);
+    uint32_t i, hn;
+    unsigned n = 0;
+    char names[SEL_CACHE_COMPANIONS_MAX][SEL_RP_COMPANION_NAME_MAX];
+    char base_c[SEL_RP_COMPANION_NAME_MAX];
+
+    if (c->registry_count == NULL || c->registry_get == NULL || blen >= sizeof base_c || dirlen + SEL_RP_COMPANION_NAME_MAX > SEL_CACHE_PATH_MAX) {
+        return 0;
+    }
+    memcpy(base_c, base, blen + 1u);
+    hn = c->registry_count();
+    for (i = 0; i < hn && (data != NULL ? n < max : 1); i++) {
+        const sel_tag* hooks = content_hook_list(c, i);
+        sel_rp_content_companions_fn fn =
+            hooks != NULL ? (sel_rp_content_companions_fn)sel_tag_find(hooks, SEL_RP_CONTENT_COMPANIONS, 0) : NULL;
+        unsigned got, k;
+
+        if (fn == NULL || fn(base_c, NULL, 0, NULL, 0, c->hook_host) == 0) {
+            continue;
+        }
+        if (data == NULL) {
+            return 1;
+        }
+        got = fn(base_c, data, size, names, SEL_CACHE_COMPANIONS_MAX, c->hook_host);
+        if (got > SEL_CACHE_COMPANIONS_MAX) {
+            got = SEL_CACHE_COMPANIONS_MAX;
+        }
+        for (k = 0; k < got && n < max; k++) {
+            unsigned j;
+            int dup = 0;
+
+            if (memchr(names[k], '\0', SEL_RP_COMPANION_NAME_MAX) == NULL || !content_name_ok(names[k], base_c)) { /* no NUL in 64 bytes: a 64+ character name */
+                c->stats.content_rejected++;
+                continue;
+            }
+            for (j = 0; j < n; j++) {
+                dup |= strlen(out[j] + dirlen) == strlen(names[k]) && ci_eq(out[j] + dirlen, names[k], strlen(names[k]));
+            }
+            if (!dup) {
+                memcpy(out[n], path, dirlen);
+                strcpy(out[n] + dirlen, names[k]);
+                n++;
+            }
+        }
+    }
+    return data == NULL ? 0 : n;
+}
+
+/* Reads the first SEL_CACHE_CONTENT_HEAD bytes of the cached song; *buf is host memory (free with hook_host->mem_free). */
+static uint8_t* content_head(sel_cache* c, const char* file, size_t* size) {
+    FILE* f = fopen(file, "rb");
+    uint8_t* buf;
+
+    if (f == NULL) {
+        return NULL;
+    }
+    buf = c->hook_host != NULL ? c->hook_host->mem_alloc(c->hook_host, SEL_CACHE_CONTENT_HEAD, SEL_MEM_FAST) : NULL;
+    if (buf != NULL) {
+        *size = fread(buf, 1, SEL_CACHE_CONTENT_HEAD, f);
+    }
+    fclose(f);
+    return buf;
+}
+
+static void content_variants(const char* path, char v[3][SEL_CACHE_PATH_MAX]) {
+    size_t i, dirlen = (size_t)(path_base(path) - path);
+
+    snprintf(v[0], SEL_CACHE_PATH_MAX, "%s", path);
+    snprintf(v[1], SEL_CACHE_PATH_MAX, "%s", path);
+    snprintf(v[2], SEL_CACHE_PATH_MAX, "%s", path);
+    for (i = dirlen; v[0][i] != '\0'; i++) {
+        v[1][i] = (char)tolower((unsigned char)v[0][i]);
+        v[2][i] = (char)toupper((unsigned char)v[0][i]);
+    }
+}
+
+/* Fetches the banks the song's bytes name. Result: OK, or PENDING when a bank's sliced download goes on. */
+static sel_cache_result fetch_content_companions(sel_cache* c, const char* source, const char* path, const char* songfile,
+                                                 char comp[][SEL_CACHE_PATH_MAX], unsigned ncomp) {
+    char names[SEL_CACHE_COMPANIONS_MAX][SEL_CACHE_PATH_MAX];
+    char v[3][SEL_CACHE_PATH_MAX];
+    char cpath[SEL_CACHE_PATH_MAX], want[SEL_CACHE_PATH_MAX];
+    size_t size = 0;
+    uint8_t* head;
+    unsigned n, i, j;
+    sel_cache_result res = SEL_CACHE_OK;
+
+    if (!sel_content_companion_names(c, path, NULL, 0, NULL, 0)) {
+        return SEL_CACHE_OK; /* no hook claims this name: no bytes read */
+    }
+    head = content_head(c, songfile, &size);
+    if (head == NULL) {
+        return SEL_CACHE_OK;
+    }
+    n = sel_content_companion_names(c, path, head, size, names, SEL_CACHE_COMPANIONS_MAX);
+    c->hook_host->mem_free(c->hook_host, head);
+    for (i = 0; i < n && !(c->cancel != NULL && *c->cancel); i++) {
+        int done = 0;
+
+        for (j = 0; j < ncomp; j++) {
+            done |= strcasecmp(comp[j], names[i]) == 0; /* the rule pass already delivered it */
+        }
+        content_variants(names[i], v);
+        for (j = 0; j < 3 && !done; j++) {
+            sel_cache_result cr;
+
+            if ((j == 1 && strcmp(v[1], v[0]) == 0) || (j == 2 && (strcmp(v[2], v[0]) == 0 || strcmp(v[2], v[1]) == 0))) {
+                continue;
+            }
+            cr = sel_cache_fetch(c, source, v[j], NULL, cpath, sizeof cpath);
+            if (cr == SEL_CACHE_PENDING) {
+                return SEL_CACHE_PENDING;
+            }
+            if (cr == SEL_CACHE_OK) {
+                done = 1;
+                if (j != 0 && sel_cache_path(c, source, v[0], want, sizeof want)) {
+                    (void)rename(cpath, want); /* stored under the spelling the song writes */
+                }
+                c->stats.companions++;
+                c->stats.content_companions++;
+            }
+        }
+        if (!done) {
+            c->stats.content_missing++;
+        }
+    }
+    return res;
+}
+
 sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const char* path, const char* md5,
                                       const char* rules, char* out, size_t cap) {
     char comp[SEL_CACHE_COMPANIONS_MAX][SEL_CACHE_PATH_MAX];
     char cpath[SEL_CACHE_PATH_MAX];
-    unsigned n, i;
+    unsigned n = 0, i;
     sel_cache_result r = sel_cache_fetch(c, source, path, md5, out, cap);
 
-    if (r != SEL_CACHE_OK || rules == NULL) {
+    if (r != SEL_CACHE_OK || (rules == NULL && c->registry_get == NULL)) {
         return r;
     }
-    n = sel_companion_paths(rules, path, comp, SEL_CACHE_COMPANIONS_MAX);
+    if (rules != NULL) {
+        n = sel_companion_paths(rules, path, comp, SEL_CACHE_COMPANIONS_MAX);
+    }
     for (i = 0; i < n && !(c->cancel != NULL && *c->cancel); i++) {
         sel_cache_result cr = sel_cache_fetch(c, source, comp[i], NULL, cpath, sizeof cpath);
         if (cr == SEL_CACHE_PENDING) {
@@ -457,6 +628,10 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
         if (cr == SEL_CACHE_OK) {
             c->stats.companions++;
         }
+    }
+    if (c->registry_get != NULL && !(c->cancel != NULL && *c->cancel) &&
+        fetch_content_companions(c, source, path, out, comp, n) == SEL_CACHE_PENDING) {
+        return SEL_CACHE_PENDING;
     }
     return r;
 }
@@ -591,6 +766,40 @@ static void mark_companions(trim_walk* w, size_t rl, const char* rules, sel_cach
     }
 }
 
+/* Exempt the banks the exempt songs' own bytes name (I1127b): same function the fetch uses. */
+static void mark_content_companions(sel_cache* c, trim_walk* w, size_t rl, sel_cache_trim_result* out) {
+    char names[SEL_CACHE_COMPANIONS_MAX][SEL_CACHE_PATH_MAX];
+    unsigned i, j, k, n;
+
+    for (i = 0; i < w->n; i++) {
+        const char* rel = w->e[i].path + rl + 1u;
+        const char* slash = strchr(rel, '/');
+        size_t sl, size = 0;
+        uint8_t* head;
+
+        if (!w->e[i].exempt || slash == NULL || !sel_content_companion_names(c, slash + 1, NULL, 0, NULL, 0)) {
+            continue;
+        }
+        head = content_head(c, w->e[i].path, &size);
+        if (head == NULL) {
+            continue;
+        }
+        sl = (size_t)(slash - rel);
+        n = sel_content_companion_names(c, slash + 1, head, size, names, SEL_CACHE_COMPANIONS_MAX);
+        c->hook_host->mem_free(c->hook_host, head);
+        for (k = 0; k < n; k++) {
+            for (j = 0; j < w->n; j++) {
+                const char* r2 = w->e[j].path + rl + 1u;
+
+                if (!w->e[j].exempt && strncmp(r2, rel, sl + 1u) == 0 && strcasecmp(r2 + sl + 1u, names[k]) == 0) {
+                    w->e[j].exempt = 1;
+                    out->companion_exempt++;
+                }
+            }
+        }
+    }
+}
+
 void sel_cache_trim(sel_cache* c, uint32_t budget, sel_cache_keep_fn keep, void* ctx, const char* protect,
                     const char* rules, sel_cache_trim_result* out) {
     trim_walk w;
@@ -624,6 +833,9 @@ void sel_cache_trim(sel_cache* c, uint32_t budget, sel_cache_keep_fn keep, void*
     }
     if (rules != NULL && rules[0] != '\0') {
         mark_companions(&w, rl, rules, out);
+    }
+    if (c->registry_get != NULL) {
+        mark_content_companions(c, &w, rl, out);
     }
     out->bytes_before = total > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)total;
     if (total > budget && w.n > 0) {

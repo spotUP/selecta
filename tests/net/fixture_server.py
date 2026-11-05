@@ -82,7 +82,9 @@ HOST_ALIAS = {"localhost": "fixture.test"}
 def safe_join(host, path):
     root = os.path.realpath(os.path.join(FIXTURES, host))
     full = os.path.realpath(os.path.join(root, path.lstrip("/")))
-    if full != root and not full.startswith(root + os.sep):
+    # I1127b: a fixture may be a symlink into tests/ (one copy of a binary fixture), never out of it.
+    tests_root = os.path.dirname(HERE)
+    if full != root and not full.startswith(root + os.sep) and not full.startswith(tests_root + os.sep):
         return None
     return full
 

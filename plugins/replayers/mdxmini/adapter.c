@@ -11,7 +11,9 @@
 #include "mdxmini.h"
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 #define MDX_PLAY_LOOPS 1
 #define MDX_OPEN_RATE 44100
@@ -181,7 +183,44 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[12];
+/* RP_CONTENT_COMPANIONS (I1127b): the PDX sample set a .mdx names after its title (mdxfile.c: title ends at 0x0D 0x0A
+ * 0x1A, then a NUL-terminated name; ".pdx" is appended when missing). Same walk, with bounds checks over the head. The
+ * local open keeps mdxmini's own lookup (third_party is not touched); this feeds only the library cache. */
+static unsigned rp_content_companions(const char* name, const uint8_t* data, size_t size, char out[][SEL_RP_COMPANION_NAME_MAX],
+                                      unsigned max, const sel_host* host) {
+    size_t nl = strlen(name), p = 0, n = 0;
+    (void)host;
+    if (nl < 4u || name[nl - 4u] != '.' || (name[nl - 3u] | 0x20) != 'm' || (name[nl - 2u] | 0x20) != 'd' || (name[nl - 1u] | 0x20) != 'x') {
+        return 0;
+    }
+    if (data == NULL) {
+        return 1;
+    }
+    if (max == 0u) {
+        return 0;
+    }
+    while (p + 3u <= size && !(data[p] == 0x0D && data[p + 1u] == 0x0A && data[p + 2u] == 0x1A)) {
+        p++;
+    }
+    if (p + 3u > size) {
+        return 0;
+    }
+    p += 3u;
+    while (p + n < size && data[p + n] != 0u && n < SEL_RP_COMPANION_NAME_MAX - 5u) {
+        out[0][n] = (char)data[p + n];
+        n++;
+    }
+    if (n == 0u || p + n >= size || data[p + n] != 0u) {
+        return 0; /* no name, or an unterminated / over-long one */
+    }
+    out[0][n] = '\0';
+    if (n < 4u || strcasecmp(out[0] + n - 4u, ".pdx") != 0) {
+        memcpy(out[0] + n, ".pdx", 5u);
+    }
+    return 1;
+}
+
+static sel_tag g_hooks[13];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -204,7 +243,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[8], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[11], SEL_TAG_END, 0);
+    set(&g_hooks[11], SEL_RP_CONTENT_COMPANIONS, SEL_TAG_FN(rp_content_companions));
+    set(&g_hooks[12], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "mdxmini");
