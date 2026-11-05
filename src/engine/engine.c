@@ -412,6 +412,7 @@ struct sel_engine {
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t lib_reads_applied;                /* I829: posted library reads the pump applied */
+    uint32_t hidden_read_drops;                /* I1091: Home/Folders answers collected while another source was shown, not written (sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
     uint32_t stream_adds;                      /* STREAM_ADD URLs saved (I725a) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
@@ -8963,6 +8964,8 @@ static void lib_reads_collect(sel_engine* e) {
         if (e->view.pub.source == SEL_VIEW_HOME) {
             home_apply(e, e->rd_home_text);
             view_reread(e, SEL_VIEW_HOME);
+        } else {
+            e->hidden_read_drops++;
         }
         if (e->rd_home.again) home_reload(e);
     }
@@ -9082,6 +9085,8 @@ static void lib_reads_collect(sel_engine* e) {
         if (e->view.pub.source == SEL_VIEW_FOLDERS) { /* I1091: the shared row store, see the Home landing; VIEW_SOURCE folders posts a fresh read */
             e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
             view_reread(e, SEL_VIEW_FOLDERS);
+        } else {
+            e->hidden_read_drops++;
         }
         if (e->rd_folders.again) lib_read_post(e, &e->rd_folders, folders_read_run);
         if (e->collection_kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && e->coll.kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) { /* I994d3: the open playlist page follows the playlist */
@@ -9148,7 +9153,7 @@ static void lib_models_follow(sel_engine* e) {
     }
     /* I1086: the Home shelves are a model too: re-read in place (lib_reads_collect applies the answer and view_reread rebuilds the window when
      * Home is the view source); no client has to re-enter the page for it. */
-    if (e->view.pub.source == SEL_VIEW_HOME || e->home_rows > 0) home_reload(e);
+    if (e->view.pub.source == SEL_VIEW_HOME) home_reload(e);
     if (e->formats != NULL) lib_read_post(e, &e->rd_formats, formats_read_run);
     if (e->composers_open) composers_post(e);
     if (e->stats_open) lib_read_post(e, &e->rd_stats, stats_read_run);
@@ -11241,6 +11246,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->home_rows = e->home_rows;
     out->home_item_shelves = e->home_item_shelves;
     out->folder_view_rows = e->folder_view_rows;
+    out->hidden_read_drops = e->hidden_read_drops;
     out->panel_loads = e->panel_loads;
     out->panel_reads = e->panel_reads;
     out->play_meta_reads = e->play_meta_reads;

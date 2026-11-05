@@ -3075,6 +3075,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(search_follows_library_test PRIVATE selecta_library selecta_core)
   add_test(NAME search-follows-library COMMAND search_follows_library_test)
   set_tests_properties(search-follows-library PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "search_follows_library_ok")
+  add_executable(search_publish_never_empty_test engine/search_publish_never_empty_test.c)
+  target_include_directories(search_publish_never_empty_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(search_publish_never_empty_test PRIVATE selecta_library selecta_core)
+  add_test(NAME search-publish-never-empty COMMAND search_publish_never_empty_test)
+  set_tests_properties(search-publish-never-empty PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "search_publish_never_empty_ok")
 
   # I1019b: the Search view lists a From section per source after Artists; Enter on a From row plays its source:path key.
   add_executable(source_search_view_test engine/source_search_view_test.c)
