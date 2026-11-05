@@ -217,6 +217,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-settings PROPERTIES LABELS "dui;settings" TIMEOUT 120) # I989e: the test of plan item DUI-P4-14, so it keeps the dui label that dui-ratchet counts
 endif()
 
+# bundle-sunvox (I706d): the shipped app plays a modern SunVox song through the staged SunVox Library and credits it in About.
+if(NOT SEL_AMIGA AND TARGET sel_module_sunvox_lib AND TARGET selecta AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
+  add_test(NAME bundle-sunvox
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONG=${PROJECT_SOURCE_DIR}/tests/m3/fixtures/sunvox_tune_modern.sunvox"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/bundle-sunvox" -P "${CMAKE_CURRENT_SOURCE_DIR}/bundle_sunvox.cmake")
+  set_tests_properties(bundle-sunvox PROPERTIES LABELS builtin-modules TIMEOUT 180 PASS_REGULAR_EXPRESSION "bundle_sunvox_ok")
+endif()
+
 # dui-engine-thread-stall (I1082a): reachability test of the engine thread (plan 2026-11-05-I1082-engine-thread.md). RED on main until I1082f:
 # a blocking open stops the UI. Labelled dui-red so the finished-milestone run (-LE dui-red) and the pre-push gate leave it out; no dui label,
 # so dui-ratchet (one test per plan id) does not count it.

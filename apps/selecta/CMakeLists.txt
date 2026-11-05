@@ -60,6 +60,15 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
     add_custom_command(TARGET selecta_bundle_modules POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${_m}>" "${_sel_plugins_dir}/"
       VERBATIM)
+    # I706d: a module that dlopen()s a binary or must ship licence texts keeps them in a folder of its own beside it
+    # (sunvox_lib/: the SunVox Library, every licence TXT, CREDITS.txt). The folder travels whole; the About view reads CREDITS.txt.
+    get_target_property(_sel_data_dir ${_m} SEL_MODULE_DATA_DIR)
+    if(_sel_data_dir)
+      get_filename_component(_sel_data_name "${_sel_data_dir}" NAME)
+      add_custom_command(TARGET selecta_bundle_modules POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${_sel_data_dir}" "${_sel_plugins_dir}/${_sel_data_name}"
+        VERBATIM)
+    endif()
   endforeach()
   # I1129: `--target selecta` must refresh the copies too. The copy target depends on the core and every module, and selecta
   # depends on the copy target (not the reverse), so building selecta alone runs the copies; the old reverse edge left an
