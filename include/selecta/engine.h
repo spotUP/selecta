@@ -145,6 +145,7 @@ typedef struct sel_song_state {
     sel_rp_position pattern_pos; /* zeros when not reported */
     const sel_tag* meta;         /* SEL_META_* list, valid until next pump */
     const char* path;            /* NULL when no song is open; valid until next pump */
+    uint32_t bank_missing;       /* I1127c: 1 when a companion bank of the open remote song was on no mirror; the panels show "Sample bank not found" */
 } sel_song_state;
 
 /* Pattern window of the playing tracker song (plan M1.3 I101). A front end asks

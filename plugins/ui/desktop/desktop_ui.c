@@ -355,6 +355,7 @@ typedef struct desk {
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     int32_t np_inset_l, np_inset_r; /* gap between the Now Playing panel edge and its content, left and right: one spacing token (I404) */
     sel_gui_rect np_art, np_panel; /* the Now Playing cover and the panel it spans, for the dump (I443) */
+    uint32_t np_notes;                /* Now Playing note lines drawn (I1127c sentinel: "Sample bank not found") */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
@@ -7534,9 +7535,9 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "stats_more %d %d %d %d open=%d\nstats_panel draws=%u rows=%u rect %d %d %d %d\n", (int)mr.x, (int)mr.y, (int)mr.w, (int)mr.h,
                      d->stats_open, (unsigned)d->stats_panel_draws, (unsigned)d->stats_panel_rows, (int)pr.x, (int)pr.y, (int)pr.w, (int)pr.h);
     }
-    o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
+    o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nnowplaying note=\"%s\" drawn=%u\nlyrics line %d at %u\nmessage lines %u\n",
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
-                          (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
+                          (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, sel_uim_np_note(&st->song) != NULL ? sel_uim_np_note(&st->song) : "", (unsigned)d->np_notes, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
     o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
@@ -12305,6 +12306,14 @@ static void draw_nowplaying(desk* d) {
             y += lpx(d, 16);
             d->np_rows++;
             p = v + strlen(v) + 1;
+        }
+    }
+    {
+        const char* note = sel_uim_np_note(&st->song); /* I1127c */
+        if (note != NULL) {
+            draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), note, 0, 12, muted);
+            y += lpx(d, 16);
+            d->np_notes++;
         }
     }
     y += sp;

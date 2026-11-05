@@ -52,7 +52,8 @@ typedef struct sel_cache_stats {
     unsigned zip_requests;     /* HTTP requests those zip fetches sent */
     unsigned content_companions; /* banks delivered because a CONTENT_COMPANIONS hook named them (I1127b sentinel) */
     unsigned content_rejected;   /* hook names the sanitiser dropped (I1127b) */
-    unsigned content_missing;    /* hook names no mirror had (I1127b: a "bank missing" note can read this later) */
+    unsigned content_missing;    /* hook names no mirror had (I1127b) */
+    unsigned companion_missing;  /* rule companions (TFMX smpl.*) no mirror had (I1127c) */
 } sel_cache_stats;
 
 /* The state of a download that stopped at its time budget (I168b): the partial body stays in `<file>.part` and the
@@ -79,6 +80,7 @@ typedef struct sel_cache {
     unsigned slice_ms;      /* > 0: a fetch returns SEL_CACHE_PENDING after about this many milliseconds of body, and a
                              * stalled attempt after SEL_CACHE_SLICE_STALL_MS; one mirror per call (I168b) */
     sel_cache_slice slice;
+    int last_banks_missing; /* I1127c: 1 when the last sel_cache_fetch_song found a companion bank on no mirror (rule or content named) */
     int last_status;        /* HTTP status of the last failed fetch (404 for a file the mirror does not serve), 0 when none (I695b) */
     const sel_host* unzip_host; /* non-NULL: a freshly fetched file of a SEL_SOURCE_ZIPPED source is unpacked to its one
                              * module member in place, here at fetch and prefetch, never when a song is read (I406a) */

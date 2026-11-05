@@ -612,8 +612,11 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
     char comp[SEL_CACHE_COMPANIONS_MAX][SEL_CACHE_PATH_MAX];
     char cpath[SEL_CACHE_PATH_MAX];
     unsigned n = 0, i;
-    sel_cache_result r = sel_cache_fetch(c, source, path, md5, out, cap);
+    sel_cache_result r;
+    unsigned missing0 = c->stats.content_missing + c->stats.companion_missing;
 
+    c->last_banks_missing = 0;
+    r = sel_cache_fetch(c, source, path, md5, out, cap);
     if (r != SEL_CACHE_OK || (rules == NULL && c->registry_get == NULL)) {
         return r;
     }
@@ -627,12 +630,15 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
         }
         if (cr == SEL_CACHE_OK) {
             c->stats.companions++;
+        } else if (cr == SEL_CACHE_FAILED) {
+            c->stats.companion_missing++;
         }
     }
     if (c->registry_get != NULL && !(c->cancel != NULL && *c->cancel) &&
         fetch_content_companions(c, source, path, out, comp, n) == SEL_CACHE_PENDING) {
         return SEL_CACHE_PENDING;
     }
+    c->last_banks_missing = c->stats.content_missing + c->stats.companion_missing != missing0;
     return r;
 }
 

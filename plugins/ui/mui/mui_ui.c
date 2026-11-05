@@ -202,6 +202,7 @@ typedef struct mui_state {
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
     Object* np_artist;
     Object* np_album;
+    Object* np_note;                /* I1127c: "Sample bank not found" under the album line */
     Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
     Object* cyc_viz;
     mui_mainpane pane;              /* I735: the main-slot pane shown (list, Visualizer page, Pattern page) and its opening counters */
@@ -215,7 +216,7 @@ typedef struct mui_state {
     mui_find_plugin_fn find_plugin;
     Object* np_lyrics;
     Object* np_up[3];
-    char np_buf[3][112];
+    char np_buf[4][112];
     char np_lyric_buf[1024];
     char np_up_buf[3][96];
     Object* info_list;              /* MUI-P4-9 song info rows */
@@ -1700,6 +1701,7 @@ static Object* mui_detail_group(mui_state* s) {
     s->np_title = mui_np_text(s->np_buf[0], sizeof s->np_buf[0], " ", MUI_LBL_TITLE);
     s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ", MUI_LBL_ARTIST);
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ", MUI_LBL_ALBUM);
+    s->np_note = mui_np_text(s->np_buf[3], sizeof s->np_buf[3], " ", MUI_LBL_UPCOMING);
     {
         mui_aalist_spec sp;
         memset(&sp, 0, sizeof sp);
@@ -1722,6 +1724,7 @@ static Object* mui_detail_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->np_title);
     DoMethod(g, OM_ADDMEMBER, s->np_artist);
     DoMethod(g, OM_ADDMEMBER, s->np_album);
+    DoMethod(g, OM_ADDMEMBER, s->np_note);
     {
         /* I1125 (design I973 6a Q6): the Like heart sits on the Now Playing panel like the Mac np_like, not in the player bar. */
         Object* like = mui_make_button_icon("Like", "Like", CTL_P4_BASE + (LONG)P4_LIKE);
@@ -1896,6 +1899,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     }
     MUI_SIG(so->subsong);
     MUI_SIG(so->subsong_count);
+    MUI_SIG(so->bank_missing);
     MUI_SIG(st->lyric_line);
     MUI_SIG(st->lyric_lines);
     MUI_SIG(st->queue_playing);
@@ -1917,6 +1921,8 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     mui_aatext_set(s->np_title, s->np_buf[0]);
     mui_aatext_set(s->np_artist, s->np_buf[1]);
     mui_aatext_set(s->np_album, s->np_buf[2]);
+    mui_flat(s->np_buf[3], sizeof s->np_buf[3], sel_uim_np_note(so) != NULL ? sel_uim_np_note(so) : " "); /* I1127c */
+    mui_aatext_set(s->np_note, s->np_buf[3]);
     /* Lyrics: plain text whole; synced lyrics show the current line and the next. */
     lyr = st->lyric_text;
     if (lyr != NULL) {
