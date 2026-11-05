@@ -168,3 +168,8 @@ endif()
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/furnace)
 endif()
+
+# 98fmplayer (I700): PC-98 PMD and FMP songs, BSD-2-Clause sources behind the shared GPL-plugin gate. Host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/98fmplayer)
+endif()

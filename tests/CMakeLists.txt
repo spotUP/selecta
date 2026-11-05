@@ -2009,6 +2009,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I700: PC-98 PMD and FMP songs play through the render entry point (98fmplayer module). Same gate as the other GPL modules.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/fmp98-decode)
+    add_test(NAME fmp98-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/fmp98_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/pmd_test.m ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/fmp_test.ovi
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/fmp98-decode)
+    set_tests_properties(fmp98-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "fmp98_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/tiatracker-decode)

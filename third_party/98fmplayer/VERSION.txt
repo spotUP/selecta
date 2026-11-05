@@ -1,0 +1,5 @@
+98fmplayer, PC-98 FM sound driver emulation: PMD and FMP (PLAY6) players over libopna (YM2608 emulation).
+License: BSD-2-Clause (LICENSE). Only fmdriver/ and libopna/ are vendored; the GUI, FMDSP and file helpers are not.
+Upstream: https://github.com/takamichih/fmplayer, pinned commit 4fa914e4b2b994cb3ccf92d571a20a7cdf1fe36a.
+Not vendored: the YM2608 drum ROM (2608_rhythm samples are proprietary); the plugin leaves the OPNA rhythm samples empty,
+so PMD rhythm-part drums are silent. The SSE2/NEON SSG resamplers are dropped; the C one is used (libopna default).
