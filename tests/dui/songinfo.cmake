@@ -146,6 +146,19 @@ if(last_bottom GREATER panel_bottom)
   message(FATAL_ERROR "after the wheel the last row still ends at ${last_bottom}, below the panel bottom ${panel_bottom}")
 endif()
 
+# I1079e: the rows come from sel_uim_cols_split (design 2026-11-05-I1079 section 3.2): the splitter ran, Label is the fixed 160 and the Value
+# column ends at the row width.
+if(NOT "${a_out}" MATCHES "sicols_calls ([0-9]+)\nsicols row_w=([0-9]+) label=([0-9]+):([0-9]+) value=([0-9]+):([0-9]+)")
+  message(FATAL_ERROR "no sicols lines in:\n${a_out}")
+endif()
+if(CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the Song info rows never ran sel_uim_cols_split (sicols_calls ${CMAKE_MATCH_1})")
+endif()
+math(EXPR si_end "${CMAKE_MATCH_5} + ${CMAKE_MATCH_6}")
+if(NOT si_end EQUAL CMAKE_MATCH_2 OR NOT CMAKE_MATCH_5 EQUAL CMAKE_MATCH_4)
+  message(FATAL_ERROR "Song info columns do not tile the row: row_w=${CMAKE_MATCH_2} label=${CMAKE_MATCH_3}:${CMAKE_MATCH_4} value=${CMAKE_MATCH_5}:${CMAKE_MATCH_6}")
+endif()
+
 # 4. the golden of the untouched page
 set(gfile "${GOLDEN}/desktop/songinfo-rgba32-1280x800@1.hash")
 if("$ENV{SELECTA_GOLDEN_UPDATE}" STREQUAL "1")

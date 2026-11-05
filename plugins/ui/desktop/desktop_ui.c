@@ -5637,12 +5637,38 @@ static void pls_find_split(const char* text, char* title, size_t cap, const char
     *artist = sep != NULL ? sep + 2 : "";
 }
 
+/* I1079e: a result row of the empty playlist's search is Title, Artist and the fixed Add button on the shared splitter sel_uim_cols_split (design
+ * 2026-11-05-I1079 section 3.2). Title and Artist weigh 1 each; the Artist column is absent when no shown result has an artist. */
+enum { PFC_TITLE, PFC_ARTIST, PFC_ADD, PFC_N };
+
+static void pls_find_cols(desk* d, sel_gui_rect mn, int32_t* x, int32_t* w) {
+    sel_uim_col c[PFC_N];
+    uint32_t slot;
+    int any_artist = 0;
+    memset(c, 0, sizeof c);
+    c[PFC_TITLE].weight = 1;
+    c[PFC_ARTIST].weight = 1;
+    c[PFC_ADD].fixed = lpx(d, PLS_FIND_ADD_W);
+    for (slot = 0; pls_find_row_visible(d, mn, slot) && pls_find_result(d, slot) != NULL; slot++) {
+        char title[96];
+        const char* artist;
+        pls_find_split(pls_find_result(d, slot)->text != NULL ? pls_find_result(d, slot)->text : "", title, sizeof title, &artist);
+        any_artist |= artist[0] != '\0';
+    }
+    if (!any_artist) {
+        c[PFC_ARTIST].weight = 0;
+    }
+    (void)sel_uim_cols_split(pls_find_row_rect(d, mn, 0u).w, 0, c, PFC_N, x, w);
+}
+
 static void draw_playlist_find(desk* d, sel_gui_rect mn) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     sel_gui_rect sr = pls_find_field_rect(d, mn);
     int32_t ic = lpx(d, 18), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
     uint32_t slot;
+    int32_t fx[PFC_N], fw[PFC_N];
+    pls_find_cols(d, mn, fx, fw);
     draw_text(d, pls_find_head_rect(d, mn), "Let's find something for your playlist", 1, 22, text);
     sel_gui_round_rect(d->canvas, sr, rad, surf);
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
@@ -5661,8 +5687,10 @@ static void draw_playlist_find(desk* d, sel_gui_rect mn) {
             break;
         }
         pls_find_split(r->text != NULL ? r->text : "", title, sizeof title, &artist);
-        draw_text(d, rect_of(rr.x + lpx(d, 12), rr.y, rr.w / 2 - lpx(d, 12), rr.h), title, 0, 14, text);
-        draw_text(d, rect_of(rr.x + rr.w / 2, rr.y, rr.w / 2 - lpx(d, PLS_FIND_ADD_W + 16), rr.h), artist, 0, 13, muted);
+        draw_text(d, rect_of(rr.x + lpx(d, 12), rr.y, fw[PFC_TITLE] > lpx(d, 12) ? fw[PFC_TITLE] - lpx(d, 12) : 0, rr.h), title, 0, 14, text);
+        if (fw[PFC_ARTIST] > 0) {
+            draw_text(d, rect_of(rr.x + fx[PFC_ARTIST], rr.y, fw[PFC_ARTIST] > lpx(d, 16) ? fw[PFC_ARTIST] - lpx(d, 16) : 0, rr.h), artist, 0, 13, muted);
+        }
         draw_button(d, pls_find_add_rect(d, mn, slot), accent, "Add", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
         d->pls_find_shown++;
     }
@@ -6637,8 +6665,28 @@ static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const 
 }
 
 /* I298: a value wraps into the value column and the row grows to its lines; the list scrolls by wheel. */
+enum { SIC_LABEL, SIC_VALUE, SIC_N };
+
+/* I1079e: a Song info row is the fixed Label column (160 points) and the flex Value column on the shared splitter sel_uim_cols_split (design
+ * 2026-11-05-I1079 section 3.2); x is relative to the left margin. */
+static void si_cols(desk* d, sel_gui_rect mn, int32_t* x, int32_t* w) {
+    sel_uim_col c[SIC_N];
+    memset(c, 0, sizeof c);
+    c[SIC_LABEL].fixed = lpx(d, 160);
+    c[SIC_VALUE].weight = 1;
+    (void)sel_uim_cols_split(mn.w - 2 * lpx(d, HOME_MARGIN), 0, c, SIC_N, x, w);
+}
+
 static int32_t si_value_w(desk* d, sel_gui_rect mn) {
-    return mn.w - 2 * lpx(d, HOME_MARGIN) - lpx(d, 160);
+    int32_t x[SIC_N], w[SIC_N];
+    si_cols(d, mn, x, w);
+    return w[SIC_VALUE];
+}
+
+static int32_t si_value_x(desk* d, sel_gui_rect mn) {
+    int32_t x[SIC_N], w[SIC_N];
+    si_cols(d, mn, x, w);
+    return mn.x + lpx(d, HOME_MARGIN) + x[SIC_VALUE];
 }
 
 static int32_t si_lines(desk* d, sel_gui_rect mn, const char* value) {
@@ -6668,23 +6716,29 @@ static void si_composer_rect(desk* d, sel_gui_rect mn, const char* value, uint32
     if ((int32_t)i != d->si_composer_row || si_lines(d, mn, value) > 1) {
         return;
     }
-    d->si_composer = rect_of(mn.x + lpx(d, HOME_MARGIN) + lpx(d, 160), y, tw < si_value_w(d, mn) ? tw : si_value_w(d, mn), lpx(d, SI_ROW_H));
+    d->si_composer = rect_of(si_value_x(d, mn), y, tw < si_value_w(d, mn) ? tw : si_value_w(d, mn), lpx(d, SI_ROW_H));
 }
 
 static void si_draw_row(desk* d, const char* label, const char* value, uint32_t i) {
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t h = si_row_h(d, mn, value), y = si_row_y(d, mn), half = lpx(d, 160);
+    int32_t h = si_row_h(d, mn, value), y = si_row_y(d, mn), lw, vx;
+    {
+        int32_t cx[SIC_N], cw[SIC_N];
+        si_cols(d, mn, cx, cw);
+        lw = cw[SIC_LABEL];
+        vx = mn.x + lpx(d, HOME_MARGIN) + cx[SIC_VALUE];
+    }
     d->si_cy += h;
     if (y + h <= si_list_top(d, mn) || y >= mn.y + mn.h) {
         return;
     }
     si_composer_rect(d, mn, value, i, y);
-    draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, half, lpx(d, SI_ROW_H)), label, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, lw, lpx(d, SI_ROW_H)), label, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     if (si_lines(d, mn, value) > 1) {
-        sel_gui_text_wrap(d->canvas, desk_font(d, 0, 13), rect_of(mn.x + lpx(d, HOME_MARGIN) + half, y, si_value_w(d, mn), h), value,
+        sel_gui_text_wrap(d->canvas, desk_font(d, 0, 13), rect_of(vx, y, si_value_w(d, mn), h), value,
                           ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1 << 20, &d->text);
     } else {
-        draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN) + half, y, si_value_w(d, mn), lpx(d, SI_ROW_H)), value, 0, 13,
+        draw_text(d, rect_of(vx, y, si_value_w(d, mn), lpx(d, SI_ROW_H)), value, 0, 13,
                   ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     }
     d->si_rows++;
@@ -7331,6 +7385,9 @@ static sel_gui_rect online_chip_chevron(desk* d, sel_gui_rect mn, int right);
 static int online_chip_overflow(desk* d, sel_gui_rect mn);
 static const char* online_chip_scope(const desk* d, uint32_t k);
 
+enum { SLC_TITLE, SLC_TYPE, SLC_ADDED, SLC_PLAYED, SLC_N };
+static sel_gui_rect side_lib_view_rect(const desk* d);
+static void side_tbl_cols(desk* d, sel_gui_rect v, int32_t* x, int32_t* w);
 static size_t dump_put(desk* d, size_t o, const char* fmt, ...) {
     va_list ap;
     int n;
@@ -7794,6 +7851,12 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->pls_adds, (unsigned)d->lib_searches, d->search_on, sel_engine_state(d->engine)->view != NULL ? (int)sel_engine_state(d->engine)->view->source : -1,
                          sel_engine_state(d->engine)->view != NULL ? (unsigned)sel_engine_state(d->engine)->view->row_n : 0u, pls_find_result(d, 0u) != NULL, d->pls_find_key0,
                          pls_find_result(d, 0u) != NULL && pls_find_result(d, 0u)->key != NULL ? pls_find_result(d, 0u)->key : "");
+            {   /* I1079e: the Title / Artist / Add split of the result rows, from the same pls_find_cols the draw uses */
+                int32_t fcx[PFC_N], fcw[PFC_N];
+                pls_find_cols(d, pmn, fcx, fcw);
+                o = dump_put(d, o, "plfindcols_calls %u\nplfindcols row_w=%d title=%d:%d artist=%d:%d add=%d:%d\n", (unsigned)sel_uim_cols_calls(),
+                             (int)pls_find_row_rect(d, pmn, 0u).w, (int)fcx[0], (int)fcw[0], (int)fcx[1], (int)fcw[1], (int)fcx[2], (int)fcw[2]);
+            }
             for (j = 0; (int)j < d->pls_find_shown; j++) {
                 sel_gui_rect fa = pls_find_add_rect(d, pmn, j);
                 const sel_view_row* fr = pls_find_result(d, j);
@@ -7840,6 +7903,12 @@ static const char* library_dump_build(desk* d) {
                               (int)sn.h);
         o = dump_put(d, o, "sipanel %d %d\n", (int)si_list_top(d, smn),
                               (int)(smn.y + smn.h));
+        {   /* I1079e: the Label / Value split of the rows, from the same si_cols the draw uses */
+            int32_t scx[SIC_N], scw[SIC_N];
+            si_cols(d, smn, scx, scw);
+            o = dump_put(d, o, "sicols_calls %u\nsicols row_w=%d label=%d:%d value=%d:%d\n", (unsigned)sel_uim_cols_calls(), (int)(smn.w - 2 * lpx(d, HOME_MARGIN)),
+                         (int)scx[0], (int)scw[0], (int)scx[1], (int)scw[1]);
+        }
         d->si_cy = 0;
         memset(&d->si_composer, 0, sizeof d->si_composer);
         si_walk(d, st, si_dump_row);
@@ -8023,6 +8092,13 @@ static const char* library_dump_build(desk* d) {
                      (int)side_lib_row_h(d), (unsigned)side_lib_cols(d), (unsigned)side_table(d), (int)side_table_head_h(d), (int)region_rect(d, "sidebar").w,
                      (int)d->canvas->w, (int)side_card_h(d), (unsigned)side_pinned_n(d), (unsigned)d->side_sub, (unsigned)d->side_sub_clicks, (int)d->side_sub_btn.x,
                      (int)d->side_sub_btn.y, (int)d->side_sub_btn.w, (int)d->side_sub_btn.h);
+        {   /* I1079e: the Title / Type / Date Added / Played split of the table, from the same side_tbl_cols the draw uses */
+            int32_t dcx[SLC_N], dcw[SLC_N];
+            side_tbl_cols(d, side_lib_view_rect(d), dcx, dcw);
+            o = dump_put(d, o, "sidecols_calls %u\nsidecols row_w=%d title=%d:%d type=%d:%d added=%d:%d played=%d:%d\n", (unsigned)sel_uim_cols_calls(),
+                         (int)(side_lib_view_rect(d).w - 2 * lpx(d, 12)), (int)dcx[0], (int)dcw[0], (int)dcx[1], (int)dcw[1], (int)dcx[2], (int)dcw[2],
+                         (int)dcx[3], (int)dcw[3]);
+        }
         o = dump_put(d, o, "sideempty draws=%u clicks=%u btn %d %d %d %d\n", (unsigned)d->side_empty_draws, (unsigned)d->side_create_clicks,
                      (int)d->side_empty_btn.x, (int)d->side_empty_btn.y, (int)d->side_empty_btn.w, (int)d->side_empty_btn.h);
         for (k = 1u; k <= (uint32_t)SIDE_HDR_COUNT; k++) { /* I609: header controls and their counters */
@@ -11730,11 +11806,32 @@ static void side_item_thumb(desk* d, sel_gui_rect ar, const sel_engine_library_i
     family_platform_cover(d, d->canvas, ar, sel_platform_of_ext(it->format), it->name, &d->pc_side); /* I691d: mark only on this small thumb */
 }
 
+/* I1079e: the expanded library table is Title, Type, Date Added, Played on the shared splitter sel_uim_cols_split (design 2026-11-05-I1079
+ * section 3.2). One spec: Title weight 52, each meta column 16. A meta column that shows only the "-" placeholder in every row is absent. x is
+ * relative to the left padding of the list. */
+static const sel_uim_col side_tbl_spec[SLC_N] = {{52, 0, 0, 0}, {16, 0, 0, 0}, {16, 0, 0, 0}, {16, 0, 0, 0}};
+
+static void side_tbl_cols(desk* d, sel_gui_rect v, int32_t* x, int32_t* w) {
+    sel_uim_col c[SLC_N];
+    uint32_t i;
+    int has_added = 0, has_played = 0;
+    memcpy(c, side_tbl_spec, sizeof c);
+    for (i = 0; i < d->side_n; i++) {
+        has_added |= d->side_items[i].kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST && d->side_items[i].added >= 1000000000u;
+        has_played |= d->side_items[i].last_played >= 1000000000u;
+    }
+    c[SLC_ADDED].weight = has_added ? c[SLC_ADDED].weight : 0;
+    c[SLC_PLAYED].weight = has_played ? c[SLC_PLAYED].weight : 0;
+    (void)sel_uim_cols_split(v.w - 2 * lpx(d, 12), 0, c, SLC_N, x, w);
+}
+
 static void side_lib_draw(desk* d, sel_gui_rect sb) {
     sel_gui_rect hd = side_lib_header_rect(d), v = side_lib_view_rect(d);
     int32_t pad = lpx(d, 12), cov = lpx(d, 44), gap = lpx(d, 12);
     int labels = sb.w > lpx(d, 120);
     uint32_t i;
+    int32_t scx[SLC_N], scw[SLC_N];
+    side_tbl_cols(d, v, scx, scw);
     {   /* I678c: the engine applied a LIBRARY_TOUCH (an opened time changed): the Recents order is stale */
         sel_engine_stats ts;
         sel_engine_stats_get(d->engine, &ts);
@@ -11814,11 +11911,13 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     }
     if (labels && side_table(d)) { /* I678d: the table header over the rows */
         uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
-        int32_t hy = v.y - side_table_head_h(d), tw = v.w - 2 * pad, c1 = v.x + pad + tw * 52 / 100, c2 = v.x + pad + tw * 68 / 100, c3 = v.x + pad + tw * 84 / 100;
-        draw_text(d, rect_of(v.x + pad, hy, c1 - v.x - pad, side_table_head_h(d)), "Title", 1, 12, muted);
-        draw_text(d, rect_of(c1, hy, c2 - c1, side_table_head_h(d)), "Type", 1, 12, muted);
-        draw_text(d, rect_of(c2, hy, c3 - c2, side_table_head_h(d)), "Date Added", 1, 12, muted);
-        draw_text(d, rect_of(c3, hy, v.x + v.w - pad - c3, side_table_head_h(d)), "Played", 1, 12, muted);
+        int32_t hy = v.y - side_table_head_h(d), k;
+        static const char* const heads[SLC_N] = {"Title", "Type", "Date Added", "Played"};
+        for (k = 0; k < SLC_N; k++) {
+            if (scw[k] > 0) {
+                draw_text(d, rect_of(v.x + pad + scx[k], hy, scw[k], side_table_head_h(d)), heads[k], 1, 12, muted);
+            }
+        }
     }
     if (labels && side_card_h(d) > 0) { /* I627, I678d: no saved playlist: Spotify's card with one button, below the pinned rows */
         uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), cn = side_pinned_n(d), cc = side_lib_cols(d);
@@ -11886,15 +11985,20 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         if (labels) {
             int32_t tx = ar.x + cov + gap, tw = r.x + r.w - pad - tx, th = lpx(d, 20);
             if (side_table(d)) { /* I678d: the expanded table: Title | Type | Date Added | Played */
-                int32_t tt = v.w - 2 * pad, c1 = v.x + pad + tt * 52 / 100, c2 = v.x + pad + tt * 68 / 100, c3 = v.x + pad + tt * 84 / 100;
                 char when[48];
                 uint32_t mu = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
-                tw = c1 - gap - tx;
-                sel_uim_relative_time((int64_t)time(NULL), d->side_items[i].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST ? 0u : d->side_items[i].added, when, sizeof when);
-                draw_text(d, rect_of(c1, r.y, c2 - c1, r.h), sel_uim_library_item_type(d->side_items[i].kind), 0, 12, mu);
-                draw_text(d, rect_of(c2, r.y, c3 - c2, r.h), when, 0, 12, mu);
-                sel_uim_relative_time((int64_t)time(NULL), d->side_items[i].last_played, when, sizeof when);
-                draw_text(d, rect_of(c3, r.y, v.x + v.w - pad - c3, r.h), when, 0, 12, mu);
+                tw = v.x + pad + scx[SLC_TITLE] + scw[SLC_TITLE] - gap - tx;
+                if (scw[SLC_TYPE] > 0) {
+                    draw_text(d, rect_of(v.x + pad + scx[SLC_TYPE], r.y, scw[SLC_TYPE], r.h), sel_uim_library_item_type(d->side_items[i].kind), 0, 12, mu);
+                }
+                if (scw[SLC_ADDED] > 0) {
+                    sel_uim_relative_time((int64_t)time(NULL), d->side_items[i].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST ? 0u : d->side_items[i].added, when, sizeof when);
+                    draw_text(d, rect_of(v.x + pad + scx[SLC_ADDED], r.y, scw[SLC_ADDED], r.h), when, 0, 12, mu);
+                }
+                if (scw[SLC_PLAYED] > 0) {
+                    sel_uim_relative_time((int64_t)time(NULL), d->side_items[i].last_played, when, sizeof when);
+                    draw_text(d, rect_of(v.x + pad + scx[SLC_PLAYED], r.y, scw[SLC_PLAYED], r.h), when, 0, 12, mu);
+                }
             }
             uint32_t ink = open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
             draw_text(d, rect_of(tx, ar.y + lpx(d, 2), tw, th), d->side_items[i].name, 1, 14, ink);
