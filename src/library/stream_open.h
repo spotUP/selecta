@@ -39,6 +39,11 @@ typedef struct sel_live sel_live;
 
 #define SEL_STREAM_HEAD 16384u /* bytes handed to the format probe before the rest has arrived */
 
+/* A live head must fit the ring (SEL_STREAM_RING, 256 KB) with room left for the download to keep moving. */
+#define SEL_LIVE_HEAD_MAX (240u * 1024u)
+/* Head size the format probe needs from bytes h[0..n) (the first 10 are enough): see stream_open.c. */
+size_t sel_stream_head_want(const uint8_t* h, size_t n, uint64_t size, size_t cap);
+
 /* Starts the download. `gen`/`start` (the engine's cancel generation) end the head wait below when a newer
  * STOP or OPEN arrives. NULL when streaming is not available or the thread did not start. */
 sel_live* sel_live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start);

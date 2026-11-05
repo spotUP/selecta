@@ -959,9 +959,10 @@ static int file_seek(void* ctx, uint64_t pos) {
     return 1;
 }
 
-/* Bytes the probe needs: SEL_STREAM_HEAD, or for a file that starts with an ID3v2 tag the whole tag plus room for
- * the first frames behind it (cover art makes tags of several hundred KB common), capped at SEL_FILE_HEAD_MAX. */
-static size_t file_head_want(const uint8_t* h, size_t n, uint64_t size) {
+/* Bytes the probe needs: SEL_STREAM_HEAD, or for a stream that starts with an ID3v2 tag the whole tag plus room for
+ * the first frames behind it (cover art makes tags of several hundred KB common), capped at `cap` and at `size`
+ * (0 = length unknown). Shared by the file path (cap SEL_FILE_HEAD_MAX) and the live path (cap SEL_LIVE_HEAD_MAX). */
+size_t sel_stream_head_want(const uint8_t* h, size_t n, uint64_t size, size_t cap) {
     size_t want = SEL_STREAM_HEAD;
 
     if (n >= 10u && h[0] == 'I' && h[1] == 'D' && h[2] == '3' && ((h[6] | h[7] | h[8] | h[9]) & 0x80u) == 0u) {
@@ -971,10 +972,10 @@ static size_t file_head_want(const uint8_t* h, size_t n, uint64_t size) {
             want = tag + SEL_STREAM_HEAD;
         }
     }
-    if (want > SEL_FILE_HEAD_MAX) {
-        want = SEL_FILE_HEAD_MAX;
+    if (want > cap) {
+        want = cap;
     }
-    return want > size ? (size_t)size : want;
+    return size != 0u && want > size ? (size_t)size : want;
 }
 
 sel_file_stream* sel_file_stream_open(const sel_host* host, const char* path, uint8_t** head, size_t* headn) {
@@ -996,7 +997,7 @@ sel_file_stream* sel_file_stream_open(const sel_host* host, const char* path, ui
     }
     s->size = (uint64_t)len;
     got = fread(first, 1, sizeof first, s->f);
-    want = file_head_want(first, got, s->size);
+    want = sel_stream_head_want(first, got, s->size, SEL_FILE_HEAD_MAX);
     *head = (uint8_t*)host->mem_alloc(host, want + 1u, SEL_MEM_FAST);
     if (*head == NULL || fseek(s->f, 0, SEEK_SET) != 0) {
         sel_file_stream_close(s);

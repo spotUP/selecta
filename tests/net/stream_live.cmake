@@ -11,6 +11,23 @@ endif()
 if(NOT DEFINED EXT)
   set(EXT mp3)
 endif()
+# I1080: -DTAG_KB=<n> puts an ID3v2 tag of n KB (podcast cover art) in front of the audio. The head must be sized past
+# the tag, so the MP3 replayer streams it; otherwise the engine drains the whole (stalled) body on its own thread.
+if(DEFINED TAG_KB)
+  set(tagged "${WORK}/tagged-live.mp3")
+  execute_process(COMMAND python3 -I -c "
+import sys
+tag = int(sys.argv[3]) * 1024
+n = tag - 10
+hdr = b'ID3\\x03\\x00\\x00' + bytes([(n >> 21) & 127, (n >> 14) & 127, (n >> 7) & 127, n & 127])
+open(sys.argv[2], 'wb').write(hdr + bytes(n) + open(sys.argv[1], 'rb').read() * int(sys.argv[4]))
+" "${MP3}" "${tagged}" ${TAG_KB} ${REPEAT} RESULT_VARIABLE prc)
+  if(NOT prc EQUAL 0)
+    message(FATAL_ERROR "I1080: could not build the tagged MP3")
+  endif()
+  set(MP3 "${tagged}")
+  set(REPEAT 1)
+endif()
 set(PERCENT 60)
 file(SIZE "${MP3}" one)
 math(EXPR total "${one} * ${REPEAT}")

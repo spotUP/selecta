@@ -2691,6 +2691,14 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
 
   # I195d: the same for Ogg Vorbis (stb_vorbis pushdata path); one long file, no repeat (chained Ogg streams).
+  # I1080: a podcast MP3 opens with a 200 KB ID3v2 tag; the head is sized past it and the MP3 replayer streams.
+  add_test(NAME stream-live-id3
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DSLOW=${SEL_NET_DIR}/slow_server.py"
+            -DREPEAT=400 -DTAG_KB=200 -P "${SEL_NET_DIR}/stream_live.cmake")
+  set_tests_properties(stream-live-id3 PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
+
   add_test(NAME stream-live-ogg
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
             "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/long.ogg" "-DSLOW=${SEL_NET_DIR}/slow_server.py"

@@ -2048,10 +2048,27 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
                                 : sel_live_open(e->host, path, &e->cancel_gen, e->cancel_served);
         }
         if (st != NULL) {
-            uint8_t head[SEL_STREAM_HEAD];
-            size_t n = 0;
+            uint8_t first[10];
+            uint8_t* head;
+            size_t n = 0, nfirst = 0, want;
             uint8_t* copy;
-            if (!sel_live_head(st, head, sizeof head, &n)) {
+            /* An ID3v2 tag (podcast cover art) can be longer than SEL_STREAM_HEAD: size the head past it, like a file. */
+            if (!sel_live_head(st, first, sizeof first, &nfirst)) {
+                if (e->cancel_gen != e->cancel_served) {
+                    e->net_cancels++;
+                }
+                e->open_status = sel_live_status(st);
+                sel_live_close(st);
+                return NULL;
+            }
+            want = sel_stream_head_want(first, nfirst, 0, SEL_LIVE_HEAD_MAX);
+            head = e->host->mem_alloc(e->host, want, SEL_MEM_FAST);
+            if (head == NULL) {
+                sel_live_close(st);
+                return NULL;
+            }
+            if (!sel_live_head(st, head, want, &n)) {
+                e->host->mem_free(e->host, head);
                 if (e->cancel_gen != e->cancel_served) {
                     e->net_cancels++;
                 }
@@ -2061,10 +2078,12 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             }
             copy = e->host->mem_alloc(e->host, n + 1u, SEL_MEM_FAST);
             if (copy == NULL) {
+                e->host->mem_free(e->host, head);
                 sel_live_close(st);
                 return NULL;
             }
             memcpy(copy, head, n);
+            e->host->mem_free(e->host, head);
             copy[n] = 0;
             *size = n;
             *live = st;
