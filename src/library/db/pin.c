@@ -40,11 +40,20 @@ static void pin_write(sel_library* lib, const sel_pin_slot* q, unsigned n) {
     memset(&b, 0, sizeof b); /* new_day = 0: a pin records no New-level entry */
     b.rows = rows;
     b.count = n;
+    b.pin = 1;
     b.now = 0; /* added = 0: a pin is the user's own pick, never "New" (Q4) */
     memset(&reply, 0, sizeof reply);
     if (sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) && reply.args[1].v.i == 0) {
         lib->pin_rows += (unsigned)reply.args[0].v.i;
     }
+}
+
+uint32_t sel_library_write_gen(sel_library* lib) {
+    return lib != NULL ? lib->write_gen : 0;
+}
+
+uint32_t sel_library_pin_gen(sel_library* lib) {
+    return lib != NULL ? lib->pin_gen : 0;
 }
 
 uint32_t sel_library_pin_rows(sel_library* lib) {

@@ -243,6 +243,7 @@ typedef struct sel_scan_batch {
     int64_t now; /* epoch seconds stored in songs.added */
     int64_t new_day; /* I790: not 0 = epoch day; the batch adds its songs not yet in the catalogue to
                       * source_new(source, new_day), the New level of the source page. 0 = record nothing */
+    int pin; /* I1077b: not 0 = a pin batch (pin.c): its commits also count in sel_library_pin_gen */
 } sel_scan_batch;
 
 /* Rows to delete again (a changelog's deleted: and moved: entries): `count` paths of one source. */
@@ -523,6 +524,12 @@ void sel_library_rating_push(sel_library* lib);
 void sel_library_pin(sel_library* lib, const char* source, const char* path, const char* title, const char* artist,
                      const char* format);
 uint32_t sel_library_pin_rows(sel_library* lib);
+/* I1077b: the library's write generation, one count per committed write transaction (a sqlite commit hook on the read-write
+ * connection, so no write path can skip it: autocommit statements, scan/folder/sync BEGIN..COMMIT, pin batches). A SELECT or a
+ * ROLLBACK does not move it. For VIEWS (the engine's library_serial); never key a store cache on it (I838). _pin_gen counts the
+ * commits of pin batches only, so the engine can tell a pins-only change (I1038). Plain loads, never a request. */
+uint32_t sel_library_write_gen(sel_library* lib);
+uint32_t sel_library_pin_gen(sel_library* lib);
 /* I958: pending 'rating' pushes (what sel_library_rating_pending reports as rows), kept by the library's writer; a plain load, never a
  * request, so a per-frame UI read cannot wait on the worker. */
 uint32_t sel_library_rating_pending_count(sel_library* lib);

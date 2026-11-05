@@ -157,6 +157,15 @@ static int set_cache_size(sqlite3* db) {
     return sqlite3_exec(db, sql, NULL, NULL, NULL) == SQLITE_OK;
 }
 
+/* I1077b: one count per committed write transaction, on the writer's connection. Returning 0 lets the commit go on. */
+static int write_gen_hook(void* ctx) {
+    sel_library* lib = (sel_library*)ctx;
+
+    lib->write_gen++;
+    if (lib->in_pin) lib->pin_gen++;
+    return 0;
+}
+
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path) {
     sel_library* lib = host->mem_alloc(host, sizeof *lib, SEL_MEM_FAST);
     char sql[80];
@@ -182,6 +191,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);
     sel_user_rating_pending_refresh(lib);
     sel_library_source_mirror_open(lib);
+    sqlite3_commit_hook(lib->db, write_gen_hook, lib);
     if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK || !sel_worker_start(lib)) {
         goto fail;
     }
@@ -299,7 +309,11 @@ static void handle_request(sel_library* lib, const sel_message* req, sel_message
         reply->id = req->id;
         reply->argc = 0;
     } else if (req->id == SEL_LIB_REQ_SCAN_BATCH && req->argc == 1) {
-        sel_library_scan_batch(lib, (const sel_scan_batch*)req->args[0].v.s, reply);
+        const sel_scan_batch* sb = (const sel_scan_batch*)req->args[0].v.s;
+
+        lib->in_pin = sb->pin ? 1u : 0u;
+        sel_library_scan_batch(lib, sb, reply);
+        lib->in_pin = 0u;
     } else if (req->id == SEL_LIB_REQ_REMOVE && req->argc == 1) {
         sel_library_remove(lib, (const sel_remove_batch*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_MOVE && req->argc == 1) {

@@ -2521,6 +2521,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_task_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-task-thread COMMAND library_task_test)
   set_tests_properties(library-task-thread PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "library_task_ok")
+  # I1077b: the store's write generation counts committed write transactions (sqlite commit hook).
+  add_executable(library_write_gen_test library/write_gen_test.c)
+  target_include_directories(library_write_gen_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_write_gen_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-write-gen COMMAND library_write_gen_test)
+  set_tests_properties(library-write-gen PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "write_gen_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
   target_include_directories(kplayer_modwalk_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer ${PROJECT_SOURCE_DIR}/include)
