@@ -24,6 +24,15 @@
 static sel_source g_src[SEL_SOURCE_MAX + 1u];
 static char g_id[SEL_SOURCE_MAX + 1u][SEL_SOURCE_ID_MAX];
 static unsigned g_rows;
+static unsigned g_groups; /* I1058: Playlists-only sources are a Playlists group, never a Sources row */
+
+static void count_group(void* ctx, const char* id, const char* name, const char* home, int remote) {
+    const sel_source* s = sel_source_find(id);
+    (void)ctx; (void)name; (void)home; (void)remote;
+    if (s != NULL && (s->flags & SEL_SOURCE_PLAYLISTS_ONLY) != 0u) {
+        g_groups++;
+    }
+}
 
 static void sink(void* ctx, const sel_message* evt) {
     (void)ctx;
@@ -66,7 +75,8 @@ int main(void) {
     CHECK(sel_source_count() == SEL_SOURCE_MAX);
     CHECK(sel_engine_send_line(e, "SOURCES", pool, sizeof pool) == 0);
     sel_engine_pump(e, sink, NULL);
-    CHECK(g_rows == SEL_SOURCE_MAX); /* all listed, none dropped by the engine's row table */
+    (void)sel_source_each(count_group, NULL);
+    CHECK(g_rows + g_groups == SEL_SOURCE_MAX); /* all listed except Playlists groups, none dropped by the engine's row table */
     CHECK(sel_source_register(&g_src[SEL_SOURCE_MAX]) == 0); /* one more: an error, and a log line on stderr */
     CHECK(sel_source_count() == SEL_SOURCE_MAX);
     printf("source_cap_ok %u\n", g_rows);

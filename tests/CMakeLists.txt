@@ -3050,8 +3050,15 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-sync-dispatch COMMAND library_sync_dispatch_test)
   set_tests_properties(library-sync-dispatch PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sync_dispatch_ok")
 
-  # I1089: selecta_core (shared, MODULE mode) must come BEFORE selecta_library: ld takes the first definition, so the other order links a private
-  # copy of the source registry into the test and the stand-in sources it registers never reach the engine.
+  # I1090: link order of a folded library and selecta_core is irrelevant in MODULE mode. The wrong order is deliberate here.
+  if(SELECTA_PLUGIN_LINK STREQUAL "MODULE")
+    add_executable(core_single_copy_test engine/core_single_copy_test.c)
+    target_include_directories(core_single_copy_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+    target_link_libraries(core_single_copy_test PRIVATE selecta_library selecta_core ${CMAKE_DL_LIBS})
+    add_test(NAME core-single-copy COMMAND core_single_copy_test)
+    set_tests_properties(core-single-copy PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "core_single_copy_ok")
+  endif()
+
   # I1019a: SOURCE_SEARCH * fans out over every enabled searchable source in registry order; a newer query drops the stale task's hits.
   add_executable(source_search_all_test engine/source_search_all_test.c)
   target_include_directories(source_search_all_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
