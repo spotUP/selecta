@@ -2,6 +2,7 @@
 #include "source.h"
 
 #include "archive/archive.h"
+#include "../core/count.h"
 
 #include <selecta/plugin.h>
 
@@ -250,7 +251,7 @@ int sel_source_stream_url(const sel_host* host, const char* key, char* out, size
 static uint32_t g_search_runs;
 
 uint32_t sel_source_search_runs(void) {
-    return __atomic_load_n(&g_search_runs, __ATOMIC_RELAXED);
+    return SEL_COUNT_GET(&g_search_runs);
 }
 
 int sel_source_search(const sel_host* host, const char* id, const char* query, sel_search_sink* out) {
@@ -264,7 +265,7 @@ int sel_source_search(const sel_host* host, const char* id, const char* query, s
     if (src == NULL || src->search == NULL) {
         return -1;
     }
-    __atomic_add_fetch(&g_search_runs, 1u, __ATOMIC_RELAXED); /* I1044: searches run on parallel threads */
+    SEL_COUNT_ADD(&g_search_runs, 1u); /* I1044: searches run on parallel threads */
     return src->search(host, query, out);
 }
 
