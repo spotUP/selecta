@@ -211,6 +211,18 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-settings PROPERTIES LABELS "dui;settings" TIMEOUT 120) # I989e: the test of plan item DUI-P4-14, so it keeps the dui label that dui-ratchet counts
 endif()
 
+# dui-engine-thread-stall (I1082a): reachability test of the engine thread (plan 2026-11-05-I1082-engine-thread.md). RED on main until I1082f:
+# a blocking open stops the UI. Labelled dui-red so the finished-milestone run (-LE dui-red) and the pre-push gate leave it out; no dui label,
+# so dui-ratchet (one test per plan id) does not count it.
+if(NOT SEL_AMIGA)
+  add_test(NAME dui-engine-thread-stall
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-engine-thread-stall" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}"
+      "-DSLOW=${PROJECT_SOURCE_DIR}/tests/net/slow_server.py" "-DMOD=${PROJECT_SOURCE_DIR}/tests/net/fixtures/slow.mirror.test/mods/Protracker/test/song.mod"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/engine_thread_stall.cmake")
+  set_tests_properties(dui-engine-thread-stall PROPERTIES LABELS "dui-red;engine-thread-stall" TIMEOUT 120)
+  set_property(TEST dui-engine-thread-stall PROPERTY SKIP_REGULAR_EXPRESSION "SELECTA_SKIP")
+endif()
+
 # dui-search-online (I406a): the Search page's Modules.pl scope, row click, remembered scope and the radio button on the source page (I1019h), against the net fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME dui-search-online

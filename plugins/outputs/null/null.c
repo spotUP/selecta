@@ -4,7 +4,11 @@
 #include <selecta/output.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#if defined(__unix__) || defined(__APPLE__)
+#include <time.h>
+#endif
 
 #define NULL_BLOCK 512u
 
@@ -13,14 +17,17 @@ typedef struct null_out {
     sel_pcm_pull pull;
     void* pull_ctx;
     int16_t* buf;
+    uint32_t rate;
+    int paced; /* I1082a: SELECTA_NULL_PACED sleeps the pump for the real time of the frames it drops */
     uint32_t frames;
     uint32_t peak; /* largest absolute sample pulled (STAT_PEAK) */
     sel_tag stats[3];
 } null_out;
 
+static int g_paced; /* set by the plugin entry from SELECTA_NULL_PACED */
+
 static void* null_open(const sel_host* host, uint32_t rate, uint32_t channels) {
     null_out* o;
-    (void)rate;
     if (channels != 2) {
         return NULL;
     }
@@ -36,6 +43,8 @@ static void* null_open(const sel_host* host, uint32_t rate, uint32_t channels) {
     o->host = host;
     o->pull = NULL;
     o->pull_ctx = NULL;
+    o->rate = rate ? rate : 44100u;
+    o->paced = g_paced;
     o->frames = 0;
     o->peak = 0;
     return o;
@@ -83,6 +92,15 @@ static uint32_t null_pump(void* state, uint32_t frames) {
         done += got;
     }
     o->frames += done;
+#if defined(__unix__) || defined(__APPLE__)
+    if (o->paced && done > 0) { /* a clocked, silent sink: the caller waits the duration of the audio like a device would */
+        struct timespec ts;
+        uint64_t ns = (uint64_t)done * 1000000000ull / o->rate;
+        ts.tv_sec = (time_t)(ns / 1000000000ull);
+        ts.tv_nsec = (long)(ns % 1000000000ull);
+        nanosleep(&ts, NULL);
+    }
+#endif
     return done;
 }
 
@@ -148,7 +166,11 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[6], SEL_OUT_SET_SOURCE, SEL_TAG_FN(null_set_source));
     set(&g_hooks[7], SEL_OUT_PUMP, SEL_TAG_FN(null_pump));
     set(&g_hooks[8], SEL_OUT_STATS, SEL_TAG_FN(null_stats));
-    set(&g_hooks[9], SEL_OUT_CLOCKLESS, 1);
+    {
+        const char* pc = getenv("SELECTA_NULL_PACED"); /* I1082a: paced silent output for reachability tests of a clocked shell */
+        g_paced = pc != NULL && pc[0] != '\0' && pc[0] != '0';
+    }
+    set(&g_hooks[9], SEL_OUT_CLOCKLESS, g_paced ? 0 : 1);
     set(&g_hooks[10], SEL_OUT_DEVICES, SEL_TAG_FN(null_devices));
     set(&g_hooks[11], SEL_OUT_LATENCY_QUERY, SEL_TAG_FN(null_latency_query));
     set(&g_hooks[12], SEL_TAG_END, 0);

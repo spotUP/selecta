@@ -146,6 +146,7 @@ static int g_marked; /* the output's pull thread is marked as the audio thread *
 /* I829: one engine pump per shell turn. A clockless run is deterministic (one UI turn per pump), so a posted library read (home, search,
  * folders) lands before the next turn; a paced run never waits for the library (the pump posts and applies the answer on a later turn). */
 static uint32_t g_pump_ms_max; /* I906a: longest pump_turn in host clock ms; sees library waits inside cmd_* handlers, which turn_ms_max (desk_wait only) does not */
+static uint32_t g_engine_pumps; /* I1082a: pumps run on the engine thread (0 until I1082f moves the pump there) */
 static void pump_turn(sel_engine* e, int clockless, sel_event_sink on_event, void* ctx) {
     const sel_host* ph = sel_engine_plugin_host(e);
     uint32_t t0 = ph->clock_ms(ph), dt;
@@ -544,6 +545,9 @@ int main(int argc, char** argv)
 #endif
     char cmd[1100];
     uint32_t waits = 0;
+    uint32_t gap_last_ms = 0, gap_ms_max = 0; /* I1082a: longest wall time between two UI wait returns, pump included */
+    int gap_have = 0;
+    int engine_thread = 0; /* I1082a: 1 once the engine pumps on its own thread (I1082f) */
     uint32_t wait_ms_min = 0xFFFFFFFFu; /* the smallest and largest UI wait the loop asked for (I684c) */
     uint32_t wait_ms_max = 0;
     int r;
@@ -905,6 +909,15 @@ int main(int argc, char** argv)
             if (wr > r) {
                 r = wr;
             }
+            if (u == 0) {
+                const sel_host* gh = sel_engine_plugin_host(e);
+                uint32_t now = gh->clock_ms(gh);
+                if (gap_have && now - gap_last_ms > gap_ms_max) {
+                    gap_ms_max = now - gap_last_ms;
+                }
+                gap_last_ms = now;
+                gap_have = 1;
+            }
         }
         pump_turn(e, clockless, sink, ctx); /* a UI_SWITCH key sent during the wait is waiting in the engine */
         {
@@ -951,6 +964,7 @@ int main(int argc, char** argv)
     printf("skip_excluded=%u\n", (unsigned)est.skip_excluded); /* I906g: skip-flagged rows the random order left out */
     printf("radio_appends=%u\n", (unsigned)est.radio_appends); /* I906g: songs the posted radio draw appended */
     printf("shell_wait_ms_min=%u shell_wait_ms_max=%u\n", (unsigned)(wait_ms_min == 0xFFFFFFFFu ? 0u : wait_ms_min), (unsigned)wait_ms_max); /* what the shell asked the UI to wait (I684c) */
+    printf("ui_gap_ms_max=%u engine_thread=%d engine_pumps=%u\n", (unsigned)gap_ms_max, engine_thread, (unsigned)g_engine_pumps); /* I1082a */
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
     printf("hw_handovers=%u hw_starts=%u replayer=%s\n", (unsigned)est.hw_handovers, (unsigned)est.hw_starts,
