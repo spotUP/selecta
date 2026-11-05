@@ -115,12 +115,12 @@ static const sel_tag* null_stats(void* state) {
     return o->stats;
 }
 
-/* The headless sink reports a distinct, fixed latency so a test can see the engine take the queried value instead of the
- * nominal one (I1042). */
-#define NULL_TEST_LATENCY_MS 340u
+/* The headless sink has no device buffer, so it reports 0 ms by default. SELECTA_NULL_LATENCY_MS sets a distinct value
+ * so a test can see the engine take the queried latency instead of the nominal one (I1042, I1085). */
 static uint32_t null_latency_query(void* state) {
     (void)state;
-    return NULL_TEST_LATENCY_MS;
+    const char* e = getenv("SELECTA_NULL_LATENCY_MS");
+    return e ? (uint32_t)strtoul(e, NULL, 10) : 0u;
 }
 
 /* A fixed device list: the null output is the headless test sink, so the dui tests get a device picker with known rows
