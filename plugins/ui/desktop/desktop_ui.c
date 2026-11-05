@@ -390,6 +390,7 @@ typedef struct desk {
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
     uint32_t art_waits;      /* I906c: headless naps spent waiting for the background cover batches */
     uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
+    uint32_t sync_waits;     /* I1077d: headless naps spent waiting for a running LIBRARY_SYNC to end */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
     uint32_t on_chip_first, on_chip_scrolls; /* I1073: the source chip that leads the scrolled chip row, chevron scrolls that moved it (sentinel) */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
@@ -8104,6 +8105,11 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "library_serial=%u library_reloads=%u library_pins=%u pin_keeps=%u\n", (unsigned)sel_engine_state(d->engine)->library_serial, (unsigned)d->lib_reloads,
                      (unsigned)sel_engine_state(d->engine)->library_pins, (unsigned)d->lib_pin_keeps);
         {
+            sel_engine_stats lgs;
+            sel_engine_stats_get(d->engine, &lgs);
+            o = dump_put(d, o, "lib_gen publishes=%u followed=%u sources_serial=%u\n", (unsigned)lgs.lib_publishes, (unsigned)lgs.lib_models_followed, (unsigned)sel_engine_state(d->engine)->sources_serial);
+        }
+        {
             static const char* const rn[] = {"", "sidebar", "main", "detail", "player"};
             int hr = hover_region_of(d, d->hover_box);
             sel_gui_rect rr = hr != HR_NONE ? region_rect(d, rn[hr]) : rect_of(0, 0, 0, 0);
@@ -14440,8 +14446,26 @@ static int desk_scan_active(const desk* d) {
     return sp.active != 0u;
 }
 
-/* I348: the engine's library serial moved (a scan, sync or fetch finished, whoever asked): the page lists what the library holds now.
- * LIBRARY_RESULT is no signal for this: searches and browses answer with the same event. */
+/* I1077d: the one place a library change reaches the surfaces. The engine publishes library_serial when the store's write generation
+ * moves (a sync, a scan, a pin, a playlist edit, whoever wrote); this drops every cache keyed on library content, marks the sidebar
+ * and the open playlist stale, asks for the open page again and repaints. The sentinel lib_reloads counts the calls. */
+static void desk_library_invalidate(desk* d) {
+    d->lib_reloads++;
+    d->side_stale = 1u;
+    d->pls_stale = d->pls_id != 0u ? 1u : d->pls_stale; /* a list page has no open collection to read again */
+    d->side_pl_sig_set = 0u;
+    d->home_sig = 0xffffffffu;
+    art_forget_misses(d->art); /* I689: a title that found no album before the scan made it must be looked up again */
+    desk_page_load(d, d->page); /* I316: a drilldown stays (I302) */
+    if (d->page == SEL_UIM_PG_FOLDERS && (d->lib_mode == 1u || d->lib_mode == 2u)) {
+        desk_send(d, "LIBRARY_SEARCH \"\"");
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* I689: the bar, the panel and the lists draw the covers the scan just made findable */
+}
+
+/* I348: the engine's library serial moved (a scan, sync or fetch finished, a playlist or rating edit, whoever asked): the page lists what the
+ * library holds now. LIBRARY_RESULT is no signal for this: searches and browses answer with the same event. */
 static void desk_library_follow(desk* d) {
     uint32_t serial = sel_engine_state(d->engine)->library_serial, pins = sel_engine_state(d->engine)->library_pins;
     int pins_only = d->lib_serial_seen != UINT32_MAX && serial - d->lib_serial_seen == pins - d->lib_pins_seen;
@@ -14455,14 +14479,7 @@ static void desk_library_follow(desk* d) {
          * and open the results at the top under the pointer. A scan or sync (not pins only) still reloads them (I296). */
         d->lib_pin_keeps++;
     } else if (d->lib_serial_seen != UINT32_MAX) {
-        d->lib_reloads++;
-        art_forget_misses(d->art); /* I689: a title that found no album before the scan made it must be looked up again */
-        desk_page_load(d, d->page); /* I316: a drilldown stays (I302) */
-        if (d->page == SEL_UIM_PG_FOLDERS && (d->lib_mode == 1u || d->lib_mode == 2u)) {
-            desk_send(d, "LIBRARY_SEARCH \"\"");
-        }
-        d->repaint = 1;
-        d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* I689: the bar, the panel and the lists draw the covers the scan just made findable */
+        desk_library_invalidate(d);
     }
     d->lib_serial_seen = serial;
 }
@@ -16256,13 +16273,13 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         }
     }
-    if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION) { /* I994d4: the engine republished the open page (own change, view): read it again */
+    if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION) { /* I994d4, I1077d: the engine republished the open page (own change, view, a sync of its source): read it again */
         const sel_collection_page* cp = sel_engine_state(d->engine)->collection;
         if (cp != NULL && d->col_ready && cp->kind == col_eng_kind(d) && strcmp(cp->key, d->col_key) == 0 && cp->serial != d->col_read_serial) {
             d->pls_stale = 1u;
         }
     }
-    if (d->pls_stale && d->pls_id != 0u) { /* I633: a song left the open playlist: redraw so the page reads the list again */
+    if (d->pls_stale && d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION) { /* I633: a song left the open playlist: redraw so the page reads the list again */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     }
     if (d->pls_id != 0u && d->search_on && sel_engine_state(d->engine)->view != NULL) { /* I652a: the empty playlist's search result arrived or changed: redraw */
@@ -16313,6 +16330,13 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     }
     if (!d->live && (d->scan_pending || desk_scan_active(d))) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
                                         * progress) until its LIBRARY_RESULT arrives, so the script's next line sees the finished scan */
+        desk_nap();
+        d->turn_why[2]++;
+        return 1;
+    }
+    if (!d->live && d->sync_ui.active && d->sync_waits < 20000u) { /* I1077d: a LIBRARY_SYNC runs on the library job thread; a scripted or headless run keeps turning until it ended, so the
+                                        * script's next line and the final frame see the page the sync end rebuilt (at most about 20 s) */
+        d->sync_waits++;
         desk_nap();
         d->turn_why[2]++;
         return 1;

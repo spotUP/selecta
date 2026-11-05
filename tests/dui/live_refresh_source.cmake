@@ -76,3 +76,15 @@ math(EXPR want "${before} + 1")
 if(NOT after EQUAL want OR reloads LESS 1)
   message(FATAL_ERROR "I1077a RED: the open source page did not follow the sync: Formats rows ${after} (want ${want}: ${before} seeded + ProTracker), library_reloads=${reloads} (want >=1)")
 endif()
+
+# I1077c sentinel and coalescing bound: the engine published the generation (the new code ran) and followed it with its models, and one
+# sync of three songs made a handful of publishes, never one per written row or per pump.
+if(NOT "${o}" MATCHES "lib_gen publishes=([0-9]+) followed=([0-9]+) sources_serial=([0-9]+)")
+  message(FATAL_ERROR "no lib_gen line in:\n${o}")
+endif()
+set(pubs "${CMAKE_MATCH_1}")
+set(fol "${CMAKE_MATCH_2}")
+if(pubs LESS 1 OR fol LESS 1 OR pubs GREATER 12)
+  message(FATAL_ERROR "I1077c: lib_gen publishes=${pubs} followed=${fol} (want 1..12: coalesced, and the models followed)")
+endif()
+message(STATUS "I1077 evidence: Formats rows ${before} -> ${after}, library_reloads=${reloads}, lib_gen publishes=${pubs} followed=${fol}")
