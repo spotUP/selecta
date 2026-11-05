@@ -24,6 +24,7 @@
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/cols.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/select.h>
 #include <selecta/uimodel/viewcmds.h>
@@ -259,6 +260,7 @@ typedef struct desk {
     char* pls_buf;           /* its song keys, NUL separated, in playlist order */
     uint32_t* pls_off;       /* offset of each key in pls_buf */
     char (*pls_title)[96];   /* the catalogue title of each song, read once per reload */
+    uint32_t pls_cols_ok, pls_has_artist, pls_has_album, pls_has_tail; /* I1079c: which collection page columns have content (cached) */
     pls_meta_row* pls_meta;  /* I678h3: the artist and album of each song, read once per reload */
     sel_gui_rect si_composer; /* I678h3: the Song Information composer link, zero width when the page has no composer row */
     char si_composer_key[SEL_COMPOSER_MAX]; /* its composer canon, from the song's db row */
@@ -4706,6 +4708,7 @@ static void pls_free(desk* d) {
     d->col_av_w = 0;
     free(d->col_plays);
     d->col_plays = NULL;
+    d->pls_cols_ok = 0u;
     free(d->pls_buf);
     free(d->pls_off);
     free(d->pls_title);
@@ -4794,6 +4797,7 @@ static void pls_briefs_follow(desk* d) {
                 d->pls_meta[i].album_id = (uint32_t)strtoul(aid, NULL, 10);
                 r = aid + strlen(aid) + 1u;
             }
+            d->pls_cols_ok = 0u;
             col_rebuild(d);
             col_cover_refresh(d);
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -5786,21 +5790,49 @@ static int col_src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     return 0;
 }
 
-/* I678h3: a collection page song row is the number, the title, the artist link, the album link and (on a kind page) the Plays column. The
- * title takes 45 percent of the room left of the Plays column, the artist 28 percent, the album the rest. */
-static int32_t pls_cols_w(desk* d, sel_gui_rect r) {
-    int32_t w = r.w - lpx(d, 56) - lpx(d, 180);
-    return w > 0 ? w : 0;
+/* I678h3, I1079c: a collection page song row is the number, the title, the artist link, the album link and (on a kind page) the Plays or
+ * Played column. One spec table and the shared splitter sel_uim_cols_split (design 2026-11-05-I1079 section 3.2): the title takes 45
+ * parts, the artist 28, the album 27 of the room left after the number and the Plays slot; a column no row of the list has content
+ * for is absent (width 0, no gap) and gives its room to the others. The presence flags are cached until the list or its briefs change. */
+enum { PLS_C_LEAD, PLS_C_TITLE, PLS_C_ARTIST, PLS_C_ALBUM, PLS_C_TAIL, PLS_C_N };
+
+static void pls_cols_scan(desk* d) {
+    uint32_t i;
+    d->pls_has_artist = d->pls_has_album = d->pls_has_tail = 0u;
+    for (i = 0; i < d->pls_n; i++) {
+        d->pls_has_artist |= d->pls_meta != NULL && d->pls_meta[i].artist[0] != '\0';
+        d->pls_has_album |= d->pls_meta != NULL && d->pls_meta[i].album[0] != '\0';
+        d->pls_has_tail |= d->col_kind != 0u && d->col_plays != NULL && d->col_plays[i] > 0u;
+    }
+    d->pls_cols_ok = 1u;
+}
+
+/* The column x (relative to the row) and width of a collection page row of width `row_w`. */
+static void pls_cols(desk* d, int32_t row_w, int32_t* x, int32_t* w) {
+    sel_uim_col c[PLS_C_N];
+    memset(c, 0, sizeof c);
+    if (!d->pls_cols_ok) {
+        pls_cols_scan(d);
+    }
+    c[PLS_C_LEAD].fixed = lpx(d, 56);
+    c[PLS_C_TITLE].weight = 45;
+    c[PLS_C_ARTIST].weight = d->pls_has_artist ? 28 : 0;
+    c[PLS_C_ALBUM].weight = d->pls_has_album ? 27 : 0;
+    c[PLS_C_TAIL].fixed = d->pls_has_tail ? lpx(d, d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT ? 168 : 120) : 0;
+    (void)sel_uim_cols_split(row_w, 0, c, PLS_C_N, x, w);
 }
 
 static int32_t pls_title_w(desk* d, sel_gui_rect r) {
-    return pls_cols_w(d, r) * 45 / 100;
+    int32_t x[PLS_C_N], w[PLS_C_N];
+    pls_cols(d, r.w, x, w);
+    return w[PLS_C_TITLE];
 }
 
 /* The link rects of song `i` on row `r`: the text width, capped at its column; zero width when the song has no artist or album. */
 static void pls_link_rects(desk* d, sel_gui_rect r, uint32_t i, sel_gui_rect* art, sel_gui_rect* alb) {
     const sel_gui_atlas* at = desk_font(d, 0, 13);
-    int32_t cw = pls_cols_w(d, r), ax = r.x + lpx(d, 56) + pls_title_w(d, r), aw = cw * 28 / 100, bx = ax + aw, bw = cw - pls_title_w(d, r) - aw, tw;
+    int32_t x[PLS_C_N], w[PLS_C_N], tw;
+    pls_cols(d, r.w, x, w);
     memset(art, 0, sizeof *art);
     memset(alb, 0, sizeof *alb);
     if (d->pls_meta == NULL || at == NULL) {
@@ -5808,11 +5840,11 @@ static void pls_link_rects(desk* d, sel_gui_rect r, uint32_t i, sel_gui_rect* ar
     }
     if (d->pls_meta[i].artist[0] != '\0') {
         tw = sel_gui_text_width(at, d->pls_meta[i].artist, strlen(d->pls_meta[i].artist));
-        *art = rect_of(ax, r.y, tw < aw - lpx(d, 8) ? tw : aw - lpx(d, 8), r.h);
+        *art = rect_of(r.x + x[PLS_C_ARTIST], r.y, tw < w[PLS_C_ARTIST] - lpx(d, 8) ? tw : w[PLS_C_ARTIST] - lpx(d, 8), r.h);
     }
     if (d->pls_meta[i].album[0] != '\0') {
         tw = sel_gui_text_width(at, d->pls_meta[i].album, strlen(d->pls_meta[i].album));
-        *alb = rect_of(bx, r.y, tw < bw - lpx(d, 8) ? tw : bw - lpx(d, 8), r.h);
+        *alb = rect_of(r.x + x[PLS_C_ALBUM], r.y, tw < w[PLS_C_ALBUM] - lpx(d, 8) ? tw : w[PLS_C_ALBUM] - lpx(d, 8), r.h);
     }
 }
 
@@ -5966,7 +5998,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
                 n = strftime(pl, sizeof pl, "Played %Y-%m-%d", &tmv);
             }
             if (n > 0u) {
-                draw_text(d, rect_of(r.x + r.w - lpx(d, 168), r.y, lpx(d, 156), r.h), pl, 0, 13, muted);
+                draw_text(d, rect_of(r.x + r.w - lpx(d, 168), r.y, lpx(d, 156), r.h), pl, 0, 13, muted); /* the tail column of pls_cols */
             }
         } else if (d->col_kind != 0u && d->col_kind != (uint32_t)SEL_LIB_ITEM_RECENT && d->col_plays != NULL && d->col_plays[i] > 0u) { /* the Plays column */
             char pl[24];
@@ -7682,6 +7714,16 @@ static const char* library_dump_build(desk* d) {
             uint32_t real = d->pls_ord[d->pls_scroll + j];
             o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, real)),
                          d->pls_title[real]);
+        }
+        o = dump_put(d, o, "plcols_calls %u\n", (unsigned)sel_uim_cols_calls()); /* I1079c: the sentinel: the shared splitter ran */
+        for (j = 0; d->pls_scroll + j < d->pls_vn && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) { /* I1079c: the column split of each drawn row */
+            sel_gui_rect r = pls_row_rect(d, pmn, j);
+            uint32_t real = d->pls_ord[d->pls_scroll + j];
+            const sel_gui_atlas* at = desk_font(d, 0, 14);
+            int32_t cx[PLS_C_N], cw[PLS_C_N], ttw = at != NULL ? sel_gui_text_width(at, d->pls_title[real], strlen(d->pls_title[real])) : 0;
+            pls_cols(d, r.w, cx, cw);
+            o = dump_put(d, o, "plsongcols %u row_w=%d cols=%d:%d,%d:%d,%d:%d,%d:%d,%d:%d title_tw=%d title_elided=%d\n", (unsigned)j, (int)r.w, (int)cx[0], (int)cw[0], (int)cx[1],
+                         (int)cw[1], (int)cx[2], (int)cw[2], (int)cx[3], (int)cw[3], (int)cx[4], (int)cw[4], (int)ttw, ttw > cw[PLS_C_TITLE]);
         }
         o = dump_put(d, o, "plhover fill=%08x link=%u\n", (unsigned)d->row_hover_fill, (unsigned)d->link_hover); /* I690b: the fill of the hovered row, the underlined link */
         o = dump_put(d, o, "plplaying %d\n", (int)d->pls_playing); /* I690: the position of the playing song's row, -1 when none */
