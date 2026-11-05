@@ -1,0 +1,10 @@
+SunVox engine (Alex Zolotov, 2002-2009), BSD licence (LICENSE-sunvox_engine.txt).
+Origin: sunvox_sources-master (sunvox_engine/, copy at ~/Code/DEViLBOX/third-party/sunvox_sources-master; the public
+SunVox engine source release "sunvox_sources" by nightradio / warmplace.ru).
+Vendored verbatim: sunvox_engine/ (engine + psynth modules, without psynth/templates).
+NOT vendored: sundog_engine (window manager, sound output, file system). shim/ holds clean replacements of the few
+sundog calls the engine makes (memory, time, random, in-memory file reads, mutex stubs); shim/ is Selecta code (MIT).
+LICENSE-sundog_engine.txt is kept because the engine headers carry the SunDog interface names.
+Defines used: STYPE_FLOAT (float mixing), no SUNVOX_GUI.
+Local edits to vendored files: sunvox_engine.cpp: the three spin waits on s->playing call sunvox_shim_pump() (no render
+thread here, the caller drains the command queue), plus its declaration.
