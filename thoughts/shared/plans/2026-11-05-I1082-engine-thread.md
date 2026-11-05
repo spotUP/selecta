@@ -1,5 +1,5 @@
 ---
-status: draft
+status: decided
 row: I1082
 parent: I1080
 date: 2026-11-05
@@ -220,7 +220,10 @@ Order: a (red), b, c, d, e, f (a turns green here), g, h, i, j, k. Done for I108
 `Selecta` entry, TSan tests clean, Johan Mac check (Mac: play a podcast and a Modland song over a slow link, the
 window keeps moving, STOP answers at once), Amiga rig check of I1082j.
 
-## 6. Open decisions for Johan
+## 6. Decisions (Johan 2026-11-05, all four as recommended)
+
+Decided: D1 paced runs only; D2 stepped open in one Amiga task; D3 triple-buffered deep copy per pump; D4 finish in-flight I906 rows, new ones only where latency is visible.
+
 
 - **D1 Engine thread only for paced runs.** Recommended: yes; clockless runs (dui goldens, scripts, `--exec`) keep
   the inline pump. Trade-off: two shell modes to keep alive, against rewriting 158 dui tests and the golden flow that
