@@ -333,7 +333,7 @@ elseif(TAG STREQUAL "M4MUI")
     endif()
     message(STATUS "M4MUI P4-2: crumb click moved the browse path RAM:mui-mm to RAM:")
     # MUI-P4-1: Previous Track (I973c removed the Stop button), then the Home door, then a double-click on the first Home song row must play again.
-    ami(ignored ui click ${UIW} "Previous Track")
+    ami(ignored ui click ${UIW} "Return to the previous track (P)")
     execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 2)
     ami(ignored ui click ${UIW} Home)
     execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
@@ -373,7 +373,7 @@ elseif(TAG STREQUAL "M4MUI")
     if(NOT rx_rc EQUAL 0)
       list(APPEND p17_fail "the ARexx commands through port SELECTA did not return rc 0: ${rx}")
     endif()
-    ami(ignored ui click ${UIW} "Previous Track")
+    ami(ignored ui click ${UIW} "Return to the previous track (P)")
     execute_process(COMMAND "${PYTHON3}" "${RXPY}" "${RIG_DIR}" SELECTA "PLAY" OUTPUT_QUIET ERROR_QUIET TIMEOUT 120)
     set(xplay FALSE)
     foreach(i RANGE 1 6)
@@ -432,7 +432,7 @@ elseif(TAG STREQUAL "M4MUI")
   endforeach()
   # MUI-P4-3 / MUI-P4-13: the two String gadgets (search first, command line second) are typed into with the rig's
   # settext (click, cut, type, Return); each Return must send its line (search>=1, cmd>=1 on the ui_p4 line).
-  ami(ignored ui click ${UIW} "Previous Track")
+  ami(ignored ui click ${UIW} "Return to the previous track (P)")
   execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
   # `ui settext` addresses a gadget by id, and every MUI gadget has id 0 in the uitree, so it cannot reach a String gadget.
   # Needed verb: `ui settext <window> <kind>:<n> <text>` (n-th gadget of that kind). Until then: gclick on the first string
