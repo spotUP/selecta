@@ -70,6 +70,7 @@ I348), but it fails in two ways:
 **Measured: unverified.** I read the code but did not run it. The trace above (sync end -> `emit_library_path` ->
 `library_serial` moves -> `desk_library_follow` -> `VIEW_SOURCE folders` only -> `state.collection` unchanged) is a
 code reading. Row I1077a's red test confirms it before the fix.
+  - Test dui-live-refresh-source, RED, commit c1bd885e, branch i1077a-red (observable: drill rows at the Formats level, not of=).
 
 ## 2. Inventory
 
