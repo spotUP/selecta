@@ -154,17 +154,29 @@ expect_eq("step 7 routed" "${r7_calls}" "2")
 # 8. I678h2: the Home album tile opens the album page by id; the artist link follows; Back, Back, Forward replay without routing and
 # without touching Recents (the tile and the artist link are the only two touches). Since I678j quick tile 0 is Liked, so the album
 # tile is found by its title on the `quick K cols=C key|title|artist` dump lines.
-dui_run(idle_tile ${common} --input "${WORK}/idle.txt")
-if(NOT "${idle_tile}" MATCHES "quick ([0-9]+) cols=[0-9]+ [^|\n]*\\|Lotus Turbo Challenge\\|")
-  message(FATAL_ERROR "no Lotus Turbo Challenge quick tile in:\n${idle_tile}")
+# I1123: the quick tiles are ordered by Recents, and every open stamps Recents with the wall-clock second. The tile run itself moves the
+# album ahead of the artist unless both opens land in the same second, so the index is read from an idle run right before each run that
+# clicks it (the `step` rule), never reused across a run that opens something. Both Recents rows are pinned to the same old time first,
+# so the reorder happens on every run instead of only when the clock ticks between processes.
+execute_process(COMMAND "${SQLITE3}" "${db}" "UPDATE opened SET at = 1" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "pinning the Recents times failed: ${err}")
 endif()
-set(qt "${CMAKE_MATCH_1}")
+function(album_tile out)
+  dui_run(idle_tile ${common} --input "${WORK}/idle.txt")
+  if(NOT "${idle_tile}" MATCHES "quick ([0-9]+) cols=[0-9]+ [^|\n]*\\|Lotus Turbo Challenge\\|")
+    message(FATAL_ERROR "no Lotus Turbo Challenge quick tile in:\n${idle_tile}")
+  endif()
+  set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+album_tile(qt)
 file(WRITE "${WORK}/tile.txt" "wait 100\nquicktile ${qt}\nwait 100\n")
 dui_run(run_tile ${common} --input "${WORK}/tile.txt")
 read_route(r8 "${run_tile}")
 expect_eq("step 8 page (Home album tile)" "${r8_cur}" "collection:album")
 expect_eq("step 8 routed" "${r8_calls}" "1")
 expect_eq("step 8 history" "${r8_n}/${r8_pos}" "2/1")
+album_tile(qt)
 file(WRITE "${WORK}/tile2.txt" "wait 100\nquicktile ${qt}\nwait 100\nclick ${r8_artist}\nwait 100\n${back}${back}${fwd}")
 dui_run(run_tile2 ${common} --input "${WORK}/tile2.txt")
 read_route(r9 "${run_tile2}")
