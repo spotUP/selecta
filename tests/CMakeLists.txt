@@ -3070,6 +3070,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(search_keeps_sync_test PRIVATE selecta_core selecta_library)
   add_test(NAME search-keeps-sync COMMAND search_keeps_sync_test)
   set_tests_properties(search-keeps-sync PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "search_keeps_sync_ok")
+  add_executable(search_follows_library_test engine/search_follows_library_test.c)
+  target_include_directories(search_follows_library_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(search_follows_library_test PRIVATE selecta_library selecta_core)
+  add_test(NAME search-follows-library COMMAND search_follows_library_test)
+  set_tests_properties(search-follows-library PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "search_follows_library_ok")
 
   # I1019b: the Search view lists a From section per source after Artists; Enter on a From row plays its source:path key.
   add_executable(source_search_view_test engine/source_search_view_test.c)
