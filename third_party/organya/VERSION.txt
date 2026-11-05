@@ -1,0 +1,6 @@
+organya.h v1.03 by Strultz, single-header C library for Organya (.org, Cave Story) music. Licence: ISC-style
+permissive (text in COPYING, same notice at the end of organya.h). Upstream: https://github.com/Strultz/organya.h,
+tag v1.03 (commit 057c8f64e86a443c75d12e4d222086330f1d888a), file organya.h unchanged, taken 2026-11-05.
+Not vendored: any soundbank. The Organya wavetable (wave100.wdb: 100 melody waves and the drum samples) is Studio Pixel's
+Cave Story data with no open licence; bbmp does not bundle it either (it downloads it with a checksum at first start).
+The adapter reads wave100.wdb from the directory of the song when present and otherwise builds a synthetic bank.

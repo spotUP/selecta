@@ -183,3 +183,8 @@ endif()
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/pxtone)
 endif()
+
+# organya (I703): Organya songs (.org, Cave Story) via organya.h (ISC-style licence), MIT module. Host only (float DSP; Amiga exemption in row I703).
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/organya)
+endif()

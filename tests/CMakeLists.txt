@@ -2040,6 +2040,16 @@ if(NOT SEL_AMIGA)
   set_tests_properties(pxtone-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "pxtone_decode_ok"
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
+  # I703: an Organya song plays through the render entry point (organya module); a wave100.wdb beside it must change the sound.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/organya-decode)
+  add_test(NAME organya-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/organya_decode.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/org_test.org ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/org_bank_test.wdb
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/organya-decode)
+  set_tests_properties(organya-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "organya_decode_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+
+
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/tiatracker-decode)
