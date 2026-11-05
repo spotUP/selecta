@@ -441,7 +441,7 @@ struct sel_engine {
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t songs_counted_at;                 /* DUI-P4-18: library_changes + 1 when state.library_songs was counted */
-    uint32_t library_changes;                  /* I348: emit_library_path calls (scan, sync, fetch finished): state.library_serial */
+    uint32_t library_changes;                  /* I348, I1077c: library_serial; moves in lib_gen_poll only, once per published batch of commits */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
     const void* panel_state;                   /* replayer state the panel was loaded for (reload on a new song) */
     sel_lrc lyr;                               /* synced lyrics of the open song (I193), lyr.count 0: none */
@@ -630,7 +630,12 @@ struct sel_engine {
     sel_sync_ctx search_ctx;
     uint32_t source_searches;      /* searches started (STAT_SOURCE_SEARCHES) */
     uint32_t source_pins;          /* I406b: hits handed to the library (search_pin) */
-    uint32_t pin_rows_seen;        /* I406b: sel_library_pin_rows at the last pump pass; a change bumps library_changes */
+    uint32_t write_gen_seen, pin_gen_seen; /* I1077c: sel_library_write_gen / _pin_gen at the last pump pass */
+    int gen_pending, gen_flush, gen_pins_only; /* I1077c: a committed write not yet published; flush = a task ended, publish now; pins_only = every commit since was a pin */
+    uint32_t gen_pub_ms;           /* I1077c: host clock_ms of the last publish (SEL_LIB_GEN_MIN_MS during a scan or sync) */
+    uint32_t followed_serial;      /* I1077c: library_changes the engine models (lib_models_follow) were last re-posted for */
+    uint32_t sources_asked;        /* I1077c: a client sent SOURCES once; from then on the rows are republished when the library changes */
+    uint32_t gen_publishes;        /* I1077c: sentinel, publishes of library_serial (sel_engine_library_publishes) */
     uint32_t search_worker_runs;   /* searches that ran on a thread other than the command thread */
 #if defined(SEL_LI_THREAD)
     pthread_t search_cmd_thread;
@@ -638,6 +643,7 @@ struct sel_engine {
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
+    uint32_t models_followed;                 /* I1077c: sentinel, lib_models_follow passes (sel_engine_models_followed) */
     uint32_t lib_touch_calls;                 /* LIBRARY_TOUCH commands applied (I678c) */
     uint32_t collection_opens;                /* COLLECTION_OPEN commands applied (I678e) */
     uint32_t collection_kind;                 /* the collection page last opened: its kind (SEL_LIB_ITEM_*) */
@@ -4684,12 +4690,18 @@ static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
     wq_submit(e);
 }
 
+/* I1077c: the publish is lib_gen_poll's; a task that ends, or a catalogue op, only asks for it now (no rate limit, not a pins-only change). */
+static void lib_gen_flush(sel_engine* e) {
+    e->gen_pending = 1;
+    e->gen_flush = 1;
+    e->gen_pins_only = 0;
+}
+
 /* Emit a LIBRARY_RESULT with a path and a count from the library hooks (scan and fetch). */
 static void emit_library_path(sel_engine* e, const char* path, uint32_t count) {
     uint32_t slot = e->lib_slot++ & 3u;
     sel_tag* t = e->lib_tags[slot];
-    e->library_changes++; /* I348: every caller of this function (scan, sync, fetch) changed the library: listings read before are stale */
-    e->state.library_serial = e->library_changes;
+    lib_gen_flush(e); /* I348: a scan, sync or fetch finished: lib_gen_poll publishes the serial now, whatever the rate limit */
     sel_message r;
     size_t n = strlen(path);
 
@@ -5654,6 +5666,7 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
 static void cmd_SOURCES(sel_engine* e, const sel_message* m) {
     sources_fill f;
     (void)m;
+    e->sources_asked = 1; /* I1077c: from now on lib_models_follow republishes the rows when the library changes */
     f.e = e;
     f.n = 0;
     (void)sel_source_each(sources_row, &f); /* I961c: song counts and sync times come from the library's mirror, no worker request */
@@ -7489,8 +7502,7 @@ static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
 
 /* DUI-P4-18: the catalogue changed under every listing; the pages reload on the new serial (I348). */
 static void library_catalogue_changed(sel_engine* e) {
-    e->library_changes++;
-    e->state.library_serial = e->library_changes;
+    lib_gen_flush(e);
     art_changed(e);
 }
 
@@ -9012,6 +9024,62 @@ static void lib_reads_collect(sel_engine* e) {
     }
 }
 
+/* I1077c: ONE place moves library_serial. The store counts committed write transactions (sel_library_write_gen, a sqlite commit hook), so
+ * no write path (likes, playlists, ratings, syncs, the CLI, a remote client) can skip it. A move is published once per pump (coalesced); while a scan or
+ * a sync runs it is published at most every SEL_LIB_GEN_MIN_MS, and always when the task ends (lib_gen_flush). A change made only by pin batches
+ * (I406b) also moves library_pins, so the Search page that listed those hits keeps its results (I1038). */
+#define SEL_LIB_GEN_MIN_MS 500u
+
+static void lib_gen_poll(sel_engine* e) {
+    uint32_t g, p, now;
+
+    if (e->lib == NULL) return;
+    g = sel_library_write_gen(e->lib);
+    p = sel_library_pin_gen(e->lib);
+    if (g != e->write_gen_seen) {
+        if (!e->gen_pending) e->gen_pins_only = 1;
+        if (g - e->write_gen_seen != p - e->pin_gen_seen) e->gen_pins_only = 0;
+        e->gen_pending = 1;
+        e->write_gen_seen = g;
+        e->pin_gen_seen = p;
+    }
+    if (!e->gen_pending) return;
+    now = e->host->clock_ms(e->host);
+    if (!e->gen_flush && (e->scan_running || e->sync_running) && now - e->gen_pub_ms < SEL_LIB_GEN_MIN_MS) return;
+    e->gen_pending = 0;
+    e->gen_flush = 0;
+    e->gen_pub_ms = now;
+    e->gen_publishes++;
+    e->library_changes++;
+    e->state.library_serial = e->library_changes;
+    if (e->gen_pins_only) e->state.library_pins++;
+    e->gen_pins_only = 0;
+}
+
+/* I1077c: the engine's own models follow library_serial, so no UI has to ask: the open collection page of any kind (follow mode: identical content is
+ * dropped, I994d3a; a playlist page follows through the folders read), the folders view, the formats, composers and stats when open, and the SOURCES
+ * rows once a client has asked for them (state.sources_serial). Each re-read goes through its lib_read slot, whose .again coalesces a second change. */
+static void lib_models_follow(sel_engine* e) {
+    if (e->lib == NULL || e->followed_serial == e->library_changes) return;
+    e->followed_serial = e->library_changes;
+    e->models_followed++;
+    if (e->coll.serial != 0u && e->collection_kind < (uint32_t)SEL_LIB_ITEM_KINDS && e->collection_kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+        e->rdc_next_kind = e->collection_kind;
+        snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
+        e->rdc_next_page = 1;
+        e->rdc_next_follow = 1;
+        coll_post(e);
+    }
+    lib_read_post(e, &e->rd_folders, folders_read_run);
+    if (e->formats != NULL) lib_read_post(e, &e->rd_formats, formats_read_run);
+    if (e->composers_open) composers_post(e);
+    if (e->stats_open) lib_read_post(e, &e->rd_stats, stats_read_run);
+    if (e->sources_asked) {
+        cmd_SOURCES(e, NULL);
+        e->state.sources_serial++;
+    }
+}
+
 const char* sel_view_source_label(uint32_t source) {
     return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : source == SEL_VIEW_HOME ? "home" : source == SEL_VIEW_SEARCH ? "search" : "unknown";
 }
@@ -10304,6 +10372,8 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         e->registry_get = cfg->registry_get;
         sel_source_set_plugins(cfg->registry_count, cfg->registry_get, host);
         e->lib = cfg->library;
+        e->write_gen_seen = sel_library_write_gen(e->lib); /* I1077c: commits made before the engine existed (open, migrate) are not changes */
+        e->pin_gen_seen = sel_library_pin_gen(e->lib);
     }
     {
         /* FAST_RAM is a uintptr_t: a 4 GB or 8 GB host would wrap to 0 in a plain uint32_t cast and get the
@@ -10784,12 +10854,8 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     sync_collect(e);
     search_collect(e);
     lib_reads_collect(e);
-    if (e->lib != NULL && sel_library_pin_rows(e->lib) != e->pin_rows_seen) {
-        e->pin_rows_seen = sel_library_pin_rows(e->lib); /* I406b: pinned hits landed: open listings and the Sources count reload */
-        e->library_changes++;
-        e->state.library_serial = e->library_changes;
-        e->state.library_pins++; /* I1038: this change only pinned hits: the Search page that listed them keeps its results */
-    }
+    lib_gen_poll(e);
+    lib_models_follow(e);
     timer_pump(e);
     reclaim_slots(e);
     if (e->deferred) {
@@ -11057,6 +11123,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->import_runs = e->import_runs;
     out->import_added = e->import_added;
     out->addf_runs = e->addf_runs;
+    out->lib_publishes = e->gen_publishes;
+    out->lib_models_followed = e->models_followed;
     out->addf_added = e->addf_added;
     out->stream_adds = e->stream_adds;
     out->pl_fail_runs = e->pl_fail_runs;

@@ -251,6 +251,7 @@ typedef struct sel_state {
     uint32_t panel_serial;      /* I288: counts panel loads; a change means `panel` was read again (a rating or sticker write) */
     uint32_t search_serial;     /* I994b: the SOURCE_SEARCH hit list's version (list=hits); a change means the hits the UI shows are gone */
     uint32_t library_serial;    /* I348: counts library changes (a scan, sync or fetch finished); a change means library listings are stale */
+    uint32_t sources_serial;    /* I1077c: counts SOURCES republishes; the engine re-sends the SOURCES rows after a library change once a client has asked for them */
     uint32_t library_pins;      /* I1038: of the library_serial changes, those that only pinned played online hits (I406b); a result list showing those hits is not stale */
     uint32_t library_playlists; /* I906e: saved playlists, counted with library_songs on the same posted read */
     uint32_t library_songs;     /* DUI-P4-18: songs in the catalogue, re-counted when library_serial changes (the Clear Library dialog names it) */
@@ -538,6 +539,8 @@ typedef struct sel_engine_stats {
     uint32_t import_runs;         /* PLAYLIST_IMPORT files parsed and appended (I652c sentinel) */
     uint32_t import_added;        /* songs the last PLAYLIST_IMPORT appended */
     uint32_t addf_runs;           /* PLAYLIST_ADD_FOLDER scans finished and appended (I652d sentinel) */
+    uint32_t lib_publishes;       /* I1077c sentinel: library_serial publishes made from the store write generation */
+    uint32_t lib_models_followed; /* I1077c sentinel: times the engine models were read again after a publish */
     uint32_t addf_added;          /* songs the last PLAYLIST_ADD_FOLDER appended */
     uint32_t stream_adds;         /* STREAM_ADD URLs saved to the Streams playlist (I725a sentinel) */
     uint32_t pl_fail_runs;        /* PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER runs that failed (I652e) */
