@@ -184,8 +184,9 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/eupmini)
 endif()
 
-# pxtone (I702): PiSTOL Collage songs (.ptcop, .pttune), permissively licensed play sample sources. Host only (C++ engine).
-if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+# pxtone (I702): PiSTOL Collage songs (.ptcop, .pttune), permissively licensed play sample sources. C++ engine: host module
+# and static Amiga plugin (I702a, bebbo m68k-amigaos-c++).
+if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))
   add_subdirectory(replayers/pxtone)
 endif()
 

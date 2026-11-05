@@ -20,9 +20,12 @@ if(NOT EXISTS "${AMIGA_GCC_ROOT}/bin/m68k-amigaos-gcc")
 endif()
 
 set(CMAKE_C_COMPILER "${AMIGA_GCC_ROOT}/bin/m68k-amigaos-gcc")
+set(CMAKE_CXX_COMPILER "${AMIGA_GCC_ROOT}/bin/m68k-amigaos-c++")
+set(CMAKE_CXX_FLAGS_INIT "-m68020 -mcrt=nix20 -fomit-frame-pointer -fno-exceptions -fno-rtti")
 set(CMAKE_C_FLAGS_INIT "-m68020 -mcrt=nix20 -fomit-frame-pointer")
 # build/amiga is an optimised Release build (-O2, no -g); build/amiga-dbg passes -DCMAKE_BUILD_TYPE=Debug.
 set(CMAKE_C_FLAGS_RELEASE_INIT "-O2 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE_INIT "-O2 -DNDEBUG")
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Release default, Debug for build/amiga-dbg)" FORCE)
 endif()
