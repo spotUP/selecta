@@ -2081,6 +2081,16 @@ if(NOT SEL_AMIGA)
     # I704c: the game set is fetched at test time (m3/fetch_fixture.sh); exit 77 = offline = SKIP.
     set_tests_properties(qsf-real-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "qsf_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I705b: real Modland sets (game ROM data, fetched at test time by m3/fetch_fixture.sh, never in git; exit 77 = SKIP).
+    # Default length 180 s + 10 s fade = 190 s. wolfenstein = HiROM, blackthorne = LoROM.
+    foreach(game wolfenstein blackthorne)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-real-${game})
+      add_test(NAME snsf-real-${game}
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/snsf_real_decode.sh $<TARGET_FILE:selecta-cli> ${game}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/snsf-real-${game})
+      set_tests_properties(snsf-real-${game} PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "snsf_decode_ok" SKIP_RETURN_CODE 77
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endforeach()
   endif()
 
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.

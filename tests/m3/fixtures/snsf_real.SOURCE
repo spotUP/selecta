@@ -1,0 +1,14 @@
+Real SNSF sets from Modland, folder Super Nintendo Sound Format (snsf format by loveemu / Caitsith2; rips by the SNSF project):
+  https://modland.antarctica.no/pub/modules/Super%20Nintendo%20Sound%20Format/   (mirrors: modland.com)
+Licence: the .snsflib files hold the games' 65816 program and sample data (Wolfenstein 3D: Imagineer/id; Blackthorne:
+Blizzard/Interplay). Not redistributable: test fixtures only, excluded from release packages and public mirrors.
+
+I705b: the binaries are NOT in git (game ROM data, public repo). tests/m3/snsf_real_decode.sh fetches them through
+tests/m3/fetch_fixture.sh into tests/m3/fixtures/.cache (git-ignored) and checks the sha256; offline = ctest SKIP.
+  wolfenstein3d-0000.minisnsf  sha256 88af26eaf058bb5ec082d0bc36cff3094f3693302141f502504684cf6fe279f2   (HiROM, 9 byte exe: one byte patch at 0x7341)
+  wolfenstein3d.snsflib        sha256 5498ae1660d5df81d37f5cf205cedfc8db0190a46456e8c0c65a1ac9392f7006   (1 MiB ROM image)
+    https://modland.antarctica.no/pub/modules/Super%20Nintendo%20Sound%20Format/Robert%20Prince/Wolfenstein%203D/
+  blackthorne-0000.minisnsf    sha256 2420f41ce2e196f20b04287c8057f44d87d3a47538081ff5146830569d5f8568   (LoROM)
+  blackthorne.snsflib          sha256 8917187eacb2134d9e990f80fc3a4820e2c5f3bb631c132a299cc4d63eb36167
+    https://modland.antarctica.no/pub/modules/Super%20Nintendo%20Sound%20Format/Glenn%20Stafford/Blackthorne/
+Layout seen in these files (decompressed): exe = {u32 ROM offset, u32 size, data} then 4 trailing bytes in a lib; reserved empty.
