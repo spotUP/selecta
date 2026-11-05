@@ -115,6 +115,11 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/qsf)
 endif()
 
+# SNSF (I705a): GPL-3 module over the vendored bsnes core (third_party/bsnes) and psflib, loadable module only, opt-in, host only.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/snsf)
+endif()
+
 # ZXTune via bbmp's patched build (I421): GPL-3 module, loadable module only, opt-in, host only. Needs
 # SELECTA_ZXTUNE_SRC (a zxtune checkout); without it the subdirectory prints a notice and builds nothing.
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
