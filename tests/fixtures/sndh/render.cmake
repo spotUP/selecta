@@ -3,6 +3,24 @@
 # path, dyn_loaded=1, render prints replayer=sc68 render_calls=N) and the output (non-silent: a sample of at least
 # 0x0800 magnitude, about -24 dBFS, and the pinned SHA-256 of the deterministic emulator output).
 # Variables: CLI MODDIR SONG OUT HASH; EXPECT_FAIL=1 is the negative run (module not on the plugin path).
+# Only the module under test is on the plugin path: MODDIR is the shared build folder (every module of the build, the
+# other SNDH backend psgplay among them), so the positive run links just sel_sndh.* into its own folder and
+# dyn_loaded=1 then counts that one module. The negative run passes an empty folder and is used as given.
+if(NOT EXPECT_FAIL)
+  get_filename_component(ISO "${OUT}" DIRECTORY)
+  set(ISO "${ISO}/sndh-only")
+  file(REMOVE_RECURSE "${ISO}")
+  file(MAKE_DIRECTORY "${ISO}")
+  file(GLOB sndh_mod "${MODDIR}/sel_sndh.*")
+  if(NOT sndh_mod)
+    message(FATAL_ERROR "no sel_sndh module in ${MODDIR}")
+  endif()
+  foreach(m IN LISTS sndh_mod)
+    get_filename_component(n "${m}" NAME)
+    file(CREATE_LINK "${m}" "${ISO}/${n}" SYMBOLIC)
+  endforeach()
+  set(MODDIR "${ISO}")
+endif()
 set(ENV{SELECTA_PLUGIN_PATH} "${MODDIR}")
 if(NOT EXPECT_FAIL)
   execute_process(COMMAND "${CLI}" plugins --stats OUTPUT_VARIABLE list ERROR_VARIABLE lerr RESULT_VARIABLE rc)
