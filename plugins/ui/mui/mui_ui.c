@@ -1354,7 +1354,7 @@ static Object* mui_tool_group(mui_state* s) {
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
         if (g_tool_which[i] == P4_LIKE) {
-            continue; /* I796 B4: Like lives beside the title in the player bar */
+            continue; /* I1125: Like lives on the Now Playing panel (Mac location), not in the tool row */
         }
         /* New Playlist is the accent button of the row (design 3.1); the others are plain icon buttons. */
         Object* b = g_tool_which[i] == P4_PNEW
@@ -1722,6 +1722,13 @@ static Object* mui_detail_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->np_title);
     DoMethod(g, OM_ADDMEMBER, s->np_artist);
     DoMethod(g, OM_ADDMEMBER, s->np_album);
+    {
+        /* I1125 (design I973 6a Q6): the Like heart sits on the Now Playing panel like the Mac np_like, not in the player bar. */
+        Object* like = mui_make_button_icon("Like", "Like", CTL_P4_BASE + (LONG)P4_LIKE);
+        if (like != NULL) {
+            DoMethod(g, OM_ADDMEMBER, like);
+        }
+    }
     if (s->vizset.n > 0u) {
         s->cyc_viz = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
         s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);

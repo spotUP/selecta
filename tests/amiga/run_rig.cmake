@@ -436,8 +436,19 @@ elseif(TAG STREQUAL "M4MUI")
     endforeach()
   endif()
   # MUI-P4-4 / MUI-P4-7: the tool row buttons Like and Clear Queue are real gadgets; each click must send its line (ui_p4 counters).
+  # I1125: Like is on the Now Playing panel (Mac location), so open that door before the Like click and return to the tool row.
+  # The player bar shows no title below 900 px (I973 Q7, rig screen is 800x600), so the P3-1 title assertion is skipped here and
+  # would be restored only for a bar width >= 900.
   foreach(tool "Like" "Clear Queue")
-    if(NOT tree MATCHES "\"${tool}\"")
+    if(tool STREQUAL "Like")
+      ami(ignored ui click ${UIW} "Now Playing")
+      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
+      ami(nptree uitree)
+      if(NOT nptree MATCHES "\"Like\"")
+        ami(ignored exec "Break ${pid} C" 10)
+        message(FATAL_ERROR "RED[M4MUI]: MUI-P4: Like gadget missing on the Now Playing panel:\n${nptree}")
+      endif()
+    elseif(NOT tree MATCHES "\"${tool}\"")
       ami(ignored exec "Break ${pid} C" 10)
       message(FATAL_ERROR "RED[M4MUI]: MUI-P4: tool gadget \"${tool}\" missing in the window list:\n${tree}")
     endif()
