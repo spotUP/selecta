@@ -4,3 +4,10 @@ https://modland.antarctica.no/pub/modules/Capcom%20Q-Sound%20Format/Hideki%20OK/
 (mirrors: modland.com, ftp.amigascne.org/mirrors/ftp.modland.com). Song length tag 0:21, fade 0.
 Licence: the .qsflib holds Capcom's CPS-2 sound ROM data (copyright 1995 Capcom). Not redistributable as a release asset:
 this is a test fixture only and must be excluded from release packages and any public mirror of the repository.
+
+I704c: the binaries are NOT in git (Capcom ROM data, public repo). tests/m3/qsf_real_decode.sh fetches them through
+tests/m3/fetch_fixture.sh into tests/m3/fixtures/.cache (git-ignored) and checks the sha256; offline = ctest SKIP.
+  mm1_title.miniqsf  sha256 6bd52eadd9f60041e1489687b48c431d353560f722438475d4dc8ec2761fc098
+    https://modland.antarctica.no/pub/modules/Capcom%20Q-Sound%20Format/Hideki%20OK/Megaman%201%20-%20The%20Power%20Battle/01%20-%20title.miniqsf
+  Mega Man - The Power Battle.qsflib  sha256 6c95fbf2f1beecd8dd59ce30c725e21352c714fc5dc1e1c5c8b1e0dc1dcbd481
+    https://modland.antarctica.no/pub/modules/Capcom%20Q-Sound%20Format/Hideki%20OK/Megaman%201%20-%20The%20Power%20Battle/Mega%20Man%20-%20The%20Power%20Battle.qsflib

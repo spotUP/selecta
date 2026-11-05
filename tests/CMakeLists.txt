@@ -2065,11 +2065,11 @@ if(NOT SEL_AMIGA)
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/qsf-real-decode)
     add_test(NAME qsf-real-decode
-      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/qsf_decode.sh $<TARGET_FILE:selecta-cli>
-              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/mm1_title.miniqsf
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/qsf_real_decode.sh $<TARGET_FILE:selecta-cli>
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/qsf-real-decode)
-    set_tests_properties(qsf-real-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "qsf_decode_ok"
-      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules;QSF_LIB=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/Mega Man - The Power Battle.qsflib;QSF_MIN_SECONDS=21;QSF_MAX_SECONDS=22;QSF_ENERGY_MIN=1000000000000")
+    # I704c: the game set is fetched at test time (m3/fetch_fixture.sh); exit 77 = offline = SKIP.
+    set_tests_properties(qsf-real-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "qsf_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
   # I429: a TIATracker song plays through the render entry point (tiatracker module). GPL module, opt-in.
