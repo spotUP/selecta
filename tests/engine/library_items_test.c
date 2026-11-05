@@ -144,8 +144,13 @@ int main(void) {
     c = (uint32_t)scalar(lib, "SELECT COUNT(*) FROM composers") + (uint32_t)scalar(lib, "SELECT COUNT(*) FROM composer_unknown WHERE n>0");
     /* I678m: every registered source but local lists, a source with 0 songs too; the fixture's songs are all registered. */
     sel_source_register_builtin();
-    s = sel_source_count() - 1u;
-    CHECK(p == 2u && a == 3u && r == 3u && c == 3u && s >= 2u); /* the fixture itself: modland plus hippo at least */
+    s = 0;
+    for (i = 0; i < sel_source_count(); i++) {
+        const sel_source* rs = sel_source_get(i);
+        /* I1058: hippo is a Playlists group, not a Sources row (SOURCES skips it, so does the item list) */
+        if (rs != NULL && strcmp(rs->id, "local") != 0 && (rs->flags & SEL_SOURCE_PLAYLISTS_ONLY) == 0u) s++;
+    }
+    CHECK(p == 2u && a == 3u && r == 3u && c == 3u && s >= 1u); /* the fixture itself: modland at least */
     CHECK(scalar(lib, "SELECT COUNT(*) FROM source_songs WHERE source<>'local' AND n>0") == 1); /* only modland has songs */
     w = 3u + p + a + r + c + s;
 
@@ -192,11 +197,7 @@ int main(void) {
         if (all[i].kind == SEL_LIB_ITEM_SOURCE && strcmp(all[i].key, "modland") == 0) it = &all[i];
     }
     CHECK(it != NULL && it->songs == 1u);
-    it = NULL;
-    for (i = 0; i < n; i++) {
-        if (all[i].kind == SEL_LIB_ITEM_SOURCE && strcmp(all[i].key, "hippo") == 0) it = &all[i];
-    }
-    CHECK(it != NULL && it->songs == 0u && strcmp(it->name, "hippo") != 0); /* I678m: never synced, still listed, display name */
+    CHECK(find(all, n, SEL_LIB_ITEM_SOURCE, "hippo") == NULL); /* I1058: a playlists-only source never lists as a Your Library source */
     CHECK(find(all, n, SEL_LIB_ITEM_SOURCE, "local") == NULL); /* Local Files is the pinned row */
 
     /* Kind masks. */

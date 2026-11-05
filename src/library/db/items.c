@@ -99,7 +99,7 @@ static size_t put_reg(char* sql, size_t cap, size_t n) {
     for (i = 0; i < count && n < cap; i++) {
         const sel_source* src = sel_source_get(i);
 
-        if (src == NULL) continue;
+        if (src == NULL || (src->flags & SEL_SOURCE_PLAYLISTS_ONLY) != 0u) continue; /* I1058: a Playlists group, not a Sources row (as SOURCES) */
         n = put(sql, cap, n, " UNION ALL SELECT ");
         if (n < cap) {
             sqlite3_snprintf((int)(cap - n), sql + n, "%Q", src->id);
