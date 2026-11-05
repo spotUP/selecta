@@ -629,6 +629,7 @@ struct sel_engine {
     int search_running;
     int search_rc;
     char search_query[SEL_SEARCH_QUERY_MAX];
+    char search_wait_source[SEL_SOURCE_ID_MAX]; /* I1086b: the source argument of the current SOURCE_SEARCH ("*" or one id), so a library change can run it again */
     char search_wait_query[SEL_SEARCH_QUERY_MAX]; /* the current query; queued buckets start from it, search_query belongs to the running task */
     sel_sync_ctx search_ctx;
     uint32_t source_searches;      /* searches started (STAT_SOURCE_SEARCHES) */
@@ -7992,20 +7993,18 @@ static void search_bucket_set(sel_engine* e, const char* id) {
 }
 
 /* SOURCE_SEARCH <source> <query>; source `*` (I1019a) searches every enabled source that has a search hook, in registry order. */
-static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
-    const char* source = m->args[0].v.s;
-    const char* query = m->args[1].v.s;
-
+static void search_run(sel_engine* e, const char* source, const char* query, const char* cmd) {
     if (e->lib == NULL) {
-        sel_engine_report_error(e, "no_library", "SOURCE_SEARCH");
+        sel_engine_report_error(e, "no_library", cmd);
         return;
     }
     search_supersede(e);
     sel_source_register_builtin();
     if (!search_buckets_ensure(e)) {
-        sel_engine_report_error(e, "out_of_memory", "SOURCE_SEARCH");
+        sel_engine_report_error(e, "out_of_memory", cmd);
         return;
     }
+    snprintf(e->search_wait_source, sizeof e->search_wait_source, "%s", source);
     snprintf(e->search_wait_query, sizeof e->search_wait_query, "%s", query);
     if (strcmp(source, "*") == 0) {
         uint32_t i;
@@ -8025,6 +8024,10 @@ static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
     }
     search_start_next(e); /* busy slot (scan, sync or the superseded search): the pump starts it after that task's collect */
     search_view_changed(e);
+}
+
+static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
+    search_run(e, m->args[0].v.s, m->args[1].v.s, "SOURCE_SEARCH");
 }
 
 #if defined(SEL_LI_THREAD)
@@ -9074,6 +9077,15 @@ static void lib_models_follow(sel_engine* e) {
         coll_post(e);
     }
     lib_read_post(e, &e->rd_folders, folders_read_run);
+    /* I1086b: the Search hits are a model too: the shown query runs again through the same path as SOURCE_SEARCH, no client resend. The copies
+     * keep search_run's own writes to the buffers from aliasing its arguments. */
+    if (e->view.active && e->view.pub.source == SEL_VIEW_SEARCH && e->search_wait_query[0] != '\0' && e->search_wait_source[0] != '\0') {
+        char src[SEL_SOURCE_ID_MAX], qry[SEL_SEARCH_QUERY_MAX];
+
+        snprintf(src, sizeof src, "%s", e->search_wait_source);
+        snprintf(qry, sizeof qry, "%s", e->search_wait_query);
+        search_run(e, src, qry, "SOURCE_SEARCH");
+    }
     /* I1086: the Home shelves are a model too: re-read in place (lib_reads_collect applies the answer and view_reread rebuilds the window when
      * Home is the view source); no client has to re-enter the page for it. */
     if (e->view.pub.source == SEL_VIEW_HOME || e->home_rows > 0) home_reload(e);
