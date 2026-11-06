@@ -358,6 +358,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_cybertracker)
 endif()
 
+# bbmp_shroom (I710aa): Mario Paint songs (.sho), bbmp csrc/retro shroom engine (GPL 3 or later) over the user's own Mariopants notes.wav (system
+# file, Nintendo data, never shipped), behind the GPL-plugin gate. Host only (C++17 engine, no Amiga build; follow-up I710aaa).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_shroom)
+endif()
+
 # bbmp_psycle (I710u): Psycle songs (.psy), GPL Psycle engine + bbmp helper and native plugins run as a child process, behind the
 # GPL-plugin gate. Host only (C++14 engine, dlopen'd plugin libraries, no Amiga build).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

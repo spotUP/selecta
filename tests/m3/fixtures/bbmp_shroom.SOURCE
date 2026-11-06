@@ -1,0 +1,6 @@
+Mario Paint (Shroom, .sho) songs for tests/m3/shroom_decode.sh (bbmp_shroom module, I710aa). Never committed: fetched by sha256 into the git-ignored
+tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive). The instrument sounds (Mariopants 1.1 data/notes.wav,
+Nintendo data) are never fetched or committed: the playback part reads the path in env SELECTA_SHROOM_SAMPLES and skips (exit 77) without it.
+https://modland.com/pub/modules/Shroom/Andy%20Lee/untitled.sho  05a30d0fa9fd75a424df9c3795cb3c7b70fe0a1082e110ae7e091c3849128e47
+https://modland.com/pub/modules/Shroom/Adam%20Netke/untitled.sho  dec4cbca71f8062ace7627647c495b26664c382c7ccf91a3fd8b56050bfb467a
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro shroom engine, third_party/bbmp_shroom).

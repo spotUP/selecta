@@ -80,6 +80,9 @@ static int join(char* out, size_t cap, const char* dir, const char* name, const 
     return n > 0 && (size_t)n < cap;
 }
 
+/* A plain system file is hashed whole; the 16 MB zip member cap does not apply (Mariopants' notes.wav is 25.7 MB, I710aa). */
+#define SEL_SYSFILE_MAX_BYTES (64ul << 20)
+
 static unsigned char* slurp(const char* path, size_t* n) {
     FILE* f = fopen(path, "rb");
     unsigned char* b = NULL;
@@ -88,7 +91,7 @@ static unsigned char* slurp(const char* path, size_t* n) {
     if (f == NULL) {
         return NULL;
     }
-    if (fseek(f, 0, SEEK_END) == 0 && (len = ftell(f)) >= 0 && (unsigned long)len <= SEL_ZIP_MEMBER_MAX &&
+    if (fseek(f, 0, SEEK_END) == 0 && (len = ftell(f)) >= 0 && (unsigned long)len <= SEL_SYSFILE_MAX_BYTES &&
         fseek(f, 0, SEEK_SET) == 0) {
         b = malloc(len > 0 ? (size_t)len : 1u);
         if (b != NULL && fread(b, 1, (size_t)len, f) != (size_t)len) {

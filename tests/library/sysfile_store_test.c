@@ -215,6 +215,28 @@ int main(int argc, char** argv) {
         path(src, sizeof src, "in.bin");
     }
 
+    /* I710aa: a plain file above the 16 MB zip member cap (Mariopants notes.wav is 25.7 MB) still resolves by sha. */
+    {
+        size_t big = 24u << 20;
+        unsigned char* b = malloc(big);
+        uint8_t bd[32];
+        char bhex[65];
+        sel_sysfile_decl bdecl = decl;
+
+        CHECK(b != NULL);
+        if (b != NULL) {
+            for (i = 0; i < big; i++) b[i] = (unsigned char)(i * 13u + (i >> 9));
+            sel_sha256(b, big, bd);
+            for (i = 0; i < 32; i++) snprintf(bhex + 2 * i, 3, "%02x", (unsigned)bd[i]);
+            bdecl.name = "big.wav";
+            bdecl.sha256 = bhex;
+            bdecl.size = (uint32_t)big;
+            put("big.wav", b, big);
+            CHECK(sel_sysfile_resolve(g_dir, &bdecl, NULL, 0));
+            free(b);
+        }
+    }
+
     if (fails == 0) {
         printf("sysfile_store_ok\n");
     }

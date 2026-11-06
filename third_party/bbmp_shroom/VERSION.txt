@@ -1,0 +1,12 @@
+bbmp_shroom: csrc/retro/shroom_engine.cpp, self_path.h and engine.h from github.com/creep-ltx/bbmp, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX line in each file). Songs of Mario Paint's music editor (.sho), after
+Mariopants 1.1 by Brad Smith (credit and change mark are in the engine's header). The instrument sounds are Nintendo's and are NOT vendored,
+fetched or shipped: the user supplies Mariopants' data/notes.wav (declared system file mariopants-notes.wav, no download URL).
+bshroom_glue.cpp is Selecta's glue: the registry hook, read_file(), find_beside(), the text helpers and debug_on() the engine takes from bbmp-retro's
+main program, notes.wav -> note table conversion at load time (port of csrc/retro/shroom_samples.cpp, GPL-3.0-or-later, so that no separate tool
+is needed), and a C entry point that renders the song.
+Declared system file mariopants-notes.wav: Mariopants 1.1 data/notes.wav, 26936466 bytes, sha256
+039f642ea239970f41ed6fe3431f27c156346312ee72184723611951b855b129 (adapter.c SEL_RP_SYSFILE_SHA256). Read from the package
+mariopants11src.zip (sha256 468dd5075fa171f38c3a05b3836a8aa2e144b3eba8bf88b7ac98e8b997ab509a), Wayback copy
+http://web.archive.org/web/2018/http://rainwarrior.ca/projects/nes/mariopants11src.zip (author's page rainwarrior.ca/projects/nes/mariopants.html,
+original link now 404). The package is Nintendo data: never committed, bundled or hosted.
