@@ -3797,3 +3797,14 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
       -P "${PROJECT_SOURCE_DIR}/tests/dui/bundle_fresh.cmake")
   set_tests_properties(bundle-fresh PROPERTIES LABELS builtin-modules TIMEOUT 60 PASS_REGULAR_EXPRESSION "bundle_fresh_ok")
 endif()
+
+# I710w: SGC and GBR songs play through the render entry point (bbmp_nez module, libnezplug, no GPL gate). Four songs fetched by checksum
+# (tests/m3/fixtures/bbmp_nez.SOURCE), exit 77 = skip. A file that is not an SGC/GBR song must not be claimed.
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nez-decode)
+  add_test(NAME nez-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/nez_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nez-decode)
+  set_tests_properties(nez-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nez_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+endif()

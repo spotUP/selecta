@@ -1,0 +1,5 @@
+libnezplug (John Regan's library made from NEZplug++), src/ tree unmodified.
+Upstream copy: https://github.com/gcielniak/libnezplug commit 161d6e2b7187dc1426e33bd0f39d79b865899cca (the original jprjr repository is gone; bbmp builds from a copy of it).
+Licence: Unlicense (public domain) or MIT No Attribution, copyright 2020 John Regan; see COPYING. Core module, no GPL gate.
+bbmp's libnezplug-hooks.patch (song-end detection, PAL clock, cartridge memory) is not applied; Selecta plays a fixed length.
+Used by plugins/replayers/bbmp_nez (row I710w) for SGC and GBR only.

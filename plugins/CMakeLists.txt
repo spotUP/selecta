@@ -376,3 +376,9 @@ endif()
 if(NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/organya)
 endif()
+
+# bbmp_nez (I710w): SGC and Game Boy GBR songs, libnezplug (Unlicense / MIT-0, plain C) plus our own adapter. Core module, no GPL gate.
+# Host only for now; the Amiga build is tried in row I710w.
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_nez)
+endif()
