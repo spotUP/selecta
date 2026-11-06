@@ -192,22 +192,44 @@ int main(void) {
         uint32_t served0, w0;
         int64_t before;
 
-        usleep(100000); /* let the posted reads of the checks above finish */
+        sel_sync_progress sp;
+
+        /* I1130a: VIEW_SOURCE folders above started the due playlists-only sync (I1058 lists_sync_due: the hippo lists). Its job makes
+         * worker requests and writes the whole time it runs, so the served counter below would count the sync, not SOURCES. End it and
+         * let its landing and the reads that follow it finish: the library is idle, as this check means. */
+        sel_engine_sync_cancel(e);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        do {
+            sel_engine_pump_reads(e, sink, NULL, 100u);
+            sel_engine_sync_progress(e, &sp);
+        } while ((sp.active || sp.queued || sel_engine_reads_pending(e)) && ms_since(&t0) < 10000);
+        CHECK(!sp.active && !sp.queued);
         op.key = "sync.local";
         op.value = "1234567";
         op.cap = 24;
         op.set = 1;
         memset(&reply, 0, sizeof reply);
+        sel_engine_stats_get(e, &s0);
         CHECK(sel_library_request(lib, SEL_LIB_REQ_META, &op, &reply) != 0); /* the write goes through the worker */
+        /* I1130a: the write moves write_gen, so the next pump publishes library_serial and lib_models_follow re-posts the open folders
+         * model (a posted read, no wait; a folders read still in flight repeats it). Settle that follow first: its read served by the worker during the SOURCES pump below is the
+         * model following the write, not the SOURCES command, and made :211 fail about 2 runs in 3. */
+        sel_engine_pump_reads(e, sink, NULL, 5000u); /* the pump that follows the write, then every read it posted (and their repeats) */
+        sel_engine_stats_get(e, &s1);
+        CHECK(s1.lib_models_followed > s0.lib_models_followed);
+        CHECK(!sel_engine_reads_pending(e));
         served0 = lib->served;
         w0 = sel_library_watched_waits();
         before = sel_library_source_synced(lib, "local");
         CHECK(before == 1234567); /* read-after-write, no request */
         CHECK(sel_library_source_songs(lib, "local") == 2); /* the two songs seeded above, counted by the source_songs triggers */
         CHECK(sel_engine_send_line(e, "SOURCES", pool, sizeof pool) == 0);
+        sel_engine_stats_get(e, &s0);
         sel_engine_pump(e, sink, NULL);
-        printf("i961c SOURCES: worker requests %u, watched waits %u\n", (unsigned)(lib->served - served0),
-               (unsigned)(sel_library_watched_waits() - w0));
+        sel_engine_stats_get(e, &s1);
+        printf("i961c SOURCES: worker requests %u, watched waits %u, models followed in this pump %u\n", (unsigned)(lib->served - served0),
+               (unsigned)(sel_library_watched_waits() - w0), (unsigned)(s1.lib_models_followed - s0.lib_models_followed));
+        CHECK(s1.lib_models_followed == s0.lib_models_followed); /* no publish was pending: this pump measures SOURCES alone */
         CHECK(lib->served == served0);
         CHECK(sel_library_watched_waits() == w0);
     }
