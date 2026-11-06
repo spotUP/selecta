@@ -1,0 +1,6 @@
+Noise Tracker GS 1 test modules for tests/m3/ntgs_decode.sh (bbmp_ntgs module, I710p). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the modules.
+https://modland.com/pub/modules/Noise%20Tracker%20GS%201/FTA/Megamisque  0dc535c4800508d1845dff3b3f30ffa7d3a224f8152760cf80d79a9f57e5404a
+https://modland.com/pub/modules/Noise%20Tracker%20GS%201/FTA/Modulae  1213fcf45b1a33bf4b4023a687094bc6aacce5a6bb460e8bee88568283da956d
+https://modland.com/pub/modules/Noise%20Tracker%20GS%201/David%20Sanborn/Chicago%20Song  56faa6be744daa2ef1ec010ac227420b84fe868f72c8c89f6d8f7a99aca9c94e
+Engine licence: GPL-3.0-or-later (bbmp csrc/iigs/ntgs_cr.cpp, third_party/bbmp_iigs).

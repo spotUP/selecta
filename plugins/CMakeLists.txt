@@ -231,6 +231,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_iigs)
 endif()
 
+# bbmp_ntgs (I710p): Noise Tracker GS 1 modules of the Apple IIGS, GPL-3.0 bbmp engine (ntgs_cr.cpp) on the Ensoniq 5503
+# emulation shared with bbmp_iigs, behind the GPL-plugin gate. Host only (C++17 engine, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_ntgs)
+endif()
+
 # bbmp_musicline (I710n): Musicline Editor (.ml), bbmp csrc/musicline (LGPL replay routine, GPL Paula mixer), behind the GPL-plugin
 # gate. Host only (C++17 engine, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

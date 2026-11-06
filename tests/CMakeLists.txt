@@ -2135,6 +2135,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710p: Noise Tracker GS 1 modules (Apple IIGS) play through the render entry point (bbmp_ntgs module, GPL-3.0). Modules are
+  # fetched by checksum, exit 77 = skip. A non-module file and a cut-off module must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ntgs-decode)
+    add_test(NAME ntgs-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/ntgs_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ntgs-decode)
+    set_tests_properties(ntgs-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "ntgs_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710y: PlayStation SPU logs (.spu) play through the render entry point (bbmp_spu module, GPL-2.0-or-later). Two logs fetched by
   # checksum (tests/m3/fixtures/bbmp_spu.SOURCE), exit 77 = skip. A file that is not an SPU log must not be claimed.
   if(SELECTA_GPL_PLUGINS)
