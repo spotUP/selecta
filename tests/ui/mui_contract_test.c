@@ -5,9 +5,13 @@
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
 
+#include <dirent.h>
+#include <mcc/up.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
 
 #include "mui_aa.h"
 #include "mui_icons.h"
@@ -2301,6 +2305,141 @@ static void test_live_guard(void) {
     CHECK(strstr(src, "muiRenderInfo(obj) != NULL && _win(obj) != NULL") != NULL, "aa_live does not check the render info before _win");
 }
 
+/* I685d: the MUI tag base is written once (mcc/up.h) and every tag of the class package is UP_TAG(class, offset). The classes are
+ * Amiga-only, so the table reads each tag's #define from the source, evaluates it with the real UP_TAG macro and compares it with the
+ * literal it had before the conversion. The two tooltip outliers moved to class 0F; AAF_Redraw moved from 0x53410301 (same number as
+ * AATab_Active) to the Field class 07. */
+typedef struct up_tag_row {
+    const char* file;
+    const char* name;
+    unsigned cls, off;
+    unsigned long literal;
+} up_tag_row;
+
+static unsigned long up_class_value(const char* name, int* ok) {
+    static const struct {
+        const char* n;
+        unsigned v;
+    } cls[] = {{"UP_CLS_TEXT", UP_CLS_TEXT},   {"UP_CLS_PROGRESS", UP_CLS_PROGRESS}, {"UP_CLS_CYCLE", UP_CLS_CYCLE},
+               {"UP_CLS_TABS", UP_CLS_TABS},   {"UP_CLS_SCROLLER", UP_CLS_SCROLLER}, {"UP_CLS_LIST", UP_CLS_LIST},
+               {"UP_CLS_BUTTON", UP_CLS_BUTTON}, {"UP_CLS_FIELD", UP_CLS_FIELD},     {"UP_CLS_PANEL", UP_CLS_PANEL},
+               {"UP_CLS_BALANCE", UP_CLS_BALANCE}, {"UP_CLS_SHARED", UP_CLS_SHARED}};
+    size_t i;
+    for (i = 0; i < sizeof cls / sizeof cls[0]; i++) {
+        if (strcmp(cls[i].n, name) == 0) {
+            *ok = 1;
+            return cls[i].v;
+        }
+    }
+    *ok = 0;
+    return 0;
+}
+
+static int up_read_file(const char* path, char* buf, size_t cap) {
+    FILE* f = fopen(path, "rb");
+    size_t n;
+    if (f == NULL) {
+        return 0;
+    }
+    n = fread(buf, 1, cap - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    return 1;
+}
+
+/* Every .c/.h file under dir, recursively: no 0x5341.... or 0x5E1A.... literal (any case) may be written there. */
+static void up_scan_literals(const char* dir, int* files) {
+    static char src[400000];
+    DIR* d = opendir(dir);
+    struct dirent* e;
+    if (d == NULL) {
+        CHECK(0, "open %s", dir);
+        return;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char path[1024];
+        size_t l = strlen(e->d_name);
+        struct stat st;
+        if (e->d_name[0] == '.') {
+            continue;
+        }
+        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        if (stat(path, &st) != 0) {
+            continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            up_scan_literals(path, files);
+        } else if (l > 2 && (strcmp(e->d_name + l - 2, ".c") == 0 || strcmp(e->d_name + l - 2, ".h") == 0)) {
+            size_t i;
+            CHECK(up_read_file(path, src, sizeof src), "read %s", path);
+            for (i = 0; src[i] != 0; i++) {
+                if (src[i] == '0' && (src[i + 1] == 'x' || src[i + 1] == 'X')) {
+                    CHECK(strncasecmp(src + i + 2, "5341", 4) != 0 && strncasecmp(src + i + 2, "5E1A", 4) != 0,
+                          "%s writes a tag base literal near byte %zu; the base lives in mcc/up.h only", path, i);
+                }
+            }
+            (*files)++;
+        }
+    }
+    closedir(d);
+}
+
+static void test_up_tags(void) {
+    static const up_tag_row rows[] = {
+        {"/class/mui_aatext_class.h", "AAT_Contents", UP_CLS_TEXT, 0x01, 0x80000000UL | 0x53410001UL},
+        {"/class/mui_aaslider_class.h", "AAP_Value", UP_CLS_PROGRESS, 0x01, 0x80000000UL | 0x53410101UL},
+        {"/class/mui_aaslider_class.h", "AAP_Max", UP_CLS_PROGRESS, 0x02, 0x80000000UL | 0x53410102UL},
+        {"/class/mui_aacycle_class.h", "AAC_Active", UP_CLS_CYCLE, 0x01, 0x80000000UL | 0x53410201UL},
+        {"/class/mui_aacycle_class.h", "AAC_Entries", UP_CLS_CYCLE, 0x02, 0x80000000UL | 0x53410202UL},
+        {"/class/mui_aatabs_class.h", "AATab_Active", UP_CLS_TABS, 0x01, 0x80000000UL | 0x53410301UL},
+        {"/class/mui_aascroller_class.h", "AAS_First", UP_CLS_SCROLLER, 0x01, 0x80000000UL | 0x53410401UL},
+        {"/class/mui_aascroller_class.h", "AAS_Visible", UP_CLS_SCROLLER, 0x02, 0x80000000UL | 0x53410402UL},
+        {"/class/mui_aascroller_class.h", "AAS_Entries", UP_CLS_SCROLLER, 0x03, 0x80000000UL | 0x53410403UL},
+        {"/class/mui_aalist_class.h", "AAL_Count", UP_CLS_LIST, 0x01, 0x80000000UL | 0x53410501UL},
+        {"/class/mui_aalist_class.h", "AAL_Active", UP_CLS_LIST, 0x02, 0x80000000UL | 0x53410502UL},
+        {"/class/mui_aalist_class.h", "AAL_First", UP_CLS_LIST, 0x03, 0x80000000UL | 0x53410503UL},
+        {"/class/mui_aalist_class.h", "AAL_Picked", UP_CLS_LIST, 0x04, 0x80000000UL | 0x53410504UL},
+        {"/class/mui_aalist_class.h", "AAL_Columns", UP_CLS_LIST, 0x05, 0x80000000UL | 0x53410505UL},
+        {"/class/mui_aalist_class.h", "AAL_Playing", UP_CLS_LIST, 0x06, 0x80000000UL | 0x53410506UL},
+        {"/class/mui_aalist_class.h", "AAM_GetRow", UP_CLS_LIST, 0x10, 0x80000000UL | 0x53410510UL},
+        {"/class/mui_aafield_class.c", "AAF_Redraw", UP_CLS_FIELD, 0x01, 0x80000000UL | 0x53410701UL},
+        {"/mui_aatip.h", "AATIP_M_FIRE", UP_CLS_SHARED, 0x31, 0x80000000UL | 0x53410F31UL},
+        {"/mui_aatip.h", "AATIP_A_Side", UP_CLS_SHARED, 0x32, 0x80000000UL | 0x53410F32UL},
+    };
+    static char src[200000];
+    size_t i, j;
+    int files = 0;
+    for (i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        char path[1024], key[96], clsname[48];
+        const char* p;
+        unsigned off = 0;
+        int ok = 0;
+        unsigned long cls, value;
+        snprintf(path, sizeof path, "%s%s", MCC_SRC, rows[i].file);
+        CHECK(up_read_file(path, src, sizeof src), "read %s", path);
+        snprintf(key, sizeof key, "#define %s UP_TAG(", rows[i].name);
+        p = strstr(src, key);
+        CHECK(p != NULL, "%s is not defined as UP_TAG(class, offset) in %s", rows[i].name, path);
+        if (p == NULL || sscanf(p + strlen(key), "%47[A-Z_], 0x%x)", clsname, &off) != 2) {
+            CHECK(p == NULL, "%s: cannot read the class and offset", rows[i].name);
+            continue;
+        }
+        cls = up_class_value(clsname, &ok);
+        CHECK(ok, "%s uses the unknown class name %s", rows[i].name, clsname);
+        value = UP_TAG(cls, off);
+        CHECK(value == rows[i].literal, "%s is 0x%08lX, expected the literal 0x%08lX", rows[i].name, value, rows[i].literal);
+        CHECK(value == UP_TAG(rows[i].cls, rows[i].off), "%s is not UP_TAG(0x%02X, 0x%02X)", rows[i].name, rows[i].cls, rows[i].off);
+        CHECK(rows[i].literal == UP_TAG(rows[i].cls, rows[i].off), "table row %s: literal and UP_TAG(class, offset) disagree", rows[i].name);
+    }
+    for (i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        for (j = i + 1; j < sizeof rows / sizeof rows[0]; j++) {
+            CHECK(rows[i].literal != rows[j].literal, "%s and %s share the number 0x%08lX", rows[i].name, rows[j].name, rows[i].literal);
+        }
+    }
+    up_scan_literals(MCC_SRC, &files);
+    CHECK(files >= 20, "the literal scan saw only %d files under %s", files, MCC_SRC);
+}
+
 /* I713: the rig's wasabid lists AAList rows as items by calling AAM_GetRow (the class's documented read-back, mui_aalist_class.h).
  * The class is Amiga-only, so the contract is checked in the sources: the header declares the method and its message, the
  * dispatcher answers it, and the handler gives the row text, the selection and the on-screen box wasabid clicks. */
@@ -3285,6 +3424,7 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "live-guard") == 0) {
         test_live_guard();
         test_aalist_getrow();
+        test_up_tags();
     } else if (strcmp(argv[1], "status-face") == 0) {
         test_status_face();
     } else if (strcmp(argv[1], "player-bar") == 0) {

@@ -8,8 +8,9 @@
 #include <exec/types.h>
 #include <libraries/mui.h>
 #include <stdint.h>
+#include <mcc/up.h>
 
-#define AAT_Contents (TAG_USER + 0x53410001UL) /* STRPTR copied into the object; redraws only when it changed */
+#define AAT_Contents UP_TAG(UP_CLS_TEXT, 0x01) /* STRPTR copied into the object; redraws only when it changed */
 
 typedef struct mui_aatext_spec {
     const char* contents; /* first text */

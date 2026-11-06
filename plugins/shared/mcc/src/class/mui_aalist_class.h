@@ -9,14 +9,15 @@
 #include <exec/types.h>
 #include <libraries/mui.h>
 #include <stdint.h>
+#include <mcc/up.h>
 
-#define AAL_Count (TAG_USER + 0x53410501UL)  /* LONG: rows (notifies) */
-#define AAL_Active (TAG_USER + 0x53410502UL) /* LONG: selected row, -1 none (notifies) */
-#define AAL_First (TAG_USER + 0x53410503UL)  /* LONG: first visible row (notifies) */
-#define AAL_Picked (TAG_USER + 0x53410504UL) /* LONG: row chosen by click or Return (notifies every time) */
+#define AAL_Count UP_TAG(UP_CLS_LIST, 0x01)  /* LONG: rows (notifies) */
+#define AAL_Active UP_TAG(UP_CLS_LIST, 0x02) /* LONG: selected row, -1 none (notifies) */
+#define AAL_First UP_TAG(UP_CLS_LIST, 0x03)  /* LONG: first visible row (notifies) */
+#define AAL_Picked UP_TAG(UP_CLS_LIST, 0x04) /* LONG: row chosen by click or Return (notifies every time) */
 
-#define AAL_Columns (TAG_USER + 0x53410505UL) /* ptr to mui_aalist_cols, copied (I667i2): the shown columns, may change while live */
-#define AAL_Playing (TAG_USER + 0x53410506UL) /* LONG: row whose first column is drawn in ACCENT, -1 none (I667i2) */
+#define AAL_Columns UP_TAG(UP_CLS_LIST, 0x05) /* ptr to mui_aalist_cols, copied (I667i2): the shown columns, may change while live */
+#define AAL_Playing UP_TAG(UP_CLS_LIST, 0x06) /* LONG: row whose first column is drawn in ACCENT, -1 none (I667i2) */
 
 #define MUI_AALIST_COLS 5
 
@@ -25,7 +26,7 @@
  * row and text/cap; the method returns TRUE when the row exists and sets: text = the cell texts of the row joined by two spaces (empty
  * cells left out, truncated to cap), x/y/w/h = the row's box in window coordinates (all 0 when the row is scrolled out of view or the
  * list is not shown), selected = 1 on the active row. */
-#define AAM_GetRow (TAG_USER + 0x53410510UL)
+#define AAM_GetRow UP_TAG(UP_CLS_LIST, 0x10)
 typedef struct mui_aalist_getrow {
     ULONG MethodID; /* AAM_GetRow */
     LONG row;

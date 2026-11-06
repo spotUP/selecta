@@ -16,7 +16,7 @@ if(SEL_AMIGA)
 endif()
 add_library(sel_mcc_static STATIC ${MCC_SOURCES})
 # src/map: "mui_aa.h" etc. for every consumer; src: "map/mui_theme.h" and "mui_aa_draw.h" spellings the sources already use.
-target_include_directories(sel_mcc_static PUBLIC "${MCC_DIR}/src" "${MCC_DIR}/src/map" "${MCC_DIR}/src/class")
+target_include_directories(sel_mcc_static PUBLIC "${MCC_DIR}/include" "${MCC_DIR}/src" "${MCC_DIR}/src/map" "${MCC_DIR}/src/class")
 # Today's couplings (allow-list include_allowlist.txt, removed by row I685e): mui_gfxbase.h and map/mui_map.h.
 target_include_directories(sel_mcc_static PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/mui")
 target_link_libraries(sel_mcc_static PUBLIC selecta_uimodel selecta_gui)

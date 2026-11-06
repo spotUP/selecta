@@ -9,6 +9,7 @@
 #include <intuition/classusr.h>
 #include <intuition/intuition.h>
 #include <stdint.h>
+#include <mcc/up.h>
 
 #include "mui_aa_draw.h"
 
@@ -18,8 +19,8 @@ typedef struct aatip_slot {
     int in;   /* the pointer is inside the owner (ENTER / LEAVE edges) */
 } aatip_slot;
 
-#define AATIP_M_FIRE (TAG_USER | 0x5E1A0731UL) /* private method the timer node sends to the owner */
-#define AATIP_A_Side (TAG_USER | 0x5E1A0732UL) /* I/S: preferred side, MUI_AA_TIP_* */
+#define AATIP_M_FIRE UP_TAG(UP_CLS_SHARED, 0x31) /* private method the timer node sends to the owner */
+#define AATIP_A_Side UP_TAG(UP_CLS_SHARED, 0x32) /* I/S: preferred side, MUI_AA_TIP_* */
 
 /* OM_NEW / OM_SET: take MUIA_ShortHelp and AATIP_A_Side out of the tag list, call the super, restore the tags, then store the values
  * in the aatip_slot at byte offset slot_off of the class instance data (of the new object on OM_NEW). Returns the super's result. */

@@ -9,9 +9,10 @@
 #include <exec/types.h>
 #include <libraries/mui.h>
 #include <stdint.h>
+#include <mcc/up.h>
 
-#define AAC_Active (TAG_USER + 0x53410201UL)  /* LONG: index of the shown entry */
-#define AAC_Entries (TAG_USER + 0x53410202UL) /* char**: NULL terminated, must outlive the object (initial only) */
+#define AAC_Active UP_TAG(UP_CLS_CYCLE, 0x01)  /* LONG: index of the shown entry */
+#define AAC_Entries UP_TAG(UP_CLS_CYCLE, 0x02) /* char**: NULL terminated, must outlive the object (initial only) */
 
 typedef struct mui_aacycle_spec {
     const char* const* entries; /* NULL terminated */

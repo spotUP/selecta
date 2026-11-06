@@ -17,6 +17,7 @@
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 #include <proto/utility.h>
+#include <mcc/up.h>
 
 #include "map/mui_theme.h"
 #include "mui_aa_draw.h"
@@ -24,7 +25,7 @@
 
 extern struct Library* MUIMasterBase;
 
-#define AAF_Redraw (TAG_USER + 0x53410301UL) /* method: the window's active object changed, repaint the outline */
+#define AAF_Redraw UP_TAG(UP_CLS_FIELD, 0x01) /* method: the window's active object changed, repaint the outline */
 
 typedef struct aafield_data {
     Object* str;

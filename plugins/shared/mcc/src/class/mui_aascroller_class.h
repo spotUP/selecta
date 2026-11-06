@@ -8,10 +8,11 @@
 #include <exec/types.h>
 #include <libraries/mui.h>
 #include <stdint.h>
+#include <mcc/up.h>
 
-#define AAS_First (TAG_USER + 0x53410401UL)   /* LONG: first visible entry (notifies) */
-#define AAS_Visible (TAG_USER + 0x53410402UL) /* LONG: entries that fit the owner */
-#define AAS_Entries (TAG_USER + 0x53410403UL) /* LONG: entries in the owner */
+#define AAS_First UP_TAG(UP_CLS_SCROLLER, 0x01)   /* LONG: first visible entry (notifies) */
+#define AAS_Visible UP_TAG(UP_CLS_SCROLLER, 0x02) /* LONG: entries that fit the owner */
+#define AAS_Entries UP_TAG(UP_CLS_SCROLLER, 0x03) /* LONG: entries in the owner */
 
 Object* mui_aascroller_new(void);
 /* Scrollers constructed since start (sentinel: AAList builds exactly one per list). */

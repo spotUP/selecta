@@ -9,9 +9,10 @@
 #include <exec/types.h>
 #include <libraries/mui.h>
 #include <stdint.h>
+#include <mcc/up.h>
 
-#define AAP_Value (TAG_USER + 0x53410101UL) /* LONG: filled part */
-#define AAP_Max (TAG_USER + 0x53410102UL)   /* LONG: value that fills the bar */
+#define AAP_Value UP_TAG(UP_CLS_PROGRESS, 0x01) /* LONG: filled part */
+#define AAP_Max UP_TAG(UP_CLS_PROGRESS, 0x02)   /* LONG: value that fills the bar */
 
 typedef struct mui_aaslider_spec {
     long lo, hi, value;
