@@ -68,3 +68,7 @@ smart_fetches=0
 smart_skipped=0
 zip_members=0
 zip_requests=0
+content_companions=0
+content_rejected=0
+content_missing=0
+companion_missing=0
