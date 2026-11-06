@@ -302,7 +302,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 17
+#define SEL_LIB_SCHEMA_VERSION 18
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 640 KiB (512 KiB + 32 KiB I687c + 32 KiB I790 + 64 KiB I848a), <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:

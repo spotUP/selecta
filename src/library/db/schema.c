@@ -3,6 +3,7 @@
  * runner applies the missing ones inside one transaction each and sets
  * PRAGMA user_version. Add a version by appending to g_migrations. */
 #include "schema.h"
+#include "db_internal.h"
 
 #include <sqlite3.h>
 #include <stddef.h>
@@ -278,9 +279,18 @@ static const char SCHEMA_V17[] =
     "DELETE FROM source_state WHERE source = old.source;"
     "END;";
 
+/* I1094a: maintained duplicate groups. dup_of: NULL on a unique song and on the best copy, else the best copy's key; dup_members: group size.
+ * dup_pick holds the user's "Use This Copy" per md5. The migration ends with one set-based rebuild so an existing library comes up resolved. */
+static const char SCHEMA_V18[] =
+    "ALTER TABLE songs ADD COLUMN dup_of TEXT;"
+    "ALTER TABLE songs ADD COLUMN dup_members INTEGER NOT NULL DEFAULT 1;"
+    "CREATE INDEX IF NOT EXISTS songs_dup_of ON songs(dup_of) WHERE dup_of IS NOT NULL;"
+    "CREATE TABLE IF NOT EXISTS dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;"
+    SEL_DUP_REBUILD_SQL;
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

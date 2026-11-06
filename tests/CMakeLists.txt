@@ -3030,6 +3030,12 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-album-rows COMMAND library_album_rows_test)
   set_tests_properties(library-album-rows PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_album_rows_ok")
   # I336: the library job thread runs the folder scan task off the caller's thread.
+  # I1094a: the one duplicate rank (SEL_DUP_RANK_SQL) and the maintained groups (dup_of, dup_members) on a planted 3-group fixture.
+  add_executable(dup_rank_test library/dup_rank_test.c)
+  target_include_directories(dup_rank_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(dup_rank_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-dup-rank COMMAND dup_rank_test)
+  set_tests_properties(library-dup-rank PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "dup_rank_ok")
   add_executable(library_task_test library_task_test.c)
   target_include_directories(library_task_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_task_test PRIVATE selecta_library selecta_core)

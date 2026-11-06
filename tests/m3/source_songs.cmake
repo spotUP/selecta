@@ -30,7 +30,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "analyse failed rc=${rc}\n${a}${ae}")
 endif()
 sql("${db}" "PRAGMA user_version;" ver)
-expect_eq("schema version" "${ver}" "17")
+expect_eq("schema version" "${ver}" "18")
 
 # Part 1.
 sql("${db}" "INSERT INTO songs(key, source, path) VALUES('modland:a', 'modland', 'a'), ('modland:b', 'modland', 'b'),
@@ -46,13 +46,13 @@ expect_eq("stored equals counted" "${s}" "${c}")
 
 # Part 2.
 sql("${db}" "DROP TRIGGER songs_source_ai; DROP TRIGGER songs_source_ad; DROP TRIGGER songs_source_au; DROP TRIGGER songs_album_ai; DROP TRIGGER songs_album_au; DROP TRIGGER songs_album_ad; DROP INDEX songs_album; DROP INDEX songs_artist_added; ALTER TABLE history DROP COLUMN format;
-  DROP TABLE opened; DROP TABLE source_songs; INSERT INTO songs(key, source, path) VALUES('sndh:f', 'sndh', 'f'); PRAGMA user_version = 7;" ignore)
+  DROP TABLE opened; DROP TABLE source_songs; INSERT INTO songs(key, source, path) VALUES('sndh:f', 'sndh', 'f'); DROP INDEX songs_dup_of; DROP TABLE dup_pick; ALTER TABLE songs DROP COLUMN dup_of; ALTER TABLE songs DROP COLUMN dup_members;  PRAGMA user_version = 7;" ignore)
 execute_process(COMMAND "${CLI}" userdata --db "${db}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "userdata (migration open) failed rc=${rc}\n${o}${e}")
 endif()
 sql("${db}" "PRAGMA user_version;" ver)
-expect_eq("migrated schema version" "${ver}" "17")
+expect_eq("migrated schema version" "${ver}" "18")
 # I687c: the V11 migration of an older file creates the songs(album) index on the album column.
 sql("${db}" "SELECT group_concat(name || ':' || tbl_name, ' ') FROM sqlite_master WHERE type = 'index' AND name = 'songs_album';" idx)
 expect_eq("songs(album) index after migration" "${idx}" "songs_album:songs")

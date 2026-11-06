@@ -186,14 +186,59 @@ static int hash_for_open(sqlite3* db, const char* key) {
     }
 }
 
+static unsigned long g_dup_regroups;
+static unsigned long g_dup_rebuilds;
+
+unsigned long sel_db_dup_regroups(void) { return g_dup_regroups; }
+unsigned long sel_db_dup_rebuilds(void) { return g_dup_rebuilds; }
+
+/* I1094a: recompute the maintained group (songs.dup_of / dup_members) of one md5. Empty or NULL md5: nothing to group. */
+int sel_dup_regroup(sqlite3* db, const char* md5) {
+    sqlite3_stmt* st = NULL;
+    int rc;
+
+    g_dup_regroups++;
+    if (md5 == NULL || md5[0] == '\0') return SQLITE_OK;
+    rc = sqlite3_prepare_v2(db, "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE md5 = ?1 AND (dup_of IS NOT NULL OR dup_members <> 1)",
+                            -1, &st, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, md5, -1, SQLITE_STATIC);
+        rc = sqlite3_step(st);
+        rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_OK) return rc;
+    st = NULL;
+    rc = sqlite3_prepare_v2(
+        db,
+        "WITH g AS (SELECT s.id AS id, s.key AS key, COUNT(*) OVER () AS n,"
+        " FIRST_VALUE(s.key) OVER (ORDER BY " SEL_DUP_RANK_SQL("s") ") AS best FROM songs s WHERE s.md5 = ?1 AND s.md5 <> '')"
+        " UPDATE songs SET dup_of = CASE WHEN g.key <> g.best THEN g.best END, dup_members = g.n FROM g"
+        " WHERE songs.id = g.id AND g.n > 1",
+        -1, &st, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, md5, -1, SQLITE_STATIC);
+        rc = sqlite3_step(st);
+        rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+    }
+    sqlite3_finalize(st);
+    return rc;
+}
+
+/* I1094a: recompute every group in one statement; the bulk writers call it once at the end of a bulk write. */
+int sel_dup_rebuild(sqlite3* db) {
+    g_dup_rebuilds++;
+    return sqlite3_exec(db, SEL_DUP_REBUILD_SQL, NULL, NULL, NULL);
+}
+
 /* Every duplicate group (same md5, two or more songs), streamed through op->row in one query: md5, member count, best key (I528). */
 static int op_dup_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
     int64_t rows = 0;
     int rc = sqlite3_prepare_v2(
         db,
-        "SELECT md5, COUNT(*), (SELECT s2.key FROM songs s2 WHERE s2.md5 = s.md5 ORDER BY " SEL_SOURCE_RANK_SQL
-        ", s2.id LIMIT 1) FROM songs s WHERE COALESCE(md5, '') <> '' GROUP BY md5 HAVING COUNT(*) > 1"
+        "SELECT md5, COUNT(*), (SELECT s2.key FROM songs s2 WHERE s2.md5 = s.md5 ORDER BY " SEL_DUP_RANK_SQL("s2")
+        " LIMIT 1) FROM songs s WHERE COALESCE(md5, '') <> '' GROUP BY md5 HAVING COUNT(*) > 1"
         " ORDER BY MIN(id)",
         -1, &st, NULL);
 

@@ -74,6 +74,7 @@ static int make_v12(const sel_host* host, const char* path) {
     ok = ok && sqlite3_exec(lib->db,
                       "DROP INDEX songs_source_format; DROP INDEX songs_source_artist; DROP TABLE source_new;"
                       "DROP INDEX songs_artist_added; DROP INDEX songs_album; CREATE INDEX songs_album ON songs(album);"
+                      "DROP INDEX songs_dup_of; DROP TABLE dup_pick; ALTER TABLE songs DROP COLUMN dup_of; ALTER TABLE songs DROP COLUMN dup_members;"
                       "PRAGMA user_version=12;",
                       NULL, NULL, NULL) == SQLITE_OK;
     if (!ok) {

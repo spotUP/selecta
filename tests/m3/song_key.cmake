@@ -55,7 +55,7 @@ expect_eq("history rows joined to the song with a gain" "${joined}" "1")
 set(mdb "${WORK}/m.db")
 execute_process(COMMAND "${CLI}" analyse --db "${mdb}" selecta-test.mod WORKING_DIRECTORY "${CWD}" OUTPUT_VARIABLE a)
 string(CONCAT seed
-  "PRAGMA user_version = 4; ALTER TABLE song_composers DROP COLUMN tag; "
+  "PRAGMA user_version = 4; ALTER TABLE song_composers DROP COLUMN tag; DROP INDEX songs_dup_of; DROP TABLE dup_pick; ALTER TABLE songs DROP COLUMN dup_of; ALTER TABLE songs DROP COLUMN dup_members; "
   # Objects of v7 and later go too, so a re-run of their migrations starts from a real v4 file.
   "DROP TRIGGER song_composers_ai; DROP TRIGGER song_composers_ad; DROP TRIGGER song_composers_au; "
   "DROP TRIGGER songs_composers_ai; DROP TRIGGER songs_composers_ad; DROP TRIGGER songs_composers_au; "
@@ -73,7 +73,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "userdata (migration open) failed rc=${rc}\n${o}${e}")
 endif()
 sql("${mdb}" "PRAGMA user_version;" ver)
-expect_eq("schema version" "${ver}" "17")
+expect_eq("schema version" "${ver}" "18")
 sql("${mdb}" "SELECT group_concat(key || '/' || played_at, ' ') FROM (SELECT * FROM history ORDER BY played_at);" h)
 expect_eq("history" "${h}" "local:selecta-test.mod/10 local:selecta-test.mod/11 modland:p/purple.xm/12 http://x.test/a.mp3/13")
 sql("${mdb}" "SELECT group_concat(key || '/' || at, ' ') FROM (SELECT * FROM liked ORDER BY at);" l)

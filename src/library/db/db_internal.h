@@ -172,9 +172,30 @@ unsigned long sel_db_majority_scans(void);
 /* Rank of a source in the D-M3-14 order, lower is better. */
 #define SEL_SOURCE_RANK_SQL \
     "CASE source WHEN 'local' THEN 0 WHEN 'modland' THEN 3 WHEN 'hvsc' THEN 4 WHEN 'hippo' THEN 5 ELSE 6 END"
+/* I1094a: THE ranking of the copies of one song (design 2026-11-06-I1094-hide-duplicates.md section 2), first difference wins: the
+ * user's pick in dup_pick, source rank, larger size, lowest id. `t` is the songs alias (a string literal) the ORDER BY runs over; the
+ * source rank stays unqualified, so it binds to the innermost songs. Every reader uses this: the maintained songs.dup_of
+ * (sel_dup_regroup/sel_dup_rebuild), op_dup_next and SEL_BEST_SOURCE_SQL, so the copy a list shows is the copy OPEN plays. */
+#define SEL_DUP_RANK_SQL(t) \
+    "(SELECT COUNT(*) FROM dup_pick WHERE dup_pick.md5 = " t ".md5 AND dup_pick.key = " t ".key) DESC, " SEL_SOURCE_RANK_SQL \
+    ", COALESCE(" t ".size, 0) DESC, " t ".id"
 #define SEL_BEST_SOURCE_SQL \
     "SELECT key FROM songs WHERE md5 <> '' AND md5 = (SELECT md5 FROM songs WHERE key = ?1)" \
-    " ORDER BY " SEL_SOURCE_RANK_SQL ", id LIMIT 1"
+    " ORDER BY " SEL_DUP_RANK_SQL("songs") " LIMIT 1"
+
+/* I1094a: maintained duplicate groups (schema v18). songs.dup_of is NULL on a unique song and on the best copy of a group, else the best
+ * copy's key; songs.dup_members is the group size (1 when unique). SEL_DUP_REBUILD_SQL recomputes every group in one set-based UPDATE;
+ * sel_dup_regroup recomputes one md5 (index seek on songs_md5). Both run inside the writer's open transaction. Counters are test sentinels. */
+#define SEL_DUP_REBUILD_SQL \
+    "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE dup_of IS NOT NULL OR dup_members <> 1;" \
+    "WITH g AS (SELECT s.id AS id, s.key AS key, COUNT(*) OVER (PARTITION BY s.md5) AS n," \
+    " FIRST_VALUE(s.key) OVER (PARTITION BY s.md5 ORDER BY " SEL_DUP_RANK_SQL("s") ") AS best FROM songs s WHERE s.md5 <> '')" \
+    " UPDATE songs SET dup_of = CASE WHEN g.key <> g.best THEN g.best END, dup_members = g.n FROM g" \
+    " WHERE songs.id = g.id AND g.n > 1;"
+int sel_dup_regroup(sqlite3* db, const char* md5);
+int sel_dup_rebuild(sqlite3* db);
+unsigned long sel_db_dup_regroups(void);
+unsigned long sel_db_dup_rebuilds(void);
 
 /* scan.c: SEL_LIB_REQ_SCAN_BATCH. */
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);
