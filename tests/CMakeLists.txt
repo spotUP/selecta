@@ -2797,6 +2797,18 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_lazy_open_ok")
 endif()
 
+# Row I710ga3: system-file download loop and job kind over the net fixture.
+if(NOT SEL_AMIGA)
+  add_executable(sysfile_fetch_test net/sysfile_fetch_test.c)
+  target_include_directories(sysfile_fetch_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(sysfile_fetch_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME sysfile-fetch
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:sysfile_fetch_test>" "-DWORK=${SEL_NET_WORK}"
+      "-DFIXDIR=${SEL_NET_DIR}/fixtures" -P "${SEL_NET_DIR}/sysfile_fetch.cmake")
+  set_tests_properties(sysfile-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "sysfile_fetch_ok")
+endif()
+
 # Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).
 if(NOT SEL_AMIGA)
   add_test(NAME source-aminet-net

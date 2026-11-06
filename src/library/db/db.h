@@ -12,6 +12,7 @@
 #include <selecta/host.h>
 #include <selecta/library_item.h>
 #include <selecta/protocol.h>
+#include <selecta/registry.h>
 #include <selecta/tags.h>
 
 #include <stdint.h>
@@ -602,6 +603,14 @@ typedef struct sel_lyrics_result {
 void sel_library_lyrics_fetch(sel_library* lib, const char* song_path, int local_lrc);
 unsigned sel_library_lyrics_seq(sel_library* lib);                     /* cheap: result sequence only */
 void sel_library_lyrics_result(sel_library* lib, sel_lyrics_result* out); /* copies the whole result */
+/* I710ga3: background download of a system file a replayer declares (sysfile_fetch.h). The request runs on the library
+ * job thread (inline without threads): after a pending user prefetch, before smart downloads, never on the caller's
+ * thread. A second request for a name that is queued or running is ignored and counted. _poll returns SEL_SYSF_NONE
+ * (never requested), SEL_SYSF_RUNNING, or the finished result SEL_SYSF_OK / ALL_FAILED / NO_MATCH; the engine polls
+ * it on its pump tick. config_dir is copied (255 chars at most). Returns 1 when queued, 0 when refused or ignored. */
+int sel_library_sysfile_request(sel_library* lib, const char* config_dir, const sel_sysfile_decl* d);
+int sel_library_sysfile_poll(sel_library* lib, const char* name);
+unsigned sel_library_sysfile_dups(sel_library* lib);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);

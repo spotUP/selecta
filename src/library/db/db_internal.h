@@ -7,6 +7,7 @@
 #include "../query.h"
 #include "../cache.h"
 #include "../md5.h"
+#include "../sysfile_fetch.h"
 
 #include <stdio.h>
 
@@ -44,6 +45,15 @@ typedef struct sel_src_mirror {
     struct { char id[16]; int n; } songs[32];
     struct { char id[16]; int64_t when; } sync[32];
 } sel_src_mirror;
+
+/* I710ga3: one system-file download request (fetch.c). state: SEL_SYSF_NONE free, SEL_SYSF_RUNNING queued or running,
+ * else the finished result. The decl's strings live in the plugin descriptor. */
+#define SEL_SYSF_SLOTS 4u
+typedef struct sel_sysf_slot {
+    sel_sysfile_decl decl;
+    char config[256];
+    int state;
+} sel_sysf_slot;
 
 struct sel_library {
     const sel_host* host;
@@ -98,6 +108,8 @@ struct sel_library {
     unsigned task_done;      /* a task ended and _task_take has not collected it */
     uint32_t (*registry_count)(void); /* I1127b: copied into cache and pf_cache */
     const sel_tag* (*registry_get)(uint32_t);
+    sel_sysf_slot sysf[SEL_SYSF_SLOTS]; /* I710ga3: under job_lock when threads exist */
+    unsigned sysf_dups;                 /* requests ignored because that name was queued or running */
 #if defined(SEL_LIBRARY_NO_THREAD)
     char pf_cur[160];        /* the request the poll is working on across ticks (I168b); "" = none */
     int pf_cur_smart;
@@ -107,6 +119,7 @@ struct sel_library {
     unsigned job_task, job_task_busy; /* I336: the queued caller task, and one running */
     unsigned job_vote, job_vote_busy; /* one queued vote request, and one running */
     unsigned job_lyric, job_lyric_busy; /* one queued lyrics request, and one running */
+    unsigned job_sysf, job_sysf_busy;   /* I710ga3: queued system-file downloads, and one running (fetch.c) */
     unsigned job_hash, job_hash_busy;   /* local md5 pass: one coalesced pending job, and one running (duplicates.c, I184a) */
     pthread_t job_thread;    /* the one background job thread, created on the first job (job.c, I173d) */
     pthread_mutex_t job_lock; /* guards the job queue (pf_spec, sm_spec, job_rating) and the flags below */
@@ -233,6 +246,7 @@ void sel_job_wake(sel_library* lib);  /* job_lock held: a job was queued */
 void sel_job_wait(sel_library* lib);  /* returns once the queue is empty and nothing runs */
 void sel_job_stop(sel_library* lib);
 int sel_fetch_job_pending(sel_library* lib);  /* job_lock held */
+void sel_sysf_job_run(sel_library* lib);     /* job_lock held on entry and exit; one request per call */
 void sel_fetch_job_run(sel_library* lib);     /* job_lock held on entry and exit; drops it around the transfer */
 #endif
 void sel_pin_job_run(sel_library* lib);       /* I406b: writes the queued pinned hits as one SCAN_BATCH (no lock held) */

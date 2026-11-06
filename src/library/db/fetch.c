@@ -582,3 +582,161 @@ void sel_library_cache_report(const sel_library* lib) {
                s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped, s.zip_members, s.zip_requests, s.content_companions, s.content_rejected, s.content_missing, s.companion_missing);
     }
 }
+
+/* ---- I710ga3: system-file downloads (sysfile_fetch.h). Slots in lib->sysf; one request per job turn. ---- */
+#define SYSF_RUNNING_NOW 10 /* internal slot state: the job thread is on it (polled as SEL_SYSF_RUNNING) */
+
+static sel_sysf_slot* sysf_find(sel_library* lib, const char* name) {
+    unsigned i;
+
+    for (i = 0; i < SEL_SYSF_SLOTS; i++) {
+        if (lib->sysf[i].state != SEL_SYSF_NONE && strcmp(lib->sysf[i].decl.name, name) == 0) {
+            return &lib->sysf[i];
+        }
+    }
+    return NULL;
+}
+
+/* Slot for a new name: a free one, else the first with a finished result. */
+static sel_sysf_slot* sysf_free(sel_library* lib) {
+    unsigned i;
+
+    for (i = 0; i < SEL_SYSF_SLOTS; i++) {
+        if (lib->sysf[i].state == SEL_SYSF_NONE) {
+            return &lib->sysf[i];
+        }
+    }
+    for (i = 0; i < SEL_SYSF_SLOTS; i++) {
+        if (lib->sysf[i].state != SEL_SYSF_RUNNING && lib->sysf[i].state != SYSF_RUNNING_NOW) {
+            return &lib->sysf[i];
+        }
+    }
+    return NULL;
+}
+
+static int sysf_run_slot(sel_library* lib, sel_sysf_slot* s) {
+    sel_sysfile_res res;
+
+    return sel_sysfile_fetch(lib->host, s->config, &s->decl, &res);
+}
+
+#if defined(SEL_LIBRARY_NO_THREAD)
+int sel_library_sysfile_request(sel_library* lib, const char* config_dir, const sel_sysfile_decl* d) {
+    sel_sysf_slot* s;
+
+    if (lib == NULL || config_dir == NULL || d == NULL || d->name == NULL || strlen(config_dir) >= sizeof s->config) {
+        return 0;
+    }
+    s = sysf_find(lib, d->name);
+    if (s == NULL) {
+        s = sysf_free(lib);
+    }
+    if (s == NULL) {
+        return 0;
+    }
+    s->decl = *d;
+    snprintf(s->config, sizeof s->config, "%s", config_dir);
+    s->state = sysf_run_slot(lib, s); /* no job thread: runs inline */
+    return 1;
+}
+#else
+int sel_library_sysfile_request(sel_library* lib, const char* config_dir, const sel_sysfile_decl* d) {
+    sel_sysf_slot* s;
+
+    if (lib == NULL || config_dir == NULL || d == NULL || d->name == NULL || strlen(config_dir) >= sizeof s->config ||
+        !sel_job_start(lib)) {
+        return 0;
+    }
+    pthread_mutex_lock(&lib->job_lock);
+    s = sysf_find(lib, d->name);
+    if (s != NULL && (s->state == SEL_SYSF_RUNNING || s->state == SYSF_RUNNING_NOW)) {
+        lib->sysf_dups++;
+        pthread_mutex_unlock(&lib->job_lock);
+        return 0;
+    }
+    if (s == NULL) {
+        s = sysf_free(lib);
+    }
+    if (s == NULL) {
+        pthread_mutex_unlock(&lib->job_lock);
+        return 0;
+    }
+    s->decl = *d;
+    snprintf(s->config, sizeof s->config, "%s", config_dir);
+    s->state = SEL_SYSF_RUNNING;
+    lib->job_sysf++;
+    sel_job_wake(lib);
+    pthread_mutex_unlock(&lib->job_lock);
+    return 1;
+}
+
+void sel_sysf_job_run(sel_library* lib) {
+    sel_sysf_slot* s = NULL;
+    sel_sysf_slot local;
+    unsigned i;
+    int rc;
+
+    for (i = 0; i < SEL_SYSF_SLOTS; i++) {
+        if (lib->sysf[i].state == SEL_SYSF_RUNNING) {
+            s = &lib->sysf[i];
+            break;
+        }
+    }
+    if (s == NULL) {
+        lib->job_sysf = 0;
+        return;
+    }
+    s->state = SYSF_RUNNING_NOW;
+    lib->job_sysf--;
+    lib->job_sysf_busy = 1;
+    local = *s; /* the transfer runs without job_lock; the slot is only touched under it */
+    pthread_mutex_unlock(&lib->job_lock);
+    rc = sysf_run_slot(lib, &local);
+    pthread_mutex_lock(&lib->job_lock);
+    s->state = rc;
+    lib->job_sysf_busy = 0;
+    pthread_cond_broadcast(&lib->job_wake);
+}
+#endif
+
+int sel_library_sysfile_poll(sel_library* lib, const char* name) {
+    sel_sysf_slot* s;
+    int st = SEL_SYSF_NONE;
+
+    if (lib == NULL || name == NULL) {
+        return SEL_SYSF_NONE;
+    }
+#if !defined(SEL_LIBRARY_NO_THREAD)
+    if (!lib->job_started) {
+        return SEL_SYSF_NONE;
+    }
+    pthread_mutex_lock(&lib->job_lock);
+#endif
+    s = sysf_find(lib, name);
+    if (s != NULL) {
+        st = s->state == SYSF_RUNNING_NOW ? SEL_SYSF_RUNNING : s->state;
+    }
+#if !defined(SEL_LIBRARY_NO_THREAD)
+    pthread_mutex_unlock(&lib->job_lock);
+#endif
+    return st;
+}
+
+unsigned sel_library_sysfile_dups(sel_library* lib) {
+    unsigned n;
+
+    if (lib == NULL) {
+        return 0;
+    }
+#if !defined(SEL_LIBRARY_NO_THREAD)
+    if (!lib->job_started) {
+        return 0;
+    }
+    pthread_mutex_lock(&lib->job_lock);
+#endif
+    n = lib->sysf_dups;
+#if !defined(SEL_LIBRARY_NO_THREAD)
+    pthread_mutex_unlock(&lib->job_lock);
+#endif
+    return n;
+}

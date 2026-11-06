@@ -17,7 +17,7 @@ static void* job_main(void* arg) {
     sel_net_set_cancel(&lib->job_quit, 0u); /* close ends a job stuck on a silent server within one poll slice (I173f) */
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
-        while (!lib->job_quit && !lib->job_rating && !lib->job_pin && !lib->job_vote && !lib->job_lyric && !lib->job_hash && !lib->job_task &&
+        while (!lib->job_quit && !lib->job_rating && !lib->job_pin && !lib->job_vote && !lib->job_lyric && !lib->job_sysf && !lib->job_hash && !lib->job_task &&
                !sel_fetch_job_pending(lib)) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
@@ -77,6 +77,11 @@ static void* job_main(void* arg) {
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }
+        if (lib->job_sysf && lib->pf_spec[0] == '\0') {
+            /* I710ga3: after a pending user prefetch, before any smart download */
+            sel_sysf_job_run(lib);
+            continue;
+        }
         if (lib->job_hash && !sel_fetch_job_pending(lib)) {
             /* lowest priority: one file per turn, so a queued job never waits for the whole pass (I184a) */
             lib->job_hash = 0;
@@ -112,7 +117,7 @@ void sel_job_wake(sel_library* lib) {
 void sel_job_wait(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
-        while (lib->job_task || lib->job_task_busy || lib->job_rating || lib->job_rating_busy || lib->job_pin || lib->job_pin_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || lib->job_hash || lib->job_hash_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
+        while (lib->job_task || lib->job_task_busy || lib->job_rating || lib->job_rating_busy || lib->job_pin || lib->job_pin_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || lib->job_sysf || lib->job_sysf_busy || lib->job_hash || lib->job_hash_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
         pthread_mutex_unlock(&lib->job_lock);
