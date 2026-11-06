@@ -410,7 +410,7 @@ struct sel_engine {
     int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
     uint32_t home_item_shelves;                /* I678j sentinel: item shelves the home text carried */
     uint32_t home_chip;                        /* Home format chip: SEL_HOME_CHIP_* (I678j) */
-    uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
+    uint32_t home_rows;                        /* entries the last applied home read shows (I191 sentinel; a re-read replaces it, I1130) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t lib_reads_applied;                /* I829: posted library reads the pump applied */
     uint32_t hidden_read_drops;                /* I1091: Home/Folders answers collected while another source was shown, not written (sentinel) */
@@ -6067,7 +6067,7 @@ static void home_apply(sel_engine* e, const char* from) {
     char* text = e->view.htext;
 
     copy_str(text, SEL_VIEW_HOME_TEXT_MAX, from);
-    e->home_rows += sel_view_set_home(&e->view, text);
+    e->home_rows = sel_view_set_home(&e->view, text);
     /* I678j sentinel: item shelves sent (a run of "S #<kind>:" lines under one heading). */
     {
         const char* l = text;
