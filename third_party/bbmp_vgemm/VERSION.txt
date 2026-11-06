@@ -1,0 +1,5 @@
+bbmp_vgemm (I710ah): vgemm_engine.cpp and engine.h from github.com/creep-ltx/bbmp csrc/retro, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged
+(GPL-3.0-or-later, SPDX line in each file, COPYING). VGM Music Maker songs (.vge, Shiru 2011; Mega Drive YM2612 + SN76489): the engine replays the
+song the way the editor's VGM export does (measured from vgm_mm.exe -vgm, bbmp docs/replayers.md, engine `vgemm`), builds the VGM in memory and has
+libvgm play it (the engine calls five gme.h functions; plugins/replayers/bbmp_vgemm/compat/gme/gme.h and gme_compat.cpp answer them with libvgm, because selecta_gme has no VGM core). Only these two files of csrc/retro are vendored; the retro:: helpers it uses (register_engine,
+field, to_utf8) are in plugins/replayers/bbmp_vgemm/shim.cpp.

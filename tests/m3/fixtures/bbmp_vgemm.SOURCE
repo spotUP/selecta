@@ -1,0 +1,6 @@
+VGM Music Maker test songs for tests/m3/vgemm_decode.sh (bbmp_vgemm module, I710ah). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/VGM%20Music%20Maker/Shiru/example%20fm%20psg%20samples.vge  c7d1303c77af2df69142bc90dbf8a809803515ad07cbeec838360f68d8d53624
+https://modland.com/pub/modules/VGM%20Music%20Maker/Linde/trinitron%20sunset.vge  a249847ca7ed7ed1f48544d4706e01df60c657362d2ca257cf0e987fbdb015bd
+https://modland.com/pub/modules/VGM%20Music%20Maker/Groovemaster303/bonus%20stage%20funk.vge  78da6fb758e64702fa4c87b5f35b84738283bd7c16373d9482ce3c592f98ea6d
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro/vgemm_engine.cpp, third_party/bbmp_vgemm).

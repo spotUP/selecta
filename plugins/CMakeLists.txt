@@ -243,6 +243,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_smufi)
 endif()
 
+# bbmp_vgemm (I710ah): VGM Music Maker songs (.vge), bbmp csrc/retro/vgemm_engine (clean-room, GPL 3 or later) played by libvgm (static libs of replayers/libvgm, added above), behind the
+# GPL-plugin gate. Host only (C++17 engine, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_vgemm)
+endif()
+
 # bbmp_tss (I710af): T'SoundSystem songs (.tss, .tsd), bbmp csrc/retro/tss_engine (BSD 3-clause, a port of toyoshim's TSS). Permissive, so a core
 # module (no GPL gate). Host only (C++17 engine, no Amiga module path; exemption in row I710af, follow-up I710afa).
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
