@@ -242,7 +242,7 @@ Every Selecta coupling in the shipped classes, with the fix. Line numbers verifi
 | mui_aabalance_class.c:110-111 | `mui_aa_balance_rgb(mui_theme_tokens(), ...)`, `mui_theme_bg_spec` | none; `mui_theme_tokens()` becomes a support library call |
 | mui_aabtn_class.c:22 | `map/mui_icons.h` | icon becomes `AAA_Button_Icon` tag (section 6) |
 | mui_aabtn_class.c:23 | `map/mui_map.h` for `mui_aabtn_minmax` (mui_map.h:127) | move `mui_aabtn_minmax` into package `map/mui_aa.c`; mui_map.h keeps a forward include |
-| mui_aabtn_class.c:63 | `mui_aa_metrics_aspect(..., mui_aa_screen_aspect(), ...)`; global `g_screen_aspect` set by Selecta (map/mui_aa.c:192-200) | aspect read per screen from `GetVPModeID` + `GetDisplayInfoData` in `aa_setup`; Selecta's setter removed. Resolution source detail OPEN: not examined |
+| mui_aabtn_class.c:63 | `mui_aa_metrics_aspect(..., mui_aa_screen_aspect(), ...)`; global `g_screen_aspect` set by Selecta (map/mui_aa.c:192-200) | aspect read per screen in `aa_setup` from the screen's `DrawInfo` (`_dri(obj)->dri_Resolution`), kept in the context; Selecta's setter and the global removed. Rule: section 4.1 |
 | mui_aabtn_class.c:68-70, :229 | `SEL_GUI_TOKEN_FOCUS_RING / TEXT_MUTED / SURFACE` | keep token enum (public, tokens.h); public header re-exports names as `AATOK_*` |
 | mui_aabtn_class.c:130-142 | `mui_icon_body_wh / body / sizes / heights` (baked Lucide) | section 6 |
 | mui_aabtn_class.c, spec `.id` | ReturnID inside class | remove; caller uses `MUIM_Notify` on `MUIA_Pressed`/`MUIA_Selected`; Selecta wrapper adds the notify |
@@ -272,6 +272,54 @@ Couplings in the 3 private classes (not decoupled, they stay in Selecta): canvas
 Selecta-side glue that stays in `plugins/ui/mui/`: theme file path `MUI_THEME_ENV_PATH "ENV:Selecta/theme"`
 (mui_ui.c:277), `mui_theme_tokens_set` (mui_ui.c:713), `aa_retheme_all` call (mui_ui.c:754). These become calls into
 the package API; the logic stays one copy in the package.
+
+### 4.1 Screen aspect rule (row I685e1, examined 2026-11-06)
+
+Facts read from the sources:
+
+- Today one global holds the aspect: `g_screen_aspect` (map/mui_aa.c:192). Selecta sets it once in `mui_screen_open`
+  (plugins/ui/mui/mui_ui.c:646-651): `GetDisplayInfoData(DTAG_DISP, plan.mode)`, then
+  `mui_pixel_aspect_q8(di.Resolution.x, di.Resolution.y)`, then `mui_aa_set_screen_aspect`.
+- Five package map functions read the global without an argument: `mui_aa_slider_metrics` (:339),
+  `mui_aa_cycle_metrics` (:464), `mui_aa_field_metrics` (:547), `mui_aa_scroller_metrics` (:601),
+  `mui_aa_list_metrics` (:661). `model_metrics` in map/mui_icons.c:84 reads it through `mui_aa_screen_aspect()`, as do
+  `mui_aabtn_class.c:63` and one line in `mui_aapanel_class.c`.
+- `aa_setup` (mui_aa_draw.c:150) already takes everything else per screen from `_screen(obj)`: colour map, depth,
+  font size from the screen height and width.
+- `struct DrawInfo` carries `dri_Resolution` with the NDK comment "from DisplayInfo database for initial display mode"
+  (intuition/screens.h:76-79). MUI gives it per object as `_dri(obj)`, valid from `MUIM_Setup` to `MUIM_Cleanup`,
+  the same span as the `aa_ctx`.
+
+Why the global must go: a `.mcc` and the support library are shared by every program that opens them. Two programs
+on screens of different pixel shape (a 640x256 Workbench and an RTG screen) would overwrite each other's value.
+
+Rule:
+
+1. `aa_setup` sets `c->aspect_q8 = mui_pixel_aspect_q8(_dri(obj)->dri_Resolution.X, _dri(obj)->dri_Resolution.Y)`.
+   `mui_pixel_aspect_q8` is unchanged: 0 or negative input gives 256, the result is clamped to 256..512. A NULL
+   `_dri(obj)` gives 256.
+2. No display database call in `aa_setup`. `aa_setup` runs once per object in `MUIM_Setup` (several hundred objects
+   in Selecta); a field read costs nothing, `GetDisplayInfoData` per object would add to the start-up time row I625a
+   measures. No cache keyed on a screen pointer either (a closed screen's address can be reused).
+3. The five metrics functions and `model_metrics` take the aspect as an argument (`int aspect_q8` after `font_px`).
+   Classes pass `c->aspect_q8` (or `d->aa.aspect_q8`). `g_screen_aspect`, `mui_aa_set_screen_aspect` and
+   `mui_aa_screen_aspect` are deleted, not kept as a fallback.
+4. Selecta keeps its own `g_pixel_aspect_q8` (mui_ui.c) for its own layout decisions (screen plan, viz, band) and
+   passes it where its layout code calls a package metrics function. It no longer sets anything in the package.
+5. Same number as today for Selecta by construction on its own screen: the screen is opened with `plan.mode`, and
+   Intuition fills `dri_Resolution` from the display database entry of that mode, the entry `mui_screen_open` reads
+   today. Unverified on hardware: that Picasso96 (uaegfx) fills `dri_Resolution` with the same values as
+   `DisplayInfo.Resolution`. The rig check below decides it.
+
+Checks for the row:
+
+- Host: `mui_pixel_aspect_q8` cases stay; a new case proves each of the five metrics functions returns the tall-pixel
+  values for 512 and the square values for 256 in ONE process (two calls, two answers: the proof the global is gone).
+  A source check fails when `g_screen_aspect` or `mui_aa_set_screen_aspect` is written anywhere under the package.
+- Rig (PAL 640x256, PAL laced 640x512, RTG): the debug line prints both numbers once per screen open,
+  `dri_Resolution` and `DisplayInfo.Resolution` of `GetVPModeID(&scr->ViewPort)`; PASS when they give the same
+  `aspect_q8` on all three screens and the layout matches the screenshots from before the change. A mismatch on any
+  screen stops the row and is reported with both numbers; it is not patched with a fallback.
 
 ---
 
