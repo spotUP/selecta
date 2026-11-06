@@ -2090,6 +2090,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710d: Buzz (.bmx) songs on the BmxPlay machines play through the render entry point (bbmp_buzz module, GPL-3.0). Songs are
+  # fetched by checksum, exit 77 = skip. A song that needs a Windows machine must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/buzz-decode)
+    add_test(NAME buzz-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/buzz_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/buzz-decode)
+    set_tests_properties(buzz-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "buzz_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ak: FAC SoundTracker (MSX .mus) songs play through the render entry point (bbmp_fac module, GPL-3.0). Songs and
   # drum kits are fetched by checksum, exit 77 = skip. A non-FAC .mus must not be claimed.
   if(SELECTA_GPL_PLUGINS)

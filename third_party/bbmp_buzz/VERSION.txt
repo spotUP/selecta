@@ -1,0 +1,15 @@
+bbmp_buzz: Jeskola Buzz (.bmx) songs that use only BmxPlay's machines.
+buzz_engine.c and engine.h: github.com/creep-ltx/bbmp csrc/pc, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged.
+  License GPL-3.0-or-later (SPDX line in each file, COPYING). This is the licence of the vendored tree as a whole.
+bmxplay.h, bmxmi.h, bmxmlist.h, bmxdebug.h, _303.h, _delay.h, _filter.h, _voice.h, _xi.h: BmxPlay 0.4.6 by Joric^Proxium,
+  github.com/joric/bmxplay commit e77f921f35caf075876d676a87cc84161b132416, src/. README of that repo: "Player is public domain".
+  Only these player headers are vendored. MachineInterface.h (Oskari Tammelin, freeware / non-commercial only) and the machine
+  .cpp files that include it are NOT vendored and not needed (the player never includes or links them).
+Patches to BmxPlay, the same ones as bbmp tools/build-pc.sh makes (each marked "modland" in the source):
+  bmxplay.h: the Windows/Linux waveout include replaced by "#define BUFSIZE 4096" (no sound output).
+  bmxmi.h: bmx_alloc zeroed with 16 bytes of room (_xi reads one byte past 4-bit samples, _filter uses state early);
+           BmxMachineHeader laid out with pack(8) on Apple (ARM linker cannot place pointers at odd addresses).
+  _xi.h: a sample playing backwards past its start (ping-pong) no longer reads before the data.
+  _delay.h: delay length clamped to 128/128 of its buffer (a byte in the file).
+Engine limit: only songs whose machines are _303, _xi, _voice, _filter, _delay play; any other machine is refused by name.
+Global state: the engine keeps one song in static variables, so only one buzz song can be open at a time.

@@ -1,0 +1,7 @@
+Buzz test songs for tests/m3/buzz_decode.sh (bbmp_buzz module, I710d). Never committed: fetched by sha256 into the git-ignored
+tests/m3/fixtures/.cache. No redistribution licence is stated for the songs. The first two use only BmxPlay's machines and play; the
+third needs the Windows plug-in "And XGEN" and must be refused.
+https://modland.com/pub/modules/Buzz/_unknown/atb-gm.bmx  eafd9eeb2e4e709c79acc31442fe7aeb6d6bf13c21eac239f9d473c79c8ff13a
+https://modland.com/pub/modules/Buzz/_unknown/axel2.bmx  805bb0964d6bd59b37dec594cab14dfb6bfc2cca731723bce552cf7e2d7c86d2
+https://modland.com/pub/modules/Buzz/And/outside%20of%20the%20dream.bmx  691de052eb12076d8059b07352890c185a3ea680c696e1b39605f091b587a808
+Engine licence: GPL-3.0-or-later (bbmp csrc/pc/buzz_engine.c) on BmxPlay's public-domain player (third_party/bbmp_buzz).
