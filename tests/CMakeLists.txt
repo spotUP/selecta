@@ -720,6 +720,7 @@ if(NOT SEL_AMIGA)
   # time at main entry; without --log none appear. Fail-before: the lines did not exist.
   add_test(NAME selecta-start-phase-trace
     COMMAND ${CMAKE_COMMAND} -DSELECTA=$<TARGET_FILE:selecta> -DWORK=${CMAKE_CURRENT_BINARY_DIR}/start_phase_trace
+      -DSRC=${PROJECT_SOURCE_DIR}/apps/selecta/main.c
       -P ${CMAKE_CURRENT_SOURCE_DIR}/m1/start_phase_trace.cmake)
 
   # I916: a UI that refuses its flags hands the shell the reason (sel_ui_open_args.why); the start-up report names it

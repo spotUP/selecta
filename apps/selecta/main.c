@@ -78,6 +78,8 @@ static uint32_t g_trace_t0; /* host clock at main entry; trace lines print ms si
 static void sel_trace(const sel_host* h, const char* phase) {
     if (g_trace || g_phase_trace) {
         fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)(h->clock_ms(h) - g_trace_t0), phase);
+        /* I625a4: the Amiga stderr (libnix) buffers into the --log file; a start that hangs must still leave the line. */
+        fflush(stderr);
     }
 }
 /* I625a: wall clock at main entry, so load-to-main is the difference between this and a system time printed just before
@@ -644,6 +646,7 @@ int main(int argc, char** argv)
     }
     if (g_phase_trace) {
         sel_trace_system_time();
+        fflush(stderr); /* I625a4: see sel_trace */
     }
     sel_trace(host, "main begin");
     sel_trace_load_address();

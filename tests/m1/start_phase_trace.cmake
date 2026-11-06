@@ -32,3 +32,15 @@ execute_process(COMMAND "${SELECTA}" --output null --start-dir "${WORK}" --keys 
 if(err2 MATCHES "trace t_ms=" OR out2 MATCHES "trace t_ms=" OR err2 MATCHES "system_time=")
   message(FATAL_ERROR "trace lines appeared without --log:\n${err2}")
 endif()
+# I625a4: every trace line is flushed (the Amiga stderr buffers into the --log file, so a hung start left no line). A host run
+# cannot show this (host stderr is unbuffered, so the log is complete either way); the test pins the flush calls in the source
+# instead: one fflush(stderr) inside sel_trace and one after the system_time line. It does not prove the Amiga log is readable
+# while the process runs; that is the rig check of the row.
+file(READ "${SRC}" main_c)
+string(REGEX MATCH "static void sel_trace\\(const sel_host\\* h, const char\\* phase\\) \\{[^}]*\\}[^}]*\\}" trace_fn "${main_c}")
+if(NOT trace_fn MATCHES "fflush\\(stderr\\)")
+  message(FATAL_ERROR "sel_trace does not flush stderr after the trace line")
+endif()
+if(NOT main_c MATCHES "sel_trace_system_time\\(\\);[ \t\n]*fflush\\(stderr\\)")
+  message(FATAL_ERROR "the system_time trace line is not flushed")
+endif()
