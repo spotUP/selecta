@@ -227,6 +227,7 @@ add_subdirectory(nuade_ab)
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(fixtures/plugin_dyn)
   add_subdirectory(fixtures/plugin_sidfeed)
+  add_subdirectory(fixtures/plugin_sysfile) # I710ga6
   if(SELECTA_GPL_PLUGINS)
     add_subdirectory(fixtures/sndh)
   endif()
@@ -2901,6 +2902,15 @@ if(NOT SEL_AMIGA)
       "-DFIXDIR=${SEL_NET_DIR}/fixtures" -P "${SEL_NET_DIR}/sysfile_engine.cmake")
   set_tests_properties(sysfile-engine PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "sysfile_engine_ok")
+endif()
+
+# Row I710ga6: the desktop UI's system-file flow (toast, note + dialog, pick) with the loadable test-only sysfile_probe.
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32 AND SELECTA_UI_DESKTOP)
+  add_test(NAME sysfile-desktop
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DPLUGINS=${SEL_SYSFILE_PROBE_DIR}" -P "${SEL_NET_DIR}/sysfile_desktop.cmake")
+  set_tests_properties(sysfile-desktop PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "sysfile_desktop_ok")
 endif()
 
 # Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).

@@ -359,6 +359,7 @@ typedef struct desk {
     uint32_t np_notes;                /* Now Playing note lines drawn (I1127c sentinel: "Sample bank not found") */
     sel_gui_rect np_note_btn;         /* I710ga6: the note line's "Get File..." button, empty when none is drawn */
     uint32_t np_note_buttons;         /* sentinel: note buttons drawn */
+    int sysfile_picked;               /* a picked file is on its way: its SYSFILE_READY is no download, so no toast */
     uint32_t sysfile_toasts, sysfile_picks, sysfile_retries; /* I710ga6 sentinels: "<label> downloaded" toasts, files picked, downloads retried */
     int sysfile_auto_done;            /* the fallback dialog opened by itself once this session (decision 5) */
     int sysfile_wait;                 /* a file dialog is open for the system file dialog; its answer arrives as a drop */
@@ -7707,6 +7708,8 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)sel_uim_pref_row_count(), (unsigned)d->set_sets, (unsigned)d->set_clicks, (unsigned)d->set_entry_clicks, (int)se.x, (int)se.y,
                      (int)se.w, (int)se.h);
         o = dump_put(d, o, "about credits=%u first=%s\n", (unsigned)d->about.count, d->about.count > 0u ? d->about.credit[0].title : "");
+        o = dump_put(d, o, "sysfile state=%u toasts=%u buttons=%u picks=%u retries=%u dlg=%d dlg_opens=%u\n", (unsigned)sel_engine_state(d->engine)->song.sysfile_state,
+                     (unsigned)d->sysfile_toasts, (unsigned)d->np_note_buttons, (unsigned)d->sysfile_picks, (unsigned)d->sysfile_retries, d->dlg_open, (unsigned)d->dlg_opens); /* I710ga6 */
         o = dump_put(d, o, "rom loads=%u resets=%u refused=%u\n", (unsigned)d->rom_loads, (unsigned)d->rom_resets, (unsigned)d->rom_refused);
         for (si = 0; si < SEL_UIM_ROM_COUNT; si++) {
             o = dump_put(d, o, "rom_row %u source=%s err=%s\n", (unsigned)si,
@@ -14873,6 +14876,7 @@ static int sysfile_install(desk* d, const char* path) {
     line[o++] = '"';
     line[o] = '\0';
     d->sysfile_picks++;
+    d->sysfile_picked = 1;
     d->repaint = 1;
     return desk_send(d, line);
 }
@@ -16379,9 +16383,13 @@ static void desk_on_event(void* state, const sel_message* evt) {
         d->repaint = 1;
     }
     if (evt->id == SEL_EVT_SYSFILE_READY && evt->argc > 0 && evt->args[0].type == SEL_ARG_STR) { /* I710ga6 */
-        snprintf(d->sysfile_toast, sizeof d->sysfile_toast, "%.60s downloaded", evt->args[0].v.s);
-        d->sysfile_toasts++;
-        desk_toast(d, d->sysfile_toast);
+        if (d->sysfile_picked) { /* the user's own file, not a download */
+            d->sysfile_picked = 0;
+        } else {
+            snprintf(d->sysfile_toast, sizeof d->sysfile_toast, "%.60s downloaded", evt->args[0].v.s);
+            d->sysfile_toasts++;
+            desk_toast(d, d->sysfile_toast);
+        }
         d->repaint = 1;
     }
     if (evt->id == SEL_EVT_SYSFILE_FAILED && evt->argc > 1 && evt->args[1].type == SEL_ARG_STR) {
