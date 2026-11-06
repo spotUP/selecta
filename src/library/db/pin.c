@@ -56,6 +56,10 @@ uint32_t sel_library_pin_gen(sel_library* lib) {
     return lib != NULL ? lib->pin_gen : 0;
 }
 
+uint32_t sel_library_touch_gen(sel_library* lib) {
+    return lib != NULL ? lib->touch_gen : 0;
+}
+
 uint32_t sel_library_pin_rows(sel_library* lib) {
     return lib != NULL ? lib->pin_rows : 0;
 }

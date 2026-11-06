@@ -530,9 +530,11 @@ uint32_t sel_library_pin_rows(sel_library* lib);
 /* I1077b: the library's write generation, one count per committed write transaction (a sqlite commit hook on the read-write
  * connection, so no write path can skip it: autocommit statements, scan/folder/sync BEGIN..COMMIT, pin batches). A SELECT or a
  * ROLLBACK does not move it. For VIEWS (the engine's library_serial); never key a store cache on it (I838). _pin_gen counts the
- * commits of pin batches only, so the engine can tell a pins-only change (I1038). Plain loads, never a request. */
+ * commits of pin batches only, so the engine can tell a pins-only change (I1038). _touch_gen (I1130a) counts the commits of Recents
+ * touches only (the opened table), so the engine can tell a change that moves nothing but the Recents order. Plain loads, never a request. */
 uint32_t sel_library_write_gen(sel_library* lib);
 uint32_t sel_library_pin_gen(sel_library* lib);
+uint32_t sel_library_touch_gen(sel_library* lib);
 /* I958: pending 'rating' pushes (what sel_library_rating_pending reports as rows), kept by the library's writer; a plain load, never a
  * request, so a per-frame UI read cannot wait on the worker. */
 uint32_t sel_library_rating_pending_count(sel_library* lib);

@@ -87,6 +87,8 @@ struct sel_library {
     volatile unsigned write_gen;   /* I1077b: committed write transactions (commit hook, writer thread) */
     volatile unsigned pin_gen;     /* I1077b: of those, commits made by pin batches */
     volatile unsigned in_pin;      /* I1077b: the writer is inside a pin batch */
+    volatile unsigned touch_gen;   /* I1130a: of those, commits made by Recents touches (SEL_USER_LIBRARY_TOUCH: the opened table only) */
+    volatile unsigned in_touch;    /* I1130a: the writer is inside a Recents touch */
     volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
     volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
     volatile unsigned rating_pending_n; /* I958: pending 'rating' pushes; the writer of pending_push keeps it, a UI read never asks the worker */

@@ -273,6 +273,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_boyscout)
 endif()
 
+# bbmp_cybertracker (I710g): CyberTracker C64 songs (.ct), bbmp csrc/retro clean-room engine (GPL 3 or later) that runs the user's own
+# CyberTracker 1.01 disk image on a 6502 + reSIDfp, behind the GPL-plugin gate. Host only (C++17 engine, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_cybertracker)
+endif()
+
 # bbmp_psycle (I710u): Psycle songs (.psy), GPL Psycle engine + bbmp helper and native plugins run as a child process, behind the
 # GPL-plugin gate. Host only (C++14 engine, dlopen'd plugin libraries, no Amiga build).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

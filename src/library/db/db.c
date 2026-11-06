@@ -163,6 +163,7 @@ static int write_gen_hook(void* ctx) {
 
     lib->write_gen++;
     if (lib->in_pin) lib->pin_gen++;
+    if (lib->in_touch) lib->touch_gen++;
     return 0;
 }
 
@@ -325,7 +326,11 @@ static void handle_request(sel_library* lib, const sel_message* req, sel_message
     } else if (req->id == SEL_LIB_REQ_SRCSTATE && req->argc == 1) {
         sel_library_srcstate(lib, (const sel_srcstate_op*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_USER && req->argc == 1) {
-        sel_library_user(lib, (const sel_user_op*)req->args[0].v.s, reply);
+        const sel_user_op* uop = (const sel_user_op*)req->args[0].v.s;
+
+        lib->in_touch = uop->op == SEL_USER_LIBRARY_TOUCH ? 1u : 0u;
+        sel_library_user(lib, uop, reply);
+        lib->in_touch = 0u;
     } else if (req->id == SEL_LIB_REQ_GENRE && req->argc == 1) {
         sel_library_genre_op(lib, (const sel_genre_op*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_ART && req->argc == 1) {

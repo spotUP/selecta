@@ -639,7 +639,10 @@ struct sel_engine {
     uint32_t source_searches;      /* searches started (STAT_SOURCE_SEARCHES) */
     uint32_t source_pins;          /* I406b: hits handed to the library (search_pin) */
     uint32_t write_gen_seen, pin_gen_seen; /* I1077c: sel_library_write_gen / _pin_gen at the last pump pass */
+    uint32_t touch_gen_seen;       /* I1130a: sel_library_touch_gen at the last pump pass */
     int gen_pending, gen_flush, gen_pins_only; /* I1077c: a committed write not yet published; flush = a task ended, publish now; pins_only = every commit since was a pin */
+    int gen_touch_only;            /* I1130a: every commit since the last publish was a Recents touch */
+    int follow_all;                /* I1130a: a publish since the last lib_models_follow moved more than the Recents order */
     uint32_t gen_pub_ms;           /* I1077c: host clock_ms of the last publish (SEL_LIB_GEN_MIN_MS during a scan or sync) */
     uint32_t followed_serial;      /* I1077c: library_changes the engine models (lib_models_follow) were last re-posted for */
     uint32_t sources_asked;        /* I1077c: a client sent SOURCES once; from then on the rows are republished when the library changes */
@@ -4715,6 +4718,7 @@ static void lib_gen_flush(sel_engine* e) {
     e->gen_pending = 1;
     e->gen_flush = 1;
     e->gen_pins_only = 0;
+    e->gen_touch_only = 0;
 }
 
 /* Emit a LIBRARY_RESULT with a path and a count from the library hooks (scan and fetch). */
@@ -9115,17 +9119,20 @@ static void lib_reads_collect(sel_engine* e) {
 #define SEL_LIB_GEN_MIN_MS 500u
 
 static void lib_gen_poll(sel_engine* e) {
-    uint32_t g, p, now;
+    uint32_t g, p, t, now;
 
     if (e->lib == NULL) return;
     g = sel_library_write_gen(e->lib);
     p = sel_library_pin_gen(e->lib);
+    t = sel_library_touch_gen(e->lib);
     if (g != e->write_gen_seen) {
-        if (!e->gen_pending) e->gen_pins_only = 1;
+        if (!e->gen_pending) e->gen_pins_only = 1, e->gen_touch_only = 1;
         if (g - e->write_gen_seen != p - e->pin_gen_seen) e->gen_pins_only = 0;
+        if (g - e->write_gen_seen != t - e->touch_gen_seen) e->gen_touch_only = 0;
         e->gen_pending = 1;
         e->write_gen_seen = g;
         e->pin_gen_seen = p;
+        e->touch_gen_seen = t;
     }
     if (!e->gen_pending) return;
     now = e->host->clock_ms(e->host);
@@ -9137,17 +9144,24 @@ static void lib_gen_poll(sel_engine* e) {
     e->library_changes++;
     e->state.library_serial = e->library_changes;
     if (e->gen_pins_only) e->state.library_pins++;
+    if (!e->gen_touch_only) e->follow_all = 1;
     e->gen_pins_only = 0;
+    e->gen_touch_only = 0;
 }
 
 /* I1077c: the engine's own models follow library_serial, so no UI has to ask: the open collection page of any kind (follow mode: identical content is
  * dropped, I994d3a; a playlist page follows through the folders read), the folders view, the formats, composers and stats when open, and the SOURCES
  * rows once a client has asked for them (state.sources_serial). Each re-read goes through its lib_read slot, whose .again coalesces a second change. */
 static void lib_models_follow(sel_engine* e) {
+    int recents_only; /* I1130a: only Recents touches since the last pass (the opened table): the page open's own touch must not rebuild that page */
+
     if (e->lib == NULL || e->followed_serial == e->library_changes) return;
     e->followed_serial = e->library_changes;
     e->models_followed++;
-    if (e->coll.serial != 0u && e->collection_kind < (uint32_t)SEL_LIB_ITEM_KINDS && e->collection_kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+    recents_only = !e->follow_all;
+    e->follow_all = 0;
+    if (e->coll.serial != 0u && e->collection_kind < (uint32_t)SEL_LIB_ITEM_KINDS && e->collection_kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST &&
+        (!recents_only || e->collection_kind == (uint32_t)SEL_LIB_ITEM_RECENT)) {
         e->rdc_next_kind = e->collection_kind;
         snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
         e->rdc_next_page = 1;
@@ -9157,7 +9171,7 @@ static void lib_models_follow(sel_engine* e) {
     lib_read_post(e, &e->rd_folders, folders_read_run);
     /* I1086b: the Search hits are a model too: the shown query runs again, no client resend. I1091: in place (search_refresh), so a write at a
      * click (a pin, the history row of the play) never publishes an empty Search page under the scrolled results. */
-    if (e->view.active && e->view.pub.source == SEL_VIEW_SEARCH && e->search_wait_query[0] != '\0' && e->search_wait_source[0] != '\0') {
+    if (!recents_only && e->view.active && e->view.pub.source == SEL_VIEW_SEARCH && e->search_wait_query[0] != '\0' && e->search_wait_source[0] != '\0') {
         search_refresh(e);
     }
     /* I1086: the Home shelves are a model too: re-read in place (lib_reads_collect applies the answer and view_reread rebuilds the window when
@@ -10469,6 +10483,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         }
         e->write_gen_seen = sel_library_write_gen(e->lib); /* I1077c: commits made before the engine existed (open, migrate) are not changes */
         e->pin_gen_seen = sel_library_pin_gen(e->lib);
+        e->touch_gen_seen = sel_library_touch_gen(e->lib);
     }
     {
         /* FAST_RAM is a uintptr_t: a 4 GB or 8 GB host would wrap to 0 in a plain uint32_t cast and get the
