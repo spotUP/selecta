@@ -117,9 +117,9 @@ endif()
 # so the From sections start past row 51 and Radio Browser, the last bucket, past row 64. The page draws the whole grouped result,
 # scrolled in pixels; a view window shorter than the search text hid the last source's section (VIEW_WINDOW 64). The sentinel: the
 # radiobrowser bucket ran and its 2 rows reached the From Radio Browser section with a full library above it.
-find_program(SQLITE3 sqlite3)
+# SQLITE3: the in-tree shell (sel_sqlite3_shell, has FTS5), passed by tests/dui/CMakeLists.txt; the system sqlite3 CLI may lack FTS5 (macOS CI, I1130).
 if(NOT SQLITE3)
-  message(FATAL_ERROR "dui-search-all needs the sqlite3 command line tool to load the matching library")
+  message(FATAL_ERROR "dui-search-all: -DSQLITE3=<sel_sqlite3_shell> missing")
 endif()
 set(full_db "${WORK}/full.db")
 file(REMOVE "${full_db}")

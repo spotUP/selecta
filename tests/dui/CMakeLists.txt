@@ -249,7 +249,7 @@ if(NOT SEL_AMIGA)
   # I1019e: no source chip picked: the fan-out line, one From section per searchable source in the shared row loop.
   add_test(NAME dui-search-all
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
-      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-all" "-DNETWORK=${SEL_NET_WORK}"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-all" "-DNETWORK=${SEL_NET_WORK}" "-DSQLITE3=$<TARGET_FILE:sel_sqlite3_shell>"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/search_all.cmake")
   set_tests_properties(dui-search-all PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-all.tmp")
@@ -265,7 +265,7 @@ if(NOT SEL_AMIGA)
   # I1020: every Search result row draws a source badge (Library, Modules.pl); the sentinel counts them.
   add_test(NAME dui-search-badge
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
-      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-badge" "-DNETWORK=${SEL_NET_WORK}"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-badge" "-DNETWORK=${SEL_NET_WORK}" "-DSQLITE3=$<TARGET_FILE:sel_sqlite3_shell>"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/search_badge.cmake")
   set_tests_properties(dui-search-badge PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-badge.tmp")
