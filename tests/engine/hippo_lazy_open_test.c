@@ -77,6 +77,22 @@ static uint32_t reads_now(sel_engine* e) {
     return s.lib_reads_applied;
 }
 
+/* Pumps until no posted read is pending (or 15 s): the reload the take posted (I1058e) can still be in flight, and its answer
+ * must not count as a read caused by the next, already filled, request. */
+static void settle(sel_engine* e) {
+    struct timespec t0;
+
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    do {
+        sel_engine_pump(e, sink, NULL);
+        if (!sel_engine_reads_pending(e)) {
+            sel_engine_pump(e, sink, NULL);
+            if (!sel_engine_reads_pending(e)) return;
+        }
+        usleep(2000);
+    } while (ms_since(&t0) < 15000);
+}
+
 int main(int argc, char** argv) {
     const sel_host* host;
     char *db, *logp, pool[1024], keys[4096];
@@ -131,6 +147,7 @@ int main(int argc, char** argv) {
     CHECK(pump_reads(e, base, 1) >= 1u); /* I1058e: the take posted a folders reload */
 
     /* 3. Already filled: no new request, no reload. */
+    settle(e);
     base = reads_now(e);
     CHECK(sel_engine_playlist_keys_post(e, id, sizeof keys) == 1);
     taken = 0;
