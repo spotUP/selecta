@@ -1,0 +1,6 @@
+bbmp_smx (I710am): smx_engine.cpp and engine.h from github.com/creep-ltx/bbmp csrc/retro, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX line in smx_engine.cpp, COPYING). SCC-Musixx (.sng, MSX, Konami SCC wave-table
+chip, Tyfoon Soft 1990): a clean-room replayer written by bbmp from a description of the tracker's replay behaviour (bbmp docs/replayers.md, engine
+`sccmusixx`; terms GPL 3 or later, emu2212 MIT). The SCC chip is emu2212.c / emu2212.h by Mitsutaka Okazaki, MIT (emu2212.LICENSE), from
+github.com/digital-sound-antiques/emu2212 commit ee35dbe099f7242253e9b5b2a93847161a355c7b (the commit bbmp's tools/build-retro.sh pins), unchanged.
+No helper program and no other data are needed. The retro:: helpers it uses (register_engine, field, debug_on) are in plugins/replayers/bbmp_smx/shim.cpp.

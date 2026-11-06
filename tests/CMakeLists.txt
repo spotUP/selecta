@@ -2201,6 +2201,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710am: SCC-Musixx songs (.sng) play through the render entry point (bbmp_smx module, GPL-3.0 engine on emu2212). Songs are fetched by checksum, exit 77 = skip.
+  # Other .sng formats (GoatTracker-style, zero file, cut-off song) must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/smx-decode)
+    add_test(NAME smx-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/smx_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/smx-decode)
+    set_tests_properties(smx-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "smx_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ab: Skale Tracker songs (.skm) play through the render entry point (bbmp_skale module over the patched libopenmpt). Songs are fetched by
   # checksum, exit 77 = skip. A file that is not an .skm is not claimed.
   if(SELECTA_GPL_PLUGINS)

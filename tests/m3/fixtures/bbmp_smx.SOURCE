@@ -1,0 +1,6 @@
+SCC-Musixx test songs for tests/m3/smx_decode.sh (bbmp_smx module, I710am). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/SCC-Musixx/BDD%20%28Ben%20den%20Dulk%29/BDDSCC2%20%5B50Hz%5D.SNG  a45b1325de59c83e3b7d84ced7e28c404ded6c3a7396b91fef60ae6aab0fd693
+https://modland.com/pub/modules/SCC-Musixx/BDD%20%28Ben%20den%20Dulk%29/CLAURA%20%5B50Hz%5D.SNG  52f6bc76ff07a6464b1dedd297378724328b536c045a1bec0a43a3baf7143530
+https://modland.com/pub/modules/SCC-Musixx/BDD%20%28Ben%20den%20Dulk%29/BDDT3%20%5B50Hz%5D.SNG  42906c51b092bd77b4cbd59830b299da99abc91689bd2496a19ce85dcb41fdc1
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro/smx_engine.cpp, third_party/bbmp_smx); emu2212 MIT.
