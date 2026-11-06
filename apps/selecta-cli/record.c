@@ -21,9 +21,19 @@ int sel_cli_record(int argc, char** argv) {
 }
 #else
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t g_stop;
+
+/* Milliseconds on the monotonic clock. The time limit is wall time: counting loop turns of usleep(2000) took 7+ s of real time per
+ * 3 s on the loaded macOS runner (a sleep there lasts far longer than asked) and the test timed out (I1130). */
+static unsigned long now_ms(void) {
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (unsigned long)ts.tv_sec * 1000ul + (unsigned long)(ts.tv_nsec / 1000000L);
+}
 static void on_signal(int sig) {
     (void)sig;
     g_stop = 1;
@@ -32,7 +42,7 @@ static void on_signal(int sig) {
 int sel_cli_record(int argc, char** argv) {
     const char* url = NULL;
     const char* file = NULL;
-    unsigned long limit = 0, seconds = 0, waited_ms = 0;
+    unsigned long limit = 0, seconds = 0, started_ms;
     const char* end = "stream_end";
     sel_live* live;
     int i, rc;
@@ -61,6 +71,7 @@ int sel_cli_record(int argc, char** argv) {
         fprintf(stderr, "record: cannot start (url %s, file %s)\n", url, file);
         return 1;
     }
+    started_ms = now_ms();
     for (;;) {
         sel_live_discard(live, 65536u); /* no decoder reads the ring: keep the socket flowing */
         if (g_stop) {
@@ -74,12 +85,11 @@ int sel_cli_record(int argc, char** argv) {
         if (sel_live_finished(live)) {
             break;
         }
-        if (seconds != 0 && waited_ms >= seconds * 1000ul) {
+        if (seconds != 0 && now_ms() - started_ms >= seconds * 1000ul) {
             end = "time_limit";
             break;
         }
         usleep(2000);
-        waited_ms += 2;
     }
     sel_live_close(live);
     printf("RECORD stream_bytes=%u recorded_bytes=%u record_taps=%u end=%s\n", (unsigned)sel_stream_received(),
