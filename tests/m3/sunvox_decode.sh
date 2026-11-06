@@ -3,12 +3,15 @@
 # One reachability test through the product entry point; the sentinel is the `replayer=sunvox` line of render.
 # Asserts: the plugin ran, the WAV is not silent (SV_ENERGY_MIN raises the floor for red proofs) and the song lasts
 # at least SV_MIN_SECONDS (default 5; the song ends by itself, so --seconds is set far above it).
-# Fixture: tests/m3/fixtures/sunvox_tune.sunvox (source and licence note in sunvox_tune.sunvox.SOURCE).
+# Fixture: the SunVox example tune, fetched at test time (sunvox_fixtures.sh, fetch_fixture.sh; origin in fixtures/sunvox_tune.sunvox.SOURCE).
+# Exit 77 (ctest SKIP) when the download fails.
 # Needs SELECTA_PLUGIN_PATH to hold the sunvox module (set by the test registration).
-# usage: sunvox_decode.sh <selecta-cli> <fixture>...
+# usage: sunvox_decode.sh <selecta-cli>
 set -u
 cli=$1
-shift
+here=$(dirname "$0")
+song=$("$here/sunvox_fixtures.sh" . ) || exit $?
+set -- "$song"
 field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }
 fail() { echo "FAIL: $*"; exit 1; }
 # I706b: the I706a test covers the BSD engine alone, so it runs with a plugin folder that holds only sel_sunvox.* (the

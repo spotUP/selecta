@@ -2081,9 +2081,8 @@ if(NOT SEL_AMIGA)
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-decode)
   add_test(NAME sunvox-decode
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sunvox_decode.sh $<TARGET_FILE:selecta-cli>
-            ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sunvox_tune.sunvox
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-decode)
-  set_tests_properties(sunvox-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sunvox_refusal_ok"
+  set_tests_properties(sunvox-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sunvox_refusal_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
   # I706b: modern SunVox songs play through the precompiled SunVox Library module (sunvox_lib); it wins over the BSD plugin and falls back without the library.
@@ -2091,9 +2090,8 @@ if(NOT SEL_AMIGA)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-lib-decode)
     add_test(NAME sunvox-lib-decode
       COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sunvox_lib_decode.sh $<TARGET_FILE:selecta-cli>
-              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sunvox_tune.sunvox ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sunvox_tune_modern.sunvox
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sunvox-lib-decode)
-    set_tests_properties(sunvox-lib-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sunvox_lib_fallback_ok"
+    set_tests_properties(sunvox-lib-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sunvox_lib_fallback_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 

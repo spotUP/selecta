@@ -7,11 +7,19 @@
 #  3. library file absent next to the module: the old song falls back to the BSD plugin (replayer=sunvox), the modern
 #     one is refused cleanly (no crash, no sentinel)
 # Needs SELECTA_PLUGIN_PATH to hold sel_sunvox.* and sel_sunvox_lib.* plus sunvox_lib/ (set by the test registration).
-# usage: sunvox_lib_decode.sh <selecta-cli> <old.sunvox> <modern.sunvox>
+# Songs: fetched original + a modern re-save made with the library (sunvox_fixtures.sh); exit 77 (SKIP) when offline.
+# usage: sunvox_lib_decode.sh <selecta-cli>
 set -u
 cli=$1
-old=$2
-modern=$3
+here=$(dirname "$0")
+lib=
+for dir in $(printf '%s' "${SELECTA_PLUGIN_PATH:-}" | tr ':' ' '); do
+    for c in "$dir"/sunvox_lib/sunvox.*; do [ -z "$lib" ] && [ -f "$c" ] && lib=$c; done
+done
+[ -n "$lib" ] || { echo "FAIL: no sunvox_lib/sunvox.* on SELECTA_PLUGIN_PATH"; exit 1; }
+songs=$("$here/sunvox_fixtures.sh" "$PWD/songs" "$lib") || exit $?
+old=$(printf '%s\n' "$songs" | sed -n 1p)
+modern=$(printf '%s\n' "$songs" | sed -n 2p)
 field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }
 fail() { echo "FAIL: $*"; exit 1; }
 rate=44100
