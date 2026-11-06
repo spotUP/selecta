@@ -2213,6 +2213,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710b: BeRoTracker songs (.brt) play through the render entry point (bbmp_berotracker module, GPL-3.0-or-later). Two songs fetched by
+  # checksum (tests/m3/fixtures/bbmp_berotracker.SOURCE), exit 77 = skip. A file that is not a BeRoTracker song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/berotracker-decode)
+    add_test(NAME berotracker-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/berotracker_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/berotracker-decode)
+    set_tests_properties(berotracker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "berotracker_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710u: Psycle songs (.psy) play through the render entry point (bbmp_psycle module, helper child process), GPL; two Alk
   # songs fetched by checksum (tests/m3/fixtures/bbmp_psycle.SOURCE), exit 77 = skip.
   if(SELECTA_GPL_PLUGINS)

@@ -1,0 +1,5 @@
+bbmp_berotracker: bbmp-berotracker.cpp and resample.h from github.com/creep-ltx/bbmp csrc/berotracker, commit 19d87098b3716156d80224d22dc49ca22884d1b7,
+unchanged (GPL-3.0-or-later, SPDX line in each file). BeRoTracker (.brt), a clean-room replayer written for bbmp (no code of BeRo's tracker
+was looked at, per bbmp docs/replayers.md). brt_engine.cpp/.h are ours: they include the helper with main() renamed and add an in-process C API.
+Built with -ffp-contract=off and no fast-math as bbmp's tools/build-berotracker.sh does. Bit-exact output needs the x87 path (x86 only);
+other CPUs (arm64 Mac) use the C library and are close but not bit-exact.

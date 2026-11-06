@@ -261,6 +261,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_wsr)
 endif()
 
+# bbmp_berotracker (I710b): BeRoTracker songs (.brt), bbmp csrc/berotracker (clean-room, GPL 3 or later), behind the GPL-plugin gate. Host
+# only (C++17 engine with x87 long double arithmetic, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_berotracker)
+endif()
+
 # bbmp_maxtrax (I710k): MaxTrax scores (.mxtx), bbmp csrc/amiga/maxtrax_engine over ScummVM's MaxTrax player (GPL 3), behind the
 # GPL-plugin gate. Host only (C++17 engine on ScummVM-shaped headers, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

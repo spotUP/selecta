@@ -1,0 +1,5 @@
+BeRoTracker songs for tests/m3/berotracker_decode.sh (bbmp_berotracker module, I710b). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive).
+https://modland.com/pub/modules/BeRoTracker/BeRo/aa2s.brt  ae3917b011bafbac1d486bcaa47e76a107a01ed8871a62ef573b640289980da7
+https://modland.com/pub/modules/BeRoTracker/BeRo/b2.brt  c5097a3e2964c2b81f115a23b6a8b6fec9a6bd5107b2df85a650a2bcfc75a4be
+Engine licence: GPL-3.0-or-later (bbmp csrc/berotracker, third_party/bbmp_berotracker).
