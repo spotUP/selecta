@@ -1,0 +1,5 @@
+T0AST (The 0ok Amazing Synth Tracker, .t0ast) songs by BeRo for tests/m3/t0ast_decode.sh (bbmp_t0ast module, I710ag). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive).
+https://modland.com/pub/modules/The%200ok%20Amazing%20Synth%20Tracker/BeRo/lost%20in%20time.t0ast  269a19be1eeeea0790403320b0d6d325f5abee9729981d91f631e2487aa0ff11
+https://modland.com/pub/modules/The%200ok%20Amazing%20Synth%20Tracker/BeRo/hard%20and%20harder.t0ast  d91d9ce8a1a149d5a97404bb71c5f97268a7fe7ae07291d508a763531afb0eac
+Engine licence: GPL-3.0-or-later (bbmp csrc/t0ast, third_party/bbmp_t0ast).

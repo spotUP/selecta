@@ -2316,6 +2316,16 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710ag: T0AST (.t0ast) songs play through the render entry point (bbmp_t0ast module, GPL). Songs fetched by checksum, exit 77 = skip.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/t0ast-decode)
+    add_test(NAME t0ast-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/t0ast_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/t0ast-decode)
+    set_tests_properties(t0ast-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "t0ast_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710f: Cubic Tiny XM (.mxm) songs play through the render entry point (bbmp_mxm module, GPL-3.0-or-later). Two songs fetched by
   # checksum (tests/m3/fixtures/bbmp_mxm.SOURCE), exit 77 = skip. A file that is not an MXM song must not be claimed.
   if(SELECTA_GPL_PLUGINS)

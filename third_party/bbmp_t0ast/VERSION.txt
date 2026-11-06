@@ -1,0 +1,5 @@
+bbmp_t0ast: csrc/t0ast/bbmp-t0ast.cpp and resample.h from github.com/creep-ltx/bbmp, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged
+(GPL-3.0-or-later, SPDX line in each file, COPYING). T0AST, "The 0ok Amazing Synth Tracker" (.t0ast), a clean-room player (docs/replayers.md: written from a
+description of the format only, bit exact with the tracker's WAV export on x86 through x87 long double; no helper terms beyond the GPL).
+bt0ast_glue.cpp is Selecta's glue: it includes the engine file with its main() renamed and calls its load(), measure(), Engine and Resampler
+to render the whole song into one buffer (a C entry point, bbt0ast_render).

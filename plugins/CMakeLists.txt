@@ -376,6 +376,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_shroom)
 endif()
 
+# bbmp_t0ast (I710ag): T0AST, "The 0ok Amazing Synth Tracker" songs (.t0ast), bbmp csrc/t0ast clean-room engine (GPL 3 or later), behind the GPL-plugin gate.
+# Host only (C++17 engine with x87 long double; no Amiga build, exemption in row I710ag).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_t0ast)
+endif()
+
 # bbmp_psycle (I710u): Psycle songs (.psy), GPL Psycle engine + bbmp helper and native plugins run as a child process, behind the
 # GPL-plugin gate. Host only (C++14 engine, dlopen'd plugin libraries, no Amiga build).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
