@@ -394,7 +394,7 @@ mui_aa_draw.c:34-56).
   A "Theme" cycle switches between the shipped themes live. Its source is the example in the docs.
 - Licence: MIT for the package code (D3), plus the third-party licence files.
 - Where published (D2): built by CI from this repo as a release asset on `https://github.com/spotUP/selecta` (remote
-  verified), then uploaded to Aminet (`dev/mui`). Aminet upload procedure is OPEN: not examined.
+  verified), then uploaded to Aminet (`dev/mui`). Aminet upload procedure is OPEN: not examined. Deferred (section 12.1 D2): no Aminet upload until the Selecta UI is final, row I685m.
 
 ---
 
@@ -461,6 +461,17 @@ Amiga exemption: none; every row builds for Amiga (RULES 4a).
 | D4 | Icons | ship baked Lucide set, by name | caller-supplied data only | +21.5 KB vs every user baking icons |
 | D5 | Theme location | `ENV:AA/` (per prefix in D1) | `ENV:MUI/` | own directory avoids touching MUI's settings; one more ENV directory |
 | D6 | ttengine | optional user install, PLAIN fallback | ship it | shipping without a grant is a licence risk (grant unverified) |
+
+### 12.1 Decided (Johan, 2026-11-06, through the question tool)
+
+| ID | Answer | Effect on the rows |
+|---|---|---|
+| D1 | Prefix `UP-`, file names spelled with the hyphen: `UP-Button.mcc`, `UP-List.mcc`, ... (his typed answer "UP-", then "UP-Button.mcc" over `UPButton.mcc`) | Wherever this document writes `AA<Name>.mcc` read `UP-<Name>.mcc`. C names cannot hold a hyphen: the class macro is `MUIC_UPButton "UP-Button.mcc"`, tags and methods use `UPA_` / `UPM_` style names, the public header is `include/mcc/up.h`, the tag base macro is `UP_TAGBASE`. The support library is `up-mcc.library`, the prefs class `UP-MCC.mcp`. I685b proves on the rig that MUI 3.8 opens a class whose name holds a hyphen (rename the spike to `UP-Spike.mcc` for the rig run). |
+| D2 | In the Selecta repository (`plugins/shared/mcc`) plus a CI release asset. **No Aminet release yet** (Johan: "no aminet release yet though we do that when the selecta ui is final") | I685l builds the LhA and the release asset only. Aminet upload is its own row, I685m, blocked until Johan says the Selecta UI is final. |
+| D3 | MIT | Licence file in the archive; Lucide and Inter licence files beside it. |
+| D4 | Ship the baked Lucide set, icons by name | I685g as written. |
+| D5 | Own directory `ENV:UP-MCC/` and `ENVARC:UP-MCC/` | Wherever this document writes `ENV:AA/` read `ENV:UP-MCC/`. |
+| D6 | ttengine optional, plain bitmap text fallback; the archive does not hold ttengine | README points to the ttengine Aminet archive. |
 
 ---
 
