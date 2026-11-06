@@ -1,0 +1,5 @@
+SoundSmith test songs for tests/m3/iigs_decode.sh (bbmp_iigs module, I710ad). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs. Each song has its wave bank <song>.W.
+https://modland.com/pub/modules/SoundSmith/Cappy/Introspection  2790fc9cca77079f365c3b03ebb03191a89824525fd01bd1334c742aa3e05df6  (bank Introspection.W 9977c38966a04f8e6602c799bd5070fd7142375b42d4268af8a464e28526386b)
+https://modland.com/pub/modules/SoundSmith/Ian%20Schmidt/MT%20Intro  c459ab00b67e236b2350b9b3d8824b76914df870a83706dbbf9e815e9518cd06  (MegaTracker dialect; bank MT Intro.W 517587624096c2acd49a7f3065e8760fb8fcb24d071942812bb51fdce96fcfc0)
+Engine licence: GPL-3.0-or-later (bbmp csrc/iigs, third_party/bbmp_iigs).

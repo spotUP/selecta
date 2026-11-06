@@ -1,0 +1,5 @@
+bbmp_iigs: ss_cr.cpp, iigs_cr.h, iigs_cr_tables.h, doc5503.h, LICENSE.es5503 and bbmp-iigs.cpp from github.com/creep-ltx/bbmp
+csrc/iigs, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged. ntgs_cr.cpp (Noise Tracker GS) is not vendored.
+License GPL-3.0-or-later (SPDX line in each file, COPYING; MegaTracker effect rules follow MTPng, GPL 2 or later, bbmp docs/replayers.md).
+doc5503.h follows MAME's es5503 (BSD-3-Clause, LICENSE.es5503). Written for bbmp in a clean room from a description of the format only.
+bbmp-iigs.cpp is compiled with its main() renamed (-Dmain=...): its Resampler, bent() and read_file() are reused by shim.cpp.
