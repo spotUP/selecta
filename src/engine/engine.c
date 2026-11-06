@@ -7765,8 +7765,7 @@ static void search_start(sel_engine* e, uint32_t b) {
     e->search_cur = b;
     e->search_task_gen = e->search_gen;
     e->search_bucket[b].state = SEARCH_RUNNING;
-    e->search_n = 0;
-    e->search_serial++;
+    e->search_n = 0; /* I1130a: no search_serial move; the staged hits show at search_collect, the list emptied in search_supersede (both builds) */
     e->search_rc = -1;
     memset(&e->search_ctx, 0, sizeof e->search_ctx);
     e->search_ctx.scfg.host = e->host;
