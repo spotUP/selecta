@@ -1,0 +1,6 @@
+bbmp_digitrekker (I710ap): digitrekker.cpp and common.h from github.com/creep-ltx/bbmp csrc/pcmusic, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged
+(GPL-3.0-or-later, SPDX line in both files, COPYING). DigiTrekker modules (.dtm, Horst Beham's DOS tracker, 3.00-3.10): written by bbmp for this player from the
+format document (DTMDOC.TXT) and the tracker's help file, checked against DigiTrekker 3.10's own rendering. bbmp docs/replayers.md: helper `bbmp-pcmusic`,
+terms GPL 3 or later, so the plugin is built as GPL (SELECTA_GPL_PLUGINS).
+digitrekker.cpp is an engine half of the helper; the helper's I/O functions (readFile, header, fail, emit, fromCp437, field in bbmp's pcmusic/bbmp-pcmusic.cpp) are
+restated in plugins/replayers/bbmp_digitrekker/shim.cpp over memory, so the vendored files stay unchanged.

@@ -273,6 +273,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_monotone)
 endif()
 
+# bbmp_digitrekker (I710ap): DigiTrekker songs (.dtm), bbmp csrc/pcmusic/digitrekker.cpp (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine, no Amiga
+# module path; exemption in row I710ap).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_digitrekker)
+endif()
+
 # bbmp_wwsnd (I710aj): Westwood SND songs (.snd, PC speaker), bbmp csrc/retro/wwsnd_engine (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine,
 # no Amiga module path; exemption in row I710aj).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
