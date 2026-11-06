@@ -5,6 +5,7 @@
 #include <selecta/engine.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef SEL_HAVE_LOADER
@@ -15,26 +16,26 @@
 extern const sel_plugin_entry_fn sel_registry_entries[];
 extern const uint32_t sel_registry_entry_count;
 
-/* Static entries plus loaded modules: both families count, so the bound covers their sum with room (I1130b: 64 silently dropped
- * the last modules once the host built 63+ plugins, and xmp, tiatracker and sunvox_lib vanished). */
-#define SEL_REGISTRY_MAX 256
+/* Registry tables grow with the plugin count (I1133): a fixed bound dropped modules each time the build gained
+ * plugins (I1130b: 64, I1133: 192 slots, with static and module copies of one plugin both counting). */
+#define SEL_ORIGIN_MAX 512
 
 static const sel_host* g_host;
-static const sel_tag* g_desc[SEL_REGISTRY_MAX];
+static const sel_tag** g_desc;
+static const char** g_origin;
 static uint32_t g_count;
+static uint32_t g_cap;
 static sel_registry_stats g_stats;
 
 /* Dynamic entries (plugin loader, I427a): added by a loader before init, walked after the static array. */
-#define SEL_DYN_MAX 192
-#define SEL_ORIGIN_MAX 512
-static struct {
+static struct dyn_entry {
     sel_plugin_entry_fn fn;
-    char origin[SEL_ORIGIN_MAX];
+    char* origin;
     int builtin;
-} g_dyn[SEL_DYN_MAX];
+}* g_dyn;
+static uint32_t g_dyn_cap;
 static uint32_t g_dyn_count;
 static uint32_t g_load_rejected; /* rejects a loader reported before init; they persist for the process */
-static const char* g_origin[SEL_REGISTRY_MAX];
 #ifdef SEL_HAVE_LOADER
 static int g_scanned;
 #endif
@@ -46,12 +47,28 @@ static uint32_t g_missing_n;
 static void reject_line(const char* path, const char* reason);
 
 static int add_dyn(sel_plugin_entry_fn fn, const char* origin, int builtin) {
-    if (fn == NULL || g_dyn_count >= SEL_DYN_MAX) {
+    const char* o = origin != NULL ? origin : "?";
+    char* copy;
+    if (fn == NULL) {
         return 0;
     }
+    if (g_dyn_count >= g_dyn_cap) {
+        uint32_t cap = g_dyn_cap != 0 ? g_dyn_cap * 2u : 64u;
+        struct dyn_entry* grown = (struct dyn_entry*)realloc(g_dyn, cap * sizeof *g_dyn);
+        if (grown == NULL) {
+            return 0;
+        }
+        g_dyn = grown;
+        g_dyn_cap = cap;
+    }
+    copy = (char*)malloc(strlen(o) + 1u);
+    if (copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, o, strlen(o) + 1u);
     g_dyn[g_dyn_count].builtin = builtin;
     g_dyn[g_dyn_count].fn = fn;
-    snprintf(g_dyn[g_dyn_count].origin, sizeof g_dyn[g_dyn_count].origin, "%s", origin != NULL ? origin : "?");
+    g_dyn[g_dyn_count].origin = copy;
     g_dyn_count++;
     return 1;
 }
@@ -154,17 +171,32 @@ static void keep(const sel_tag* d, const char* origin, const sel_tag* machine) {
     g_stats.total++;
     if (!fits(d, machine)) {
         g_stats.filtered++;
-    } else if (g_count < SEL_REGISTRY_MAX) {
+    } else {
+        if (g_count >= g_cap) {
+            uint32_t cap = g_cap != 0 ? g_cap * 2u : 128u;
+            const sel_tag** nd = (const sel_tag**)realloc((void*)g_desc, cap * sizeof *nd);
+            const char** no;
+            if (nd != NULL) {
+                g_desc = nd;
+            }
+            no = (const char**)realloc((void*)g_origin, cap * sizeof *no);
+            if (no != NULL) {
+                g_origin = no;
+            }
+            if (nd == NULL || no == NULL) {
+                reject_line(origin, "out of memory, plugin dropped");
+                return;
+            }
+            g_cap = cap;
+        }
         g_origin[g_count] = origin;
         g_desc[g_count++] = d;
-    } else {
-        reject_line(origin, "registry full, plugin dropped");
     }
 }
 
 uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine) {
     uint32_t i, j;
-    const char* seen[SEL_REGISTRY_MAX + SEL_DYN_MAX];
+    const char** seen;
     uint32_t seen_n = 0;
     g_host = host;
 #ifdef SEL_HAVE_LOADER
@@ -173,6 +205,10 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
         sel_loader_scan();
     }
 #endif
+    seen = (const char**)malloc(((size_t)sel_registry_entry_count + g_dyn_count + 1u) * sizeof *seen);
+    if (seen == NULL) {
+        return 0;
+    }
     g_count = 0;
     memset(&g_stats, 0, sizeof g_stats);
     g_stats.dyn_rejected = g_load_rejected;
@@ -182,9 +218,7 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
         if (!d) {
             continue;
         }
-        if (seen_n < SEL_REGISTRY_MAX) {
-            seen[seen_n++] = (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "");
-        }
+        seen[seen_n++] = (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "");
         keep(d, "static", machine);
     }
     for (i = 0; i < g_dyn_count; i++) {
@@ -223,6 +257,7 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
         }
         keep(d, g_dyn[i].origin, machine);
     }
+    free((void*)seen);
     return g_count;
 }
 

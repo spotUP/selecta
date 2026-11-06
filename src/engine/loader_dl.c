@@ -22,10 +22,27 @@
 #endif
 
 #define PATH_MAX_SEL 1024
-#define SEEN_MAX 128
+#define NAME_MAX_SEL 256
 
-static char g_seen[SEEN_MAX][256];
+/* File names already loaded or reserved, grown on demand (I1133: a fixed 128 dropped modules once the build had more). */
+static char (*g_seen)[NAME_MAX_SEL];
 static unsigned g_seen_n;
+static unsigned g_seen_cap;
+
+/* Reserves `name`; 0 on out of memory. */
+static int mark_seen(const char* name) {
+    if (g_seen_n >= g_seen_cap) {
+        unsigned cap = g_seen_cap != 0 ? g_seen_cap * 2u : 128u;
+        char(*grown)[NAME_MAX_SEL] = realloc(g_seen, cap * sizeof *grown);
+        if (grown == NULL) {
+            return 0;
+        }
+        g_seen = grown;
+        g_seen_cap = cap;
+    }
+    snprintf(g_seen[g_seen_n++], NAME_MAX_SEL, "%s", name);
+    return 1;
+}
 
 static int already_seen(const char* name) {
     unsigned i;
@@ -76,17 +93,25 @@ static int by_name(const void* a, const void* b) {
 static void scan_dir(const char* dir) {
     DIR* d = opendir(dir);
     struct dirent* de;
-    char names[SEEN_MAX][256];
-    unsigned n = 0, i;
+    char(*names)[NAME_MAX_SEL] = NULL;
+    unsigned n = 0, cap = 0, i;
     size_t slen = strlen(SEL_MODULE_SUFFIX);
     if (d == NULL) {
         return;
     }
-    while ((de = readdir(d)) != NULL && n < SEEN_MAX) {
+    while ((de = readdir(d)) != NULL) {
         size_t l = strlen(de->d_name);
         if (l >= sizeof names[0] || l <= slen + 4u || strncmp(de->d_name, "sel_", 4) != 0 ||
             strcmp(de->d_name + l - slen, SEL_MODULE_SUFFIX) != 0) {
             continue;
+        }
+        if (n >= cap) {
+            char(*grown)[NAME_MAX_SEL] = realloc(names, (cap != 0 ? cap * 2u : 128u) * sizeof *grown);
+            if (grown == NULL) {
+                break;
+            }
+            names = grown;
+            cap = cap != 0 ? cap * 2u : 128u;
         }
         memcpy(names[n++], de->d_name, l + 1u);
     }
@@ -94,14 +119,14 @@ static void scan_dir(const char* dir) {
     qsort(names, n, sizeof names[0], by_name);
     for (i = 0; i < n; i++) {
         char path[PATH_MAX_SEL];
-        if (already_seen(names[i]) || g_seen_n >= SEEN_MAX) {
+        if (already_seen(names[i]) || !mark_seen(names[i])) {
             continue;
         }
-        memcpy(g_seen[g_seen_n++], names[i], strlen(names[i]) + 1u);
         if (snprintf(path, sizeof path, "%s/%s", dir, names[i]) < (int)sizeof path) {
             load_module(path, 0);
         }
     }
+    free(names);
 }
 
 /* Built-in modules (I427f): every file name this build expects is looked up in, first hit wins,
@@ -139,9 +164,7 @@ static void load_builtin_modules(void) {
         if (!ok) {
             sel_registry_note_builtin_missing(name);
         }
-        if (g_seen_n < SEEN_MAX) {
-            snprintf(g_seen[g_seen_n++], sizeof g_seen[0], "%s", name);
-        }
+        mark_seen(name);
     }
 }
 
