@@ -194,6 +194,17 @@ int sel_dup_rebuild(sqlite3* db);
  * sel_dup_after regroups that old md5 and the md5 `key` has AFTER the write (a delete leaves no row: only the old group moves). */
 void sel_dup_md5_of(sqlite3* db, const char* key, char out[33]);
 int sel_dup_after(sqlite3* db, const char* old_md5, const char* key);
+
+/* I1094b: the same helpers over statements prepared once per bulk batch (scan batch). Zero-initialise, close at batch end. */
+typedef struct sel_dup_stmts {
+    sqlite3_stmt* md5;
+    sqlite3_stmt* clear;
+    sqlite3_stmt* set;
+} sel_dup_stmts;
+void sel_dup_stmts_close(sel_dup_stmts* d);
+void sel_dup_md5_of_c(sqlite3* db, sel_dup_stmts* d, const char* key, char out[33]);
+int sel_dup_regroup_c(sqlite3* db, sel_dup_stmts* d, const char* md5);
+int sel_dup_after_c(sqlite3* db, sel_dup_stmts* d, const char* old_md5, const char* key);
 unsigned long sel_db_dup_regroups(void);
 unsigned long sel_db_dup_rebuilds(void);
 

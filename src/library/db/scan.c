@@ -39,6 +39,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
     sqlite3_stmt* sd = NULL; /* drops the artwork of the album a retag emptied */
     sqlite3_stmt* sd2 = NULL; /* then the albums row itself (second statement of SEL_SQL_ALBUM_DROP) */
     const char* drop_tail = NULL;
+    sel_dup_stmts dup = {0}; /* I1094b: prepared once for the whole batch */
     int rc;
     int written = 0;
     int64_t fresh = 0; /* I790: songs of this batch that were not in the catalogue yet */
@@ -65,7 +66,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         int old_rc;
 
         snprintf(key, sizeof key, "%s:%s", r->source, r->path);
-        sel_dup_md5_of(lib->db, key, old_md5);
+        sel_dup_md5_of_c(lib->db, &dup, key, old_md5);
         sqlite3_reset(sf);
         sqlite3_bind_text(sf, 1, r->source, -1, SQLITE_STATIC);
         sqlite3_bind_text(sf, 2, r->path, -1, SQLITE_STATIC);
@@ -143,7 +144,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         }
         /* I1094b: a batch of 32..256 rows regroups the md5 groups it touched (index seeks); one sel_dup_rebuild per batch would scan the
          * whole catalogue every 32 rows. */
-        rc = sel_dup_after(lib->db, old_md5, key);
+        rc = sel_dup_after_c(lib->db, &dup, old_md5, key);
         if (rc != SQLITE_OK) {
             break;
         }
@@ -152,6 +153,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
     sqlite3_finalize(sf);
     sqlite3_finalize(ss);
     sqlite3_finalize(so);
+    sel_dup_stmts_close(&dup);
     sqlite3_finalize(sd);
     sqlite3_finalize(sd2);
     if (rc == SQLITE_OK && b->new_day > 0 && fresh > 0 && b->count > 0) {
