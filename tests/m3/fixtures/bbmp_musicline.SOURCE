@@ -1,0 +1,5 @@
+Musicline Editor test songs for tests/m3/musicline_decode.sh (bbmp_musicline module, I710n). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Musicline%20Editor/ADE/cybernoid%202.ml  e25fda74e8d21f940a3833be71cdb2af99a9279a42077367e6cac27f46338a3f
+https://modland.com/pub/modules/Musicline%20Editor/Andrew/lonelyness.ml  eb87272d596e6edfb6c65035372052a5c36a6bdb4f6a5ff9b89c5aa006a3b591
+Engine licence: replay routine LGPL-2.1-or-later, Paula mixer GPL-3.0-or-later (bbmp csrc/musicline, third_party/bbmp_musicline).

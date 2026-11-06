@@ -2097,6 +2097,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710n: Musicline Editor (.ml) songs play through the render entry point (bbmp_musicline module, GPL). Songs are fetched by
+  # checksum, exit 77 = skip. A .ml that is not Musicline must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/musicline-decode)
+    add_test(NAME musicline-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/musicline_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/musicline-decode)
+    set_tests_properties(musicline-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "musicline_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I702: a pxtone song plays through the render entry point (pxtone module).
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/pxtone-decode)
   add_test(NAME pxtone-decode
