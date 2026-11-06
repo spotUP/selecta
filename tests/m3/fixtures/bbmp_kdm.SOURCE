@@ -1,0 +1,7 @@
+Ken's Digital Music songs and their instrument bank for tests/m3/kdm_decode.sh (bbmp_kdm module, I710j). Never committed: fetched by
+sha256 into the git-ignored tests/m3/fixtures/.cache. The songs and waves.kwv are by Ken Silverman; no redistribution licence is
+stated (Modland archive). waves.kwv must sit next to the song.
+https://modland.com/pub/modules/Ken%27s%20Digital%20Music/Ken%20Silverman/kdmsong.kdm  e5d40426d3c48b54bab2ca31b07a8f39882a4ddbedcbbbc149316d73783662e0
+https://modland.com/pub/modules/Ken%27s%20Digital%20Music/Ken%20Silverman/joysong.kdm  28cd6d53397eb1ebd73a414212ecfed87a92dffeedf48e5224aae63e457105c5
+https://modland.com/pub/modules/Ken%27s%20Digital%20Music/Ken%20Silverman/waves.kwv  222e50767edf2551761b87b13d1d56ea3a51984fd54c445cac62a6c01bd5708e
+Engine licence: GPL-3.0-or-later (bbmp csrc/synth kdm_engine, third_party/bbmp_kdm).

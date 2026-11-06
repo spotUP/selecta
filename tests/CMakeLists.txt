@@ -2145,6 +2145,18 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710j: Ken's Digital Music (.kdm) songs play through the render entry point (bbmp_kdm module, GPL-3.0-or-later). Two songs and
+  # waves.kwv fetched by checksum (tests/m3/fixtures/bbmp_kdm.SOURCE), exit 77 = skip. A song without its bank, or a file that is
+  # not a KDM song, must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/kdm-decode)
+    add_test(NAME kdm-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/kdm_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/kdm-decode)
+    set_tests_properties(kdm-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "kdm_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710k: MaxTrax (.mxtx) scores play through the render entry point (bbmp_maxtrax module, GPL). Songs fetched by checksum
   # (tests/m3/fixtures/bbmp_maxtrax.SOURCE), exit 77 = skip. A file that is not a song of the format must not be claimed.
   if(SELECTA_GPL_PLUGINS)

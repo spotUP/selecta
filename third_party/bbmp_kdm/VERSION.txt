@@ -1,0 +1,4 @@
+bbmp_kdm: engine.h and kdm_engine.c from github.com/creep-ltx/bbmp csrc/synth, commit 19d87098b3716156d80224d22dc49ca22884d1b7,
+unchanged (GPL-3.0-or-later, SPDX line in each file). Ken's Digital Music (.kdm), a clean-room replayer written for bbmp. Only the kdm
+engine of csrc/synth is vendored; the other engines and bbmp-synth.cpp (the helper main) are not. waves.kwv (the instruments) is Ken
+Silverman's and is NOT shipped: it must sit next to the song. BBMP_KDM_FLAT is not used by the adapter (default behaviour).
