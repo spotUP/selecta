@@ -7,6 +7,7 @@
  * supplies the draw (the engine steps sel_xorshift32), so one seed gives one sequence. Two passes over the same queries
  * (total weight, then the pick) keep the function free of any candidate array. */
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "db.h"
@@ -30,11 +31,10 @@ static void queue_form(const char* key, char* out, size_t cap) {
     char src[32], path[512];
 
     if (sel_song_key_split(key, src, sizeof src, path, sizeof path) && strcmp(src, "local") == 0) {
-        strncpy(out, path, cap - 1u);
+        snprintf(out, cap, "%s", path);
     } else {
-        strncpy(out, key, cap - 1u);
+        snprintf(out, cap, "%s", key);
     }
-    out[cap - 1u] = '\0';
 }
 
 /* Weight of one candidate, 0 when it is excluded (skip flag, or the avoided previous pick). */

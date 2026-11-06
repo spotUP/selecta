@@ -15,7 +15,9 @@
 extern const sel_plugin_entry_fn sel_registry_entries[];
 extern const uint32_t sel_registry_entry_count;
 
-#define SEL_REGISTRY_MAX 64
+/* Static entries plus loaded modules: both families count, so the bound covers their sum with room (I1130b: 64 silently dropped
+ * the last modules once the host built 63+ plugins, and xmp, tiatracker and sunvox_lib vanished). */
+#define SEL_REGISTRY_MAX 256
 
 static const sel_host* g_host;
 static const sel_tag* g_desc[SEL_REGISTRY_MAX];
@@ -23,7 +25,7 @@ static uint32_t g_count;
 static sel_registry_stats g_stats;
 
 /* Dynamic entries (plugin loader, I427a): added by a loader before init, walked after the static array. */
-#define SEL_DYN_MAX 96
+#define SEL_DYN_MAX 192
 #define SEL_ORIGIN_MAX 512
 static struct {
     sel_plugin_entry_fn fn;
@@ -155,6 +157,8 @@ static void keep(const sel_tag* d, const char* origin, const sel_tag* machine) {
     } else if (g_count < SEL_REGISTRY_MAX) {
         g_origin[g_count] = origin;
         g_desc[g_count++] = d;
+    } else {
+        reject_line(origin, "registry full, plugin dropped");
     }
 }
 

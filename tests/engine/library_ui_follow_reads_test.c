@@ -698,7 +698,8 @@ int main(int argc, char** argv) {
         CHECK(sel_engine_send_line(e, "LIBRARY_SYNC i906f2esrc /x 1234567", pool, sizeof pool) == 0);
         sel_engine_pump(e, sink, NULL);
         g_held = 0;
-        pthread_create(&th, NULL, holder, lib);
+        g_release = 0; /* I1130b: gated, the 300-pump window below outlasts a timer on a slow CI host */
+        pthread_create(&th, NULL, holder_gated, lib);
         while (!g_held) usleep(1000);
         w0 = sel_library_watched_waits();
         g_sync_go = 1;
@@ -717,6 +718,7 @@ int main(int argc, char** argv) {
         printf("i906f2e sync time: worst pump %ld ms, waits %u\n", worst, (unsigned)(w1 - w0));
         CHECK(w1 == w0);
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done); /* queued behind the held lock */
+        g_release = 1;
         pthread_join(th, NULL);
         clock_gettime(CLOCK_MONOTONIC, &t0);
         for (;;) {
@@ -751,7 +753,8 @@ int main(int argc, char** argv) {
         CHECK(sel_engine_send_line(e, "LIBRARY_SYNC i906f2fsrc /x 1234567", pool, sizeof pool) == 0);
         sel_engine_pump(e, sink, NULL);
         g_held = 0;
-        pthread_create(&th, NULL, holder, lib);
+        g_release = 0; /* I1130b: gated, the 300-pump window below outlasts a timer on a slow CI host */
+        pthread_create(&th, NULL, holder_gated, lib);
         while (!g_held) usleep(1000);
         w0 = sel_library_watched_waits();
         g_sync_go = 1;
@@ -770,6 +773,7 @@ int main(int argc, char** argv) {
         printf("i906f2f new this week: worst pump %ld ms, waits %u\n", worst, (unsigned)(w1 - w0));
         CHECK(w1 == w0);
         CHECK(s_after.lib_writes_done == s_before.lib_writes_done);
+        g_release = 1;
         pthread_join(th, NULL);
         clock_gettime(CLOCK_MONOTONIC, &t0);
         for (;;) {

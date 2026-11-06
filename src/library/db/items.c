@@ -664,28 +664,31 @@ int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, s
     sel_home_chip_sql(shelf == SEL_HOME_QUICK ? SEL_HOME_CHIP_ALL : chip, "s.format", fam, sizeof fam);
     if (shelf == SEL_HOME_QUICK || chip == SEL_HOME_CHIP_ALL) {
         snprintf(has, sizeof has, "1");
-    } else snprintf(has, sizeof has,
+    } else if (snprintf(has, sizeof has,
              "(CASE k WHEN 4 THEN EXISTS(SELECT 1 FROM songs s WHERE s.album IS nm AND s.artist IS NULLIF(sub,'') AND %s)"
              " WHEN 6 THEN EXISTS(SELECT 1 FROM song_composers c JOIN songs s ON s.key=c.song_key WHERE c.canon=ik AND %s)"
              " WHEN 3 THEN EXISTS(SELECT 1 FROM playlist_entries e JOIN songs s ON s.key=e.key WHERE e.playlist_id=CAST(ik AS INTEGER) AND %s)"
              " ELSE 1 END)",
-             fam, fam, fam);
+             fam, fam, fam) >= (int)sizeof has) {
+        return SQLITE_TOOBIG;
+    }
     if (shelf == SEL_HOME_RECENT) {
         /* Johan 2026-10-29: a stream or Modland play (a history key with no songs row, not a vanished library file) is a single-song card
          * in this shelf, ordered by its last play together with the items. Its format is the one stored with the play (history.format), so it files under the Modules, Chiptunes or Music chip. */
         char nofam[600];
         sel_home_chip_sql(chip, "h.format", nofam, sizeof nofam);
-        snprintf(sql, sizeof sql,
+        rc = snprintf(sql, sizeof sql,
                  "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM ("
                  "SELECT k,ik,nm,sub," HOME_FIN_LAST " AS lpx,sn,tie FROM t WHERE k IN (3,4,6) AND " HOME_FIN ">0 AND %s"
                  " UNION ALL SELECT %u,h.key,h.key,'',MAX(h.played_at),h.key,h.key FROM history h"
                  " WHERE NOT EXISTS(SELECT 1 FROM songs s WHERE s.key=h.key) AND substr(h.key,1,6)<>'local:' AND %s GROUP BY h.key)"
                  " ORDER BY lpx DESC, sn COLLATE NOCASE, tie LIMIT ?1",
                  inner, has, (unsigned)SEL_HOME_ITEM_SONG, nofam);
+        if (rc >= (int)sizeof sql) return SQLITE_TOOBIG;
     } else {
         char tl[3000];
-        snprintf(tl, sizeof tl, tail[shelf], has);
-        snprintf(sql, sizeof sql, "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM t%s", inner, tl);
+        if (snprintf(tl, sizeof tl, tail[shelf], has) >= (int)sizeof tl) return SQLITE_TOOBIG;
+        if (snprintf(sql, sizeof sql, "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM t%s", inner, tl) >= (int)sizeof sql) return SQLITE_TOOBIG;
     }
     rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
