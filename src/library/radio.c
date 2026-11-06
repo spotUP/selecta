@@ -54,8 +54,7 @@ static void take(radio_pass* p, const char* key, uint32_t weight) {
         p->total += weight;
     } else if (!p->picked) {
         if (p->target < weight) {
-            strncpy(p->out, form, p->cap - 1u);
-            p->out[p->cap - 1u] = '\0';
+            snprintf(p->out, p->cap, "%s", form);
             p->picked = 1;
         } else {
             p->target -= weight;
