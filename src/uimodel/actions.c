@@ -121,6 +121,8 @@ static const struct {
     {"END", PROTO},          {"COMMANDS", PROTO},     {"EVENTS", PROTO},        {"TAGTYPES", PROTO},
     {"IDLE", PROTO},         {"STATUS", PROTO},       {"AUTH", PROTO},         {"DEVICE_LIST", PROTO},   {"DEVICE_TRANSFER", ARG},
     {"DEVICE_FOLLOW", ARG},
+    {"SYSFILE_INSTALL", "sent by the Get File button and the system file dialog (I710ga6), which pick the file name and path"},
+    {"SYSFILE_RETRY", "sent by the Retry Download button of the system file dialog (I710ga6), which names the waiting file"},
 };
 #undef ARG
 #undef PROTO
