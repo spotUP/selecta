@@ -2163,6 +2163,17 @@ if(NOT SEL_AMIGA)
   endif()
 
   # I710s: P/ECE music driver songs (.pmd) play through the render entry point (bbmp_piece module, GPL-3.0). Songs are fetched by
+  # I710ab: Skale Tracker songs (.skm) play through the render entry point (bbmp_skale module over the patched libopenmpt). Songs are fetched by
+  # checksum, exit 77 = skip. A file that is not an .skm is not claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/skale-decode)
+    add_test(NAME skale-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/skale_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/skale-decode)
+    set_tests_properties(skale-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "skale_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # checksum, exit 77 = skip. A non-song .pmd, a cut-off song and a song without the extension must not be claimed.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/piece-decode)

@@ -1,0 +1,1204 @@
+diff --git a/soundlib/Load_skm.cpp b/soundlib/Load_skm.cpp
+new file mode 100644
+index 000000000..a98a32558
+--- /dev/null
++++ b/soundlib/Load_skm.cpp
+@@ -0,0 +1,1154 @@
++/*
++ * Load_skm.cpp
++ * ------------
++ * Purpose: Skale Tracker (SKM) module loader
++ * Notes  : Experimental reference implementation. Compiled, linked, and
++ *          render-tested against OpenMPT; the parsing logic was cross-checked
++ *          against independent C++ and Python reference parsers with exact
++ *          byte consumption.
++ *
++ *          The format was derived only by observing .skm files; no Skale
++ *          binary was disassembled, decompiled, or debugged.
++ *
++ *          VST/VSTi state and Skale's SUB/FX routing graph are not mapped.
++ *          Some 0.76 instruments with 716/784-byte prefixes use an unknown
++ *          keymap encoding and fall back to their first playable sample.
++ *
++ *          NOT AN OPENMPT CONTRIBUTION AS IT STANDS. This file was developed
++ *          with AI assistance, which OpenMPT's contribution policy does not
++ *          currently accept (see doc/contributing.md upstream). It is
++ *          published as inspectable reference material for the format
++ *          research; please do not copy it into OpenMPT without approval from
++ *          OpenMPT maintainers. See README.md.
++ * Authors: Luke Preiner
++ * Released under the BSD 2-Clause license. Read LICENSE for more details.
++ */
++
++#include "stdafx.h"
++#include "Loaders.h"
++
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstring>
++#include <optional>
++#include <string>
++#include <vector>
++
++extern "C" { int modland_skm_hook = 0; float modland_skm_gain[256]; }  // modland
++
++OPENMPT_NAMESPACE_BEGIN
++
++namespace
++{
++
++// Container: flat/nested id/tag/length chunk stream.
++// The same header frames top-level sections and instrument sub-chunks.
++
++constexpr uint16 SKMTagHeader = 0xFFFE;
++constexpr uint16 SKMTagEOF = 0xFFFF;
++
++struct SKMChunkHeader
++{
++	uint16le id;      // 0x0001 = binary section, 0x0003 = record/text section (not otherwise used below)
++	uint16le tag;      // 0xFFFE = header, 1..6 = section index, 0xFFFF = EOF
++	uint32le length;
++
++	uint32 GetLength() const { return length; }
++};
++
++MPT_BINARY_STRUCT(SKMChunkHeader, 8)
++
++// Chunk offsets refer to the shared raw-byte buffer.
++struct SKMChunk
++{
++	std::size_t offset = 0;      // header offset
++	uint16 id = 0;
++	uint16 tag = 0;
++	uint32 length = 0;
++	std::size_t dataOffset = 0;  // payload offset
++};
++
++uint16 PeekU16(mpt::span<const std::byte> b, std::size_t off)
++{
++	return static_cast<uint16>(std::to_integer<uint8>(b[off])) | (static_cast<uint16>(std::to_integer<uint8>(b[off + 1])) << 8);
++}
++
++uint32 PeekU32(mpt::span<const std::byte> b, std::size_t off)
++{
++	return static_cast<uint32>(std::to_integer<uint8>(b[off])) | (static_cast<uint32>(std::to_integer<uint8>(b[off + 1])) << 8)
++		| (static_cast<uint32>(std::to_integer<uint8>(b[off + 2])) << 16) | (static_cast<uint32>(std::to_integer<uint8>(b[off + 3])) << 24);
++}
++
++float PeekFloat32LE(mpt::span<const std::byte> b, std::size_t off)
++{
++	return static_cast<float>(IEEE754binary32LE{b[off], b[off + 1], b[off + 2], b[off + 3]});
++}
++
++uint32 SKMBasePreAmp(CHANNELINDEX channels)
++{
++	// Cancel Original mix mode's channel-count attenuation; Skale 0.71+
++	// keeps the same level when empty channels are added.
++	static constexpr uint8 attenuation[16] = {
++		0x60, 0x60, 0x60, 0x70, 0x80, 0x88, 0x90, 0x98,
++		0xA0, 0xA4, 0xA8, 0xAC, 0xB0, 0xB4, 0xB8, 0xBC,
++	};
++	const CHANNELINDEX clamped = std::clamp(channels, CHANNELINDEX{1}, CHANNELINDEX{31});
++	return mpt::saturate_round<uint32>(208.0f * attenuation[clamped / 2u] / 136.0f);
++}
++
++// Walk one chunk level. `consumedOut` allows callers to require exact closure.
++bool ReadSKMChunkList(mpt::span<const std::byte> buf, std::size_t base, std::size_t len,
++	std::vector<SKMChunk> &out, std::size_t &consumedOut)
++{
++	if(base > buf.size() || len > buf.size() - base)
++		return false;
++	std::size_t off = 0;
++	while(off <= len && len - off >= 8)
++	{
++		uint16 id = PeekU16(buf, base + off);
++		uint16 tag = PeekU16(buf, base + off + 2);
++		uint32 length = PeekU32(buf, base + off + 4);
++		std::size_t body = off + 8;
++		if(length > len - body)
++		{
++			consumedOut = off;
++			return false;
++		}
++		SKMChunk c;
++		c.offset = base + off;
++		c.id = id;
++		c.tag = tag;
++		c.length = length;
++		c.dataOffset = base + body;
++		out.push_back(c);
++		off = body + length;
++		if(tag == SKMTagEOF)
++			break;
++	}
++	consumedOut = off;
++	return true;
++}
++
++std::string ReadSKMCString(mpt::span<const std::byte> buf, std::size_t off, std::size_t end, std::size_t &next)
++{
++	std::size_t p = off;
++	while(p < end && buf[p] != std::byte{0})
++		p++;
++	std::string s;
++	s.reserve(p - off);
++	for(std::size_t i = off; i < p; i++)
++		s.push_back(static_cast<char>(std::to_integer<uint8>(buf[i])));
++	// A missing terminator leaves next at end for the caller to reject.
++	next = (p < end) ? p + 1 : end;
++	return s;
++}
++
++// Sample sub-chunks contain a C string followed by a 27-byte header and audio.
++// Loop positions are absolute sample-frame offsets.
++
++constexpr std::size_t SKMSampleHeaderLen = 27;
++
++// A valid embedded sample consumes its record exactly, including a 3-byte tail.
++std::optional<bool> SKMSampleSubchunkSizeExact(mpt::span<const std::byte> buf, std::size_t base, std::size_t len)
++{
++	if(base > buf.size() || len > buf.size() - base || len < 2)
++		return std::nullopt;
++	std::size_t p = 1;
++	while(p < len && buf[base + p] != std::byte{0})
++		p++;
++	if(p >= len)
++		return std::nullopt;
++	std::size_t n2 = p + 1;
++	if(len < SKMSampleHeaderLen || n2 > len - SKMSampleHeaderLen || len - n2 - SKMSampleHeaderLen < 3)
++		return std::nullopt;
++	uint32 audioDataLength = PeekU32(buf, base + n2 + 18);
++	return audioDataLength == len - n2 - SKMSampleHeaderLen - 3;
++}
++
++struct SKMSampleInfo
++{
++	std::string name;
++	uint8 volume = 0, panning = 0;
++	int8 finetune = 0, relativeNote = 0;
++	uint32 loopStart = 0, loopEnd = 0;
++	uint8 loopType = 0;
++	uint16 formatRaw = 0;
++	uint32 audioDataLength = 0, sampleValueCount = 0;
++	uint8 channels = 1;
++	std::size_t audioDataOffset = 0;  // absolute, within the shared buffer
++	bool headerValid = false;
++};
++
++SKMSampleInfo ParseSKMSampleSubchunk(mpt::span<const std::byte> buf, std::size_t base, std::size_t len)
++{
++	SKMSampleInfo si;
++	if(base > buf.size() || len > buf.size() - base || len < 2)
++		return si;
++	std::size_t p = 1;
++	while(p < len && buf[base + p] != std::byte{0})
++		p++;
++	std::size_t n2 = p + 1;
++	std::size_t dummy;
++	si.name = ReadSKMCString(buf, base + 1, base + len, dummy);
++	if(len < SKMSampleHeaderLen || n2 > len - SKMSampleHeaderLen)
++		return si;
++	std::size_t h = base + n2;
++	si.volume = std::to_integer<uint8>(buf[h]);
++	si.panning = std::to_integer<uint8>(buf[h + 1]);
++	si.finetune = static_cast<int8>(std::to_integer<uint8>(buf[h + 2]));
++	si.relativeNote = static_cast<int8>(std::to_integer<uint8>(buf[h + 3]));
++	si.loopStart = PeekU32(buf, h + 5);
++	si.loopEnd = PeekU32(buf, h + 9);
++	si.loopType = std::to_integer<uint8>(buf[h + 13]);
++	si.formatRaw = PeekU16(buf, h + 14);
++	si.audioDataLength = PeekU32(buf, h + 18);
++	si.sampleValueCount = PeekU32(buf, h + 22);
++	si.channels = std::to_integer<uint8>(buf[h + 26]);
++	si.audioDataOffset = h + SKMSampleHeaderLen;
++	si.headerValid = true;
++	return si;
++}
++
++struct SKMEnvelopeInfo
++{
++	uint8 type = 0;
++	bool enabled = false, sustain = false, loop = false;
++	uint8 sustainPoint = 0, loopStart = 0, loopEnd = 0;
++	std::vector<EnvelopeNode> points;
++};
++
++std::optional<SKMEnvelopeInfo> ParseSKMEnvelope(mpt::span<const std::byte> buf, std::size_t base, std::size_t len)
++{
++	// Main step-A envelopes use row 0, type 1=volume / 2=panning. The same
++	// id=3/tag=2 record family also holds the B-H preset grid, so row/type and
++	// the self-describing point count are required to distinguish them.
++	if(base > buf.size() || len > buf.size() - base || len < 10)
++		return std::nullopt;
++	const uint8 row = std::to_integer<uint8>(buf[base]);
++	const uint8 type = std::to_integer<uint8>(buf[base + 1]);
++	const uint8 enabled = std::to_integer<uint8>(buf[base + 2]);
++	const uint8 numPoints = std::to_integer<uint8>(buf[base + 3]);
++	const std::size_t coreLength = 9u + 4u * numPoints;
++	if(row != 0 || (type != 1 && type != 2) || enabled > 1
++		|| numPoints > 12 || (len != coreLength && len != coreLength + 1u))
++		return std::nullopt;
++
++	SKMEnvelopeInfo env;
++	env.type = type;
++	env.enabled = enabled != 0;
++	env.points.reserve(numPoints);
++	uint16 previousTick = 0;
++	for(uint8 i = 0; i < numPoints; i++)
++	{
++		const uint16 tick = PeekU16(buf, base + 4u + 4u * i);
++		const uint16 value = PeekU16(buf, base + 6u + 4u * i);
++		if(value > ENVELOPE_MAX || (i != 0 && tick < previousTick))
++			return std::nullopt;
++		env.points.emplace_back(tick, static_cast<uint8>(value));
++		previousTick = tick;
++	}
++
++	const std::size_t tail = base + 4u + 4u * numPoints;
++	const uint8 sustain = std::to_integer<uint8>(buf[tail]);
++	const uint8 loop = std::to_integer<uint8>(buf[tail + 2]);
++	if(sustain > 1 || loop > 1 || (len == coreLength + 1u && buf[tail + 5] != std::byte{0}))
++		return std::nullopt;
++	env.sustain = sustain != 0;
++	env.sustainPoint = std::to_integer<uint8>(buf[tail + 1]);
++	env.loop = loop != 0;
++	env.loopStart = std::to_integer<uint8>(buf[tail + 3]);
++	env.loopEnd = std::to_integer<uint8>(buf[tail + 4]);
++	if((env.sustain && env.sustainPoint >= numPoints)
++		|| (env.loop && (env.loopStart >= numPoints || env.loopEnd >= numPoints || env.loopStart > env.loopEnd)))
++		return std::nullopt;
++	return env;
++}
++
++void ApplySKMEnvelope(const SKMEnvelopeInfo &src, InstrumentEnvelope &dst)
++{
++	dst.assign(src.points.begin(), src.points.end());
++	dst.dwFlags.set(ENV_ENABLED, src.enabled && !dst.empty());
++	dst.dwFlags.set(ENV_SUSTAIN, src.sustain && !dst.empty());
++	dst.dwFlags.set(ENV_LOOP, src.loop && !dst.empty());
++	dst.nSustainStart = dst.nSustainEnd = src.sustainPoint;
++	dst.nLoopStart = src.loopStart;
++	dst.nLoopEnd = src.loopEnd;
++}
++
++// Locate the nested sample list by validating its framing and sample sizes.
++// The prefix is fixed before 0.76 but has several 0.76 layouts. A missing
++// list is valid for sample-less instrument or text records.
++std::optional<std::size_t> LocateSKMSampleList(mpt::span<const std::byte> buf, std::size_t recBase, std::size_t recLen,
++	std::size_t start, uint32 versionRaw)
++{
++	if(recBase > buf.size() || recLen > buf.size() - recBase || recLen < 8 || start > recLen)
++		return std::nullopt;
++
++	auto validateCandidate = [&](std::size_t off) -> bool
++	{
++		if(off > recLen - 8)
++			return false;
++		uint16 id = PeekU16(buf, recBase + off);
++		uint16 tag = PeekU16(buf, recBase + off + 2);
++		if(!(id == 1 || id == 3))
++			return false;
++		if(!(tag == 1 || tag == 2 || tag == SKMTagEOF))
++			return false;
++		uint32 length = PeekU32(buf, recBase + off + 4);
++		if(length > recLen - off - 8)
++			return false;
++		std::vector<SKMChunk> sub;
++		std::size_t consumed = 0;
++		bool clean = ReadSKMChunkList(buf, recBase + off, recLen - off, sub, consumed);
++		if(!clean || consumed != recLen - off || sub.empty()
++			|| sub.back().id != 1 || sub.back().tag != SKMTagEOF || sub.back().length != 0)
++			return false;
++		for(const auto &s : sub)
++		{
++			if(s.id == 1 && s.tag == 1)
++			{
++				auto exact = SKMSampleSubchunkSizeExact(buf, s.dataOffset, s.length);
++				if(exact && !*exact)
++					return false;
++			}
++		}
++		return true;
++	};
++
++	// Known layouts use a small finite set of prefix sizes.
++	if(versionRaw == 7000 || versionRaw == 7100 || versionRaw == 7500)
++	{
++		if(529 > recLen - start)
++			return std::nullopt;
++		const std::size_t candidate = start + 529;
++		return validateCandidate(candidate) ? std::optional<std::size_t>{candidate} : std::nullopt;
++	}
++	if(versionRaw == 7600)
++	{
++		static constexpr std::size_t gaps[] = {928, 1056, 1052, 1048, 784, 716, 544, 412};
++		for(const auto gap : gaps)
++		{
++			if(gap > recLen - start)
++				continue;
++			const std::size_t candidate = start + gap;
++			if(validateCandidate(candidate))
++				return candidate;
++		}
++		return std::nullopt;
++	}
++
++	// Unknown versions: try every prefix size the known layouts use instead of
++	// scanning. An open-ended scan would validate a fresh chunk list at every
++	// offset, making a single crafted instrument record quadratic to parse.
++	static constexpr std::size_t knownGaps[] = {1056, 1052, 1048, 928, 784, 716, 544, 529, 412};
++	for(const auto gap : knownGaps)
++	{
++		if(gap > recLen - start)
++			continue;
++		const std::size_t candidate = start + gap;
++		if(validateCandidate(candidate))
++			return candidate;
++	}
++	return std::nullopt;
++}
++
++// Section 2: order list + channel-major pattern/track/row grammar.
++
++constexpr uint32 SKMPatternSig = 0x00010001;  // bytes 01 00 01 00, read as LE u32
++constexpr uint16 SKMTrackSepMarker = 0x0101;  // bytes 01 01
++
++// 0x81 is Note Off. 0x80 is provisionally mapped to Note Cut.
++constexpr uint8 SKMNoteOff = 0x81;
++constexpr uint8 SKMNoteCut = 0x80;
++
++// Keep decoding separate from conversion to soundlib commands.
++struct SKMCell
++{
++	bool hasNote = false, hasInstrument = false, hasVolume = false, hasEffect = false;
++	uint8 note = 0, instrument = 0, volume0 = 0, volume1 = 0, effectCmd = 0, effectParam = 0;
++};
++
++// Decode one track into absolute rows. The first two bytes are the last and
++// first stored row; unencoded rows remain empty.
++bool SKMDecodeTrackEvents(mpt::span<const std::byte> data, std::size_t offset, std::size_t length,
++	ROWINDEX numRows, std::vector<std::optional<SKMCell>> &rowsOut)
++{
++	if(length < 2)
++		return false;
++	const uint8 lastRow = std::to_integer<uint8>(data[offset]);
++	uint8 reserved = std::to_integer<uint8>(data[offset + 1]);
++	std::size_t pos = offset + 2;
++	std::size_t end = offset + length;
++	ROWINDEX row = reserved;
++	while(pos < end)
++	{
++		if(row >= numRows)
++			return false;
++		uint8 b = std::to_integer<uint8>(data[pos++]);
++		if(b == 0x80)
++		{
++			row++;
++			continue;
++		}
++		SKMCell cell;
++		if(b & 0x80)
++		{
++			// COMPRESSED row: low 5 bits select fields, ascending bit order.
++			if(b & (1 << 0))
++			{
++				if(pos + 1 > end) return false;
++				cell.hasEffect = true;
++				cell.effectCmd = std::to_integer<uint8>(data[pos++]);
++			}
++			if(b & (1 << 1))
++			{
++				if(pos + 1 > end) return false;
++				cell.hasNote = true;
++				cell.note = std::to_integer<uint8>(data[pos++]);
++			}
++			if(b & (1 << 2))
++			{
++				if(pos + 1 > end) return false;
++				cell.hasInstrument = true;
++				cell.instrument = std::to_integer<uint8>(data[pos++]);
++			}
++			if(b & (1 << 3))
++			{
++				if(pos + 2 > end) return false;
++				cell.hasVolume = true;
++				cell.volume0 = std::to_integer<uint8>(data[pos]);
++				cell.volume1 = std::to_integer<uint8>(data[pos + 1]);
++				pos += 2;
++			}
++			if(b & (1 << 4))
++			{
++				if(pos + 1 > end) return false;
++				cell.effectParam = std::to_integer<uint8>(data[pos++]);
++			}
++		} else
++		{
++			// Literal rows store effect, note, instrument, volume, and parameter.
++			if(pos + 5 > end) return false;
++			cell.hasEffect = true;
++			cell.effectCmd = b;
++			cell.hasNote = true;
++			cell.note = std::to_integer<uint8>(data[pos]);
++			cell.hasInstrument = true;
++			cell.instrument = std::to_integer<uint8>(data[pos + 1]);
++			cell.hasVolume = true;
++			cell.volume0 = std::to_integer<uint8>(data[pos + 2]);
++			cell.volume1 = std::to_integer<uint8>(data[pos + 3]);
++			cell.effectParam = std::to_integer<uint8>(data[pos + 4]);
++			pos += 5;
++		}
++		if(row < numRows)
++			rowsOut[row] = cell;
++		row++;
++	}
++	return row > reserved && row - 1 == lastRow;
++}
++
++// Convert SKM's zero-based notes and instruments to soundlib's one-based
++// representation. Effects 0x00..0x0F follow MOD/XM numbering; Set Volume
++// uses twice the XM parameter. Native effects 0x10..0x13 remain unmapped.
++void SKMApplyCellToModCommand(const SKMCell &cell, ModCommand &m)
++{
++	if(cell.hasNote)
++	{
++		if(cell.note == SKMNoteOff)
++			m.note = NOTE_KEYOFF;
++		else if(cell.note == SKMNoteCut)
++			m.note = NOTE_NOTECUT;  // provisional interpretation
++		else if(cell.note <= 95)
++			m.note = static_cast<ModCommand::NOTE>(cell.note + 13);
++	}
++
++	if(cell.hasInstrument && cell.instrument != 0)
++		m.instr = cell.instrument;
++
++	// A zero high byte denotes plain 0..128 volume. A high byte of 0x80 is
++	// displayed as no volume; its low byte is opaque.
++	if(cell.hasVolume && cell.volume1 == 0 && cell.volume0 <= 0x80)
++	{
++		// SKM's 0..128 scale maps to soundlib's 0..64 scale.
++		m.volcmd = VOLCMD_VOLUME;
++		m.vol = cell.volume0 / 2;
++	}
++
++	if(cell.hasEffect || cell.effectParam != 0)
++	{
++		// Deliberately skip Skale-native 0x10..0x13 and any unknown extended
++		// command until a faithful mapping is established.
++		if(cell.effectCmd > 15)
++			return;
++		uint8 param = cell.effectParam;
++		if(cell.effectCmd == 12)
++		{
++			// Set Volume stores twice the XM parameter. Every observed value is
++			// even; round instead of dropping the command should an odd one
++			// appear, so an unseen file degrades by a half step rather than
++			// losing the volume change entirely.
++			param = static_cast<uint8>((param + 1u) / 2u);
++		}
++		if(cell.effectCmd != 0 || param != 0)
++			CSoundFile::ConvertModCommand(m, cell.effectCmd, param);
++	}
++}
++
++}  // anonymous namespace
++
++
++CSoundFile::ProbeResult CSoundFile::ProbeFileHeaderSKM(MemoryFileReader file, const uint64 *pfilesize)
++{
++	SKMChunkHeader hdr;
++	if(!file.ReadStruct(hdr))
++		return ProbeWantMoreData;
++	if(hdr.id != 1 || hdr.tag != SKMTagHeader || hdr.GetLength() < 9)
++		return ProbeFailure;
++	if(!file.CanRead(5))
++		return ProbeWantMoreData;
++	char magic[5];
++	file.ReadArray(magic);
++	if(std::memcmp(magic, "ALIM3", 5) != 0)
++		return ProbeFailure;
++	MPT_UNREFERENCED_PARAMETER(pfilesize);
++	return ProbeSuccess;
++}
++
++
++bool CSoundFile::ReadSKM(FileReader &file, ModLoadingFlags loadFlags)
++{
++	file.Rewind();
++
++	SKMChunkHeader hdr;
++	if(!file.ReadStruct(hdr) || hdr.id != 1 || hdr.tag != SKMTagHeader || hdr.GetLength() < 9)
++		return false;
++	FileReader headerChunk = file.ReadChunk(hdr.GetLength());
++	char magic[5];
++	if(!headerChunk.ReadArray(magic) || std::memcmp(magic, "ALIM3", 5) != 0)
++		return false;
++	const uint32 versionRaw = headerChunk.ReadUint32LE();  // version * 10000, e.g. 7600 = Skale 0.76
++
++	if(loadFlags == onlyVerifyHeader)
++		return true;
++
++	// Collect the supported sections in one linear top-level pass.
++	FileReader songTextChunk, patternsChunk, instrumentsChunk, globalChunk;
++	std::array<bool, 7> seenSection{};
++	bool sawEOF = false;
++	for(;;)
++	{
++		SKMChunkHeader ch;
++		if(!file.CanRead(sizeof(SKMChunkHeader)) || !file.ReadStruct(ch))
++			return false;
++		if(!file.CanRead(ch.GetLength()))
++			return false;
++		FileReader chunk = file.ReadChunk(ch.GetLength());
++		// Section 5 permits either observed binary ID; other IDs are fixed.
++		if((ch.tag == 1 && ch.id != 3)
++			|| ((ch.tag == 2 || ch.tag == 3 || ch.tag == 4 || ch.tag == 6) && ch.id != 1)
++			|| (ch.tag == 5 && ch.id != 1 && ch.id != 2))
++			return false;
++		if(ch.tag >= 1 && ch.tag <= 6)
++		{
++			if(seenSection[ch.tag])
++				return false;
++			seenSection[ch.tag] = true;
++		}
++		switch(ch.tag)
++		{
++		case 1: songTextChunk = chunk; break;
++		case 2: patternsChunk = chunk; break;
++		case 3: instrumentsChunk = chunk; break;
++		case 5: globalChunk = chunk; break;
++		default: break;
++		}
++		if(ch.tag == SKMTagEOF)
++		{
++			if(ch.id != 1 || ch.GetLength() != 0)
++				return false;
++			sawEOF = true;
++			break;
++		}
++	}
++	if(!sawEOF || !file.EndOfFile())
++		return false;
++
++	if(!patternsChunk.IsValid() || !patternsChunk.CanRead(259))
++		return false;
++
++	// Use one raw section-2 view so all offsets share the same origin.
++	FileReader::PinnedView patView = patternsChunk.GetPinnedView(patternsChunk.GetLength());
++	mpt::span<const std::byte> patSpan = patView.span();
++
++	// Section 2 header: channel count, order list, length, restart position.
++	const CHANNELINDEX numChannels = std::to_integer<uint8>(patSpan[0]);
++	if(numChannels < 1 || numChannels > MAX_BASECHANNELS)
++		return false;
++	std::array<uint8, 256> orderRegion{};
++	for(std::size_t i = 0; i < 256; i++)
++		orderRegion[i] = std::to_integer<uint8>(patSpan[1 + i]);
++	const uint8 songLength = std::to_integer<uint8>(patSpan[257]);
++	const uint8 repeatPattern = std::to_integer<uint8>(patSpan[258]);
++	if(songLength == 0)
++		return false;
++	const std::size_t orderUsed = std::min<std::size_t>(songLength, orderRegion.size());
++
++	// SKM shares XM tuning, effect, envelope, and sample semantics, so the
++	// module is loaded as MOD_TYPE_XM and identified as SKM through m_modFormat
++	// alone. This is what recent soundlib formats do (SymMOD, DSym, FTM, RTM,
++	// ETX all take no MODTYPE bit of their own), and it needs no Snd_defs.h
++	// change.
++	//
++	// It also matters for more than packaging: GetModSpecifications() switches
++	// on the exact type, so a composite value falls through to ModSpecs::mod,
++	// which declares no instruments, no envelopes, 64-row patterns, and 31
++	// samples. MOD_TYPE_XM selects ModSpecs::xmEx, which actually describes
++	// what this loader produces.
++	InitializeGlobals(MOD_TYPE_XM, numChannels);
++	// Original mixing with preamp 208 matches controlled Skale renders.
++	m_nMixLevels = MixLevels::Original;
++	// Skale 0.70 retains Original mode's channel attenuation; 0.71+ does not.
++	const uint32 skmBasePreAmp = versionRaw == 7000 ? 208u : SKMBasePreAmp(numChannels);
++	m_nSamplePreAmp = skmBasePreAmp;
++	// Skale omits the final point when a ping-pong loop reverses.
++	m_playBehaviour.set(kITPingPongMode);
++	m_modFormat.formatName = UL_("Skale Tracker Module");
++	m_modFormat.type = UL_("skm");
++	// Skale is a Win32 tracker and stores plain 8-bit text.
++	m_modFormat.charset = mpt::Charset::Windows1252;
++	// The stamped value is the format version, not the application version:
++	// Skale 0.77 through 0.81 all still write 7600.
++	m_modFormat.madeWithTracker = MPT_UFORMAT("Skale Tracker (format v0.{})")((versionRaw % 10000u) / 100u);
++	m_SongFlags.set(SONG_IMPORTED);
++	// Skale uses linear periods and preserves all finetune bits, unlike FT2.
++	m_SongFlags.set(SONG_LINEARSLIDES);
++	m_playBehaviour.reset(kFT2FinetunePrecision);
++
++	// Section 1: title, message, initial tempo.
++	if(songTextChunk.IsValid() && songTextChunk.GetLength() >= 18)
++	{
++		// Title C string, optional NUL separator, message, a 10-byte zero footer,
++		// then the fixed 8-byte trailer. The footer is fixed-width in files Skale
++		// itself writes, but this parses the message by trimming trailing NULs
++		// back from the trailer rather than reserving the footer: a file whose
++		// run is shorter is malformed song text, not a reason to fail the whole
++		// module, and reserving a fixed count would truncate its message.
++		const std::size_t chunkLen = songTextChunk.GetLength();
++		const std::size_t trailerOffset = chunkLen - 8;
++		const FileReader::PinnedView textView = songTextChunk.GetPinnedView(chunkLen);
++		const mpt::span<const std::byte> text = textView.span();
++		if(std::to_integer<uint8>(text[trailerOffset + 2]) != numChannels
++			|| text[trailerOffset + 3] != std::byte{0}
++			|| PeekU32(text, trailerOffset + 4) != versionRaw)
++			return false;
++
++		std::size_t titleEnd = 0;
++		const std::string title = ReadSKMCString(text, 0, trailerOffset, titleEnd);
++		if(titleEnd == trailerOffset && (trailerOffset == 0 || text[trailerOffset - 1] != std::byte{0}))
++			return false;
++		m_songName = title;
++
++		// Tolerate a missing separator between the title and message.
++		std::size_t pos = titleEnd;
++		if(pos < trailerOffset && text[pos] == std::byte{0})
++			pos++;
++		// Trim the trailing NUL padding rather than assuming its length.
++		std::size_t messageEnd = trailerOffset;
++		while(messageEnd > pos && text[messageEnd - 1] == std::byte{0})
++			messageEnd--;
++		if(pos < messageEnd)
++		{
++			songTextChunk.Seek(pos);
++			m_songMessage.Read(songTextChunk, messageEnd - pos, SongMessage::leAutodetect);
++		}
++
++		const uint8 initialBpm = std::to_integer<uint8>(text[trailerOffset]);
++		const uint8 initialSpeed = std::to_integer<uint8>(text[trailerOffset + 1]);
++		if(initialSpeed > 0)
++			Order().SetDefaultSpeed(std::min<uint8>(initialSpeed, 31));
++		if(initialBpm > 0)
++			Order().SetDefaultTempoInt(std::max<uint8>(initialBpm, 32));
++	}
++
++	// Section 2 body: patterns.
++	// Validate framing even without allocation; record IDs sanitize the order list.
++	std::array<bool, 256> patternIDs{};
++	{
++		std::size_t off = 0x103;
++		// Reused across every track; tracks are decoded one at a time.
++		std::vector<std::optional<SKMCell>> rows;
++		for(;;)
++		{
++			if(off > patSpan.size())
++				return false;
++			const std::size_t bytesLeft = patSpan.size() - off;
++			if(bytesLeft == 8)
++			{
++				if(PeekU16(patSpan, off) != 1 || PeekU16(patSpan, off + 2) != SKMTagEOF || PeekU32(patSpan, off + 4) != 0)
++					return false;
++				break;
++			}
++			if(bytesLeft < 17)
++				return false;
++			if(PeekU32(patSpan, off) != SKMPatternSig)
++				return false;
++			const uint16 packedSize = PeekU16(patSpan, off + 4);
++			if(packedSize < 9)
++				return false;
++			if(off > patSpan.size() - 4 || packedSize > patSpan.size() - off - 4)
++				return false;
++			const std::size_t dataEnd = off + 4 + packedSize;
++			if(patSpan.size() - dataEnd < 4)
++				return false;
++			if(patSpan[dataEnd] != std::byte{0x01} || patSpan[dataEnd + 1] != std::byte{0xFF}
++				|| patSpan[dataEnd + 2] != std::byte{0x00} || patSpan[dataEnd + 3] != std::byte{0x00})
++				return false;
++			const PATTERNINDEX patIndex = std::to_integer<uint8>(patSpan[off + 8]);
++			if(patternIDs[patIndex])
++				return false;
++			patternIDs[patIndex] = true;
++			const uint8 rowsRaw = std::to_integer<uint8>(patSpan[off + 9]);
++			const ROWINDEX numRows = rowsRaw ? rowsRaw : 256;  // zero encodes the 256-row limit
++
++			const bool storePattern = (loadFlags & loadPatternData)
++				&& patIndex < MAX_PATTERNS && Patterns.Insert(patIndex, numRows);
++			// Tracks are channel-major and separated by 01 01.
++			std::size_t toff = off + 13;
++			const std::size_t tend = dataEnd;
++			CHANNELINDEX expectedChannel = 0;
++			while(toff < tend)
++			{
++				if(tend - toff < 2)
++					return false;
++				const uint16 ln = PeekU16(patSpan, toff);
++				toff += 2;
++				if(ln < 3 || ln > tend - toff)
++					return false;
++				const CHANNELINDEX channel = std::to_integer<uint8>(patSpan[toff]);
++				if(channel != expectedChannel || channel >= numChannels)
++					return false;
++				const std::size_t eventsOffset = toff + 1;
++				const std::size_t eventsLength = ln - 1;
++				rows.assign(numRows, std::nullopt);
++				if(!SKMDecodeTrackEvents(patSpan, eventsOffset, eventsLength, numRows, rows))
++					return false;
++
++				if(storePattern)
++				{
++					for(ROWINDEX row = 0; row < numRows; row++)
++					{
++						if(rows[row])
++							SKMApplyCellToModCommand(*rows[row], *Patterns[patIndex].GetpModCommand(row, channel));
++					}
++				}
++
++				toff += ln;
++				expectedChannel++;
++				if(toff == tend)
++					break;
++				if(tend - toff < 2 || PeekU16(patSpan, toff) != SKMTrackSepMarker)
++					return false;
++				toff += 2;
++			}
++			if(toff != tend || expectedChannel != numChannels)
++				return false;
++
++			off = dataEnd + 4;  // include the 01 ff 00 00 trailer
++		}
++	}
++
++	Order().resize(static_cast<ORDERINDEX>(orderUsed));
++	for(std::size_t i = 0; i < orderUsed; i++)
++	{
++		const PATTERNINDEX pat = orderRegion[i];
++		// Missing pattern IDs play as 64 empty rows rather than being skipped.
++		bool patternAvailable = pat < MAX_PATTERNS;
++		if(patternAvailable && !patternIDs[pat] && (loadFlags & loadPatternData))
++		{
++			patternAvailable = Patterns.Insert(pat, 0x40);
++			patternIDs[pat] = patternAvailable;
++		}
++		Order()[i] = patternAvailable ? pat : PATTERNINDEX_SKIP;
++	}
++	if(repeatPattern < Order().size())
++		Order().SetRestartPos(repeatPattern);
++
++	// Section 3: instruments and samples. Some 0.76 instruments with
++	// 716/784-byte prefixes use an unknown keymap and fall back to sample 1.
++	// Instrument, envelope, keymap, and sample metadata are always parsed:
++	// libopenmpt scans modules for names and counts with sample loading off.
++	// Only the audio payload itself is gated.
++	if(instrumentsChunk.IsValid())
++	{
++		const bool loadAudio = (loadFlags & loadSampleData) != 0;
++		FileReader::PinnedView insView = instrumentsChunk.GetPinnedView(instrumentsChunk.GetLength());
++		mpt::span<const std::byte> insSpan = insView.span();
++		std::vector<SKMChunk> recs;
++		std::vector<std::pair<INSTRUMENTINDEX, float>> mixerInstrumentGains;
++		std::array<std::optional<float>, MAX_INSTRUMENTS> mixerBalances{};
++		std::size_t consumed = 0;
++		if(!ReadSKMChunkList(insSpan, 0, insSpan.size(), recs, consumed)
++			|| consumed != insSpan.size() || recs.empty()
++			|| recs.back().id != 1 || recs.back().tag != SKMTagEOF || recs.back().length != 0)
++			return false;
++
++		std::array<bool, 256> instrumentIDs{};
++		for(const auto &rec : recs)
++		{
++			if(rec.tag == SKMTagEOF || rec.length == 0)
++				continue;
++			// Record IDs vary by layout; tag 1 identifies instruments.
++			if(rec.tag != 1 || rec.length < 2)
++				return false;
++			const uint8 recordIndex = std::to_integer<uint8>(insSpan[rec.dataOffset]);
++			if(instrumentIDs[recordIndex])
++				return false;
++			instrumentIDs[recordIndex] = true;
++			const INSTRUMENTINDEX instrIndex = static_cast<INSTRUMENTINDEX>(recordIndex) + 1;
++			if(instrIndex >= MAX_INSTRUMENTS)
++				continue;
++
++			std::size_t nameEnd;
++			const std::size_t recordEnd = rec.dataOffset + rec.length;
++			const std::string instrName = ReadSKMCString(insSpan, rec.dataOffset + 1, recordEnd, nameEnd);
++			if(nameEnd == recordEnd && insSpan[recordEnd - 1] != std::byte{0})
++				return false;
++			const std::size_t nameEndRel = nameEnd - rec.dataOffset;
++
++			SAMPLEINDEX sampleIdx = 0;
++			std::array<SAMPLEINDEX, 256> localSamples{};
++			std::array<bool, 256> localSlotsSeen{};
++			std::optional<std::array<uint8, 96>> keymap;
++			std::optional<uint16> instrumentFadeOut;
++			std::optional<float> mixerVolume, mixerBalance;
++			std::optional<SKMEnvelopeInfo> volumeEnvelope, panningEnvelope;
++			if(nameEndRel < rec.length)
++			{
++				auto listStart = LocateSKMSampleList(insSpan, rec.dataOffset, rec.length, nameEndRel, versionRaw);
++				if(listStart)
++				{
++					// Fadeout is known only for the canonical 928-byte prefix.
++					if(versionRaw == 7600 && *listStart - nameEndRel == 928)
++					{
++						instrumentFadeOut = PeekU16(insSpan, rec.dataOffset + nameEndRel + 640);
++					}
++					// The mixer strip is anchored before the sample list. Boolean
++					// fields reject incompatible older two-band-EQ layouts.
++					if(versionRaw == 7600 && *listStart >= 281)
++					{
++						const std::size_t mixer = rec.dataOffset + *listStart;
++						const std::array<std::size_t, 9> flags = {
++							281, 136, 35, 34, 33, 32, 31, 22, 13,
++						};
++						const bool saneMixer = std::all_of(flags.begin(), flags.end(), [&](std::size_t back) {
++							return insSpan[mixer - back] == std::byte{0} || insSpan[mixer - back] == std::byte{1};
++						});
++						const float volume = PeekFloat32LE(insSpan, mixer - 279);
++						const float balance = PeekFloat32LE(insSpan, mixer - 275);
++						if(saneMixer && std::isfinite(volume) && volume >= 0.0f)
++							mixerVolume = volume;
++						if(saneMixer && std::isfinite(balance) && balance >= -0.5f && balance <= 0.5f)
++							mixerBalance = balance;
++					}
++					if(modland_skm_hook) mixerBalance = 0.0f;  // modland
++					std::vector<SKMChunk> sub;
++					std::size_t subConsumed = 0;
++					const std::size_t subLength = rec.length - *listStart;
++					if(!ReadSKMChunkList(insSpan, rec.dataOffset + *listStart, subLength, sub, subConsumed)
++						|| subConsumed != subLength || sub.empty()
++						|| sub.back().id != 1 || sub.back().tag != SKMTagEOF || sub.back().length != 0)
++						return false;
++
++					// Later 0.76-family keymaps use 96 framed six-byte entries.
++					if(versionRaw == 7600 && *listStart >= nameEndRel && *listStart - nameEndRel >= 96u * 6u)
++					{
++						std::array<uint8, 96> candidate{};
++						bool validKeymap = true;
++						for(std::size_t note = 0; note < candidate.size(); note++)
++						{
++							const std::size_t entry = rec.dataOffset + nameEndRel + note * 6u;
++							if(insSpan[entry] != std::byte{1} || insSpan[entry + 1] != std::byte{1}
++								|| insSpan[entry + 3] != std::byte{0} || insSpan[entry + 4] != std::byte{0x7F}
++								|| insSpan[entry + 5] != std::byte{0})
++							{
++								validKeymap = false;
++								break;
++							}
++							candidate[note] = std::to_integer<uint8>(insSpan[entry + 2]);
++						}
++						if(validKeymap)
++							keymap = candidate;
++					} else if((versionRaw < 7600 && *listStart - nameEndRel == 529)
++						|| (versionRaw == 7600 && *listStart - nameEndRel == 412))
++					{
++						// Older formats and the compact 412-byte 0.76 layout store one
++						// local sample-slot byte per note.
++						std::array<uint8, 96> candidate{};
++						for(std::size_t note = 0; note < candidate.size(); note++)
++							candidate[note] = std::to_integer<uint8>(insSpan[rec.dataOffset + nameEndRel + note]);
++						keymap = candidate;
++					}
++					for(const auto &sc : sub)
++					{
++						if((sc.id != 2 && sc.id != 3) || sc.tag != 2)
++							continue;
++						const auto env = ParseSKMEnvelope(insSpan, sc.dataOffset, sc.length);
++						if(!env)
++							continue;
++						if(env->type == 1)
++							volumeEnvelope = env;
++						else
++							panningEnvelope = env;
++					}
++					for(const auto &sc : sub)
++					{
++						if(sc.id != 1 || sc.tag != 1)
++							continue;
++						if(sc.length == 0)
++							continue;
++						const uint8 localSlot = std::to_integer<uint8>(insSpan[sc.dataOffset]);
++						if(localSlotsSeen[localSlot])
++							return false;
++						localSlotsSeen[localSlot] = true;
++						// Empty slots share the same framing; only size-exact audio plays.
++						const auto sizeExact = SKMSampleSubchunkSizeExact(insSpan, sc.dataOffset, sc.length);
++						if(!sizeExact || !*sizeExact)
++							continue;
++						if(!CanAddMoreSamples())
++							break;
++						SKMSampleInfo si = ParseSKMSampleSubchunk(insSpan, sc.dataOffset, sc.length);
++						if(!si.headerValid || (si.formatRaw != 2 && si.formatRaw != 3 && si.formatRaw != 4)
++							|| si.audioDataOffset > instrumentsChunk.GetLength()
++							|| si.audioDataLength > instrumentsChunk.GetLength() - si.audioDataOffset)
++							continue;
++
++						const SAMPLEINDEX newSampleIdx = ++m_nSamples;
++						ModSample &mptSmp = Samples[newSampleIdx];
++						bool decoded = false;
++						if(si.formatRaw == 4)
++						{
++							// Embedded Ogg uses a length-prefixed, self-contained stream.
++							// Its frame count is only known once decoded, so a
++							// metadata-only load keeps the slot but leaves it empty.
++							if(!loadAudio)
++							{
++								mptSmp.Initialize(MOD_TYPE_XM);
++								decoded = true;
++							} else if(si.audioDataLength >= 10)
++							{
++								const uint32 streamLength = PeekU32(insSpan, si.audioDataOffset);
++								const std::size_t streamOffset = si.audioDataOffset + 4;
++								// Skale pads every stream with a fixed 01 00 FF FF after the
++								// real Ogg EOS, counted inside the inner length. All four bytes
++								// must be excluded, not just the trailing FF FF: leaving 01 00
++								// in place makes stb_vorbis consume nothing while reporting
++								// need-more-data, which spins a length-driven read loop forever
++								// once the audio is already fully decoded. The padding carries
++								// no audio, so dropping it is lossless.
++								if(streamLength <= si.audioDataLength - 4 && streamLength >= 8
++									&& insSpan[streamOffset] == std::byte{'O'} && insSpan[streamOffset + 1] == std::byte{'g'}
++									&& insSpan[streamOffset + 2] == std::byte{'g'} && insSpan[streamOffset + 3] == std::byte{'S'}
++									&& insSpan[streamOffset + streamLength - 4] == std::byte{0x01}
++									&& insSpan[streamOffset + streamLength - 3] == std::byte{0x00}
++									&& insSpan[streamOffset + streamLength - 2] == std::byte{0xFF}
++									&& insSpan[streamOffset + streamLength - 1] == std::byte{0xFF})
++								{
++									FileReader oggChunk = instrumentsChunk;
++									oggChunk.Seek(streamOffset);
++									oggChunk = oggChunk.ReadChunk(streamLength - 4);
++									decoded = ReadVorbisSample(newSampleIdx, oggChunk);
++								}
++							}
++						} else
++						{
++							const uint32 sampleFrames = (si.channels == 1 || si.channels == 2)
++								? si.sampleValueCount / si.channels : 0;
++							if((si.channels != 1 && si.channels != 2) || si.sampleValueCount == 0
++								|| (si.sampleValueCount % si.channels) != 0 || sampleFrames > MAX_SAMPLE_LENGTH)
++							{
++								m_nSamples--;
++								continue;
++							}
++							const uint32 bytesPerValue = si.formatRaw == 2 ? 2u : 1u;
++							const uint64 requiredAudioBytes = static_cast<uint64>(si.sampleValueCount) * bytesPerValue;
++							if(requiredAudioBytes > si.audioDataLength)
++							{
++								m_nSamples--;
++								continue;
++							}
++							mptSmp.Initialize(MOD_TYPE_XM);
++							mptSmp.nLength = sampleFrames;
++							if(loadAudio)
++							{
++								FileReader audioChunk = instrumentsChunk;
++								audioChunk.Seek(si.audioDataOffset);
++								audioChunk = audioChunk.ReadChunk(mpt::saturate_cast<std::size_t>(requiredAudioBytes));
++								SampleIO(
++									si.formatRaw == 2 ? SampleIO::_16bit : SampleIO::_8bit,
++									si.channels > 1 ? SampleIO::stereoInterleaved : SampleIO::mono,
++									SampleIO::littleEndian,
++									// Raw PCM8 and PCM16 are signed.
++									SampleIO::signedPCM)
++									.ReadSample(mptSmp, audioChunk);
++							}
++							decoded = true;
++						}
++
++						if(!decoded)
++						{
++							mptSmp.FreeSample();
++							mptSmp.Initialize(MOD_TYPE_XM);
++							m_nSamples--;
++							continue;
++						}
++
++						// Apply metadata after decoding; ReadVorbisSample reinitializes the sample.
++						m_szNames[newSampleIdx] = si.name;
++						mptSmp.filename = si.name;
++						// Convert Skale's soft pan followed by linear BAL into soundlib's
++						// linear pan plus attenuation.
++						const float samplePan = si.panning;
++						float left = std::min(1.0f, (256.0f - samplePan) / 128.0f);
++						float right = std::min(1.0f, samplePan / 128.0f);
++						const float balance = mixerBalance.value_or(0.0f);
++						left *= 1.0f - 2.0f * balance;
++						right *= 1.0f + 2.0f * balance;
++						const float panGain = (left + right) * 0.5f;
++						const float linearPan = (left + right) > 0.0f ? 256.0f * right / (left + right) : 128.0f;
++						// Keep panning attenuation multiplicative so event volume cannot erase it.
++						mptSmp.nVolume = std::min<uint16>(si.volume * 2u, 256u);
++						mptSmp.nGlobalVol = mpt::saturate_round<uint16>(64.0f * panGain);
++						mptSmp.nPan = mpt::saturate_round<uint16>(linearPan);
++						mptSmp.uFlags.set(CHN_PANNING);
++						mptSmp.nFineTune = si.finetune;
++						mptSmp.RelativeTone = si.relativeNote;
++						if((si.loopType == 1 || si.loopType == 2)
++							&& si.loopEnd > si.loopStart && si.loopEnd <= mptSmp.nLength)
++						{
++							mptSmp.nLoopStart = si.loopStart;
++							mptSmp.nLoopEnd = si.loopEnd;
++							mptSmp.uFlags.set(CHN_LOOP);
++							if(si.loopType == 2)
++								mptSmp.uFlags.set(CHN_PINGPONGLOOP);
++						}
++
++						localSamples[localSlot] = newSampleIdx;
++						if(sampleIdx == 0)
++							sampleIdx = newSampleIdx;
++					}
++				}
++			}
++
++			// Preserve sparse zero-based record IDs as one-based instruments.
++			ModInstrument *instr = AllocateInstrument(instrIndex, keymap ? 0 : sampleIdx);
++			if(instr != nullptr)
++			{
++				instr->name = instrName;
++				mixerInstrumentGains.emplace_back(instrIndex, modland_skm_hook ? modland_skm_gain[recordIndex] : mixerVolume.value_or(1.0f));  // modland
++				mixerBalances[instrIndex] = mixerBalance;
++				if(volumeEnvelope)
++					ApplySKMEnvelope(*volumeEnvelope, instr->VolEnv);
++				if(panningEnvelope)
++					ApplySKMEnvelope(*panningEnvelope, instr->PanEnv);
++				if(instrumentFadeOut)
++					instr->nFadeOut = std::min<uint16>(*instrumentFadeOut, 32767);
++				if(keymap)
++				{
++					for(std::size_t note = 0; note < keymap->size(); note++)
++						instr->Keyboard[note + 12] = localSamples[(*keymap)[note]];
++				}
++			}
++		}
++
++		// Move above-unity strip gain into the format preamp, preserving relative
++		// instrument gains within soundlib's unity-limited fields.
++		float maxMixerGain = 1.0f;
++		for(const auto &[instrument, gain] : mixerInstrumentGains)
++			maxMixerGain = std::max(maxMixerGain, gain);
++		const float basePreAmp = static_cast<float>(skmBasePreAmp);
++		const float preAmpScale = std::min(maxMixerGain, static_cast<float>(MAX_PREAMP) / basePreAmp);
++		m_nSamplePreAmp = mpt::saturate_round<uint32>(basePreAmp * preAmpScale);
++		for(const auto &[instrument, gain] : mixerInstrumentGains)
++		{
++			if(ModInstrument *instr = Instruments[instrument])
++				instr->nGlobalVol = mpt::saturate_round<uint16>(std::clamp(64.0f * gain / preAmpScale, 0.0f, 64.0f));
++		}
++
++		// Command 8 applies soft pan before mixer BAL. Track the active instrument
++		// so effect-only rows use its BAL and preserve the resulting attenuation.
++		//
++		// Limitation: the conversion is baked into shared pattern data, so the
++		// active instrument is only tracked within a pattern. A pattern entered
++		// with an instrument still held from an earlier order entry falls back to
++		// BAL 0, and a pattern played twice under different instruments can only
++		// carry one answer. Reproducing Skale exactly would need per-channel
++		// state at playback time rather than a load-time rewrite.
++		for(PATTERNINDEX pat = 0; pat < Patterns.Size(); pat++)
++		{
++			if(!Patterns.IsValidPat(pat))
++				continue;
++			std::vector<INSTRUMENTINDEX> currentInstrument(GetNumChannels(), 0);
++			for(ROWINDEX row = 0; row < Patterns[pat].GetNumRows(); row++)
++			{
++				for(CHANNELINDEX channel = 0; channel < GetNumChannels(); channel++)
++				{
++					ModCommand &m = *Patterns[pat].GetpModCommand(row, channel);
++					if(m.instr != 0)
++						currentInstrument[channel] = m.instr;
++					if(m.command != CMD_PANNING8)
++						continue;
++					// Unknown volume families may conflict with this conversion.
++					if(m.volcmd != VOLCMD_NONE && m.volcmd != VOLCMD_VOLUME)
++						continue;
++					const INSTRUMENTINDEX instrument = currentInstrument[channel];
++					const float balance = instrument < mixerBalances.size() ? mixerBalances[instrument].value_or(0.0f) : 0.0f;
++					float left = std::min(1.0f, (256.0f - m.param) / 128.0f);
++					float right = std::min(1.0f, m.param / 128.0f);
++					left *= 1.0f - 2.0f * balance;
++					right *= 1.0f + 2.0f * balance;
++					const float panGain = (left + right) * 0.5f;
++					const float linearPan = (left + right) > 0.0f ? 256.0f * right / (left + right) : 128.0f;
++					m.param = mpt::saturate_round<ModCommand::PARAM>(std::min(linearPan, 255.0f));
++					if(m.volcmd == VOLCMD_VOLUME)
++						m.vol = mpt::saturate_round<ModCommand::VOL>(m.vol * panGain);
++					else if(m.volcmd == VOLCMD_NONE)
++					{
++						// Store pan and persistent attenuation in separate command columns.
++						m.volcmd = VOLCMD_PANNING;
++						m.vol = mpt::saturate_round<ModCommand::VOL>(linearPan / 4.0f);
++						m.command = CMD_CHANNELVOLUME;
++						m.param = mpt::saturate_round<ModCommand::PARAM>(64.0f * panGain);
++					}
++				}
++			}
++		}
++	}
++
++	// Section 5: master volume only.
++	// SUB1-4 bus routing and the FX-bus send matrix have no direct equivalent
++	// in soundlib's shared module graph and are not attempted here.
++	if(globalChunk.IsValid() && globalChunk.CanRead(4))
++	{
++		globalChunk.Seek(0);
++		const float masterVolume = globalChunk.ReadFloatLE();
++		if(std::isfinite(masterVolume))
++		{
++			const float saneMasterVolume = std::clamp(masterVolume, 0.0f, 2.0f);
++			if(saneMasterVolume <= 1.0f)
++			{
++				m_nDefaultGlobalVolume = mpt::saturate_round<uint32>(saneMasterVolume * MAX_GLOBAL_VOLUME);
++			} else
++			{
++				// Preserve above-unity master gain in the format preamp.
++				m_nDefaultGlobalVolume = MAX_GLOBAL_VOLUME;
++				m_nSamplePreAmp = mpt::saturate_round<uint32>(std::min(m_nSamplePreAmp * saneMasterVolume, static_cast<float>(MAX_PREAMP)));
++			}
++		}
++	}
++
++	return true;
++}
++
++OPENMPT_NAMESPACE_END
+diff --git a/soundlib/Sndfile.cpp b/soundlib/Sndfile.cpp
+index 9cae3d20b..d0232d88f 100644
+--- a/soundlib/Sndfile.cpp
++++ b/soundlib/Sndfile.cpp
+@@ -254,6 +254,7 @@ struct FileFormatLoader
+ static constexpr FileFormatLoader ModuleFormatLoaders[] =
+ {
+ 	MPT_DECLARE_FORMAT(XM),
++	MPT_DECLARE_FORMAT(SKM),
+ 	MPT_DECLARE_FORMAT(IT),
+ 	MPT_DECLARE_FORMAT(S3M),
+ 	MPT_DECLARE_FORMAT(STM),
+diff --git a/soundlib/Sndfile.h b/soundlib/Sndfile.h
+index f818dc67b..30748bca9 100644
+--- a/soundlib/Sndfile.h
++++ b/soundlib/Sndfile.h
+@@ -850,6 +850,7 @@ public:
+ 	static ProbeResult ProbeFileHeaderUNIC(MemoryFileReader file, const uint64 *pfilesize);
+ 	static ProbeResult ProbeFileHeaderULT(MemoryFileReader file, const uint64 *pfilesize);
+ 	static ProbeResult ProbeFileHeaderXM(MemoryFileReader file, const uint64 *pfilesize);
++	static ProbeResult ProbeFileHeaderSKM(MemoryFileReader file, const uint64 *pfilesize);
+ 	static ProbeResult ProbeFileHeaderXMF(MemoryFileReader file, const uint64 *pfilesize);
+ 
+ 	static ProbeResult ProbeFileHeaderMID(MemoryFileReader file, const uint64 *pfilesize);
+@@ -915,6 +916,7 @@ public:
+ 	bool ReadUNIC(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+ 	bool ReadULT(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+ 	bool ReadXM(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
++	bool ReadSKM(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+ 	bool ReadXMF(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+ 
+ 	bool ReadMID(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+diff --git a/soundlib/Tables.cpp b/soundlib/Tables.cpp
+index a6947e69b..add64f16c 100644
+--- a/soundlib/Tables.cpp
++++ b/soundlib/Tables.cpp
+@@ -109,6 +109,7 @@ static constexpr ModFormatInfo modFormatInfo[] =
+ 	{ UL_("SoundTracker 2.6"),                   "st26" },
+ 	{ UL_("Soundtracker"),                       "stk" },
+ 	{ UL_("Scream Tracker 2"),                   "stm" },
++	{ UL_("Skale Tracker"), "skm" },
+ 	{ UL_("Scream Tracker Music Interface Kit"), "stx" },
+ 	{ UL_("Soundtracker Pro II"),                "stp" },
+ 	{ UL_("Symphonie"),                          "symmod"},

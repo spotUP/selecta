@@ -1,0 +1,7 @@
+Skale Tracker test songs for tests/m3/skale_decode.sh (bbmp_skale module, I710ab). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Skale%20Tracker/Awesome/skalable%20chords.skm  70b6a2715a3d4144d79826c80f77f74ebc647a9a842b4a54ff8e35a5205bf29c
+https://modland.com/pub/modules/Skale%20Tracker/Manwe/minuet.skm  65a86a2564ac7d5fd06e249e31a87d460c5783adc9c311af7f6117cab1de5db8
+https://modland.com/pub/modules/Skale%20Tracker/Rain/rocking%20bug.skm  2888b96d6ca2bb90f43c9e5eef5b8780bd00793d40c9a6ee3f957b76cb121cc4
+https://modland.com/pub/modules/Skale%20Tracker/Tone/inka.skm  ddfbe4c675543f760c409b1e5650f5868bdc344d185630d1d8219f719ff6a37d
+Engine licence: GPL-3.0-or-later (bbmp csrc/synth skale_engine.cpp, third_party/bbmp_skale). Loader: BSD 2-clause (Luke Preiner), patched into libopenmpt.

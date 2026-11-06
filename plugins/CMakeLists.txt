@@ -243,6 +243,13 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_smufi)
 endif()
 
+# bbmp_skale (I710ab): Skale Tracker songs (.skm), bbmp csrc/synth/skale_engine + skale_fx (GPL 3 or later) over the vendored libopenmpt with Luke
+# Preiner's SKM loader patched in (third_party/patches/libopenmpt), behind the GPL-plugin gate. Host only (C++17 engine and libopenmpt, no Amiga
+# module path; follow-up I710aba). Needs selecta_openmpt.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_skale)
+endif()
+
 # bbmp_mgb (I710x): Gameboy Tracker songs (.mgb), bbmp csrc/retro/gbt_engine (clean-room, GPL 3 or later) over the GBSoundSystem driver (MIT) and the
 # existing selecta_gme, behind the GPL-plugin gate. Host only (C++17 engine, GBS image played by libgme; Amiga follow-up I710xa).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

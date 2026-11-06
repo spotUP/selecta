@@ -1,0 +1,3 @@
+bbmp_skale: skale_engine.cpp, skale_fx.cpp, skale_fx.h, engine.h (GPL-3.0-or-later, SPDX line in each file, COPYING) and LICENSE.mda (MIT,
+the mda plug-in substitutes in skale_fx.cpp) from github.com/creep-ltx/bbmp csrc/synth, commit 19d87098b3716156d80224d22dc49ca22884d1b7,
+unchanged. Skale Tracker (.skm) through the vendored libopenmpt with Luke Preiner's SKM loader, see third_party/patches/libopenmpt.
