@@ -1,6 +1,7 @@
 /* mui_aa_draw: see mui_aa_draw.h. The ttengine V6 calls come from the I665 spike (tags and LVOs from its Developer/include). */
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
+#include "map/mui_fontprobe.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include <clib/muimaster_protos.h>
 #include <graphics/text.h>
 #include <inline/macros.h>
+#include <dos/dosextens.h>
 #include <proto/exec.h>
 #include "mui_gfxbase.h"
 #include <proto/intuition.h>
@@ -65,6 +67,38 @@ static struct {
 static const char* const g_ttf[] = {"RAM:Inter-Regular.ttf", "Selecta:Fonts/Inter-Regular.ttf", "FONTS:Inter-Regular.ttf", NULL};
 static int g_missing_logged;
 
+/* I625a3: the probe names may sit on an assign or volume that is missing ("Selecta:"); dos.library would open a "Please insert
+ * volume" requester. The probe loop runs with the process's pr_WindowPtr = -1 and restores it. Same pattern as I214
+ * (src/core/amiga/dos_quiet.c); the package cannot include src/core, so it carries its own copy of the two small calls. */
+struct font_probe {
+    struct Screen* scr;
+    int px;
+};
+static void* probe_quiet_begin(void* ctx) {
+    struct Process* me = (struct Process*)FindTask(NULL);
+    void* saved;
+    (void)ctx;
+    if (me == NULL || me->pr_Task.tc_Node.ln_Type != NT_PROCESS) {
+        return (void*)-2L; /* not a DOS process: nothing to change, nothing to restore */
+    }
+    saved = me->pr_WindowPtr;
+    me->pr_WindowPtr = (APTR)-1L;
+    return saved;
+}
+static void probe_quiet_end(void* ctx, void* saved) {
+    struct Process* me = (struct Process*)FindTask(NULL);
+    (void)ctx;
+    if (saved == (void*)-2L || me == NULL) {
+        return;
+    }
+    me->pr_WindowPtr = saved;
+}
+static void* probe_open(void* ctx, const char* name) {
+    const struct font_probe* fp = (const struct font_probe*)ctx;
+    struct TagItem tl[4] = {{TTE_FontFile, (ULONG)name}, {TTE_FontSize, (ULONG)fp->px}, {TTE_Screen, (ULONG)fp->scr}, {TAG_DONE, 0}};
+    return tte_open_font(tl);
+}
+
 static APTR font_get(struct Screen* scr, int px) {
     int i, free_slot = -1;
     for (i = 0; i < FONT_SLOTS; i++) {
@@ -80,15 +114,21 @@ static APTR font_get(struct Screen* scr, int px) {
         TTEngineBase = OpenLibrary((CONST_STRPTR) "ttengine.library", 6);
     }
     if (TTEngineBase != NULL && free_slot >= 0) {
-        for (i = 0; g_ttf[i] != NULL; i++) {
-            struct TagItem tl[4] = {{TTE_FontFile, (ULONG)g_ttf[i]}, {TTE_FontSize, (ULONG)px}, {TTE_Screen, (ULONG)scr}, {TAG_DONE, 0}};
-            APTR f = tte_open_font(tl);
-            if (f != NULL) {
-                g_fonts[free_slot].px = px;
-                g_fonts[free_slot].refs = 1;
-                g_fonts[free_slot].font = f;
-                return f;
-            }
+        struct font_probe fp;
+        mui_fontprobe_ops ops;
+        APTR f;
+        fp.scr = scr;
+        fp.px = px;
+        ops.ctx = &fp;
+        ops.quiet_begin = probe_quiet_begin;
+        ops.quiet_end = probe_quiet_end;
+        ops.open = probe_open;
+        f = mui_fontprobe_open(&ops, g_ttf);
+        if (f != NULL) {
+            g_fonts[free_slot].px = px;
+            g_fonts[free_slot].refs = 1;
+            g_fonts[free_slot].font = f;
+            return f;
         }
     }
     if (!g_missing_logged) {
