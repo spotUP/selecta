@@ -1,0 +1,16 @@
+ProTrekkr / NoiseTrekker replay routine (I710q)
+
+Source: rePlayer, source/Replays/ProTrekkr/protrekkr
+  https://github.com/arnaud-neny/rePlayer  commit e3bf02cb41a40cdaebf8dc80efc0ae5ac488dc38 (rePlayer 0.22.14)
+Upstream engine: ProTrekkr, Copyright 2008-2024 Franck Charlet, BSD 2-clause (COPYING).
+
+Why not bbmp's csrc/synth/ptk_engine.cpp: that wrapper is GPL-3.0-or-later. Only the BSD replayer is vendored; the host
+shim and adapter are in plugins/replayers/bbmp_ptk (written for Selecta, MIT).
+
+Patches (the same set as bbmp tools/build-synth.sh, redone with perl because macOS sed differs):
+  - replay/include/synth.h, samples/aiff/include/aiff.h: uint64_t typedef fix.
+  - files/synths.cpp: 156-byte Synth_Parameters size fix; modland read hooks.
+  - files/files.cpp: modland_read_mem and modland_sample_fits hooks.
+  - replay/replay.cpp: divide-by-zero guard for SamplesPerTick.
+
+Left out: the UI, MIDI, record and Windows-only directories of rePlayer's tree.

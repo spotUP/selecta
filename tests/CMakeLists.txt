@@ -2269,6 +2269,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710q: NoiseTrekker / ProTrekkr songs (.ntk, .ptk) play through the render entry point (bbmp_ptk module, BSD 2-clause engine, no GPL gate).
+  # Four songs fetched by checksum (tests/m3/fixtures/bbmp_ptk.SOURCE), exit 77 = skip. A file that is not a Trekker song must not be claimed.
+  if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ptk-decode)
+    add_test(NAME ptk-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/ptk_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ptk-decode)
+    set_tests_properties(ptk-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "ptk_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710b: BeRoTracker songs (.brt) play through the render entry point (bbmp_berotracker module, GPL-3.0-or-later). Two songs fetched by
   # checksum (tests/m3/fixtures/bbmp_berotracker.SOURCE), exit 77 = skip. A file that is not a BeRoTracker song must not be claimed.
   if(SELECTA_GPL_PLUGINS)
