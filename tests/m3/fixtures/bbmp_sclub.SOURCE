@@ -1,0 +1,5 @@
+Sound Club test songs for tests/m3/sclub_decode.sh (bbmp_sclub module, I710ac). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs. Neither needs Sound Club's instrument bank.
+https://modland.com/pub/modules/Sound%20Club/Fish/motherfuckin%27xtc%21.sn  8ad5adba24b4241df45820d03c2f738902d5f4b24af9e398f14f035f50fe129f
+https://modland.com/pub/modules/Sound%20Club%202/Ott%20Aaloe/country%20funk.sn2  3c9ec5ddd2b0764afe5dd377f5753dab61c7ed6685aa4b62c19aa51bc2d7f655
+Engine licence: GPL-3.0-or-later (bbmp csrc/misc/sclub_cr.cpp, third_party/bbmp_sclub).

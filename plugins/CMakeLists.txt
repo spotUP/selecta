@@ -201,6 +201,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_ay)
 endif()
 
+# bbmp_sclub (I710ac): Sound Club and Sound Club 2 (.sn, .sn2), GPL-3.0 bbmp engine, behind the GPL-plugin gate. Host only (C++17
+# engine, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_sclub)
+endif()
+
 # bbmp_fac (I710ak): FAC SoundTracker for MSX (.mus), GPL-3.0 bbmp engine on the MIT emu8950 / emu2413 chips, behind the GPL-plugin
 # gate. Host only (C++17 engine, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

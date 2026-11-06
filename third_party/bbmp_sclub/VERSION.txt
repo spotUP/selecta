@@ -1,0 +1,7 @@
+bbmp_sclub: sclub_cr.cpp and common.h from github.com/creep-ltx/bbmp csrc/misc, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged.
+License GPL-3.0-or-later (SPDX line in each file, COPYING). Written for bbmp in a clean room from a description of the format only
+(bbmp docs/replayers.md, "Sound Club"). common.h declares the helpers (header, emit, fail, readFile) that bbmp-misc.cpp defines; the
+Selecta shim defines them itself, so bbmp-misc.cpp (its other engines, CLI and downloader) is not vendored.
+Not shipped: Sound Club for Windows 2.03's instrument bank (sclub.bnk) and FM waveforms (scwaves.bin) are BlueMoon's, distributable
+only inside the publisher's whole package. Songs that name bank instruments are refused unless the user points $BBMP_SOUNDCLUB_DATA
+at a folder holding both files; plain-sample and own-FM songs play without them.
