@@ -372,6 +372,19 @@ one-line change to `AA_TAGBASE` plus a major version bump.
 Class index byte: 00 Text, 01 Progress/Slider value, 02 Cycle, 03 Tabs, 04 Scroller, 05 List, 06 Button, 07 Field,
 08 Panel, 09 Balance, 0F tooltip and shared. 06-09 are new (AAButton has no tags today, verified).
 
+State after row I685d (commits 6a4e64cd, 2bfffdb5, 2026-11-06):
+
+- The header is `plugins/shared/mcc/include/mcc/up.h` with `UP_TAGBASE`, `UP_TAG(cls, n)` and `UP_CLS_*` (read every
+  `aa.h` / `AA_TAGBASE` / `AA_TAG` in this section as those names, decision D1).
+- 19 tags and methods exist today and all are `UP_TAG(class, offset)`. Three numbers changed: the two tooltip tags
+  (class 0F, offsets 0x31 and 0x32) and `AAF_Redraw`, which had the same number as `AATab_Active` (0x53410301) and is
+  now class 07 offset 0x01.
+- On the host the header defines `ULONG` and `TAG_USER` itself (guard `__amigaos__` / `AMIGA`). MorphOS, AROS and
+  AmigaOS 4 compilers are not covered by that guard; row I685l (distribution) decides whether they are targets.
+- `mcc-include-check` is both a build target and a ctest entry (tests/CMakeLists.txt); it is not counted by
+  `ctest -R '^mui-'`.
+- Token names (`UPTOK_*`) are row I685d2. Tag names stay `AA*` until row I685f.
+
 ### 8.3 From spec structs to tags
 
 Today every class is built from a C spec struct (`mui_aabtn_spec`, `mui_aalist_spec`, ...). Decision: tags become the
