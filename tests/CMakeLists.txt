@@ -2223,6 +2223,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710ao: MONOTONE songs (.mon) play through the render entry point (bbmp_monotone module, GPL-3.0 bbmp monotone.cpp). Songs are fetched by checksum, exit 77 = skip.
+  # A .mon file with another magic (nuade maniacsofnoise shape), a zero file and a cut-off song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/monotone-decode)
+    add_test(NAME monotone-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/monotone_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/monotone-decode)
+    set_tests_properties(monotone-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "monotone_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ab: Skale Tracker songs (.skm) play through the render entry point (bbmp_skale module over the patched libopenmpt). Songs are fetched by
   # checksum, exit 77 = skip. A file that is not an .skm is not claimed.
   if(SELECTA_GPL_PLUGINS)

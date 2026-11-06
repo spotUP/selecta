@@ -261,6 +261,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_synder)
 endif()
 
+# bbmp_monotone (I710ao): MONOTONE songs (.mon, PC speaker tracker), bbmp csrc/pcmusic/monotone.cpp (GPL 3 or later port of a public-domain player), behind the GPL-plugin gate. Host only
+# (C++17 engine, no Amiga module path; exemption in row I710ao).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_monotone)
+endif()
+
 # bbmp_wwsnd (I710aj): Westwood SND songs (.snd, PC speaker), bbmp csrc/retro/wwsnd_engine (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine,
 # no Amiga module path; exemption in row I710aj).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
