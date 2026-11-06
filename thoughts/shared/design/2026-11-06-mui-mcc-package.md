@@ -133,6 +133,22 @@ plugins/shared/mcc/
   CMakeLists.txt
 ```
 
+State after row I685c (commit d8061fd4, 2026-11-06), where the tree differs from the layout above:
+
+- The move kept every file name (`src/mui_aa_draw.c`, `src/mui_aatip.c`, `src/class/mui_aabtn_class.c`, ...). The
+  short names above (`src/aa_draw.c`, `src/class/aabtn.c`) and `include/mcc/` do not exist yet; the header arrives
+  with I685d as `include/mcc/up.h` (decision D1).
+- `src/map/` holds 7 files, not 4: `mui_aa.c/.h`, `mui_theme.c/.h`, `mui_icons.c/.h`, `mui_aatip.c`.
+- `sel_mcc_static` builds on every target (the map sources on the host, the class sources on the Amiga only), so the
+  host tests link the same archive. The spike targets stay Amiga only.
+- The package still includes two headers from `plugins/ui/mui`: `mui_gfxbase.h` (12 files) and `map/mui_map.h`
+  (`mui_aabtn_class.c`). The test `mcc-include-check` (`cmake/mcc_check_includes.cmake`) allows exactly the 13 lines
+  in `plugins/shared/mcc/include_allowlist.txt` and fails on a new one or on a stale one. Row I685e empties the list.
+- `sel_mcc_static` and `mui_map` link each other (`mui_icons.c` reads the baked table in `mui_map`, the classes call
+  `mui_map.h` functions). Row I685e removes the cycle.
+- The include check resolves quoted includes against the package tree and `plugins/ui/mui` only. An include that
+  resolves through `plugins/shared` (`amiga/p96_write.h`) is not reported. Row I685e covers it.
+
 Reason: RULES.md rule 3 (line 9, verified) says plugins see `include/selecta/` only and shared plugin code lives in
 `plugins/shared/<topic>/`. `plugins/shared/` already holds amiga, archive, cast, mdns, paula, raop, source, stream,
 upnp and viz (verified). The package is shared plugin code with a second consumer (the release), so it belongs there.
@@ -424,7 +440,7 @@ The test-path problem: `tests/ui/mui_contract_test.c` and `tests/ui/mui_aa_test.
 (references measured: aabtn 8, aatext 6, aalist 6, aapanel 5, aafield 5, mui_aa_draw.c 5, aaslider 4, aacycle 4,
 aascroller 3, aabalance 3, aatabs 2: 51 in total). Decision: the move row (I685c) adds one `MCC_DIR` define next to
 `MUI_DIR` (tests/CMakeLists.txt:511-515) and changes every path in the same commit. The contract test must pass before
-and after with zero assertions removed: count `mui-*` tests registered (102 today) from `ctest -N -R mui-`, not grep.
+and after with zero assertions removed: count `mui-*` tests registered (145 on 2026-11-06, measured by I685c; the 102 first written here was wrong) from `ctest -N -R mui-`, not grep.
 
 **Final gate (I685k):**
 
