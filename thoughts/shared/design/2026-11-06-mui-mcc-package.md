@@ -198,6 +198,21 @@ Why own skeleton: the MUI kit is not available here and its licence for redistri
 OPEN: not examined. libnix is already the toolchain C runtime. Risk: section 13 R1. Row I685b is a spike that proves
 one empty class loads from `MUI:Libs/mui/` on rig 2 before any class moves.
 
+Spike result (I685b, commit c4f2fcd3, report `thoughts/spot/agent-reports/I685b.md`): the libnix skeleton builds
+without a hand-written Resident. Facts the build needed, binding for every later class library:
+- `libinit.o` (`${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/lib/libinit.o`) is an EXTERNAL_OBJECT source of the target and
+  the FIRST object on the link line; link with `-nostartfiles`.
+- `stabs.h` is in `m68k-amigaos/sys-include`; `libinit.h` (libnix include directory) gives the only accepted
+  prototypes: `LONG __stdargs __UserLibInit(struct Library*, REG(a4, APTR))` and
+  `VOID __stdargs __UserLibCleanup(REG(a4, APTR))`. `__UserLibInit` returns 0 on success.
+- The file that uses `ADDTABL_*` needs `-fasm` (`-std=c99` hides `asm`); the macros already end in `;`.
+- A function pointer passed as `APTR` is cast `(APTR)(uintptr_t)fn` under `-pedantic`.
+- Guard: `if(SEL_AMIGA) add_subdirectory(mcc)` in `plugins/shared/CMakeLists.txt`.
+- The local Amiga configure needs `-DSEL_DESKTOP_AGA=OFF` when the host bake tools are not built.
+- `Busy.mcc` (MUI 3.8) differs in two points that do not matter to MUI: it is not RTF_AUTOINIT (its init calls
+  `MakeLibrary`) and its Reserved vector is NULL. Our skeleton is RTF_AUTOINIT with a real Reserved function.
+Open after the spike: MUI 3.8 opening the hyphenated `UP-Spike.mcc` at run time and expunge after close (rig run).
+
 ---
 
 ## 4. Decoupling table
@@ -480,7 +495,7 @@ Amiga exemption: none; every row builds for Amiga (RULES 4a).
 | ID | Risk | Evidence | Mitigation |
 |---|---|---|---|
 | R1 | No Amiga shared library or MUI class library has ever been built in this repo or toolchain | grep: no `-nostartfiles`, `Resident`, `libinit` use; no `mccheader.c` locally (verified) | I685b spike first; libnix `libinit.o` present (verified) |
-| R2 | `MCC_Query` LVO and selector values unverified | from memory only | spike tests against MUI 3.8 on rig 2; compare with `Busy.mcc` on disk (disassemble its function table) |
+| R2 | `MCC_Query` LVO and selector values | CONFIRMED 2026-11-06 on `Busy.mcc` (I685b): fifth vector (LVO -30), selector in d0, 0 returns the class pointer, other values 0 | run-time load of our own library on rig 2 still open (I685b rig run) |
 | R3 | 51 test source-path references break on move | measured counts, section 10 | one `MCC_DIR` define, same commit, test count compared before and after |
 | R4 | Interim tag base `0x5341xxxx` is not a registered serial; collides if another author uses it | no serial (out of scope) | one-line swap in `AA_TAGBASE`, major version bump |
 | R5 | ttengine redistribution | 2026-10-28 doc line 71, unverified | not shipped; PLAIN fallback |
