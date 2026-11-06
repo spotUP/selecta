@@ -90,7 +90,7 @@ static ULONG aalist_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    mui_aa_list_metrics(d->aa.font_px, &d->m);
+    mui_aa_list_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_SELECTED; st++) {
         if (st == MUI_AA_PRESSED || st == MUI_AA_DISABLED) {
             continue;

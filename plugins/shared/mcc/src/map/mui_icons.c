@@ -81,20 +81,20 @@ uint32_t mui_icon_body_lookups(int px) {
 
 /* Font the width and height models assume: tier M (the laced 640x512 screen) on square pixels; on tall pixels the screen is
  * 256 rows (640x256 PAL), so the model takes the small font and with it the tight tier (I949e2). */
-static void model_metrics(mui_aa_metrics_t* m) {
-    int asp = mui_aa_screen_aspect();
+static void model_metrics(int aspect_q8, mui_aa_metrics_t* m) {
+    int asp = aspect_q8;
     mui_aa_metrics_aspect(mui_aa_font_px(asp > 256 ? 256 : 512, 0), asp, m);
 }
 
-int mui_model_icon_px(void) {
+int mui_model_icon_px(int aspect_q8) {
     mui_aa_metrics_t m;
-    model_metrics(&m);
+    model_metrics(aspect_q8, &m);
     return m.icon_px;
 }
 
-int mui_model_icon_h(void) {
+int mui_model_icon_h(int aspect_q8) {
     mui_aa_metrics_t m;
-    model_metrics(&m);
+    model_metrics(aspect_q8, &m);
     return m.icon_h;
 }
 
@@ -118,8 +118,8 @@ void mui_icon_palette(const uint32_t* tokens, int themed, uint32_t out[12]) {
     }
 }
 
-uint32_t mui_button_width(const char* label, int icon_only) {
-    uint32_t w = 2u * MUI_BTN_PAD_X + MUI_BTN_FRAME + (uint32_t)mui_model_icon_px();
+uint32_t mui_button_width(const char* label, int icon_only, int aspect_q8) {
+    uint32_t w = 2u * MUI_BTN_PAD_X + MUI_BTN_FRAME + (uint32_t)mui_model_icon_px(aspect_q8);
     if (!icon_only && label != NULL) {
         w += MUI_BTN_ICON_GAP + (uint32_t)strlen(label) * MUI_FONT_W;
     }

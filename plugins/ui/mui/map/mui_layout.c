@@ -23,25 +23,25 @@ uint32_t mui_tool_row_chars(uint32_t row) {
     return n;
 }
 
-uint32_t mui_tool_row_width(uint32_t row) {
+uint32_t mui_tool_row_width(uint32_t row, int aspect_q8) {
     uint32_t i, n = 0;
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
         if ((i < MUI_TOOL_ROW2 ? 0u : 1u) == row) {
-            n += mui_button_width(mui_tool_labels[i], MUI_TOOL_ICON_ONLY);
+            n += mui_button_width(mui_tool_labels[i], MUI_TOOL_ICON_ONLY, aspect_q8);
         }
     }
     return n;
 }
 
-uint32_t mui_extra_row_width(void) {
+uint32_t mui_extra_row_width(int aspect_q8) {
     uint32_t i, n = 0;
     for (i = 0; i < MUI_EXTRA_COUNT; i++) {
-        n += mui_button_width(mui_extra_label(i), MUI_EXTRA_ICON_ONLY);
+        n += mui_button_width(mui_extra_label(i), MUI_EXTRA_ICON_ONLY, aspect_q8);
     }
     return n;
 }
 
-uint32_t mui_transport_row_width(uint32_t row) {
+uint32_t mui_transport_row_width(uint32_t row, int aspect_q8) {
     uint32_t b, n = row == 0u ? MUI_SLIDER_MIN : 0u;
     for (b = 0; b < MUI_BTN_COUNT; b++) {
         if ((b < MUI_TRANSPORT_ROW1 ? 0u : 1u) != row) {
@@ -56,8 +56,8 @@ uint32_t mui_transport_row_width(uint32_t row) {
             f.repeat_mode = (st >> 1) % 3u;
             f.random_on = (st / 6u) != 0u;
             l = mui_transport_label(b, &f);
-            if (l != NULL && mui_button_width(l, mui_transport_icon_only(b)) > widest) {
-                widest = mui_button_width(l, mui_transport_icon_only(b));
+            if (l != NULL && mui_button_width(l, mui_transport_icon_only(b), aspect_q8) > widest) {
+                widest = mui_button_width(l, mui_transport_icon_only(b), aspect_q8);
             }
         }
         n += widest;
@@ -93,7 +93,7 @@ void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8, ui
     memset(out, 0, sizeof *out);
     g_player_bar_builds++;
     mui_aa_metrics_aspect((int)font_px, aspect_q8, &m);
-    mui_aa_slider_metrics((int)font_px, &sl);
+    mui_aa_slider_metrics((int)font_px, aspect_q8, &sl);
     out->band_n = 1;
     out->right_rows = 1;
     out->art_w = (uint32_t)MUI_PLAYER_ART_PX;

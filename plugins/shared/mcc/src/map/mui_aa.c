@@ -189,16 +189,6 @@ int mui_aa_tier(int screen_rows) {
     return screen_rows <= 256 ? MUI_AA_TIER_S : screen_rows <= 600 ? MUI_AA_TIER_M : screen_rows <= 800 ? MUI_AA_TIER_L : MUI_AA_TIER_XL;
 }
 
-static int g_screen_aspect = 256;
-
-void mui_aa_set_screen_aspect(int aspect_q8) {
-    g_screen_aspect = aspect_q8 < 256 ? 256 : aspect_q8 > 512 ? 512 : aspect_q8;
-}
-
-int mui_aa_screen_aspect(void) {
-    return g_screen_aspect;
-}
-
 int mui_aa_rows(int px, int aspect_q8) {
     int a = aspect_q8 < 256 ? 256 : aspect_q8;
     int r = (px * 256 + a / 2) / a;
@@ -336,13 +326,13 @@ uint32_t mui_aa_slider_calls(void) {
     return g_slider_calls;
 }
 
-void mui_aa_slider_metrics(int font_px, mui_aa_slider_t* out) {
+void mui_aa_slider_metrics(int font_px, int aspect_q8, mui_aa_slider_t* out) {
     g_slider_calls++;
     /* I965: vertical sizes count in rows (mui_aa_rows) at the screen aspect, so a 2x-tall pixel counts as two; square (256): unchanged. */
-    out->track_h = font_px <= 0 ? mui_aa_rows(2, g_screen_aspect) : 4;
+    out->track_h = font_px <= 0 ? mui_aa_rows(2, aspect_q8) : 4;
     out->radius = out->track_h / 2;
     out->min_w = 80;
-    out->height = font_px <= 0 ? mui_aa_rows(12, g_screen_aspect) : font_px < 15 ? 16 : font_px < 17 ? 18 : 20; /* hit height; only the track and fill are drawn */
+    out->height = font_px <= 0 ? mui_aa_rows(12, aspect_q8) : font_px < 15 ? 16 : font_px < 17 ? 18 : 20; /* hit height; only the track and fill are drawn */
 }
 
 void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* fill) {
@@ -461,10 +451,10 @@ uint32_t mui_aa_cycle_calls(void) {
     return g_cycle_calls;
 }
 
-void mui_aa_cycle_metrics(int font_px, mui_aa_cycle_t* out) {
+void mui_aa_cycle_metrics(int font_px, int aspect_q8, mui_aa_cycle_t* out) {
     mui_aa_metrics_t b;
     g_cycle_calls++;
-    mui_aa_metrics_aspect(font_px, g_screen_aspect, &b);
+    mui_aa_metrics_aspect(font_px, aspect_q8, &b);
     out->height = b.height;
     out->pad_x = b.pad_x;
     out->radius = b.radius;
@@ -544,10 +534,10 @@ uint32_t mui_aa_field_calls(void) {
     return g_field_calls;
 }
 
-void mui_aa_field_metrics(int font_px, mui_aa_field_t* out) {
+void mui_aa_field_metrics(int font_px, int aspect_q8, mui_aa_field_t* out) {
     mui_aa_metrics_t b;
     g_field_calls++;
-    mui_aa_metrics_aspect(font_px, g_screen_aspect, &b);
+    mui_aa_metrics_aspect(font_px, aspect_q8, &b);
     out->height = b.height;
     out->radius = b.radius;
     out->pad_x = 8; /* same on every tier: the group's inner offsets are fixed at construction, before the screen tier is known */
@@ -598,9 +588,9 @@ uint32_t mui_aa_list_calls(void) {
     return g_list_calls;
 }
 
-void mui_aa_scroller_metrics(int font_px, mui_aa_scroller_t* out) {
+void mui_aa_scroller_metrics(int font_px, int aspect_q8, mui_aa_scroller_t* out) {
     g_scroller_calls++;
-    out->width = font_px <= 0 ? (g_screen_aspect > 256 ? 4 : 6) : 10; /* I965: tight tier (tall pixels, small font) packs across */
+    out->width = font_px <= 0 ? (aspect_q8 > 256 ? 4 : 6) : 10; /* I965: tight tier (tall pixels, small font) packs across */
     out->radius = font_px <= 0 ? 2 : 4;
     out->min_thumb = 20;
 }
@@ -658,15 +648,15 @@ long mui_aa_scroller_first_at(const mui_aa_scroller_t* m, int h, int thumb_h_gra
     return (range * y + travel / 2) / travel;
 }
 
-void mui_aa_list_metrics(int font_px, mui_aa_list_t* out) {
+void mui_aa_list_metrics(int font_px, int aspect_q8, mui_aa_list_t* out) {
     mui_aa_scroller_t s;
     mui_aa_metrics_t b;
     g_list_calls++;
-    mui_aa_scroller_metrics(font_px, &s);
-    mui_aa_metrics_aspect(font_px, g_screen_aspect, &b); /* I965: the pad and gap across come from the one metrics table (tight tier: 4) */
+    mui_aa_scroller_metrics(font_px, aspect_q8, &s);
+    mui_aa_metrics_aspect(font_px, aspect_q8, &b); /* I965: the pad and gap across come from the one metrics table (tight tier: 4) */
     out->row_h = font_px <= 0 ? 10 : font_px + 8;
     out->pad_x = font_px <= 0 ? b.pad_x : 10;
-    out->pad_y = font_px <= 0 ? mui_aa_rows(2, g_screen_aspect) : 4; /* inside the list face above the first and below the last row (I667i: the cycle popup had none) */
+    out->pad_y = font_px <= 0 ? mui_aa_rows(2, aspect_q8) : 4; /* inside the list face above the first and below the last row (I667i: the cycle popup had none) */
     out->gap = font_px <= 0 ? b.icon_gap : 8;
     out->scroller_w = s.width;
     out->radius = font_px <= 0 ? 4 : 6;

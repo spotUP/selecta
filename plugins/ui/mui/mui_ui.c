@@ -648,7 +648,6 @@ static void mui_screen_open(const uint32_t* tokens) {
     if (mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0) {
         g_pixel_aspect_q8 = mui_pixel_aspect_q8((int)di.Resolution.x, (int)di.Resolution.y);
     }
-    mui_aa_set_screen_aspect(g_pixel_aspect_q8);
     fprintf(stderr, "selecta mui: pixel aspect %d/256 (resolution %dx%d)\n", g_pixel_aspect_q8, (int)di.Resolution.x, (int)di.Resolution.y);
     pal[0] = ((ULONG)MUI_PEN_TOTAL << 16) | 0u;
     for (i = 0; i < MUI_PEN_TOTAL; i++) {
@@ -673,6 +672,16 @@ static void mui_screen_open(const uint32_t* tokens) {
         if (pen < 0) {
             fprintf(stderr, "selecta mui: no exact pen for %06x\n", (unsigned)g_plan.rgb[i]);
         }
+    }
+    /* I685e1 rig check: the package reads the screen's DrawInfo resolution, Selecta its display database entry; this reports both once per open, no fallback. */
+    {
+        struct DrawInfo* dri = GetScreenDrawInfo(g_scr);
+        int dri_q8 = 256;
+        if (dri != NULL) {
+            dri_q8 = mui_pixel_aspect_q8((int)dri->dri_Resolution.X, (int)dri->dri_Resolution.Y);
+            FreeScreenDrawInfo(g_scr, dri);
+        }
+        fprintf(stderr, "mui aspect dri=%d displayinfo=%d mode=0x%08lx\n", dri_q8, g_pixel_aspect_q8, (unsigned long)GetVPModeID(&g_scr->ViewPort));
     }
     PubScreenStatus(g_scr, 0); /* from private to public: MUI windows find it by name */
 }
@@ -960,6 +969,7 @@ static Object* mui_aapanel_wh(int role, int fixed_px, int fixed_h) {
     sp.role = role;
     sp.fixed_px = fixed_px;
     sp.fixed_h = fixed_h;
+    sp.aspect_q8 = g_pixel_aspect_q8;
     return mui_aapanel_new(&sp);
 }
 
@@ -1043,7 +1053,7 @@ static void mui_sidebar_model_for(mui_state* s, int top_bar, mui_sidebar_model* 
     in.bitmap = 0;
     in.rail = s != NULL && s->side_rail; /* I949c */
     in.chip = s != NULL ? s->lib_filter : 0u;
-    in.chips_single = mui_sidebar_chips_single(!g_screen_rtg, s != NULL && s->lay.weight_w[MUI_SLOT_SIDEBAR] > 0u ? s->lay.weight_w[MUI_SLOT_SIDEBAR] : 0u);
+    in.chips_single = mui_sidebar_chips_single(!g_screen_rtg, s != NULL && s->lay.weight_w[MUI_SLOT_SIDEBAR] > 0u ? s->lay.weight_w[MUI_SLOT_SIDEBAR] : 0u, g_pixel_aspect_q8);
     in.filter = "";
     in.item_n = s != NULL ? s->side_item_n : 0u;
     in.items = s != NULL ? s->side_items : NULL;
@@ -1595,7 +1605,7 @@ static Object* mui_facet_row_group(mui_state* s) {
 static Object* mui_main_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     s->col_bp = SEL_UIM_BP_COUNT;
-    mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
+    mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt, g_pixel_aspect_q8);
     mui_main_cols_fill(s->col_bp, &s->main_cols, s->cell, s->cell_n);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
@@ -1689,7 +1699,7 @@ static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label la
 
 static Object* mui_detail_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
-    Object* art = mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, mui_aa_screen_aspect()));
+    Object* art = mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, g_pixel_aspect_q8));
     Object* lyr_view;
     Object* info_g;
     Object* trk_g;
@@ -1734,7 +1744,7 @@ static Object* mui_detail_group(mui_state* s) {
     }
     if (s->vizset.n > 0u) {
         s->cyc_viz = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
-        s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);
+        s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg, g_pixel_aspect_q8);
         if (s->cyc_viz != NULL && s->viz_area != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->viz_area);
             DoMethod(g, OM_ADDMEMBER, s->cyc_viz);
@@ -1821,7 +1831,7 @@ static Object* mui_main_pages(mui_state* s) {
     }
     if (s->vizset.n > 0u) {
         s->cyc_viz_page = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
-        s->viz_page_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);
+        s->viz_page_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg, g_pixel_aspect_q8);
         mui_vizarea_set_tall(s->viz_page_area);
     }
     if (s->cyc_viz_page != NULL && s->viz_page_area != NULL) {
@@ -2263,7 +2273,7 @@ static void mui_refresh(mui_state* s) {
         active = mui_list_pending_resolve(&s->list_pending, active);
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
-            mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
+            mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt, g_pixel_aspect_q8);
             mui_main_cols_push(s);
         }
         {
@@ -3174,7 +3184,7 @@ static void mui_check_resize(mui_state* s) {
     if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, &flips)) {
         mui_apply_layout(s);
     }
-    if (s->side_dyn != NULL && mui_sidebar_chips_single(!g_screen_rtg, s->lay.weight_w[MUI_SLOT_SIDEBAR]) != s->side_single) {
+    if (s->side_dyn != NULL && mui_sidebar_chips_single(!g_screen_rtg, s->lay.weight_w[MUI_SLOT_SIDEBAR], g_pixel_aspect_q8) != s->side_single) {
         mui_sidebar_refresh(s); /* I669: the chips now fit, or no longer fit, the sidebar width */
     }
 }

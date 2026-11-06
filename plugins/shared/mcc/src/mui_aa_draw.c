@@ -201,6 +201,8 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     c->scr = _screen(obj);
     c->cm = c->scr->ViewPort.ColorMap;
     depth = (int)GetBitMapAttr(c->scr->RastPort.BitMap, BMA_DEPTH);
+    /* I685e1: the screen's pixel shape from its DrawInfo (valid MUIM_Setup..MUIM_Cleanup, as this context); no display database call per object. */
+    c->aspect_q8 = _dri(obj) != NULL ? mui_pixel_aspect_q8((int)_dri(obj)->dri_Resolution.X, (int)_dri(obj)->dri_Resolution.Y) : 256;
     c->font_px = mui_aa_font_px(c->scr->Height, c->scr->Width);
     c->font = c->font_px > 0 ? font_get(c->scr, c->font_px) : NULL;
     if (c->font == NULL) {

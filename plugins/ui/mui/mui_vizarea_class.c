@@ -29,6 +29,7 @@ typedef struct viza_data {
     uint32_t pw, ph; /* size px holds a rendered frame for, 0 when none */
     uint32_t cap;    /* words allocated */
     int rtg, shown;
+    int aspect_q8; /* I685e1: the pixel aspect Selecta opened its screen with (g_pixel_aspect_q8) */
     int tall; /* I918: the Visualizer page area may grow to fill the page; the Now Playing strip keeps its cap */
     struct Library* p96;
 } viza_data;
@@ -81,17 +82,15 @@ static ULONG viza_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
 
 static ULONG viza_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
     mui_vizarea_h_t vh;
+    viza_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
-    mui_vizarea_heights(mui_aa_screen_aspect(), &vh); /* I949e2: heights are square-pixel lengths counted in rows */
+    mui_vizarea_heights(d->aspect_q8, &vh); /* I949e2: heights are square-pixel lengths counted in rows */
     msg->MinMaxInfo->MinWidth += 32;
     msg->MinMaxInfo->DefWidth += 160;
     msg->MinMaxInfo->MaxWidth += MUI_MAXMAX;
     msg->MinMaxInfo->MinHeight += vh.min_h;
     msg->MinMaxInfo->DefHeight += vh.def_h;
-    {
-        viza_data* d = INST_DATA(cl, obj);
-        msg->MinMaxInfo->MaxHeight += d->tall ? MUI_MAXMAX : vh.cap_h;
-    }
+    msg->MinMaxInfo->MaxHeight += d->tall ? MUI_MAXMAX : vh.cap_h;
     return 0;
 }
 
@@ -141,7 +140,7 @@ static ULONG __attribute__((used)) viza_dispatch_c(struct IClass* cl, Object* ob
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_vizarea_new(mui_vizset* set, const uint32_t* tokens, int screen_is_rtg) {
+Object* mui_vizarea_new(mui_vizset* set, const uint32_t* tokens, int screen_is_rtg, int aspect_q8) {
     Object* o;
     viza_data* d;
     if (g_class == NULL) {
@@ -155,6 +154,7 @@ Object* mui_vizarea_new(mui_vizset* set, const uint32_t* tokens, int screen_is_r
         d = INST_DATA(g_class->mcc_Class, o);
         d->set = set;
         d->rtg = screen_is_rtg;
+        d->aspect_q8 = aspect_q8;
         mui_viz_palette_from_tokens(d->v, tokens);
     }
     return o;
@@ -180,7 +180,7 @@ int mui_vizarea_step(Object* obj, const sel_viz_frame* f, const sel_uim_budget* 
         d->px = bigger;
         d->cap = w * h;
     }
-    if (!mui_vizset_step(d->set, d->v, f, b, now_ms, w, h, d->px)) {
+    if (!mui_vizset_step(d->set, d->v, f, b, now_ms, w, h, d->aspect_q8, d->px)) {
         return 0;
     }
     d->pw = w;

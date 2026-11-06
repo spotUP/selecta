@@ -257,7 +257,7 @@ enum { MUI_COL_TITLE = 0, MUI_COL_ARTIST, MUI_COL_ALBUM, MUI_COL_LENGTH, MUI_COL
 /* Visible columns in display order for a SEL_UIM_BP_*; hidden by width: format first, then album, then length. */
 uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]);
 /* MUIA_List_Format string for those columns: "BAR," per column but the last. */
-void mui_columns_format(uint32_t breakpoint, char* out, size_t cap);
+void mui_columns_format(uint32_t breakpoint, char* out, size_t cap, int aspect_q8);
 /* I667i2: the weight of each shown column (0 = fixed to its sample width), the table the format string uses; returns the column count. */
 /* I667i2: the lyrics as rows of an AAList: number of newline separated lines (a trailing newline adds none, empty text has 0) and line row
  * copied into out (cut to cap - 1; empty past the last line). */
@@ -442,9 +442,9 @@ extern const char* const mui_tool_labels[MUI_TOOL_BTNS];
 uint32_t mui_tool_row_chars(uint32_t row);
 /* Minimum pixel widths of the button rows as mui_ui.c builds them (mui_icons.h width model): tool row 0 or 1, the transport row
  * (worst-case labels over play, repeat and random states; row 0 = the first MUI_TRANSPORT_ROW1 buttons plus the volume slider, row 1 = the state buttons Repeat and Random), the extras row. */
-uint32_t mui_tool_row_width(uint32_t row);
-uint32_t mui_transport_row_width(uint32_t row);
-uint32_t mui_extra_row_width(void);
+uint32_t mui_tool_row_width(uint32_t row, int aspect_q8);
+uint32_t mui_transport_row_width(uint32_t row, int aspect_q8);
+uint32_t mui_extra_row_width(int aspect_q8);
 
 /* I671/I949b: screen plan and open ladder (map/mui_screen.c). MUI 3.8 refuses a window whose minimum size does not fit the
  * screen (MUIA_Window_Open reads back 0); MUI itself is the measurement, so no height model lives here. The plan keeps the
@@ -452,7 +452,7 @@ uint32_t mui_extra_row_width(void);
 #define MUI_MODE_LACE 0x00000004u
 #define MUI_INVALID_MODE 0xFFFFFFFFu
 /* Height of one icon button: icon, vertical padding, frame. */
-uint32_t mui_button_height(void);
+uint32_t mui_button_height(int aspect_q8);
 typedef struct mui_screen_plan_t {
     uint32_t mode;          /* SA_DisplayID for the own screen */
     uint32_t width, height; /* expected screen size */
@@ -692,7 +692,7 @@ typedef struct mui_sidebar_model {
 } mui_sidebar_model;
 void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* out);
 /* I669: 1 when the kind chips do not fit a sidebar `sidebar_px` wide (or on the bitmap tier); the decision is sel_uim_lfilter_chips_single. */
-int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px);
+int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px, int aspect_q8);
 uint32_t mui_sidebar_builds(void);
 /* I949c: sentinel, the builds that took the rail path (no Your Library block). */
 uint32_t mui_sidebar_rail_builds(void);

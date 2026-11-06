@@ -64,7 +64,7 @@ static ULONG aaslider_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     aa_setup(obj, &d->aa, NULL, 0);
     d->drawn_fw = -1;
-    mui_aa_slider_metrics(d->aa.font_px, &d->m);
+    mui_aa_slider_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_DISABLED; st++) {
         mui_aa_slider_rgb(d->aa.tok, st, &track, &fill);
         aa_pen(&d->aa, track);
@@ -264,7 +264,7 @@ static ULONG aaprogress_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    mui_aa_slider_metrics(d->aa.font_px, &d->m);
+    mui_aa_slider_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     mui_aa_slider_rgb(d->aa.tok, MUI_AA_NORMAL, &track, &fill);
     aa_pen(&d->aa, track);
     aa_pen(&d->aa, fill);

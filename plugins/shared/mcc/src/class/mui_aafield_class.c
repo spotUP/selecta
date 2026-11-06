@@ -59,7 +59,7 @@ static ULONG aafield_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    mui_aa_field_metrics(d->aa.font_px, &d->m);
+    mui_aa_field_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (k = 0; k < 2; k++) {
         n = mui_aa_field_plan(d->aa.tok, &d->m, k, ops);
         while (n-- > 0) {
@@ -243,7 +243,7 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
     if (g_class == NULL) {
         return NULL;
     }
-    mui_aa_field_metrics(0, &m); /* the paddings are the same on every tier */
+    mui_aa_field_metrics(0, 256, &m); /* the paddings are the same on every tier */
     mui_theme_bg_spec(sp->tokens[MUI_AA_FIELD_FACE], g_bg_spec, sizeof g_bg_spec);
     str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_String_MaxLen, (ULONG)sp->maxlen,
                         MUIA_String_Contents, (ULONG) "", TAG_DONE);

@@ -24,11 +24,11 @@ static void put(char* dst, size_t cap, const char* src) {
     snprintf(dst, cap, "%s", src != NULL ? src : "");
 }
 
-int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px) {
+int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px, int aspect_q8) {
     int32_t w[SEL_UIM_SIDE_CHIPS];
     uint32_t k;
     for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) {
-        w[k] = (int32_t)mui_button_width(sel_uim_side_chip_name(k), 0);
+        w[k] = (int32_t)mui_button_width(sel_uim_side_chip_name(k), 0, aspect_q8);
     }
     return sel_uim_lfilter_chips_single(bitmap, sel_uim_lfilter_chips_total(w, SEL_UIM_SIDE_CHIPS, 4), (int32_t)sidebar_px - 2 * MUI_BTN_PAD_X);
 }

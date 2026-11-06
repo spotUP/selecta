@@ -88,7 +88,7 @@ Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
     pad = 0;
     padv = 0;
     if (sp->fixed_px <= 0) {
-        mui_aa_panel_pad(sp->tokens, mui_aa_screen_aspect(), &pad, &padv);
+        mui_aa_panel_pad(sp->tokens, sp->aspect_q8, &pad, &padv);
     }
     mui_theme_bg_spec(mui_aa_panel_rgb(sp->tokens, sp->role), g_bg_spec[sp->role], sizeof g_bg_spec[sp->role]);
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec[sp->role], MUIA_FillArea, (ULONG)FALSE,

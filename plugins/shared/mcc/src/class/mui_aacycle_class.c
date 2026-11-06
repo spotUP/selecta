@@ -62,7 +62,7 @@ static ULONG aacycle_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    mui_aa_cycle_metrics(d->aa.font_px, &d->m);
+    mui_aa_cycle_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_DISABLED; st++) {
         mui_aa_cycle_rgb(d->aa.tok, st, &face, &text, &chev, NULL, NULL);
         aa_pen(&d->aa, face);

@@ -26,7 +26,7 @@ static inline unsigned mui_button_spacers(int icon_only, int has_icon) {
  * doors, crumbs and the transport row keep icon and label. */
 enum { MUI_BTN_FRAME = 4, MUI_FONT_W = 8, MUI_SLIDER_MIN = 64, MUI_MIN_SCREEN_W = 640, MUI_TOOL_ICON_ONLY = 1, MUI_EXTRA_ICON_ONLY = 1 };
 /* Minimum width of one button: padding, frame, the icon and, unless icon_only, the gap and the label text. */
-uint32_t mui_button_width(const char* label, int icon_only);
+uint32_t mui_button_width(const char* label, int icon_only, int aspect_q8);
 
 /* The baked bodies (generated at build time): count, edge in px, and one body per sel_gui_icon. */
 /* One set per size (mui_icon_sizes, ascending), one body per sel_gui_icon in each set. */
@@ -46,10 +46,10 @@ const uint8_t* mui_icon_body(int icon, int px);
 /* The body of exactly w x h (mui_icon_sizes / mui_icon_heights), NULL when no set has that shape. mui_icon_body(icon, px) is w = h = px. */
 const uint8_t* mui_icon_body_wh(int icon, int w, int h);
 uint32_t mui_icon_body_lookups_wh(int w, int h);
-/* Icon edge the width and height models assume: the tier M size (mui_aa_metrics), the tier of the laced 640x512 screen. */
-int mui_model_icon_px(void);
-/* Its height in rows on the open screen (mui_aa_screen_aspect): equal to the edge on square pixels, half on a tall-pixel screen. */
-int mui_model_icon_h(void);
+/* Icon edge the width and height models assume on a screen of aspect_q8: the tier M size (mui_aa_metrics), the tier of the laced 640x512 screen. */
+int mui_model_icon_px(int aspect_q8);
+/* Its height in rows on the open screen (aspect_q8): equal to the edge on square pixels, half on a tall-pixel screen. */
+int mui_model_icon_h(int aspect_q8);
 /* I667m sentinel: mui_icon_body lookups that found a body of this size since start. */
 uint32_t mui_icon_body_lookups(int px);
 /* Number of successful mui_icon_id lookups since start (sentinel for the build path test). */

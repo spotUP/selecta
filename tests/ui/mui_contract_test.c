@@ -999,7 +999,7 @@ static void test_columns(void) {
     uint32_t bp;
     for (bp = 0; bp < 4; bp++) {
         CHECK(mui_columns_for(bp, c) == want[bp] && c[0] == MUI_COL_TITLE, "breakpoint %u has %u columns", bp, mui_columns_for(bp, c));
-        mui_columns_format(bp, f, sizeof f);
+        mui_columns_format(bp, f, sizeof f, 256);
         {
             uint32_t bars = 0, k;
             for (k = 0; f[k] != '\0'; k++) {
@@ -1638,7 +1638,7 @@ static void test_screen_plan(void) {
         fclose(f);
     }
     hdr_src[n] = 0;
-    CHECK(mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
+    CHECK(mui_button_height(256) == (uint32_t)mui_model_icon_px(256) + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height(256));
     /* The plan keeps the Workbench mode: never an automatic lace step, whatever the height. */
     CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, &p) == 0 && p.mode == 0x29000u && p.width == 640u && p.height == 256u && p.depth == 4u,
           "AGA 640x256 plan: mode %08x %ux%u depth %u", (unsigned)p.mode, (unsigned)p.width, (unsigned)p.height, (unsigned)p.depth);
@@ -1885,12 +1885,12 @@ static void test_icon_button_rows(void) {
     }
     src[n] = 0;
     for (r = 0; r < 2u; r++) {
-        CHECK(mui_tool_row_width(r) <= MUI_MIN_SCREEN_W, "tool row %u needs %u px (screen %d)", (unsigned)r, (unsigned)mui_tool_row_width(r), MUI_MIN_SCREEN_W);
+        CHECK(mui_tool_row_width(r, 256) <= MUI_MIN_SCREEN_W, "tool row %u needs %u px (screen %d)", (unsigned)r, (unsigned)mui_tool_row_width(r, 256), MUI_MIN_SCREEN_W);
     }
     for (r = 0; r < 2u; r++) {
-        CHECK(mui_transport_row_width(r) <= MUI_MIN_SCREEN_W, "transport row %u needs %u px", (unsigned)r, (unsigned)mui_transport_row_width(r));
+        CHECK(mui_transport_row_width(r, 256) <= MUI_MIN_SCREEN_W, "transport row %u needs %u px", (unsigned)r, (unsigned)mui_transport_row_width(r, 256));
     }
-    CHECK(mui_extra_row_width() <= MUI_MIN_SCREEN_W, "extras row needs %u px", (unsigned)mui_extra_row_width());
+    CHECK(mui_extra_row_width(256) <= MUI_MIN_SCREEN_W, "extras row needs %u px", (unsigned)mui_extra_row_width(256));
     /* I656b: icon-only buttons must stretch (spacers around the fixed image) or the root group's max width caps the window. */
     CHECK(mui_button_spacers(1, 1) == 2u && mui_button_spacers(0, 1) == 0u && mui_button_spacers(1, 0) == 0u, "icon-only button has no stretch spacers");
     /* I667b: the AAButton class stretches itself (MaxWidth MUI_MAXMAX) so the spacer children are gone. */
@@ -2015,7 +2015,7 @@ static void test_icon_buttons(void) {
     mui_icon_palette(th.token, 1, pal);
     CHECK(pal[0] == (th.token[SEL_GUI_TOKEN_SURFACE_RAISED] >> 16 & 0xFFu) * 0x01010101u && pal[9] == (th.token[SEL_GUI_TOKEN_TEXT] >> 16 & 0xFFu) * 0x01010101u,
           "palette runs from the button face to the text colour");
-    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && mui_model_icon_px() >= 18, "buttons are bigger than the 1 px text-only ones");
+    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && mui_model_icon_px(256) >= 18, "buttons are bigger than the 1 px text-only ones");
     f = fopen(MUI_UI_SOURCE, "rb");
     CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
     if (f == NULL) {
@@ -2251,7 +2251,7 @@ static void test_libfilter(void) {
                       sel_uim_viz_tabs_fit(vw, 0u, 4, 100) == 0,
                   "I918 viz tabs fit: exact fit tabs, one pixel short chooser, one label, none");
         }
-        CHECK(mui_sidebar_chips_single(0, 100u) == 1 && mui_sidebar_chips_single(0, 2000u) == 0 && mui_sidebar_chips_single(1, 2000u) == 1, "MUI width decision");
+        CHECK(mui_sidebar_chips_single(0, 100u, 256) == 1 && mui_sidebar_chips_single(0, 2000u, 256) == 0 && mui_sidebar_chips_single(1, 2000u, 256) == 1, "MUI width decision");
     }
     CHECK(src != NULL, "read mui_ui.c");
     if (src != NULL) {
@@ -2696,9 +2696,9 @@ static void test_screen_rtg_flag(void) {
     }
     src[n] = 0;
     CHECK(strstr(src, "g_screen_rtg = foreign;") != NULL, "the flag is not taken from the foreign-mode test");
-    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg)") != NULL, "VizArea does not get the screen RTG flag");
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg, g_pixel_aspect_q8)") != NULL, "VizArea does not get the screen RTG flag");
     CHECK(strstr(src, "mui_canvas_new(&grid, g_screen_rtg)") != NULL, "canvas does not get the screen RTG flag");
-    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1, g_pixel_aspect_q8)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
           "a hardcoded RTG flag came back");
 }
 
@@ -2769,8 +2769,8 @@ static void test_player_band_sizes(void) {
     CHECK(mui_player_bar_builds() == b0 + 3u, "bar sentinel %u (want %u)", (unsigned)mui_player_bar_builds(), (unsigned)(b0 + 3u));
     mui_aa_metrics_aspect(0, 512, &tm);
     mui_aa_metrics_aspect(15, 256, &rm);
-    mui_aa_slider_metrics(0, &tsl);
-    mui_aa_slider_metrics(15, &rsl);
+    mui_aa_slider_metrics(0, 256, &tsl);
+    mui_aa_slider_metrics(15, 256, &rsl);
     icon_box = (uint32_t)(tm.icon_h + 2 * tm.pad_y);
     CHECK(c.btn_px == (icon_box > (uint32_t)tm.height ? icon_box : (uint32_t)tm.height) && c.btn_px >= 12u, "640x256 btn_px %u", (unsigned)c.btn_px);
     CHECK(c.btn_w == c.btn_px * 2u, "tall pixels: a square on screen is twice as wide in px, got %u x %u", (unsigned)c.btn_w, (unsigned)c.btn_px);
@@ -2825,7 +2825,7 @@ static void test_compact_player(void) {
         tok[SEL_GUI_TOKEN_SPACING] = 8;
         mui_aa_metrics_aspect(0, 512, &tm);
         mui_aa_metrics_aspect(0, 256, &sqm);
-        mui_aa_slider_metrics(0, &sl);
+        mui_aa_slider_metrics(0, 256, &sl);
         mui_aa_panel_pad(tok, 512, &gx, &gy);
         need = tm.height + sl.height + gy;
         CHECK(need <= MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
@@ -3237,17 +3237,27 @@ static void test_aa_aspect(void) {
         CHECK(tall.pad_x == 4 && tall.pad_y == 2 && tall.icon_gap == 4 && tall.height == 12, "tight tier: pad %d,%d gap %d height %d", tall.pad_x, tall.pad_y, tall.icon_gap, tall.height);
         CHECK(tall.icon_px == 16 && tall.icon_h == 8 && tall.check_px == 12 && tall.check_h == 6 && tall.aspect_q8 == 512, "tall icon %dx%d check %dx%d", tall.icon_px, tall.icon_h, tall.check_px, tall.check_h);
         CHECK(m13.pad_x == 10 && m13.icon_h == 9 && mui_aa_rows(1, 512) == 1 && mui_aa_rows(10, 512) == 5, "larger tiers only scale rows");
-        mui_aa_set_screen_aspect(512);
-        CHECK(mui_aa_screen_aspect() == 512, "screen aspect not stored");
-        mui_aa_set_screen_aspect(256);
-        CHECK(cn > 0 && strstr(cls, "mui_aa_metrics_aspect(d->aa.font_px, mui_aa_screen_aspect(), &d->m)") != NULL && strstr(cls, "d->m.check_h") != NULL && strstr(cls, "d->m.icon_h") != NULL,
+        CHECK(cn > 0 && strstr(cls, "mui_aa_metrics_aspect(d->aa.font_px, d->aa.aspect_q8, &d->m)") != NULL && strstr(cls, "d->m.check_h") != NULL && strstr(cls, "d->m.icon_h") != NULL,
               "AAButton does not size icon and check from the aspect metrics");
-        CHECK(strstr(src, "mui_aa_set_screen_aspect(g_pixel_aspect_q8)") != NULL, "mui_screen_open does not publish the aspect");
+        {
+            /* I685e1: the process-wide screen aspect is gone; each object reads its own DrawInfo (design 4.1). */
+            static char gone[262144];
+            const char* const gf[] = {MCC_SRC "/map/mui_aa.c", MCC_SRC "/map/mui_aa.h", MCC_SRC "/mui_aa_draw.c", MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aapanel_class.c"};
+            size_t gi;
+            for (gi = 0; gi < sizeof gf / sizeof gf[0]; gi++) {
+                CHECK(up_read_file(gf[gi], gone, sizeof gone) && strstr(gone, "g_screen_aspect") == NULL && strstr(gone, "mui_aa_set_screen_aspect") == NULL && strstr(gone, "mui_aa_screen_aspect") == NULL,
+                      "the global screen aspect or its accessors are still in %s", gf[gi]);
+            }
+            CHECK(strstr(src, "g_screen_aspect") == NULL && strstr(src, "mui_aa_set_screen_aspect") == NULL && strstr(src, "mui_aa_screen_aspect") == NULL, "mui_ui.c still names the global screen aspect");
+            up_read_file(MCC_SRC "/mui_aa_draw.c", gone, sizeof gone);
+            CHECK(strstr(gone, "c->aspect_q8 = _dri(obj) != NULL ? mui_pixel_aspect_q8((int)_dri(obj)->dri_Resolution.X, (int)_dri(obj)->dri_Resolution.Y) : 256;") != NULL, "aa_setup does not set the context aspect from the DrawInfo resolution");
+            CHECK(strstr(src, "\"mui aspect dri=%d displayinfo=%d mode=0x%08lx\\n\"") != NULL, "mui_screen_open does not print the aspect debug line");
+        }
     {
         /* I949e2: the tight tier. Items 1 to 5 each have the rule where it lives; the class and group sources prove the consumers call them. */
         uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
         mui_vizarea_h_t vt, vs;
-        int px, py, sx, sy, hi = 0, found8 = 0, bh_before = (int)mui_button_height(), sq_h, tight_h;
+        int px, py, sx, sy, hi = 0, found8 = 0, bh_before = (int)mui_button_height(256), sq_h, tight_h;
         uint32_t i, lk;
         static char va[100000], ui2[1000000];
         FILE* vf = fopen(MUI_DIR "/mui_vizarea_class.c", "rb");
@@ -3288,22 +3298,20 @@ static void test_aa_aspect(void) {
         }
         /* item 2: art panels count their height in rows; square stays square. */
         CHECK(mui_art_height(56, 512) == 28u && mui_art_height(64, 512) == 32u && mui_art_height(56, 256) == 56u && mui_art_height(64, 256) == 64u, "art heights %u %u", (unsigned)mui_art_height(56, 512), (unsigned)mui_art_height(64, 512));
-        CHECK(un > 0 && strstr(ui2, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, mui_aa_screen_aspect()))") != NULL,
+        CHECK(un > 0 && strstr(ui2, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, g_pixel_aspect_q8))") != NULL,
               "the detail art does not use mui_art_height");
         /* item 3: the visualizer minimum is rows. */
         mui_vizarea_heights(512, &vt);
         mui_vizarea_heights(256, &vs);
         CHECK(vt.min_h == 16u && vt.def_h == 40u && vt.cap_h == 80u && vs.min_h == 32u && vs.def_h == 80u && vs.cap_h == 160u, "viz heights tight %u/%u/%u square %u/%u/%u", (unsigned)vt.min_h, (unsigned)vt.def_h,
               (unsigned)vt.cap_h, (unsigned)vs.min_h, (unsigned)vs.def_h, (unsigned)vs.cap_h);
-        CHECK(vn > 0 && strstr(va, "mui_vizarea_heights(mui_aa_screen_aspect(), &vh)") != NULL && strstr(va, "MinHeight += vh.min_h") != NULL, "the vizarea does not take its heights from the aspect");
+        CHECK(vn > 0 && strstr(va, "mui_vizarea_heights(d->aspect_q8, &vh)") != NULL && strstr(va, "MinHeight += vh.min_h") != NULL, "the vizarea does not take its heights from the aspect");
         /* item 4: button height and model icon follow the screen aspect; square is the old formula. */
-        sq_h = (int)mui_button_height();
-        mui_aa_set_screen_aspect(512);
-        tight_h = (int)mui_button_height();
-        CHECK(mui_model_icon_px() == 16 && mui_model_icon_h() == 8 && tight_h == mui_model_icon_h() + 2 * mui_aa_rows(MUI_BTN_PAD_Y, 512) + mui_aa_rows(MUI_BTN_FRAME, 512) && tight_h < sq_h, "tight button %d icon %dx%d (square %d)",
-              tight_h, mui_model_icon_px(), mui_model_icon_h(), sq_h);
-        mui_aa_set_screen_aspect(256);
-        CHECK(sq_h == bh_before && mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME && mui_model_icon_h() == mui_model_icon_px(), "square button height moved");
+        sq_h = (int)mui_button_height(256);
+        tight_h = (int)mui_button_height(512);
+        CHECK(mui_model_icon_px(512) == 16 && mui_model_icon_h(512) == 8 && tight_h == mui_model_icon_h(512) + 2 * mui_aa_rows(MUI_BTN_PAD_Y, 512) + mui_aa_rows(MUI_BTN_FRAME, 512) && tight_h < sq_h, "tight button %d icon %dx%d (square %d)",
+              tight_h, mui_model_icon_px(512), mui_model_icon_h(512), sq_h);
+        CHECK(sq_h == bh_before && mui_button_height(256) == (uint32_t)mui_model_icon_px(256) + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME && mui_model_icon_h(256) == mui_model_icon_px(256), "square button height moved");
         /* item 5: group spacing packs on tall pixels, square unchanged. */
         mui_aa_panel_pad(tok, 256, &sx, &sy);
         mui_aa_panel_pad(tok, 512, &px, &py);

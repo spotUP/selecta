@@ -21,6 +21,7 @@ typedef struct aa_ctx {
     struct ColorMap* cm;
     struct Screen* scr;
     int backend, kind, font_px;
+    int aspect_q8;         /* I685e1: pixel height over width x 256 of this object's screen (DrawInfo resolution), 256..512 */
     APTR font;
     int npens;
     uint32_t pen_rgb[AA_MAX_PENS];

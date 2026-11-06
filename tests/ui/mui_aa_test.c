@@ -383,7 +383,7 @@ static void test_slider_geom(void) {
     txt_theme_default(&th);
     for (i = 0; i < 4; i++) {
         mui_aa_slider_t m;
-        mui_aa_slider_metrics(fonts[i], &m);
+        mui_aa_slider_metrics(fonts[i], 256, &m);
         CHECK(m.height == heights[i] && m.track_h == tracks[i] && m.radius == m.track_h / 2 && m.min_w == 80, "tier %d metrics height %d track %d", i, m.height, m.track_h);
     }
     CHECK(mui_aa_slider_fill_w(w, 0, 0, 100) == 0 && mui_aa_slider_fill_w(w, 100, 0, 100) == w && mui_aa_slider_fill_w(w, 50, 0, 100) == 100 &&
@@ -406,7 +406,7 @@ static void test_slider_geom(void) {
     {
         mui_aa_slider_t m;
         int h = 16;
-        mui_aa_slider_metrics(13, &m);
+        mui_aa_slider_metrics(13, 256, &m);
         n = mui_aa_slider_plan(th.token, &m, MUI_AA_NORMAL, w, h, 50, 0, 100, ops);
         CHECK(n == 3 && ops[0].kind == MUI_AA_SLIDER_ERASE && ops[0].x == 0 && ops[0].y == 0 && ops[0].w == w && ops[0].h == h,
               "update plan starts with the full-box erase (n %d)", n);
@@ -483,7 +483,7 @@ static void test_slider_partial(void) {
     char* cls = slurp(AASLIDER_SOURCE);
     CHECK(cls != NULL, "cannot read the slider class");
     txt_theme_default(&th);
-    mui_aa_slider_metrics(13, &m);
+    mui_aa_slider_metrics(13, 256, &m);
     for (tick = 0; tick < 200; tick++) {
         long v = tick / 2; /* two ticks per value step: every second tick repeats the value */
         int fw = mui_aa_slider_fill_w(w, v, 0, 100);
@@ -563,7 +563,7 @@ static void test_cycle_step(void) {
     for (i = 0; i < 4; i++) {
         mui_aa_cycle_t m;
         mui_aa_metrics_t b;
-        mui_aa_cycle_metrics(fonts[i], &m);
+        mui_aa_cycle_metrics(fonts[i], 256, &m);
         mui_aa_metrics(fonts[i], &b);
         CHECK(m.height == b.height && m.pad_x == b.pad_x && m.radius == b.radius, "tier %d shares the button metrics", i);
         CHECK(m.chev_w == (i == 0 ? 6 : 8) && m.chev_h == m.chev_w / 2 && m.gap == (i == 0 ? 6 : 8), "tier %d chevron %dx%d gap %d", i, m.chev_w, m.chev_h, m.gap);
@@ -634,7 +634,7 @@ static void test_i667n(void) {
         const char* mk = strstr(fld, "Object* mui_aafield_new(");
         CHECK(mk != NULL, "AAField constructor present");
     }
-    mui_aa_slider_metrics(13, &m);
+    mui_aa_slider_metrics(13, 256, &m);
     n = mui_aa_slider_plan(th.token, &m, MUI_AA_NORMAL, 83, 16, 50, 0, 100, ops);
     for (i = 0; i < n; i++) {
         if (ops[i].kind == MUI_AA_SLIDER_TRACK) {
@@ -702,8 +702,8 @@ static void test_field_plan(void) {
     mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
     uint32_t before = mui_aa_field_calls();
     txt_theme_default(&th);
-    mui_aa_field_metrics(13, &m);
-    mui_aa_field_metrics(0, &s);
+    mui_aa_field_metrics(13, 256, &m);
+    mui_aa_field_metrics(0, 256, &s);
     mui_aa_metrics(13, &b);
     CHECK(m.height == b.height && m.radius == 6 && m.pad_x == 8 && m.outline == 1, "tier M metrics: h %d r %d pad %d", m.height, m.radius, m.pad_x);
     CHECK(s.radius == 4 && s.pad_x == 8 && s.pad_x > s.radius, "tier S radius 4, pad 8 clears it");
@@ -837,8 +837,8 @@ static void test_scroller_geom(void) {
     int ty, th_h;
     uint32_t track, thumb, calls0 = mui_aa_scroller_calls();
     txt_theme_default(&th);
-    mui_aa_scroller_metrics(13, &m);
-    mui_aa_scroller_metrics(0, &ms);
+    mui_aa_scroller_metrics(13, 256, &m);
+    mui_aa_scroller_metrics(0, 256, &ms);
     CHECK(m.width == 10 && ms.width == 6 && m.radius == 4 && ms.radius == 2 && m.min_thumb == 20, "metrics %d/%d %d/%d %d", m.width, ms.width, m.radius, ms.radius, m.min_thumb);
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 20, 20, &ty, &th_h) == 0 && th_h == 0, "no thumb when everything fits");
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 10, 100, &ty, &th_h) == 1 && ty == 0 && th_h == 20, "top thumb %d %d (min 20)", ty, th_h);
@@ -861,12 +861,12 @@ static void test_list_rows(void) {
     int w[3] = {120, 80, 40}, k;
     long a;
     txt_theme_default(&th);
-    mui_aa_list_metrics(13, &m);
-    mui_aa_list_metrics(0, &ms);
+    mui_aa_list_metrics(13, 256, &m);
+    mui_aa_list_metrics(0, 256, &ms);
     CHECK(m.row_h == 21 && ms.row_h == 10 && m.pad_x == 10 && m.gap == 8 && m.pad_y >= 2, "metrics %d %d %d %d %d", m.row_h, ms.row_h, m.pad_x, m.gap, m.pad_y);
-    mui_aa_list_metrics(15, &ms);
+    mui_aa_list_metrics(15, 256, &ms);
     CHECK(ms.row_h == 23, "L row %d", ms.row_h);
-    mui_aa_list_metrics(17, &ms);
+    mui_aa_list_metrics(17, 256, &ms);
     CHECK(ms.row_h == 25, "XL row %d", ms.row_h);
     /* Johan: text sat 5 px from the frame and from the dividers. First column at least the left pad, 8 px each side of a divider. */
     CHECK(mui_aa_list_col_x(&m, 0, w) >= 10, "first column text x %d", mui_aa_list_col_x(&m, 0, w));
@@ -901,7 +901,7 @@ static void test_list_rows(void) {
         for (bp = 0; bp < 4; bp++) {
             const char* p;
             int n = 0;
-            mui_columns_format(bp, f, sizeof f);
+            mui_columns_format(bp, f, sizeof f, 256);
             for (p = f; (p = strstr(p, "DELTA=16 BAR")) != NULL; p++) {
                 n++;
             }
@@ -922,7 +922,7 @@ static void test_list_cols(void) {
     char f[160], line[16];
     uint32_t bp, n;
     txt_theme_default(&th);
-    mui_aa_list_metrics(13, &m);
+    mui_aa_list_metrics(13, 256, &m);
     mui_aa_list_col_widths(&m, 600, 3, weight, fixed, out);
     sum = out[0] + out[1] + out[2];
     /* I1079b: the shared splitter hands the integer remainder to the last weighted column, so the row is filled to the pixel. */
@@ -937,7 +937,7 @@ static void test_list_cols(void) {
     CHECK(mui_aa_list_calls() > calls0, "sentinel did not move");
     for (bp = 0; bp < 4; bp++) {
         n = mui_columns_weights(bp, w);
-        mui_columns_format(bp, f, sizeof f);
+        mui_columns_format(bp, f, sizeof f, 256);
         CHECK(n == mui_columns_for(bp, (uint8_t[MUI_COL_COUNT]){0}) && n >= 1 && n <= MUI_COL_COUNT, "bp %u columns %u", (unsigned)bp, (unsigned)n);
         for (k = 0; k < (int)n; k++) {
             char want[16];
@@ -1031,25 +1031,47 @@ static void test_tight_pad(void) {
     uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
     int px, py;
     tok[SEL_GUI_TOKEN_SPACING] = 8;
-    mui_aa_set_screen_aspect(256);
-    mui_aa_list_metrics(0, &l);
-    mui_aa_slider_metrics(0, &s);
-    mui_aa_scroller_metrics(0, &sc);
+    mui_aa_list_metrics(0, 256, &l);
+    mui_aa_slider_metrics(0, 256, &s);
+    mui_aa_scroller_metrics(0, 256, &sc);
     CHECK(l.pad_x == 6 && l.pad_y == 2 && l.gap == 6, "square list pad %d,%d gap %d", l.pad_x, l.pad_y, l.gap);
     CHECK(s.height == 12 && s.track_h == 2, "square slider height %d track %d", s.height, s.track_h);
     CHECK(sc.width == 6, "square scroller width %d", sc.width);
-    mui_aa_set_screen_aspect(512);
     mui_aa_metrics_aspect(0, 512, &b);
-    mui_aa_list_metrics(0, &l);
-    mui_aa_slider_metrics(0, &s);
-    mui_aa_scroller_metrics(0, &sc);
+    mui_aa_list_metrics(0, 512, &l);
+    mui_aa_slider_metrics(0, 512, &s);
+    mui_aa_scroller_metrics(0, 512, &sc);
     CHECK(l.pad_x == b.pad_x && l.pad_x == 4, "tight list pad_x %d (button %d)", l.pad_x, b.pad_x);
     CHECK(l.pad_y == 1 && l.gap == b.icon_gap && l.gap == 4, "tight list pad_y %d gap %d", l.pad_y, l.gap);
     CHECK(s.height == 6 && s.track_h == 1, "tight slider height %d track %d", s.height, s.track_h);
     CHECK(sc.width == 4, "tight scroller width %d", sc.width);
+    {
+        /* I685e1: the aspect is an argument, not a global: one process answers 256 and 512 side by side, for all five metrics and the icons. */
+        mui_aa_cycle_t c1, c2;
+        mui_aa_field_t f1, f2;
+        mui_aa_list_t l1, l2;
+        mui_aa_slider_t s1, s2;
+        mui_aa_scroller_t k1, k2;
+        mui_aa_cycle_metrics(0, 256, &c1);
+        mui_aa_cycle_metrics(0, 512, &c2);
+        mui_aa_field_metrics(0, 256, &f1);
+        mui_aa_field_metrics(0, 512, &f2);
+        mui_aa_list_metrics(0, 256, &l1);
+        mui_aa_list_metrics(0, 512, &l2);
+        mui_aa_slider_metrics(0, 256, &s1);
+        mui_aa_slider_metrics(0, 512, &s2);
+        mui_aa_scroller_metrics(0, 256, &k1);
+        mui_aa_scroller_metrics(0, 512, &k2);
+        CHECK(c1.height == 14 && c1.pad_x == 6 && c2.height == 12 && c2.pad_x == 4, "cycle 256: %d,%d 512: %d,%d", c1.height, c1.pad_x, c2.height, c2.pad_x);
+        CHECK(f1.height == 14 && f2.height == 12 && f1.pad_x == 8 && f2.pad_x == 8 && f1.pad_y == 2 && f2.pad_y == 2, "field 256: %d 512: %d", f1.height, f2.height);
+        CHECK(l1.pad_x == 6 && l1.pad_y == 2 && l1.gap == 6 && l2.pad_x == 4 && l2.pad_y == 1 && l2.gap == 4, "list 256/512 side by side");
+        CHECK(s1.height == 12 && s1.track_h == 2 && s2.height == 6 && s2.track_h == 1, "slider 256/512 side by side");
+        CHECK(k1.width == 6 && k2.width == 4, "scroller 256: %d 512: %d", k1.width, k2.width);
+        CHECK(mui_model_icon_px(256) == 18 && mui_model_icon_h(256) == 18 && mui_model_icon_px(512) == 16 && mui_model_icon_h(512) == 8, "icon 256: %dx%d 512: %dx%d",
+              mui_model_icon_px(256), mui_model_icon_h(256), mui_model_icon_px(512), mui_model_icon_h(512));
+    }
     mui_aa_panel_pad(tok, 512, &px, &py);
     CHECK(mui_aa_balance_width(tok, 0) == px, "balance width %d equals tight panel pad_x %d", mui_aa_balance_width(tok, 0), px);
-    mui_aa_set_screen_aspect(256);
 }
 
 /* I972: on RTG 800x600 the text stayed 8 px: the own screen kept the Workbench font, and MUI's stock objects and the PLAIN

@@ -83,9 +83,6 @@ void mui_aa_metrics(int font_px, mui_aa_metrics_t* out);
 void mui_aa_metrics_aspect(int font_px, int aspect_q8, mui_aa_metrics_t* out);
 /* A length of px square pixels as rows on a screen of aspect_q8 (rounded, at least 1). The one place vertical sizes are scaled. */
 int mui_aa_rows(int px, int aspect_q8);
-/* The aspect of the open screen, set once by mui_screen_open and read by every class (none reads DisplayInfo). */
-void mui_aa_set_screen_aspect(int aspect_q8);
-int mui_aa_screen_aspect(void);
 /* I949a: pixel aspect (height over width, x 256) from DisplayInfo.Resolution (ticks per pixel): hires PAL non-laced 22x44 gives 512,
  * laced and RTG about 1:1 give 256; clamped to 256..512. mui_pixel_aspect_calls counts the calls (sentinel for mui_screen_open). */
 int mui_pixel_aspect_q8(int res_x, int res_y);
@@ -129,7 +126,7 @@ void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad
 typedef struct mui_aa_slider_t {
     int track_h, radius, min_w, height;
 } mui_aa_slider_t;
-void mui_aa_slider_metrics(int font_px, mui_aa_slider_t* out);
+void mui_aa_slider_metrics(int font_px, int aspect_q8, mui_aa_slider_t* out);
 /* Track and filled part colours in a state (MUI_AA_NORMAL, _HOVER, _DISABLED): TRACK, ACCENT; disabled fill TEXT_DISABLED. Any out
  * pointer may be NULL. */
 void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* fill);
@@ -162,7 +159,7 @@ uint32_t mui_aa_slider_calls(void);
 typedef struct mui_aa_cycle_t {
     int height, pad_x, radius, chev_w, chev_h, gap;
 } mui_aa_cycle_t;
-void mui_aa_cycle_metrics(int font_px, mui_aa_cycle_t* out);
+void mui_aa_cycle_metrics(int font_px, int aspect_q8, mui_aa_cycle_t* out);
 /* Face SURFACE_RAISED (hover/pressed per state), value text TEXT (TEXT_DISABLED when disabled), chevron TEXT_MUTED (TEXT_DISABLED when
  * disabled), popup background SURFACE, popup row hover SURFACE_HOVER. Any out pointer may be NULL. */
 void mui_aa_cycle_rgb(const uint32_t* token, int state, uint32_t* face, uint32_t* text, uint32_t* chevron, uint32_t* popup_bg, uint32_t* row_hover);
@@ -183,7 +180,7 @@ uint32_t mui_aa_cycle_calls(void);
 typedef struct mui_aa_field_t {
     int height, pad_x, pad_y, radius, outline;
 } mui_aa_field_t;
-void mui_aa_field_metrics(int font_px, mui_aa_field_t* out);
+void mui_aa_field_metrics(int font_px, int aspect_q8, mui_aa_field_t* out);
 /* Paint plan, painted in order, box-relative: op 0 the outline colour over the whole box (rounded), op 1 the face inset by the outline.
  * Returns the op count (MUI_AA_FIELD_OPS). */
 #define MUI_AA_FIELD_OPS 2
@@ -215,7 +212,7 @@ uint32_t mui_aa_field_calls(void);
 typedef struct mui_aa_scroller_t {
     int width, radius, min_thumb;
 } mui_aa_scroller_t;
-void mui_aa_scroller_metrics(int font_px, mui_aa_scroller_t* out);
+void mui_aa_scroller_metrics(int font_px, int aspect_q8, mui_aa_scroller_t* out);
 void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* thumb);
 /* Thumb top and height inside a track of height h for the first visible entry; both 0 and a 0 return when everything fits. The thumb
  * is at least min_thumb (at most h); first is clamped to [0, entries - visible]. */
@@ -231,7 +228,7 @@ typedef struct mui_aa_list_t {
     int row_h, pad_x, pad_y, gap, scroller_w, radius;
 } mui_aa_list_t;
 enum { MUI_AA_LIST_KEY_UP, MUI_AA_LIST_KEY_DOWN, MUI_AA_LIST_KEY_PAGEUP, MUI_AA_LIST_KEY_PAGEDOWN, MUI_AA_LIST_KEY_HOME, MUI_AA_LIST_KEY_END };
-void mui_aa_list_metrics(int font_px, mui_aa_list_t* out);
+void mui_aa_list_metrics(int font_px, int aspect_q8, mui_aa_list_t* out);
 /* Whole rows that fit a list face of height h (after the vertical pads). */
 int mui_aa_list_visible(const mui_aa_list_t* m, int h);
 long mui_aa_list_clamp_first(long first, long visible, long count);
