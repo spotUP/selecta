@@ -1,5 +1,7 @@
-sunvox_tune.sunvox = sunvox_api_examples/interactive_sound/make/tune.sunvox from the public SunVox engine source release
-"sunvox_sources" (Alex Zolotov / warmplace.ru; local copy ~/Code/DEViLBOX/third-party/sunvox_sources-master).
+sunvox_tune.sunvox is NOT in the repo (no licence line for the tune). tests/m3/sunvox_fixtures.sh fetches it at test time.
+Origin: sunvox_api_examples/interactive_sound/make/tune.sunvox from the public SunVox engine source release "sunvox_sources"
+(Alex Zolotov / warmplace.ru), https://github.com/warmplace/sunvox_sources at commit e5e38200984567e37a4615048f198977ca7a07a6.
+sha256 4cb6e4080c68718535833fdd98b062ef07ec01cd0c83b2153b2183642c258b02 (checked on every use by fetch_fixture.sh).
 Song file version field: VERS 1 (old format the 2009 engine reads).
-Licence: shipped as the example tune inside the BSD-licensed source package (engine licence: third_party/sunvox_bsd/
-LICENSE-sunvox_engine.txt); the package has no separate licence line for the tune. Johan decides if it stays public.
+Licence: example tune inside the BSD-licensed source package (engine licence: third_party/sunvox_bsd/LICENSE-sunvox_engine.txt);
+the package has no separate licence line for the tune.

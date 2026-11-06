@@ -1,5 +1,6 @@
 # bundle-sunvox (I706d): the shipped app plays a modern SunVox song through the SunVox Library and credits it in About.
-# -DSELECTA (the Selecta.app executable) -DSONG (tests/m3/fixtures/sunvox_tune_modern.sunvox) -DWORK.
+# -DSELECTA (the Selecta.app executable) -DFIXTURES (tests/m3/sunvox_fixtures.sh) -DWORK.
+# The modern song is fetched and re-saved at test time (I706c); a failed download (exit 77) ends the test as SKIPPED.
 # Both runs use an isolated app layout (a symlink of the executable beside its own plugin folder), so nothing from the build
 # tree or $SELECTA_PLUGIN_PATH reaches the app:
 # 1. Layout built from the real bundle's plugin folder, sunvox_lib module and its sunvox_lib/ folder COPIED in: the dropped
@@ -30,7 +31,18 @@ file(GLOB svl_lib "${REAL_PLUGINS}/sunvox_lib/sunvox.*")
 if(NOT svl_lib)
   message(FATAL_ERROR "the app bundle carries no SunVox Library file in ${REAL_PLUGINS}/sunvox_lib")
 endif()
-file(COPY_FILE "${SONG}" "${WORK}/songs/modern.sunvox")
+list(GET svl_lib 0 svl_lib_file)
+execute_process(COMMAND sh "${FIXTURES}" "${WORK}/fx" "${svl_lib_file}" RESULT_VARIABLE fx_rc OUTPUT_VARIABLE fx_out ERROR_VARIABLE fx_err)
+if(fx_rc EQUAL 77)
+  message(STATUS "SKIP: ${fx_err}")
+  message(STATUS "bundle_sunvox_skip")
+  return()
+endif()
+if(NOT fx_rc EQUAL 0)
+  message(FATAL_ERROR "sunvox_fixtures.sh failed (${fx_rc}): ${fx_err}")
+endif()
+string(REGEX MATCH "[^\n]*sunvox_tune_modern.sunvox" modern_song "${fx_out}")
+file(COPY_FILE "${modern_song}" "${WORK}/songs/modern.sunvox")
 
 # layout(<name> <with library 0|1>): app/<name>/... ; every shipped module linked, the sunvox_lib parts copied or left out.
 function(layout name with_lib)
