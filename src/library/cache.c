@@ -542,12 +542,13 @@ static uint8_t* content_head(sel_cache* c, const char* file, size_t* size) {
     return buf;
 }
 
+/* path is one companion name from sel_content_companion_names, already shorter than SEL_CACHE_PATH_MAX; the precision states that bound to the compiler. */
 static void content_variants(const char* path, char v[3][SEL_CACHE_PATH_MAX]) {
     size_t i, dirlen = (size_t)(path_base(path) - path);
 
-    snprintf(v[0], SEL_CACHE_PATH_MAX, "%s", path);
-    snprintf(v[1], SEL_CACHE_PATH_MAX, "%s", path);
-    snprintf(v[2], SEL_CACHE_PATH_MAX, "%s", path);
+    snprintf(v[0], SEL_CACHE_PATH_MAX, "%.*s", SEL_CACHE_PATH_MAX - 1, path);
+    snprintf(v[1], SEL_CACHE_PATH_MAX, "%.*s", SEL_CACHE_PATH_MAX - 1, path);
+    snprintf(v[2], SEL_CACHE_PATH_MAX, "%.*s", SEL_CACHE_PATH_MAX - 1, path);
     for (i = dirlen; v[0][i] != '\0'; i++) {
         v[1][i] = (char)tolower((unsigned char)v[0][i]);
         v[2][i] = (char)toupper((unsigned char)v[0][i]);

@@ -140,7 +140,7 @@ int sel_sysfile_fetch(const sel_host* host, const char* config_dir, const sel_sy
         got_body = 1;
         if (sel_sysfile_install(config_dir, d, tmp, err, sizeof err)) {
             remove(tmp);
-            snprintf(res->served, sizeof res->served, "%s", urls[i]);
+            snprintf(res->served, sizeof res->served, "%.*s", (int)(SEL_SYSFILE_URL_MAX - 1u), urls[i]); /* add_list admits only entries shorter than SEL_SYSFILE_URL_MAX, so nothing is cut */
             return SEL_SYSF_OK;
         }
         res->rejected++;
