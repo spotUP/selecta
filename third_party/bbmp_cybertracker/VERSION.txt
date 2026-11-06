@@ -1,0 +1,9 @@
+bbmp_cybertracker: csrc/retro/cybertracker_engine.cpp, cybertracker_6502.h, self_path.h and engine.h from github.com/creep-ltx/bbmp, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX line in each file). A clean-room engine that runs CyberTracker 1.01
+(CyberBrain of No Name, 2001, C64) from its disk image on a 6502 with a reSIDfp SID (third_party/libresidfp). The tracker itself is "Copyright
+No Name 2001", released on CSDb without terms: it is NOT vendored or shipped; the user supplies cybertracker101.d64 (see below).
+Disk image lookup: $SELECTA_CYBERTRACKER_DISK, $BBMP_CYBERTRACKER_DISK, else <config dir>/cybertracker101.d64 ($XDG_CONFIG_HOME/selecta or
+$HOME/.config/selecta). Download: https://csdb.dk/getinternalfile.php/63969/cybertracker1_01-d64.zip (sha256
+cdecc06385ebb5cd1d941889cae8c1ecf33e72965116db652a4e43c50d4040fe), the .d64 inside the zip.
+bcybertracker_glue.cpp is Selecta's glue: the registry hook, read_file(), dir_of() and debug_on() the engine needs from bbmp-retro's main
+program, the disk image lookup, and a C entry point that renders one track of the song.

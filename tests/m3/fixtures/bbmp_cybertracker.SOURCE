@@ -1,0 +1,7 @@
+CyberTracker C64 songs and the tracker's disk image for tests/m3/cybertracker_decode.sh (bbmp_cybertracker module, I710g). Never committed:
+fetched by sha256 into the git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive) nor for the
+tracker ("Copyright No Name 2001", released on CSDb without terms): the tracker is never shipped, the user supplies it.
+https://modland.com/pub/modules/Cybertracker%20C64/CyberBrain/arpeggio.ct  d3ae040598e13d825d3f851e6ad18b7efe811f8e83daa0f5cbee0fda780ce40d
+https://modland.com/pub/modules/Cybertracker%20C64/CyberBrain/china.ct  503f798e7f6c5f72094a47a98836748d01439eeced2d17c51d3a46a324283a62
+https://csdb.dk/getinternalfile.php/63969/cybertracker1_01-d64.zip  cdecc06385ebb5cd1d941889cae8c1ecf33e72965116db652a4e43c50d4040fe  (zip; the .d64 inside)
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro cybertracker engine, third_party/bbmp_cybertracker).
