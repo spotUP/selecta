@@ -1,0 +1,5 @@
+MaxTrax test songs for tests/m3/maxtrax_decode.sh (bbmp_maxtrax module, I710k). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. Amiga game music; no redistribution licence is stated for them.
+https://modland.com/pub/modules/MaxTrax/Steve%20Hales/antmusic.mxtx  e4a2620e61e1091ee714d30c87c0c36a8e17f852aa7f572a463f867128f6c98d
+https://modland.com/pub/modules/MaxTrax/Frank%20Klepacki/dune%202%20endgame.mxtx  1842fafeda339ae182e25603a5691abf11737eec5551ed084a9163ca5b834e79
+Engine licence: ScummVM MaxTrax player and Paula, GPL 3 or later (third_party/bbmp_maxtrax).

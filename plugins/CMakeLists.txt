@@ -249,6 +249,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_wsr)
 endif()
 
+# bbmp_maxtrax (I710k): MaxTrax scores (.mxtx), bbmp csrc/amiga/maxtrax_engine over ScummVM's MaxTrax player (GPL 3), behind the
+# GPL-plugin gate. Host only (C++17 engine on ScummVM-shaped headers, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_maxtrax)
+endif()
+
 # bbmp_psycle (I710u): Psycle songs (.psy), GPL Psycle engine + bbmp helper and native plugins run as a child process, behind the
 # GPL-plugin gate. Host only (C++14 engine, dlopen'd plugin libraries, no Amiga build).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

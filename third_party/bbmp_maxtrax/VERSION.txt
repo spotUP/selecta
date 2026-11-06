@@ -1,0 +1,9 @@
+bbmp_maxtrax: csrc/amiga/maxtrax_engine.cpp, engine.h and maxtrax_shim/ (renamed shim/) from github.com/creep-ltx/bbmp, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (bbmp-amiga.cpp, the stdio main, is not taken; plugins/replayers/bbmp_maxtrax/shim.cpp
+provides the engine registry, to_utf8 and debug_on that engine.h expects from it). Build with -DENABLE_KYRA (maxtrax.h is guarded by it).
+audio/mods/{maxtrax.cpp,maxtrax.h,paula.cpp,paula.h}: ScummVM commit e6c3b103c96822eb9212f743be63c998383f7c4f (audio/mods/), sha256
+checked as in bbmp's tools/build-amiga.sh. Patched exactly as that script patches them (all marked "modland:" in the source):
+tempo changes remember the tempo (3 places); portamento time 0 (3); last voice for a mono channel (2 lines); delete[] for a patch
+loaded twice (2); Paula's 32 KB sample assert removed (paula.h).
+Licence: ScummVM's player and Paula GPL 3 or later (COPYING = GPL 3), bbmp's engine GPL 3 or later: the module is GPL and sits behind
+SELECTA_GPL_PLUGINS.
