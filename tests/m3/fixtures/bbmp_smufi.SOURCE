@@ -1,0 +1,6 @@
+Picatune test songs for tests/m3/smufi_decode.sh (bbmp_smufi module, I710t). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Picatune/BeRo/cubeman.smufi  90f12e5a1a266565bf1fe8b135eb046343639c3cbef45e70708f6bec832d3f7e
+https://modland.com/pub/modules/Picatune/BeRo/danceordie.smufi  5d5cef50cbf32f65a4f777952d4a178332c1a75c0d380b2d624cd2512bda101b
+https://modland.com/pub/modules/Picatune/BeRo/feelthebass.smufi  7bed31bbcae62607856e026d89b477d540ed494852a60b98fa515d28637fb529
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro/smufi_engine.cpp, third_party/bbmp_smufi).

@@ -237,6 +237,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_onyx)
 endif()
 
+# bbmp_smufi (I710t): Picatune 1 songs (.smufi), bbmp csrc/retro/smufi_engine (clean-room synthesizer tracker replayer, GPL 3 or later), behind the
+# GPL-plugin gate. Host only (C++17 engine, x87/glibc maths, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_smufi)
+endif()
+
 # bbmp_piece (I710s): Aquaplus P/ECE music driver songs (.pmd), GPL-3.0 bbmp clean-room engine (piece.cpp), behind the GPL-plugin
 # gate. Host only (C++17 engine, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
