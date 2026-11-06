@@ -11,18 +11,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* https wherever TLS is compiled in (every build but the Amiga, SEL_NO_TLS, see tls.c); the login sends a password. */
-#ifdef SEL_NO_TLS
-#define DEVILBOX_DEFAULT "http://hippoplayer.se"
-#else
-#define DEVILBOX_DEFAULT "https://hippoplayer.se"
-#endif
+#include "tls.h"
+
+/* https wherever TLS is usable (always on desktop; on the Amiga once AmiSSL opened, I899g); the login sends a password. */
+#define DEVILBOX_HTTPS "https://hippoplayer.se"
+#define DEVILBOX_HTTP "http://hippoplayer.se"
 #define ENV_PREFIX "SELECTA_MIRRORS_"
 
 const char* sel_devilbox_base(void) {
     const char* dev = getenv("SELECTA_DEVILBOX_URL");
 
-    return dev != NULL && dev[0] != '\0' ? dev : DEVILBOX_DEFAULT;
+    return dev != NULL && dev[0] != '\0' ? dev : sel_tls_available() ? DEVILBOX_HTTPS : DEVILBOX_HTTP;
 }
 
 /* Built-in lists (research 2026-10-25-m3-external-endpoints.md). HTTP mirrors first, FTP last. Each base is the root
@@ -46,6 +45,11 @@ static const builtin BUILTIN[] = {
 static int add_base(sel_mirror_set* s, const char* base, size_t n) {
     char* dst;
     if (n == 0 || s->count >= SEL_MIRROR_MAX || n + 2 > SEL_MIRROR_URL_MAX) {
+        return 0;
+    }
+    /* I899g: without a usable TLS library (Amiga without AmiSSL) an https base is skipped, never tried and never
+     * downgraded to http. */
+    if (n >= 8 && strncmp(base, "https://", 8) == 0 && !sel_tls_available()) {
         return 0;
     }
     dst = s->base[s->count];
@@ -74,7 +78,7 @@ static void add_list(sel_mirror_set* s, const char* list) {
 }
 
 int sel_net_amiga_route(void) {
-#ifdef SEL_NO_TLS
+#if defined(__amigaos__) || defined(AMIGA)
     return 1;
 #else
     const char* v = getenv("SELECTA_AMIGA_ROUTE");

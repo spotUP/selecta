@@ -39,6 +39,7 @@
 #include "db.h"
 #include "local.h"
 #include "share.h"
+#include "net/tls.h"
 #include "../../src/engine/evtring.h"
 #include "../../src/engine/options.h"
 
@@ -876,6 +877,13 @@ int main(int argc, char** argv)
             if (mname != NULL) {
                 sel_engine_report_error(e, "plugin_module_missing", mname);
             }
+        }
+    }
+    {
+        /* I899g: Amiga without AmiSSL skips https mirrors; the one-line install note goes through the same toast path */
+        const char* tls_note = sel_tls_missing_note();
+        if (tls_note != NULL) {
+            sel_engine_report_error(e, "tls_unavailable", tls_note);
         }
     }
     pump_turn(e, clockless, sink, ctx);

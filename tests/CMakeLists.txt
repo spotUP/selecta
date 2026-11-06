@@ -3128,6 +3128,21 @@ if(NOT SEL_AMIGA)
   add_test(NAME entropy COMMAND entropy_test "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(entropy PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "entropy_ok")
 
+  # I899g: TLS backend choice and the missing-AmiSSL fallback. "mirrors" runs on the real host library; "amissl" compiles
+  # tls_gate.c with SEL_TLS_AMISSL against a stub opener (the AmiSSL path itself is rig-checked, tests/amiga).
+  add_executable(tls_gate_test net/tls_gate_test.c)
+  target_link_libraries(tls_gate_test PRIVATE selecta_library)
+  target_include_directories(tls_gate_test PRIVATE "${PROJECT_SOURCE_DIR}/src/library/net")
+  add_executable(tls_gate_amissl_test net/tls_gate_test.c ${PROJECT_SOURCE_DIR}/src/library/net/tls_gate.c)
+  target_compile_definitions(tls_gate_amissl_test PRIVATE GATE_AMISSL_STUB SEL_TLS_AMISSL)
+  target_include_directories(tls_gate_amissl_test PRIVATE "${PROJECT_SOURCE_DIR}/src/library/net")
+  add_test(NAME tls-gate-mirrors COMMAND tls_gate_test mirrors)
+  set_tests_properties(tls-gate-mirrors PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "tls_gate_mirrors_ok")
+  foreach(rc 0 1 2)
+    add_test(NAME tls-gate-amissl-${rc} COMMAND tls_gate_amissl_test amissl ${rc})
+    set_tests_properties(tls-gate-amissl-${rc} PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "tls_gate_amissl_ok rc=${rc} ")
+  endforeach()
+
   # I894a1: UPnP MediaServer discovery (SSDP unicast to the fixture, HTTP description, ContentDirectory controlURL).
   add_executable(upnp_discover_test net/upnp_discover_test.c)
   target_link_libraries(upnp_discover_test PRIVATE selecta_shared_upnp selecta_library)

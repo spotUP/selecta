@@ -416,3 +416,8 @@ int sel_net_local_ip(int h, char* out, size_t cap) {
     format_ip4((unsigned long)sa.sin_addr.s_addr, out, cap);
     return 0;
 }
+
+/* AmiSSL (tls_amissl.c, I899g) needs the bsdsocket base to open; NULL when there is no TCP/IP stack. */
+struct Library* sel_net_amiga_socketbase(void) {
+    return stack_ready() ? SocketBase : NULL;
+}

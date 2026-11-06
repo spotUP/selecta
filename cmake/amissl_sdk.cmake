@@ -1,0 +1,33 @@
+# AmiSSL 5.27 Developer SDK for the Amiga TLS backend (I899g). Fetched at configure time into the build tree with a
+# pinned sha256 and never committed (Apache 2.0, ~21 MB unpacked). Only the headers are needed: the proto/ inline
+# stubs call through the AmiSSLBase globals that src/library/net/tls_amissl.c defines.
+# Offline or mirrored: -DAMISSL_SDK_LHA=<local AmiSSL-5.27-SDK.lha> (same hash), or -DAMISSL_SDK=<Developer dir>.
+set(AMISSL_SDK_VERSION 5.27)
+set(AMISSL_SDK_SHA256 5003bef8c5930354d16b0ce7196d71b2811891c42fad38a9238c5ce4098ad42a)
+set(AMISSL_SDK_URL "https://github.com/jens-maus/amissl/releases/download/${AMISSL_SDK_VERSION}/AmiSSL-${AMISSL_SDK_VERSION}-SDK.lha")
+
+if(NOT AMISSL_SDK)
+  set(_dir "${CMAKE_BINARY_DIR}/third_party/amissl-sdk")
+  if(NOT EXISTS "${_dir}/AmiSSL/Developer/include/openssl/ssl.h")
+    if(AMISSL_SDK_LHA)
+      set(_lha "${AMISSL_SDK_LHA}")
+      file(SHA256 "${_lha}" _got)
+      if(NOT _got STREQUAL AMISSL_SDK_SHA256)
+        message(FATAL_ERROR "AMISSL_SDK_LHA sha256 ${_got} is not the pinned ${AMISSL_SDK_SHA256}")
+      endif()
+    else()
+      set(_lha "${CMAKE_BINARY_DIR}/third_party/AmiSSL-${AMISSL_SDK_VERSION}-SDK.lha")
+      file(DOWNLOAD "${AMISSL_SDK_URL}" "${_lha}" EXPECTED_HASH SHA256=${AMISSL_SDK_SHA256} STATUS _st)
+      list(GET _st 0 _code)
+      if(NOT _code EQUAL 0)
+        message(FATAL_ERROR "AmiSSL SDK download failed (${_st}); pass -DAMISSL_SDK_LHA=<${AMISSL_SDK_URL}> or -DAMISSL_SDK=<Developer dir>")
+      endif()
+    endif()
+    file(MAKE_DIRECTORY "${_dir}")
+    file(ARCHIVE_EXTRACT INPUT "${_lha}" DESTINATION "${_dir}")
+  endif()
+  set(AMISSL_SDK "${_dir}/AmiSSL/Developer" CACHE PATH "AmiSSL SDK Developer directory" FORCE)
+endif()
+if(NOT EXISTS "${AMISSL_SDK}/include/openssl/ssl.h")
+  message(FATAL_ERROR "AMISSL_SDK=${AMISSL_SDK} has no include/openssl/ssl.h")
+endif()

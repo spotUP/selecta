@@ -16293,6 +16293,11 @@ static void desk_on_event(void* state, const sel_message* evt) {
             desk_toast(d, d->module_missing_text);
             d->repaint = 1;
         }
+        if (strcmp(code, "tls_unavailable") == 0) { /* I899g: Amiga without AmiSSL; detail is the install note */
+            snprintf(d->module_missing_text, sizeof d->module_missing_text, "%.100s", detail);
+            desk_toast(d, d->module_missing_text);
+            d->repaint = 1;
+        }
         d->drop_playing = 0;
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));

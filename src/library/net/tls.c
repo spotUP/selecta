@@ -5,41 +5,8 @@
 #include "net.h"
 
 #include <stdlib.h>
-#if !defined(__amigaos__)
 #include <pthread.h>
-#endif
 #include <string.h>
-
-#ifdef SEL_NO_TLS
-
-int sel_tls_open(int h, const char* host, unsigned timeout_ms) {
-    (void)h;
-    (void)host;
-    (void)timeout_ms;
-    return SEL_TLS_E_UNAVAILABLE;
-}
-
-int sel_tls_open_insecure(int h, const char* host, unsigned timeout_ms) {
-    return sel_tls_open(h, host, timeout_ms);
-}
-
-unsigned sel_tls_handshakes(void) {
-    return 0;
-}
-
-int sel_stream_send(int h, const void* data, size_t len, unsigned timeout_ms) {
-    return sel_net_send(h, data, len, timeout_ms);
-}
-
-int sel_stream_recv(int h, void* buf, size_t cap, unsigned timeout_ms) {
-    return sel_net_recv(h, buf, cap, timeout_ms);
-}
-
-void sel_stream_close(int h) {
-    sel_net_close(h);
-}
-
-#else
 
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
@@ -115,15 +82,11 @@ static int tls_init_once(void) {
 /* I1044: parallel searches and a sync may all be the first TLS user; the lazy init of the shared config runs once. */
 static int tls_init(void) {
     int rc;
-#if !defined(__amigaos__)
     static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
     pthread_mutex_lock(&lock);
     rc = tls_init_once();
     pthread_mutex_unlock(&lock);
-#else
-    rc = tls_init_once();
-#endif
     return rc;
 }
 
@@ -266,5 +229,3 @@ void sel_stream_close(int h) {
     }
     sel_net_close(h);
 }
-
-#endif

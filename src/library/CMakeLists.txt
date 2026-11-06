@@ -37,14 +37,19 @@ endif()
 
 # Network (plan 2026-10-25-m3-library.md Phase 3, D-M3-4): the socket table with the guard and host
 # map (one file per OS under src/core/) and the HTTP/1.1 client on top of it.
-target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c net/tls.c net/ftp.c net/mirrors.c net/backoff.c net/devilbox.c md5.c entropy.c support.c cache.c zip_member.c)
+target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c net/tls_gate.c net/ftp.c net/mirrors.c net/backoff.c net/devilbox.c md5.c entropy.c support.c cache.c zip_member.c)
 if(SEL_AMIGA)
-  # Plain HTTP and FTP on the Amiga (D-M3-4): no TLS library, tls.c compiles its stubs.
-  target_compile_definitions(selecta_library PRIVATE SEL_NO_TLS)
+  # I899g: https through the user's AmiSSL v5, opened at runtime (tls_amissl.c); the SDK headers are fetched here.
+  include(${PROJECT_SOURCE_DIR}/cmake/amissl_sdk.cmake)
+  target_sources(selecta_library PRIVATE net/tls_amissl.c)
+  target_compile_definitions(selecta_library PRIVATE SEL_TLS_AMISSL)
+  set_source_files_properties(net/tls_amissl.c PROPERTIES INCLUDE_DIRECTORIES "${AMISSL_SDK}/include"
+                              COMPILE_OPTIONS "-Wno-pedantic") # the SDK inline stubs use GNU statement expressions
   # I623: a Ctrl-C swallowed by a bsdsocket wait must survive the net layer (rig-i623-net-break).
   add_executable(selecta-net-break ${PROJECT_SOURCE_DIR}/tests/amiga/net_break.c)
   target_link_libraries(selecta-net-break PRIVATE selecta_library)
 else()
+  target_sources(selecta_library PRIVATE net/tls.c)
   add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/mbedtls ${CMAKE_BINARY_DIR}/third_party/mbedtls)
   target_link_libraries(selecta_library PUBLIC selecta_mbedtls)
 endif()
