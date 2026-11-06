@@ -249,6 +249,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_kdm)
 endif()
 
+# bbmp_buzzic (I710e): Buzzic 1 and 2 songs (.buz, .buz2), bbmp csrc/synth/buz_engine (clean-room C++ engine, GPL 3 or later), behind
+# the GPL-plugin gate. Host only (C++17 engine, no Amiga module build of the GPL tier). No samples, no companion file.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_buzzic)
+endif()
+
 # bbmp_wsr (I710z): WonderSwan (.wsr), bbmp csrc/console/wsr_engine over Mednafen WonderSwan (GPL 2 only files), behind the GPL-plugin
 # gate. Host only (C++17 emulator, forked scan workers, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

@@ -1,0 +1,4 @@
+bbmp_buzzic: engine.h and buz_engine.cpp from github.com/creep-ltx/bbmp csrc/synth, commit 19d87098b3716156d80224d22dc49ca22884d1b7,
+unchanged (GPL-3.0-or-later, SPDX line in each file). Buzzic 1 (.buz) and Buzzic 2 (.buz2), a clean-room replayer written for bbmp.
+Only the buz engine of csrc/synth is vendored; the other engines and bbmp-synth.cpp (the helper main) are not. Neither format has
+samples or a companion file. Built with -ffp-contract=off as bbmp does (bit-exact float order).

@@ -2157,6 +2157,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710e: Buzzic 1 and 2 (.buz, .buz2) songs play through the render entry point (bbmp_buzzic module, GPL-3.0-or-later). Four songs
+  # fetched by checksum (tests/m3/fixtures/bbmp_buzzic.SOURCE), exit 77 = skip. A file that is not a Buzzic song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/buzzic-decode)
+    add_test(NAME buzzic-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/buzzic_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/buzzic-decode)
+    set_tests_properties(buzzic-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "buzzic_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710k: MaxTrax (.mxtx) scores play through the render entry point (bbmp_maxtrax module, GPL). Songs fetched by checksum
   # (tests/m3/fixtures/bbmp_maxtrax.SOURCE), exit 77 = skip. A file that is not a song of the format must not be claimed.
   if(SELECTA_GPL_PLUGINS)
