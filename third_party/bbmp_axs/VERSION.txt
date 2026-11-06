@@ -1,0 +1,4 @@
+bbmp_axs: bbmp-axs.cpp, axs_tables.h and resample.h from github.com/creep-ltx/bbmp csrc/axs, commit 19d87098b3716156d80224d22dc49ca22884d1b7,
+unchanged (GPL-3.0-or-later, SPDX line in each file). AXS (Resolution Audio, .axs), a clean-room replayer written for bbmp. The helper's
+main() is compiled out with AXS_NO_MAIN (the file's own switch); axs_engine.cpp is Selecta's glue (includes bbmp-axs.cpp, exposes
+bbaxs_render as a C function). Default behaviour (the Winamp plug-in's sound, quirk included), not --clean.

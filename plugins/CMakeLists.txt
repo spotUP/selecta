@@ -255,6 +255,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_maxtrax)
 endif()
 
+# bbmp_axs (I710a): AXS songs (.axs), bbmp csrc/axs clean-room engine (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17
+# engine, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_axs)
+endif()
+
 # bbmp_psycle (I710u): Psycle songs (.psy), GPL Psycle engine + bbmp helper and native plugins run as a child process, behind the
 # GPL-plugin gate. Host only (C++14 engine, dlopen'd plugin libraries, no Amiga build).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

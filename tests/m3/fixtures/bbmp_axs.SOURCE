@@ -1,0 +1,5 @@
+AXS songs for tests/m3/axs_decode.sh (bbmp_axs module, I710a). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive).
+https://modland.com/pub/modules/AXS/Emile/emile50.axs  389bcd386032c0d0e473d0ee83e48355d1199fe8d4516a56587bfa10dfe682b7
+https://modland.com/pub/modules/AXS/Rez/spectral.axs  470e1b16abcd5a974eb14c9f6abd4af9ca1e3b7ea24603914145f6130618a61c
+Engine licence: GPL-3.0-or-later (bbmp csrc/axs, third_party/bbmp_axs).
