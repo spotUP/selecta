@@ -49,6 +49,7 @@ static const char* g_rp_global;
 static const char* g_rp_song;
 static sel_library* g_rp_lib;
 static const char* g_loud_mode;
+static const char* g_config_dir; /* render --config-dir: engine config_dir, system files resolve there (I710ga) */
 static const char* g_record_dir; /* play --record <dir>: OPTION record_to before OPEN (I196c) */
 static const char* g_loud_db;
 static int g_loud_have_gain;
@@ -69,6 +70,10 @@ void sel_cli_set_record_dir(const char* dir) {
     g_record_dir = dir;
 }
 
+void sel_cli_set_config_dir(const char* dir) {
+    g_config_dir = dir;
+}
+
 void sel_cli_set_loudness(const char* mode, const char* db, int have_gain, int32_t gain_cdb) {
     g_loud_mode = mode;
     g_loud_db = db;
@@ -87,6 +92,7 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(host);
+    cfg.config_dir = g_config_dir;
     if (g_rp_song != NULL || g_loud_db != NULL || g_loud_have_gain) {
         /* The per-song override (I170) and the stored loudness gain (I189) live in the library DB: --db names a
          * real one, otherwise a throwaway library holds them for this song. */

@@ -1,8 +1,9 @@
 /* bbmp cybertracker replayer (row I710g): a RENDER-kind adapter over bbmp's csrc/retro cybertracker engine (third_party/bbmp_cybertracker,
  * GPL-3.0-or-later, clean-room), which runs the user's own CyberTracker 1.01 disk image on an emulated C64. The selected track is rendered
  * at RP_START through the engine's open()/render() into one buffer that rp_render copies out. The song starts with the 10-byte magic
- * 00 04 "NNTRKMZX"; without the disk image (SELECTA_CYBERTRACKER_DISK, BBMP_CYBERTRACKER_DISK or <config dir>/cybertracker101.d64) open
- * fails and the file is not claimed. */
+ * 00 04 "NNTRKMZX"; the disk image is a declared system file (RP_SYSFILE, I710ga): the host checks its sha256, fetches it, and hands the stored
+ * path through config_get "sysfile.cybertracker101.d64"; without it the host does not call open (system_file_missing). The
+ * developer overrides SELECTA_CYBERTRACKER_DISK / BBMP_CYBERTRACKER_DISK still win. */
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
@@ -11,7 +12,7 @@
 #include <string.h>
 
 int bbcybertracker_render(const uint8_t* data, size_t size, uint32_t rate, int track, int check_only, int16_t** pcm, uint64_t* frames,
-                          long* duration_ms, int* tracks, char* err, size_t errn);
+                          long* duration_ms, int* tracks, char* err, size_t errn, const char* disk_path);
 
 typedef struct bbct_state {
     const sel_host* host;
@@ -22,6 +23,7 @@ typedef struct bbct_state {
     uint64_t frames;
     uint64_t pos;
     uint32_t rate;
+    char disk[1024]; /* config_get sysfile path, "" when the host gave none */
     sel_tag meta[3];
 } bbct_state;
 
@@ -52,8 +54,9 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     bbct_state* s;
     char err[256];
     int tracks = 0;
+    const char* disk = host->config_get != NULL ? host->config_get(host, "sysfile.cybertracker101.d64", NULL) : NULL;
     if (src->stream != NULL || src->data == NULL || !has_magic(src->data, src->size) ||
-        !bbcybertracker_render(src->data, src->size, 44100u, 0, 1, NULL, NULL, NULL, &tracks, err, sizeof err)) {
+        !bbcybertracker_render(src->data, src->size, 44100u, 0, 1, NULL, NULL, NULL, &tracks, err, sizeof err, disk)) {
         return NULL;
     }
     s = (bbct_state*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
@@ -62,6 +65,9 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     memset(s, 0, sizeof *s);
     s->host = host;
+    if (disk != NULL && strlen(disk) < sizeof s->disk) {
+        strcpy(s->disk, disk);
+    }
     s->data = (uint8_t*)malloc(src->size);
     if (s->data == NULL) {
         host->mem_free(host, s);
@@ -89,7 +95,7 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     s->pcm = NULL;
     s->frames = s->pos = 0;
     s->rate = rate;
-    if (!bbcybertracker_render(s->data, s->size, rate, (int)subsong, 0, &s->pcm, &s->frames, &dur, NULL, err, sizeof err) ||
+    if (!bbcybertracker_render(s->data, s->size, rate, (int)subsong, 0, &s->pcm, &s->frames, &dur, NULL, err, sizeof err, s->disk[0] != '\0' ? s->disk : NULL) ||
         s->frames == 0u) {
         free(s->pcm);
         s->pcm = NULL;
@@ -132,7 +138,16 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[13];
+static const sel_tag g_sysfile[] = {
+    {SEL_RP_SYSFILE_NAME, (uintptr_t) "cybertracker101.d64"},
+    {SEL_RP_SYSFILE_LABEL, (uintptr_t) "CyberTracker disk image"},
+    {SEL_RP_SYSFILE_HINT, (uintptr_t) "CyberTracker 1.01 by Cyberbrain is on CSDb as cybertracker1_01-d64.zip. Pick the .d64 or the zip."},
+    {SEL_RP_SYSFILE_SHA256, (uintptr_t) "000ccb714183281bcdf7ac59fef062e46b02e475511990f4c3e8067ea8f8c148"},
+    {SEL_RP_SYSFILE_SIZE, 174848},
+    {SEL_RP_SYSFILE_URLS, (uintptr_t) "https://csdb.dk/getinternalfile.php/63969/cybertracker1_01-d64.zip;"
+                                      "https://hippoplayer.se/sysfiles/cybertracker101.d64"},
+    {SEL_TAG_END, 0}};
+static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -156,7 +171,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_PRIORITY, 10);
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[12], SEL_RP_SYSFILE, (uintptr_t)g_sysfile);
+    set(&g_hooks[13], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "bbmp_cybertracker");

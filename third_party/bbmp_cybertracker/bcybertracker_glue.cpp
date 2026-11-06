@@ -24,8 +24,9 @@ std::string dir_of(const std::string& path) {
 }  // namespace retro
 
 namespace {
-// The engine reads BBMP_CYBERTRACKER_DISK. Selecta's order: SELECTA_CYBERTRACKER_DISK, BBMP_CYBERTRACKER_DISK, then the config directory.
-void pick_disk() {
+// The engine reads BBMP_CYBERTRACKER_DISK. Selecta's order: SELECTA_CYBERTRACKER_DISK (developer override), BBMP_CYBERTRACKER_DISK, then the
+// path the host resolved for the declared system file (config_get "sysfile.cybertracker101.d64"). No directory guess of our own.
+void pick_disk(const char* host_path) {
   const char* own = std::getenv("SELECTA_CYBERTRACKER_DISK");
   if (own && *own) {
     setenv("BBMP_CYBERTRACKER_DISK", own, 1);
@@ -33,13 +34,7 @@ void pick_disk() {
   }
   const char* bbmp = std::getenv("BBMP_CYBERTRACKER_DISK");
   if (bbmp && *bbmp) return;
-  const char* xdg = std::getenv("XDG_CONFIG_HOME");
-  const char* home = std::getenv("HOME");
-  std::string dir;
-  if (xdg && *xdg) dir = std::string(xdg) + "/selecta";
-  else if (home && *home) dir = std::string(home) + "/.config/selecta";
-  else return;
-  setenv("BBMP_CYBERTRACKER_DISK", (dir + "/cybertracker101.d64").c_str(), 1);
+  if (host_path && *host_path) setenv("BBMP_CYBERTRACKER_DISK", host_path, 1);
 }
 }  // namespace
 
@@ -47,12 +42,12 @@ extern "C" {
 // Renders track `track` at `rate`. Returns 1 and a malloc'd s16 stereo buffer, or 0 with `err` set. check_only: open() only.
 // *tracks is the number of songs in the file (also set when the track asked for does not exist).
 int bbcybertracker_render(const uint8_t* data, size_t size, uint32_t rate, int track, int check_only, int16_t** pcm, uint64_t* frames,
-                          long* duration_ms, int* tracks, char* err, size_t errn) {
+                          long* duration_ms, int* tracks, char* err, size_t errn, const char* disk_path) {
   if (retro::g_maker == nullptr) {
     std::snprintf(err, errn, "engine not registered");
     return 0;
   }
-  pick_disk();
+  pick_disk(disk_path);
   std::unique_ptr<retro::Engine> engine(retro::g_maker());
   std::vector<uint8_t> file(data, data + size);
   retro::SongInfo info;

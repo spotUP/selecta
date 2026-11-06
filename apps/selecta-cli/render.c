@@ -169,6 +169,8 @@ int sel_cli_render(int argc, char** argv) {
             seek_ms = argv[i + 1];
         } else if (strcmp(argv[i], "--rp-config") == 0) {
             rp_global = argv[i + 1];
+        } else if (strcmp(argv[i], "--config-dir") == 0) {
+            sel_cli_set_config_dir(argv[i + 1]); /* system files (I710ga) and prefs.conf live here */
         } else if (strcmp(argv[i], "--rp-config-song") == 0) {
             rp_song = argv[i + 1];
         } else if (strcmp(argv[i], "--rate") == 0) {
