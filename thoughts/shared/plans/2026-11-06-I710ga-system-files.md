@@ -3,7 +3,7 @@ date: 2026-11-06
 author: spot (Opus design pass)
 row: I710ga
 parent: I710g (Cybertracker C64 replayer)
-status: draft
+status: approved
 topic: Required system files for replayers (ROMs, disk images), Cybertracker disk image first
 design_doc: thoughts/shared/plans/2026-10-22-architecture-design.md sections 4 (replayer SDK), 10 (tag ABI), 9.3 (cache/fetch), 13 (reachability)
 ---
@@ -254,6 +254,8 @@ file -> playback starts, toast count unchanged (no download); (b) mirror serves 
 dialog, playback. Uses the sysfile_probe module, so it never needs the real image.
 
 ## 8. Open questions for Johan (recommended answer first)
+
+Answered 2026-11-06: Q1 `Get File...`, Q2 show nothing (toast reports), Q4 CSDb image only, Q5 once per session for the current song (Johan, AskUserQuestion). Q3 No and Q6 skip 77 taken as the recommended defaults (implementation choices, stated in chat).
 
 - Q1 Note-line button label: **`Get File...`** (recommended; generic for later ROM players) vs `Choose Disk Image...`
   (names the thing, label then comes from the plugin) vs `Fix...`.
