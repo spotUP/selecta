@@ -1,15 +1,2 @@
-# I685c: includes from plugins/shared/mcc/src into plugins/ui/mui that exist today. Row I685e removes them; never add a line.
+# I685c/I685e3: quoted includes from plugins/shared/mcc/src that resolve outside plugins/shared/mcc. Empty since I685e3; never add a line.
 # Format: <file relative to plugins/shared/mcc>: <include spelling>
-src/class/mui_aabalance_class.c: mui_gfxbase.h
-src/class/mui_aabtn_class.c: mui_gfxbase.h
-src/class/mui_aabtn_class.c: map/mui_map.h
-src/class/mui_aacycle_class.c: mui_gfxbase.h
-src/class/mui_aafield_class.c: mui_gfxbase.h
-src/class/mui_aalist_class.c: mui_gfxbase.h
-src/class/mui_aapanel_class.c: mui_gfxbase.h
-src/class/mui_aascroller_class.c: mui_gfxbase.h
-src/class/mui_aaslider_class.c: mui_gfxbase.h
-src/class/mui_aatabs_class.c: mui_gfxbase.h
-src/class/mui_aatext_class.c: mui_gfxbase.h
-src/mui_aa_draw.c: mui_gfxbase.h
-src/mui_aatip.c: mui_gfxbase.h

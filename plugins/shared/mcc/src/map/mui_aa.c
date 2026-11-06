@@ -904,3 +904,10 @@ void mui_aa_balance_rgb(const uint32_t* token, uint32_t* box, uint32_t* line) {
         *line = token[SEL_GUI_TOKEN_DIVIDER];
     }
 }
+
+void mui_aabtn_minmax(uint32_t content_w, uint32_t content_h, uint32_t fixed_w, uint32_t fixed_h, uint32_t toggle, mui_btn_box_t* out) {
+    out->min_w = out->def_w = fixed_w != 0u ? fixed_w : content_w;
+    out->min_h = out->def_h = fixed_h != 0u ? fixed_h : content_h;
+    out->w_fixed = (fixed_w != 0u || toggle) ? 1u : 0u;
+    out->h_fixed = 1u;
+}

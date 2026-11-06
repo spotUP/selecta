@@ -503,7 +503,7 @@ endif()
 # I685c: the MUI class package source tree; every test that reads a shipped class source starts from this one path.
 set(MCC_DIR "${PROJECT_SOURCE_DIR}/plugins/shared/mcc")
 add_test(NAME mcc-include-check COMMAND "${CMAKE_COMMAND}" "-DMCC_DIR=${MCC_DIR}" "-DUI_DIR=${PROJECT_SOURCE_DIR}/plugins/ui/mui"
-  "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DALLOW=${MCC_DIR}/include_allowlist.txt" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake")
+  "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DALLOW=${MCC_DIR}/include_allowlist.txt" "-DROOTS=${MCC_CHECK_ROOTS}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake")
 set_tests_properties(mcc-include-check PROPERTIES TIMEOUT 30)
 if(NOT SEL_AMIGA)
   add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")

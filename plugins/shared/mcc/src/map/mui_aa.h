@@ -302,6 +302,15 @@ int mui_aa_tip_step(int state, int ev, int* actions); /* returns the next state,
 #define MUI_AA_TIP_DELAY_MS 600 /* desktop TIP_DELAY_MS */
 uint32_t mui_aa_tip_calls(void); /* sentinel: mui_aa_tip_plan calls */
 
+/* I973b: an icon button's size request, pure. fixed_w / fixed_h in px (0 = none). The deltas are added to the Area's own insets.
+ * A fixed side has min = def = max, so no weight can stretch the square; a labelled button keeps the unbounded width. */
+typedef struct mui_btn_box {
+    uint32_t min_w, def_w, min_h, def_h;
+    uint32_t w_fixed; /* 1: MaxWidth = MinWidth, else unbounded */
+    uint32_t h_fixed; /* always 1 today: a button never grows taller than its contents */
+} mui_btn_box_t;
+void mui_aabtn_minmax(uint32_t content_w, uint32_t content_h, uint32_t fixed_w, uint32_t fixed_h, uint32_t toggle, mui_btn_box_t* out);
+
 #ifdef __cplusplus
 }
 #endif

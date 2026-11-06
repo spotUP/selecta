@@ -17,7 +17,7 @@ endif()
 add_library(sel_mcc_static STATIC ${MCC_SOURCES})
 # src/map: "mui_aa.h" etc. for every consumer; src: "map/mui_theme.h" and "mui_aa_draw.h" spellings the sources already use.
 target_include_directories(sel_mcc_static PUBLIC "${MCC_DIR}/include" "${MCC_DIR}/src" "${MCC_DIR}/src/map" "${MCC_DIR}/src/class")
-# Today's couplings (allow-list include_allowlist.txt, removed by row I685e): mui_gfxbase.h and map/mui_map.h.
+# Remaining couplings (allow-list include_allowlist.txt, removed by rows I685e1/I685e2): see the list.
 target_include_directories(sel_mcc_static PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/mui")
 target_link_libraries(sel_mcc_static PUBLIC selecta_uimodel selecta_gui)
 if(SEL_AMIGA)
@@ -25,10 +25,14 @@ if(SEL_AMIGA)
   target_include_directories(sel_mcc_static PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
 endif()
 
+# Include roots of the check: the real target's INCLUDE_DIRECTORIES, plus plugins/shared (a target dir only on Amiga builds, so the
+# host run still resolves includes of the Amiga-only sources). Shared with the ctest entry in tests/CMakeLists.txt.
+set(MCC_CHECK_ROOTS "$<JOIN:$<TARGET_PROPERTY:sel_mcc_static,INCLUDE_DIRECTORIES>,|>|${PROJECT_SOURCE_DIR}/plugins/shared" CACHE INTERNAL "")
 # Include check: no class file reaches into src/ or plugins/ui/mui beyond the recorded allow-list.
 add_custom_target(mcc-include-check
   COMMAND "${CMAKE_COMMAND}" "-DMCC_DIR=${MCC_DIR}" "-DUI_DIR=${PROJECT_SOURCE_DIR}/plugins/ui/mui"
     "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DALLOW=${MCC_DIR}/include_allowlist.txt"
+    "-DROOTS=${MCC_CHECK_ROOTS}"
     -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake"
   VERBATIM COMMENT "Include check of the MUI class package")
 add_dependencies(sdk-isolation mcc-include-check)

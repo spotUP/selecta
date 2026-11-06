@@ -20,7 +20,7 @@
 #include <proto/utility.h>
 
 #include "map/mui_icons.h"
-#include "map/mui_map.h"
+#include "mui_aa.h"
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
 

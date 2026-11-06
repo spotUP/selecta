@@ -14,6 +14,7 @@
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
+#include "mui_aa.h" /* mui_aabtn_minmax lives in the class package map */
 
 /* The view styles the MUI UI offers. An RTG screen offers every style (6). A planar screen shows artwork and grid tiles
  * as cached 1-bit dithered images (MUI-P5-7, I509), so all but cover flow (5); the classic three alone no longer fit. */
@@ -117,14 +118,6 @@ uint32_t mui_player_min_width(const mui_player_band_t* pb);
 /* Sentinel: bars built (mui_player_band calls) since start. */
 uint32_t mui_player_bar_builds(void);
 
-/* I973b: an icon button's size request, pure. fixed_w / fixed_h in px (0 = none). The deltas are added to the Area's own insets.
- * A fixed side has min = def = max, so no weight can stretch the square; a labelled button keeps the unbounded width. */
-typedef struct mui_btn_box {
-    uint32_t min_w, def_w, min_h, def_h;
-    uint32_t w_fixed; /* 1: MaxWidth = MinWidth, else unbounded */
-    uint32_t h_fixed; /* always 1 today: a button never grows taller than its contents */
-} mui_btn_box_t;
-void mui_aabtn_minmax(uint32_t content_w, uint32_t content_h, uint32_t fixed_w, uint32_t fixed_h, uint32_t toggle, mui_btn_box_t* out);
 /* I949e2: height of an art frame width px wide so it is square on screen: width x 256 / aspect (mui_aa_rows). The player art is
  * MUI_PLAYER_ART_PX wide, the detail art MUI_DETAIL_ART_PX. 256 (square pixels) gives the width. */
 #define MUI_DETAIL_ART_PX 64

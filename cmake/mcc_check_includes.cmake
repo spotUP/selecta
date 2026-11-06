@@ -1,15 +1,18 @@
 # MUI class package include check (design 2026-11-06-mui-mcc-package.md section 3.1, row I685c). Run as
 #   cmake -DMCC_DIR=<plugins/shared/mcc> -DUI_DIR=<plugins/ui/mui> -DSDK_DIR=<include/selecta>
-#         -DALLOW=<allow-list file> -P mcc_check_includes.cmake
+#         -DALLOW=<allow-list file> "-DROOTS=<include roots, | separated>" -P mcc_check_includes.cmake
 # A source under plugins/shared/mcc/src may include include/selecta (rule 3), its own tree, and nothing from src/ or
-# plugins/ui/mui. Resolution mirrors the compiler: the including file's directory, then the package include roots, then
-# plugins/ui/mui (the include root the Selecta build adds today). A file that resolves into plugins/ui/mui is an
-# offender, and an offender passes only while ALLOW lists "<file relative to MCC_DIR>: <include spelling>".
+# plugins/ui/mui. Resolution mirrors the compiler: the including file's directory, then ROOTS. ROOTS comes from the real
+# target (the INCLUDE_DIRECTORIES sel_mcc_static is compiled with, a generator expression in plugins/shared/mcc/CMakeLists.txt)
+# plus plugins/shared, which the target only has on Amiga builds, so a host run still sees the Amiga-only sources' includes.
+# A quoted include that resolves to ANY file outside MCC_DIR is an offender, and an offender passes only while ALLOW lists
+# "<file relative to MCC_DIR>: <include spelling>".
 # The allow-list is the decoupling debt of row I685e (aa_log, screen aspect, mui_aabtn_minmax, gfxbase): it must only
 # shrink. An allow-list line that no longer matches an offender fails the check, so the list cannot go stale.
 get_filename_component(MCC_DIR "${MCC_DIR}" REALPATH)
 get_filename_component(UI_DIR "${UI_DIR}" REALPATH)
-set(roots "${MCC_DIR}/src" "${MCC_DIR}/src/map" "${UI_DIR}")
+string(REPLACE "|" ";" roots "${ROOTS}")
+list(APPEND roots "${UI_DIR}")
 file(GLOB_RECURSE files "${MCC_DIR}/src/*.c" "${MCC_DIR}/src/*.h")
 set(found "")
 set(bad "")
@@ -49,7 +52,7 @@ endforeach()
 file(STRINGS "${ALLOW}" allow REGEX "^[^#]")
 foreach(f IN LISTS found)
   if(NOT f IN_LIST allow)
-    string(APPEND bad "  ${f} reaches into plugins/ui/mui or src/ and is not in the allow-list\n")
+    string(APPEND bad "  ${f} resolves outside plugins/shared/mcc and is not in the allow-list\n")
   endif()
 endforeach()
 foreach(a IN LISTS allow)
@@ -61,4 +64,4 @@ list(LENGTH found n_found)
 if(bad)
   message(FATAL_ERROR "[ERROR] MCC include check failed:\n${bad}")
 endif()
-message(STATUS "[OK] MCC include check: ${n_found} allow-listed includes into plugins/ui/mui (row I685e shrinks the list)")
+message(STATUS "[OK] MCC include check: ${n_found} allow-listed includes outside the package")

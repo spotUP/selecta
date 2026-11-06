@@ -119,13 +119,6 @@ void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8, ui
     }
 }
 
-void mui_aabtn_minmax(uint32_t content_w, uint32_t content_h, uint32_t fixed_w, uint32_t fixed_h, uint32_t toggle, mui_btn_box_t* out) {
-    out->min_w = out->def_w = fixed_w != 0u ? fixed_w : content_w;
-    out->min_h = out->def_h = fixed_h != 0u ? fixed_h : content_h;
-    out->w_fixed = (fixed_w != 0u || toggle) ? 1u : 0u;
-    out->h_fixed = 1u;
-}
-
 uint32_t mui_player_centre_y(const mui_player_band_t* pb, uint32_t child_h) {
     return (pb->height - child_h) / 2u + child_h / 2u;
 }
