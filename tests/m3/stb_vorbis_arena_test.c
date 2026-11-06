@@ -120,6 +120,7 @@ int main(int argc, char** argv) {
         fd.d = file;
         fd.n = len;
         fd.pos = 0;
+        memset(&bs, 0, sizeof bs); /* seek, total, network and origin (I184d, I725f, I1080) stay zero: a live stream has none */
         bs.ctx = &fd;
         bs.read = f_read;
         bs.read_wait = f_read;
