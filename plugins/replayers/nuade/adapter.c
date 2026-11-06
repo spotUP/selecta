@@ -23,6 +23,7 @@ typedef struct nuade_state {
     const NuadePlayer* player;
     void* pdata;
     NuadeSongSource src;
+    SelNuadeSiblingIo sibling_io; /* the src.io backend: reads the song's own directory only */
     NuadeVoices voices;
     char title[META_LEN];
     char author[META_LEN];
@@ -114,7 +115,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     s->src.data = src->data;
     s->src.size = src->size;
     s->src.path = src->path;
-    s->src.io = sel_nuade_io_none();
+    s->src.io = sel_nuade_io_sibling(&s->sibling_io, host, src->path);
     r = p->open(&s->src);
     if (r.user_data == NULL) {
         host->mem_free(host, s);

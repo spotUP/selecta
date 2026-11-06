@@ -820,6 +820,24 @@ add_test(NAME nuade-players
     "-DNUADE_DIR=${SELECTA_NUADE_DIR}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/nuade_players.cmake")
 
+# I710au: the nuade adapter reads companion files (smp.set, smp.*) from the song's own directory only. The unit test drives the
+# NuadeIo (reads, and refuses "../x", absolute and backslash paths); the decode test plays real Pierre Adane / Synth Pack songs
+# through the render entry point (fetched by checksum, exit 77 = skip).
+add_executable(nuade_sibling_io_test m3/nuade_sibling_io_test.c)
+target_link_libraries(nuade_sibling_io_test PRIVATE sel_nuade_shim)
+target_include_directories(nuade_sibling_io_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${SELECTA_NUADE_DIR}/include")
+add_test(NAME nuade-sibling-io COMMAND nuade_sibling_io_test)
+set_tests_properties(nuade-sibling-io PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "nuade_sibling_io_ok"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+if(NOT SEL_AMIGA)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-companion-decode)
+  add_test(NAME nuade-companion-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/nuade_companion_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-companion-decode)
+  set_tests_properties(nuade-companion-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_companion_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+endif()
+
 # T29: playlist codecs (Hippo .prg, M3U, PLS, XSPF), src/library/playlist.
 add_executable(playlist_test playlist/playlist_test.c)
 target_link_libraries(playlist_test PRIVATE selecta_library selecta_core)

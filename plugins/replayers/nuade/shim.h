@@ -21,4 +21,14 @@ struct NuadeVoices {
 /* io_shim.c: an NuadeIo whose files are all absent. */
 const NuadeIo* sel_nuade_io_none(void);
 
+/* io_shim.c (I710au): an NuadeIo that reads files inside the song's own directory (and below it) and refuses any
+ * other url. The struct is the NuadeIo's private data, so it must outlive the player (it lives in the adapter state).
+ * song_path NULL, or a directory too long for root: falls back to sel_nuade_io_none(). */
+typedef struct SelNuadeSiblingIo {
+    NuadeIo io;
+    const sel_host* host;
+    char root[1024]; /* the song's directory with its trailing separator, "" for a bare file name */
+} SelNuadeSiblingIo;
+const NuadeIo* sel_nuade_io_sibling(SelNuadeSiblingIo* io, const sel_host* host, const char* song_path);
+
 #endif /* SELECTA_NUADE_SHIM_H */
