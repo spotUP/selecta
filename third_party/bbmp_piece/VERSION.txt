@@ -1,0 +1,5 @@
+bbmp_piece: piece.cpp and piece.h from github.com/creep-ltx/bbmp csrc/piece, commit 19d87098b3716156d80224d22dc49ca22884d1b7
+(file last changed in 6c31a6e1651bad67da92615b1a760199cf91ab51), unchanged. bbmp-piece.cpp (the command-line wrapper) is not vendored.
+License GPL-3.0-or-later (SPDX line in each file, COPYING; docs/replayers.md "PiECE"). Written anew for bbmp from the P/ECE SDK's
+format documents and measurements of the driver's output; no code of Aquaplus' driver (usable only in P/ECE programs) was read or used.
+Self-contained: no binary blob, no asm, no data files. 16 kHz mono engine; shim.cpp resamples to the host rate by straight lines.

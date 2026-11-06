@@ -2146,6 +2146,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710s: P/ECE music driver songs (.pmd) play through the render entry point (bbmp_piece module, GPL-3.0). Songs are fetched by
+  # checksum, exit 77 = skip. A non-song .pmd, a cut-off song and a song without the extension must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/piece-decode)
+    add_test(NAME piece-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/piece_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/piece-decode)
+    set_tests_properties(piece-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "piece_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710p: Noise Tracker GS 1 modules (Apple IIGS) play through the render entry point (bbmp_ntgs module, GPL-3.0). Modules are
   # fetched by checksum, exit 77 = skip. A non-module file and a cut-off module must not be claimed.
   if(SELECTA_GPL_PLUGINS)

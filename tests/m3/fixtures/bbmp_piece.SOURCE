@@ -1,0 +1,5 @@
+Engine: bbmp csrc/piece/piece.cpp, GPL-3.0-or-later (third_party/bbmp_piece/COPYING).
+Fixtures for tests/m3/piece_decode.sh, fetched by checksum, never committed. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/PiECE%20music%20driver/Autch/Final%20Fantasy%20-%20Prelude.pmd c5e2dc0bf3799c2bf10c626a86132cfdfa60dfdfb63398dc66bce9c68aa77aa6
+https://modland.com/pub/modules/PiECE%20music%20driver/Yama/Sample%20BGM1.pmd 5208a4e79031c40036f5760b9529c46012fdd9ccf5b56659d29749221b446ace
+https://modland.com/pub/modules/PiECE%20music%20driver/Chemool/Calling.pmd a9001e3e47f224bd017f211e15114053eb21d00ef1a4a007bb503da587ae2326
