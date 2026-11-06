@@ -2135,6 +2135,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710r: Onyx Music Files (.omf) play through the render entry point (bbmp_onyx module, GPL-3.0 engine over libopenmpt). Songs are
+  # fetched by checksum, exit 77 = skip. A non-Onyx file and a cut-off song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/onyx-decode)
+    add_test(NAME onyx-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/onyx_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/onyx-decode)
+    set_tests_properties(onyx-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "onyx_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710p: Noise Tracker GS 1 modules (Apple IIGS) play through the render entry point (bbmp_ntgs module, GPL-3.0). Modules are
   # fetched by checksum, exit 77 = skip. A non-module file and a cut-off module must not be claimed.
   if(SELECTA_GPL_PLUGINS)

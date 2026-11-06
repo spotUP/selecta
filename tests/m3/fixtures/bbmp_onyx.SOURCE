@@ -1,0 +1,6 @@
+Onyx Music File test songs for tests/m3/onyx_decode.sh (bbmp_onyx module, I710r). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Onyx%20Music%20File/Tirana/battle%20squadron.omf  7e64beadf16b616c9c6cfeafdff29a63d98388744a6a949d8c9afa3fa8de2967
+https://modland.com/pub/modules/Onyx%20Music%20File/Tonza/shadows%20love.omf  a0faa20a7e94888d60c3730f8f348010882687d8f2365d4426da1d337a5c04c4
+https://modland.com/pub/modules/Onyx%20Music%20File/Hydra/laxity%20remix.omf  e5bc74ba27f2f5519f7d58696b74b582fa0af5fbadcaf167bedf3e4dd8399ccb
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro/jangle_engine.cpp, third_party/bbmp_onyx); libopenmpt BSD 3-clause.
