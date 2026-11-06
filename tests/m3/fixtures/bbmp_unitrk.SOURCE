@@ -1,0 +1,6 @@
+MikMod UNITRK songs for tests/m3/unitrk_decode.sh (bbmp_unitrk module, I710m). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive; unlicensed scene material).
+https://modland.com/pub/modules/MikMod%20UNITRK/Croaker/mulla%20on%20porkkanaa.uni  599af18e7521f964a3f4897eabb3c14f7738d2aab9992fc313f863a4af70cf30
+https://modland.com/pub/modules/MikMod%20UNITRK/Gatekeeper/leroy%20-%20intro.uni  b042e32e5358172cc8fef8df7226e6e6b89ed2a1a2b30a336d271d2e8c950a9f
+https://modland.com/pub/modules/MikMod%20UNITRK/Javier%20Tienda/fray%20luis%20-%20cuatra.uni  0371439e43d382b62ca8a159f1d002bc4ecc4778c8ac60cfbfd4c1c1fb79eb19
+Engine licence: LGPL-2.1-or-later (libmikmod 3.3.14, third_party/bbmp_unitrk).

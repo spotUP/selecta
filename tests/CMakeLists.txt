@@ -2247,6 +2247,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710m: MikMod UNITRK songs (.uni) play through the render entry point (bbmp_unitrk module, libmikmod LGPL 2.1). Three songs fetched by
+  # checksum (tests/m3/fixtures/bbmp_unitrk.SOURCE), exit 77 = skip. A file that is not UNITRK must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/unitrk-decode)
+    add_test(NAME unitrk-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/unitrk_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/unitrk-decode)
+    set_tests_properties(unitrk-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "unitrk_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710b: BeRoTracker songs (.brt) play through the render entry point (bbmp_berotracker module, GPL-3.0-or-later). Two songs fetched by
   # checksum (tests/m3/fixtures/bbmp_berotracker.SOURCE), exit 77 = skip. A file that is not a BeRoTracker song must not be claimed.
   if(SELECTA_GPL_PLUGINS)

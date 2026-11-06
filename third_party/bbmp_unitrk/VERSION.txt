@@ -1,0 +1,5 @@
+bbmp_unitrk: libmikmod 3.3.14 from github.com/sezero/mikmod commit 8de19eef766d9ba30a74c19e566edfcd61851dba (libmikmod/), the revision bbmp's tools/build-pc.sh
+builds for its engine "unitrk" (github.com/creep-ltx/bbmp csrc/pc/unitrk_engine.c). Licence: LGPL 2.1 or later (COPYING = COPYING.LESSER; per-file
+headers say Library GPL 2 or later). Vendored: include/, mmio/, playercode/, loaders/load_uni.c, drivers/drv_nos.c (the only loader and the only
+driver bbmp registers), unchanged. Not vendored: playercode/mlreg.c and mdreg.c (register-all), the other loaders, drivers and the depackers (config.h defines NO_DEPACKERS; UNITRK files are not
+packed). config.h is ours. bbmp's engine file is GPL-3.0-or-later; it is not vendored, adapter.c is written fresh against libmikmod's public API.

@@ -273,6 +273,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_darkwave)
 endif()
 
+# bbmp_unitrk (I710m): MikMod UNITRK modules (.uni), libmikmod 3.3.14 (LGPL 2.1 or later) linked statically, behind the GPL-plugin gate like the
+# other LGPL engine (adplug). Plain C99; Amiga status in row I710m.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_unitrk)
+endif()
+
 # bbmp_wsr (I710z): WonderSwan (.wsr), bbmp csrc/console/wsr_engine over Mednafen WonderSwan (GPL 2 only files), behind the GPL-plugin
 # gate. Host only (C++17 emulator, forked scan workers, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
