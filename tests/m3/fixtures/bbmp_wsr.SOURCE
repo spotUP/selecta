@@ -1,0 +1,5 @@
+WonderSwan test rips for tests/m3/wsr_decode.sh (bbmp_wsr module, I710z). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. Game sound drivers; no redistribution licence is stated for them.
+https://modland.com/pub/modules/WonderSwan/_unknown/chaos%20gear.wsr  2c8e641e940d5f4ca192e21ae7cdcd51007a12bac763a4e8eb4d9c93f8cdf943
+https://modland.com/pub/modules/WonderSwan/_unknown/densha%20de%20go%21.wsr  747af1e077ac4035daf88203daafa7ba106d464f1f1f13b0edcce369978d25b4
+Engine licence: Mednafen WonderSwan, GPL 2 only (third_party/bbmp_wsr).

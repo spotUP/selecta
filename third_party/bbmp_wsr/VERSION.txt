@@ -1,0 +1,10 @@
+bbmp_wsr: csrc/console/wsr_engine.cpp and engine.h from github.com/creep-ltx/bbmp, commit 19d87098b3716156d80224d22dc49ca22884d1b7,
+unchanged (bbmp's SPU engine, resample.h and the stdio main bbmp-console.cpp are not taken; plugins/replayers/bbmp_wsr/shim.cpp
+provides the two functions engine.h expects from that main). README.txt is bbmp's csrc/console/README.txt.
+mednafen/: Mednafen's WonderSwan emulation as rePlayer (github.com/arnaud-neny/rePlayer, commit e3bf02cb41a40cdaebf8dc80efc0ae5ac488dc38,
+source/Replays/WonderSwan/mednafen) carries it after foo_input_wsr, unchanged; only the files bbmp builds plus the headers/includes they
+need (no debug, comm, eeprom, rtc .cpp, no wsr_player.cpp, no docs).
+Licence: wswan/main.cpp, memory.cpp, gfx.cpp, tcache.cpp are GPL-2.0-only (Dox; Mednafen Team; Alex Marshall), so the whole module is
+GPL 2 only (COPYING = GPL 2, same text as mednafen/COPYING) and sits behind SELECTA_GPL_PLUGINS. sound.cpp, interrupt.cpp, error.cpp:
+GPL 2 or later. wswan/v30mz.cpp (NEC V30MZ): free incl. commercial use with credit to Bryan McPhail (this is that credit).
+sound/Blip_Buffer.cpp (Shay Green): LGPL 2.1 or later. bbmp's wsr_engine.cpp / engine.h: GPL 2 or later.

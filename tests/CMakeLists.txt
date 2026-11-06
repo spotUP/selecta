@@ -2119,6 +2119,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710z: WonderSwan (.wsr) rips play through the render entry point (bbmp_wsr module, GPL). Rips are fetched by checksum, exit 77 =
+  # skip. A .wsr without the WSRF footer must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/wsr-decode)
+    add_test(NAME wsr-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/wsr_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/wsr-decode)
+    set_tests_properties(wsr-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "wsr_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I702: a pxtone song plays through the render entry point (pxtone module).
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/pxtone-decode)
   add_test(NAME pxtone-decode
