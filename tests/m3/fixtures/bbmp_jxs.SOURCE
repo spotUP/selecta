@@ -1,0 +1,5 @@
+JayTrax songs for tests/m3/jxs_decode.sh (bbmp_jxs module, I710i). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive).
+https://modland.com/pub/modules/JayTrax/Reinier%20Van%20Vliet/hakke.jxs  18f670158a7ac622cd63881620207501a24d7aaa01d9d6c1cf2e385f454efdde
+https://modland.com/pub/modules/JayTrax/Reinier%20Van%20Vliet/jbells.jxs  29c6639058e1b6efc82c13f2838260289de98ae3260f8af37e71fd08c83a3686
+Engine licence: GPL-3.0-or-later (bbmp csrc/synth jxs_engine, third_party/bbmp_jxs).

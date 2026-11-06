@@ -2123,6 +2123,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710i: JayTrax songs (.jxs) play through the render entry point (bbmp_jxs module, GPL-3.0-or-later). Two songs fetched by
+  # checksum (tests/m3/fixtures/bbmp_jxs.SOURCE), exit 77 = skip. A file that is not a JayTrax song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/jxs-decode)
+    add_test(NAME jxs-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/jxs_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/jxs-decode)
+    set_tests_properties(jxs-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "jxs_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710u: Psycle songs (.psy) play through the render entry point (bbmp_psycle module, helper child process), GPL; two Alk
   # songs fetched by checksum (tests/m3/fixtures/bbmp_psycle.SOURCE), exit 77 = skip.
   if(SELECTA_GPL_PLUGINS)

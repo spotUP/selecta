@@ -231,6 +231,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_spu)
 endif()
 
+# bbmp_jxs (I710i): JayTrax songs (.jxs), bbmp csrc/synth/jxs_engine (clean-room, GPL 3 or later), behind the GPL-plugin gate. Host
+# only (C++17 engine, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_jxs)
+endif()
+
 # bbmp_wsr (I710z): WonderSwan (.wsr), bbmp csrc/console/wsr_engine over Mednafen WonderSwan (GPL 2 only files), behind the GPL-plugin
 # gate. Host only (C++17 emulator, forked scan workers, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
