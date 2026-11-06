@@ -1,0 +1,6 @@
+bbmp_tss: csrc/retro/tss_engine.cpp and LICENSE.tss from github.com/creep-ltx/bbmp, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged
+(BSD-3-Clause, SPDX line in the file; a port of Takashi Toyoshima's T'SoundSystem, copyright (c) 2014, licence text in LICENSE.tss). T'SoundSystem
+music is MML text (.tss) that the engine compiles, or compiled sequence data (.tsd).
+engine.h is Selecta's own BSD-3-Clause stand-in for bbmp's GPL engine.h (the few names the engine uses). btss_glue.cpp is Selecta's glue: the
+registry hook, to_utf8 (valid UTF-8 kept, else Latin-1; no Shift-JIS table, so a Shift-JIS title shows as Latin-1) and a C entry point that
+renders the song. No GPL file is vendored: the module is core (not behind SELECTA_GPL_PLUGINS). Host only (C++17 engine; Amiga follow-up I710afa).

@@ -243,6 +243,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_smufi)
 endif()
 
+# bbmp_tss (I710af): T'SoundSystem songs (.tss, .tsd), bbmp csrc/retro/tss_engine (BSD 3-clause, a port of toyoshim's TSS). Permissive, so a core
+# module (no GPL gate). Host only (C++17 engine, no Amiga module path; exemption in row I710af, follow-up I710afa).
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_tss)
+endif()
+
 # bbmp_skale (I710ab): Skale Tracker songs (.skm), bbmp csrc/synth/skale_engine + skale_fx (GPL 3 or later) over the vendored libopenmpt with Luke
 # Preiner's SKM loader patched in (third_party/patches/libopenmpt), behind the GPL-plugin gate. Host only (C++17 engine and libopenmpt, no Amiga
 # module path; follow-up I710aba). Needs selecta_openmpt.

@@ -1,0 +1,5 @@
+T'SoundSystem songs for tests/m3/tss_decode.sh (bbmp_tss module, I710af). Never committed: fetched by sha256 into the git-ignored
+tests/m3/fixtures/.cache. Modland archive, no redistribution licence stated for the songs.
+https://modland.com/pub/modules/TSS/_unknown/gradius%20st1.tss  5f6fb1aad10030b2e2e6346e7df5035deb1d0b662ebd0b40e152553796e6b3f6
+https://modland.com/pub/modules/TSS/_unknown/galg%20title.tsd  138e7b6395918cd12efc9d0622bdddc8bacf6e6888b3b04dca940760c0b3d455
+Engine licence: BSD-3-Clause (bbmp csrc/retro tss_engine, a port of toyoshim's T'SoundSystem; third_party/bbmp_tss).
