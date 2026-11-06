@@ -45,6 +45,7 @@
 #define SP_STARTPLAYER       0x10
 #define SP_STOPPLAYER        0x14
 #define SP_SETPLAYERPOS      0x18
+#define SP_SETVECTORS        0x24
 #define SP_SLIDESONGVOLUME   0x28
 #define SP_SLIDEBALANCE      0x2C
 #define SP_CHECKMODULE       0x34
@@ -64,6 +65,19 @@
 static const uint32_t k_volume_read_pcs[7] = {
   0x0A40, 0x2AC8, 0x2D24, 0x2D9E, 0x35AE, 0x3624, 0x369A,
 };
+
+/* ---- song end (bbmp csrc/amiga/stonetracker_player.asm, same two signals) ----
+ * 1. VL_SongEnd: spSetVectors gets a vector list whose SongEnd entry is a stub
+ *    in machine RAM that sets a flag (the player calls it when it runs off its
+ *    last position or goes on with another song of the module).
+ * 2. A song that jumps back instead of ending: the first time the player comes
+ *    to a position it has already played, that is the end (bbmp's Visited set). */
+#define ADDR_VECTORS  0x003000u   /* VL_UserData, VL_ID, VL_SongEnd, 3 fade slots */
+#define ADDR_ENDSTUB  0x003020u   /* st.b flag.l ; rts */
+#define ADDR_ENDFLAG  0x003030u
+static uint8_t g_visited[8192];
+static int32_t g_lastPos;
+static int g_ended;
 
 /* ---- run state -------------------------------------------------------- */
 static int g_loaded = 0;
@@ -246,6 +260,13 @@ int st_machine_load(const uint8_t *spm, size_t spmLen, const uint8_t *sps, size_
   call_player(SP_INITPLAYER, 0, 0, 0, 0, 0, 0, 0);
   call_player(SP_SLIDESONGVOLUME, 64, 0, 0, 0, 0, 0, 0);
   call_player(SP_SLIDEBALANCE, 128, 0, 0, 0, 0, 0, 0);
+  ah_wr16(ADDR_ENDSTUB, 0x50F9); ah_wr32(ADDR_ENDSTUB + 2, ADDR_ENDFLAG); ah_wr16(ADDR_ENDSTUB + 6, 0x4E75);
+  ah_wr32(ADDR_VECTORS + 8, ADDR_ENDSTUB);
+  ah_ram[ADDR_ENDFLAG] = 0;
+  memset(g_visited, 0, sizeof g_visited);
+  g_lastPos = -1;
+  g_ended = 0;
+  call_player(SP_SETVECTORS, 0, 0, 0, 0, ADDR_VECTORS, 0, 0);
   call_player(SP_SETPLAYERPOS, (uint32_t)(song > 0 ? song : 1), 0, 0, 0, 0, 0, 0);
   call_player(SP_STARTPLAYER, 0, 0, 0, 0, 0, 0, 0);
   if (ah_crashed()) return -5;
@@ -330,3 +351,18 @@ int st_machine_get_position(void) { return rd16(PLAYER_VARS + VAR_POSITION); }
 int st_machine_get_line(void) { return rd16(PLAYER_VARS + VAR_LINE); }
 int st_machine_get_song(void) { return rd16(PLAYER_VARS + VAR_SONG); }
 int st_machine_crashed(void) { return ah_crashed(); }
+
+int st_machine_song_ended(void) {
+  if (!g_loaded) return 0;
+  if (g_ended) return 1;
+  if (ah_ram[ADDR_ENDFLAG]) { g_ended = 1; return 1; }
+  const int32_t pos = rd16(PLAYER_VARS + VAR_POSITION);
+  if (pos != g_lastPos) {
+    g_lastPos = pos;
+    const uint32_t byte = ((uint32_t)pos >> 3) & 8191u;
+    const uint8_t bit = (uint8_t)(1u << (pos & 7));
+    if (g_visited[byte] & bit) g_ended = 1;
+    g_visited[byte] |= bit;
+  }
+  return g_ended;
+}

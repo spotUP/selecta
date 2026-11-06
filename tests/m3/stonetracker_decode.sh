@@ -25,12 +25,13 @@ cfg=$PWD/stcfg
 SELECTA_STONETRACKER_TRACE=1
 export SELECTA_STONETRACKER_TRACE
 rm -f fd_st.wav
-out=$("$cli" render stsong/t.spm --output fd_st.wav --seconds 30 --rate "$rate" --config-dir "$cfg" 2>st_err.txt) || { cat st_err.txt; fail "render failed"; }
+out=$("$cli" render stsong/t.spm --output fd_st.wav --seconds 300 --rate "$rate" --config-dir "$cfg" 2>st_err.txt) || { cat st_err.txt; fail "render failed"; }
 [ "$(field "$out" replayer)" = "stonetracker" ] || fail "replayer=$(field "$out" replayer), want stonetracker"
 grep -q "stonetracker: 68k host ran" st_err.txt || fail "no 68k host sentinel on stderr"
 got=$(field "$out" rendered_frames)
-# Measured 2026-11-06 (rate 44100): 30 s render = 1323000 frames, energy 1.9e13. The song loops with no end detected, so the band is the --seconds cap.
-[ "$got" -ge "${ST_MIN_FRAMES:-1300000}" ] && [ "$got" -le 1330000 ] || fail "rendered_frames=$got outside 1300000..1330000"
+# Measured 2026-11-06 (rate 44100, I710aec): the song ends by itself (VL_SongEnd / revisited position, as bbmp) at 3044864 frames = 69.05 s, well under the
+# --seconds cap of 300 s, so a render that never detects the end hits the cap (13230000) and fails the upper bound.
+[ "$got" -ge "${ST_MIN_FRAMES:-3000000}" ] && [ "$got" -le 3100000 ] || fail "rendered_frames=$got outside 3000000..3100000"
 e=$(energy fd_st.wav)
 [ "$e" -gt "${ST_ENERGY_MIN:-1000000000000}" ] || fail "silent output (energy $e)"
 echo "frames=$got energy=$e"

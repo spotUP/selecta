@@ -41,6 +41,9 @@ int st_machine_get_position(void);
 int st_machine_get_line(void);
 int st_machine_get_song(void);
 
+/* 1 once the song has ended: the player's VL_SongEnd fired, or it came back to a position it already played. Poll often (about 50 Hz). */
+int st_machine_song_ended(void);
+
 /* Diagnostics: 1 if the CPU hit an unexpected exception. */
 int st_machine_crashed(void);
 #endif

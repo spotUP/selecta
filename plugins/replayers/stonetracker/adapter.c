@@ -170,8 +170,8 @@ static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
         done += n;
         s->rendered += n;
         pos = st_machine_get_position();
-        if (pos < s->max_pos - 1 || st_machine_crashed() || s->rendered >= (uint64_t)s->rate * ST_MAX_SECONDS) {
-            s->done = 1; /* the song looped back to an earlier position, or ran away */
+        if (st_machine_song_ended() || st_machine_crashed() || s->rendered >= (uint64_t)s->rate * ST_MAX_SECONDS) {
+            s->done = 1; /* the song ended (st_machine_song_ended), the CPU crashed, or it ran away past the cap */
             break;
         }
         if (pos > s->max_pos) {
