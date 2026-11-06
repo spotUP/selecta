@@ -93,5 +93,6 @@ int sel_library_gen(sel_library* lib, uint32_t songs) {
              " INSERT OR IGNORE INTO liked(key, at) SELECT 'modland:' || (1 + (i * 104729) %% %u), 1700000000 + i FROM n;",
              (unsigned)(songs / 300), (unsigned)n_mod);
     if (!gen_exec(db, sql)) return 0;
+    if (sel_dup_rebuild(db) != SQLITE_OK) return 0; /* I1094b: bulk write, groups resolved once */
     return gen_exec(db, "DROP TABLE gen_w;ANALYZE;");
 }

@@ -771,5 +771,11 @@ void sel_library_import(sel_library* lib, sel_lib_job* job) {
         }
     }
     sqlite3_finalize(st);
+    if (sel_dup_rebuild(lib->db) != SQLITE_OK) { /* I1094b: bulk write, one rebuild inside the transaction */
+        sqlite3_exec(lib->db, "ROLLBACK", NULL, NULL, NULL);
+        set_error(job, "bad_value");
+        job->count = 0;
+        return;
+    }
     sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
 }

@@ -219,9 +219,11 @@ static int song_remove(sqlite3* db, const sel_user_op* op, int64_t* rows) {
         "DELETE FROM files WHERE (source, path) IN (SELECT source, path FROM songs WHERE key = ?1)",
         "DELETE FROM songs WHERE key = ?1"};
     char key[SEL_SONG_KEY_MAX];
+    char old_md5[33];
     size_t i;
     if (op->value == NULL || !sel_song_key_of(op->value, key, sizeof key)) return SQLITE_MISUSE;
     if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) return SQLITE_ERROR;
+    sel_dup_md5_of(db, key, old_md5);
     for (i = 0; i < sizeof sql / sizeof sql[0]; i++) {
         sqlite3_stmt* st = NULL;
         int ok = sqlite3_prepare_v2(db, sql[i], -1, &st, NULL) == SQLITE_OK;
@@ -236,6 +238,10 @@ static int song_remove(sqlite3* db, const sel_user_op* op, int64_t* rows) {
         }
     }
     *rows = sqlite3_changes(db);
+    if (sel_dup_after(db, old_md5, key) != SQLITE_OK) { /* I1094b: the old group loses a member */
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        return SQLITE_ERROR;
+    }
     return sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) == SQLITE_OK ? SQLITE_OK : SQLITE_ERROR;
 }
 

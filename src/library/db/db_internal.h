@@ -184,16 +184,15 @@ unsigned long sel_db_majority_scans(void);
     " ORDER BY " SEL_DUP_RANK_SQL("songs") " LIMIT 1"
 
 /* I1094a: maintained duplicate groups (schema v18). songs.dup_of is NULL on a unique song and on the best copy of a group, else the best
- * copy's key; songs.dup_members is the group size (1 when unique). SEL_DUP_REBUILD_SQL recomputes every group in one set-based UPDATE;
+ * copy's key; songs.dup_members is the group size (1 when unique). sel_dup_rebuild recomputes every group in bounded slices (rowid slices,
+ * then md5 slices of songs_md5: one UPDATE over every group ran the a060 heap dry, I1094b); the v18 migration runs it too.
  * sel_dup_regroup recomputes one md5 (index seek on songs_md5). Both run inside the writer's open transaction. Counters are test sentinels. */
-#define SEL_DUP_REBUILD_SQL \
-    "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE dup_of IS NOT NULL OR dup_members <> 1;" \
-    "WITH g AS (SELECT s.id AS id, s.key AS key, COUNT(*) OVER (PARTITION BY s.md5) AS n," \
-    " FIRST_VALUE(s.key) OVER (PARTITION BY s.md5 ORDER BY " SEL_DUP_RANK_SQL("s") ") AS best FROM songs s WHERE s.md5 <> '')" \
-    " UPDATE songs SET dup_of = CASE WHEN g.key <> g.best THEN g.best END, dup_members = g.n FROM g" \
-    " WHERE songs.id = g.id AND g.n > 1;"
 int sel_dup_regroup(sqlite3* db, const char* md5);
 int sel_dup_rebuild(sqlite3* db);
+/* I1094b: the single-row writers' two halves. sel_dup_md5_of reads the md5 of song `key` ("" when no row or none) BEFORE the write;
+ * sel_dup_after regroups that old md5 and the md5 `key` has AFTER the write (a delete leaves no row: only the old group moves). */
+void sel_dup_md5_of(sqlite3* db, const char* key, char out[33]);
+int sel_dup_after(sqlite3* db, const char* old_md5, const char* key);
 unsigned long sel_db_dup_regroups(void);
 unsigned long sel_db_dup_rebuilds(void);
 

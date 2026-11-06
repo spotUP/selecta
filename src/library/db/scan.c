@@ -60,10 +60,12 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         const sel_scan_row* r = &b->rows[i];
         char old_album[512];
         char old_artist[512];
+        char old_md5[33];
         int had_album = 0;
         int old_rc;
 
         snprintf(key, sizeof key, "%s:%s", r->source, r->path);
+        sel_dup_md5_of(lib->db, key, old_md5);
         sqlite3_reset(sf);
         sqlite3_bind_text(sf, 1, r->source, -1, SQLITE_STATIC);
         sqlite3_bind_text(sf, 2, r->path, -1, SQLITE_STATIC);
@@ -139,6 +141,12 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         if (rc != SQLITE_OK) {
             break;
         }
+        /* I1094b: a batch of 32..256 rows regroups the md5 groups it touched (index seeks); one sel_dup_rebuild per batch would scan the
+         * whole catalogue every 32 rows. */
+        rc = sel_dup_after(lib->db, old_md5, key);
+        if (rc != SQLITE_OK) {
+            break;
+        }
         written++;
     }
     sqlite3_finalize(sf);
@@ -187,6 +195,7 @@ void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message
     int removed = 0;
     uint32_t i;
     char key[1200];
+    char old_md5[33];
 
     rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
     if (rc == SQLITE_OK) {
@@ -197,6 +206,7 @@ void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message
     }
     for (i = 0; rc == SQLITE_OK && i < b->count; i++) {
         snprintf(key, sizeof key, "%s:%s", b->source, b->paths[i]);
+        sel_dup_md5_of(lib->db, key, old_md5);
         sqlite3_reset(sf);
         sqlite3_bind_text(sf, 1, b->source, -1, SQLITE_STATIC);
         sqlite3_bind_text(sf, 2, b->paths[i], -1, SQLITE_STATIC);
@@ -210,8 +220,8 @@ void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message
         if (rc != SQLITE_DONE) {
             break;
         }
-        rc = SQLITE_OK;
         removed += sqlite3_changes(lib->db);
+        rc = sel_dup_after(lib->db, old_md5, key); /* I1094b: the song is gone, its old group moves */
     }
     sqlite3_finalize(sf);
     sqlite3_finalize(ss);
@@ -267,6 +277,8 @@ void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply) {
     char oldkey[1200];
     char newkey[1200];
     char sql[160];
+    char old_md5[33];
+    char shadow_md5[33];
     int moved = 0;
     int changes = 0;
     int rc;
@@ -274,6 +286,8 @@ void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply) {
 
     snprintf(oldkey, sizeof oldkey, "%s:%s", m->source, m->from);
     snprintf(newkey, sizeof newkey, "%s:%s", m->to->source, m->to->path);
+    sel_dup_md5_of(lib->db, oldkey, old_md5);
+    sel_dup_md5_of(lib->db, newkey, shadow_md5); /* a song already at the new key is replaced */
     rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
     if (rc == SQLITE_OK && strcmp(oldkey, newkey) != 0) {
         rc = exec_bind2(lib->db, "DELETE FROM songs WHERE key=?1 AND EXISTS(SELECT 1 FROM songs WHERE key=?2)", newkey,
@@ -325,6 +339,9 @@ void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply) {
             snprintf(sql, sizeof sql, "UPDATE OR REPLACE %s SET key=?1 WHERE key=?2", KEYED_TABLES[t]);
             rc = exec_bind2(lib->db, sql, newkey, oldkey, NULL, NULL, NULL, &changes);
         }
+        /* I1094b: the key of a group member changed (dup_of names keys), and a song at the new key was replaced */
+        if (rc == SQLITE_OK) rc = sel_dup_after(lib->db, old_md5, newkey);
+        if (rc == SQLITE_OK && shadow_md5[0] != '\0' && strcmp(shadow_md5, old_md5) != 0) rc = sel_dup_regroup(lib->db, shadow_md5);
     }
     if (rc == SQLITE_OK) {
         rc = sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
@@ -352,6 +369,7 @@ void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_mes
     int done = 0;
     uint32_t i, j;
     char key[1200];
+    char old_md5[33];
 
     rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
     if (rc == SQLITE_OK) {
@@ -372,6 +390,7 @@ void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_mes
         int has_md5 = a->md5 != NULL && a->md5[0] != '\0';
 
         snprintf(key, sizeof key, "%s:%s", b->source, a->path);
+        sel_dup_md5_of(lib->db, key, old_md5);
         sqlite3_reset(su);
         sqlite3_bind_text(su, 1, key, -1, SQLITE_STATIC);
         bind_positive(su, 2, a->duration_ms);
@@ -390,6 +409,10 @@ void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_mes
         bind_text(sf, 3, has_md5 ? a->md5 : NULL);
         if (sqlite3_step(sf) != SQLITE_DONE) {
             rc = SQLITE_ERROR;
+            break;
+        }
+        rc = sel_dup_after(lib->db, old_md5, key); /* I1094b */
+        if (rc != SQLITE_OK) {
             break;
         }
         for (j = 0; j < a->sticker_n; j++) {

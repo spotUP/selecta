@@ -63,10 +63,13 @@ static int exec2(sqlite3* db, const char* sql, const char* a, const char* b) {
 static int store_hash(sqlite3* db, const char* key, const char* path) {
     char hex[33];
     int rc;
+    char old[33];
 
     if (!md5_of_file(path, hex)) return SQLITE_OK;
+    sel_dup_md5_of(db, key, old);
     rc = exec2(db, "UPDATE songs SET md5 = ?2 WHERE key = ?1", key, hex);
     if (rc == SQLITE_OK) rc = exec2(db, "UPDATE files SET md5 = ?2 WHERE source = 'local' AND path = ?1", path, hex);
+    if (rc == SQLITE_OK) rc = sel_dup_after(db, old, key);
     return rc;
 }
 
@@ -139,7 +142,11 @@ static int op_store(sqlite3* db, const sel_genre_op* op, int64_t* id) {
                    " AND path = (SELECT path FROM songs WHERE key = ?1 AND source = 'local')",
                    op->key, op->value);
 
+    char old[33];
+
+    sel_dup_md5_of(db, op->key, old);
     if (rc == SQLITE_OK) rc = exec2(db, "UPDATE songs SET md5 = ?2 WHERE key = ?1", op->key, op->value);
+    if (rc == SQLITE_OK) rc = sel_dup_after(db, old, op->key);
     if (rc == SQLITE_OK) *id = 1;
     return rc;
 }
@@ -192,43 +199,126 @@ static unsigned long g_dup_rebuilds;
 unsigned long sel_db_dup_regroups(void) { return g_dup_regroups; }
 unsigned long sel_db_dup_rebuilds(void) { return g_dup_rebuilds; }
 
+/* I1094a/b: the one statement that sets group columns, for the rows the appended condition selects (one md5, or a md5 slice of the
+ * rebuild). Every seek names md5 <> '' so the partial index songs_md5 serves it; without that a bound md5 = ?1 cannot prove the partial
+ * index applies and each regroup scanned the whole table (catalogue-sync import 1.5 s -> 4.6..10 s on 25000 songs, I1094b). */
+#define DUP_SET_SQL \
+    "UPDATE songs SET dup_members = (SELECT COUNT(*) FROM songs o WHERE o.md5 = songs.md5 AND o.md5 <> '')," \
+    " dup_of = NULLIF((SELECT o.key FROM songs o WHERE o.md5 = songs.md5 AND o.md5 <> '' ORDER BY " SEL_DUP_RANK_SQL("o") " LIMIT 1), songs.key)" \
+    " WHERE md5 <> '' AND EXISTS (SELECT 1 FROM songs o WHERE o.md5 = songs.md5 AND o.md5 <> '' AND o.id <> songs.id) AND "
+
 /* I1094a: recompute the maintained group (songs.dup_of / dup_members) of one md5. Empty or NULL md5: nothing to group. */
 int sel_dup_regroup(sqlite3* db, const char* md5) {
-    sqlite3_stmt* st = NULL;
-    int rc;
+    static const char* const sql[2] = {
+        "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE md5 = ?1 AND md5 <> '' AND (dup_of IS NOT NULL OR dup_members <> 1)",
+        DUP_SET_SQL "md5 = ?1"};
+    int rc = SQLITE_OK, i;
 
     g_dup_regroups++;
     if (md5 == NULL || md5[0] == '\0') return SQLITE_OK;
-    rc = sqlite3_prepare_v2(db, "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE md5 = ?1 AND (dup_of IS NOT NULL OR dup_members <> 1)",
-                            -1, &st, NULL);
-    if (rc == SQLITE_OK) {
-        sqlite3_bind_text(st, 1, md5, -1, SQLITE_STATIC);
-        rc = sqlite3_step(st);
-        rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+    for (i = 0; i < 2 && rc == SQLITE_OK; i++) {
+        sqlite3_stmt* st = NULL;
+
+        rc = sqlite3_prepare_v2(db, sql[i], -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, md5, -1, SQLITE_STATIC);
+            rc = sqlite3_step(st);
+            rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+        }
+        sqlite3_finalize(st);
     }
-    sqlite3_finalize(st);
-    if (rc != SQLITE_OK) return rc;
-    st = NULL;
-    rc = sqlite3_prepare_v2(
-        db,
-        "WITH g AS (SELECT s.id AS id, s.key AS key, COUNT(*) OVER () AS n,"
-        " FIRST_VALUE(s.key) OVER (ORDER BY " SEL_DUP_RANK_SQL("s") ") AS best FROM songs s WHERE s.md5 = ?1 AND s.md5 <> '')"
-        " UPDATE songs SET dup_of = CASE WHEN g.key <> g.best THEN g.best END, dup_members = g.n FROM g"
-        " WHERE songs.id = g.id AND g.n > 1",
-        -1, &st, NULL);
-    if (rc == SQLITE_OK) {
-        sqlite3_bind_text(st, 1, md5, -1, SQLITE_STATIC);
-        rc = sqlite3_step(st);
-        rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
-    }
-    sqlite3_finalize(st);
     return rc;
 }
 
-/* I1094a: recompute every group in one statement; the bulk writers call it once at the end of a bulk write. */
+/* I1094b: md5 of song `key`, "" when the row or the value is missing. */
+void sel_dup_md5_of(sqlite3* db, const char* key, char out[33]) {
+    sqlite3_stmt* st = NULL;
+
+    out[0] = '\0';
+    if (sqlite3_prepare_v2(db, "SELECT md5 FROM songs WHERE key = ?1", -1, &st, NULL) != SQLITE_OK) return;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) == SQLITE_TEXT) {
+        snprintf(out, 33, "%s", (const char*)sqlite3_column_text(st, 0));
+    }
+    sqlite3_finalize(st);
+}
+
+/* I1094b: after a single-row md5 write (store, annotate, upsert, move, delete) regroup the old md5 and the new one. */
+int sel_dup_after(sqlite3* db, const char* old_md5, const char* key) {
+    char now[33];
+    int rc = SQLITE_OK;
+
+    sel_dup_md5_of(db, key, now);
+    if (old_md5[0] != '\0' && strcmp(old_md5, now) != 0) rc = sel_dup_regroup(db, old_md5);
+    if (rc == SQLITE_OK && now[0] != '\0') rc = sel_dup_regroup(db, now);
+    return rc;
+}
+
+/* I1094b: rows one rebuild statement may touch. One UPDATE over every grouped row held heap in proportion to the rows it changed
+ * (2.2 -> 4.3 MB of the a060 tier's 5 MB heap part at 20000 songs / 1919 grouped rows inside the caller's transaction; SQLITE_NOMEM
+ * from ~7500 songs on :memory:), so the rebuild walks the table in bounded slices: the heap a statement needs no longer grows with
+ * the library, only the slice. */
+#define DUP_SLICE_ROWS 512
+
+static int dup_step(sqlite3_stmt* st) {
+    int rc = sqlite3_step(st);
+
+    sqlite3_reset(st);
+    return rc == SQLITE_DONE || rc == SQLITE_ROW ? SQLITE_OK : rc;
+}
+
+/* I1094a/b: recompute every group; the bulk writers (and the v18 migration) call it once at the end of a bulk write, inside their
+ * transaction. Pass 1 clears stale group columns of rows that are no longer in a group, by rowid slices. Pass 2 sets the groups, by
+ * md5 slices of the songs_md5 index: each slice ends on a md5 at least DUP_SLICE_ROWS rows on, so a group never straddles two slices. */
 int sel_dup_rebuild(sqlite3* db) {
+    sqlite3_stmt *clear = NULL, *edge = NULL, *set = NULL;
+    sqlite3_int64 maxid = 0, a;
+    char lo[80] = "", hi[80];
+    int rc;
+
     g_dup_rebuilds++;
-    return sqlite3_exec(db, SEL_DUP_REBUILD_SQL, NULL, NULL, NULL);
+    rc = sqlite3_prepare_v2(db, "SELECT MAX(id) FROM songs", -1, &edge, NULL);
+    if (rc == SQLITE_OK && sqlite3_step(edge) == SQLITE_ROW) maxid = sqlite3_column_int64(edge, 0);
+    sqlite3_finalize(edge);
+    edge = NULL;
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(db,
+                                "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE id > ?1 AND id <= ?2 AND (dup_of IS NOT NULL OR dup_members <> 1)"
+                                " AND NOT (COALESCE(md5, '') <> '' AND EXISTS (SELECT 1 FROM songs o WHERE o.md5 = songs.md5 AND o.md5 <> '' AND o.id <> songs.id))",
+                                -1, &clear, NULL);
+    }
+    for (a = 0; rc == SQLITE_OK && a < maxid; a += DUP_SLICE_ROWS) {
+        sqlite3_bind_int64(clear, 1, a);
+        sqlite3_bind_int64(clear, 2, a + DUP_SLICE_ROWS);
+        rc = dup_step(clear);
+    }
+    sqlite3_finalize(clear);
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(db,
+                                "SELECT COALESCE((SELECT md5 FROM songs WHERE md5 > ?1 AND md5 <> '' ORDER BY md5 LIMIT 1 OFFSET ?2),"
+                                " (SELECT MAX(md5) FROM songs WHERE md5 > ?1 AND md5 <> ''))",
+                                -1, &edge, NULL);
+    }
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(db, DUP_SET_SQL "md5 > ?1 AND md5 <= ?2", -1, &set, NULL);
+    }
+    while (rc == SQLITE_OK) {
+        sqlite3_bind_text(edge, 1, lo, -1, SQLITE_STATIC);
+        sqlite3_bind_int(edge, 2, DUP_SLICE_ROWS);
+        if (sqlite3_step(edge) != SQLITE_ROW || sqlite3_column_type(edge, 0) != SQLITE_TEXT) {
+            rc = sqlite3_reset(edge);
+            break; /* no md5 above lo: done */
+        }
+        snprintf(hi, sizeof hi, "%s", (const char*)sqlite3_column_text(edge, 0));
+        sqlite3_reset(edge);
+        sqlite3_bind_text(set, 1, lo, -1, SQLITE_STATIC);
+        sqlite3_bind_text(set, 2, hi, -1, SQLITE_STATIC);
+        rc = dup_step(set);
+        memcpy(lo, hi, sizeof lo);
+    }
+    sqlite3_finalize(edge);
+    sqlite3_finalize(set);
+    return rc;
 }
 
 /* Every duplicate group (same md5, two or more songs), streamed through op->row in one query: md5, member count, best key (I528). */

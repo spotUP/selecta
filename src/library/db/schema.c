@@ -280,13 +280,13 @@ static const char SCHEMA_V17[] =
     "END;";
 
 /* I1094a: maintained duplicate groups. dup_of: NULL on a unique song and on the best copy, else the best copy's key; dup_members: group size.
- * dup_pick holds the user's "Use This Copy" per md5. The migration ends with one set-based rebuild so an existing library comes up resolved. */
+ * dup_pick holds the user's "Use This Copy" per md5. migrate_steps ends v18 with sel_dup_rebuild (bounded slices, I1094b) so an existing
+ * library comes up resolved on every heap tier. */
 static const char SCHEMA_V18[] =
     "ALTER TABLE songs ADD COLUMN dup_of TEXT;"
     "ALTER TABLE songs ADD COLUMN dup_members INTEGER NOT NULL DEFAULT 1;"
     "CREATE INDEX IF NOT EXISTS songs_dup_of ON songs(dup_of) WHERE dup_of IS NOT NULL;"
-    "CREATE TABLE IF NOT EXISTS dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;"
-    SEL_DUP_REBUILD_SQL;
+    "CREATE TABLE IF NOT EXISTS dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;";
 
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
@@ -331,7 +331,8 @@ static int migrate_steps(sqlite3* db, const sel_host* host) {
             migrate_failed(db, host, i + 1, "BEGIN");
             return 0;
         }
-        if (sqlite3_exec(db, g_migrations[i], NULL, NULL, NULL) != SQLITE_OK) {
+        if (sqlite3_exec(db, g_migrations[i], NULL, NULL, NULL) != SQLITE_OK ||
+            (i + 1 == 18 && sel_dup_rebuild(db) != SQLITE_OK)) {
             migrate_failed(db, host, i + 1, "statements");
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
