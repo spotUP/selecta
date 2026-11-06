@@ -90,6 +90,7 @@ int main(void) {
     cfg.registry_get = sel_registry_get;
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
+    CHECK(sel_engine_send_line(e, "PREF_SET library.sources_off \"hippo\"", pool, sizeof pool) == 0); /* I1130c: no hippo list sync (network) */
     CHECK(sqlite3_exec(lib->db,
                        "INSERT INTO songs(key, source, path, name, artist, album, added) VALUES"
                        "('local:a.mod','local','a.mod','Chip one','Ann','Alb1',100),('local:c.sid','local','c.sid','Chime','Bob',NULL,300);",
@@ -194,10 +195,12 @@ int main(void) {
 
         sel_sync_progress sp;
 
-        /* I1130a: VIEW_SOURCE folders above started the due playlists-only sync (I1058 lists_sync_due: the hippo lists). Its job makes
-         * worker requests and writes the whole time it runs, so the served counter below would count the sync, not SOURCES. End it and
-         * let its landing and the reads that follow it finish: the library is idle, as this check means. */
-        sel_engine_sync_cancel(e);
+        /* I1130c: the hippo playlists-only source is switched off (library.sources_off, as the user does), so VIEW_SOURCE folders above
+         * started no sync and this test touches no network. Sentinel: no job active or queued; without the pref the I1058 lists_sync_due
+         * sync starts and this check fails. Sampled before any wait, so a started sync is caught, not waited out. Then let the reads
+         * that follow the open finish: the library is idle, as this check means. */
+        sel_engine_sync_progress(e, &sp);
+        CHECK(!sp.active && !sp.queued);
         clock_gettime(CLOCK_MONOTONIC, &t0);
         do {
             sel_engine_pump_reads(e, sink, NULL, 100u);
