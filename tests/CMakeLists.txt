@@ -712,6 +712,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(selecta-startup-error-report PROPERTIES
     PASS_REGULAR_EXPRESSION "selecta: ui 'no-such-ui' is not registered.*startup_error_reports=1")
 
+  # I625a: the start-up phase trace. --log writes one "trace t_ms=" line per phase (ms since main entry) plus the system
+  # time at main entry; without --log none appear. Fail-before: the lines did not exist.
+  add_test(NAME selecta-start-phase-trace
+    COMMAND ${CMAKE_COMMAND} -DSELECTA=$<TARGET_FILE:selecta> -DWORK=${CMAKE_CURRENT_BINARY_DIR}/start_phase_trace
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/m1/start_phase_trace.cmake)
+
   # I916: a UI that refuses its flags hands the shell the reason (sel_ui_open_args.why); the start-up report names it
   # instead of "the UI could not open (no terminal?)". rc 1 is the WILL_FAIL half.
   if(SELECTA_UI_DESKTOP)

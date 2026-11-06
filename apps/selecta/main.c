@@ -32,6 +32,7 @@
 #ifdef __amigaos__
 #include "arexx.h"
 #endif
+#include <time.h>
 #include "catalogue.h"
 #include "startup_error.h"
 #include "console_fallback.h"
@@ -72,11 +73,35 @@ typedef struct shell_ui {
 static shell_ui g_uis[SHELL_MAX_UIS];
 static unsigned g_ui_count;
 static int g_trace; /* --stats: one stderr line per launch phase (I524b) */
+static int g_phase_trace; /* --log or --stats: the phase lines only (I625a); the rest of --stats stays on --stats */
+static uint32_t g_trace_t0; /* host clock at main entry; trace lines print ms since this */
 static void sel_trace(const sel_host* h, const char* phase) {
-    if (g_trace) {
-        fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)h->clock_ms(h), phase);
+    if (g_trace || g_phase_trace) {
+        fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)(h->clock_ms(h) - g_trace_t0), phase);
     }
 }
+/* I625a: wall clock at main entry, so load-to-main is the difference between this and a system time printed just before
+ * the launch in the same shell line (the executable load and relocation happen before main and no host clock sees them). */
+#if defined(__amigaos__) || defined(AMIGA)
+#include <proto/dos.h>
+#include <dos/dos.h>
+static void sel_trace_system_time(void) {
+    struct DateStamp ds;
+    unsigned long secs;
+    DateStamp(&ds);
+    secs = (unsigned long)ds.ds_Minute * 60UL + (unsigned long)ds.ds_Tick / 50UL;
+    fprintf(stderr, "trace system_time=%02lu:%02lu:%02lu.%02lu (hh:mm:ss.hundredths)\n", secs / 3600UL, (secs / 60UL) % 60UL,
+            secs % 60UL, ((unsigned long)ds.ds_Tick % 50UL) * 2UL);
+}
+#else
+static void sel_trace_system_time(void) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    if (t != NULL) {
+        fprintf(stderr, "trace system_time=%02d:%02d:%02d.00 (hh:mm:ss.hundredths)\n", t->tm_hour, t->tm_min, t->tm_sec);
+    }
+}
+#endif
 #if defined(__amigaos__) || defined(AMIGA)
 #include <proto/dos.h>
 #include <dos/dosextens.h>
@@ -614,11 +639,20 @@ int main(int argc, char** argv)
         for (ta = 1; ta < argc; ta++) {
             g_trace = g_trace || strcmp(argv[ta], "--stats") == 0;
         }
+        g_phase_trace = g_trace || option(argc, argv, "--log", "")[0] != '\0';
+        g_trace_t0 = host->clock_ms(host);
+    }
+    if (g_phase_trace) {
+        sel_trace_system_time();
     }
     sel_trace(host, "main begin");
     sel_trace_load_address();
-    sel_registry_init_machine(host, machine_tags);
-    sel_trace(host, "registry init done");
+    {
+        uint32_t registered = sel_registry_init_machine(host, machine_tags);
+        char note[80];
+        snprintf(note, sizeof note, "registry init and plugin registration done plugins=%u", (unsigned)registered);
+        sel_trace(host, note);
+    }
     if (ui_id == NULL) {
         /* I1023: a launch with no --ui (a double-click on Selecta.app) takes the machine default UI, and its default backend. */
         int user_launch = default_ui_allowed(argc, argv);
@@ -709,10 +743,10 @@ int main(int argc, char** argv)
     if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
         cfg.config_dir = cfgdir;
     }
-    sel_trace(host, "library open done");
+    sel_trace(host, "library open done (sel_library_open plus first queries)");
     if (library != NULL) sel_library_watch(1); /* I906a: this thread runs every UI and the engine pump; a library wait here is a debug-guard hit */
     e = sel_engine_create(host, &cfg);
-    sel_trace(host, "engine created");
+    sel_trace(host, "engine created (prefs load, catalogue open, source setup)");
     if (e == NULL) {
         STARTUP_FAIL("engine allocation failed");
         return 1;
@@ -886,7 +920,9 @@ int main(int argc, char** argv)
             sel_engine_report_error(e, "tls_unavailable", tls_note);
         }
     }
+    sel_trace(host, "all UIs open, first pump begin");
     pump_turn(e, clockless, sink, ctx);
+    sel_trace(host, "first pump done (start-up source sync turn)");
     for (a = 1; a < argc; a++) { /* `selecta <share link>` opens the song, playlist or view the link names (I180) */
         if (sel_share_is_link(argv[a])) {
             char pool[1536];
@@ -919,7 +955,9 @@ int main(int argc, char** argv)
                 }
             } else if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
                 (void)sel_engine_pump_reads(e, sink, ctx, 60000u); /* I829: a --exec line is a script step: its posted read lands first */
+                sel_trace(host, "sel_engine_scan_wait begin");
                 sel_engine_scan_wait(e, sink, ctx); /* a --exec LIBRARY_SCAN finishes before the next option (I336) */
+                sel_trace(host, "sel_engine_scan_wait done");
             }
         }
     }
@@ -938,6 +976,9 @@ int main(int argc, char** argv)
                 wait_ms_max = wait_ms;
             }
             wr = g_uis[u].wait(g_uis[u].state, wait_ms);
+            if (waits == 0 && u == 0) {
+                sel_trace(host, "first frame shown (first UI wait returned)");
+            }
             if (wr > r) {
                 r = wr;
             }
