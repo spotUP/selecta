@@ -98,6 +98,9 @@ typedef struct sel_sysfile_decl {
  * tag returns 0. An entry missing NAME, LABEL or SHA256, with a NAME outside [A-Za-z0-9._-] (or starting with '.'), or
  * with a digest that is not 64 lowercase hex, is dropped with a WARN log naming the plugin. */
 unsigned sel_registry_sysfiles(const sel_tag* hooks, sel_sysfile_decl* out, unsigned max);
+/* Same parse with the owner name given and no registry (core, used by the engine); warn may be NULL. */
+unsigned sel_sysfile_decls(const sel_tag* hooks, const char* owner, sel_sysfile_decl* out, unsigned max,
+                           void (*warn)(void* ctx, const char* plugin, const char* why), void* ctx);
 
 SEL_EXTERN_C_END
 

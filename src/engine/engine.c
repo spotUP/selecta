@@ -56,6 +56,8 @@
 #define SEL_LI_THREAD 1
 #endif
 #include "db.h"
+#include "sysfile.h"
+#include "sysfile_fetch.h"
 #include "composer.h"
 #include "meta_utf8.h"
 #include "xxh32.h"
@@ -152,6 +154,8 @@
     X(LIBRARY_SCAN)                                                                           \
     X(LIBRARY_SYNC)                                                                           \
     X(SOURCE_PIN)                                                                             \
+    X(SYSFILE_INSTALL)                                                                        \
+    X(SYSFILE_RETRY)                                                                          \
     X(SOURCE_SEARCH)                                                                          \
     X(SOURCES)                                                                                \
     X(LIKE)                                                                                   \
@@ -386,6 +390,17 @@ typedef struct sel_txt {
     char want[SEL_TXT_BLK], job[SEL_TXT_BLK];
     uint32_t head, epoch, job_epoch, want_n, job_n, want_len;
 } sel_txt;
+
+/* I710ga4: a required system file this session has met (plan 2026-11-06-I710ga-system-files.md section 5). */
+#define SEL_SF_MAX 16
+#define SEL_SF_NAME_MAX 64
+#define SEL_SF_DONE 3u /* beside SEL_SYSF_ST_NONE / FETCHING / FAILED: the file is stored and path is valid */
+typedef struct sel_sf_entry {
+    sel_sysfile_decl decl; /* strings live in the plugin descriptor */
+    char name[SEL_SF_NAME_MAX];
+    char path[320];
+    uint32_t state;
+} sel_sf_entry;
 
 struct sel_engine {
     const sel_host* host;
@@ -838,6 +853,14 @@ struct sel_engine {
     uint32_t hw_clock_ms;         /* host clock_ms of the last self-clocked render while handed over */
     uint32_t hw_handovers;        /* stats: output handed over (I219) */
     uint32_t hw_starts;           /* stats: HW RP_START successes (I219) */
+    /* I710ga4: required system files. One entry per declared name seen this session. */
+    sel_sf_entry sf[SEL_SF_MAX];
+    uint32_t sf_n;
+    int sf_wait;                  /* sf[] index the requested song waits for, -1: none */
+    uint32_t sf_wait_sub;
+    char sf_wait_path[SEL_DEFERRED_PATH_MAX]; /* the requested song while sf_wait >= 0 */
+    char sf_err[160];
+    uint32_t sf_missing_reports, sf_fetches, sf_installed, sf_reopens;
     uint32_t route_direct;        /* routing of the song started last: 1 = voice_sink, 0 = mixer (sel_engine_voice_route) */
     /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
      * raises pat_req; the audio thread fills pat_res between render calls and sets pat_ack
@@ -1102,6 +1125,7 @@ static void cmd_PAUSE_PLAYBACK(sel_engine* e, const sel_message* m) {
 
 static void cmd_STOP(sel_engine* e, const sel_message* m) {
     (void)m;
+    e->sf_wait = -1; /* I710ga4: a stopped player does not re-open a song when a system file lands */
     set_play(e, SEL_STOPPED);
 }
 
@@ -2267,6 +2291,17 @@ static int rp_list_find(sel_engine* e, const char* list, const char* key) {
     return 0;
 }
 
+/* I710ga4: the stored path of a declared system file for config key "sysfile.<name>", NULL when none is stored. */
+static const char* sf_config_path(const sel_engine* e, const char* key) {
+    uint32_t i;
+
+    if (strncmp(key, "sysfile.", 8) != 0) return NULL;
+    for (i = 0; i < e->sf_n; i++) {
+        if (e->sf[i].state == SEL_SF_DONE && strcmp(e->sf[i].name, key + 8) == 0) return e->sf[i].path;
+    }
+    return NULL;
+}
+
 /* host->config_get handed to replayers (I134): the per-song override beats the pref "rp.config",
  * which beats whatever the real host answers. Each layer that answered counts in rp_config_applied. */
 static const char* rp_config_get(const sel_host* h, const char* key, const char* def) {
@@ -2281,6 +2316,10 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
         have = 1;
     }
     if (have) return e->rp_value;
+    {
+        const char* sp = sf_config_path(e, key);
+        if (sp != NULL) return sp; /* I710ga4: the checked file the host stored for this replayer */
+    }
     if (strcmp(key, "config.dir") == 0 && e->config_dir[0] != '\0') return e->config_dir; /* ROM files (sid, MPS-1) */
     {   /* a set engine pref the replayer names by its key (playsid.mode, output.id) beats the real host (I434b) */
         int id = sel_prefs_find(key);
@@ -2293,6 +2332,8 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
 static const char* pl_config_get(const sel_host* h, const char* key, const char* def) {
     const sel_engine* e = (const sel_engine*)h->ctx;
     int id = sel_prefs_find(key);
+    const char* sp = sf_config_path(e, key);
+    if (sp != NULL) return sp;
     if (strcmp(key, "config.dir") == 0 && e->config_dir[0] != '\0') return e->config_dir; /* the Settings ROM rows (MPS-1c) */
     if (id >= 0 && e->prefs.value[id][0] != '\0') return e->prefs.value[id];
     return e->host->config_get != NULL ? e->host->config_get(e->host, key, def) : def;
@@ -2615,6 +2656,77 @@ static const sel_tag* unpack_archived_module(sel_engine* e, uint8_t** data, size
     return find_replayer(e, u.module, u.module_size, e->archive_member);
 }
 
+/* I710ga4: the engine entry for system file `name`, created from `decl` on first use; NULL when the table is full. */
+static sel_sf_entry* sf_entry(sel_engine* e, const sel_sysfile_decl* decl) {
+    uint32_t i;
+
+    for (i = 0; i < e->sf_n; i++) {
+        if (strcmp(e->sf[i].name, decl->name) == 0) return &e->sf[i];
+    }
+    if (e->sf_n >= SEL_SF_MAX) return NULL;
+    memset(&e->sf[e->sf_n], 0, sizeof e->sf[0]);
+    e->sf[e->sf_n].decl = *decl;
+    copy_str(e->sf[e->sf_n].name, sizeof e->sf[0].name, decl->name);
+    return &e->sf[e->sf_n++];
+}
+
+static const char* sysfile_owner_name(const sel_engine* e, const sel_tag* hooks) {
+    uint32_t i, n = e->registry_count != NULL && e->registry_get != NULL ? e->registry_count() : 0;
+
+    for (i = 0; i < n; i++) {
+        const sel_tag* desc = e->registry_get(i);
+
+        if ((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) == hooks) {
+            return (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, (uintptr_t) "?");
+        }
+    }
+    return "?";
+}
+
+/* I710ga4: the contract before RP_OPEN. Every system file the replayer declares must be installed and checked;
+ * the first missing one reports system_file_missing, starts one download per name and session, and fails the open. */
+static int sysfiles_ready(sel_engine* e, const sel_tag* hooks, const char* path, uint32_t subsong, int queued) {
+    sel_sysfile_decl d[SEL_SYSFILE_MAX];
+    size_t n, i;
+    char found[320];
+    char detail[160];
+
+    if (e->config_dir[0] == '\0') return 1;
+    n = sel_sysfile_decls(hooks, sysfile_owner_name(e, hooks), d, SEL_SYSFILE_MAX, NULL, NULL);
+    for (i = 0; i < n; i++) {
+        sel_sf_entry* en = sf_entry(e, &d[i]);
+
+        if (sel_sysfile_resolve(e->config_dir, &d[i], found, sizeof found) && en != NULL) {
+            copy_str(en->path, sizeof en->path, found);
+            en->state = SEL_SF_DONE;
+            continue;
+        }
+        if (en == NULL) continue;
+        {
+            const char* pn = (const char*)sel_tag_find(hooks, SEL_RP_NAME, 0);
+            snprintf(detail, sizeof detail, "%s:%s", pn != NULL ? pn : "replayer", d[i].name);
+        }
+        sel_engine_report_error(e, "system_file_missing", detail);
+        e->sf_missing_reports++;
+        if (en->state == SEL_SF_DONE) en->state = SEL_SYSF_ST_FAILED;
+        if (en->state == SEL_SYSF_ST_NONE) {
+            if (e->lib != NULL && sel_library_sysfile_request(e->lib, e->config_dir, &d[i])) {
+                en->state = SEL_SYSF_ST_FETCHING;
+                e->sf_fetches++;
+            } else {
+                en->state = SEL_SYSF_ST_FAILED;
+            }
+        }
+        if (!queued) {
+            e->sf_wait = (int)(en - e->sf);
+            copy_str(e->sf_wait_path, sizeof e->sf_wait_path, path);
+            e->sf_wait_sub = subsong;
+        }
+        return 0;
+    }
+    return 1;
+}
+
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
@@ -2734,6 +2846,10 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         sel_engine_report_error(e, "replayer_incomplete", err_detail);
         return 0;
     }
+    if (!sysfiles_ready(e, hooks, path, subsong, queued)) {
+        drop_song(e, data, live, fs);
+        return 0;
+    }
     src.data = data;
     src.size = size;
     src.path = file_path[0] != '\0' ? file_path : path; /* a remote key opens as its cached file, so sibling banks resolve (I1127b) */
@@ -2850,6 +2966,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
     uint32_t idx;
     sel_message ev;
 
+    if (kind == SEL_BEGIN_OPEN) e->sf_wait = -1; /* I710ga4: prepare_slot sets it again when this open waits for a system file */
     if (path != NULL && strncmp(path, "local:", 6) == 0) path += 6; /* a library key (I211): the file is the part after "local:" */
     const char* detail = kind == SEL_BEGIN_OPEN     ? path
                          : kind == SEL_BEGIN_SUBSONG ? "SUBSONG"
@@ -3018,6 +3135,109 @@ static int search_pin(sel_engine* e, const char* key) {
 static void cmd_SOURCE_PIN(sel_engine* e, const sel_message* m) {
     if (!search_pin(e, m->args[0].v.s)) {
         sel_engine_report_error(e, "not_a_hit", "SOURCE_PIN");
+    }
+}
+
+/* I710ga4: a system file landed (download or SYSFILE_INSTALL): announce it and re-open the song that waited for it. */
+static void sf_landed(sel_engine* e, uint32_t i) {
+    sel_message ev;
+    sel_sf_entry* en = &e->sf[i];
+    char path[SEL_DEFERRED_PATH_MAX];
+    uint32_t sub;
+    int waiting = e->sf_wait == (int)i;
+
+    en->state = SEL_SF_DONE;
+    e->sf_installed++;
+    evt_init(&ev, SEL_EVT_SYSFILE_READY);
+    evt_str(&ev, en->decl.label);
+    emit(e, &ev);
+    if (!waiting) return;
+    copy_str(path, sizeof path, e->sf_wait_path);
+    sub = e->sf_wait_sub;
+    if (begin_song(e, SEL_BEGIN_OPEN, path, sub, 0)) {
+        e->sf_reopens++;
+        set_play(e, SEL_PLAYING);
+    }
+}
+
+static void sf_failed(sel_engine* e, uint32_t i, const char* reason) {
+    sel_message ev;
+
+    e->sf[i].state = SEL_SYSF_ST_FAILED;
+    evt_init(&ev, SEL_EVT_SYSFILE_FAILED);
+    evt_str(&ev, e->sf[i].decl.label);
+    evt_str(&ev, reason);
+    emit(e, &ev);
+}
+
+static void sf_poll(sel_engine* e) {
+    uint32_t i;
+
+    if (e->lib == NULL) return;
+    for (i = 0; i < e->sf_n; i++) {
+        if (e->sf[i].state != SEL_SYSF_ST_FETCHING) continue;
+        switch (sel_library_sysfile_poll(e->lib, e->sf[i].name)) {
+        case SEL_SYSF_RUNNING: break;
+        case SEL_SYSF_OK:
+            {
+                char found[320];
+                if (sel_sysfile_resolve(e->config_dir, &e->sf[i].decl, found, sizeof found)) {
+                    copy_str(e->sf[i].path, sizeof e->sf[i].path, found);
+                    sf_landed(e, i);
+                } else {
+                    sf_failed(e, i, "install_not_found");
+                }
+            }
+            break;
+        case SEL_SYSF_NO_MATCH: sf_failed(e, i, "no_match"); break;
+        default: sf_failed(e, i, "all_urls_failed"); break;
+        }
+    }
+}
+
+static sel_sf_entry* sf_find(sel_engine* e, const char* name, uint32_t* idx) {
+    uint32_t i;
+
+    for (i = 0; i < e->sf_n; i++) {
+        if (strcmp(e->sf[i].name, name) == 0) {
+            *idx = i;
+            return &e->sf[i];
+        }
+    }
+    return NULL;
+}
+
+static void cmd_SYSFILE_INSTALL(sel_engine* e, const sel_message* m) {
+    uint32_t i;
+    sel_sf_entry* en = sf_find(e, m->args[0].v.s, &i);
+
+    if (en == NULL) {
+        sel_engine_report_error(e, "unknown_sysfile", m->args[0].v.s);
+        return;
+    }
+    if (!sel_sysfile_install(e->config_dir, &en->decl, m->args[1].v.s, e->sf_err, sizeof e->sf_err)) {
+        sf_failed(e, i, e->sf_err);
+        return;
+    }
+    if (!sel_sysfile_resolve(e->config_dir, &en->decl, en->path, sizeof en->path)) {
+        sf_failed(e, i, "install_not_found");
+        return;
+    }
+    sf_landed(e, i);
+}
+
+static void cmd_SYSFILE_RETRY(sel_engine* e, const sel_message* m) {
+    uint32_t i;
+    sel_sf_entry* en = sf_find(e, m->args[0].v.s, &i);
+
+    if (en == NULL) {
+        sel_engine_report_error(e, "unknown_sysfile", m->args[0].v.s);
+        return;
+    }
+    if (en->state != SEL_SYSF_ST_FAILED) return;
+    if (e->lib != NULL && sel_library_sysfile_request(e->lib, e->config_dir, &en->decl)) {
+        en->state = SEL_SYSF_ST_FETCHING;
+        e->sf_fetches++;
     }
 }
 
@@ -10437,6 +10657,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     }
     memset(e, 0, sizeof *e);
     e->ui_view_styles = SEL_VIEW_STYLES_CLASSIC;
+    e->sf_wait = -1;
     e->host = host;
     e->rp_host = *host;
     e->rp_host.config_get = rp_config_get;
@@ -10830,6 +11051,8 @@ static void refresh_snapshot(sel_engine* e) {
         e->lyr_source = SEL_LYRIC_NONE;
         e->lyr_plain[0] = '\0';
     }
+    song->sysfile_state = e->sf_wait >= 0 ? e->sf[e->sf_wait].state : SEL_SYSF_ST_NONE;
+    song->sysfile_label = e->sf_wait >= 0 ? e->sf[e->sf_wait].decl.label : NULL;
     if (sl != NULL && sl->rp_state != NULL) {
         song->queue_id = e->q_playing;
         song->subsong = sl->subsong;
@@ -10964,6 +11187,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     search_collect(e);
     lib_reads_collect(e);
     lib_gen_poll(e);
+    sf_poll(e);
     lib_models_follow(e);
     timer_pump(e);
     reclaim_slots(e);
@@ -11182,6 +11406,11 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_opened = e->songs_opened;
     out->hw_handovers = e->hw_handovers;
     out->hw_starts = e->hw_starts;
+    out->sysfile_missing_reports = e->sf_missing_reports;
+    out->sysfile_fetches = e->sf_fetches;
+    out->sysfile_installed = e->sf_installed;
+    out->sysfile_reopens = e->sf_reopens;
+    out->sysfile_state = e->sf_wait >= 0 ? e->sf[e->sf_wait].state : SEL_SYSF_ST_NONE;
     out->dup_redirects = e->dup_redirects;
     out->dup_played = e->dup_played;
     out->archive_unpacks = e->archive_unpacks;

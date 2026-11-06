@@ -26,6 +26,7 @@ add_library(selecta_core ${SEL_CORE_KIND}
   engine/engine.c
   engine/libsort.c
   engine/claims.c
+  engine/sysfile_decl.c
   engine/queue.c
   engine/history.c
   engine/shuffle.c

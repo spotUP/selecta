@@ -1001,6 +1001,8 @@ int main(int argc, char** argv)
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
     printf("hw_handovers=%u hw_starts=%u replayer=%s\n", (unsigned)est.hw_handovers, (unsigned)est.hw_starts,
            est.replayer != NULL ? est.replayer : "none");
+    printf("sysfile missing_reports=%u fetches=%u installed=%u reopens=%u state=%u\n", (unsigned)est.sysfile_missing_reports,
+           (unsigned)est.sysfile_fetches, (unsigned)est.sysfile_installed, (unsigned)est.sysfile_reopens, (unsigned)est.sysfile_state); /* I710ga4 sentinels */
     printf("songs_opened=%u queue_version=%u\n", (unsigned)est.songs_opened,
            (unsigned)sel_engine_state(e)->queue_version);
     if (has_stats) { /* I427b: what the open song's replayer rendered and what reached the output (null output: the peak sample) */

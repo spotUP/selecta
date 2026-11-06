@@ -146,7 +146,12 @@ typedef struct sel_song_state {
     const sel_tag* meta;         /* SEL_META_* list, valid until next pump */
     const char* path;            /* NULL when no song is open; valid until next pump */
     uint32_t bank_missing;       /* I1127c: 1 when a companion bank of the open remote song was on no mirror; the panels show "Sample bank not found" */
+    uint32_t sysfile_state;      /* I710ga4: SEL_SYSF_ST_*; not NONE while the requested song waits for a required system file */
+    const char* sysfile_label;   /* the waiting file's declared LABEL (registry-owned), NULL when sysfile_state is NONE */
 } sel_song_state;
+#define SEL_SYSF_ST_NONE 0u     /* no song waits for a system file */
+#define SEL_SYSF_ST_FETCHING 1u /* the file is being downloaded in the background */
+#define SEL_SYSF_ST_FAILED 2u   /* every URL failed or none matched: the user may SYSFILE_INSTALL or SYSFILE_RETRY */
 
 /* Pattern window of the playing tracker song (plan M1.3 I101). A front end asks
  * with sel_engine_pattern_request; the audio thread, which owns the replayer,
@@ -609,6 +614,11 @@ typedef struct sel_engine_stats {
     uint32_t leveler_writes;      /* provisional gains the leveler wrote back to the library (I190) */
     uint32_t hw_handovers;        /* times the output was handed over to a HW-kind replayer (I219) */
     uint32_t hw_starts;           /* HW-kind RP_START calls that succeeded (sentinel of I219) */
+    uint32_t sysfile_missing_reports; /* I710ga4: system_file_missing errors reported (RP_OPEN not called) */
+    uint32_t sysfile_fetches;     /* background downloads requested (one per name per session) */
+    uint32_t sysfile_installed;   /* files that landed (download or SYSFILE_INSTALL) */
+    uint32_t sysfile_reopens;     /* waiting songs re-opened after their file landed */
+    uint32_t sysfile_state;       /* SEL_SYSF_ST_* of the waiting song */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 /* Key `i` of the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result (byte order of the key), NULL past the end. */

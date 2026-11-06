@@ -2842,6 +2842,18 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "sysfile_fetch_ok")
 endif()
 
+# Row I710ga4: engine system-file contract (missing reason, one request, re-OPEN on land, FAILED, RETRY, INSTALL).
+if(NOT SEL_AMIGA)
+  add_executable(sysfile_engine_test engine/sysfile_engine_test.c)
+  target_include_directories(sysfile_engine_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(sysfile_engine_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME sysfile-engine
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:sysfile_engine_test>" "-DWORK=${SEL_NET_WORK}"
+      "-DFIXDIR=${SEL_NET_DIR}/fixtures" -P "${SEL_NET_DIR}/sysfile_engine.cmake")
+  set_tests_properties(sysfile-engine PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "sysfile_engine_ok")
+endif()
+
 # Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).
 if(NOT SEL_AMIGA)
   add_test(NAME source-aminet-net
