@@ -1,0 +1,5 @@
+libpac 0.9.0 (SBStudio .pac replayer) by Thomas Pfaff, ISC licence (COPYING, header of every source file). Taken from rePlayer
+(github.com/arnaud-neny/rePlayer) commit 78b3089684dc96fb59463a1683a1fb926e427ce6, source/Replays/SBStudio/libpac, the copy bbmp
+(tools/build-synth.sh) builds. Only change: the five bounds fixes bbmp's build script applies to src/load.c for damaged files, marked
+"selecta:" in load.c (sound and sheet table indices, instrument number, length scan capped at one hour). Selecta's own adapter is
+plugins/replayers/bbmp_sbstudio/adapter.c; bbmp's GPL-3.0-or-later wrapper (csrc/synth/sbstudio_engine.c) is not used.

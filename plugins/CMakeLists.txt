@@ -303,6 +303,12 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_ptk)
 endif()
 
+# bbmp_sbstudio (I710v): SBStudio songs (.pac), libpac 0.9.0 (ISC, plain C) plus our own adapter; bbmp's GPL wrapper is not used. No GPL gate.
+# Host only for now; the Amiga build is tried in row I710v.
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_sbstudio)
+endif()
+
 # bbmp_wsr (I710z): WonderSwan (.wsr), bbmp csrc/console/wsr_engine over Mednafen WonderSwan (GPL 2 only files), behind the GPL-plugin
 # gate. Host only (C++17 emulator, forked scan workers, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
