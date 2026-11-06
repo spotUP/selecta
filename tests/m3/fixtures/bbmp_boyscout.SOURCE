@@ -1,0 +1,6 @@
+BoyScout songs for tests/m3/boyscout_decode.sh (bbmp_boyscout module, I710c). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive).
+https://modland.com/pub/modules/BoyScout/Aegis/ladybug.bsf  6853b4e5fa30ab0c56cfd54db2b867ace832c09f8e6b51f091a79196fcc205f0
+https://modland.com/pub/modules/BoyScout/Aegis/numb.bsf  0449a089d26347803386e6605d70fb6caeae26582af62ddfc851e4ffe09bab81
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro boyscout engine, third_party/bbmp_boyscout); BoyScout 1.0's library terms in
+third_party/bbmp_boyscout/BOYSCOUT-LICENCE.txt.

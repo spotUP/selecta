@@ -1,0 +1,5 @@
+bbmp_boyscout: csrc/retro/boyscout_engine.cpp and engine.h from github.com/creep-ltx/bbmp, commit 19d87098b3716156d80224d22dc49ca22884d1b7,
+unchanged (GPL-3.0-or-later, SPDX line in each file). BoyScout (Christer Andersson, .bsf), a clean-room engine written after BoyScout 1.0's
+GBA playback library, which holds "free to use in any project" terms (BOYSCOUT-LICENCE.txt, bbmp licences/boyscout.txt; no BoyScout code is
+vendored). bboyscout_glue.cpp is Selecta's glue: the registry hook and debug_on() the engine needs from bbmp-retro's main program, and a C
+entry point that renders the whole song.

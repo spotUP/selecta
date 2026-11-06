@@ -2179,6 +2179,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710c: BoyScout (.bsf) songs play through the render entry point (bbmp_boyscout module, GPL). Songs fetched by checksum
+  # (tests/m3/fixtures/bbmp_boyscout.SOURCE), exit 77 = skip. A file that is not a song of the format must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/boyscout-decode)
+    add_test(NAME boyscout-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/boyscout_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/boyscout-decode)
+    set_tests_properties(boyscout-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "boyscout_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710u: Psycle songs (.psy) play through the render entry point (bbmp_psycle module, helper child process), GPL; two Alk
   # songs fetched by checksum (tests/m3/fixtures/bbmp_psycle.SOURCE), exit 77 = skip.
   if(SELECTA_GPL_PLUGINS)
