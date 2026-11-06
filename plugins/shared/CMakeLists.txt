@@ -64,3 +64,8 @@ add_library(selecta_shared_cast STATIC cast/cast.c cast/cast_session.c cast/cast
 target_include_directories(selecta_shared_cast PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(selecta_shared_cast PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
 target_link_libraries(selecta_shared_cast PUBLIC selecta_shared_source selecta_shared_mdns)
+
+# I685b: MUI external class library spike, Amiga cross build only.
+if(SEL_AMIGA)
+  add_subdirectory(mcc)
+endif()
