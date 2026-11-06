@@ -90,6 +90,15 @@ SEL_TAG(RP, CFG_APPLIED,       0x1024, PTR)
  * library cache to fetch beside a remote song (sel_rp_content_companions_fn). SEL_RP_COMPANIONS covers names derived
  * from the file name; this covers names inside the file. */
 SEL_TAG(RP, CONTENT_COMPANIONS, 0x1025, PTR)
+/* SYSFILE (I710ga): optional, repeatable. One required system file (ROM, disk image) the replayer cannot play without.
+ * Value: a tag list of SYSFILE_* below. The host checks, stores and fetches it; see replayer.h. */
+SEL_TAG(RP, SYSFILE,          0x1026, LIST)
+SEL_TAG(RP, SYSFILE_NAME,     0x1027, STR)  /* stored base name in the config dir, "cybertracker101.d64"; [A-Za-z0-9._-] only */
+SEL_TAG(RP, SYSFILE_LABEL,    0x1028, STR)  /* what the UI calls it, "CyberTracker disk image" */
+SEL_TAG(RP, SYSFILE_HINT,     0x1029, STR)  /* one or two sentences for the dialog: where a user finds it */
+SEL_TAG(RP, SYSFILE_SHA256,   0x102A, STR)  /* ';'-separated lowercase hex sha256 of the accepted files (the identity) */
+SEL_TAG(RP, SYSFILE_URLS,     0x102B, STR)  /* ';'-separated full URLs in try order; a URL may serve the file or a zip holding it */
+SEL_TAG(RP, SYSFILE_SIZE,     0x102C, INT)  /* exact byte size, 0 = any; cheap pre-check before hashing */
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

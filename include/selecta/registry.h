@@ -82,6 +82,23 @@ const char* sel_registry_default_integration(const char* preferred);
  * through the host log. */
 void sel_registry_lint(sel_lint_report* report);
 
+#define SEL_SYSFILE_MAX 8 /* declarations the host reads from one plugin */
+/* One RP_SYSFILE entry, parsed (I710ga1). Host-internal shape, not plugin ABI. Strings point into the plugin descriptor
+ * and live as long as it does; sha256 and urls stay ';'-separated. hint is "" when absent, size 0 means any. */
+typedef struct sel_sysfile_decl {
+    const char* plugin; /* PLUGIN_ID of the owner, "?" when unknown */
+    const char* name;
+    const char* label;
+    const char* hint;
+    const char* sha256;
+    const char* urls; /* "" when none */
+    uint32_t size;
+} sel_sysfile_decl;
+/* Parse the RP_SYSFILE entries of a plugin's hook list into out[0..max); returns how many were kept. A plugin without the
+ * tag returns 0. An entry missing NAME, LABEL or SHA256, with a NAME outside [A-Za-z0-9._-] (or starting with '.'), or
+ * with a digest that is not 64 lowercase hex, is dropped with a WARN log naming the plugin. */
+unsigned sel_registry_sysfiles(const sel_tag* hooks, sel_sysfile_decl* out, unsigned max);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_REGISTRY_H */

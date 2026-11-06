@@ -435,6 +435,11 @@ add_test(NAME mem-class-unit COMMAND mem_class_test)
 add_executable(default_output_test host/default_output_test.c)
 target_link_libraries(default_output_test PRIVATE selecta_registry)
 add_test(NAME default-output-unit COMMAND default_output_test)
+# I710ga1: RP_SYSFILE declarations parse out of a plugin's hook list (sel_registry_sysfiles).
+add_executable(sysfile_tags_test host/sysfile_tags_test.c)
+target_link_libraries(sysfile_tags_test PRIVATE selecta_registry)
+add_test(NAME sysfile-tags-unit COMMAND sysfile_tags_test)
+set_tests_properties(sysfile-tags-unit PROPERTIES PASS_REGULAR_EXPRESSION "sysfile_tags_ok")
 # The default integration follows the OS preference list and the registry ("none" when not built).
 add_executable(default_integration_test host/default_integration_test.c)
 target_link_libraries(default_integration_test PRIVATE selecta_registry)

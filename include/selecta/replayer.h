@@ -170,6 +170,18 @@ typedef unsigned (*sel_rp_content_companions_fn)(const char* name, const uint8_t
                                                  char out[][SEL_RP_COMPANION_NAME_MAX], unsigned max,
                                                  const sel_host* host);
 
+/* RP_SYSFILE (I710ga): optional, one entry per file. A required system file is identified by its sha256, never by
+ * its URL or name: any bytes whose sha256 is in SYSFILE_SHA256 are that file. The host stores the checked file as
+ * <config dir>/<SYSFILE_NAME>, and before RP_OPEN of a song this replayer claimed it resolves every declared file;
+ * when one is missing or fails the check it does not call RP_OPEN, reports the typed reason system_file_missing and
+ * fetches the file in the background from SYSFILE_URLS (an I1076 player-pack manifest may add or replace URLs).
+ * The replayer reads the stored path with host->config_get(host, "sysfile.<SYSFILE_NAME>", NULL): the full path of
+ * the checked file, or NULL when the host has none (an older host, or a host without the contract: the replayer
+ * then keeps its own lookup and its RP_OPEN still refuses without the file). The path is valid for the session.
+ * NAME, SHA256 and LABEL are required; the registry ignores an entry missing one (or with a bad name or digest) and
+ * logs a WARN naming the plugin. Unknown SYSFILE_* tags inside an entry are skipped, so fields can be appended. No
+ * API version bump: an older host skips the unknown RP_SYSFILE tag and behaves as before. */
+
 /* One sample of the open song (RP_SAMPLE_GET). `data` points at `length` frames
  * of `channels` interleaved signed PCM, 8-bit (`bits` 8) or 16-bit native
  * endian (`bits` 16), owned by the replayer and valid until the song closes.
