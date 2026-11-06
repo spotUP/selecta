@@ -3239,6 +3239,12 @@ if(NOT SEL_AMIGA)
       COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}"
         "-DUI=${SEL_MISSING_BANK_UI}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures" "-DPLUGINS=${CMAKE_BINARY_DIR}/modules" -P "${SEL_NET_DIR}/remote_eup_missing_bank.cmake")
     set_tests_properties(remote-eup-missing-bank-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture TIMEOUT 120)
+    # I710ga7: system files end to end (real .ct, empty config dir, fixture CSDb mirror); SKIP 77 without the cached zip.
+    add_test(NAME sysfile-cybertracker
+      COMMAND sh "${SEL_NET_DIR}/sysfile_cybertracker.sh" "${CMAKE_COMMAND}" "$<TARGET_FILE:selecta>" "${SEL_NET_WORK}"
+        "${SEL_NET_DIR}/fixtures" "${CMAKE_BINARY_DIR}/modules" "${SEL_NET_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/m3")
+    set_tests_properties(sysfile-cybertracker PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+      TIMEOUT 240 SKIP_RETURN_CODE 77 PASS_REGULAR_EXPRESSION "sysfile_cybertracker_ok")
   endif()
   add_executable(record_cut_unit_test record_cut_unit_test.c)
   target_include_directories(record_cut_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
