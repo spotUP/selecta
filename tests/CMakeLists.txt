@@ -2068,6 +2068,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710u: Psycle songs (.psy) play through the render entry point (bbmp_psycle module, helper child process), GPL; two Alk
+  # songs fetched by checksum (tests/m3/fixtures/bbmp_psycle.SOURCE), exit 77 = skip.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/psycle-decode)
+    add_test(NAME psycle-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/psycle_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/psycle-decode)
+    set_tests_properties(psycle-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "psycle_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I702: a pxtone song plays through the render entry point (pxtone module).
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/pxtone-decode)
   add_test(NAME pxtone-decode

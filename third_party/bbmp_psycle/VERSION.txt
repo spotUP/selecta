@@ -1,0 +1,11 @@
+bbmp_psycle: Psycle song player (.psy), I710u.
+Engine: Psycle r12005 (svn.code.sf.net/p/psycle/code/trunk, host player code, psycle-helpers, universalis, diversalis, native
+plugins psycle-plugins), GPL-2.0-or-later (src/COPYING). Glue: bbmp csrc/psycle (github.com/creep-ltx/bbmp, commit
+19d87098b3716156d80224d22dc49ca22884d1b7), GPL-3.0-or-later (COPYING), so the combined module is GPL-3.0-or-later.
+Changes to Psycle: third_party/patches/bbmp_psycle/*.patch (bbmp's two patches, applied by build.sh). STK 4.5.0 tarball (MIT-like
+STK licence) is built into the stk-based plugins; build.sh checks its sha256.
+Plugins built (64 of 65 native machines): audacity, gverb, jme, legasynth, moreamp_eq, vincenzo_demasi carry GPL notices; graue,
+surround, yezar_freeverb are public domain; the others carry no header and live in Psycle's GPL repository. Left out: fluid
+sf2 player (LGPL fluidsynth dependency) and y_midi (Windows MIDI), plus ladspa-gverb (does not build on macOS, malloc.h).
+Songs needing a left-out or third-party VST/unpublished plugin render those machines silent (see ledger row I710v).
+Runs as a child process (posix_spawn) of the module; host only, no Amiga build (C++14 engine, dlopen plugins).
