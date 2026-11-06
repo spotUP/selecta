@@ -82,7 +82,9 @@ dui_run(c ${common} --input "${WORK}/click.txt")
 if(NOT "${c}" MATCHES "search_sync [0-9]+ sndh [^\n]* clicks=1\n")
   message(FATAL_ERROR "I1053b: the Sync click did not reach the sync branch (clicks=1 expected):\n${c}")
 endif()
-if(NOT "${c}" MATCHES "sync_ui [^\n]*source=sndh")
+# The sync runs offline here (SELECTA_NET_ALLOW), so the fetch can fail inside the 600 ms wait and sync_ui drops its source again:
+# the card was shown once (shown=1) and the failure toast names the source, which is the durable proof of WHICH sync started.
+if(NOT "${c}" MATCHES "sync_ui [^\n]*source=sndh" AND NOT ("${c}" MATCHES "sync_ui [^\n]* shown=1 " AND "${c}" MATCHES "toast_text Cannot sync SNDH"))
   message(FATAL_ERROR "I1053b: the Sync click must start the sndh sync (sync_ui source=sndh):\n${c}")
 endif()
 
@@ -90,6 +92,6 @@ endif()
 # when Enter arrives. Row 38 is the Keygen Music Sync row of this seed (no From Local files section above it since I1009r) (clicks counts every Sync action, one per run).
 file(WRITE "${WORK}/enter.txt" "${typed}key down\nexec VIEW_CURSOR 38\nkey enter\nwait 600\n")
 dui_run(en ${common} --input "${WORK}/enter.txt")
-if(NOT "${en}" MATCHES "search_sync [0-9]+ keygenmusic [^\n]* clicks=1\n" OR NOT "${en}" MATCHES "sync_ui [^\n]*source=keygenmusic" OR "${en}" MATCHES "row_plays=[1-9]")
+if(NOT "${en}" MATCHES "search_sync [0-9]+ keygenmusic [^\n]* clicks=1\n" OR NOT ("${en}" MATCHES "sync_ui [^\n]*source=keygenmusic" OR ("${en}" MATCHES "sync_ui [^\n]* shown=1 " AND "${en}" MATCHES "toast_text Cannot sync Keygen Music")) OR "${en}" MATCHES "row_plays=[1-9]")
   message(FATAL_ERROR "I1053b: Enter on the Keygen Music Sync row must start that sync like the click (clicks=1, no song played):\n${en}")
 endif()
