@@ -1,0 +1,8 @@
+bbmp_darkwave: DarkWave Studio 4.1.6 (Daniel Werner, experimentalscene.com, GPL 3 or later) machines and DarkPlug interface, from
+DarkWave-Studio-4.1.6-Source.zip (Wayback Machine web/20130121175233id_, sha256 db42a257cf11da396a0943551e89b9fbe07e270c7fd877d3dd489e5941cd2352),
+and bbmp (github.com/creep-ltx/bbmp csrc/darkwave, GPL-3.0-or-later): studio.cpp, studio.h, compat/, darkwave-4.1.6-headless.patch.
+src/ = the used files of the zip (CoreMachines/Source, Shared) with CR LF -> LF, includes by base name, and the headless patch applied,
+exactly as bbmp's tools/build-darkwave.sh does. minblep.dat = Resource/MinBLEP[32ZC,256xOS,64].dat of the zip (an upstream DLL resource).
+COPYING = the zip's LICENSE.txt (GPL 3). dw_engine.cpp/.h and darwin/ are ours: dw_engine is the helper's main() as a C API.
+sse2neon/ = sse2neon 1.8.0 (MIT, github.com/DLTcollab/sse2neon v1.8.0, sha256 07723c9f9457dd4316f1fde3dd4eb6f31dd67d9955f6c21f4e609ac1698be48a)
+with wrapper headers; used on arm64 only. The studio is never torn down (some machines free wrongly; bbmp leaves it standing too).

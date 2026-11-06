@@ -1,0 +1,6 @@
+DarkWave Studio projects for tests/m3/darkwave_decode.sh (bbmp_darkwave module, I710h). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive; unlicensed scene material).
+https://modland.com/pub/modules/DarkWave%20Studio/Daniel%20Werner/chemistry%20101.dwp  e0ab34a9de1872d7b99ee5ee38c919485ff9ba24f6b5417d46e43c54ed405bac
+https://modland.com/pub/modules/DarkWave%20Studio/Daniel%20Werner/chemistry%20202.dwp  f321b35addd8b551723396f45dff85f6183c6139a2aef36d3ce8b9f4da1b1817
+https://modland.com/pub/modules/DarkWave%20Studio/Daniel%20Werner/chemistry%20303.dwp  faf5142d1ba4b6f09722889b654d54b3fa45deda6430912c604689ae3abd5a56
+Engine licence: GPL-3.0-or-later (bbmp csrc/darkwave, third_party/bbmp_darkwave).

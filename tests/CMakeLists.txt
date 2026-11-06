@@ -2229,6 +2229,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710h: DarkWave Studio projects (.dwp) play through the render entry point (bbmp_darkwave module, GPL-3.0-or-later). Three projects fetched by
+  # checksum (tests/m3/fixtures/bbmp_darkwave.SOURCE), exit 77 = skip. A file that is not a DarkWave Studio project must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/darkwave-decode)
+    add_test(NAME darkwave-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/darkwave_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/darkwave-decode)
+    set_tests_properties(darkwave-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "darkwave_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710b: BeRoTracker songs (.brt) play through the render entry point (bbmp_berotracker module, GPL-3.0-or-later). Two songs fetched by
   # checksum (tests/m3/fixtures/bbmp_berotracker.SOURCE), exit 77 = skip. A file that is not a BeRoTracker song must not be claimed.
   if(SELECTA_GPL_PLUGINS)
