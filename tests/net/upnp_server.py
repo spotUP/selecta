@@ -13,6 +13,7 @@ import http.server
 import re
 from xml.sax.saxutils import escape
 import socket
+import socketserver
 import sys
 import threading
 import time
@@ -218,7 +219,17 @@ class Desc(http.server.BaseHTTPRequestHandler):
         pass
 
 
-httpd = http.server.HTTPServer(("127.0.0.1", 0), Desc)
+class Quiet(http.server.HTTPServer):
+    def server_bind(self):
+        # HTTPServer.server_bind() calls socket.getfqdn(), a reverse-DNS lookup that stalls for 10+ s on the GitHub macOS runner
+        # and kept the port file from appearing in time (I1130, same cause as I989d in fixture_server.py). The fixture only
+        # binds 127.0.0.1 and never reads server_name.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+
+
+httpd = Quiet(("127.0.0.1", 0), Desc)
 udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp.bind(("127.0.0.1", 0))
 http_port = httpd.server_address[1]
