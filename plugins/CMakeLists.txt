@@ -249,6 +249,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_vgemm)
 endif()
 
+# bbmp_wwsnd (I710aj): Westwood SND songs (.snd, PC speaker), bbmp csrc/retro/wwsnd_engine (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine,
+# no Amiga module path; exemption in row I710aj).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_wwsnd)
+endif()
+
 # bbmp_victracker (I710ai): VIC-TRACKER songs (.vt), bbmp csrc/retro/victracker_engine (GPL 3 or later) running the tracker's own BSD player on a 6502 + VIC sound, behind the
 # GPL-plugin gate. Host only (C++17 engine, no Amiga module path; exemption in row I710ai).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

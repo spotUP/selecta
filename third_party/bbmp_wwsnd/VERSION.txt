@@ -1,0 +1,5 @@
+bbmp_wwsnd (I710aj): wwsnd_engine.cpp and engine.h from github.com/creep-ltx/bbmp csrc/retro, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX line in each file, COPYING). Westwood SND (.snd, the PC speaker
+files of Eye of the Beholder 1 and 2 and Legend of Kyrandia): the engine plays the one-voice byte code as a square wave; written by bbmp after
+ScummVM's PC speaker driver (engines/kyra/sound/drivers/pcspeaker_v1.cpp, GPL 3 or later; bbmp docs/replayers.md, engine `wwsnd`). No helper program
+and no other data are needed. The retro:: helpers it uses (register_engine, field, debug_on) are in plugins/replayers/bbmp_wwsnd/shim.cpp.

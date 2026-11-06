@@ -839,6 +839,11 @@ target_include_directories(nuade_sibling_io_test PRIVATE "${PROJECT_SOURCE_DIR}/
 add_test(NAME nuade-sibling-io COMMAND nuade_sibling_io_test)
 set_tests_properties(nuade-sibling-io PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "nuade_sibling_io_ok"
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+if(NOT SEL_AMIGA AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
+  # I1133: 400 modules through the user path, none rejected with "module table full".
+  add_test(NAME plugin-table-growth COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/plugin_table_growth.sh $<TARGET_FILE:selecta-cli> ${CMAKE_BINARY_DIR}/modules)
+  set_tests_properties(plugin-table-growth PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "plugin_table_growth_ok" SKIP_RETURN_CODE 77)
+endif()
 if(NOT SEL_AMIGA)
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-companion-decode)
   add_test(NAME nuade-companion-decode
@@ -2182,6 +2187,17 @@ if(NOT SEL_AMIGA)
       COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/victracker_decode.sh $<TARGET_FILE:selecta-cli>
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/victracker-decode)
     set_tests_properties(victracker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "victracker_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
+  # I710aj: Westwood SND songs (.snd) play through the render entry point (bbmp_wwsnd module, GPL-3.0 engine). Songs are fetched by checksum, exit 77 = skip.
+  # A non-Westwood file and a cut-off song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/wwsnd-decode)
+    add_test(NAME wwsnd-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/wwsnd_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/wwsnd-decode)
+    set_tests_properties(wwsnd-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "wwsnd_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
