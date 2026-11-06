@@ -147,6 +147,12 @@ if(NOT SEL_AMIGA)
   add_subdirectory(replayers/openmpt)
 endif()
 
+# bbmp_mxm (I710f): Cubic Tiny XM songs (.mxm), bbmp csrc/pc/mxm_engine (clean-room C++ converter to XM, GPL 3 or later) played by the
+# vendored libopenmpt, behind the GPL-plugin gate. Host only (C++17 engine and libopenmpt, no Amiga module path). Needs selecta_openmpt.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_mxm)
+endif()
+
 # Text UI building blocks (plan M1.1 phase 5): cell grid, keys, theme and the
 # POSIX terminal device. Library for grid-unit; the UI plugin entry
 # (text_ui.c, row I60) registers from ui/text/CMakeLists.txt. Desktop only until M2.

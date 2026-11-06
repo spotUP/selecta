@@ -1,0 +1,5 @@
+bbmp_mxm: mxm_engine.cpp, bytes.h, engine.h and openmpt.cpp from github.com/creep-ltx/bbmp csrc/pc, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX line in each file). Cubic Tiny XM (.mxm), a clean-room
+converter from MXM to an in-memory XM module, played by libopenmpt (Selecta's vendored copy, BSD 3-clause, linked statically into the
+module). Only the mxm engine and its two helpers of csrc/pc are vendored; the other engines and bbmp-pc.cpp are not. Built with
+-ffp-contract=off as bbmp does. BBMP_MXM_XM=<file> (engine test hook) writes the XM built there.
