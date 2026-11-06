@@ -7913,7 +7913,6 @@ static void search_start_next(sel_engine* e) {
     if (live > e->search_peak) {
         e->search_peak = live;
     }
-    e->search_serial++;
 }
 
 /* Cancels every search thread and joins it (engine destroy). */
@@ -7953,13 +7952,13 @@ static void search_cancel_flight(sel_engine* e);
 /* A new query supersedes the one in flight: its buckets go, and search_cancel_flight drops its collect. */
 static void search_supersede(sel_engine* e) {
     e->search_buckets = 0;
+    e->search_serial++; /* I1130a: the list empties here, the one start bump; cancel and the threaded job start change nothing visible */
     search_cancel_flight(e);
 }
 
 /* The generation bump drops the collect of every search in flight; the cancel request ends its network wait. The buckets stay. */
 static void search_cancel_flight(sel_engine* e) {
     e->search_gen++;
-    e->search_serial++;
 #if defined(SEL_LI_THREAD)
     {
         struct sel_search_job* j;
