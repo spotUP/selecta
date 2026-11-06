@@ -249,6 +249,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_vgemm)
 endif()
 
+# bbmp_victracker (I710ai): VIC-TRACKER songs (.vt), bbmp csrc/retro/victracker_engine (GPL 3 or later) running the tracker's own BSD player on a 6502 + VIC sound, behind the
+# GPL-plugin gate. Host only (C++17 engine, no Amiga module path; exemption in row I710ai).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_victracker)
+endif()
+
 # bbmp_tss (I710af): T'SoundSystem songs (.tss, .tsd), bbmp csrc/retro/tss_engine (BSD 3-clause, a port of toyoshim's TSS). Permissive, so a core
 # module (no GPL gate). Host only (C++17 engine, no Amiga module path; exemption in row I710af, follow-up I710afa).
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

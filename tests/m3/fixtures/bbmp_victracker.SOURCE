@@ -1,0 +1,6 @@
+VIC-TRACKER test songs for tests/m3/victracker_decode.sh (bbmp_victracker module, I710ai). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Vic-Tracker/Daniel%20Kahlin/mystic.vt  1c11bf3083e90ff29bff1dea503b2d85de0be1bc4dcd8680b860cc8755779cf3
+https://modland.com/pub/modules/Vic-Tracker/Daniel%20Kahlin/vt-theme.vt  a0a84bf2c8a1ff6c12c4905f70e84d62ff6fb10a1727308b9af25729669197fa
+https://modland.com/pub/modules/Vic-Tracker/Warlord/toxic%20cave.vt  ac03a0b11f0a120d81326bb37d07b86540f54b1ded8f31369e85546b5919d690
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro/victracker_engine.cpp, third_party/bbmp_victracker).
