@@ -65,7 +65,7 @@ jobs:
         with:
           submodules: true
       - name: Install cmake and ninja
-        run: apt-get update && apt-get install -y cmake ninja-build
+        run: apt-get update && apt-get install -y cmake ninja-build zlib1g-dev
       # The desktop UI plugin (SEL_DESKTOP_AGA defaults ON) needs the host-built bake tools, the RULES.md "Build (Amiga
       # 68020) with the desktop UI" sequence: host gui_iconbake and gui_fontbake first, then the -D paths (I987).
       - name: Configure (host bake tools)

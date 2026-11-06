@@ -152,7 +152,7 @@ static int hash_for_open(sqlite3* db, const char* key) {
     char skey[1200];
     char spath[1200];
     char smd5[40];
-    char base[300];
+    char base[sizeof spath]; /* the basename of spath, so never longer than it */
     const char* slash;
     int local;
     int64_t size;
