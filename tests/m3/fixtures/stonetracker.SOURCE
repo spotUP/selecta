@@ -1,0 +1,8 @@
+StoneTracker song and sample bank for tests/m3/stonetracker_decode.sh (stonetracker module, I710ae). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. Song and bank by Bosco (Modland archive), no redistribution licence stated; the bank must sit beside the song.
+https://modland.com/pub/modules/Stonetracker/Bosco/teinteremix22.spm  eb0bf66b1c0a36baf2984fd7e3439f5f6fa6c752a8f5ad3de30dcbdf4b4926a8
+https://modland.com/pub/modules/Stonetracker/Bosco/teinteremix22.sps  01334388e2a5b8994de7ecd79ae644c7608ef7d4c5c68170eff1550a3501a28b
+The player StonePlayer_Hard.bin (sha256 16d70adb7f09fdf3fc7786f4b7cc7c988073c160ce9879e86c98b61e89f0c15c, 83248 bytes) is the authors' own, not open source, never
+committed, bundled or fetched by the test. It sits in Players.LHS (the authors' SCMk container, unpacked by the Amiga tool StoneEx) inside Aminet
+mus/edit/stonefree2.lha. The test takes the unpacked bin from STONEPLAYER_HARD_BIN and skips (77) without it. Unpacking SCMk: follow-up row.
+Engine licence: Musashi MIT + Selecta MIT (third_party/stonetracker_host/COPYING).

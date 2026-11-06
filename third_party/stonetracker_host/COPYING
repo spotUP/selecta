@@ -1,0 +1,12 @@
+third_party/stonetracker_host: files and licences
+
+musashi/ (except softfloat/)  Musashi 4.60 (m68kmake banner), Karl Stenerud, MIT. Terms: musashi/readme.txt ("LICENSE AND COPYRIGHT").
+musashi/softfloat/            SoftFloat release 2b, John R. Hauser. Free to use, derivative works acceptable with the notice kept; the full
+                              four-paragraph notice is at the top of softfloat.c and is retained.
+src/amiga_host.[ch], src/m68kconf_host.h, src/paula_soft.[ch], src/st_machine.[ch], src/st_dhuf.[ch]
+                              Written by spotUP (Johan) for DEViLBOX (git history: author spot only), contributed here under Selecta's MIT licence.
+                              st_dhuf.c re-implements the DeltaHuffman bank depacker of stonepacker.library 39.2 (Emmanuel Marty) in C; it
+                              contains no bytes of that library.
+
+NOT included, never committed or bundled: StonePlayer_Hard.bin (the authors' player, Michael Lavaire / Emmanuel Marty, Aminet stonefree2.lha,
+not open source). The plugin loads the user's copy as a system file (SEL_RP_SYSFILE).

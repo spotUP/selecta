@@ -2239,6 +2239,16 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710ae: StoneTracker (.spm + .sps) through the render entry point; skips (77) without STONEPLAYER_HARD_BIN (the player is a user system file).
+  if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/stonetracker-decode)
+    add_test(NAME stonetracker-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/stonetracker_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/stonetracker-decode)
+    set_tests_properties(stonetracker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stonetracker_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710e: Buzzic 1 and 2 (.buz, .buz2) songs play through the render entry point (bbmp_buzzic module, GPL-3.0-or-later). Four songs
   # fetched by checksum (tests/m3/fixtures/bbmp_buzzic.SOURCE), exit 77 = skip. A file that is not a Buzzic song must not be claimed.
   if(SELECTA_GPL_PLUGINS)

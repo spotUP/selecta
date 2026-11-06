@@ -1,0 +1,7 @@
+StoneTracker host: Musashi 68020 + minimal Amiga + software Paula + StonePlayer machine.
+Origin: ~/Code/DEViLBOX (spotUP), musashi-host/src (amiga_host.[ch], m68kconf_host.h), tools/asm68k-to-c/runtime/paula_soft.[ch],
+stonetracker-wasm/src (st_machine.[ch], st_dhuf.[ch]), third-party/musashi (commit 313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd, m68kdasm.c removed).
+Copied 2026-11-06 (row I710ae). Changes: st_machine.c no longer includes the generated stoneplayer_hard.h; st_machine_set_player() hands
+over the user's StonePlayer_Hard.bin. Everything else unchanged. paula_soft is a second Paula next to nuade_paula: amiga_host drives
+paula_soft's register-level API (block-start polling, DMA latch), which nuade's voice model does not offer.
+m68kops.c/.h are generated at build time by m68kmake (plugins/replayers/stonetracker).

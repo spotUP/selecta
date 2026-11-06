@@ -249,6 +249,12 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_tss)
 endif()
 
+# stonetracker (I710ae): StoneTracker songs (.spm + .sps), the authors' StonePlayer_Hard.bin (a user system file) on Musashi's 68020, MIT, so a core
+# module. Host only: the Amiga build runs the same bin on the real CPU (row I710aea), so it needs no emulator.
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/stonetracker)
+endif()
+
 # bbmp_skale (I710ab): Skale Tracker songs (.skm), bbmp csrc/synth/skale_engine + skale_fx (GPL 3 or later) over the vendored libopenmpt with Luke
 # Preiner's SKM loader patched in (third_party/patches/libopenmpt), behind the GPL-plugin gate. Host only (C++17 engine and libopenmpt, no Amiga
 # module path; follow-up I710aba). Needs selecta_openmpt.
