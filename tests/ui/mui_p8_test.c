@@ -198,7 +198,7 @@ static void test_tile_steps(void) {
     CHECK(mui_tile_step(5) == 0, "step past the count");
     CHECK(mui_tile_step(0) < mui_tile_step(4), "steps not increasing");
     /* the written exemption: no MUI source reads ui.desktop.zoom */
-    snprintf(cmd, sizeof cmd, "grep -rl 'desktop\\.zoom' %s/plugins/ui/mui --include=*.c --include=*.h", MUI_SRC_ROOT);
+    snprintf(cmd, sizeof cmd, "grep -rl 'desktop\\.zoom' %s/plugins/ui/mui %s/plugins/shared/mcc --include=*.c --include=*.h", MUI_SRC_ROOT, MUI_SRC_ROOT);
     f = popen(cmd, "r");
     CHECK(f != NULL, "popen");
     if (f != NULL) {

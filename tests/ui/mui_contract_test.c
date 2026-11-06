@@ -23,6 +23,10 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/pages.h>
+
+/* I685c: the shipped MUI classes live in plugins/shared/mcc; MCC_DIR is the one define every source path starts from. */
+#define MCC_SRC MCC_DIR "/src"
+#define MCC_CLASS MCC_DIR "/src/class"
 #include <selecta/uimodel/route.h>
 #include <selecta/uimodel/theme.h>
 
@@ -206,13 +210,13 @@ static void test_theme_file(const char* dir) {
     mui_theme_tokens_set(th.token);
     CHECK(mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT] == 0x112233u, "token store carries the file accent, got %06x", (unsigned)mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT]);
     {
-        static const char* const files[] = {"mui_aa_draw.c", "mui_aabalance_class.c", "mui_aabtn_class.c", "mui_aapanel_class.c", "mui_aatext_class.c", "mui_aafield_class.c"};
+        static const char* const files[] = {MCC_SRC "/mui_aa_draw.c", MCC_CLASS "/mui_aabalance_class.c", MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aapanel_class.c", MCC_CLASS "/mui_aatext_class.c", MCC_CLASS "/mui_aafield_class.c"};
         static char src[400000];
         size_t k, n;
         for (k = 0; k < sizeof files / sizeof files[0]; k++) {
             char path[600];
             FILE* sf;
-            snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[k]);
+            snprintf(path, sizeof path, "%s", files[k]);
             sf = fopen(path, "rb");
             if (sf == NULL) {
                 continue;
@@ -1082,7 +1086,7 @@ static void test_list_dbl_row(void) {
               strstr(dbl, "mui_list_dbl_row(") < strstr(dbl, "VIEW_ACTIVATE"),
           "the DBL branch of mui_ui.c reads AAL_Picked and decides through mui_list_dbl_row before VIEW_ACTIVATE");
     n = 0;
-    f = fopen(MUI_DIR "/mui_aalist_class.c", "rb");
+    f = fopen(MCC_CLASS "/mui_aalist_class.c", "rb");
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
     if (f != NULL) {
         fclose(f);
@@ -1783,7 +1787,7 @@ static int tip_file(const char* name, char* buf, size_t cap) {
     char path[600];
     FILE* f;
     size_t n;
-    snprintf(path, sizeof path, "%s/%s", MUI_DIR, name);
+    snprintf(path, sizeof path, "%s", name);
     f = fopen(path, "rb");
     if (f == NULL) {
         buf[0] = 0;
@@ -1801,7 +1805,7 @@ static void test_tooltip_flat(void) {
     mui_aa_tip_t p, s;
     int x = 0, y = 0, act, st, side;
     static char src[400000];
-    static const char* const classes[] = {"mui_aabtn_class.c", "mui_aaslider_class.c", "mui_aafield_class.c"};
+    static const char* const classes[] = {MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aaslider_class.c", MCC_CLASS "/mui_aafield_class.c"};
     static const char* const need[] = {"aatip_super_set(", "aatip_event(", "AATIP_M_FIRE", "aatip_drop("};
     static const char* const tip_need[] = {"mui_aa_tip_plan(", "mui_aa_tip_place(", "mui_aa_tip_step(", "aa_round_fill(", "aa_text(", "WA_Borderless", "WA_Activate, FALSE", "MUIIHNF_TIMER"};
     static const char* const tip_ban[] = {"MUIM_CreateBubble", "MUIA_Frame", "aa_round_frame("};
@@ -1842,7 +1846,7 @@ static void test_tooltip_flat(void) {
     st = mui_aa_tip_step(st, MUI_AA_TIP_EV_LEAVE, &act);
     CHECK(st == MUI_AA_TIP_IDLE, "leave does not reset");
 
-    CHECK(tip_file("mui_aatip.c", src, sizeof src), "mui_aatip.c is missing");
+    CHECK(tip_file(MCC_SRC "/mui_aatip.c", src, sizeof src), "mui_aatip.c is missing");
     for (k = 0; k < sizeof tip_need / sizeof tip_need[0]; k++) {
         CHECK(strstr(src, tip_need[k]) != NULL, "mui_aatip.c lacks %s", tip_need[k]);
     }
@@ -1855,12 +1859,12 @@ static void test_tooltip_flat(void) {
             CHECK(strstr(src, need[k]) != NULL, "%s does not call %s", classes[j], need[k]);
         }
     }
-    CHECK(tip_file("mui_aa_draw.c", src, sizeof src), "mui_aa_draw.c is missing");
+    CHECK(tip_file(MCC_SRC "/mui_aa_draw.c", src, sizeof src), "mui_aa_draw.c is missing");
     fn = strstr(src, "uint32_t aa_retheme_all(void) {");
     end = fn != NULL ? strstr(fn, "\n}\n") : NULL;
     CHECK(end != NULL && strstr(fn, "aatip_drop(NULL)") != NULL && strstr(fn, "aatip_drop(NULL)") < end, "aa_retheme_all does not drop an open tip");
-    CHECK(tip_file("mui_aabtn_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") != NULL, "AABtn must still take MUIA_ShortHelp");
-    CHECK(tip_file("mui_aalist_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") == NULL, "AAList passes MUIA_ShortHelp to MUI's own bubble");
+    CHECK(tip_file(MCC_CLASS "/mui_aabtn_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") != NULL, "AABtn must still take MUIA_ShortHelp");
+    CHECK(tip_file(MCC_CLASS "/mui_aalist_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") == NULL, "AAList passes MUIA_ShortHelp to MUI's own bubble");
 }
 
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
@@ -1936,7 +1940,7 @@ static void test_icon_square(void) {
     mui_btn_box_t bn, fx, tg;
     static char src[400000], ui[1200000];
     size_t n;
-    FILE* f = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+    FILE* f = fopen(MCC_CLASS "/mui_aabtn_class.c", "rb");
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
     if (f != NULL) {
         fclose(f);
@@ -2266,15 +2270,15 @@ static void test_libfilter(void) {
  * Amiga crashed at start (set AAC_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
  * which checks the render info first; no class file may test _win(obj) against NULL on its own. */
 static void test_live_guard(void) {
-    static const char* const files[] = {"mui_aacycle_class.c", "mui_aafield_class.c", "mui_aabtn_class.c", "mui_aascroller_class.c",
-                                        "mui_aaslider_class.c", "mui_aalist_class.c", "mui_listview_class.c", "mui_aatext_class.c",
-                                        "mui_aapanel_class.c", "mui_vizarea_class.c", "mui_canvas_class.c"};
+    static const char* const files[] = {MCC_CLASS "/mui_aacycle_class.c", MCC_CLASS "/mui_aafield_class.c", MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aascroller_class.c",
+                                        MCC_CLASS "/mui_aaslider_class.c", MCC_CLASS "/mui_aalist_class.c", MUI_DIR "/mui_listview_class.c", MCC_CLASS "/mui_aatext_class.c",
+                                        MCC_CLASS "/mui_aapanel_class.c", MUI_DIR "/mui_vizarea_class.c", MUI_DIR "/mui_canvas_class.c"};
     static char src[200000];
     char path[1024];
     size_t i, n;
     FILE* f;
     for (i = 0; i < sizeof files / sizeof files[0]; i++) {
-        snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[i]);
+        snprintf(path, sizeof path, "%s", files[i]);
         f = fopen(path, "rb");
         CHECK(f != NULL, "open %s", path);
         if (f == NULL) {
@@ -2286,7 +2290,7 @@ static void test_live_guard(void) {
         CHECK(strstr(src, "_win(obj) != NULL") == NULL && strstr(src, "_win(obj) == NULL") == NULL,
               "%s tests _win(obj) against NULL without the render info guard (use aa_live)", files[i]);
     }
-    snprintf(path, sizeof path, "%s/mui_aa_draw.c", MUI_DIR);
+    snprintf(path, sizeof path, "%s/mui_aa_draw.c", MCC_SRC);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -2305,7 +2309,7 @@ static void test_aalist_getrow(void) {
     char path[1024];
     size_t n;
     FILE* f;
-    snprintf(path, sizeof path, "%s/mui_aalist_class.h", MUI_DIR);
+    snprintf(path, sizeof path, "%s/mui_aalist_class.h", MCC_CLASS);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -2314,7 +2318,7 @@ static void test_aalist_getrow(void) {
     }
     src[n] = 0;
     CHECK(strstr(src, "#define AAM_GetRow") != NULL && strstr(src, "mui_aalist_getrow;") != NULL, "mui_aalist_class.h declares no AAM_GetRow message");
-    snprintf(path, sizeof path, "%s/mui_aalist_class.c", MUI_DIR);
+    snprintf(path, sizeof path, "%s/mui_aalist_class.c", MCC_CLASS);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -2340,7 +2344,7 @@ static void test_status_face(void) {
     char path[512];
     char *src = ui_source(), *cls = NULL, *ctor, *grp, *end;
     FILE* cf;
-    snprintf(path, sizeof path, "%s/mui_aatext_class.c", MUI_DIR);
+    snprintf(path, sizeof path, "%s/mui_aatext_class.c", MCC_CLASS);
     cf = fopen(path, "rb");
     if (cf != NULL) {
         size_t n = fread(cls_buf, 1, sizeof cls_buf - 1, cf);
@@ -3056,7 +3060,7 @@ static void test_aa_aspect(void) {
         /* I949e: consumers read the metrics. Tall pixels at the bitmap tier select the tight tier and count vertical sizes in rows. */
         mui_aa_metrics_t sq, tall, m13;
         char cls[65536];
-        FILE* cf = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+        FILE* cf = fopen(MCC_CLASS "/mui_aabtn_class.c", "rb");
         size_t cn = cf != NULL ? fread(cls, 1, sizeof cls - 1, cf) : 0;
         if (cf != NULL) {
             fclose(cf);
@@ -3087,7 +3091,7 @@ static void test_aa_aspect(void) {
         FILE* uf = fopen(MUI_UI_SOURCE, "rb");
         size_t un = uf != NULL ? fread(ui2, 1, sizeof ui2 - 1, uf) : 0;
         char pan[65536];
-        FILE* pf = fopen(MUI_DIR "/mui_aapanel_class.c", "rb");
+        FILE* pf = fopen(MCC_CLASS "/mui_aapanel_class.c", "rb");
         size_t pn = pf != NULL ? fread(pan, 1, sizeof pan - 1, pf) : 0;
         if (vf != NULL) fclose(vf);
         if (uf != NULL) fclose(uf);
@@ -3110,7 +3114,7 @@ static void test_aa_aspect(void) {
         {
             mui_aa_metrics_t tt;
             static char bcls[100000];
-            FILE* bf = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+            FILE* bf = fopen(MCC_CLASS "/mui_aabtn_class.c", "rb");
             size_t bn = bf != NULL ? fread(bcls, 1, sizeof bcls - 1, bf) : 0;
             if (bf != NULL) fclose(bf);
             bcls[bn] = 0;

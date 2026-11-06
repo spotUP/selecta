@@ -18,8 +18,11 @@ add_custom_command(
     "${CMAKE_CURRENT_BINARY_DIR}/mui_iconbake_unused.c" 24 --mui "${CMAKE_CURRENT_BINARY_DIR}/mui_icons_baked.c"
   DEPENDS "${MUI_ICONBAKE_EXE}" "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${MUI_LUCIDE_SVGS}
   COMMENT "Baking the MUI icon bodies")
-add_library(mui_map STATIC map/mui_style.c map/mui_wait.c map/mui_probe.c map/mui_menu.c map/mui_layout.c map/mui_controls.c map/mui_list.c map/mui_views.c map/mui_sidebar.c map/mui_canvas.c map/mui_viz.c map/mui_copper.c map/mui_drop.c map/mui_p8.c map/mui_theme.c map/mui_pens.c map/mui_aa.c map/mui_aatip.c map/mui_icons.c map/mui_screen.c map/mui_route.c map/mui_tiles.c map/mui_overlay.c "${CMAKE_CURRENT_BINARY_DIR}/mui_icons_baked.c")
-target_link_libraries(mui_map PUBLIC selecta_uimodel selecta_gui)
+add_library(mui_map STATIC map/mui_style.c map/mui_wait.c map/mui_probe.c map/mui_menu.c map/mui_layout.c map/mui_controls.c map/mui_list.c map/mui_views.c map/mui_sidebar.c map/mui_canvas.c map/mui_viz.c map/mui_copper.c map/mui_drop.c map/mui_p8.c map/mui_pens.c map/mui_screen.c map/mui_route.c map/mui_tiles.c map/mui_overlay.c "${CMAKE_CURRENT_BINARY_DIR}/mui_icons_baked.c")
+# I685c: aa, aatip, theme and icons moved to plugins/shared/mcc (sel_mcc_static). The two archives reference each other
+# (mui_icons.c reads the baked table here, the classes call mui_map.h functions), so the cycle is declared on both sides.
+target_link_libraries(mui_map PUBLIC selecta_uimodel selecta_gui sel_mcc_static)
+target_link_libraries(sel_mcc_static PUBLIC mui_map)
 target_include_directories(mui_map PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/map" PRIVATE "${PROJECT_SOURCE_DIR}/include")
 
 # Registered on every target: a missing MUI keeps the descriptor (present flag 0) so --ui mui reaches mui_open and its
@@ -30,6 +33,6 @@ target_link_libraries(sel_plugin_mui_ui PUBLIC mui_map)
 if(SEL_AMIGA)
   # libmui.a (toolchain) holds the out-of-line varargs MUI_NewObject the ApplicationObject/End idiom needs (I508).
   target_link_libraries(sel_plugin_mui_ui PUBLIC mui)
-  target_sources(sel_plugin_mui_ui PRIVATE mui_canvas_class.c mui_vizarea_class.c mui_listview_class.c mui_aabtn_class.c mui_aatext_class.c mui_aapanel_class.c mui_aatabs_class.c mui_aabalance_class.c mui_aaslider_class.c mui_aacycle_class.c mui_aalist_class.c mui_aascroller_class.c mui_aafield_class.c mui_aatip.c mui_aa_draw.c)
+  target_sources(sel_plugin_mui_ui PRIVATE mui_canvas_class.c mui_vizarea_class.c mui_listview_class.c) # the AA classes: sel_mcc_static via mui_map
   target_include_directories(sel_plugin_mui_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
 endif()
