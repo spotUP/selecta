@@ -993,6 +993,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(ctl_exec_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
   target_link_libraries(ctl_exec_test PRIVATE selecta_core)
   # I632a: the shared multi-selection model.
+  # I710ga6: the Now Playing note line and button for a song that waits for a system file.
+  add_executable(sysfile_note_test uimodel/sysfile_note_test.c)
+  target_link_libraries(sysfile_note_test PRIVATE selecta_uimodel)
+  add_test(NAME sysfile-note-unit COMMAND sysfile_note_test)
+  set_tests_properties(sysfile-note-unit PROPERTIES PASS_REGULAR_EXPRESSION "sysfile_note_ok")
   add_executable(uim_select_test uimodel/select_test.c)
   target_link_libraries(uim_select_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-select COMMAND uim_select_test)
