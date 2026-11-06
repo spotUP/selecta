@@ -207,6 +207,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_fac)
 endif()
 
+# bbmp_psycle (I710u): Psycle songs (.psy), GPL Psycle engine + bbmp helper and native plugins run as a child process, behind the
+# GPL-plugin gate. Host only (C++14 engine, dlopen'd plugin libraries, no Amiga build).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_psycle)
+endif()
+
 # pxtone (I702): PiSTOL Collage songs (.ptcop, .pttune), permissively licensed play sample sources. C++ engine: host module
 # and static Amiga plugin (I702a, bebbo m68k-amigaos-c++).
 if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))

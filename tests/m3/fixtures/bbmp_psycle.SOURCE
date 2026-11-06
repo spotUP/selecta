@@ -1,0 +1,5 @@
+Psycle test songs for tests/m3/psycle_decode.sh (bbmp_psycle module, I710u). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs. Both use native machines only.
+https://modland.com/pub/modules/Psycle/Alk/8bit05.psy  1750bae337c1d3d23a5d5f84bc5fc403ed0e7d05943193227366f41269f07fca  (about 85 s)
+https://modland.com/pub/modules/Psycle/Alk/acidate.psy  4ac811a8ea0392b9dfc85a3e9677aed86efbc33739649a9efa14a6f7c96c13c7  (about 54 s)
+Engine licence: GPL-2.0-or-later Psycle with GPL-3.0-or-later bbmp glue (third_party/bbmp_psycle).
