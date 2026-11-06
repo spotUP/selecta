@@ -2347,8 +2347,9 @@ static int up_read_file(const char* path, char* buf, size_t cap) {
     return 1;
 }
 
-/* Every .c/.h file under dir, recursively: no 0x5341.... or 0x5E1A.... literal (any case) may be written there. */
-static void up_scan_literals(const char* dir, int* files) {
+/* Every .c/.h file under dir, recursively: no 0x5341.... or 0x5E1A.... literal (any case) may be written there. *uses counts every
+ * "UP_TAG(" written under dir, so a tag added without a table row fails the count below. */
+static void up_scan_literals(const char* dir, int* files, int* uses) {
     static char src[400000];
     DIR* d = opendir(dir);
     struct dirent* e;
@@ -2368,11 +2369,14 @@ static void up_scan_literals(const char* dir, int* files) {
             continue;
         }
         if (S_ISDIR(st.st_mode)) {
-            up_scan_literals(path, files);
+            up_scan_literals(path, files, uses);
         } else if (l > 2 && (strcmp(e->d_name + l - 2, ".c") == 0 || strcmp(e->d_name + l - 2, ".h") == 0)) {
             size_t i;
             CHECK(up_read_file(path, src, sizeof src), "read %s", path);
             for (i = 0; src[i] != 0; i++) {
+                if (strncmp(src + i, "UP_TAG(", 7) == 0) {
+                    (*uses)++;
+                }
                 if (src[i] == '0' && (src[i + 1] == 'x' || src[i + 1] == 'X')) {
                     CHECK(strncasecmp(src + i + 2, "5341", 4) != 0 && strncasecmp(src + i + 2, "5E1A", 4) != 0,
                           "%s writes a tag base literal near byte %zu; the base lives in mcc/up.h only", path, i);
@@ -2408,7 +2412,7 @@ static void test_up_tags(void) {
     };
     static char src[200000];
     size_t i, j;
-    int files = 0;
+    int files = 0, uses = 0;
     for (i = 0; i < sizeof rows / sizeof rows[0]; i++) {
         char path[1024], key[96], clsname[48];
         const char* p;
@@ -2436,8 +2440,10 @@ static void test_up_tags(void) {
             CHECK(rows[i].literal != rows[j].literal, "%s and %s share the number 0x%08lX", rows[i].name, rows[j].name, rows[i].literal);
         }
     }
-    up_scan_literals(MCC_SRC, &files);
+    up_scan_literals(MCC_SRC, &files, &uses);
     CHECK(files >= 20, "the literal scan saw only %d files under %s", files, MCC_SRC);
+    CHECK(uses == (int)(sizeof rows / sizeof rows[0]), "%s writes UP_TAG( %d times, the table has %d rows: add the new tag to the table",
+          MCC_SRC, uses, (int)(sizeof rows / sizeof rows[0]));
 }
 
 /* I713: the rig's wasabid lists AAList rows as items by calling AAM_GetRow (the class's documented read-back, mui_aalist_class.h).
