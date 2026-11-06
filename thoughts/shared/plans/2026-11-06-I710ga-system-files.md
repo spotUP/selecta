@@ -16,7 +16,7 @@ choices the row does not settle are listed in section 8 as open questions with a
 ## Checklist
 
 - [x] I710ga1 ABI (09fb7310): `RP_SYSFILE` tags in tags.def + replayer.h contract (section 2)
-- [ ] I710ga2 Store: `src/library/sysfile.c` resolve / verify / install, zip unpack (section 3)
+- [x] I710ga2 Store: `src/library/sysfile.c` resolve / verify / install, zip unpack (section 3) Ledger: I710ga2 done 8c112bc2
 - [ ] I710ga3 Download: URL list, override seam, background job on the library job thread (section 4)
 - [ ] I710ga4 Engine: typed `system_file_missing` reason, song state, auto-download, reopen on land, commands (section 5)
 - [ ] I710ga5 Cybertracker adapter + glue: declare the file, read the path from the host (section 6)
