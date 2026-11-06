@@ -3798,6 +3798,17 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND TARGET selecta)
   set_tests_properties(bundle-fresh PROPERTIES LABELS builtin-modules TIMEOUT 60 PASS_REGULAR_EXPRESSION "bundle_fresh_ok")
 endif()
 
+# I710x: Gameboy Tracker songs (.mgb) play through the render entry point (bbmp_mgb module, GPL-3.0 engine, GPL-plugin gate). Songs are fetched by
+# checksum (tests/m3/fixtures/bbmp_mgb.SOURCE), exit 77 = skip. A file that is not a Gameboy Tracker song must not be claimed.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/mgb-decode)
+  add_test(NAME mgb-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/mgb_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/mgb-decode)
+  set_tests_properties(mgb-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "mgb_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+endif()
+
 # I710w: SGC and GBR songs play through the render entry point (bbmp_nez module, libnezplug, no GPL gate). Four songs fetched by checksum
 # (tests/m3/fixtures/bbmp_nez.SOURCE), exit 77 = skip. A file that is not an SGC/GBR song must not be claimed.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

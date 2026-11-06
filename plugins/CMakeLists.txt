@@ -243,6 +243,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_smufi)
 endif()
 
+# bbmp_mgb (I710x): Gameboy Tracker songs (.mgb), bbmp csrc/retro/gbt_engine (clean-room, GPL 3 or later) over the GBSoundSystem driver (MIT) and the
+# existing selecta_gme, behind the GPL-plugin gate. Host only (C++17 engine, GBS image played by libgme; Amiga follow-up I710xa).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_mgb)
+endif()
+
 # bbmp_piece (I710s): Aquaplus P/ECE music driver songs (.pmd), GPL-3.0 bbmp clean-room engine (piece.cpp), behind the GPL-plugin
 # gate. Host only (C++17 engine, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

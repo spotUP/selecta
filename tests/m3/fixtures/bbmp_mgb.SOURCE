@@ -1,0 +1,5 @@
+Engine: bbmp gbt_engine.cpp (GPL-3.0-or-later) over the GBSoundSystem driver (MIT), third_party/bbmp_mgb.
+Fixtures for tests/m3/mgb_decode.sh, fetched by checksum, never committed. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Gameboy%20Tracker/Heatbeat/f-fortress.mgb f7b4b1ba2a4e0730bbec224b9f8eeb46e147d8fbfc2e4f27b0c0b04b7eb72406
+https://modland.com/pub/modules/Gameboy%20Tracker/Nula/chipmunks.mgb 151ef0af4ba169f1830a45db437731f277b09f5f0bc101ce50d0fc71d161110b
+https://modland.com/pub/modules/Gameboy%20Tracker/Heatbeat/techtoys.mgb ec9ca2a72bd3f763c44cad9e06fdb3a5ac7bfc7c615b51d61aa293478c38ba6d
