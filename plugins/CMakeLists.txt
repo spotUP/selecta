@@ -255,6 +255,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_smx)
 endif()
 
+# goattracker (I710al): GoatTracker 1 and 2 songs (.sng), GoatTracker 2.77 play routine and loader (GPL-2.0) plus reSID (GPL-2.0-or-later) under Selecta's own glue, behind the GPL-plugin
+# gate. Host only (C++ reSID, global engine state, no Amiga module path; exemption in row I710al).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/goattracker)
+endif()
+
 # bbmp_synder (I710an): Synder SNG-Player songs (.sng, C64 tunes as synthesizer settings), bbmp csrc/synder (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine,
 # no Amiga module path; exemption in row I710an).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

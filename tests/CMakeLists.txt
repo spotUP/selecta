@@ -2212,6 +2212,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710al: GoatTracker 1 and 2 songs (.sng) play through the render entry point (goattracker module: GoatTracker play routine and reSID, GPL-2.0-or-later glue). Songs are fetched by checksum, exit 77 = skip.
+  # Other .sng formats (SCC-Musixx-shaped, zero file, junk, cut-off songs) must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/goattracker-decode)
+    add_test(NAME goattracker-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/goattracker_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/goattracker-decode)
+    set_tests_properties(goattracker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "goattracker_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710an: Synder SNG-Player songs (.sng) play through the render entry point (bbmp_synder module, GPL-3.0 bbmp-synder). Songs are fetched by checksum, exit 77 = skip.
   # Other .sng formats (GoatTracker-style, zero file, cut-off song) must not be claimed.
   if(SELECTA_GPL_PLUGINS)
