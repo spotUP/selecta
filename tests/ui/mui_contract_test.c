@@ -2446,6 +2446,25 @@ static void test_up_tags(void) {
           MCC_SRC, uses, (int)(sizeof rows / sizeof rows[0]));
 }
 
+/* I685d2: every UPTOK_* name equals its SEL_GUI_TOKEN_* and the names cover the whole token list. The expected table is the
+ * same X-list written out as (UPTOK value, SEL value) pairs, one entry per list row, so the count is the list's. */
+static void test_up_token_names(void) {
+    static const struct {
+        unsigned up, sel;
+    } pairs[] = {
+#define X(id, name, def, lo, hi) {(unsigned)UPTOK_##id, (unsigned)SEL_GUI_TOKEN_##id},
+        SEL_GUI_TOKENS(X)
+#undef X
+    };
+    size_t i, n = sizeof pairs / sizeof pairs[0];
+    CHECK(n == (size_t)SEL_GUI_TOKEN_COUNT, "%d UPTOK names, SEL_GUI_TOKEN_COUNT is %d", (int)n, (int)SEL_GUI_TOKEN_COUNT);
+    CHECK((size_t)UPTOK_END_ == (size_t)SEL_GUI_TOKEN_COUNT, "UPTOK_END_ %d != SEL_GUI_TOKEN_COUNT %d", (int)UPTOK_END_, (int)SEL_GUI_TOKEN_COUNT);
+    for (i = 0; i < n; i++) {
+        CHECK(pairs[i].up == pairs[i].sel && pairs[i].up == (unsigned)i, "UPTOK #%d is %u, SEL_GUI_TOKEN is %u", (int)i, pairs[i].up, pairs[i].sel);
+    }
+    CHECK(UPTOK_FOCUS_RING == SEL_GUI_TOKEN_FOCUS_RING, "UPTOK_FOCUS_RING differs from SEL_GUI_TOKEN_FOCUS_RING");
+}
+
 /* I713: the rig's wasabid lists AAList rows as items by calling AAM_GetRow (the class's documented read-back, mui_aalist_class.h).
  * The class is Amiga-only, so the contract is checked in the sources: the header declares the method and its message, the
  * dispatcher answers it, and the handler gives the row text, the selection and the on-screen box wasabid clicks. */
@@ -3431,6 +3450,7 @@ int main(int argc, char** argv) {
         test_live_guard();
         test_aalist_getrow();
         test_up_tags();
+        test_up_token_names();
     } else if (strcmp(argv[1], "status-face") == 0) {
         test_status_face();
     } else if (strcmp(argv[1], "player-bar") == 0) {

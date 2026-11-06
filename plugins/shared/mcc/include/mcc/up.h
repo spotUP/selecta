@@ -30,4 +30,14 @@ typedef uint32_t ULONG;
 #define UP_CLS_BALANCE 0x09
 #define UP_CLS_SHARED 0x0F /* tooltip and shared */
 
+/* Theme token names (I685d2): UPTOK_<id> equals SEL_GUI_TOKEN_<id> for every token of the SEL_GUI_TOKENS list in
+ * selecta/uimodel/tokens.h. The names are generated from that list, so a token added or removed there appears or goes here. */
+#include <selecta/uimodel/tokens.h>
+enum {
+#define UPTOK_X(id, name, def, lo, hi) UPTOK_##id = SEL_GUI_TOKEN_##id,
+    SEL_GUI_TOKENS(UPTOK_X)
+#undef UPTOK_X
+    UPTOK_END_
+};
+
 #endif
