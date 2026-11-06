@@ -7,7 +7,9 @@
 
 #include <selecta/engine.h>
 
+#if !defined(SEL_LIBRARY_NO_THREAD)
 #include <pthread.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,14 +26,23 @@ typedef struct cache_ent {
 static cache_ent g_cache[CACHE_N];
 static unsigned g_cache_next;
 static unsigned g_hashes;
+
+/* The Amiga build has one task (SEL_LIBRARY_NO_THREAD) and its pthread_mutex_t has no constant initializer that passes -Werror; no lock there, as vote_push.c. */
+#if !defined(SEL_LIBRARY_NO_THREAD)
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+#define SYSFILE_LOCK() pthread_mutex_lock(&g_lock)
+#define SYSFILE_UNLOCK() pthread_mutex_unlock(&g_lock)
+#else
+#define SYSFILE_LOCK() ((void)0)
+#define SYSFILE_UNLOCK() ((void)0)
+#endif
 
 unsigned sel_sysfile_hash_count(void) {
     unsigned n;
 
-    pthread_mutex_lock(&g_lock);
+    SYSFILE_LOCK();
     n = g_hashes;
-    pthread_mutex_unlock(&g_lock);
+    SYSFILE_UNLOCK();
     return n;
 }
 
@@ -42,9 +53,9 @@ static int sha_accepted(const char* list, const void* data, size_t n) {
     unsigned i;
     const char* p;
 
-    pthread_mutex_lock(&g_lock);
+    SYSFILE_LOCK();
     g_hashes++;
-    pthread_mutex_unlock(&g_lock);
+    SYSFILE_UNLOCK();
     sel_sha256(data, n, d);
     for (i = 0; i < 32; i++) {
         snprintf(hex + 2 * i, 3, "%02x", (unsigned)d[i]);
@@ -102,16 +113,16 @@ int sel_sysfile_resolve(const char* config_dir, const sel_sysfile_decl* d, char*
         (d->size != 0 && size != d->size)) {
         return 0;
     }
-    pthread_mutex_lock(&g_lock);
+    SYSFILE_LOCK();
     for (i = 0; i < CACHE_N; i++) {
         if (g_cache[i].path[0] != '\0' && strcmp(g_cache[i].path, full) == 0 && g_cache[i].size == size &&
             g_cache[i].mtime == mtime) {
             ok = g_cache[i].ok;
-            pthread_mutex_unlock(&g_lock);
+            SYSFILE_UNLOCK();
             goto done;
         }
     }
-    pthread_mutex_unlock(&g_lock);
+    SYSFILE_UNLOCK();
     {
         size_t n = 0;
         unsigned char* b = slurp(full, &n);
@@ -119,13 +130,13 @@ int sel_sysfile_resolve(const char* config_dir, const sel_sysfile_decl* d, char*
 
         ok = b != NULL && sha_accepted(d->sha256, b, n);
         free(b);
-        pthread_mutex_lock(&g_lock);
+        SYSFILE_LOCK();
         c = &g_cache[g_cache_next++ % CACHE_N];
         snprintf(c->path, sizeof c->path, "%s", full);
         c->size = size;
         c->mtime = mtime;
         c->ok = ok;
-        pthread_mutex_unlock(&g_lock);
+        SYSFILE_UNLOCK();
     }
 done:
     if (ok && path != NULL && cap > 0) {
