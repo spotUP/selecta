@@ -206,3 +206,11 @@ I1094a-h in the ledger under I1094, each with done criterion and track. I1094i (
 5. **Hide inside source pages** (Modland or HVSC browse)? Recommended: **no**, a source page shows everything that
    source holds. Trade-off: browsing Modland then shows songs you also have locally, but hiding there would make
    a source page incomplete and the per-source song count wrong.
+
+## Johan's answers (2026-11-06)
+
+1. Tier 2 in v1: **no**. Exact copies (same md5) only; tier 2 stays in row I1094i.
+2. Default of Hide Duplicate Songs: **on**.
+3. Global source order: **no**. D-M3-14 order plus per-group "Use This Copy".
+4. Item counts with hiding on: **count visible songs, in a follow-up row** (I1094i), not in v1.
+5. Source pages: **show everything**, no hiding inside Modland or HVSC browse.
