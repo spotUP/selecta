@@ -149,6 +149,18 @@ State after row I685c (commit d8061fd4, 2026-11-06), where the tree differs from
 - The include check resolves quoted includes against the package tree and `plugins/ui/mui` only. An include that
   resolves through `plugins/shared` (`amiga/p96_write.h`) is not reported. Row I685e covers it.
 
+State after rows I685e3 and I685d2 (commits d9e9ebdf, 08faeaee, 2026-11-06), which replaces the last three points above:
+
+- The package includes nothing outside itself: `mui_gfxbase.h` is `plugins/shared/mcc/src/mui_gfxbase.h`,
+  `mui_aabtn_minmax` and `mui_btn_box_t` live in `src/map/mui_aa.h` / `mui_aa.c`, and `plugins/ui/mui/map/mui_map.h`
+  includes the package header. `include_allowlist.txt` holds 0 lines.
+- `mcc-include-check` takes its include roots from the real target (`MCC_CHECK_ROOTS`: the `INCLUDE_DIRECTORIES` of
+  `sel_mcc_static` plus `plugins/shared`) and reports every quoted include that resolves outside the package.
+- Correction: no package file includes `amiga/p96_write.h` (grep, 2026-11-06). The "known case" named above did not
+  exist; the Canvas class that needs it is private to Selecta (section 2 table).
+- The link cycle `sel_mcc_static` <-> `mui_map` is still there: `mui_icons.c` reads the baked icon table from
+  `mui_map`. Row I685e4 removes it.
+
 Reason: RULES.md rule 3 (line 9, verified) says plugins see `include/selecta/` only and shared plugin code lives in
 `plugins/shared/<topic>/`. `plugins/shared/` already holds amiga, archive, cast, mdns, paula, raop, source, stream,
 upnp and viz (verified). The package is shared plugin code with a second consumer (the release), so it belongs there.
@@ -431,7 +443,8 @@ State after row I685d (commits 6a4e64cd, 2bfffdb5, 2026-11-06):
   AmigaOS 4 compilers are not covered by that guard; row I685l (distribution) decides whether they are targets.
 - `mcc-include-check` is both a build target and a ctest entry (tests/CMakeLists.txt); it is not counted by
   `ctest -R '^mui-'`.
-- Token names (`UPTOK_*`) are row I685d2. Tag names stay `AA*` until row I685f.
+- Token names: `up.h` defines `UPTOK_<id> = SEL_GUI_TOKEN_<id>` for every entry of `SEL_GUI_TOKENS` and `UPTOK_END_`
+  (row I685d2, commit 08faeaee; before that commit the header had no token names). Tag names stay `AA*` until row I685f.
 
 ### 8.3 From spec structs to tags
 
