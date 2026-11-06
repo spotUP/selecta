@@ -9,7 +9,7 @@
 
 #define VIEW_DEPTH_MAX 8
 
-typedef enum { K_TEXT, K_INT, K_DUR, K_SIZE, K_TIME, K_BOOL, K_IN, K_VIEW } key_kind;
+typedef enum { K_TEXT, K_INT, K_DUR, K_SIZE, K_TIME, K_BOOL, K_IN, K_VIEW, K_DUP, K_COPIES } key_kind;
 
 typedef struct key_def {
     const char* name;
@@ -45,6 +45,8 @@ static const key_def KEYS[] = {
     {"skip", K_BOOL, "flags.skip = 1", 0},
     {"in", K_IN, NULL, 0},
     {"view", K_VIEW, NULL, 0},
+    {"duplicate", K_DUP, NULL, 0},  /* I1094c: songs.dup_of IS NOT NULL, a copy that is not the best one */
+    {"copies", K_COPIES, NULL, 0},  /* I1094c: every song with the md5 of the named song key, hidden or not */
 };
 
 typedef struct pq {
@@ -280,6 +282,30 @@ static void bool_cond(pq* s, const key_def* kd, const char* v, size_t n) {
     put(s, ")");
 }
 
+/* I1094c: duplicate:yes is a hidden copy, duplicate:no the best copy or a unique song. */
+static void dup_cond(pq* s, const char* v, size_t n) {
+    int yes = (n == 3 && strncmp(v, "yes", 3) == 0) || (n == 4 && strncmp(v, "true", 4) == 0) || (n == 1 && v[0] == '1');
+    int no = (n == 2 && strncmp(v, "no", 2) == 0) || (n == 5 && strncmp(v, "false", 5) == 0) || (n == 1 && v[0] == '0');
+    if (!yes && !no) {
+        fail(s, "bad_value");
+        return;
+    }
+    if (yes) s->q->all_copies = 1; /* the hidden copies are the point of the query: the hide filter stays off */
+    put(s, yes ? "songs.dup_of IS NOT NULL" : "songs.dup_of IS NULL");
+}
+
+/* I1094c: copies:<song key> is the whole md5 group of that song; the hide-duplicates filter is off for it (all_copies). */
+static void copies_cond(pq* s, const char* v, size_t n) {
+    if (n == 0) {
+        fail(s, "bad_value");
+        return;
+    }
+    s->q->all_copies = 1;
+    put(s, "(songs.md5 <> '' AND songs.md5 = (SELECT g.md5 FROM songs g WHERE g.key = ?) OR songs.key = ?)");
+    bind_text(s, v, n, 0);
+    bind_text(s, v, n, 0);
+}
+
 static void in_cond(pq* s, const char* v, size_t n) {
     put(s, "songs.key IN (SELECT playlist_entries.key FROM playlist_entries JOIN playlists ON playlists.id = "
            "playlist_entries.playlist_id LEFT JOIN folders ON folders.id = playlists.folder_id "
@@ -458,6 +484,12 @@ static void parse_term(pq* s) {
             break;
         case K_VIEW:
             view_cond(s, v, vlen);
+            break;
+        case K_DUP:
+            dup_cond(s, v, vlen);
+            break;
+        case K_COPIES:
+            copies_cond(s, v, vlen);
             break;
         default:
             num_cond(s, kd, v, vlen);

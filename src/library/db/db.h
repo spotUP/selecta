@@ -115,6 +115,7 @@ enum {
     SEL_USER_HISTORY = 1, SEL_USER_LIKE, SEL_USER_KEEP, SEL_USER_STICKER_SET, SEL_USER_STICKER_GET,
     SEL_USER_FLAG,         /* I171: name "wrong" (value = note) or "skip" on the song key */
     SEL_USER_FLAG_SKIPPED, /* I171: reply [0] = 2 when the key carries the skip flag */
+    SEL_USER_DUP_HIDDEN,   /* I1094c: reply [0] = 2 when hide-duplicates is on and the key is a hidden copy (songs.dup_of IS NOT NULL) */
     SEL_USER_FLAG_EXPORT,  /* I171: name = path of the sounds-wrong.txt to write */
     SEL_USER_NOTE,         /* I172: value = note text on the song key (empty text removes it); queues a pending_push comment */
     SEL_USER_TAG_EDIT,     /* I172: name = artist|name|album|genre, value = edited tag (empty drops the edit) */
@@ -370,6 +371,8 @@ int sel_library_song_config_get(sel_library* lib, const char* key, char* out, ui
 int sel_library_flag(sel_library* lib, const char* key, const char* kind, const char* note, uint32_t* rows);
 /* 1 when the song key carries the skip flag. */
 int sel_library_flag_skipped(sel_library* lib, const char* key);
+/* I1094c: 1 when library.hide_duplicates is on and `key` is a copy other than the best one; the radio never picks it. */
+int sel_library_key_hidden_duplicate(sel_library* lib, const char* key);
 /* Writes the wrong-flagged songs to `path` as "key<TAB>note" lines in key order (sounds-wrong.txt). 1 on
  * success; *rows = lines written (may be NULL). */
 int sel_library_flags_export(sel_library* lib, const char* path, uint32_t* rows);
@@ -663,6 +666,8 @@ void sel_library_source_mirror_refresh(sel_library* lib);
 /* Switched-off sources (I265): `csv` is the library.sources_off pref, comma separated ids. A song whose key carries one
  * of those ids is skipped by sel_library_search and the radio pick; this is the one place that owns the filter. */
 void sel_library_set_sources_off(sel_library* lib, const char* csv);
+/* I1094c: library.hide_duplicates; "on" (or NULL) hides every copy but the best (songs.dup_of IS NOT NULL) from searches and lists. */
+void sel_library_set_hide_duplicates(sel_library* lib, const char* value);
 int sel_library_csv_has(const char* csv, const char* id);
 int sel_library_key_source_off(sel_library* lib, const char* key);
 

@@ -664,6 +664,15 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             found = sqlite3_step(st) == SQLITE_ROW;
             sqlite3_finalize(st);
         }
+    } else if (op->op == SEL_USER_DUP_HIDDEN) {
+        sqlite3_stmt* st = NULL;
+        rc = SQLITE_OK;
+        if (lib->hide_dups) rc = sqlite3_prepare_v2(lib->db, "SELECT 1 FROM songs WHERE key = ?1 AND dup_of IS NOT NULL", -1, &st, NULL);
+        if (st != NULL) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            found = sqlite3_step(st) == SQLITE_ROW;
+            sqlite3_finalize(st);
+        }
     } else if (op->op == SEL_USER_HISTORY) {
         rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms, format)"
                          " VALUES(?1, ?2, ?3, ?4, COALESCE((SELECT format FROM songs WHERE key = ?1), ?5))", op, 1);

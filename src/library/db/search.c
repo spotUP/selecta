@@ -408,6 +408,11 @@ void sel_library_set_sources_off(sel_library* lib, const char* csv) {
     snprintf(lib->src_off, sizeof lib->src_off, "%s", csv != NULL ? csv : "");
 }
 
+void sel_library_set_hide_duplicates(sel_library* lib, const char* value) {
+    if (lib == NULL) return;
+    lib->hide_dups = value == NULL || strcmp(value, "off") != 0; /* default on */
+}
+
 int sel_library_csv_has(const char* csv, const char* id) {
     const char* p;
     size_t n;
@@ -438,16 +443,26 @@ int sel_library_key_source_off(sel_library* lib, const char* key) {
  * until they run out or one does not fit. A key equal to the one before it (the same song in the user DB
  * and the index) is copied once. */
 static void collect(sel_library* lib, const char* arm, const char* arm_idx, const char* match, uint32_t max_hits,
-                    sel_lib_job* job) {
+                    sel_lib_job* job, int hide) {
     static const char PAGE[] = "SELECT key FROM (%s) WHERE key > :after ORDER BY key LIMIT :rows";
     sel_page_arm arms[2];
     const char* last = NULL; /* the last key copied into job->out */
     unsigned narms = arm_idx != NULL ? 2u : 1u, i;
     uint32_t used = 0;
     int rows = page_rows(lib), ok = 1;
+    char* wrapped = NULL;
 
     memset(arms, 0, sizeof arms);
-    arms[0].arm = arm;
+    /* I1094c: hide every copy but the best, in SQL before paging so a page stays full. The index arm (idx.songs) has no dup_of. */
+    if (hide && lib->hide_dups) {
+        wrapped = sqlite3_mprintf("SELECT q.key AS key FROM (%s) AS q WHERE NOT EXISTS"
+                                  " (SELECT 1 FROM songs d WHERE d.key = q.key AND d.dup_of IS NOT NULL)", arm);
+        if (wrapped == NULL) {
+            set_error(job, "out_of_memory");
+            return;
+        }
+    }
+    arms[0].arm = wrapped != NULL ? wrapped : arm;
     arms[1].arm = arm_idx;
     for (i = 0; i < narms && ok; i++) {
         arms[i].after = "";
@@ -498,6 +513,7 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
     for (i = 0; i < narms; i++) {
         sqlite3_finalize(arms[i].st);
     }
+    sqlite3_free(wrapped);
 }
 
 /* Fills job->meta with title, artist, format, duration and album for each key collected into job->out.
@@ -672,7 +688,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             snprintf(arm_idx, sizeof arm_idx, "SELECT songs.key AS key FROM idx.songs AS songs WHERE 1%s", CHECK);
             job->used_fts = 0;
         }
-        collect(lib, arm, lib->has_index ? arm_idx : NULL, match, nterms == 0 ? job->scan_max : 0, job);
+        collect(lib, arm, lib->has_index ? arm_idx : NULL, match, nterms == 0 ? job->scan_max : 0, job, 1);
     } else {
         lib->view_used = 0;
         if (!sel_query_compile(job->text, job->now, view_lookup, lib, &lib->query)) {
@@ -686,7 +702,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             sqlite3_snprintf((int)sizeof sql_idx, sql_idx, "SELECT songs.key FROM idx.songs AS songs%s",
                              where != NULL ? where : "");
         }
-        collect(lib, lib->query.sql, lib->has_index ? sql_idx : NULL, NULL, 0, job);
+        collect(lib, lib->query.sql, lib->has_index ? sql_idx : NULL, NULL, 0, job, !lib->query.all_copies);
     }
     collect_meta(lib, job);
 }

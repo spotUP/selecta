@@ -177,6 +177,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     memset(lib, 0, sizeof *lib);
     lib->host = host;
     lib->account = account;
+    lib->hide_dups = 1; /* library.hide_duplicates defaults on (I1094c) */
     lib->cache_budget = sel_cache_budget(machine);
     if (!heap_acquire(host, sel_library_heap_bytes(machine))) {
         host->mem_free(host, lib);
@@ -374,6 +375,14 @@ int sel_library_flag_skipped(sel_library* lib, const char* key) {
     sel_library_test_slow("SELECTA_LIB_ORDER_SLOW_MS"); /* I906g test knob: a flag lookup on a busy worker */
     memset(&op, 0, sizeof op);
     op.op = SEL_USER_FLAG_SKIPPED;
+    op.key = key;
+    return user_call(lib, &op) == 2;
+}
+
+int sel_library_key_hidden_duplicate(sel_library* lib, const char* key) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_DUP_HIDDEN;
     op.key = key;
     return user_call(lib, &op) == 2;
 }

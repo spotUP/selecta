@@ -370,7 +370,7 @@ int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel
 /* ---- I678f: the lists of a collection page (design doc section 8) ----
  * One statement per (kind, shelf). Every statement returns the five columns key, name, artist, year, number and binds the item key as ?1. */
 #define PLAYS "(SELECT COUNT(*) FROM history h WHERE h.key=s.key AND h.skipped=0)"
-#define SONG_COLS "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,'')," PLAYS ",s.added,IFNULL(s.duration_ms,0) FROM songs s"
+#define SONG_COLS "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,'')," PLAYS ",s.added,IFNULL(s.duration_ms,0) FROM (SELECT * FROM songs WHERE ?9 OR dup_of IS NULL) s"
 #define ALBUM_COLS \
     "SELECT CAST(a.id AS TEXT),a.name,IFNULL(a.artist,''),IFNULL(a.year,0)," \
     "(SELECT COUNT(*) FROM songs s WHERE s.album IS a.name AND s.artist IS a.artist) FROM albums a"
@@ -517,6 +517,8 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
     rc = sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     sqlite3_bind_text(st, 1, op->key, -1, SQLITE_TRANSIENT);
+    /* I1094c: ?9 = 1 shows every copy; a source page holds what the source holds (a statement without ?9 ignores the range error) */
+    sqlite3_bind_int(st, 9, lib->hide_dups && op->offset != SEL_LIB_ITEM_SOURCE ? 0 : 1);
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         char year[24], number[24];
         const char* f[8];

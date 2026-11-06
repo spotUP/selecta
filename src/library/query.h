@@ -25,6 +25,7 @@ typedef struct sel_query {
     char sql[SEL_QUERY_SQL_MAX]; /* "SELECT songs.key FROM songs WHERE ..." with `?` placeholders */
     unsigned nparams;
     sel_query_param params[SEL_QUERY_PARAMS_MAX];
+    int all_copies; /* copies:<key> is in the query: the hide-duplicates filter does not apply (I1094c) */
     unsigned terms; /* terms the parser consumed (sentinel that the parser ran) */
     char error[24]; /* "" on success, else unknown_key, view_cycle, unknown_view, syntax, bad_value, too_complex */
 } sel_query;
