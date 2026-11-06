@@ -3,8 +3,8 @@
 # 1. Module on $SELECTA_PLUGIN_PATH: songs_opened=1, replayer=sc68, the loader counted one dynamic module, the engine
 #    called RP_RENDER (replayer_render_calls >= 1, rendered_frames > 0) and the null output pulled a non-silent sample
 #    (out_peak >= 0x0800, about -24 dBFS, same floor as sndh-render). No open-fail toast.
-# 2. Empty module directory: the open fails, open_fail_toasts=1 and the toast reads "No player for that file type yet"
-#    (a dropped path has no source prefix; the library-key toast "No player for SNDH yet" is open-fail-toast's).
+# 2. Empty module directory: sc68 is absent, the bundled psgplay (I707) plays the tune: songs_opened=1, replayer=psgplay,
+#    no failure toast, no sc68.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -73,9 +73,16 @@ if(NOT with MATCHES "open_fail_toasts=0 ")
 endif()
 
 sndh_run(without "${EMPTY}")
-if(NOT without MATCHES "open_fail_toasts=1 open_fail_text=\"No player for that file type yet\"")
-  message(FATAL_ERROR "without the module the open must raise the no-player toast:\n${without}")
+# I707: psgplay is the second SNDH backend and is bundled, so without sc68 the open still succeeds, through psgplay.
+if(NOT without MATCHES "songs_opened=1 ")
+  message(FATAL_ERROR "without sc68 the dropped SNDH was not opened (psgplay should play it):\n${without}")
+endif()
+if(NOT without MATCHES "replayer=psgplay")
+  message(FATAL_ERROR "without sc68 the open must run through replayer=psgplay:\n${without}")
 endif()
 if(without MATCHES "replayer=sc68")
   message(FATAL_ERROR "sc68 rendered without its module on the plugin path:\n${without}")
+endif()
+if(NOT without MATCHES "open_fail_toasts=0 ")
+  message(FATAL_ERROR "the psgplay open raised a failure toast:\n${without}")
 endif()
