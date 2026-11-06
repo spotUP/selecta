@@ -2452,6 +2452,17 @@ if(NOT SEL_AMIGA)
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
 
+    # I710l: Megadrive CYM (.cym, Capcom CPS-1 YM2151 log) plays through the render entry point: the libvgm module converts the log to VGM.
+    # One song fetched by checksum (tests/m3/fixtures/bbmp_cym.SOURCE), exit 77 = skip. A log without a register write is not claimed.
+    if(TARGET sel_module_libvgm)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/cym-decode)
+      add_test(NAME cym-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/cym_decode.sh $<TARGET_FILE:selecta-cli>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/cym-decode)
+      set_tests_properties(cym-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "cym_decode_ok" SKIP_RETURN_CODE 77
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
+
     # I696: OPL/AdLib songs (HSC, RAW) play through the render entry point (adplug module); the format list is reported.
     if(TARGET sel_module_adplug)
       file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-decode)

@@ -22,7 +22,7 @@ for f in "$2" "$3"; do
     [ "$e" -gt 1000000 ] || fail "$f: silent output (energy $e)"
 done
 fm=$("$cli" plugins --formats libvgm 2>&1) || fail "plugins --formats libvgm: $fm"
-for id in vgm vgz s98 dro gym; do
+for id in vgm vgz s98 dro gym cym; do
     printf '%s\n' "$fm" | grep -q "^player $id\$" || fail "format $id not listed: $fm"
 done
 echo libvgm_decode_ok

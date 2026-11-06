@@ -1,0 +1,3 @@
+Megadrive CYM song for tests/m3/cym_decode.sh (libvgm module, CYM conversion, I710l). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. A YM2151 register log of a Capcom CPS-1 arcade board; no redistribution licence is stated (Modland archive).
+https://modland.com/pub/modules/Megadrive%20CYM/_unknown/-%20misc/sample.cym  dd5c788e01235eec8267f0536078471c10412623cf0bcf722eb8dcc5d23f81da
