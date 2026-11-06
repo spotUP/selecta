@@ -11053,6 +11053,7 @@ static void refresh_snapshot(sel_engine* e) {
     }
     song->sysfile_state = e->sf_wait >= 0 ? e->sf[e->sf_wait].state : SEL_SYSF_ST_NONE;
     song->sysfile_label = e->sf_wait >= 0 ? e->sf[e->sf_wait].decl.label : NULL;
+    song->sysfile_name = e->sf_wait >= 0 ? e->sf[e->sf_wait].name : NULL;
     if (sl != NULL && sl->rp_state != NULL) {
         song->queue_id = e->q_playing;
         song->subsong = sl->subsong;

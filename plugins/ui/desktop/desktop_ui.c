@@ -357,6 +357,12 @@ typedef struct desk {
     int32_t np_inset_l, np_inset_r; /* gap between the Now Playing panel edge and its content, left and right: one spacing token (I404) */
     sel_gui_rect np_art, np_panel; /* the Now Playing cover and the panel it spans, for the dump (I443) */
     uint32_t np_notes;                /* Now Playing note lines drawn (I1127c sentinel: "Sample bank not found") */
+    sel_gui_rect np_note_btn;         /* I710ga6: the note line's "Get File..." button, empty when none is drawn */
+    uint32_t np_note_buttons;         /* sentinel: note buttons drawn */
+    uint32_t sysfile_toasts, sysfile_picks, sysfile_retries; /* I710ga6 sentinels: "<label> downloaded" toasts, files picked, downloads retried */
+    int sysfile_auto_done;            /* the fallback dialog opened by itself once this session (decision 5) */
+    int sysfile_wait;                 /* a file dialog is open for the system file dialog; its answer arrives as a drop */
+    char sysfile_name[64], sysfile_reason[48], sysfile_toast[96]; /* store name of the waiting file; last SYSFILE_FAILED reason; last toast text */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
@@ -3146,7 +3152,7 @@ static void song_menu_draw(desk* d) {
 enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = SEL_SOURCE_MAX };
 /* I921: the sync offer lists every due source the registry can hold (C99 compile-time check: a negative array size fails the build). */
 typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nagdlg_key) / sizeof(((desk*)0)->nagdlg_key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
-enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5 };
+enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5, DLG_SYSFILE = 6 };
 
 static const char* path_base(const char* p);
 
@@ -3158,7 +3164,7 @@ static uint32_t nagdlg_cols(uint32_t n) {
 
 static sel_gui_rect dlg_panel_rect(const desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t w = lpx(d, 440), h = lpx(d, 168);
+    int32_t w = lpx(d, d->dlg_open == DLG_SYSFILE ? 580 : 440), h = lpx(d, 168);
     if (d->dlg_open == DLG_SYNC) { /* I602: a column of NAG_COL_ROWS source rows, another column beside it for each NAG_COL_ROWS more */
         uint32_t rows = d->nagdlg_n < (uint32_t)NAG_COL_ROWS ? d->nagdlg_n : (uint32_t)NAG_COL_ROWS;
         uint32_t cols = nagdlg_cols(d->nagdlg_n);
@@ -3173,7 +3179,8 @@ static sel_gui_rect dlg_panel_rect(const desk* d) {
 static sel_gui_rect dlg_button_rect(const desk* d, uint32_t i) {
     sel_gui_rect p = dlg_panel_rect(d);
     int32_t w = lpx(d, 132), h = lpx(d, 32), gap = lpx(d, 12), m = lpx(d, 20);
-    return rect_of(p.x + p.w - m - w - (int32_t)(1u - i) * (w + gap), p.y + p.h - m - h, w, h);
+    uint32_t last = d->dlg_open == DLG_SYSFILE ? 2u : 1u; /* I710ga6: Cancel, Retry Download, Pick File... */
+    return rect_of(p.x + p.w - m - w - (int32_t)(last - i) * (w + gap), p.y + p.h - m - h, w, h);
 }
 
 static void dlg_open_remove(desk* d, const char* path) {
@@ -3363,7 +3370,20 @@ static void dlg_open_pldel(desk* d, uint32_t id, uint32_t folder, const char* na
     d->dlg_opens++;
 }
 
+/* I710ga6: the fallback dialog of a required system file that could not be downloaded; label and reason from the engine. */
+static void dlg_open_sysfile(desk* d, const char* label) {
+    const sel_state* st = sel_engine_state(d->engine);
+    snprintf(d->sysfile_name, sizeof d->sysfile_name, "%s", st->song.sysfile_name != NULL ? st->song.sysfile_name : "");
+    sel_uim_sysfile_text(label, d->sysfile_reason, d->dlg_text, sizeof d->dlg_text);
+    d->dlg_open = DLG_SYSFILE;
+    d->dlg_opens++;
+    d->repaint = 1;
+}
+
 static const char* dlg_title(const desk* d) {
+    if (d->dlg_open == DLG_SYSFILE) {
+        return "System File Needed";
+    }
     if (d->dlg_open == DLG_PLDEL) {
         return d->dlg_pl_folder ? "Delete Folder" : "Delete Playlist";
     }
@@ -3377,6 +3397,8 @@ static const char* dlg_confirm_label(const desk* d) {
     return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove";
 }
 
+static int sysfile_pick(desk* d);
+static int sysfile_retry(desk* d);
 static void dlg_close(desk* d, int confirm) {
     int kind = d->dlg_open;
     d->dlg_open = DLG_NONE;
@@ -3432,6 +3454,12 @@ static void dlg_draw(desk* d) {
     tr = rect_of(p.x + m, p.y + m + head->line_height + lpx(d, 10), p.w - 2 * m, body->line_height * 3);
     sel_gui_text_wrap(d->canvas, body, tr, d->dlg_text, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
     draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Cancel", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    if (d->dlg_open == DLG_SYSFILE) {
+        draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Retry Download", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        draw_button(d, dlg_button_rect(d, 2u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Pick File...", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        sel_gui_dirty_add(d->canvas, p);
+        return;
+    }
     draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), dlg_confirm_label(d),
                 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     sel_gui_dirty_add(d->canvas, p);
@@ -3444,6 +3472,18 @@ static int dlg_pointer(desk* d, const sel_gui_input* ev) {
     }
     if (d->dlg_open == DLG_SYNC) {
         return nagdlg_pointer(d, ev);
+    }
+    if (ev->kind == SEL_GUI_IN_CLICK && d->dlg_open == DLG_SYSFILE) { /* I710ga6: three buttons, Cancel keeps the note line */
+        if (in_rect(dlg_button_rect(d, 2u), ev->x, ev->y)) {
+            dlg_close(d, 1);
+            sysfile_pick(d);
+        } else if (in_rect(dlg_button_rect(d, 1u), ev->x, ev->y)) {
+            dlg_close(d, 1);
+            sysfile_retry(d);
+        } else if (in_rect(dlg_button_rect(d, 0u), ev->x, ev->y) || !in_rect(dlg_panel_rect(d), ev->x, ev->y)) {
+            dlg_close(d, 0);
+        }
+        return 1;
     }
     if (ev->kind == SEL_GUI_IN_CLICK) {
         if (in_rect(dlg_button_rect(d, 1u), ev->x, ev->y)) {
@@ -3464,7 +3504,11 @@ static int dlg_key(desk* d, const sel_gui_input* ev) {
         return 1;
     }
     if (ev->code == 13u) {
+        int sysfile = d->dlg_open == DLG_SYSFILE;
         dlg_close(d, 1);
+        if (sysfile) {
+            sysfile_pick(d);
+        }
     } else if (ev->code == 27u) {
         dlg_close(d, 0);
     }
@@ -10886,6 +10930,10 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         d->search_keep = 0;
         return moved;
     }
+    if (d->np_note_btn.w > 0 && in_rect(d->np_note_btn, x, y)) { /* I710ga6: Get File... opens the system file dialog */
+        dlg_open_sysfile(d, sel_engine_state(d->engine)->song.sysfile_label);
+        return 1;
+    }
     if (d->np_draws > 0u && in_rect(d->np_like, x, y)) { /* Now Playing: like the playing song, or set its rating */
         return desk_send(d, "LIKE");
     }
@@ -12176,6 +12224,7 @@ static void draw_nowplaying(desk* d) {
     d->np_title = rect_of(0, 0, 0, 0);
     d->np_add = rect_of(0, 0, 0, 0);
     d->np_like = rect_of(0, 0, 0, 0);
+    d->np_note_btn = rect_of(0, 0, 0, 0);
     d->np_ctx_shown[0] = '\0';
     if (dt.w <= 0 || dt.h <= 0) {
         return;
@@ -12343,6 +12392,13 @@ static void draw_nowplaying(desk* d) {
             draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), note, 0, 12, muted);
             y += lpx(d, 16);
             d->np_notes++;
+            if (sel_uim_np_note_action(&st->song) != NULL) { /* I710ga6: the Get File... button under the note */
+                d->np_note_btn = rect_of(pn.x + sp, y, lpx(d, 112), lpx(d, 26));
+                hover_reg(d, d->np_note_btn);
+                draw_button(d, d->np_note_btn, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), sel_uim_np_note_action(&st->song), 12, text);
+                y += lpx(d, 32);
+                d->np_note_buttons++;
+            }
         }
     }
     y += sp;
@@ -14802,6 +14858,46 @@ static int desk_add_folder(desk* d) {
 }
 
 /* one pointer or gesture event, from the --input script or the live window */
+/* I710ga6: Pick File... of the system file dialog. The file arrives as a drop (sysfile_wait) or, in a test, as --dialog-answer;
+ * the engine checks and installs it (SYSFILE_INSTALL), the toast follows the SYSFILE_READY event. */
+static int sysfile_install(desk* d, const char* path) {
+    char line[640];
+    size_t o = (size_t)snprintf(line, sizeof line, "SYSFILE_INSTALL \"%s\" \"", d->sysfile_name);
+    d->sysfile_wait = 0;
+    for (const char* c = path; *c != '\0' && o + 4u < sizeof line; c++) {
+        if (*c == '"' || *c == '\\') {
+            line[o++] = '\\';
+        }
+        line[o++] = *c;
+    }
+    line[o++] = '"';
+    line[o] = '\0';
+    d->sysfile_picks++;
+    d->repaint = 1;
+    return desk_send(d, line);
+}
+
+static int sysfile_pick(desk* d) {
+    if (d->dialog_answer != NULL) {
+        return sysfile_install(d, d->dialog_answer);
+    }
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL && desk_sdl_open_file_dialog(d->sdl)) {
+        d->sysfile_wait = 1;
+        return 1;
+    }
+#endif
+    desk_toast(d, "No file dialog here");
+    return 1;
+}
+
+static int sysfile_retry(desk* d) {
+    char line[128];
+    snprintf(line, sizeof line, "SYSFILE_RETRY \"%s\"", d->sysfile_name);
+    d->sysfile_retries++;
+    return desk_send(d, line);
+}
+
 static int desk_route_input(desk* d, const sel_gui_input* ev_in) {
     sel_gui_input tall = *ev_in; /* I468: pointer rows are canvas rows; the layout is in square pixels, so y and y2 scale by ydiv */
     const sel_gui_input* ev = &tall;
@@ -14814,6 +14910,9 @@ static int desk_route_input(desk* d, const sel_gui_input* ev_in) {
     if (ev->kind == SEL_GUI_IN_DROP) {
         if (d->rom_wait > 0) {
             return desk_event_frame(d, settings_rom_install(d, (uint32_t)d->rom_wait - 1u, ev->path));
+        }
+        if (d->sysfile_wait) {
+            return desk_event_frame(d, sysfile_install(d, ev->path));
         }
         if (d->imp_wait == 2) {
             return desk_event_frame(d, desk_pls_add_folder(d, ev->path));
@@ -16279,6 +16378,15 @@ static void desk_on_event(void* state, const sel_message* evt) {
         desk_toast(d, "Cannot add that folder");
         d->repaint = 1;
     }
+    if (evt->id == SEL_EVT_SYSFILE_READY && evt->argc > 0 && evt->args[0].type == SEL_ARG_STR) { /* I710ga6 */
+        snprintf(d->sysfile_toast, sizeof d->sysfile_toast, "%.60s downloaded", evt->args[0].v.s);
+        d->sysfile_toasts++;
+        desk_toast(d, d->sysfile_toast);
+        d->repaint = 1;
+    }
+    if (evt->id == SEL_EVT_SYSFILE_FAILED && evt->argc > 1 && evt->args[1].type == SEL_ARG_STR) {
+        snprintf(d->sysfile_reason, sizeof d->sysfile_reason, "%s", evt->args[1].v.s);
+    }
     if (evt->id == SEL_EVT_ERROR && evt->argc > 0 && evt->args[0].type == SEL_ARG_STR) { /* I695b: every failed open, not only a drop */
         const char* code = evt->args[0].v.s;
         const char* detail = evt->argc > 1 && evt->args[1].type == SEL_ARG_STR ? evt->args[1].v.s : "";
@@ -16299,6 +16407,13 @@ static void desk_on_event(void* state, const sel_message* evt) {
             d->repaint = 1;
         }
         d->drop_playing = 0;
+    }
+    {
+        const sel_state* ss = sel_engine_state(d->engine); /* I710ga6: the fallback dialog opens by itself once per session, on the first FAILED */
+        if (!d->sysfile_auto_done && !d->dlg_open && sel_uim_np_note_action(&ss->song) != NULL) {
+            d->sysfile_auto_done = 1;
+            dlg_open_sysfile(d, ss->song.sysfile_label);
+        }
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
 }

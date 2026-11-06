@@ -233,6 +233,10 @@ const char* sel_uim_tip_like(int liked);
 const char* sel_uim_tip_np_panel(int hidden);
 /* I1127c: the note line of the Now Playing panels ("Sample bank not found" when a companion bank of the open remote song was on no mirror), NULL: none. */
 const char* sel_uim_np_note(const sel_song_state* song);
+/* I710ga6: the button on the note line ("Get File...") while the open song waits for a system file that could not be fetched, else NULL. */
+const char* sel_uim_np_note_action(const sel_song_state* song);
+/* I710ga6: the text of the system file dialog: the file's label and why the engine gave up (the SYSFILE_FAILED reason code). */
+void sel_uim_sysfile_text(const char* label, const char* reason, char* out, size_t cap);
 /* I668: the sidebar `side` wide mid-tween; the main region takes the rest. */
 void sel_uim_layout_set_side_width(sel_uim_layout* l, uint32_t side);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);

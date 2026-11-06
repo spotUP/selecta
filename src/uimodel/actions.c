@@ -163,7 +163,26 @@ const char* sel_uim_tip_like(int liked) {
 
 /* I1127c: the one-line note under the open song's metadata, shared by both Now Playing panels. NULL: no note. */
 const char* sel_uim_np_note(const sel_song_state* song) {
-    return song != NULL && song->path != NULL && song->bank_missing != 0u ? "Sample bank not found" : NULL;
+    static char needed[96]; /* I710ga6: "<label> needed"; one UI thread reads it, the caller uses it before the next call */
+    if (song != NULL && song->path != NULL && song->bank_missing != 0u) {
+        return "Sample bank not found";
+    }
+    if (sel_uim_np_note_action(song) != NULL) {
+        snprintf(needed, sizeof needed, "%s needed", song->sysfile_label);
+        return needed;
+    }
+    return NULL;
+}
+
+const char* sel_uim_np_note_action(const sel_song_state* song) {
+    return song != NULL && song->sysfile_state == SEL_SYSF_ST_FAILED && song->sysfile_label != NULL ? "Get File..." : NULL;
+}
+
+void sel_uim_sysfile_text(const char* label, const char* reason, char* out, size_t cap) {
+    const char* why = reason != NULL && strcmp(reason, "no_match") == 0 ? "No download address matched."
+                      : reason != NULL && strcmp(reason, "all_urls_failed") == 0 ? "Every download address failed."
+                      : "The file could not be installed.";
+    snprintf(out, cap, "%s is needed to play this song. %s Pick the file from disk, or retry the download.", label != NULL ? label : "A system file", why);
 }
 
 const char* sel_uim_tip_np_panel(int hidden) {

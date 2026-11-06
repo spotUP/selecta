@@ -148,6 +148,7 @@ typedef struct sel_song_state {
     uint32_t bank_missing;       /* I1127c: 1 when a companion bank of the open remote song was on no mirror; the panels show "Sample bank not found" */
     uint32_t sysfile_state;      /* I710ga4: SEL_SYSF_ST_*; not NONE while the requested song waits for a required system file */
     const char* sysfile_label;   /* the waiting file's declared LABEL (registry-owned), NULL when sysfile_state is NONE */
+    const char* sysfile_name;    /* I710ga6: the waiting file's store name (the SYSFILE_INSTALL / SYSFILE_RETRY argument), NULL when sysfile_state is NONE */
 } sel_song_state;
 #define SEL_SYSF_ST_NONE 0u     /* no song waits for a system file */
 #define SEL_SYSF_ST_FETCHING 1u /* the file is being downloaded in the background */
