@@ -5,6 +5,7 @@
 #ifndef SELECTA_LIBRARY_ZIP_MEMBER_H
 #define SELECTA_LIBRARY_ZIP_MEMBER_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define SEL_ZIP_MEMBER_MAX (16ul << 20) /* a member above 16 MB is refused */
@@ -23,5 +24,14 @@ int sel_zip_member_find(const char* cd_path, const char* name, sel_zip_member* o
 /* Downloads the member of the zip at `zip_url` and writes the unpacked bytes to `out_path`. Counts the requests sent
  * in *requests (may be NULL). 1 on success. */
 int sel_zip_member_fetch(const char* zip_url, const sel_zip_member* m, const char* out_path, unsigned* requests);
+
+/* Called once per member of a local zip with its name and unpacked bytes (valid only during the call). Return nonzero
+ * to stop the walk. */
+typedef int (*sel_zip_each_fn)(void* ctx, const char* name, const unsigned char* data, size_t n);
+
+/* Walks the central directory of the zip file `zip_path` and unpacks each member (stored or deflate, up to
+ * SEL_ZIP_MEMBER_MAX, through the same tinfl call sel_zip_member_fetch uses) for `cb`. Members that are directories,
+ * too large or unreadable are skipped. 1 when the zip was parsed, 0 when it is not a readable zip. (I710ga2) */
+int sel_zip_local_each(const char* zip_path, sel_zip_each_fn cb, void* ctx);
 
 #endif

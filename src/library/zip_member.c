@@ -129,3 +129,96 @@ int sel_zip_member_fetch(const char* zip_url, const sel_zip_member* m, const cha
     free(data);
     return ok;
 }
+
+/* Unpacks one member whose local header sits at `off` in the whole-file buffer; NULL when it does not fit or inflate fails. */
+static unsigned char* local_unpack(const unsigned char* z, size_t zn, uint32_t off, uint16_t method, uint32_t csize,
+                                   uint32_t usize) {
+    unsigned char* data;
+    size_t start;
+
+    if ((size_t)off + 30u > zn || memcmp(z + off, "PK\x03\x04", 4) != 0) {
+        return NULL;
+    }
+    start = (size_t)off + 30u + le16(z + off + 26) + le16(z + off + 28);
+    if (start > zn || csize > zn - start || (method == 0 && csize != usize)) {
+        return NULL;
+    }
+    data = malloc(usize > 0 ? usize : 1u);
+    if (data == NULL) {
+        return NULL;
+    }
+    if (method == 0) {
+        memcpy(data, z + start, usize);
+    } else if (tinfl_decompress_mem_to_mem(data, usize, z + start, csize, 0) != usize) {
+        free(data);
+        return NULL;
+    }
+    return data;
+}
+
+int sel_zip_local_each(const char* zip_path, sel_zip_each_fn cb, void* ctx) {
+    FILE* f = fopen(zip_path, "rb");
+    unsigned char* z = NULL;
+    long fl;
+    size_t zn, e, pos;
+    unsigned count, i;
+    int stop = 0;
+
+    if (f == NULL) {
+        return 0;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (fl = ftell(f)) < 22 || fl > (long)(64ul << 20) || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return 0;
+    }
+    zn = (size_t)fl;
+    z = malloc(zn);
+    if (z == NULL || fread(z, 1, zn, f) != zn) {
+        free(z);
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+    for (e = zn - 22u;; e--) { /* end-of-central-directory record, searched backwards past a trailing comment */
+        if (memcmp(z + e, "PK\x05\x06", 4) == 0) {
+            break;
+        }
+        if (e == 0 || zn - e > 22u + 65535u) {
+            free(z);
+            return 0;
+        }
+    }
+    count = le16(z + e + 10);
+    pos = le32(z + e + 16);
+    for (i = 0; i < count && !stop; i++) {
+        const unsigned char* h;
+        uint32_t nlen, usize, csize;
+        uint16_t method;
+        char name[SEL_ZIP_NAME_MAX];
+
+        if (pos + 46u > zn || memcmp(z + pos, "PK\x01\x02", 4) != 0) {
+            break;
+        }
+        h = z + pos;
+        nlen = le16(h + 28);
+        method = (uint16_t)le16(h + 10);
+        csize = le32(h + 20);
+        usize = le32(h + 24);
+        if (pos + 46u + nlen > zn) {
+            break;
+        }
+        if (nlen < sizeof name && usize > 0 && usize <= SEL_ZIP_MEMBER_MAX && (method == 0 || method == 8)) {
+            unsigned char* data = local_unpack(z, zn, le32(h + 42), method, csize, usize);
+
+            if (data != NULL) {
+                memcpy(name, h + 46, nlen);
+                name[nlen] = '\0';
+                stop = cb(ctx, name, data, usize) != 0;
+                free(data);
+            }
+        }
+        pos += 46u + nlen + le16(h + 30) + le16(h + 32);
+    }
+    free(z);
+    return 1;
+}

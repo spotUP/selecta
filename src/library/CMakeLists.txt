@@ -37,7 +37,7 @@ endif()
 
 # Network (plan 2026-10-25-m3-library.md Phase 3, D-M3-4): the socket table with the guard and host
 # map (one file per OS under src/core/) and the HTTP/1.1 client on top of it.
-target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c net/tls_gate.c net/ftp.c net/mirrors.c net/backoff.c net/devilbox.c md5.c entropy.c support.c cache.c zip_member.c)
+target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c net/tls_gate.c net/ftp.c net/mirrors.c net/backoff.c net/devilbox.c md5.c entropy.c support.c cache.c zip_member.c sysfile.c)
 if(SEL_AMIGA)
   # I899g: https through the user's AmiSSL v5, opened at runtime (tls_amissl.c); the SDK headers are fetched here.
   include(${PROJECT_SOURCE_DIR}/cmake/amissl_sdk.cmake)

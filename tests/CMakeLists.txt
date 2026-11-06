@@ -1086,6 +1086,13 @@ target_compile_definitions(modulespl_parse_test PRIVATE
 add_test(NAME modulespl-parse COMMAND modulespl_parse_test)
 set_tests_properties(modulespl-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "modulespl_parse_ok")
 
+# I710ga2: system-file store (resolve by sha256, install raw or from a zip, .part then rename).
+add_executable(sysfile_store_test library/sysfile_store_test.c)
+target_link_libraries(sysfile_store_test PRIVATE selecta_shared_cast selecta_library)
+target_include_directories(sysfile_store_test PRIVATE "${PROJECT_SOURCE_DIR}/src/library" "${PROJECT_SOURCE_DIR}/third_party/miniz")
+add_test(NAME sysfile-store COMMAND sysfile_store_test "${CMAKE_CURRENT_BINARY_DIR}")
+set_tests_properties(sysfile-store PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sysfile_store_ok")
+
 # I437: embedded cover readers (ID3v2 APIC, FLAC PICTURE).
 add_executable(cover_tag_test library/cover_tag_test.c)
 add_test(NAME cover-tag-unit COMMAND cover_tag_test)
