@@ -225,6 +225,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_musicline)
 endif()
 
+# bbmp_spu (I710y): PlayStation SPU logs (.spu), bbmp csrc/console/spu_engine over the P.E.Op.S. SPU (GPL 2 or later), behind the GPL-plugin
+# gate. Host only (C++17 engine, no Amiga module path).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_spu)
+endif()
+
 # bbmp_wsr (I710z): WonderSwan (.wsr), bbmp csrc/console/wsr_engine over Mednafen WonderSwan (GPL 2 only files), behind the GPL-plugin
 # gate. Host only (C++17 emulator, forked scan workers, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

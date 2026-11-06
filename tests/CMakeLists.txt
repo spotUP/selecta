@@ -2112,6 +2112,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710y: PlayStation SPU logs (.spu) play through the render entry point (bbmp_spu module, GPL-2.0-or-later). Two logs fetched by
+  # checksum (tests/m3/fixtures/bbmp_spu.SOURCE), exit 77 = skip. A file that is not an SPU log must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/spu-decode)
+    add_test(NAME spu-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/spu_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/spu-decode)
+    set_tests_properties(spu-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "spu_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710u: Psycle songs (.psy) play through the render entry point (bbmp_psycle module, helper child process), GPL; two Alk
   # songs fetched by checksum (tests/m3/fixtures/bbmp_psycle.SOURCE), exit 77 = skip.
   if(SELECTA_GPL_PLUGINS)

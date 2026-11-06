@@ -1,0 +1,5 @@
+PlayStation SPU logs for tests/m3/spu_decode.sh (bbmp_spu module, I710y). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (game music rips); both are the old log form.
+https://modland.com/pub/modules/SPU/_unknown/Depth/depth-peaceall.spu  abea883de48226503a9e7be4cccbf2efb0be6b48d8036883026b7fc003ef4f12
+https://modland.com/pub/modules/SPU/_unknown/Dezaemon%20Plus/dezaemon17.spu  f634f13eb9f37d2f19a2e45ed4022c61cfbf3b28a790bed23d5159f58747b405
+Engine licence: GPL-2.0-or-later (bbmp csrc/console SPU engine + P.E.Op.S., third_party/bbmp_spu).

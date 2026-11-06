@@ -1,0 +1,7 @@
+bbmp_spu: engine.h, resample.h and spu_engine.cpp from github.com/creep-ltx/bbmp csrc/console, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-2.0-or-later, SPDX line in each file). Only the SPU engine: the WonderSwan
+engine (wsr_engine.cpp, Mednafen, GPL 2 only) and the helper main (bbmp-console.cpp) are not vendored here.
+peops/: the P.E.Op.S. PlayStation SPU (Pete Bernert; gauss_i.h Chris Moeller) from the Audio Overload SDK
+(github.com/nmlgc/aosdk, commit e359a6e5154b2ba8499fb1f24a1f5f8a18538a61, eng_psf/peops), GPL-2.0-or-later (peops/License.txt = COPYING).
+One edit: spu.c includes "../corlett.h" instead of "../../corlett.h" (flat layout). The SPU needs ao.h, corlett.h, utils.h, wavedump.h
+and sampledump.h of the SDK (declarations only, BSD licence, AOSDK-license.txt). No MAME-licensed (non-commercial) SDK file is vendored.
