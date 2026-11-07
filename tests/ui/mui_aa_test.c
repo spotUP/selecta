@@ -265,14 +265,14 @@ static void test_panel_source(void) {
         snprintf(hpath, sizeof hpath, "%s", AAPANEL_SOURCE);
         hpath[strlen(hpath) - 1] = 'h';
         hdr = slurp(hpath);
-        const char* nw = cls != NULL ? strstr(cls, "Object* mui_aapanel_new(") : NULL;
+        const char* nw = cls != NULL ? strstr(cls, "Object* UP_NewPanel(") : NULL;
         const char* pad = cls != NULL ? strstr(cls, "mui_aa_panel_pad(") : NULL;
         CHECK(hdr != NULL && strstr(hdr, "aspect_q8") == NULL, "mui_aapanel_spec still has aspect_q8");
         CHECK(strstr(cls, "MUIA_Inner") == NULL, "the panel class still passes MUIA_Inner*");
         CHECK(count_of(cls, "mui_aa_panel_pad(") == 1 && pad != NULL && nw != NULL && pad < nw && strstr(cls, "mui_aa_panel_pad(d->aa.tok, d->aa.aspect_q8,") != NULL,
-              "mui_aa_panel_pad must be called once, with d->aa.aspect_q8, outside mui_aapanel_new: %d", count_of(cls, "mui_aa_panel_pad("));
+              "mui_aa_panel_pad must be called once, with d->aa.aspect_q8, outside UP_NewPanel: %d", count_of(cls, "mui_aa_panel_pad("));
         CHECK(nw != NULL && strstr(nw, "MUIA_Group_LayoutHook") != NULL && strstr(cls, "case OM_ADDMEMBER:") != NULL && strstr(cls, "case OM_REMMEMBER:") != NULL,
-              "layout hook not passed in mui_aapanel_new, or the dispatcher does not forward OM_ADDMEMBER / OM_REMMEMBER");
+              "layout hook not passed in UP_NewPanel, or the dispatcher does not forward OM_ADDMEMBER / OM_REMMEMBER");
         CHECK(strstr(ui, "sp.aspect_q8") == NULL, "mui_ui.c still sets sp.aspect_q8");
         free(hdr);
     }
@@ -329,7 +329,7 @@ static void test_tabs_source(void) {
     CHECK(count_of(ui, "mui_aatabs_class_free()") == 1, "class not freed at close");
     CHECK(strstr(cls, "mui_aa_tabs_line(") != NULL && strstr(cls, "mui_aa_tabs_rgb(") != NULL && strstr(cls, "mui_aa_tabs_key(") != NULL && strstr(cls, "mui_aa_tabs_click(") != NULL,
           "class does not run the shared tab helpers");
-    CHECK(strstr(cls, "MUI_AA_ROLE_TAB") != NULL, "tabs are not TAB role buttons");
+    CHECK(strstr(cls, "UPV_Button_Role_Tab") != NULL, "tabs are not TAB role buttons");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
     CHECK(strstr(cm, "mui_aatabs_class.c") != NULL, "class not in the build");
     free(ui);
@@ -372,7 +372,7 @@ static void test_balance_source(void) {
         return;
     }
     CHECK(count_of(ui, "BalanceObject") == 0 && count_of(ui, "MUIC_Balance") == 0, "stock Balance left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aabalance_new()") == 2, "AABalance constructor calls in mui_ui.c: %d", count_of(ui, "mui_aabalance_new()"));
+    CHECK(count_of(ui, "UP_NewBalance(NULL)") == 2, "AABalance constructor calls in mui_ui.c: %d", count_of(ui, "UP_NewBalance(NULL)"));
     CHECK(count_of(ui, "mui_aabalance_class_free()") == 1, "class not freed at close");
     CHECK(strstr(cls, "mui_aa_balance_width(") != NULL && strstr(cls, "mui_aa_balance_line(") != NULL && strstr(cls, "mui_aa_balance_rgb(") != NULL,
           "class does not run the shared balance helpers");
@@ -455,7 +455,7 @@ static void test_btn_align(void) {
         /* Johan rig 2 2026-10-29: the "> PROGDIR:" breadcrumb text ran past its button. The width was measured once at setup from the
          * blank first caption; a fit button (NULL widest) now re-measures at every layout from the caption it was last given. */
         CHECK(strstr(cls, "aabtn_measure(obj, d);") != NULL && count_of(cls, "aa_text_width(&d->aa, obj, d->widest)") == 1, "width not measured at layout");
-        CHECK(strstr(cls, "d->fit = sp->widest == NULL;") != NULL && strstr(cls, "if (d->fit) {\n        strncpy(d->widest, caption") != NULL,
+        CHECK(strstr(cls, "d->fit = widest == NULL;") != NULL && strstr(cls, "if (d->fit) {\n        strncpy(d->widest, caption") != NULL,
               "fit button does not follow its caption");
         CHECK(strstr(ui, "mui_make_button_i(label, NULL, icon_key, NULL, id, weight, 0, MUI_AA_ROLE_GHOST)") != NULL &&
                   strstr(ui, "s->crumb_btn[k] = mui_make_button_w(") != NULL,
@@ -649,7 +649,7 @@ static void test_i667n(void) {
         CHECK(sup != NULL && fill != NULL && sup < fill, "balance draws before the super draw: no clip region, nothing paints");
     }
     if (fld != NULL) {
-        const char* mk = strstr(fld, "Object* mui_aafield_new(");
+        const char* mk = strstr(fld, "Object* UP_NewField(");
         CHECK(mk != NULL, "AAField constructor present");
     }
     mui_aa_slider_metrics(13, 256, &m);
@@ -1009,7 +1009,7 @@ static void test_list_source(void) {
     CHECK(strstr(ls, "mui_aa_list_row_rgb(") != NULL && strstr(ls, "mui_aa_list_move(") != NULL && strstr(ls, "mui_aa_list_col_x(") != NULL && strstr(ls, "aa_round_fill(") != NULL,
           "list does not draw through the shared helpers");
     CHECK(strstr(sc, "mui_aa_scroller_geom(") != NULL && strstr(sc, "mui_aa_scroller_rgb(") != NULL && strstr(sc, "aa_round_fill(") != NULL, "scroller does not draw through the shared helpers");
-    CHECK(strstr(ls, "mui_aascroller_new(") != NULL && strstr(ls, "mui_aascroller_class_free(") != NULL, "list builds and frees its scroller");
+    CHECK(strstr(ls, "UP_NewScroller(") != NULL && strstr(ls, "mui_aascroller_class_free(") != NULL, "list builds and frees its scroller");
     CHECK(strstr(ls, "ObtainBestPenA") == NULL && strstr(ls, "0x1") == NULL && strstr(sc, "ObtainBestPenA") == NULL && strstr(sc, "0x3") == NULL, "no pen code or colour literal in the classes");
     CHECK(strstr(cm, "mui_aalist_class.c") != NULL && strstr(cm, "mui_aascroller_class.c") != NULL, "classes not in the build");
     free(ui);

@@ -1962,7 +1962,7 @@ static void test_icon_square(void) {
     CHECK(bn.min_w == 20 && bn.w_fixed == 0 && bn.min_h == 12 && bn.h_fixed == 1, "a button with no fixed side keeps the unbounded width");
     CHECK(fx.min_w == 24 && fx.def_w == 24 && fx.w_fixed == 1 && fx.min_h == 12 && fx.def_h == 12 && fx.h_fixed == 1, "a fixed side: min = def = max (%u %u %u)", (unsigned)fx.min_w, (unsigned)fx.def_w, (unsigned)fx.w_fixed);
     CHECK(tg.w_fixed == 1, "a toggle box stays fixed");
-    CHECK(strstr(src, "mui_aabtn_minmax((uint32_t)d->minw") != NULL && strstr(src, "d->fixed_w = sp->fixed_w;") != NULL, "askminmax calls the helper and the spec carries the fixed sides");
+    CHECK(strstr(src, "mui_aabtn_minmax((uint32_t)d->minw") != NULL && strstr(src, "d->fixed_w = (int)GetTagData(UPA_Button_FixedWidth") != NULL, "askminmax calls the helper and the spec carries the fixed sides");
     CHECK(strstr(ui, "static Object* mui_make_button_fixed(") != NULL, "the fixed-size button builder exists");
 }
 
@@ -2390,25 +2390,25 @@ static void up_scan_literals(const char* dir, int* files, int* uses) {
 
 static void test_up_tags(void) {
     static const up_tag_row rows[] = {
-        {"/class/mui_aatext_class.h", "UPA_Text_Contents", UP_CLS_TEXT, 0x01, 0x80000000UL | 0x53410001UL},
-        {"/class/mui_aaslider_class.h", "UPA_Progress_Value", UP_CLS_PROGRESS, 0x01, 0x80000000UL | 0x53410101UL},
-        {"/class/mui_aaslider_class.h", "UPA_Progress_Max", UP_CLS_PROGRESS, 0x02, 0x80000000UL | 0x53410102UL},
-        {"/class/mui_aacycle_class.h", "UPA_Cycle_Active", UP_CLS_CYCLE, 0x01, 0x80000000UL | 0x53410201UL},
-        {"/class/mui_aacycle_class.h", "UPA_Cycle_Entries", UP_CLS_CYCLE, 0x02, 0x80000000UL | 0x53410202UL},
-        {"/class/mui_aatabs_class.h", "UPA_Tabs_Active", UP_CLS_TABS, 0x01, 0x80000000UL | 0x53410301UL},
-        {"/class/mui_aascroller_class.h", "UPA_Scroller_First", UP_CLS_SCROLLER, 0x01, 0x80000000UL | 0x53410401UL},
-        {"/class/mui_aascroller_class.h", "UPA_Scroller_Visible", UP_CLS_SCROLLER, 0x02, 0x80000000UL | 0x53410402UL},
-        {"/class/mui_aascroller_class.h", "UPA_Scroller_Entries", UP_CLS_SCROLLER, 0x03, 0x80000000UL | 0x53410403UL},
-        {"/class/mui_aalist_class.h", "UPA_List_Count", UP_CLS_LIST, 0x01, 0x80000000UL | 0x53410501UL},
-        {"/class/mui_aalist_class.h", "UPA_List_Active", UP_CLS_LIST, 0x02, 0x80000000UL | 0x53410502UL},
-        {"/class/mui_aalist_class.h", "UPA_List_First", UP_CLS_LIST, 0x03, 0x80000000UL | 0x53410503UL},
-        {"/class/mui_aalist_class.h", "UPA_List_Picked", UP_CLS_LIST, 0x04, 0x80000000UL | 0x53410504UL},
-        {"/class/mui_aalist_class.h", "UPA_List_Columns", UP_CLS_LIST, 0x05, 0x80000000UL | 0x53410505UL},
-        {"/class/mui_aalist_class.h", "UPA_List_Playing", UP_CLS_LIST, 0x06, 0x80000000UL | 0x53410506UL},
-        {"/class/mui_aalist_class.h", "UPM_List_GetRow", UP_CLS_LIST, 0x10, 0x80000000UL | 0x53410510UL},
-        {"/class/mui_aafield_class.c", "UPM_Field_Redraw", UP_CLS_FIELD, 0x01, 0x80000000UL | 0x53410701UL},
-        {"/mui_aatip.h", "UPM_Shared_Fire", UP_CLS_SHARED, 0x31, 0x80000000UL | 0x53410F31UL},
-        {"/mui_aatip.h", "UPA_Shared_Side", UP_CLS_SHARED, 0x32, 0x80000000UL | 0x53410F32UL},
+        {"/../include/mcc/up.h", "UPA_Text_Contents", UP_CLS_TEXT, 0x01, 0x80000000UL | 0x53410001UL},
+        {"/../include/mcc/up.h", "UPA_Progress_Value", UP_CLS_PROGRESS, 0x01, 0x80000000UL | 0x53410101UL},
+        {"/../include/mcc/up.h", "UPA_Progress_Max", UP_CLS_PROGRESS, 0x02, 0x80000000UL | 0x53410102UL},
+        {"/../include/mcc/up.h", "UPA_Cycle_Active", UP_CLS_CYCLE, 0x01, 0x80000000UL | 0x53410201UL},
+        {"/../include/mcc/up.h", "UPA_Cycle_Entries", UP_CLS_CYCLE, 0x02, 0x80000000UL | 0x53410202UL},
+        {"/../include/mcc/up.h", "UPA_Tabs_Active", UP_CLS_TABS, 0x01, 0x80000000UL | 0x53410301UL},
+        {"/../include/mcc/up.h", "UPA_Scroller_First", UP_CLS_SCROLLER, 0x01, 0x80000000UL | 0x53410401UL},
+        {"/../include/mcc/up.h", "UPA_Scroller_Visible", UP_CLS_SCROLLER, 0x02, 0x80000000UL | 0x53410402UL},
+        {"/../include/mcc/up.h", "UPA_Scroller_Entries", UP_CLS_SCROLLER, 0x03, 0x80000000UL | 0x53410403UL},
+        {"/../include/mcc/up.h", "UPA_List_Count", UP_CLS_LIST, 0x01, 0x80000000UL | 0x53410501UL},
+        {"/../include/mcc/up.h", "UPA_List_Active", UP_CLS_LIST, 0x02, 0x80000000UL | 0x53410502UL},
+        {"/../include/mcc/up.h", "UPA_List_First", UP_CLS_LIST, 0x03, 0x80000000UL | 0x53410503UL},
+        {"/../include/mcc/up.h", "UPA_List_Picked", UP_CLS_LIST, 0x04, 0x80000000UL | 0x53410504UL},
+        {"/../include/mcc/up.h", "UPA_List_Columns", UP_CLS_LIST, 0x05, 0x80000000UL | 0x53410505UL},
+        {"/../include/mcc/up.h", "UPA_List_Playing", UP_CLS_LIST, 0x06, 0x80000000UL | 0x53410506UL},
+        {"/../include/mcc/up.h", "UPM_List_GetRow", UP_CLS_LIST, 0x10, 0x80000000UL | 0x53410510UL},
+        {"/../include/mcc/up.h", "UPM_Field_Redraw", UP_CLS_FIELD, 0x01, 0x80000000UL | 0x53410701UL},
+        {"/../include/mcc/up.h", "UPM_Shared_Fire", UP_CLS_SHARED, 0x31, 0x80000000UL | 0x53410F31UL},
+        {"/../include/mcc/up.h", "UPA_Shared_Side", UP_CLS_SHARED, 0x32, 0x80000000UL | 0x53410F32UL},
     };
     static char src[200000];
     size_t i, j;
@@ -2442,8 +2442,8 @@ static void test_up_tags(void) {
     }
     up_scan_literals(MCC_SRC, &files, &uses);
     CHECK(files >= 20, "the literal scan saw only %d files under %s", files, MCC_SRC);
-    CHECK(uses == (int)(sizeof rows / sizeof rows[0]), "%s writes UP_TAG( %d times, the table has %d rows: add the new tag to the table",
-          MCC_SRC, uses, (int)(sizeof rows / sizeof rows[0]));
+    /* I685f: every tag is defined in include/mcc/up.h; nothing under src/ writes UP_TAG( (mui_tagmap_test checks the same per file). */
+    CHECK(uses == 0, "%s writes UP_TAG( %d times; tags are defined in include/mcc/up.h only", MCC_SRC, uses);
 }
 
 /* I685d2: every UPTOK_* name equals its SEL_GUI_TOKEN_* and the names cover the whole token list. The expected table is the
@@ -2473,7 +2473,7 @@ static void test_aalist_getrow(void) {
     char path[1024];
     size_t n;
     FILE* f;
-    snprintf(path, sizeof path, "%s/mui_aalist_class.h", MCC_CLASS);
+    snprintf(path, sizeof path, "%s/../include/mcc/up.h", MCC_SRC);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -2481,7 +2481,7 @@ static void test_aalist_getrow(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(strstr(src, "#define UPM_List_GetRow") != NULL && strstr(src, "mui_aalist_getrow;") != NULL, "mui_aalist_class.h declares no UPM_List_GetRow message");
+    CHECK(strstr(src, "#define UPM_List_GetRow") != NULL && strstr(src, "UP_ListGetRow;") != NULL, "mcc/up.h declares no UPM_List_GetRow message");
     snprintf(path, sizeof path, "%s/mui_aalist_class.c", MCC_CLASS);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
