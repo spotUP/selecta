@@ -790,6 +790,7 @@ int main(int argc, char** argv)
     args.output_id = out_id;
     args.argc = argc;
     args.argv = (const char* const*)argv;
+    args.trace = sel_trace;
     args.why = ui_why;
     args.why_cap = sizeof ui_why;
     if (library != NULL) {

@@ -35,6 +35,9 @@ typedef struct sel_ui_open_args {
     const char* output_id; /* id of the output the shell opened (I1039): the UI asks that plugin for its device list; NULL = unknown */
     char* why;
     uint32_t why_cap;
+    /* Start-up phase trace (I625a5): the shell's own trace line writer, so a UI adds sub-phase lines on the same millisecond base
+     * as the shell's ("trace t_ms=<ms> <phase>", written only under --log or --stats). NULL when the shell has none. */
+    void (*trace)(const sel_host* host, const char* phase);
 } sel_ui_open_args;
 
 typedef void* (*sel_ui_open_fn)(const sel_ui_open_args* args);               /* UI_OPEN: state or NULL */

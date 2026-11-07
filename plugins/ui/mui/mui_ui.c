@@ -605,6 +605,16 @@ static void mui_screen_close(void) {
     mui_screen_font_close();
 }
 
+/* I625a5: sub-phase lines of the UI open phase on the shell's trace clock (sel_ui_open_args.trace), so the --log shows where the
+ * seconds inside "UI open returned" go. Silent when the shell gave no trace function or the run has neither --log nor --stats. */
+static const sel_host* g_trace_host;
+static void (*g_trace_fn)(const sel_host*, const char*);
+static void mui_trace(const char* phase) {
+    if (g_trace_fn != NULL) {
+        g_trace_fn(g_trace_host, phase);
+    }
+}
+
 static void mui_screen_open(const uint32_t* tokens) {
     struct Screen* wb;
     struct DisplayInfo di;
@@ -740,6 +750,7 @@ static void mui_theme_init(const sel_ui_open_args* a) {
     mui_font_file_add("Selecta:Fonts/Inter-Regular.ttf"); /* I685e2: Selecta's own font path; "RAM:Inter-Regular.ttf" was only the I665 spike's */
     mui_theme_resolve(&th, MUI_THEME_ENV_PATH, theme_arg); /* I676b: a THEME request made earlier wins over --theme */
     mui_screen_open(th.token);
+    mui_trace("ui: screen, font, DrawInfo and pens done (mui_screen_open)");
     mui_theme_decide(th.token);
 }
 
@@ -3204,6 +3215,9 @@ static void* mui_open(const sel_ui_open_args* a) {
     s->engine = a != NULL ? a->engine : NULL;
     mui_route_init(&s->route);
     s->find_plugin = a != NULL ? a->find_plugin : NULL;
+    g_trace_host = a != NULL ? a->host : NULL;
+    g_trace_fn = a != NULL && a->host != NULL ? a->trace : NULL;
+    mui_trace("ui: mui_open begin");
     {
         char knob[8];
         s->dbl_race = GetVar((CONST_STRPTR)"Selecta/MUIDblRace", (STRPTR)knob, sizeof knob, 0) >= 0 && mui_list_dbl_race_on(knob);
@@ -3219,13 +3233,16 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_LIBRARY, "(graphics.library)");
         return NULL;
     }
+    mui_trace("ui: muimaster and graphics libraries open");
     mui_theme_init(a);
+    mui_trace("ui: theme and screen setup done");
     {   /* I684: the viz plugins the desktop lists, the initial one from the same ui.desktop.viz pref */
         const sel_host* vh = s->engine != NULL ? sel_engine_plugin_host(s->engine) : NULL;
         const char* pref = vh != NULL && vh->config_get != NULL ? vh->config_get(vh, "ui.desktop.viz", "") : "";
         (void)mui_vizset_load(&s->vizset, s->find_plugin, pref);
     }
     strip = mui_menu_strip();
+    mui_trace("ui: viz set and menu strip built");
     sel_uim_init(&s->uim);
     /* I675 (D-M4-3): borderless backdrop window on the own screen, normal borders on Workbench (g_scr == NULL). The borderless
      * window has no title: Intuition draws a title bar on any titled window, borderless or not. */
@@ -3265,6 +3282,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_WINDOW, "(MUI could not create the objects)");
         return NULL;
     }
+    mui_trace("ui: application and window object tree built (classes created)");
     fprintf(stderr, "selecta mui: tier font on %d window roots (%s)\n", g_font_applied, g_scr_font != NULL ? "applied" : "none");
     DoMethod(s->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, s->app, 2, MUIM_Application_ReturnID,
              MUIV_Application_ReturnID_Quit);
@@ -3281,6 +3299,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     for (step = 0; mui_layout_for_screen(s, step); step++) {
         set(s->win, MUIA_Window_Open, TRUE);
         GetAttr(MUIA_Window_Open, s->win, &open); /* MUI opens the window inside the set; 0 here means it failed */
+        mui_trace(open ? "ui: window open attempt returned, window open (ladder step)" : "ui: window open attempt returned, refused (ladder step)");
         {
             /* I671 measurement: the minimum the root group asked for (MUIM_AskMinMax ran inside the open attempt, the values
              * stay in the object after a refusal) next to the screen it had to fit. --log on the rig records one line per step. */
@@ -3336,8 +3355,11 @@ static void* mui_open(const sel_ui_open_args* a) {
     mui_timer_open(s);
     s->lay.width = 0; /* mui_layout_for_screen applied the screen-size layout; the first resize check moves it to the real size */
     s->lay.breakpoint = SEL_UIM_BP_COUNT; /* no breakpoint yet: the first real size always applies */
+    mui_trace("ui: window open done, timer open");
     mui_check_resize(s);
+    mui_trace("ui: first resize check and layout done");
     mui_refresh(s);
+    mui_trace("ui: first refresh (data into the lists, first draw) done");
     s->opens++;
     return s;
 }
