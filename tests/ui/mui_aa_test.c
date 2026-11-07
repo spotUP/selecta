@@ -547,7 +547,7 @@ static void test_slider_source(void) {
     CHECK(count_of(ui, "mui_make_slider(") == 4, "slider constructor sites: %d (definition + 3)", count_of(ui, "mui_make_slider("));
     CHECK(count_of(ui, "mui_aaslider_new(") == 1, "one AASlider constructor call: %d", count_of(ui, "mui_aaslider_new("));
     CHECK(count_of(ui, "mui_aaslider_class_free(") == 1, "class freed in mui_close");
-    CHECK(strstr(cls, "mui_aa_slider_plan(") != NULL && strstr(cls, "MUIM_DrawBackground") != NULL && strstr(cls, "mui_aa_slider_value_at(") != NULL &&
+    CHECK(strstr(cls, "mui_aa_slider_plan(") != NULL && strstr(cls, "aa_erase(") != NULL && strstr(cls, "mui_aa_slider_value_at(") != NULL &&
               strstr(cls, "mui_aa_progress_fill_w(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
           "class does not draw through the shared slider helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");

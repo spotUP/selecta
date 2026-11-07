@@ -342,6 +342,19 @@ static ULONG aaprogress_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 
 static ULONG __attribute__((used)) aaprogress_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
+/* OM_NEW: UPA_Progress_* parsed once for UP_NewProgress and a by-name MUI_NewObject("UP-Progress.mcc"). */
+static ULONG aaprogress_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aaprogress_data* d;
+    obj = (Object*)DoSuperMethodA(cl, obj, (Msg)msg);
+    if (obj == NULL) {
+        return 0;
+    }
+    d = INST_DATA(cl, obj);
+    d->value = (long)GetTagData(UPA_Progress_Value, 0, msg->ops_AttrList);
+    d->max = (long)GetTagData(UPA_Progress_Max, 100, msg->ops_AttrList);
+    return (ULONG)obj;
+}
+
 extern ULONG aaprogress_dispatch(void);
 const struct aa_class_desc aaprogress_class_desc = {MUIC_Area, sizeof(aaprogress_data), aaprogress_dispatch, &g_progress_class};
 __asm__(".text\n.even\n.globl _aaprogress_dispatch\n_aaprogress_dispatch:\n"
@@ -350,6 +363,8 @@ __asm__(".text\n.even\n.globl _aaprogress_dispatch\n_aaprogress_dispatch:\n"
 
 static ULONG __attribute__((used)) aaprogress_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+        return aaprogress_new(cl, obj, (struct opSet*)msg);
     case MUIM_Setup:
         return aaprogress_setup(cl, obj, msg);
     case MUIM_Cleanup:
@@ -379,9 +394,6 @@ Object* UP_NewProgress(const struct TagItem* tags) {
     def[1].ti_Tag = TAG_MORE, def[1].ti_Data = (ULONG)(uintptr_t)tags;
     o = NewObjectA(g_progress_class->mcc_Class, NULL, def);
     if (o != NULL) {
-        aaprogress_data* d = INST_DATA(g_progress_class->mcc_Class, o);
-        d->value = (long)GetTagData(UPA_Progress_Value, 0, (struct TagItem*)tags);
-        d->max = (long)GetTagData(UPA_Progress_Max, 100, (struct TagItem*)tags);
         g_progress_made++;
     }
     return o;

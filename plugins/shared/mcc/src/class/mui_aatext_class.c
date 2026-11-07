@@ -54,10 +54,12 @@ static ULONG aatext_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     d->self = obj;
     aa_setup(obj, &d->aa, NULL, 0);
-    d->aa.bg_rgb = d->aa.tok[SEL_GUI_TOKEN_PANEL];
+    if (!d->aa.tc) {
+        d->aa.bg_rgb = d->aa.tok[SEL_GUI_TOKEN_PANEL]; /* on truecolour aa_setup took the role colour of the UP-Panel above (design 5.2) */
+    }
     aa_set_font_px(&d->aa, mui_aa_tone_font_px(d->tone, d->aa.font_px));
     aa_hold(&d->aa, d->aa.tok[mui_aa_tone_token(d->tone)]);
-    aa_hold(&d->aa, d->aa.tok[SEL_GUI_TOKEN_PANEL]);
+    aa_hold(&d->aa, d->aa.bg_rgb);
     dots = aa_text_width(&d->aa, obj, "...");
     d->defw = aa_text_width(&d->aa, obj, d->widest);
     d->minw = d->ellipsis ? (dots < d->defw ? dots : d->defw) : d->defw;
@@ -93,7 +95,7 @@ static ULONG aatext_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     char fit[AAT_CAP];
     const char* shown = d->text;
     int w, h, tw, th;
-    uint32_t bg = d->aa.tok[SEL_GUI_TOKEN_PANEL];
+    uint32_t bg = d->aa.bg_rgb;
     DoSuperMethodA(cl, obj, (Msg)msg);
     if ((msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) && d->aa.tc) {
         aa_erase(&d->aa, obj, _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)); /* I685w: cover MUI's grey fill with the panel token */
@@ -147,6 +149,28 @@ static ULONG aatext_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 
 static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
+/* OM_NEW: the one place UPA_Text_* are parsed, so UP_NewText and a by-name MUI_NewObject("UP-Text.mcc") build the same object. */
+static ULONG aatext_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aatext_data* d;
+    struct TagItem* tags = msg->ops_AttrList;
+    const char* contents;
+    const char* widest;
+    obj = (Object*)DoSuperMethodA(cl, obj, (Msg)msg);
+    if (obj == NULL) {
+        return 0;
+    }
+    d = INST_DATA(cl, obj);
+    contents = (const char*)GetTagData(UPA_Text_Contents, (ULONG)(uintptr_t)"", tags);
+    widest = (const char*)GetTagData(UPA_Text_Widest, (ULONG)(uintptr_t)contents, tags);
+    strncpy(d->text, contents, sizeof d->text - 1);
+    strncpy(d->widest, widest, sizeof d->widest - 1);
+    d->tone = (int)GetTagData(UPA_Text_Tone, UPV_Text_Tone_Normal, tags);
+    d->align = (int)GetTagData(UPA_Text_Align, UPV_Text_Align_Left, tags);
+    d->ellipsis = (int)GetTagData(UPA_Text_Ellipsis, FALSE, tags);
+    d->fixed = (int)GetTagData(UPA_Text_Fixed, FALSE, tags);
+    return (ULONG)obj;
+}
+
 extern ULONG aatext_dispatch(void);
 const struct aa_class_desc aatext_class_desc = {MUIC_Area, sizeof(aatext_data), aatext_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aatext_dispatch\n_aatext_dispatch:\n"
@@ -155,6 +179,8 @@ __asm__(".text\n.even\n.globl _aatext_dispatch\n_aatext_dispatch:\n"
 
 static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+        return aatext_new(cl, obj, (struct opSet*)msg);
     case MUIM_Setup:
         return aatext_setup(cl, obj, msg);
     case MUIM_Cleanup:
@@ -174,9 +200,6 @@ static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* 
 /* The tag list is the whole interface: UPA_Text_* are read here, every MUIA_* tag (Frame, Background, ShowMe) goes to the Area. */
 Object* UP_NewText(const struct TagItem* tags) {
     Object* o;
-    aatext_data* d;
-    const char* contents = (const char*)GetTagData(UPA_Text_Contents, (ULONG)(uintptr_t)"", (struct TagItem*)tags);
-    const char* widest = (const char*)GetTagData(UPA_Text_Widest, (ULONG)(uintptr_t)contents, (struct TagItem*)tags);
     if (g_class == NULL) {
         g_class = AA_CLASS_CREATE(&aatext_class_desc);
     }
@@ -185,13 +208,6 @@ Object* UP_NewText(const struct TagItem* tags) {
     }
     o = NewObjectA(g_class->mcc_Class, NULL, (struct TagItem*)tags);
     if (o != NULL) {
-        d = INST_DATA(g_class->mcc_Class, o);
-        strncpy(d->text, contents, sizeof d->text - 1);
-        strncpy(d->widest, widest, sizeof d->widest - 1);
-        d->tone = (int)GetTagData(UPA_Text_Tone, UPV_Text_Tone_Normal, (struct TagItem*)tags);
-        d->align = (int)GetTagData(UPA_Text_Align, UPV_Text_Align_Left, (struct TagItem*)tags);
-        d->ellipsis = (int)GetTagData(UPA_Text_Ellipsis, FALSE, (struct TagItem*)tags);
-        d->fixed = (int)GetTagData(UPA_Text_Fixed, FALSE, (struct TagItem*)tags);
         g_made++;
     }
     return o;

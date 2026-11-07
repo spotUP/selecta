@@ -20,6 +20,7 @@
 
 #include "mui_aa_draw.h"
 #include "mui_aabtn_class.h"
+#include "mui_aatext_class.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -124,6 +125,59 @@ static ULONG aatabs_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 
 static ULONG __attribute__((used)) aatabs_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
+/* OM_NEW: UPA_Tabs_* parsed once for UP_NewTabs and a by-name MUI_NewObject("UP-Tabs.mcc"): one button per caption, then a spacer
+ * so the strip packs left. No captions fails the object. */
+static ULONG aatabs_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aatabs_data* d;
+    struct TagItem def[4];
+    struct opSet ns = *msg;
+    int i, n = 0, active;
+    char** captions = (char**)GetTagData(UPA_Tabs_Captions, 0, msg->ops_AttrList);
+    while (captions != NULL && captions[n] != NULL && n < MUI_AATABS_MAX) {
+        n++;
+    }
+    if (n == 0) {
+        return 0;
+    }
+    def[0].ti_Tag = MUIA_Group_Horiz, def[0].ti_Data = (ULONG)TRUE;
+    def[1].ti_Tag = MUIA_Group_Spacing, def[1].ti_Data = 0;
+    def[2].ti_Tag = MUIA_Frame, def[2].ti_Data = (ULONG)MUIV_Frame_None;
+    def[3].ti_Tag = TAG_MORE, def[3].ti_Data = (ULONG)(uintptr_t)msg->ops_AttrList;
+    ns.ops_AttrList = def;
+    obj = (Object*)DoSuperMethodA(cl, obj, (Msg)&ns);
+    if (obj == NULL) {
+        return 0;
+    }
+    active = (int)GetTagData(UPA_Tabs_Active, 0, msg->ops_AttrList);
+    d = INST_DATA(cl, obj);
+    memset(d, 0, sizeof *d);
+    d->n = n;
+    d->active = mui_aa_tabs_click(active, n) >= 0 ? active : 0;
+    for (i = 0; i < n; i++) {
+        struct TagItem bt[] = {{UPA_Button_Caption, (ULONG)(uintptr_t)captions[i]},
+                               {UPA_Button_Widest, (ULONG)(uintptr_t)captions[i]},
+                               {UPA_Button_Role, UPV_Button_Role_Tab},
+                               {UPA_Button_Align, UPV_Button_Align_Centre},
+                               {MUIA_Weight, 0},
+                               {MUIA_ShortHelp, (ULONG)(uintptr_t)captions[i]},
+                               {TAG_DONE, 0}};
+        d->btn[i] = UP_NewButton(bt);
+        if (d->btn[i] == NULL) {
+            CoerceMethod(cl, obj, OM_DISPOSE);
+            return 0;
+        }
+        DoMethod(obj, OM_ADDMEMBER, d->btn[i]);
+        DoMethod(d->btn[i], MUIM_Notify, MUIA_Pressed, FALSE, obj, 3, MUIM_Set, UPA_Tabs_Active, (ULONG)i);
+    }
+    {
+        /* an UP-Text spacer erases in the panel token; a stock Rectangle would fill with MUI's snapped background pen */
+        struct TagItem st[] = {{UPA_Text_Contents, (ULONG)(uintptr_t)" "}, {TAG_DONE, 0}};
+        DoMethod(obj, OM_ADDMEMBER, UP_NewText(st));
+    }
+    aatabs_sync(d);
+    return (ULONG)obj;
+}
+
 extern ULONG aatabs_dispatch(void);
 const struct aa_class_desc aatabs_class_desc = {MUIC_Group, sizeof(aatabs_data), aatabs_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aatabs_dispatch\n_aatabs_dispatch:\n"
@@ -132,6 +186,8 @@ __asm__(".text\n.even\n.globl _aatabs_dispatch\n_aatabs_dispatch:\n"
 
 static ULONG __attribute__((used)) aatabs_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+        return aatabs_new(cl, obj, (struct opSet*)msg);
     case OM_SET:
         return aatabs_set(cl, obj, (struct opSet*)msg);
     case OM_GET:
@@ -150,49 +206,16 @@ static ULONG __attribute__((used)) aatabs_dispatch_c(struct IClass* cl, Object* 
 
 Object* UP_NewTabs(const struct TagItem* tags) {
     Object* o;
-    aatabs_data* d;
-    int i, n = 0, active;
-    char** captions = (char**)GetTagData(UPA_Tabs_Captions, 0, (struct TagItem*)tags);
-    while (captions != NULL && captions[n] != NULL && n < MUI_AATABS_MAX) {
-        n++;
-    }
-    if (n == 0) {
-        return NULL;
-    }
     if (g_class == NULL) {
         g_class = AA_CLASS_CREATE(&aatabs_class_desc);
     }
     if (g_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Group_Horiz, (ULONG)TRUE, MUIA_Group_Spacing, (ULONG)0, MUIA_Frame, (ULONG)MUIV_Frame_None, TAG_DONE);
-    if (o == NULL) {
-        return NULL;
+    o = NewObjectA(g_class->mcc_Class, NULL, (struct TagItem*)tags);
+    if (o != NULL) {
+        g_made++;
     }
-    active = (int)GetTagData(UPA_Tabs_Active, 0, (struct TagItem*)tags);
-    d = INST_DATA(g_class->mcc_Class, o);
-    memset(d, 0, sizeof *d);
-    d->n = n;
-    d->active = mui_aa_tabs_click(active, n) >= 0 ? active : 0;
-    for (i = 0; i < n; i++) {
-        struct TagItem bt[] = {{UPA_Button_Caption, (ULONG)(uintptr_t)captions[i]},
-                               {UPA_Button_Widest, (ULONG)(uintptr_t)captions[i]},
-                               {UPA_Button_Role, UPV_Button_Role_Tab},
-                               {UPA_Button_Align, UPV_Button_Align_Centre},
-                               {MUIA_Weight, 0},
-                               {MUIA_ShortHelp, (ULONG)(uintptr_t)captions[i]},
-                               {TAG_DONE, 0}};
-        d->btn[i] = UP_NewButton(bt);
-        if (d->btn[i] == NULL) {
-            MUI_DisposeObject(o);
-            return NULL;
-        }
-        DoMethod(o, OM_ADDMEMBER, d->btn[i]);
-        DoMethod(d->btn[i], MUIM_Notify, MUIA_Pressed, FALSE, o, 3, MUIM_Set, UPA_Tabs_Active, (ULONG)i);
-    }
-    DoMethod(o, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* the strip packs left */
-    aatabs_sync(d);
-    g_made++;
     return o;
 }
 

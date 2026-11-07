@@ -394,6 +394,47 @@ static ULONG aalist_getrow(struct IClass* cl, Object* obj, UP_ListGetRow* g) {
 
 static ULONG __attribute__((used)) aalist_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
+/* OM_NEW: UPA_List_* parsed once for UP_NewList and a by-name MUI_NewObject("UP-List.mcc") (which has no scroller). */
+static ULONG aalist_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aalist_data* d;
+    struct TagItem* t = msg->ops_AttrList;
+    const UP_ListColumns* cols;
+    int no_select, max_rows;
+    struct TagItem def[3];
+    struct opSet ns = *msg;
+    long count;
+    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+    def[1].ti_Tag = MUIA_CycleChain, def[1].ti_Data = (ULONG)TRUE;
+    def[2].ti_Tag = TAG_MORE, def[2].ti_Data = (ULONG)(uintptr_t)t;
+    ns.ops_AttrList = def;
+    obj = (Object*)DoSuperMethodA(cl, obj, (Msg)&ns);
+    if (obj == NULL) {
+        return 0;
+    }
+    d = INST_DATA(cl, obj);
+    cols = (const UP_ListColumns*)GetTagData(UPA_List_Columns, 0, t);
+    no_select = (int)GetTagData(UPA_List_NoSelect, FALSE, t);
+    max_rows = (int)GetTagData(UPA_List_MaxRows, 0, t);
+    count = (long)GetTagData(UPA_List_Count, 0, t);
+    d->count = count;
+    d->active = no_select ? -1 : mui_aa_list_clamp_active((long)GetTagData(UPA_List_Active, 0, t), count);
+    d->first = 0;
+    d->hover = -1;
+    d->row = (struct Hook*)(uintptr_t)GetTagData(UPA_List_RowHook, 0, t);
+    d->cell = (struct Hook*)(uintptr_t)GetTagData(UPA_List_CellHook, 0, t);
+    d->max_rows = max_rows > 0 ? max_rows : 8;
+    if (cols != NULL) {
+        d->cols = *cols;
+    }
+    d->playing = -1;
+    d->last_row = -1;
+    d->picked = -1;
+    d->title = (int)GetTagData(UPA_List_Title, FALSE, t);
+    d->double_pick = (int)GetTagData(UPA_List_DoublePick, FALSE, t);
+    d->no_select = no_select;
+    return (ULONG)obj;
+}
+
 extern ULONG aalist_dispatch(void);
 const struct aa_class_desc aalist_class_desc = {MUIC_Area, sizeof(aalist_data), aalist_dispatch, &g_list_class};
 __asm__(".text\n.even\n.globl _aalist_dispatch\n_aalist_dispatch:\n"
@@ -402,6 +443,8 @@ __asm__(".text\n.even\n.globl _aalist_dispatch\n_aalist_dispatch:\n"
 
 static ULONG __attribute__((used)) aalist_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+        return aalist_new(cl, obj, (struct opSet*)msg);
     case OM_SET:
         return aalist_set(cl, obj, (struct opSet*)msg);
     case OM_GET:
@@ -426,18 +469,13 @@ static ULONG __attribute__((used)) aalist_dispatch_c(struct IClass* cl, Object* 
 Object* UP_NewList(const struct TagItem* tags, Object** list_out) {
     Object *list, *scroller, *group;
     aalist_data* d;
-    struct TagItem* t = (struct TagItem*)tags;
-    const UP_ListColumns* cols = (const UP_ListColumns*)GetTagData(UPA_List_Columns, 0, t);
-    int no_select = (int)GetTagData(UPA_List_NoSelect, FALSE, t);
-    int max_rows = (int)GetTagData(UPA_List_MaxRows, 0, t);
-    long count = (long)GetTagData(UPA_List_Count, 0, t);
     if (g_list_class == NULL) {
         g_list_class = AA_CLASS_CREATE(&aalist_class_desc);
     }
     if (g_list_class == NULL) {
         return NULL;
     }
-    list = NewObject(g_list_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_CycleChain, (ULONG)TRUE, TAG_DONE);
+    list = NewObjectA(g_list_class->mcc_Class, NULL, (struct TagItem*)tags);
     scroller = UP_NewScroller(NULL);
     group = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, 0, MUIA_Group_HorizSpacing, 0, Child, (ULONG)list, Child, (ULONG)scroller,
                           TAG_DONE);
@@ -455,22 +493,6 @@ Object* UP_NewList(const struct TagItem* tags, Object** list_out) {
         return NULL;
     }
     d = INST_DATA(g_list_class->mcc_Class, list);
-    d->count = count;
-    d->active = no_select ? -1 : mui_aa_list_clamp_active((long)GetTagData(UPA_List_Active, 0, t), count);
-    d->first = 0;
-    d->hover = -1;
-    d->row = (struct Hook*)(uintptr_t)GetTagData(UPA_List_RowHook, 0, t);
-    d->cell = (struct Hook*)(uintptr_t)GetTagData(UPA_List_CellHook, 0, t);
-    d->max_rows = max_rows > 0 ? max_rows : 8;
-    if (cols != NULL) {
-        d->cols = *cols;
-    }
-    d->playing = -1;
-    d->last_row = -1;
-    d->picked = -1;
-    d->title = (int)GetTagData(UPA_List_Title, FALSE, t);
-    d->double_pick = (int)GetTagData(UPA_List_DoublePick, FALSE, t);
-    d->no_select = no_select;
     d->scroller = scroller;
     DoMethod(scroller, MUIM_Notify, UPA_Scroller_First, MUIV_EveryTime, list, 3, MUIM_Set, UPA_List_First, MUIV_TriggerValue);
     g_list_made++;

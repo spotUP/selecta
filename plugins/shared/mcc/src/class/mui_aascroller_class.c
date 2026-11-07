@@ -172,6 +172,20 @@ static ULONG aascroller_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 
 static ULONG __attribute__((used)) aascroller_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
+/* OM_NEW: UPA_Scroller_* parsed once for UP_NewScroller and a by-name MUI_NewObject("UP-Scroller.mcc"). */
+static ULONG aascroller_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aascroller_data* d;
+    obj = (Object*)DoSuperMethodA(cl, obj, (Msg)msg);
+    if (obj == NULL) {
+        return 0;
+    }
+    d = INST_DATA(cl, obj);
+    d->first = (long)GetTagData(UPA_Scroller_First, 0, msg->ops_AttrList);
+    d->visible = (long)GetTagData(UPA_Scroller_Visible, 0, msg->ops_AttrList);
+    d->entries = (long)GetTagData(UPA_Scroller_Entries, 0, msg->ops_AttrList);
+    return (ULONG)obj;
+}
+
 extern ULONG aascroller_dispatch(void);
 const struct aa_class_desc aascroller_class_desc = {MUIC_Area, sizeof(aascroller_data), aascroller_dispatch, &g_scroller_class};
 __asm__(".text\n.even\n.globl _aascroller_dispatch\n_aascroller_dispatch:\n"
@@ -180,6 +194,8 @@ __asm__(".text\n.even\n.globl _aascroller_dispatch\n_aascroller_dispatch:\n"
 
 static ULONG __attribute__((used)) aascroller_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+        return aascroller_new(cl, obj, (struct opSet*)msg);
     case OM_SET:
         return aascroller_set(cl, obj, (struct opSet*)msg);
     case OM_GET:

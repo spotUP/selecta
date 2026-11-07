@@ -60,7 +60,7 @@ static Object* make(int index) {
     case 2:
         return MUI_NewObject(path, UPA_Panel_Role, (ULONG)UPV_Panel_Role_Raised, MUIA_Group_Child, (ULONG)spacer, TAG_DONE);
     case 3:
-        return MUI_NewObject(path, UPA_Tabs_Captions, (ULONG)g_tab_captions, MUIA_Group_Child, (ULONG)spacer, TAG_DONE);
+        return MUI_NewObject(path, UPA_Tabs_Captions, (ULONG)g_tab_captions, TAG_DONE);
     case 4:
         return MUI_NewObject(path, TAG_DONE);
     case 5:
