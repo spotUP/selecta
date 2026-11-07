@@ -26,8 +26,6 @@
 
 extern struct Library* MUIMasterBase;
 
-#define UPM_Field_Redraw UP_TAG(UP_CLS_FIELD, 0x01) /* method: the window's active object changed, repaint the outline */
-
 typedef struct aafield_data {
     Object* str;
     mui_aa_field_t m;
@@ -190,6 +188,10 @@ static ULONG aafield_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     if (msg->opg_AttrID == MUIA_String_Contents && d->str != NULL) {
         return GetAttr(MUIA_String_Contents, d->str, msg->opg_Storage);
     }
+    if (msg->opg_AttrID == UPA_Field_String) {
+        *msg->opg_Storage = (ULONG)(uintptr_t)d->str;
+        return TRUE;
+    }
     if (aatip_get(msg, &d->tip)) {
         return TRUE;
     }
@@ -235,9 +237,14 @@ static ULONG __attribute__((used)) aafield_dispatch_c(struct IClass* cl, Object*
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aafield_new(const mui_aafield_spec* sp) {
+/* Tags: UPA_Field_* are read here; MUIA_String_MaxLen goes to the inner string. */
+Object* UP_NewField(const struct TagItem* tags) {
     Object *o, *str;
     mui_aa_field_t m;
+    const uint32_t* tokens = (const uint32_t*)GetTagData(UPA_Field_Tokens, 0, (struct TagItem*)tags);
+    if (tokens == NULL) {
+        return NULL;
+    }
     if (g_class == NULL) {
         g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Group, NULL, sizeof(aafield_data), (APTR)(uintptr_t)aafield_dispatch);
     }
@@ -245,9 +252,9 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
         return NULL;
     }
     mui_aa_field_metrics(0, 256, &m); /* the paddings are the same on every tier */
-    mui_theme_bg_spec(sp->tokens[MUI_AA_FIELD_FACE], g_bg_spec, sizeof g_bg_spec);
-    str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_String_MaxLen, (ULONG)sp->maxlen,
-                        MUIA_String_Contents, (ULONG) "", TAG_DONE);
+    mui_theme_bg_spec(tokens[MUI_AA_FIELD_FACE], g_bg_spec, sizeof g_bg_spec);
+    str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec,
+                        MUIA_String_MaxLen, GetTagData(MUIA_String_MaxLen, 80, (struct TagItem*)tags), MUIA_String_Contents, (ULONG) "", TAG_DONE);
     if (str == NULL) {
         return NULL;
     }
@@ -260,11 +267,8 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
         return NULL;
     }
     ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->str = str;
-    ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->max_w = sp->max_w;
-    ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->placeholder = sp->placeholder;
-    if (sp->id != 0) {
-        DoMethod(str, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
-    }
+    ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->max_w = (int)GetTagData(UPA_Field_MaxWidth, 0, (struct TagItem*)tags);
+    ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->placeholder = (const char*)GetTagData(UPA_Field_Placeholder, 0, (struct TagItem*)tags);
     g_made++;
     return o;
 }

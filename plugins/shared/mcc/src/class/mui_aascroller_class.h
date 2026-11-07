@@ -5,16 +5,10 @@
 #ifndef MUI_AASCROLLER_CLASS_H
 #define MUI_AASCROLLER_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
-#include <stdint.h>
 #include <mcc/up.h>
+#include <stdint.h>
 
-#define UPA_Scroller_First UP_TAG(UP_CLS_SCROLLER, 0x01)   /* LONG: first visible entry (notifies) */
-#define UPA_Scroller_Visible UP_TAG(UP_CLS_SCROLLER, 0x02) /* LONG: entries that fit the owner */
-#define UPA_Scroller_Entries UP_TAG(UP_CLS_SCROLLER, 0x03) /* LONG: entries in the owner */
 
-Object* mui_aascroller_new(void);
 /* Scrollers constructed since start (sentinel: AAList builds exactly one per list). */
 uint32_t mui_aascroller_made(void);
 void mui_aascroller_class_free(void);

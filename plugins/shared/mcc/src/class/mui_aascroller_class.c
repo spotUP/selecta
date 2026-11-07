@@ -196,15 +196,18 @@ static ULONG __attribute__((used)) aascroller_dispatch_c(struct IClass* cl, Obje
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aascroller_new(void) {
+Object* UP_NewScroller(const struct TagItem* tags) {
     Object* o;
+    struct TagItem def[2];
     if (g_scroller_class == NULL) {
         g_scroller_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aascroller_data), (APTR)(uintptr_t)aascroller_dispatch);
     }
     if (g_scroller_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_scroller_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, TAG_DONE);
+    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+    def[1].ti_Tag = tags != NULL ? (ULONG)TAG_MORE : (ULONG)TAG_DONE, def[1].ti_Data = (ULONG)(uintptr_t)tags;
+    o = NewObjectA(g_scroller_class->mcc_Class, NULL, def);
     if (o != NULL) {
         g_scroller_made++;
     }

@@ -146,11 +146,12 @@ static ULONG __attribute__((used)) aatabs_dispatch_c(struct IClass* cl, Object* 
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aatabs_new(const mui_aatabs_spec* sp) {
+Object* UP_NewTabs(const struct TagItem* tags) {
     Object* o;
     aatabs_data* d;
-    int i, n = 0;
-    while (sp->captions != NULL && sp->captions[n] != NULL && n < MUI_AATABS_MAX) {
+    int i, n = 0, active;
+    char** captions = (char**)GetTagData(UPA_Tabs_Captions, 0, (struct TagItem*)tags);
+    while (captions != NULL && captions[n] != NULL && n < MUI_AATABS_MAX) {
         n++;
     }
     if (n == 0) {
@@ -166,22 +167,22 @@ Object* mui_aatabs_new(const mui_aatabs_spec* sp) {
     if (o == NULL) {
         return NULL;
     }
+    active = (int)GetTagData(UPA_Tabs_Active, 0, (struct TagItem*)tags);
     d = INST_DATA(g_class->mcc_Class, o);
     memset(d, 0, sizeof *d);
     d->n = n;
-    d->active = mui_aa_tabs_click(sp->active, n) >= 0 ? sp->active : 0;
+    d->active = mui_aa_tabs_click(active, n) >= 0 ? active : 0;
     for (i = 0; i < n; i++) {
-        mui_aabtn_spec bs;
-        memset(&bs, 0, sizeof bs);
-        bs.caption = sp->captions[i];
-        bs.widest = sp->captions[i];
-        bs.icon = -1;
-        bs.alt_icon = -1;
-        bs.role = MUI_AA_ROLE_TAB;
-        bs.id = 0;
-        bs.weight = 0;
-        bs.align = MUI_AA_ALIGN_CENTRE;
-        d->btn[i] = mui_aabtn_new(&bs);
+        struct TagItem bt[] = {{UPA_Button_Caption, (ULONG)(uintptr_t)captions[i]},
+                               {UPA_Button_Widest, (ULONG)(uintptr_t)captions[i]},
+                               {UPA_Button_Icon, (ULONG)-1},
+                               {UPA_Button_AltIcon, (ULONG)-1},
+                               {UPA_Button_Role, UPV_Button_Role_Tab},
+                               {UPA_Button_Align, UPV_Button_Align_Centre},
+                               {MUIA_Weight, 0},
+                               {MUIA_ShortHelp, (ULONG)(uintptr_t)captions[i]},
+                               {TAG_DONE, 0}};
+        d->btn[i] = UP_NewButton(bt);
         if (d->btn[i] == NULL) {
             MUI_DisposeObject(o);
             return NULL;

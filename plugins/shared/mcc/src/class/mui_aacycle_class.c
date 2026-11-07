@@ -304,20 +304,20 @@ static ULONG __attribute__((used)) aacycle_dispatch_c(struct IClass* cl, Object*
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aacycle_new(const mui_aacycle_spec* sp) {
+Object* UP_NewCycle(const struct TagItem* tags) {
     Object* o;
+    struct TagItem def[3];
     if (g_cycle_class == NULL) {
         g_cycle_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aacycle_data), (APTR)(uintptr_t)aacycle_dispatch);
     }
     if (g_cycle_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_cycle_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_CycleChain, (ULONG)TRUE, UPA_Cycle_Entries, (ULONG)sp->entries,
-                  UPA_Cycle_Active, (ULONG)sp->active, TAG_DONE);
+    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+    def[1].ti_Tag = MUIA_CycleChain, def[1].ti_Data = (ULONG)TRUE;
+    def[2].ti_Tag = TAG_MORE, def[2].ti_Data = (ULONG)(uintptr_t)tags;
+    o = NewObjectA(g_cycle_class->mcc_Class, NULL, def);
     if (o != NULL) {
-        if (sp->id != 0) {
-            DoMethod(o, MUIM_Notify, UPA_Cycle_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
-        }
         g_cycle_made++;
     }
     return o;

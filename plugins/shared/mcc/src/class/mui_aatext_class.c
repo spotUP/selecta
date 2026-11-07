@@ -165,25 +165,27 @@ static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* 
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aatext_new(const mui_aatext_spec* sp) {
+/* The tag list is the whole interface: UPA_Text_* are read here, every MUIA_* tag (Frame, Background, ShowMe) goes to the Area. */
+Object* UP_NewText(const struct TagItem* tags) {
     Object* o;
     aatext_data* d;
+    const char* contents = (const char*)GetTagData(UPA_Text_Contents, (ULONG)(uintptr_t)"", (struct TagItem*)tags);
+    const char* widest = (const char*)GetTagData(UPA_Text_Widest, (ULONG)(uintptr_t)contents, (struct TagItem*)tags);
     if (g_class == NULL) {
         g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aatext_data), (APTR)(uintptr_t)aatext_dispatch);
     }
     if (g_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, sp->frame, sp->background != 0 ? (ULONG)MUIA_Background : (ULONG)TAG_IGNORE, sp->background,
-                  MUIA_ShowMe, (ULONG)(sp->hidden ? FALSE : TRUE), TAG_DONE);
+    o = NewObjectA(g_class->mcc_Class, NULL, (struct TagItem*)tags);
     if (o != NULL) {
         d = INST_DATA(g_class->mcc_Class, o);
-        strncpy(d->text, sp->contents, sizeof d->text - 1);
-        strncpy(d->widest, sp->widest != NULL ? sp->widest : sp->contents, sizeof d->widest - 1);
-        d->tone = sp->tone;
-        d->align = sp->align;
-        d->ellipsis = sp->ellipsis;
-        d->fixed = sp->fixed;
+        strncpy(d->text, contents, sizeof d->text - 1);
+        strncpy(d->widest, widest, sizeof d->widest - 1);
+        d->tone = (int)GetTagData(UPA_Text_Tone, UPV_Text_Tone_Normal, (struct TagItem*)tags);
+        d->align = (int)GetTagData(UPA_Text_Align, UPV_Text_Align_Left, (struct TagItem*)tags);
+        d->ellipsis = (int)GetTagData(UPA_Text_Ellipsis, FALSE, (struct TagItem*)tags);
+        d->fixed = (int)GetTagData(UPA_Text_Fixed, FALSE, (struct TagItem*)tags);
         g_made++;
     }
     return o;

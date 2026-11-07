@@ -5,12 +5,8 @@
 #ifndef MUI_AATEXT_CLASS_H
 #define MUI_AATEXT_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
-#include <stdint.h>
 #include <mcc/up.h>
-
-#define UPA_Text_Contents UP_TAG(UP_CLS_TEXT, 0x01) /* STRPTR copied into the object; redraws only when it changed */
+#include <stdint.h>
 
 typedef struct mui_aatext_spec {
     const char* contents; /* first text */

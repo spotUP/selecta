@@ -1,51 +1,21 @@
 /* Selecta_AAList (I667i, design 2026-10-28-mui-custom-classes.md section 3.6, popup look 3.3). MUI 3.8 Area subclass with its own row model
  * (a count and a row callback): SURFACE face, TEXT rows, SURFACE_HOVER hover row, SURFACE_PRESSED selected row, a vertical pad above the first
- * and below the last row, text at the left pad, wheel and keys. mui_aalist_new returns a horizontal group of the list and its AAScroller
+ * and below the last row, text at the left pad, wheel and keys. UP_NewList returns a horizontal group of the list and its AAScroller
  * (3.5), notifications wired both ways, so no stock Prop gadget is drawn. UPA_List_Picked notifies on a click press over a row or Return (the
  * row). Amiga only; the maths is in map/mui_aa.c (mui_aa_list_*). */
 #ifndef MUI_AALIST_CLASS_H
 #define MUI_AALIST_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
-#include <stdint.h>
 #include <mcc/up.h>
+#include <stdint.h>
 
-#define UPA_List_Count UP_TAG(UP_CLS_LIST, 0x01)  /* LONG: rows (notifies) */
-#define UPA_List_Active UP_TAG(UP_CLS_LIST, 0x02) /* LONG: selected row, -1 none (notifies) */
-#define UPA_List_First UP_TAG(UP_CLS_LIST, 0x03)  /* LONG: first visible row (notifies) */
-#define UPA_List_Picked UP_TAG(UP_CLS_LIST, 0x04) /* LONG: row chosen by click or Return (notifies every time) */
-
-#define UPA_List_Columns UP_TAG(UP_CLS_LIST, 0x05) /* ptr to mui_aalist_cols, copied (I667i2): the shown columns, may change while live */
-#define UPA_List_Playing UP_TAG(UP_CLS_LIST, 0x06) /* LONG: row whose first column is drawn in ACCENT, -1 none (I667i2) */
-
-#define MUI_AALIST_COLS 5
-
-/* UPM_List_GetRow (I713): the read-back method for tools that drive the window from outside (the rig's wasabid lists a row as an item and
- * double-clicks it by its text). The class has no public parent that knows its rows, so this is its documented accessor. The caller fills
- * row and text/cap; the method returns TRUE when the row exists and sets: text = the cell texts of the row joined by two spaces (empty
- * cells left out, truncated to cap), x/y/w/h = the row's box in window coordinates (all 0 when the row is scrolled out of view or the
- * list is not shown), selected = 1 on the active row. */
-#define UPM_List_GetRow UP_TAG(UP_CLS_LIST, 0x10)
-typedef struct mui_aalist_getrow {
-    ULONG MethodID; /* UPM_List_GetRow */
-    LONG row;
-    char* text;
-    LONG cap;
-    LONG x, y, w, h;
-    LONG selected;
-} mui_aalist_getrow;
+#define MUI_AALIST_COLS UP_LIST_COLS
+typedef UP_ListColumns mui_aalist_cols;
+typedef UP_ListGetRow mui_aalist_getrow;
 
 typedef const char* (*mui_aalist_row_fn)(void* ctx, long row);
 /* Cell text of a multi-column list; row -1 asks the column title (the title row). */
 typedef const char* (*mui_aalist_cell_fn)(void* ctx, long row, int col);
-
-/* Columns: weight > 0 shares the free width by weight, weight 0 is as wide as sample[k] (NULL = empty). */
-typedef struct mui_aalist_cols {
-    int n;
-    int weight[MUI_AALIST_COLS];
-    const char* sample[MUI_AALIST_COLS];
-} mui_aalist_cols;
 
 typedef struct mui_aalist_spec {
     long count, active;
@@ -59,7 +29,8 @@ typedef struct mui_aalist_spec {
     int no_select;   /* lyrics: no hover, no selection, wheel only */
 } mui_aalist_spec;
 
-/* The group (list + scroller). *list_out receives the list object (the one that carries the AAL_* attributes). */
+/* Selecta wrapper (design 8.3): builds the UPA_List_* tag list from the spec (mui_aalist_tags), owns the two hook structs, calls UP_NewList.
+ * The group is list + scroller; *list_out receives the list object (the one that carries the UPA_List_* attributes). */
 Object* mui_aalist_new(const mui_aalist_spec* spec, Object** list_out);
 /* Lists constructed since start (sentinel). */
 uint32_t mui_aalist_made(void);

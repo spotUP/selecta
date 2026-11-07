@@ -5,12 +5,9 @@
 #ifndef MUI_AATABS_CLASS_H
 #define MUI_AATABS_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
-#include <stdint.h>
 #include <mcc/up.h>
+#include <stdint.h>
 
-#define UPA_Tabs_Active UP_TAG(UP_CLS_TABS, 0x01) /* LONG: index of the active tab; notifies like MUIA_Group_ActivePage */
 #define MUI_AATABS_MAX 8
 
 typedef struct mui_aatabs_spec {

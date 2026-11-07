@@ -112,15 +112,18 @@ static Object* aabal_stock(void) {
     return MUI_NewObject((char*)MUIC_Balance, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, TAG_DONE);
 }
 
-Object* mui_aabalance_new(void) {
+Object* UP_NewBalance(const struct TagItem* tags) {
     Object* o;
+    struct TagItem def[2];
     if (g_class == NULL) {
         g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Balance, NULL, sizeof(aabal_data), (APTR)(uintptr_t)aabal_dispatch);
     }
     if (g_class == NULL) {
         return aabal_stock();
     }
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, TAG_DONE);
+    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+    def[1].ti_Tag = tags != NULL ? (ULONG)TAG_MORE : (ULONG)TAG_DONE, def[1].ti_Data = (ULONG)(uintptr_t)tags;
+    o = NewObjectA(g_class->mcc_Class, NULL, def);
     if (o == NULL) {
         return aabal_stock();
     }

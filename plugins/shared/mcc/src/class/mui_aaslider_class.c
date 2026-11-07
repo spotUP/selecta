@@ -237,20 +237,21 @@ static ULONG __attribute__((used)) aaslider_dispatch_c(struct IClass* cl, Object
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aaslider_new(const mui_aaslider_spec* sp) {
+/* Tags: MUIA_Numeric_Min/Max/Value and MUIA_FixWidth are the Numeric class's own and pass through. Defaults: no frame, on the cycle chain. */
+Object* UP_NewSlider(const struct TagItem* tags) {
     Object* o;
+    struct TagItem def[3];
     if (g_slider_class == NULL) {
         g_slider_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Numeric, NULL, sizeof(aaslider_data), (APTR)(uintptr_t)aaslider_dispatch);
     }
     if (g_slider_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_slider_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Numeric_Min, (ULONG)sp->lo, MUIA_Numeric_Max, (ULONG)sp->hi,
-                  MUIA_Numeric_Value, (ULONG)sp->value, MUIA_CycleChain, (ULONG)TRUE, sp->fix_w > 0 ? MUIA_FixWidth : TAG_IGNORE, (ULONG)sp->fix_w, TAG_DONE);
+    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+    def[1].ti_Tag = MUIA_CycleChain, def[1].ti_Data = (ULONG)TRUE;
+    def[2].ti_Tag = TAG_MORE, def[2].ti_Data = (ULONG)(uintptr_t)tags;
+    o = NewObjectA(g_slider_class->mcc_Class, NULL, def);
     if (o != NULL) {
-        if (sp->id != 0) {
-            DoMethod(o, MUIM_Notify, MUIA_Numeric_Value, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
-        }
         g_slider_made++;
     }
     return o;
@@ -362,19 +363,22 @@ static ULONG __attribute__((used)) aaprogress_dispatch_c(struct IClass* cl, Obje
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aaprogress_new(long value, long max) {
+Object* UP_NewProgress(const struct TagItem* tags) {
     Object* o;
+    struct TagItem def[2];
     if (g_progress_class == NULL) {
         g_progress_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aaprogress_data), (APTR)(uintptr_t)aaprogress_dispatch);
     }
     if (g_progress_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_progress_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, TAG_DONE);
+    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+    def[1].ti_Tag = TAG_MORE, def[1].ti_Data = (ULONG)(uintptr_t)tags;
+    o = NewObjectA(g_progress_class->mcc_Class, NULL, def);
     if (o != NULL) {
         aaprogress_data* d = INST_DATA(g_progress_class->mcc_Class, o);
-        d->value = value;
-        d->max = max;
+        d->value = (long)GetTagData(UPA_Progress_Value, 0, (struct TagItem*)tags);
+        d->max = (long)GetTagData(UPA_Progress_Max, 100, (struct TagItem*)tags);
         g_progress_made++;
     }
     return o;

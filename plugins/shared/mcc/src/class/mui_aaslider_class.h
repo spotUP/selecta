@@ -6,18 +6,13 @@
 #ifndef MUI_AASLIDER_CLASS_H
 #define MUI_AASLIDER_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
-#include <stdint.h>
 #include <mcc/up.h>
-
-#define UPA_Progress_Value UP_TAG(UP_CLS_PROGRESS, 0x01) /* LONG: filled part */
-#define UPA_Progress_Max UP_TAG(UP_CLS_PROGRESS, 0x02)   /* LONG: value that fills the bar */
+#include <stdint.h>
 
 typedef struct mui_aaslider_spec {
     long lo, hi, value;
     long fix_w; /* fixed width in pixels; 0 = takes the free width of its row (I717: the volume slider is fixed, the seek slider flexes) */
-    long id; /* MUIM_Application_ReturnID on every value change; 0 = no notification */
+    long id; /* MUIM_Application_ReturnID on every value change; 0 = no notification (the wrapper adds it; the class never sees it) */
 } mui_aaslider_spec;
 
 Object* mui_aaslider_new(const mui_aaslider_spec* spec);

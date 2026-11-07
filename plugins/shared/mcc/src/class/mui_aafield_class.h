@@ -5,8 +5,7 @@
 #ifndef MUI_AAFIELD_CLASS_H
 #define MUI_AAFIELD_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
+#include <mcc/up.h>
 #include <stdint.h>
 
 typedef struct mui_aafield_spec {

@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <selecta/uimodel/tokens.h>
+#include <mcc/up.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,7 +29,8 @@ enum { MUI_AA_NORMAL, MUI_AA_HOVER, MUI_AA_PRESSED, MUI_AA_DISABLED, MUI_AA_SELE
 /* TOGGLE (I667b-2, AACheck): checkbox box; off = SURFACE face (desktop checkbox), on (state SELECTED) = ACCENT face, ink ACCENT_TEXT. */
 /* TAB (I667j, AATabs): a tab caption on the PANEL, TEXT_MUTED idle, TEXT while its tab is active (state SELECTED); the face never changes
  * but for the hover token. */
-enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST, MUI_AA_ROLE_TOGGLE, MUI_AA_ROLE_TAB };
+enum { MUI_AA_ROLE_NORMAL = UPV_Button_Role_Normal, MUI_AA_ROLE_ACCENT = UPV_Button_Role_Accent, MUI_AA_ROLE_GHOST = UPV_Button_Role_Ghost,
+       MUI_AA_ROLE_TOGGLE = UPV_Button_Role_Toggle, MUI_AA_ROLE_TAB = UPV_Button_Role_Tab };
 /* Screen tiers by rows (section 3): S 640x256 and 320x256, M up to 600 rows, L up to 800, XL above. */
 enum { MUI_AA_TIER_S, MUI_AA_TIER_M, MUI_AA_TIER_L, MUI_AA_TIER_XL };
 /* Coverage ramp kinds (section 4): AGA four held token pens, RTG eight blended pens, TC none (ttengine blends). */
@@ -89,8 +91,8 @@ int mui_pixel_aspect_q8(int res_x, int res_y);
 uint32_t mui_pixel_aspect_calls(void);
 
 /* I667d (design 3.7, AAText): text tones, alignment and the ellipsis cut. Pure maths, tested on the host. */
-enum { MUI_AA_TONE_NORMAL, MUI_AA_TONE_MUTED, MUI_AA_TONE_TITLE };
-enum { MUI_AA_ALIGN_LEFT, MUI_AA_ALIGN_CENTRE, MUI_AA_ALIGN_RIGHT };
+enum { MUI_AA_TONE_NORMAL = UPV_Text_Tone_Normal, MUI_AA_TONE_MUTED = UPV_Text_Tone_Muted, MUI_AA_TONE_TITLE = UPV_Text_Tone_Title };
+enum { MUI_AA_ALIGN_LEFT = UPV_Text_Align_Left, MUI_AA_ALIGN_CENTRE = UPV_Text_Align_Centre, MUI_AA_ALIGN_RIGHT = UPV_Text_Align_Right };
 #define MUI_AA_TITLE_EXTRA_PX 4
 /* SEL_GUI_TOKEN_* a tone draws in: normal and title TEXT, muted TEXT_MUTED. */
 int mui_aa_tone_token(int tone);
@@ -113,7 +115,8 @@ int mui_aa_text_maxw(int fixed, int defw);
 
 /* I667e (design 3.8, AAPanel): rounded panel groups. Role -> face token (panel PANEL, surface SURFACE, raised SURFACE_RAISED),
  * corner radius RADIUS_LARGE (tier S, font_px 0: half), inner padding and spacing SPACING. Tested on the host. */
-enum { MUI_AA_PANEL_PANEL, MUI_AA_PANEL_SURFACE, MUI_AA_PANEL_RAISED, MUI_AA_PANEL_ROLES };
+enum { MUI_AA_PANEL_PANEL = UPV_Panel_Role_Panel, MUI_AA_PANEL_SURFACE = UPV_Panel_Role_Surface, MUI_AA_PANEL_RAISED = UPV_Panel_Role_Raised,
+       MUI_AA_PANEL_ROLES = UPV_Panel_Role_Count };
 int mui_aa_panel_token(int role);
 uint32_t mui_aa_panel_rgb(const uint32_t* token, int role);
 int mui_aa_panel_radius(const uint32_t* token, int font_px);

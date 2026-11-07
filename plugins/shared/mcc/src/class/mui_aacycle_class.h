@@ -6,18 +6,14 @@
 #ifndef MUI_AACYCLE_CLASS_H
 #define MUI_AACYCLE_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
-#include <stdint.h>
 #include <mcc/up.h>
+#include <stdint.h>
 
-#define UPA_Cycle_Active UP_TAG(UP_CLS_CYCLE, 0x01)  /* LONG: index of the shown entry */
-#define UPA_Cycle_Entries UP_TAG(UP_CLS_CYCLE, 0x02) /* char**: NULL terminated, must outlive the object (initial only) */
 
 typedef struct mui_aacycle_spec {
     const char* const* entries; /* NULL terminated */
     long active;
-    long id; /* MUIM_Application_ReturnID on every UPA_Cycle_Active change; 0 = no notification */
+    long id; /* MUIM_Application_ReturnID on every UPA_Cycle_Active change; 0 = none (the wrapper adds the notify) */
 } mui_aacycle_spec;
 
 Object* mui_aacycle_new(const mui_aacycle_spec* spec);

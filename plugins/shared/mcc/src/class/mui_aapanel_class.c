@@ -15,6 +15,7 @@
 #include "mui_gfxbase.h"
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
+#include <proto/utility.h>
 
 #include "map/mui_theme.h"
 #include "mui_aa_draw.h"
@@ -127,9 +128,14 @@ static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object*
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
+/* Tags: UPA_Panel_Tokens (required), UPA_Panel_Role, UPA_Panel_FixedWidth, UPA_Panel_FixedHeight. The inner group is built here (design 4.1.1). */
+Object* UP_NewPanel(const struct TagItem* tags) {
     Object *o, *inner;
-    if ((unsigned)sp->role >= MUI_AA_PANEL_ROLES) {
+    const uint32_t* tokens = (const uint32_t*)GetTagData(UPA_Panel_Tokens, 0, (struct TagItem*)tags);
+    int role = (int)GetTagData(UPA_Panel_Role, UPV_Panel_Role_Panel, (struct TagItem*)tags);
+    int fixed_w = (int)GetTagData(UPA_Panel_FixedWidth, 0, (struct TagItem*)tags);
+    int fixed_h = (int)GetTagData(UPA_Panel_FixedHeight, 0, (struct TagItem*)tags);
+    if ((unsigned)role >= MUI_AA_PANEL_ROLES || tokens == NULL) {
         return NULL;
     }
     if (g_class == NULL) {
@@ -146,17 +152,17 @@ Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
     if (inner == NULL) {
         return NULL;
     }
-    mui_theme_bg_spec(mui_aa_panel_rgb(sp->tokens, sp->role), g_bg_spec[sp->role], sizeof g_bg_spec[sp->role]);
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec[sp->role], MUIA_FillArea, (ULONG)FALSE,
+    mui_theme_bg_spec(mui_aa_panel_rgb(tokens, role), g_bg_spec[role], sizeof g_bg_spec[role]);
+    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec[role], MUIA_FillArea, (ULONG)FALSE,
                   MUIA_Group_Spacing, (ULONG)0, MUIA_Group_LayoutHook, (ULONG)(uintptr_t)&g_layout_hook, MUIA_Group_Child, (ULONG)(uintptr_t)inner,
-                  sp->fixed_px > 0 ? (ULONG)MUIA_FixWidth : (ULONG)TAG_IGNORE, (ULONG)sp->fixed_px,
-                  sp->fixed_px > 0 ? (ULONG)MUIA_FixHeight : (ULONG)TAG_IGNORE, (ULONG)(sp->fixed_h > 0 ? sp->fixed_h : sp->fixed_px), TAG_DONE);
+                  fixed_w > 0 ? (ULONG)MUIA_FixWidth : (ULONG)TAG_IGNORE, (ULONG)fixed_w,
+                  fixed_w > 0 ? (ULONG)MUIA_FixHeight : (ULONG)TAG_IGNORE, (ULONG)(fixed_h > 0 ? fixed_h : fixed_w), TAG_DONE);
     if (o == NULL) {
         MUI_DisposeObject(inner);
     } else {
         aapanel_data* d = INST_DATA(g_class->mcc_Class, o);
-        d->role = sp->role;
-        d->fixed = sp->fixed_px;
+        d->role = role;
+        d->fixed = fixed_w;
         d->inner = inner;
         g_made++;
     }

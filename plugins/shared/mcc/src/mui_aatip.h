@@ -19,9 +19,6 @@ typedef struct aatip_slot {
     int in;   /* the pointer is inside the owner (ENTER / LEAVE edges) */
 } aatip_slot;
 
-#define UPM_Shared_Fire UP_TAG(UP_CLS_SHARED, 0x31) /* private method the timer node sends to the owner */
-#define UPA_Shared_Side UP_TAG(UP_CLS_SHARED, 0x32) /* I/S: preferred side, MUI_AA_TIP_* */
-
 /* OM_NEW / OM_SET: take MUIA_ShortHelp and UPA_Shared_Side out of the tag list, call the super, restore the tags, then store the values
  * in the aatip_slot at byte offset slot_off of the class instance data (of the new object on OM_NEW). Returns the super's result. */
 ULONG aatip_super_set(struct IClass* cl, Object* obj, struct opSet* msg, ULONG slot_off);

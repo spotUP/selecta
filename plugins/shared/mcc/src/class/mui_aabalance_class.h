@@ -4,11 +4,9 @@
 #ifndef MUI_AABALANCE_CLASS_H
 #define MUI_AABALANCE_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
+#include <mcc/up.h>
 #include <stdint.h>
 
-Object* mui_aabalance_new(void);
 /* Dividers constructed since start (sentinel: equals the number of balance sites the window build made, 2). */
 uint32_t mui_aabalance_made(void);
 void mui_aabalance_class_free(void);

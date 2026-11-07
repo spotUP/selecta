@@ -5,8 +5,7 @@
 #ifndef MUI_AABTN_CLASS_H
 #define MUI_AABTN_CLASS_H
 
-#include <exec/types.h>
-#include <libraries/mui.h>
+#include <mcc/up.h>
 
 typedef struct mui_aabtn_spec {
     const char* caption;  /* shown text; also the ShortHelp unless help is set */
@@ -17,7 +16,7 @@ typedef struct mui_aabtn_spec {
     int alt_icon;         /* icon swapped in by mui_aabtn_set_icon, -1 none (kept for the page-group buttons: play/pause) */
     int icon_only;        /* no caption drawn (dense rows); the caption stays the ShortHelp */
     int role;             /* MUI_AA_ROLE_NORMAL, _ACCENT or _GHOST */
-    LONG id;              /* MUIM_Application_ReturnID on release */
+    LONG id;              /* MUIM_Application_ReturnID on release (the wrapper adds the notify; the class never sees it) */
     int selected;         /* role toggle: initial checked state */
     LONG weight;          /* MUIA_Weight: 100 shares the row, 0 sizes to the contents */
     int fixed_w;          /* I973b: exact width in px, 0 = from the contents (the player bar's square icon buttons) */
