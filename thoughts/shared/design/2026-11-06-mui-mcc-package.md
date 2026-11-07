@@ -565,7 +565,7 @@ load leaves the tokens). The library opens dos, utility, graphics, intuition and
 `MUI_ObtainPen`), sets `sel_mui_GfxBase`, and defines a private `exit()` because libnix stdio start-up (pulled in by the
 store's `fopen`/`snprintf`) names it. Open: no rig run yet (loading from `LIBS:`, a client calling through the inline
 headers, stdio inside the library, `aa_retheme_all` from a client task); the class libraries (I685i) still link
-`sel_mcc_static` themselves instead of opening this library; `UP_ThemeLoad` uses `ENV:Selecta/theme` as the env file.
+`sel_mcc_static` themselves instead of opening this library; `UP_ThemeLoad` reads `ENV:UP-MCC/theme` (D5) and not yet the per-application `ENV:UP-MCC/<application base>.theme`.
 
 ### 8.5 AutoDocs and versions
 

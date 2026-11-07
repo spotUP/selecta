@@ -14,8 +14,10 @@
 #include "mui_aa_draw.h"
 #endif
 
-/* STRPTR is unsigned char on Amiga: the store takes const char*. */
-#define UP_THEME_ENV "ENV:Selecta/theme"
+/* STRPTR is unsigned char on Amiga: the store takes const char*. The library's own theme file (D5: ENV:UP-MCC/). Selecta keeps
+ * ENV:Selecta/theme through its own mui_theme_load call in plugins/ui/mui; the per-application file
+ * ENV:UP-MCC/<application base>.theme from the design is not read yet. */
+#define UP_THEME_ENV "ENV:UP-MCC/theme"
 
 static void retheme(void) {
 #if defined(__amigaos__) || defined(AMIGA)

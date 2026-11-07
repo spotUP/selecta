@@ -3,7 +3,7 @@
 #ifndef MCC_UP_LIB_H
 #define MCC_UP_LIB_H
 
-/* UP_ThemeLoad(path): validate the theme file at path (empty or NULL: ENV:Selecta/theme) and apply it to every UP- object.
+/* UP_ThemeLoad(path): validate the theme file at path (empty or NULL: ENV:UP-MCC/theme) and apply it to every UP- object.
  * Returns 0, or -1 with the tokens untouched when the file is missing or malformed. */
 LONG UP_ThemeLoad(STRPTR path);
 /* UP_ThemeReload(): resolve the theme again (built-in, ENV file, last accepted path) and apply it. Returns 0. */
