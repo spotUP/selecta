@@ -667,6 +667,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME mcc-support-api COMMAND mcc_support_api_test)
   set_tests_properties(mcc-support-api PROPERTIES TIMEOUT 30 LABELS mui)
   # I685j: the UP-MCC.mcp prefs page, host part: theme writer round trip, gadget/token mapping, shipped theme files, the CMake name.
+  # I685k: the sentinel attribute UPA_Shared_Origin is 0 in the static build, the library base in a .mcc (gate item 1).
+  add_executable(mcc_origin_test ui/mcc_origin_test.c)
+  target_link_libraries(mcc_origin_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-shared-origin COMMAND mcc_origin_test)
+  set_tests_properties(mcc-shared-origin PROPERTIES TIMEOUT 30 LABELS mui)
   add_executable(mcc_prefs_test ui/mcc_prefs_test.c)
   target_link_libraries(mcc_prefs_test PRIVATE sel_mcc_static)
   add_test(NAME mcc-prefs-writer COMMAND mcc_prefs_test writer)
