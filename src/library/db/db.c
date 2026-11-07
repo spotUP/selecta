@@ -7,6 +7,7 @@
 
 #include <selecta/machine.h>
 
+#include <stdio.h>
 #include <string.h>
 
 static void* g_heap;
@@ -167,6 +168,62 @@ static int write_gen_hook(void* ctx) {
     return 0;
 }
 
+/* I625a8e: a missing database is made by copying the prebuilt template SEL_LIBTEMPLATE_NAME from the directory of `path` (the file the
+ * build bakes with the same sel_schema_migrate), not by running the 65 DDL statements of SCHEMA_FINAL, which cost 3336 ms on a 68020.
+ * The copy goes to <path>.part and is renamed, so an interrupted copy never leaves a half database. 0 = no template or copy failed;
+ * the caller then creates the schema with the DDL as before. */
+static int copy_template(const sel_host* host, const char* path) {
+    char tpl[512], part[512];
+    char buf[4096];
+    size_t dirlen = 0, i, n;
+    long total = 0;
+    FILE *in, *out;
+    int ok = 1;
+
+    if (path[0] == '\0' || strcmp(path, ":memory:") == 0 || strncmp(path, "file:", 5) == 0) {
+        return 0;
+    }
+    for (i = 0; path[i] != '\0'; i++) {
+        if (path[i] == '/' || path[i] == ':') dirlen = i + 1;
+    }
+    if (dirlen + sizeof SEL_LIBTEMPLATE_NAME > sizeof tpl || strlen(path) + 6 > sizeof part) {
+        return 0;
+    }
+    if ((out = fopen(path, "rb")) != NULL) { /* the database exists: nothing to copy */
+        fclose(out);
+        return 0;
+    }
+    memcpy(tpl, path, dirlen);
+    strcpy(tpl + dirlen, SEL_LIBTEMPLATE_NAME);
+    sprintf(part, "%s.part", path);
+    if ((in = fopen(tpl, "rb")) == NULL) {
+        return 0;
+    }
+    if ((out = fopen(part, "wb")) == NULL) {
+        fclose(in);
+        return 0;
+    }
+    while ((n = fread(buf, 1, sizeof buf, in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            ok = 0;
+            break;
+        }
+        total += (long)n;
+    }
+    ok = ok && !ferror(in) && total > 0;
+    fclose(in);
+    if (fclose(out) != 0) ok = 0;
+    if (ok) {
+        ok = rename(part, path) == 0;
+    }
+    if (!ok) {
+        remove(part);
+        return 0;
+    }
+    sel_library_trace(host, "template copied", (int)total);
+    return 1;
+}
+
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path) {
     sel_library* lib = host->mem_alloc(host, sizeof *lib, SEL_MEM_FAST);
     char sql[80];
@@ -188,6 +245,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     lib->heap_allocs = g_heap_allocs;
     sel_library_trace(host, "sqlite heap acquired bytes", (int)g_heap_bytes);
     sel_library_trace(host, "open begin", 0);
+    copy_template(host, path);
     if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL) !=
             SQLITE_OK) {
         goto fail;
