@@ -249,6 +249,7 @@ typedef struct desk {
     int32_t col_av_w;
     uint32_t col_av_hash;
     int pls_recent;          /* I994d4: the next pls_open is a click on a playlist (feeds Recents); any other open rebuilds the page only */
+    uint32_t col_eshown;      /* I994d5: rows the engine says are shown (pg->shown) */
     uint32_t col_read_serial; /* I994d4: serial of the page pls_reload_run last read: a newer one (own change, view) is read again */
     uint32_t col_open_serial; /* serial of the published collection page when this page was opened: only a newer page is this page's */
     char col_key[256];       /* the item key of a kind page (album id, artist name, composer canon) */
@@ -4925,7 +4926,6 @@ static void pls_briefs_follow(desk* d) {
                 r = aid + strlen(aid) + 1u;
             }
             d->pls_cols_ok = 0u;
-            col_rebuild(d);
             col_cover_refresh(d);
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             d->repaint = 1;
@@ -5051,38 +5051,9 @@ static void pls_reload_run(desk* d) {
 
 /* ---- I678e: the collection page (design doc 7): one page for a playlist now, an album, artist or composer later. The search
  * filter and the sort live here as an order over the loaded songs; the header colour is the dominant colour of the cover. ---- */
-static const desk* g_col_d;
-
-static int col_ci_cmp(const char* a, const char* b) {
-    for (; *a != '\0' && *b != '\0'; a++, b++) {
-        int x = tolower((unsigned char)*a), y = tolower((unsigned char)*b);
-        if (x != y) {
-            return x - y;
-        }
-    }
-    return tolower((unsigned char)*a) - tolower((unsigned char)*b);
-}
-
-static int col_match(const char* title, const char* q) {
-    size_t n = strlen(q), i, m = strlen(title);
-    for (i = 0; i + n <= m; i++) {
-        size_t j;
-        for (j = 0; j < n && tolower((unsigned char)title[i + j]) == tolower((unsigned char)q[j]); j++) {
-        }
-        if (j == n) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int col_order_cmp(const void* a, const void* b) {
-    uint32_t x = *(const uint32_t*)a, y = *(const uint32_t*)b;
-    int c = col_ci_cmp(g_col_d->pls_title[x], g_col_d->pls_title[y]);
-    return c != 0 ? c : (x < y ? -1 : x > y);
-}
-
+/* I994d5: the engine owns the search filter and the sort (COLLECTION_VIEW, design 11.7); col_rebuild only copies the order it published. */
 static void col_rebuild(desk* d) {
+    const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
     uint32_t i, n = 0u;
     free(d->pls_ord);
     d->pls_ord = (uint32_t*)malloc((d->pls_n + 1u) * sizeof *d->pls_ord);
@@ -5090,16 +5061,20 @@ static void col_rebuild(desk* d) {
     if (d->pls_ord == NULL) {
         return;
     }
-    for (i = 0; i < d->pls_n; i++) {
-        if (d->col_qlen == 0u || col_match(d->pls_title[i], d->col_q)) {
-            d->pls_ord[n++] = i;
+    if (pg != NULL && pg->serial == d->col_read_serial && pg->order != NULL) {
+        for (i = 0; i < pg->shown && i < d->pls_n; i++) {
+            if (pg->order[i] < d->pls_n) {
+                d->pls_ord[n++] = pg->order[i];
+            }
+        }
+    } else {
+        n = pg != NULL && pg->serial == d->col_read_serial && pg->shown < d->pls_n ? pg->shown : d->pls_n; /* no order: identity (drill group pages) */
+        for (i = 0; i < n; i++) {
+            d->pls_ord[i] = i;
         }
     }
-    if (d->col_sort == 1u && n > 1u) {
-        g_col_d = d;
-        qsort(d->pls_ord, n, sizeof *d->pls_ord, col_order_cmp);
-    }
     d->pls_vn = n;
+    d->col_eshown = pg != NULL ? pg->shown : 0u;
 }
 
 /* The header colour: the dominant colour of the first song's cover, else the accent. The band fades from it into the panel. */
@@ -5118,7 +5093,9 @@ static void col_cover_refresh(desk* d) {
 }
 
 static void col_changed(desk* d) {
-    col_rebuild(d);
+    char line[128];
+    snprintf(line, sizeof line, "COLLECTION_VIEW \"%s\" %u", d->col_q, (unsigned)d->col_sort); /* I994d5: the engine filters and sorts, the page redraws when the new serial lands */
+    desk_send(d, line);
     d->pls_scroll = 0u;
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -6602,7 +6579,7 @@ static int col_key(desk* d, const sel_gui_input* ev) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
     }
-    switch (field_edit(d, d->col_q, &d->col_qlen, sizeof d->col_q, 0, ev)) {
+    switch (field_edit(d, d->col_q, &d->col_qlen, sizeof d->col_q, '"', ev)) {
     case 0:
         return 0;
     case 2:
@@ -7836,11 +7813,12 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect cs = col_sort_rect(d, pmn), cf = col_find_rect(d, pmn);
             sel_engine_stats cst;
             sel_engine_stats_get(d->engine, &cst);
-            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d header_art_px=%d flat=%u\n",
+            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d header_art_px=%d flat=%u views=%u orders=%u eshown=%u\n",
                          d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? "composer" : d->col_kind == COL_LIKED ? "liked" : d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT ? "recent" : d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL ? "local" : "source",
                          (unsigned)cst.collection_opens, (unsigned)art_dominants(d->art), d->col_cover, (unsigned)d->col_color, (unsigned)d->col_top,
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
-                         (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws);
+                         (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws,
+                         (unsigned)cst.collection_views, (unsigned)cst.collection_orders, (unsigned)d->col_eshown);
             if (d->col_kind != 0u) { /* I678f: the kind page's shelves, the Popular limit and the geometry a script clicks */
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
                 o = dump_put(d, o, "kindscroll scroll=%u max=%u listtop=%d moredrawn=%d,%d,%d,%d\n", (unsigned)d->pls_scroll, (unsigned)col_scroll_max(d, pmn),
