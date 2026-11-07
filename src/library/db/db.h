@@ -304,6 +304,9 @@ enum {
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
 #define SEL_LIB_SCHEMA_VERSION 18
+/* I625a8e: file name of the prebuilt empty database (tools/library_template_bake.c). sel_library_open copies it, from the directory
+ * of the database path, when that database does not exist, instead of running the 65 DDL statements of SCHEMA_FINAL. */
+#define SEL_LIBTEMPLATE_NAME "library-template.db"
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 640 KiB (512 KiB + 32 KiB I687c + 32 KiB I790 + 64 KiB I848a), <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:

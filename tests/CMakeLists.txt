@@ -3312,6 +3312,9 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_schema_final_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-schema-final COMMAND library_schema_final_test)
   set_tests_properties(library-schema-final PROPERTIES LABELS "m3;library" TIMEOUT 30 PASS_REGULAR_EXPRESSION "schema_final_ok")
+  # I625a8e: the prebuilt template database equals SCHEMA_FINAL, and a missing library.db is copied from it.
+  add_test(NAME library-template-schema COMMAND library_schema_final_test --template ${CMAKE_BINARY_DIR}/library-template.db)
+  set_tests_properties(library-template-schema PROPERTIES LABELS "m3;library" TIMEOUT 30 PASS_REGULAR_EXPRESSION "template_ok")
   set_tests_properties(library-write-gen PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "write_gen_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
