@@ -3,10 +3,14 @@
  *   mapping  tokens -> gadget values -> tokens is lossless for accent, surface, text, background, radius (src/map/up_prefs_map.c,
  *            the pure half of plugins/shared/mcc/prefs/up_prefs.c)
  *   themes   dist/themes/Dark.theme equals the built-in defaults; Light.theme parses and differs
+ *   complete   every file of dist/themes named *.theme holds exactly the keys of SEL_GUI_TOKENS (none missing, none unknown, each once, in range)
  *   cmake    the CMake build list names UP-MCC.mcp (target up_mcc_prefs) */
 #include "map/up_prefs_map.h"
 
 #include <selecta/uimodel/theme.h>
+#include <selecta/uimodel/tokens.h>
+
+#include <dirent.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,7 +113,67 @@ static int t_themes(const char* dir) {
     CHECK(txt_theme_parse(&light, text, &bad) > 0, "Light.theme line %d", bad);
     free(text);
     CHECK(light.token[SEL_GUI_TOKEN_BACKGROUND] == 0xF4F4F6u && light.token[SEL_GUI_TOKEN_ACCENT] == 0x2563EBu, "Light.theme values");
-    CHECK(light.token[SEL_GUI_TOKEN_ERROR] == def.token[SEL_GUI_TOKEN_ERROR], "Light.theme changed a token it should keep");
+    CHECK(light.token[SEL_GUI_TOKEN_SURFACE] == 0xFFFFFFu && light.token[SEL_GUI_TOKEN_ERROR] != def.token[SEL_GUI_TOKEN_ERROR], "Light.theme still keeps a dark default for the status colours");
+    return 0;
+}
+
+/* I685o: one theme file names every SEL_GUI_TOKENS key exactly once and nothing else; the loader keeps the built-in dark value
+ * for a key a file leaves out, so a missing key in Light.theme is a dark remnant on a light surface. */
+static int theme_complete(const char* path, const char* text) {
+    int seen[SEL_GUI_TOKEN_COUNT] = {0};
+    int lineno = 0;
+    for (const char* p = text; *p != '\0';) {
+        const char* eol = strchr(p, '\n');
+        size_t len = eol != NULL ? (size_t)(eol - p) : strlen(p);
+        char line[256];
+        lineno++;
+        if (len >= sizeof line) len = sizeof line - 1;
+        memcpy(line, p, len);
+        line[len] = '\0';
+        p += len + (eol != NULL ? 1 : 0);
+        if (line[0] == '#' || line[0] == '\0') continue;
+        char* eq = strchr(line, '=');
+        CHECK(eq != NULL, "%s:%d no '=' in \"%s\"", path, lineno, line);
+        char* e = eq;
+        while (e > line && e[-1] == ' ') e--;
+        *e = '\0';
+        int idx = -1;
+        for (int i = 0; i < SEL_GUI_TOKEN_COUNT; i++)
+            if (strcmp(line, sel_gui_token_name((sel_gui_token)i)) == 0) idx = i;
+        CHECK(idx >= 0, "%s:%d unknown token key %s", path, lineno, line);
+        CHECK(!seen[idx], "%s:%d token %s named twice", path, lineno, line);
+        seen[idx] = 1;
+        unsigned long v = strtoul(eq + 1, NULL, 0);
+        CHECK(v >= sel_gui_token_min((sel_gui_token)idx) && v <= sel_gui_token_max((sel_gui_token)idx), "%s:%d %s out of range", path, lineno, line);
+    }
+    for (int i = 0; i < SEL_GUI_TOKEN_COUNT; i++)
+        CHECK(seen[i], "%s misses token %s", path, sel_gui_token_name((sel_gui_token)i));
+    return 0;
+}
+
+static int t_complete(const char* dir) {
+    int files = 0;
+    DIR* d = opendir(dir);
+    CHECK(d != NULL, "cannot open %s", dir);
+    struct dirent* de;
+    while ((de = readdir(d)) != NULL) {
+        size_t n = strlen(de->d_name);
+        if (n < 7 || strcmp(de->d_name + n - 6, ".theme") != 0) continue;
+        char path[512];
+        snprintf(path, sizeof path, "%s/%s", dir, de->d_name);
+        char* text = slurp(path);
+        CHECK(text != NULL, "cannot read %s", path);
+        int rc = theme_complete(path, text);
+        free(text);
+        if (rc != 0) {
+            closedir(d);
+            return rc;
+        }
+        files++;
+    }
+    closedir(d);
+    CHECK(files >= 2, "only %d theme files in %s", files, dir);
+    printf("[OK] mcc-theme-complete: %d theme files each name all %d tokens\n", files, (int)SEL_GUI_TOKEN_COUNT);
     return 0;
 }
 
@@ -125,9 +189,10 @@ static int t_cmake(const char* cmake_file, const char* name) {
 
 int main(int argc, char** argv) {
     if (argc >= 3 && strcmp(argv[1], "themes") == 0) return t_themes(argv[2]);
+    if (argc >= 3 && strcmp(argv[1], "complete") == 0) return t_complete(argv[2]);
     if (argc >= 4 && strcmp(argv[1], "cmake") == 0) return t_cmake(argv[2], argv[3]);
     if (argc >= 2 && strcmp(argv[1], "writer") == 0) return t_writer();
     if (argc >= 2 && strcmp(argv[1], "mapping") == 0) return t_mapping();
-    fprintf(stderr, "usage: mcc_prefs_test writer|mapping|themes <dir>|cmake <CMakeLists> <name>\n");
+    fprintf(stderr, "usage: mcc_prefs_test writer|mapping|themes <dir>|complete <dir>|cmake <CMakeLists> <name>\n");
     return 2;
 }
