@@ -165,6 +165,55 @@ int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path) {
     return theme_apply_file(t, env_path) + theme_apply_file(t, arg_path);
 }
 
+/* I685e2: the TrueType search list. Order: paths the host added (mui_font_file_add), the theme key font.file, the default. */
+#define FONT_ADD_MAX 4
+static char g_font_add[FONT_ADD_MAX][128];
+static int g_font_add_n;
+static char g_font_theme[128];
+static const char* g_font_list[FONT_ADD_MAX + 3];
+
+int mui_font_file_add(const char* path) {
+    int i;
+    if (path == NULL || path[0] == '\0' || strlen(path) >= sizeof g_font_add[0]) {
+        return -1;
+    }
+    for (i = 0; i < g_font_add_n; i++) {
+        if (strcmp(g_font_add[i], path) == 0) {
+            return 0;
+        }
+    }
+    if (g_font_add_n >= FONT_ADD_MAX) {
+        return -1;
+    }
+    snprintf(g_font_add[g_font_add_n++], sizeof g_font_add[0], "%s", path);
+    return 0;
+}
+
+static int font_listed(int n, const char* p) {
+    int i;
+    for (i = 0; i < n; i++) {
+        if (strcmp(g_font_list[i], p) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+const char* const* mui_font_files(void) {
+    int n = 0, i;
+    for (i = 0; i < g_font_add_n; i++) {
+        g_font_list[n++] = g_font_add[i];
+    }
+    if (g_font_theme[0] != '\0' && !font_listed(n, g_font_theme)) {
+        g_font_list[n++] = g_font_theme;
+    }
+    if (!font_listed(n, MUI_FONT_DEFAULT)) {
+        g_font_list[n++] = MUI_FONT_DEFAULT;
+    }
+    g_font_list[n] = NULL;
+    return g_font_list;
+}
+
 /* I676b: the theme the next window open reads. A THEME request that validated stores its file here; mui_theme_resolve is the one
  * place that turns (built-in, ENV file, launch --theme, request) into tokens, for the window open and for the tests. */
 static char g_request_path[256];
@@ -173,6 +222,7 @@ static uint32_t g_requests;
 void mui_theme_resolve(txt_theme* t, const char* env_path, const char* launch_arg) {
     txt_theme_default(t);
     mui_theme_load(t, env_path, g_request_path[0] != '\0' ? g_request_path : launch_arg);
+    snprintf(g_font_theme, sizeof g_font_theme, "%s", t->font_file);
 }
 
 int mui_theme_request(const char* env_path, const char* path) {

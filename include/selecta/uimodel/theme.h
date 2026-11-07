@@ -38,6 +38,7 @@ typedef struct txt_theme {
     int8_t ref[SEL_GUI_TOKEN_COUNT];     /* base a role follows, or -1 for a literal value */
     int8_t base_ref[SEL_GUI_BASE_COUNT]; /* base a base follows, or -1 */
     uint8_t bad_range;                   /* 1 when bad_token failed because its resolved value is outside the token's range, 0 for a missing or circular reference */
+    char font_file[128];                 /* file key font.file (package font path, empty when the file has none) */
     char bad_token[64];                  /* after a failed parse that named a token: its file key, else "" */
 } txt_theme;
 

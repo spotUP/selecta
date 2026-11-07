@@ -737,6 +737,7 @@ static void mui_theme_init(const sel_ui_open_args* a) {
         }
     }
     snprintf(g_theme_arg, sizeof g_theme_arg, "%s", theme_arg != NULL ? theme_arg : "");
+    mui_font_file_add("Selecta:Fonts/Inter-Regular.ttf"); /* I685e2: Selecta's own font path; "RAM:Inter-Regular.ttf" was only the I665 spike's */
     mui_theme_resolve(&th, MUI_THEME_ENV_PATH, theme_arg); /* I676b: a THEME request made earlier wins over --theme */
     mui_screen_open(th.token);
     mui_theme_decide(th.token);

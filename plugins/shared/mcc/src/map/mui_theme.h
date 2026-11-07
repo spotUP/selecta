@@ -65,6 +65,14 @@ int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path);
  * (--theme), over it. mui_theme_requests counts accepted requests (sentinel). */
 int mui_theme_request(const char* env_path, const char* path);
 void mui_theme_resolve(txt_theme* t, const char* env_path, const char* launch_arg);
+
+/* I685e2: the TrueType font search list (design 4 and 8.4, AA_SetFontFile). The host adds its own paths with mui_font_file_add
+ * (append semantics, up to 4, duplicates ignored; returns 0, or -1 for an empty, too long path or a full list). The list returned by
+ * mui_font_files is NULL terminated: the added paths in call order, then the theme key font.file of the last mui_theme_resolve,
+ * then MUI_FONT_DEFAULT; duplicates skipped. The pointer stays valid until the next call. */
+#define MUI_FONT_DEFAULT "FONTS:Inter-Regular.ttf"
+int mui_font_file_add(const char* path);
+const char* const* mui_font_files(void);
 uint32_t mui_theme_requests(void);
 /* I676c: the live repaint. Resolves the tokens (mui_theme_resolve), stores them (mui_theme_tokens_set), then calls ops->palette
  * (the screen's held pens take the new palette) and ops->classes (every AA class releases its pens, re-obtains them from the

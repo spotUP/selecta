@@ -65,10 +65,9 @@ static struct {
     int px, refs;
     APTR font;
 } g_fonts[FONT_SLOTS];
-static const char* const g_ttf[] = {"RAM:Inter-Regular.ttf", "Selecta:Fonts/Inter-Regular.ttf", "FONTS:Inter-Regular.ttf", NULL};
 static int g_missing_logged;
 
-/* I625a3: the probe names may sit on an assign or volume that is missing ("Selecta:"); dos.library would open a "Please insert
+/* I625a3: the probe names may sit on an assign or volume that is missing (a host assign); dos.library would open a "Please insert
  * volume" requester. The probe loop runs with the process's pr_WindowPtr = -1 and restores it. Same pattern as I214
  * (src/core/amiga/dos_quiet.c); the package cannot include src/core, so it carries its own copy of the two small calls. */
 struct font_probe {
@@ -124,7 +123,7 @@ static APTR font_get(struct Screen* scr, int px) {
         ops.quiet_begin = probe_quiet_begin;
         ops.quiet_end = probe_quiet_end;
         ops.open = probe_open;
-        f = mui_fontprobe_open(&ops, g_ttf);
+        f = mui_fontprobe_open(&ops, mui_font_files());
         if (f != NULL) {
             g_fonts[free_slot].px = px;
             g_fonts[free_slot].refs = 1;

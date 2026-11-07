@@ -636,6 +636,13 @@ if(NOT SEL_AMIGA)
     add_test(NAME mcc-log-${t} COMMAND mcc_log_test ${t} "${CMAKE_CURRENT_BINARY_DIR}/mcc_log_${t}.txt")
     set_tests_properties(mcc-log-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
+  # I685e2 part 2: the package font search list (setter, theme key font.file, default) and the source check that no Selecta:/RAM: path remains.
+  add_executable(mcc_font_list_test ui/mcc_font_list_test.c)
+  target_link_libraries(mcc_font_list_test PRIVATE sel_mcc_static)
+  target_compile_definitions(mcc_font_list_test PRIVATE "MCC_DIR=\"${MCC_DIR}\"")
+  add_test(NAME mcc-font-list-order COMMAND mcc_font_list_test order "${CMAKE_CURRENT_BINARY_DIR}/mcc_font_list_theme.txt")
+  add_test(NAME mcc-font-list-source COMMAND mcc_font_list_test source)
+  set_tests_properties(mcc-font-list-order mcc-font-list-source PROPERTIES TIMEOUT 30 LABELS mui)
   # I970: the baked 16x8 tall-pixel icon bodies (List, Repeat, Stop) keep their detail; the revert proof is the old baker.
   add_executable(mui_icon_fit_test ui/mui_icon_fit_test.c)
   target_include_directories(mui_icon_fit_test PRIVATE "${PROJECT_SOURCE_DIR}/include")

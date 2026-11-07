@@ -14,6 +14,7 @@ const char* txt_role_name(txt_role r) { return (unsigned)r < TXT_ROLE_COUNT ? ro
 void txt_theme_default(txt_theme* t) {
     const uint16_t D = TXT_COLOR_DEFAULT;
     uint32_t i;
+    t->font_file[0] = '\0';
     t->role[TXT_ROLE_NORMAL] = txt_style_make(252, D, 0);
     t->role[TXT_ROLE_HEADER] = txt_style_make(231, 24, TXT_ATTR_BOLD);
     t->role[TXT_ROLE_CURSOR] = txt_style_make(16, 110, 0);
@@ -166,6 +167,15 @@ static int apply_line(txt_theme* t, const char* s, const char* end) {
     rp = s;
     nrole = word(&rp, eq, &w);
     if (nrole == 0) return 0;
+    if (nrole == 9 && memcmp(w, "font.file", 9) == 0) { /* path value: rest of the line, blanks trimmed */
+        const char* v = eq + 1;
+        while (v < end && (*v == ' ' || *v == '\t')) v++;
+        while (end > v && (end[-1] == ' ' || end[-1] == '\t')) end--;
+        if (v == end || (size_t)(end - v) >= sizeof t->font_file) return 0;
+        memcpy(t->font_file, v, (size_t)(end - v));
+        t->font_file[end - v] = '\0';
+        return 1;
+    }
     for (r = 0; r < TXT_ROLE_COUNT; r++)
         if (strlen(role_names[r]) == nrole && memcmp(role_names[r], w, nrole) == 0) break;
     if (r == TXT_ROLE_COUNT) {
