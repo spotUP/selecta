@@ -109,7 +109,7 @@ static ULONG aatext_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     return 0;
 }
 
-/* AAT_Contents: copy and redraw only when the text differs from what is shown. */
+/* UPA_Text_Contents: copy and redraw only when the text differs from what is shown. */
 static void aatext_store(Object* obj, aatext_data* d, const char* text) {
     if (strlen(text) < sizeof d->text && strcmp(d->text, text) == 0) {
         return;
@@ -123,17 +123,17 @@ static void aatext_store(Object* obj, aatext_data* d, const char* text) {
 
 static ULONG aatext_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     aatext_data* d = INST_DATA(cl, obj);
-    struct TagItem* tag = FindTagItem(AAT_Contents, msg->ops_AttrList);
+    struct TagItem* tag = FindTagItem(UPA_Text_Contents, msg->ops_AttrList);
     if (tag != NULL && tag->ti_Data != 0) {
         aatext_store(obj, d, (const char*)tag->ti_Data);
     }
     return DoSuperMethodA(cl, obj, (Msg)msg);
 }
 
-/* AAT_Contents readable: the shown text (a pointer into the object). The rig's wasabid uitree reads it to list the status texts (I716b). */
+/* UPA_Text_Contents readable: the shown text (a pointer into the object). The rig's wasabid uitree reads it to list the status texts (I716b). */
 static ULONG aatext_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     aatext_data* d = INST_DATA(cl, obj);
-    if (msg->opg_AttrID == AAT_Contents) {
+    if (msg->opg_AttrID == UPA_Text_Contents) {
         *msg->opg_Storage = (ULONG)(uintptr_t)d->text;
         return TRUE;
     }
@@ -194,7 +194,7 @@ uint32_t mui_aatext_made(void) {
 }
 
 void mui_aatext_set(Object* obj, const char* contents) {
-    SetAttrs(obj, AAT_Contents, (ULONG)contents, TAG_DONE);
+    SetAttrs(obj, UPA_Text_Contents, (ULONG)contents, TAG_DONE);
 }
 
 void mui_aatext_class_free(void) {

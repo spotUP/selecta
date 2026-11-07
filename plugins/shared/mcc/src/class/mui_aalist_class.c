@@ -78,7 +78,7 @@ static const char* aalist_text(const aalist_data* d, long row, int col) {
 static void aalist_sync_scroller(Object* obj, aalist_data* d) {
     if (d->scroller != NULL && aa_live(obj)) {
         d->vis = aalist_visible(obj, d);
-        SetAttrs(d->scroller, MUIA_NoNotify, TRUE, AAS_Visible, (ULONG)d->vis, AAS_Entries, (ULONG)d->count, AAS_First, (ULONG)d->first, TAG_DONE);
+        SetAttrs(d->scroller, MUIA_NoNotify, TRUE, UPA_Scroller_Visible, (ULONG)d->vis, UPA_Scroller_Entries, (ULONG)d->count, UPA_Scroller_First, (ULONG)d->first, TAG_DONE);
     }
 }
 
@@ -214,8 +214,8 @@ static void aalist_set_active(Object* obj, aalist_data* d, long a) {
     a = mui_aa_list_clamp_active(a, d->count);
     if (a != d->active) {
         long vis = aalist_visible(obj, d);
-        set(obj, AAL_Active, (ULONG)a);
-        set(obj, AAL_First, (ULONG)mui_aa_list_scroll_to(d->first, vis, d->count, a));
+        set(obj, UPA_List_Active, (ULONG)a);
+        set(obj, UPA_List_First, (ULONG)mui_aa_list_scroll_to(d->first, vis, d->count, a));
     }
 }
 
@@ -246,7 +246,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
                 aalist_set_active(obj, d, r);
                 if (dbl || !d->double_pick) {
                     d->picked = r;
-                    set(obj, AAL_Picked, (ULONG)r);
+                    set(obj, UPA_List_Picked, (ULONG)r);
                 }
                 d->last_row = dbl ? -1 : r;
                 d->last_s = im->Seconds;
@@ -265,7 +265,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
     if (im->Code == AAL_WHEEL_UP || im->Code == AAL_WHEEL_DOWN) {
         if (in) {
             long nf = d->first + (im->Code == AAL_WHEEL_UP ? -AAL_WHEEL_STEP : AAL_WHEEL_STEP);
-            set(obj, AAL_First, (ULONG)mui_aa_list_clamp_first(nf, vis, d->count));
+            set(obj, UPA_List_First, (ULONG)mui_aa_list_clamp_first(nf, vis, d->count));
             return MUI_EventHandlerRC_Eat;
         }
         return 0;
@@ -284,7 +284,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
     case 0x43:
         if (d->active >= 0) {
             d->picked = d->active;
-            set(obj, AAL_Picked, (ULONG)d->active);
+            set(obj, UPA_List_Picked, (ULONG)d->active);
             return MUI_EventHandlerRC_Eat;
         }
         return 0;
@@ -297,9 +297,9 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
 
 static ULONG aalist_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     aalist_data* d = INST_DATA(cl, obj);
-    struct TagItem *tc = FindTagItem(AAL_Count, msg->ops_AttrList), *ta = FindTagItem(AAL_Active, msg->ops_AttrList),
-                   *tf = FindTagItem(AAL_First, msg->ops_AttrList), *tcol = FindTagItem(AAL_Columns, msg->ops_AttrList),
-                   *tp = FindTagItem(AAL_Playing, msg->ops_AttrList);
+    struct TagItem *tc = FindTagItem(UPA_List_Count, msg->ops_AttrList), *ta = FindTagItem(UPA_List_Active, msg->ops_AttrList),
+                   *tf = FindTagItem(UPA_List_First, msg->ops_AttrList), *tcol = FindTagItem(UPA_List_Columns, msg->ops_AttrList),
+                   *tp = FindTagItem(UPA_List_Playing, msg->ops_AttrList);
     int changed = 0;
     if (tcol != NULL && tcol->ti_Data != 0) {
         d->cols = *(const mui_aalist_cols*)tcol->ti_Data;
@@ -339,16 +339,16 @@ static ULONG aalist_set(struct IClass* cl, Object* obj, struct opSet* msg) {
 static ULONG aalist_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     aalist_data* d = INST_DATA(cl, obj);
     switch (msg->opg_AttrID) {
-    case AAL_Count: *msg->opg_Storage = (ULONG)d->count; return TRUE;
-    case AAL_Active: *msg->opg_Storage = (ULONG)d->active; return TRUE;
-    case AAL_First: *msg->opg_Storage = (ULONG)d->first; return TRUE;
-    case AAL_Picked: *msg->opg_Storage = (ULONG)d->picked; return TRUE;
-    case AAL_Playing: *msg->opg_Storage = (ULONG)d->playing; return TRUE;
+    case UPA_List_Count: *msg->opg_Storage = (ULONG)d->count; return TRUE;
+    case UPA_List_Active: *msg->opg_Storage = (ULONG)d->active; return TRUE;
+    case UPA_List_First: *msg->opg_Storage = (ULONG)d->first; return TRUE;
+    case UPA_List_Picked: *msg->opg_Storage = (ULONG)d->picked; return TRUE;
+    case UPA_List_Playing: *msg->opg_Storage = (ULONG)d->playing; return TRUE;
     }
     return DoSuperMethodA(cl, obj, (Msg)msg);
 }
 
-/* AAM_GetRow: see mui_aalist_class.h. The geometry is the one aalist_draw uses (pad_y, title row, row_h from first). */
+/* UPM_List_GetRow: see mui_aalist_class.h. The geometry is the one aalist_draw uses (pad_y, title row, row_h from first). */
 static ULONG aalist_getrow(struct IClass* cl, Object* obj, mui_aalist_getrow* g) {
     aalist_data* d = INST_DATA(cl, obj);
     int c, n = d->cols.n < 1 ? 1 : d->cols.n;
@@ -398,7 +398,7 @@ static ULONG __attribute__((used)) aalist_dispatch_c(struct IClass* cl, Object* 
         return aalist_set(cl, obj, (struct opSet*)msg);
     case OM_GET:
         return aalist_get(cl, obj, (struct opGet*)msg);
-    case AAM_GetRow:
+    case UPM_List_GetRow:
         return aalist_getrow(cl, obj, (mui_aalist_getrow*)msg);
     case MUIM_Setup:
         return aalist_setup(cl, obj, msg);
@@ -459,7 +459,7 @@ Object* mui_aalist_new(const mui_aalist_spec* spec, Object** list_out) {
     d->double_pick = spec->double_pick;
     d->no_select = spec->no_select;
     d->scroller = scroller;
-    DoMethod(scroller, MUIM_Notify, AAS_First, MUIV_EveryTime, list, 3, MUIM_Set, AAL_First, MUIV_TriggerValue);
+    DoMethod(scroller, MUIM_Notify, UPA_Scroller_First, MUIV_EveryTime, list, 3, MUIM_Set, UPA_List_First, MUIV_TriggerValue);
     g_list_made++;
     if (list_out != NULL) {
         *list_out = list;

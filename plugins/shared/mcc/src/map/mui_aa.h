@@ -169,7 +169,7 @@ int mui_aa_cycle_min_w(const mui_aa_cycle_t* m, int widest_text_w);
 void mui_aa_cycle_chevron_row(const mui_aa_cycle_t* m, int r, int* x, int* w);
 /* Active entry after a step of dir (-1 up, +1 down) in n entries, wrapping at both ends; n <= 0 gives 0. */
 int mui_aa_cycle_step(int active, int n, int dir);
-/* Whether v is a valid AAC_Active for n entries (a popup pick of "no row" is ignored). */
+/* Whether v is a valid UPA_Cycle_Active for n entries (a popup pick of "no row" is ignored). */
 int mui_aa_cycle_valid(int v, int n);
 /* Calls of the cycle maths above: the sentinel that the class (and not a copy) runs it. */
 uint32_t mui_aa_cycle_calls(void);

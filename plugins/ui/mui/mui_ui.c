@@ -1109,7 +1109,7 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
         if (s != NULL && i < MUI_SIDEBAR_DOORS) {
             s->door_btn[i] = b; /* S2: lit by mui_route_sync */
             mui_set_tip(s, MUI_TS_DOOR + i, b, MUI_TIP_DOOR, i, NULL, 0);
-            SetAttrs(b, AATIP_A_Side, MUI_AA_TIP_RIGHT, TAG_DONE); /* I731: the sidebar door tip opens beside the door, not over the next one */
+            SetAttrs(b, UPA_Shared_Side, MUI_AA_TIP_RIGHT, TAG_DONE); /* I731: the sidebar door tip opens beside the door, not over the next one */
         }
         mui_side_add(g, b);
     }
@@ -1424,7 +1424,7 @@ static void mui_main_cols_fill(uint32_t bp, mui_aalist_cols* out, const mui_cell
 /* Refill the main list's columns from the rows now listed and hand them to the list (the only place the columns attribute is set). */
 static void mui_main_cols_push(mui_state* s) {
     mui_main_cols_fill(s->col_bp, &s->main_cols, s->cell, s->cell_n);
-    set(s->list, AAL_Columns, (ULONG)&s->main_cols);
+    set(s->list, UPA_List_Columns, (ULONG)&s->main_cols);
 }
 
 /* I667i2: the AAList cell callback of the main list; the display hook stays the one source of the texts (row -1: the column titles). */
@@ -1513,7 +1513,7 @@ static Object* mui_col_page_group(mui_state* s) {
     if (g == NULL || head == NULL || s->col_title == NULL || s->col_meta == NULL || s->col_artist == NULL || lg == NULL || s->col_list == NULL) {
         return NULL;
     }
-    DoMethod(s->col_list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_LIST);
+    DoMethod(s->col_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_LIST);
     DoMethod(head, OM_ADDMEMBER, s->col_title);
     DoMethod(head, OM_ADDMEMBER, s->col_artist);
     DoMethod(g, OM_ADDMEMBER, head);
@@ -1571,7 +1571,7 @@ static Object* mui_home_page_group(mui_state* s) {
         if (s->shelf_grp[k] == NULL || head == NULL || s->shelf_head[k] == NULL || s->shelf_all[k] == NULL || lg == NULL || s->shelf_list[k] == NULL) {
             return NULL;
         }
-        DoMethod(s->shelf_list[k], MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)(CTL_SHELF_LIST_BASE + (LONG)k));
+        DoMethod(s->shelf_list[k], MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)(CTL_SHELF_LIST_BASE + (LONG)k));
         DoMethod(head, OM_ADDMEMBER, s->shelf_head[k]);
         DoMethod(head, OM_ADDMEMBER, s->shelf_all[k]);
         DoMethod(s->shelf_grp[k], OM_ADDMEMBER, head);
@@ -1646,8 +1646,8 @@ static Object* mui_main_group(mui_state* s) {
         return NULL;
     }
     set(s->listview, MUIA_ContextMenu, (ULONG)mui_song_context_menu()); /* MUI-P4-6: right mouse button */
-    DoMethod(s->list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
-    DoMethod(s->list, MUIM_Notify, AAL_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
+    DoMethod(s->list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
+    DoMethod(s->list, MUIM_Notify, UPA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
     s->list_active_set = -1;
     {
         Object* tools = mui_tool_group(s);
@@ -1766,7 +1766,7 @@ static Object* mui_detail_group(mui_state* s) {
         }
     }
     /* I667j (design 3.9): the detail tabs. Lyrics (with the upcoming queue), Info and Tracks are the pages of one page Group, switched
-     * by an AATabs strip (a notification from AATab_Active to MUIA_Group_ActivePage), instead of one tall stack. */
+     * by an AATabs strip (a notification from UPA_Tabs_Active to MUIA_Group_ActivePage), instead of one tall stack. */
     {
         static const char* const tab_names[] = {"Lyrics", "Info", "Tracks", NULL};
         mui_aatabs_spec ts;
@@ -1801,7 +1801,7 @@ static Object* mui_detail_group(mui_state* s) {
             DoMethod(pages, OM_ADDMEMBER, page_lyr);
             DoMethod(pages, OM_ADDMEMBER, page_info);
             DoMethod(pages, OM_ADDMEMBER, page_trk);
-            DoMethod(tabs, MUIM_Notify, AATab_Active, MUIV_EveryTime, pages, 3, MUIM_Set, MUIA_Group_ActivePage, MUIV_TriggerValue);
+            DoMethod(tabs, MUIM_Notify, UPA_Tabs_Active, MUIV_EveryTime, pages, 3, MUIM_Set, MUIA_Group_ActivePage, MUIV_TriggerValue);
             DoMethod(g, OM_ADDMEMBER, tabs);
             DoMethod(g, OM_ADDMEMBER, pages);
         }
@@ -1860,7 +1860,7 @@ static Object* mui_main_pages(mui_state* s) {
         s->viz_tabs_on = -1;
         if (s->tabs_viz_page != NULL) {
             set(s->tabs_viz_page, MUIA_ShowMe, FALSE);
-            DoMethod(s->tabs_viz_page, MUIM_Notify, AATab_Active, MUIV_EveryTime, s->cyc_viz_page, 3, MUIM_Set, AAC_Active, MUIV_TriggerValue);
+            DoMethod(s->tabs_viz_page, MUIM_Notify, UPA_Tabs_Active, MUIV_EveryTime, s->cyc_viz_page, 3, MUIM_Set, UPA_Cycle_Active, MUIV_TriggerValue);
             DoMethod(viz_g, OM_ADDMEMBER, s->tabs_viz_page);
         }
         DoMethod(viz_g, OM_ADDMEMBER, s->cyc_viz_page);
@@ -1958,7 +1958,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     } else {
         s->np_lyric_buf[0] = '\0';
     }
-    set(s->np_lyrics, AAL_Count, (ULONG)mui_text_lines(s->np_lyric_buf));
+    set(s->np_lyrics, UPA_List_Count, (ULONG)mui_text_lines(s->np_lyric_buf));
     /* Next in queue: the three entries after the playing one. */
     n = 0;
     for (i = 0; i < st->queue_count && st->queue != NULL; i++) {
@@ -2004,7 +2004,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             rows++;
         }
         s->info_ptr[rows] = NULL;
-        set(s->info_list, AAL_Count, (ULONG)rows);
+        set(s->info_list, UPA_List_Count, (ULONG)rows);
         if (rows > 0u) {
             s->p4[P4_SONGINFO]++;
         }
@@ -2034,9 +2034,9 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                 s->p4[P4_TRACKER]++;
             }
         }
-        set(s->trk_list, AAL_Count, (ULONG)rows);
+        set(s->trk_list, UPA_List_Count, (ULONG)rows);
         if (s->trk_page_list != NULL) { /* I735: the Pattern page shows the same rows */
-            set(s->trk_page_list, AAL_Count, (ULONG)rows);
+            set(s->trk_page_list, UPA_List_Count, (ULONG)rows);
         }
         set(s->trk_group, MUIA_ShowMe, rows > 0u ? TRUE : FALSE);
     }
@@ -2101,7 +2101,7 @@ static void mui_home_fill(mui_state* s, const sel_view_state* v, const sel_route
             s->shelf_id[k] = sh.id;
             snprintf(s->shelf_head_buf[k], sizeof s->shelf_head_buf[k], "%s", text != NULL ? text : " ");
             mui_aatext_set(s->shelf_head[k], s->shelf_head_buf[k]);
-            SetAttrs(s->shelf_list[k], AAL_Count, (ULONG)sh.count, AAL_Active, (ULONG)-1L, TAG_DONE);
+            SetAttrs(s->shelf_list[k], UPA_List_Count, (ULONG)sh.count, UPA_List_Active, (ULONG)-1L, TAG_DONE);
         }
         set(s->shelf_all[k], MUIA_ShowMe, on && !on_shelf ? TRUE : FALSE);
         set(s->shelf_grp[k], MUIA_ShowMe, on ? TRUE : FALSE);
@@ -2208,7 +2208,7 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         mui_aatext_set(s->col_title, s->col_title_buf);
         mui_aatext_set(s->col_meta, s->col_meta_buf);
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
-        SetAttrs(s->col_list, AAL_Count, (ULONG)pg->songs, AAL_Active, (ULONG)-1L, TAG_DONE);
+        SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
     }
     mui_pages_sync(s, st, cur, col);
 }
@@ -2376,7 +2376,7 @@ static void mui_refresh(mui_state* s) {
             s->cell_n = (uint32_t)n;
             mui_main_cols_push(s); /* I1079d: a column empty for the whole list drops out */
             s->list_active_set = active;
-            SetAttrs(s->list, AAL_Count, (ULONG)n, AAL_Playing, (ULONG)playing, AAL_Active, (ULONG)(active < 0 ? -1L : (long)active), TAG_DONE);
+            SetAttrs(s->list, UPA_List_Count, (ULONG)n, UPA_List_Playing, (ULONG)playing, UPA_List_Active, (ULONG)(active < 0 ? -1L : (long)active), TAG_DONE);
         }
         /* The sentinel the exit stats print (ui_list): which back end, style and column set the List runs, and how often its display hook ran. */
         {
@@ -2554,10 +2554,10 @@ static void mui_palette_show(mui_state* s) {
         }
         DoMethod(s->app, OM_ADDMEMBER, s->pal_win);
         mui_close_on_request(s->pal_win);
-        DoMethod(s->pal_list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_PAL_LIST);
+        DoMethod(s->pal_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_PAL_LIST);
     } else {
         set(s->pal_str, MUIA_String_Contents, (ULONG) "");
-        SetAttrs(s->pal_list, AAL_Count, (ULONG)s->pal.count, AAL_Active, (ULONG)0, TAG_DONE);
+        SetAttrs(s->pal_list, UPA_List_Count, (ULONG)s->pal.count, UPA_List_Active, (ULONG)0, TAG_DONE);
     }
     set(s->pal_win, MUIA_Window_Open, TRUE);
     set(s->pal_win, MUIA_Window_ActiveObject, s->pal_str);
@@ -2573,7 +2573,7 @@ static void mui_palette_sync(mui_state* s) {
     GetAttr(MUIA_String_Contents, s->pal_str, &text);
     if (open != 0 && text != 0 && strcmp((const char*)text, s->pal.query) != 0) {
         mui_palette_filter(&s->pal, (const char*)text);
-        SetAttrs(s->pal_list, AAL_Count, (ULONG)s->pal.count, AAL_Active, (ULONG)0, TAG_DONE);
+        SetAttrs(s->pal_list, UPA_List_Count, (ULONG)s->pal.count, UPA_List_Active, (ULONG)0, TAG_DONE);
     }
 }
 
@@ -2716,7 +2716,7 @@ static void mui_pref_fire(mui_state* s, uint32_t i) {
     }
     val[0] = '\0';
     if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
-        GetAttr(AAC_Active, s->set_ctl[i], &v);
+        GetAttr(UPA_Cycle_Active, s->set_ctl[i], &v);
         snprintf(val, sizeof val, "%s", v < 9u && s->set_entry[i][v] != NULL ? s->set_entry[i][v] : "");
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
         GetAttr(MUIA_Selected, s->set_ctl[i], &v);
@@ -2766,28 +2766,28 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         }
         break;
     case P4_RATING:
-        GetAttr(AAC_Active, s->cyc_rating, &act);
+        GetAttr(UPA_Cycle_Active, s->cyc_rating, &act);
         mui_rating_line((uint32_t)act, line, sizeof line);
         if (mui_engine_line(s, line)) {
             mui_p4_note(s, which, line);
         }
         break;
     case P4_VIZPICK:
-        GetAttr(AAC_Active, s->cyc_viz, &act);
+        GetAttr(UPA_Cycle_Active, s->cyc_viz, &act);
         if (s->cyc_viz_page != NULL && (uint32_t)act == s->vizset.sel) { /* I735: the page picker fired when the strip one did not move */
-            GetAttr(AAC_Active, s->cyc_viz_page, &act);
+            GetAttr(UPA_Cycle_Active, s->cyc_viz_page, &act);
         }
         if ((uint32_t)act < s->vizset.n) {
             s->vizset.sel = (uint32_t)act;
-            set(s->cyc_viz, AAC_Active, act); /* every picker shows the plugin the engine runs */
+            set(s->cyc_viz, UPA_Cycle_Active, act); /* every picker shows the plugin the engine runs */
             if (s->cyc_viz_page != NULL) {
-                set(s->cyc_viz_page, AAC_Active, act);
+                set(s->cyc_viz_page, UPA_Cycle_Active, act);
             }
             if (s->tabs_viz_page != NULL) {
                 ULONG ta = 0;
-                GetAttr(AATab_Active, s->tabs_viz_page, &ta);
+                GetAttr(UPA_Tabs_Active, s->tabs_viz_page, &ta);
                 if (ta != act) { /* only on a change: the tabs' own notification sets the cycle, which must not set the tabs back */
-                    set(s->tabs_viz_page, AATab_Active, act);
+                    set(s->tabs_viz_page, UPA_Tabs_Active, act);
                 }
             }
             s->vizset.seq = 0u; /* draw the new plugin on the very next frame */
@@ -2797,7 +2797,7 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         }
         break;
     case P4_SUBSONG:
-        GetAttr(AAC_Active, s->cyc_subsong, &act);
+        GetAttr(UPA_Cycle_Active, s->cyc_subsong, &act);
         if (mui_subsong_cycle_line((uint32_t)act, s->uim.frame.subsong_count, line, sizeof line) && mui_engine_line(s, line)) {
             mui_p4_note(s, which, line);
         }
@@ -2991,7 +2991,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id == CTL_COL_LIST) {
         const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
         long picked = -1;
-        GetAttr(AAL_Picked, s->col_list, (ULONG*)&picked);
+        GetAttr(UPA_List_Picked, s->col_list, (ULONG*)&picked);
         if (pg != NULL && pg->rows != NULL && picked >= 0 && (uint32_t)picked < pg->songs) {
             const char* r = pg->rows;
             long i;
@@ -3019,7 +3019,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
         const sel_view_state* view = sel_engine_state(s->engine)->view;
         LONG k = id - CTL_SHELF_LIST_BASE;
         long picked = -1;
-        GetAttr(AAL_Picked, s->shelf_list[k], (ULONG*)&picked);
+        GetAttr(UPA_List_Picked, s->shelf_list[k], (ULONG*)&picked);
         if (view != NULL && picked >= 0 && s->shelf_first[k] + (uint32_t)picked < view->row_n) {
             mui_home_row_fire(s, view, s->shelf_first[k] + (uint32_t)picked);
         }
@@ -3039,12 +3039,12 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_palette_show(s);
     } else if (id == CTL_PAL_LIST) {
         ULONG picked = 0;
-        GetAttr(AAL_Picked, s->pal_list, &picked);
+        GetAttr(UPA_List_Picked, s->pal_list, &picked);
         mui_palette_choose(s, (long)picked);
     } else if (id == CTL_PAL_STR) {
         ULONG active = 0;
         mui_palette_sync(s);
-        GetAttr(AAL_Active, s->pal_list, &active);
+        GetAttr(UPA_List_Active, s->pal_list, &active);
         mui_palette_choose(s, (long)active);
     } else if (id == CTL_NP_TOGGLE) {
         uint32_t hidden = mui_np_toggle(&s->lay);
@@ -3111,10 +3111,10 @@ static void mui_control_fire(mui_state* s, LONG id) {
         s->vol_set = v;
     } else if (id == CTL_LIST_SEL || id == CTL_LIST_DBL) {
         const sel_view_state* view = sel_engine_state(s->engine)->view;
-        GetAttr(AAL_Active, s->list, (ULONG*)&v);
+        GetAttr(UPA_List_Active, s->list, (ULONG*)&v);
         if (id == CTL_LIST_DBL) {
             long picked = -1;
-            GetAttr(AAL_Picked, s->list, (ULONG*)&picked);
+            GetAttr(UPA_List_Picked, s->list, (ULONG*)&picked);
             v = mui_list_dbl_row((int32_t)picked, (int32_t)v);
         }
         if (view == NULL || v < 0 || (id == CTL_LIST_SEL && v == s->list_active_set)) {
@@ -3380,16 +3380,16 @@ static void* mui_open(const sel_ui_open_args* a) {
     return s;
 }
 
-/* I724: the I716 race made deterministic. A list refresh between the click and its handling resets AAL_Active to the engine cursor
- * row (mui_refresh: SetAttrs AAL_Active). With the knob on, do exactly that SetAttrs before the handler runs, to the first window row
- * (".." in the rig step). A handler that reads AAL_Active then acts on that row, one that reads the picked row does not.
+/* I724: the I716 race made deterministic. A list refresh between the click and its handling resets UPA_List_Active to the engine cursor
+ * row (mui_refresh: SetAttrs UPA_List_Active). With the knob on, do exactly that SetAttrs before the handler runs, to the first window row
+ * (".." in the rig step). A handler that reads UPA_List_Active then acts on that row, one that reads the picked row does not.
  * Not done through VIEW_CURSOR + mui_refresh: sel_engine_send_line only queues the line, the engine applies it in its next pump
- * (host loop), so the refresh in the same call still saw the old cursor and left AAL_Active on the clicked row (round 7 probe:
- * AAL_Active 6 before and after, picked row 6). The click-pending guard is disarmed as the real race happens after it caught up. */
+ * (host loop), so the refresh in the same call still saw the old cursor and left UPA_List_Active on the clicked row (round 7 probe:
+ * UPA_List_Active 6 before and after, picked row 6). The click-pending guard is disarmed as the real race happens after it caught up. */
 static void mui_dbl_race_inject(mui_state* s) {
     mui_list_pending_clear(&s->list_pending);
     s->list_active_set = 0;
-    SetAttrs(s->list, AAL_Active, (ULONG)0, TAG_DONE);
+    SetAttrs(s->list, UPA_List_Active, (ULONG)0, TAG_DONE);
     s->p4[P4_DBLRACE]++;
 }
 

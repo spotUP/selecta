@@ -232,9 +232,9 @@ static void test_text_source(void) {
           "class does not draw through the shared tone, fit and text helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
     CHECK(strstr(cm, "mui_aatext_class.c") != NULL, "class not in the build");
-    /* I716b: the text is readable by GetAttr(AAT_Contents) so wasabid's uitree lists it (rig check MUI-P3-1 waits for "Playing"). */
-    CHECK(strstr(cls, "case OM_GET:") != NULL && strstr(cls, "msg->opg_AttrID == AAT_Contents") != NULL && strstr(cls, "*msg->opg_Storage = (ULONG)(uintptr_t)d->text") != NULL,
-          "AAText does not answer OM_GET AAT_Contents");
+    /* I716b: the text is readable by GetAttr(UPA_Text_Contents) so wasabid's uitree lists it (rig check MUI-P3-1 waits for "Playing"). */
+    CHECK(strstr(cls, "case OM_GET:") != NULL && strstr(cls, "msg->opg_AttrID == UPA_Text_Contents") != NULL && strstr(cls, "*msg->opg_Storage = (ULONG)(uintptr_t)d->text") != NULL,
+          "AAText does not answer OM_GET UPA_Text_Contents");
     free(ui);
     free(cls);
     free(cm);
@@ -325,7 +325,7 @@ static void test_tabs_source(void) {
     }
     CHECK(count_of(ui, "MUIC_Register") == 0 && count_of(ui, "MUIA_Register_") == 0, "stock Register left in mui_ui.c");
     CHECK(count_of(ui, "mui_aatabs_new(") == 2, "AATabs constructor calls in mui_ui.c: %d", count_of(ui, "mui_aatabs_new("));
-    CHECK(count_of(ui, "AATab_Active") >= 1 && count_of(ui, "MUIA_Group_ActivePage") >= 1, "tab strip not wired to the page group");
+    CHECK(count_of(ui, "UPA_Tabs_Active") >= 1 && count_of(ui, "MUIA_Group_ActivePage") >= 1, "tab strip not wired to the page group");
     CHECK(count_of(ui, "mui_aatabs_class_free()") == 1, "class not freed at close");
     CHECK(strstr(cls, "mui_aa_tabs_line(") != NULL && strstr(cls, "mui_aa_tabs_rgb(") != NULL && strstr(cls, "mui_aa_tabs_key(") != NULL && strstr(cls, "mui_aa_tabs_click(") != NULL,
           "class does not run the shared tab helpers");
@@ -987,7 +987,7 @@ static void test_list_source(void) {
         return;
     }
     CHECK(count_of(cy, "MUIC_List") == 0 && count_of(cy, "mui_aalist_new(") == 1, "popup must be an AAList: stock %d, aalist %d", count_of(cy, "MUIC_List"), count_of(cy, "mui_aalist_new("));
-    CHECK(count_of(cy, "AAL_Picked") >= 1, "popup listens to AAL_Picked");
+    CHECK(count_of(cy, "UPA_List_Picked") >= 1, "popup listens to UPA_List_Picked");
     CHECK(count_of(ui, "mui_aalist_class_free(") == 1, "AAList class freed once in mui_close");
     /* I667i2 (design 3.6): main, info, tracks, help and lyrics lists are AALists; no stock list, floattext or listview is left. */
     CHECK(count_of(ui, "MUIC_List") == 0 && count_of(ui, "MUIC_Floattext") == 0 && count_of(ui, "MUIC_Listview") == 0, "stock list classes left in mui_ui.c: %d %d %d",
@@ -995,8 +995,8 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
     CHECK(count_of(ui, "mui_aalist_new(") == 5 && count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
     CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 3 && count_of(ui, "sp.no_select = 1;") == 1,          "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 8, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
-          count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));
+    CHECK(count_of(ui, "UPA_List_Columns") == 1 && count_of(ui, "UPA_List_Playing") == 1 && count_of(ui, "UPA_List_Picked") == 8, "columns %d, playing %d, picked %d", count_of(ui, "UPA_List_Columns"),
+          count_of(ui, "UPA_List_Playing"), count_of(ui, "UPA_List_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");
     CHECK(strstr(ui, "aa_live(") == NULL || strstr(ui, "_win(obj) != NULL") == NULL, "aa_live, not _win, guards a live object");

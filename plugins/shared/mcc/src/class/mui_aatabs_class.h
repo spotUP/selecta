@@ -1,6 +1,6 @@
 /* Selecta_AATabs (I667j, design 2026-10-28-mui-custom-classes.md section 3.9): MUI 3.8 Group subclass, a row of AAButton tab captions
  * (role TAB: TEXT_MUTED idle, TEXT active) with a 2 px ACCENT underline under the active one. Replaces a stock Register group:
- * the pages are a plain page Group the caller switches with a notification on AATab_Active. Amiga only; click, key and underline
+ * the pages are a plain page Group the caller switches with a notification on UPA_Tabs_Active. Amiga only; click, key and underline
  * maths are in map/mui_aa.c and tested on the host (mui-tabs). */
 #ifndef MUI_AATABS_CLASS_H
 #define MUI_AATABS_CLASS_H
@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <mcc/up.h>
 
-#define AATab_Active UP_TAG(UP_CLS_TABS, 0x01) /* LONG: index of the active tab; notifies like MUIA_Group_ActivePage */
+#define UPA_Tabs_Active UP_TAG(UP_CLS_TABS, 0x01) /* LONG: index of the active tab; notifies like MUIA_Group_ActivePage */
 #define MUI_AATABS_MAX 8
 
 typedef struct mui_aatabs_spec {

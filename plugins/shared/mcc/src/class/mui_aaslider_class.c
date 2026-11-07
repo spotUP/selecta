@@ -216,7 +216,7 @@ static ULONG __attribute__((used)) aaslider_dispatch_c(struct IClass* cl, Object
             return TRUE;
         }
         break;
-    case AATIP_M_FIRE: {
+    case UPM_Shared_Fire: {
         aaslider_data* d = INST_DATA(cl, obj);
         return aatip_fire(obj, &d->aa, &d->tip);
     }
@@ -308,7 +308,7 @@ static ULONG aaprogress_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* m
 
 static ULONG aaprogress_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     aaprogress_data* d = INST_DATA(cl, obj);
-    struct TagItem *tv = FindTagItem(AAP_Value, msg->ops_AttrList), *tm = FindTagItem(AAP_Max, msg->ops_AttrList);
+    struct TagItem *tv = FindTagItem(UPA_Progress_Value, msg->ops_AttrList), *tm = FindTagItem(UPA_Progress_Max, msg->ops_AttrList);
     int changed = 0;
     if (tm != NULL && (long)tm->ti_Data != d->max) {
         d->max = (long)tm->ti_Data;
@@ -326,11 +326,11 @@ static ULONG aaprogress_set(struct IClass* cl, Object* obj, struct opSet* msg) {
 
 static ULONG aaprogress_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     aaprogress_data* d = INST_DATA(cl, obj);
-    if (msg->opg_AttrID == AAP_Value) {
+    if (msg->opg_AttrID == UPA_Progress_Value) {
         *msg->opg_Storage = (ULONG)d->value;
         return TRUE;
     }
-    if (msg->opg_AttrID == AAP_Max) {
+    if (msg->opg_AttrID == UPA_Progress_Max) {
         *msg->opg_Storage = (ULONG)d->max;
         return TRUE;
     }

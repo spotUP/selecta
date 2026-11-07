@@ -38,7 +38,7 @@ ULONG aatip_super_set(struct IClass* cl, Object* obj, struct opSet* msg, ULONG s
         if (tag->ti_Tag == MUIA_ShortHelp) {
             text = (const char*)tag->ti_Data;
             held_text = tag;
-        } else if (tag->ti_Tag == AATIP_A_Side) {
+        } else if (tag->ti_Tag == UPA_Shared_Side) {
             side = (int)tag->ti_Data;
             held_side = tag;
         }
@@ -54,7 +54,7 @@ ULONG aatip_super_set(struct IClass* cl, Object* obj, struct opSet* msg, ULONG s
         held_text->ti_Tag = MUIA_ShortHelp;
     }
     if (held_side != NULL) {
-        held_side->ti_Tag = AATIP_A_Side;
+        held_side->ti_Tag = UPA_Shared_Side;
     }
     target = msg->MethodID == OM_NEW ? (Object*)r : obj;
     if (target != NULL && (held_text != NULL || held_side != NULL)) {
@@ -97,7 +97,7 @@ static void tip_arm(Object* obj) {
     g_tip.ihn.ihn_Object = obj;
     g_tip.ihn.ihn_Flags = MUIIHNF_TIMER;
     g_tip.ihn.ihn_Millis = MUI_AA_TIP_DELAY_MS;
-    g_tip.ihn.ihn_Method = AATIP_M_FIRE;
+    g_tip.ihn.ihn_Method = UPM_Shared_Fire;
     g_tip.armed = 1;
     DoMethod(g_tip.app, MUIM_Application_AddInputHandler, (ULONG)&g_tip.ihn);
 }

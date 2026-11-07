@@ -107,7 +107,7 @@ static ULONG aascroller_handle(struct IClass* cl, Object* obj, struct MUIP_Handl
         if (d->drag) {
             long nf = mui_aa_scroller_first_at(&d->m, _mheight(obj), d->grab, im->MouseY - _mtop(obj), d->visible, d->entries);
             if (nf != d->first) {
-                set(obj, AAS_First, (ULONG)nf);
+                set(obj, UPA_Scroller_First, (ULONG)nf);
             }
         }
         if (in != d->hover) {
@@ -124,7 +124,7 @@ static ULONG aascroller_handle(struct IClass* cl, Object* obj, struct MUIP_Handl
         } else { /* a click on the track pages towards the pointer */
             long nf = d->first + (y < ty ? -d->visible : d->visible);
             nf = nf < 0 ? 0 : nf > d->entries - d->visible ? d->entries - d->visible : nf;
-            set(obj, AAS_First, (ULONG)nf);
+            set(obj, UPA_Scroller_First, (ULONG)nf);
         }
         MUI_Redraw(obj, MADF_DRAWOBJECT);
         return MUI_EventHandlerRC_Eat;
@@ -139,8 +139,8 @@ static ULONG aascroller_handle(struct IClass* cl, Object* obj, struct MUIP_Handl
 
 static ULONG aascroller_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     aascroller_data* d = INST_DATA(cl, obj);
-    struct TagItem *tf = FindTagItem(AAS_First, msg->ops_AttrList), *tv = FindTagItem(AAS_Visible, msg->ops_AttrList),
-                   *te = FindTagItem(AAS_Entries, msg->ops_AttrList);
+    struct TagItem *tf = FindTagItem(UPA_Scroller_First, msg->ops_AttrList), *tv = FindTagItem(UPA_Scroller_Visible, msg->ops_AttrList),
+                   *te = FindTagItem(UPA_Scroller_Entries, msg->ops_AttrList);
     int changed = 0;
     if (tf != NULL && (long)tf->ti_Data != d->first) {
         d->first = (long)tf->ti_Data;
@@ -162,7 +162,7 @@ static ULONG aascroller_set(struct IClass* cl, Object* obj, struct opSet* msg) {
 
 static ULONG aascroller_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     aascroller_data* d = INST_DATA(cl, obj);
-    if (msg->opg_AttrID == AAS_First) {
+    if (msg->opg_AttrID == UPA_Scroller_First) {
         *msg->opg_Storage = (ULONG)d->first;
         return TRUE;
     }

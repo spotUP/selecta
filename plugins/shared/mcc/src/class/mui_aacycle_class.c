@@ -186,9 +186,9 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     }
     d->list = list;
     DoMethod(app, OM_ADDMEMBER, (ULONG)d->popup);
-    /* A pick sets AAC_Active on the cycle and closes the popup; the active row set above fired before these notifications exist. */
-    DoMethod(list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, obj, 3, MUIM_Set, AAC_Active, MUIV_TriggerValue);
-    DoMethod(list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    /* A pick sets UPA_Cycle_Active on the cycle and closes the popup; the active row set above fired before these notifications exist. */
+    DoMethod(list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, obj, 3, MUIM_Set, UPA_Cycle_Active, MUIV_TriggerValue);
+    DoMethod(list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(d->popup, MUIM_Notify, MUIA_Window_Activate, FALSE, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     set(d->popup, MUIA_Window_Open, TRUE);
     set(d->popup, MUIA_Window_ActiveObject, (ULONG)list); /* keys go to the list */
@@ -230,7 +230,7 @@ static ULONG aacycle_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEv
     if (im->Class == IDCMP_RAWKEY && !dis && aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &act);
         if ((Object*)act == obj && (im->Code == 0x4C || im->Code == 0x4D)) { /* cursor up, cursor down */
-            set(obj, AAC_Active, (ULONG)mui_aa_cycle_step(d->active, d->n, im->Code == 0x4C ? -1 : 1));
+            set(obj, UPA_Cycle_Active, (ULONG)mui_aa_cycle_step(d->active, d->n, im->Code == 0x4C ? -1 : 1));
             return MUI_EventHandlerRC_Eat;
         }
     }
@@ -239,7 +239,7 @@ static ULONG aacycle_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEv
 
 static ULONG aacycle_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     aacycle_data* d;
-    struct TagItem *te = FindTagItem(AAC_Entries, msg->ops_AttrList), *ta = FindTagItem(AAC_Active, msg->ops_AttrList);
+    struct TagItem *te = FindTagItem(UPA_Cycle_Entries, msg->ops_AttrList), *ta = FindTagItem(UPA_Cycle_Active, msg->ops_AttrList);
     obj = (Object*)DoSuperMethodA(cl, obj, (Msg)msg);
     if (obj == NULL) {
         return 0;
@@ -256,7 +256,7 @@ static ULONG aacycle_new(struct IClass* cl, Object* obj, struct opSet* msg) {
 
 static ULONG aacycle_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     aacycle_data* d = INST_DATA(cl, obj);
-    struct TagItem* ta = FindTagItem(AAC_Active, msg->ops_AttrList);
+    struct TagItem* ta = FindTagItem(UPA_Cycle_Active, msg->ops_AttrList);
     if (ta != NULL && mui_aa_cycle_valid((int)ta->ti_Data, d->n) && (int)ta->ti_Data != d->active) {
         d->active = (int)ta->ti_Data;
         if (aa_live(obj)) {
@@ -268,7 +268,7 @@ static ULONG aacycle_set(struct IClass* cl, Object* obj, struct opSet* msg) {
 
 static ULONG aacycle_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     aacycle_data* d = INST_DATA(cl, obj);
-    if (msg->opg_AttrID == AAC_Active) {
+    if (msg->opg_AttrID == UPA_Cycle_Active) {
         *msg->opg_Storage = (ULONG)d->active;
         return TRUE;
     }
@@ -312,11 +312,11 @@ Object* mui_aacycle_new(const mui_aacycle_spec* sp) {
     if (g_cycle_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_cycle_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_CycleChain, (ULONG)TRUE, AAC_Entries, (ULONG)sp->entries,
-                  AAC_Active, (ULONG)sp->active, TAG_DONE);
+    o = NewObject(g_cycle_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_CycleChain, (ULONG)TRUE, UPA_Cycle_Entries, (ULONG)sp->entries,
+                  UPA_Cycle_Active, (ULONG)sp->active, TAG_DONE);
     if (o != NULL) {
         if (sp->id != 0) {
-            DoMethod(o, MUIM_Notify, AAC_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
+            DoMethod(o, MUIM_Notify, UPA_Cycle_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
         }
         g_cycle_made++;
     }

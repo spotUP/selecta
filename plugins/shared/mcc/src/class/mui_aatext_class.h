@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <mcc/up.h>
 
-#define AAT_Contents UP_TAG(UP_CLS_TEXT, 0x01) /* STRPTR copied into the object; redraws only when it changed */
+#define UPA_Text_Contents UP_TAG(UP_CLS_TEXT, 0x01) /* STRPTR copied into the object; redraws only when it changed */
 
 typedef struct mui_aatext_spec {
     const char* contents; /* first text */
@@ -25,7 +25,7 @@ typedef struct mui_aatext_spec {
 } mui_aatext_spec;
 
 Object* mui_aatext_new(const mui_aatext_spec* spec);
-/* New text (AAT_Contents); redraws only on change. */
+/* New text (UPA_Text_Contents); redraws only on change. */
 void mui_aatext_set(Object* obj, const char* contents);
 /* Texts constructed since start (sentinel: equals the number of text lines the window build made). */
 uint32_t mui_aatext_made(void);

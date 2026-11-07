@@ -1086,9 +1086,9 @@ static void test_list_dbl_row(void) {
               strstr(src, "s->p4[P4_DBLRACE]++") != NULL,
           "the knob is read once at open and the sentinel dbl_race_injected is counted");
     dbl = strstr(src, "if (id == CTL_LIST_DBL) {");
-    CHECK(dbl != NULL && strstr(dbl, "GetAttr(AAL_Picked, s->list") != NULL && strstr(dbl, "mui_list_dbl_row(") != NULL &&
+    CHECK(dbl != NULL && strstr(dbl, "GetAttr(UPA_List_Picked, s->list") != NULL && strstr(dbl, "mui_list_dbl_row(") != NULL &&
               strstr(dbl, "mui_list_dbl_row(") < strstr(dbl, "VIEW_ACTIVATE"),
-          "the DBL branch of mui_ui.c reads AAL_Picked and decides through mui_list_dbl_row before VIEW_ACTIVATE");
+          "the DBL branch of mui_ui.c reads UPA_List_Picked and decides through mui_list_dbl_row before VIEW_ACTIVATE");
     n = 0;
     f = fopen(MCC_CLASS "/mui_aalist_class.c", "rb");
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -1096,8 +1096,8 @@ static void test_list_dbl_row(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(strstr(src, "d->picked = r;") != NULL && strstr(src, "case AAL_Picked: *msg->opg_Storage = (ULONG)d->picked") != NULL,
-          "the AAList class stores the picked row and answers AAL_Picked");
+    CHECK(strstr(src, "d->picked = r;") != NULL && strstr(src, "case UPA_List_Picked: *msg->opg_Storage = (ULONG)d->picked") != NULL,
+          "the AAList class stores the picked row and answers UPA_List_Picked");
 }
 
 static void test_list_backends(void) {
@@ -1810,7 +1810,7 @@ static void test_tooltip_flat(void) {
     int x = 0, y = 0, act, st, side;
     static char src[400000];
     static const char* const classes[] = {MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aaslider_class.c", MCC_CLASS "/mui_aafield_class.c"};
-    static const char* const need[] = {"aatip_super_set(", "aatip_event(", "AATIP_M_FIRE", "aatip_drop("};
+    static const char* const need[] = {"aatip_super_set(", "aatip_event(", "UPM_Shared_Fire", "aatip_drop("};
     static const char* const tip_need[] = {"mui_aa_tip_plan(", "mui_aa_tip_place(", "mui_aa_tip_step(", "aa_round_fill(", "aa_text(", "WA_Borderless", "WA_Activate, FALSE", "MUIIHNF_TIMER"};
     static const char* const tip_ban[] = {"MUIM_CreateBubble", "MUIA_Frame", "aa_round_frame("};
     const char *fn, *end;
@@ -2271,7 +2271,7 @@ static void test_libfilter(void) {
 
 /* Regression (I684a): Selecta_AACycle's OM_SET redrew when _win(obj) != NULL. Before the first MUIM_Setup the render info
  * is NULL, so _win(obj) reads address 0; on rig 2 that held garbage, the redraw ran on an object with no window and the
- * Amiga crashed at start (set AAC_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
+ * Amiga crashed at start (set UPA_Cycle_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
  * which checks the render info first; no class file may test _win(obj) against NULL on its own. */
 static void test_live_guard(void) {
     static const char* const files[] = {MCC_CLASS "/mui_aacycle_class.c", MCC_CLASS "/mui_aafield_class.c", MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aascroller_class.c",
@@ -2307,8 +2307,8 @@ static void test_live_guard(void) {
 
 /* I685d: the MUI tag base is written once (mcc/up.h) and every tag of the class package is UP_TAG(class, offset). The classes are
  * Amiga-only, so the table reads each tag's #define from the source, evaluates it with the real UP_TAG macro and compares it with the
- * literal it had before the conversion. The two tooltip outliers moved to class 0F; AAF_Redraw moved from 0x53410301 (same number as
- * AATab_Active) to the Field class 07. */
+ * literal it had before the conversion. The two tooltip outliers moved to class 0F; UPM_Field_Redraw moved from 0x53410301 (same number as
+ * UPA_Tabs_Active) to the Field class 07. */
 typedef struct up_tag_row {
     const char* file;
     const char* name;
@@ -2390,25 +2390,25 @@ static void up_scan_literals(const char* dir, int* files, int* uses) {
 
 static void test_up_tags(void) {
     static const up_tag_row rows[] = {
-        {"/class/mui_aatext_class.h", "AAT_Contents", UP_CLS_TEXT, 0x01, 0x80000000UL | 0x53410001UL},
-        {"/class/mui_aaslider_class.h", "AAP_Value", UP_CLS_PROGRESS, 0x01, 0x80000000UL | 0x53410101UL},
-        {"/class/mui_aaslider_class.h", "AAP_Max", UP_CLS_PROGRESS, 0x02, 0x80000000UL | 0x53410102UL},
-        {"/class/mui_aacycle_class.h", "AAC_Active", UP_CLS_CYCLE, 0x01, 0x80000000UL | 0x53410201UL},
-        {"/class/mui_aacycle_class.h", "AAC_Entries", UP_CLS_CYCLE, 0x02, 0x80000000UL | 0x53410202UL},
-        {"/class/mui_aatabs_class.h", "AATab_Active", UP_CLS_TABS, 0x01, 0x80000000UL | 0x53410301UL},
-        {"/class/mui_aascroller_class.h", "AAS_First", UP_CLS_SCROLLER, 0x01, 0x80000000UL | 0x53410401UL},
-        {"/class/mui_aascroller_class.h", "AAS_Visible", UP_CLS_SCROLLER, 0x02, 0x80000000UL | 0x53410402UL},
-        {"/class/mui_aascroller_class.h", "AAS_Entries", UP_CLS_SCROLLER, 0x03, 0x80000000UL | 0x53410403UL},
-        {"/class/mui_aalist_class.h", "AAL_Count", UP_CLS_LIST, 0x01, 0x80000000UL | 0x53410501UL},
-        {"/class/mui_aalist_class.h", "AAL_Active", UP_CLS_LIST, 0x02, 0x80000000UL | 0x53410502UL},
-        {"/class/mui_aalist_class.h", "AAL_First", UP_CLS_LIST, 0x03, 0x80000000UL | 0x53410503UL},
-        {"/class/mui_aalist_class.h", "AAL_Picked", UP_CLS_LIST, 0x04, 0x80000000UL | 0x53410504UL},
-        {"/class/mui_aalist_class.h", "AAL_Columns", UP_CLS_LIST, 0x05, 0x80000000UL | 0x53410505UL},
-        {"/class/mui_aalist_class.h", "AAL_Playing", UP_CLS_LIST, 0x06, 0x80000000UL | 0x53410506UL},
-        {"/class/mui_aalist_class.h", "AAM_GetRow", UP_CLS_LIST, 0x10, 0x80000000UL | 0x53410510UL},
-        {"/class/mui_aafield_class.c", "AAF_Redraw", UP_CLS_FIELD, 0x01, 0x80000000UL | 0x53410701UL},
-        {"/mui_aatip.h", "AATIP_M_FIRE", UP_CLS_SHARED, 0x31, 0x80000000UL | 0x53410F31UL},
-        {"/mui_aatip.h", "AATIP_A_Side", UP_CLS_SHARED, 0x32, 0x80000000UL | 0x53410F32UL},
+        {"/class/mui_aatext_class.h", "UPA_Text_Contents", UP_CLS_TEXT, 0x01, 0x80000000UL | 0x53410001UL},
+        {"/class/mui_aaslider_class.h", "UPA_Progress_Value", UP_CLS_PROGRESS, 0x01, 0x80000000UL | 0x53410101UL},
+        {"/class/mui_aaslider_class.h", "UPA_Progress_Max", UP_CLS_PROGRESS, 0x02, 0x80000000UL | 0x53410102UL},
+        {"/class/mui_aacycle_class.h", "UPA_Cycle_Active", UP_CLS_CYCLE, 0x01, 0x80000000UL | 0x53410201UL},
+        {"/class/mui_aacycle_class.h", "UPA_Cycle_Entries", UP_CLS_CYCLE, 0x02, 0x80000000UL | 0x53410202UL},
+        {"/class/mui_aatabs_class.h", "UPA_Tabs_Active", UP_CLS_TABS, 0x01, 0x80000000UL | 0x53410301UL},
+        {"/class/mui_aascroller_class.h", "UPA_Scroller_First", UP_CLS_SCROLLER, 0x01, 0x80000000UL | 0x53410401UL},
+        {"/class/mui_aascroller_class.h", "UPA_Scroller_Visible", UP_CLS_SCROLLER, 0x02, 0x80000000UL | 0x53410402UL},
+        {"/class/mui_aascroller_class.h", "UPA_Scroller_Entries", UP_CLS_SCROLLER, 0x03, 0x80000000UL | 0x53410403UL},
+        {"/class/mui_aalist_class.h", "UPA_List_Count", UP_CLS_LIST, 0x01, 0x80000000UL | 0x53410501UL},
+        {"/class/mui_aalist_class.h", "UPA_List_Active", UP_CLS_LIST, 0x02, 0x80000000UL | 0x53410502UL},
+        {"/class/mui_aalist_class.h", "UPA_List_First", UP_CLS_LIST, 0x03, 0x80000000UL | 0x53410503UL},
+        {"/class/mui_aalist_class.h", "UPA_List_Picked", UP_CLS_LIST, 0x04, 0x80000000UL | 0x53410504UL},
+        {"/class/mui_aalist_class.h", "UPA_List_Columns", UP_CLS_LIST, 0x05, 0x80000000UL | 0x53410505UL},
+        {"/class/mui_aalist_class.h", "UPA_List_Playing", UP_CLS_LIST, 0x06, 0x80000000UL | 0x53410506UL},
+        {"/class/mui_aalist_class.h", "UPM_List_GetRow", UP_CLS_LIST, 0x10, 0x80000000UL | 0x53410510UL},
+        {"/class/mui_aafield_class.c", "UPM_Field_Redraw", UP_CLS_FIELD, 0x01, 0x80000000UL | 0x53410701UL},
+        {"/mui_aatip.h", "UPM_Shared_Fire", UP_CLS_SHARED, 0x31, 0x80000000UL | 0x53410F31UL},
+        {"/mui_aatip.h", "UPA_Shared_Side", UP_CLS_SHARED, 0x32, 0x80000000UL | 0x53410F32UL},
     };
     static char src[200000];
     size_t i, j;
@@ -2465,7 +2465,7 @@ static void test_up_token_names(void) {
     CHECK(UPTOK_FOCUS_RING == SEL_GUI_TOKEN_FOCUS_RING, "UPTOK_FOCUS_RING differs from SEL_GUI_TOKEN_FOCUS_RING");
 }
 
-/* I713: the rig's wasabid lists AAList rows as items by calling AAM_GetRow (the class's documented read-back, mui_aalist_class.h).
+/* I713: the rig's wasabid lists AAList rows as items by calling UPM_List_GetRow (the class's documented read-back, mui_aalist_class.h).
  * The class is Amiga-only, so the contract is checked in the sources: the header declares the method and its message, the
  * dispatcher answers it, and the handler gives the row text, the selection and the on-screen box wasabid clicks. */
 static void test_aalist_getrow(void) {
@@ -2481,7 +2481,7 @@ static void test_aalist_getrow(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(strstr(src, "#define AAM_GetRow") != NULL && strstr(src, "mui_aalist_getrow;") != NULL, "mui_aalist_class.h declares no AAM_GetRow message");
+    CHECK(strstr(src, "#define UPM_List_GetRow") != NULL && strstr(src, "mui_aalist_getrow;") != NULL, "mui_aalist_class.h declares no UPM_List_GetRow message");
     snprintf(path, sizeof path, "%s/mui_aalist_class.c", MCC_CLASS);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
@@ -2490,16 +2490,16 @@ static void test_aalist_getrow(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(strstr(src, "case AAM_GetRow:") != NULL, "the AAList dispatcher does not answer AAM_GetRow");
+    CHECK(strstr(src, "case UPM_List_GetRow:") != NULL, "the AAList dispatcher does not answer UPM_List_GetRow");
     CHECK(strstr(src, "g->selected = ") != NULL && strstr(src, "g->y = _mtop(obj) + d->m.pad_y + aalist_title_h(d)") != NULL,
-          "AAM_GetRow does not give the selection and the row box drawn by aalist_draw");
+          "UPM_List_GetRow does not give the selection and the row box drawn by aalist_draw");
 }
 
-/* Regression (I684a, the crash itself): mui_detail_group built the visualizer cycle and then called set(AAC_Active) before
+/* Regression (I684a, the crash itself): mui_detail_group built the visualizer cycle and then called set(UPA_Cycle_Active) before
  * the cycle was in the application tree. The set fired the MUIV_Notify_Application notification with no global info, MUI read
  * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
  * settings cycles had the same shape. The initial entry must go in at OM_NEW (mui_make_cycle's active argument): mui_ui.c may
- * not set AAC_Active at all; only the user's pick changes it. */
+ * not set UPA_Cycle_Active at all; only the user's pick changes it. */
 /* I740: the transport clock/remaining/length texts and the four status-row labels are plain AAText: no MUI frame, no field face or
  * outline (it made them look like text inputs; the Mac footer draws muted text on the window). Source contract; red when a
  * face/framed path comes back into the constructor or the class. */
@@ -2667,7 +2667,7 @@ static void test_cycle_initial(void) {
     fclose(f);
     src[n] = 0;
     /* I735 (4983dade): the P4_VIZPICK handler runs on a user pick, long after OM_NEW, and keeps every picker on the plugin the engine runs.
-     * It is the only place that may set AAC_Active; any other set() is a startup-time set of a cycle. */
+     * It is the only place that may set UPA_Cycle_Active; any other set() is a startup-time set of a cycle. */
     vp = strstr(src, "case P4_VIZPICK:");
     vend = vp != NULL ? strstr(vp, "\n    case P4_") : NULL;
     if (vend == NULL && vp != NULL) {
@@ -2679,7 +2679,7 @@ static void test_cycle_initial(void) {
         size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
         char buf[512];
         snprintf(buf, sizeof buf, "%.*s", (int)(len < sizeof buf - 1 ? len : sizeof buf - 1), line);
-        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "AAC_Active") != NULL && !(vp != NULL && line > vp && line < vend)), "mui_ui.c sets AAC_Active after OM_NEW: %s", buf);
+        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "UPA_Cycle_Active") != NULL && !(vp != NULL && line > vp && line < vend)), "mui_ui.c sets UPA_Cycle_Active after OM_NEW: %s", buf);
         line = end != NULL ? end + 1 : NULL;
     }
     CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");

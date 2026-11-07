@@ -1,5 +1,5 @@
 /* Selecta_AATabs (I667j, design section 3.9). MUI 3.8: MUI_CreateCustomClass on Group, same dispatcher pattern as mui_aapanel_class.c.
- * The children are AAButtons of role TAB (mui_aabtn_class.c): a click on one sets AATab_Active on the strip (MUIM_Notify with MUIM_Set),
+ * The children are AAButtons of role TAB (mui_aabtn_class.c): a click on one sets UPA_Tabs_Active on the strip (MUIM_Notify with MUIM_Set),
  * the strip lights the active caption (mui_aabtn_set_on) and, after the super class has drawn the children, paints the 2 px ACCENT
  * underline under the active tab through mui_aa_tabs_line / mui_aa_tabs_rgb. Cursor left and right move the active tab while one of
  * the tab buttons has the focus (mui_aa_tabs_key). No hardcoded colour, no ObtainBestPen. */
@@ -91,7 +91,7 @@ static ULONG aatabs_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
         if ((Object*)act == d->btn[i]) {
             next = mui_aa_tabs_key(im->Code, d->active, d->n);
             if (next != d->active) {
-                set(obj, AATab_Active, (ULONG)next);
+                set(obj, UPA_Tabs_Active, (ULONG)next);
             }
             return MUI_EventHandlerRC_Eat;
         }
@@ -101,7 +101,7 @@ static ULONG aatabs_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
 
 static ULONG aatabs_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     aatabs_data* d = INST_DATA(cl, obj);
-    struct TagItem* ta = FindTagItem(AATab_Active, msg->ops_AttrList);
+    struct TagItem* ta = FindTagItem(UPA_Tabs_Active, msg->ops_AttrList);
     if (ta != NULL && mui_aa_tabs_click((int)ta->ti_Data, d->n) >= 0 && (int)ta->ti_Data != d->active) {
         d->active = (int)ta->ti_Data;
         aatabs_sync(d);
@@ -114,7 +114,7 @@ static ULONG aatabs_set(struct IClass* cl, Object* obj, struct opSet* msg) {
 
 static ULONG aatabs_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     aatabs_data* d = INST_DATA(cl, obj);
-    if (msg->opg_AttrID == AATab_Active) {
+    if (msg->opg_AttrID == UPA_Tabs_Active) {
         *msg->opg_Storage = (ULONG)d->active;
         return TRUE;
     }
@@ -187,7 +187,7 @@ Object* mui_aatabs_new(const mui_aatabs_spec* sp) {
             return NULL;
         }
         DoMethod(o, OM_ADDMEMBER, d->btn[i]);
-        DoMethod(d->btn[i], MUIM_Notify, MUIA_Pressed, FALSE, o, 3, MUIM_Set, AATab_Active, (ULONG)i);
+        DoMethod(d->btn[i], MUIM_Notify, MUIA_Pressed, FALSE, o, 3, MUIM_Set, UPA_Tabs_Active, (ULONG)i);
     }
     DoMethod(o, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* the strip packs left */
     aatabs_sync(d);

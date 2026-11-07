@@ -26,7 +26,7 @@
 
 extern struct Library* MUIMasterBase;
 
-#define AAF_Redraw UP_TAG(UP_CLS_FIELD, 0x01) /* method: the window's active object changed, repaint the outline */
+#define UPM_Field_Redraw UP_TAG(UP_CLS_FIELD, 0x01) /* method: the window's active object changed, repaint the outline */
 
 typedef struct aafield_data {
     Object* str;
@@ -67,8 +67,8 @@ static ULONG aafield_setup(struct IClass* cl, Object* obj, Msg msg) {
             aa_pen(&d->aa, ops[n].rgb);
         }
     }
-    DoMethod(_win(obj), MUIM_Notify, MUIA_Window_ActiveObject, MUIV_EveryTime, (ULONG)obj, 1, AAF_Redraw);
-    DoMethod(d->str, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, (ULONG)obj, 1, AAF_Redraw); /* I733: the placeholder shows and hides with the contents */
+    DoMethod(_win(obj), MUIM_Notify, MUIA_Window_ActiveObject, MUIV_EveryTime, (ULONG)obj, 1, UPM_Field_Redraw);
+    DoMethod(d->str, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, (ULONG)obj, 1, UPM_Field_Redraw); /* I733: the placeholder shows and hides with the contents */
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
@@ -211,7 +211,7 @@ static ULONG __attribute__((used)) aafield_dispatch_c(struct IClass* cl, Object*
         return aafield_set(cl, obj, (struct opSet*)msg);
     case OM_GET:
         return aafield_get(cl, obj, (struct opGet*)msg);
-    case AATIP_M_FIRE: {
+    case UPM_Shared_Fire: {
         aafield_data* d = INST_DATA(cl, obj);
         return aatip_fire(obj, &d->aa, &d->tip);
     }
@@ -228,7 +228,7 @@ static ULONG __attribute__((used)) aafield_dispatch_c(struct IClass* cl, Object*
         return aafield_askminmax(cl, obj, (struct MUIP_AskMinMax*)msg);
     case MUIM_Draw:
         return aafield_draw(cl, obj, (struct MUIP_Draw*)msg);
-    case AAF_Redraw:
+    case UPM_Field_Redraw:
         MUI_Redraw(obj, MADF_DRAWOBJECT);
         return 0;
     }

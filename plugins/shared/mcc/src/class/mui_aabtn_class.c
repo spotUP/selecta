@@ -269,7 +269,7 @@ static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* o
             return TRUE;
         }
         break;
-    case AATIP_M_FIRE: {
+    case UPM_Shared_Fire: {
         aabtn_data* d = INST_DATA(cl, obj);
         return aatip_fire(obj, &d->aa, &d->tip);
     }
