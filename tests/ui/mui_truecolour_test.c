@@ -98,6 +98,22 @@ static int is_plan_colour(const uint32_t* token, uint32_t rgb, uint32_t face, ui
     return mui_aa_pressed_rgb(face) == rgb;
 }
 
+/* I685w: a framebuffer behind rect_rgb, to count which pixels a Panel face paint touches. */
+#define FBW 40
+#define FBH 24
+static uint32_t g_fb[FBW * FBH];
+static void fb_rgb(void* ctx, int x0, int y0, int x1, int y1, uint32_t rgb) {
+    int x, y;
+    (void)ctx;
+    for (y = y0; y <= y1; y++) {
+        for (x = x0; x <= x1; x++) {
+            if (x >= 0 && x < FBW && y >= 0 && y < FBH) {
+                g_fb[y * FBW + x] = rgb;
+            }
+        }
+    }
+}
+
 int main(void) {
     txt_theme th;
     static rec r;
@@ -143,6 +159,34 @@ int main(void) {
             got |= r.asked[i] == 0x2A2A32u;
         }
         CHECK(got, "8 bit never asked for a pen of 2A2A32");
+    }
+    /* I685w: the Panel face around two child rectangles: every pixel of the face is painted, none inside a child. Two columns of a
+     * grid with a gap between them, a third child that overlaps the first (nested spacers must not double-count or repaint). */
+    {
+        const int holes[] = {2, 2, 10, 8, 16, 2, 10, 8, 30, 10, 6, 6, 4, 4, 4, 4};
+        int x, y, bad_in = 0, bad_out = 0;
+        mui_aa_paint_ops fo = ops;
+        memset(g_fb, 0, sizeof g_fb);
+        fo.ctx = NULL;
+        fo.tc = 1;
+        fo.rect_rgb = fb_rgb;
+        mui_aa_paint_round_fill_holes(&fo, 0, 0, FBW, FBH, 0, 0x141418u, holes, 4);
+        for (y = 0; y < FBH; y++) {
+            for (x = 0; x < FBW; x++) {
+                int in = 0, k;
+                for (k = 0; k < 4; k++) {
+                    in |= x >= holes[4 * k] && x < holes[4 * k] + holes[4 * k + 2] && y >= holes[4 * k + 1] && y < holes[4 * k + 1] + holes[4 * k + 3];
+                }
+                if (in && g_fb[y * FBW + x] != 0) {
+                    bad_in++;
+                }
+                if (!in && g_fb[y * FBW + x] != 0x141418u) {
+                    bad_out++;
+                }
+            }
+        }
+        CHECK(bad_in == 0, "%d face pixels inside a child rectangle", bad_in);
+        CHECK(bad_out == 0, "%d pixels of the gaps and margins not in the face colour", bad_out);
     }
     if (fails == 0) {
         printf("mcc-truecolour-path OK\n");

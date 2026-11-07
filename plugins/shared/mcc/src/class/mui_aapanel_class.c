@@ -20,6 +20,7 @@
 
 #include "map/mui_theme.h"
 #include "mui_aa_draw.h"
+#include "map/mui_aa_paint.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -97,9 +98,24 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     aapanel_data* d = INST_DATA(cl, obj);
     ULONG r = DoSuperMethodA(cl, obj, (Msg)msg);
     if (msg->flags & MADF_DRAWOBJECT) {
-        if (d->aa.tc && d->inner != NULL) { /* I685w: MUI's background spec snaps to a pen; paint the face in exact RGB around the inner group */
-            aa_round_fill_hole(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px),
-                               mui_aa_panel_rgb(d->aa.tok, d->role), _left(d->inner), _top(d->inner), _width(d->inner), _height(d->inner));
+        if (d->aa.tc) { /* I685w: MUI's background spec snaps to a pen; paint the face in exact RGB around the children, whatever MUI filled */
+            int holes[MUI_AA_PAINT_MAX_HOLES * 4], n = 0;
+            Object* grp = d->inner != NULL ? d->inner : obj;
+            struct List* kids = NULL;
+            Object *state, *child;
+            GetAttr(MUIA_Group_ChildList, grp, (ULONG*)&kids);
+            if (kids != NULL) {
+                state = (Object*)kids->lh_Head;
+                while (n < MUI_AA_PAINT_MAX_HOLES && (child = NextObject(&state)) != NULL) {
+                    holes[4 * n] = _left(child);
+                    holes[4 * n + 1] = _top(child);
+                    holes[4 * n + 2] = _width(child);
+                    holes[4 * n + 3] = _height(child);
+                    n++;
+                }
+            }
+            aa_round_fill_holes(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px),
+                                mui_aa_panel_rgb(d->aa.tok, d->role), holes, n);
         }
         aa_round_corners(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px), d->aa.tok[SEL_GUI_TOKEN_BACKGROUND]); /* I676c: read at draw, a live THEME changes both */
     }
@@ -123,16 +139,32 @@ static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object*
         if (FindTagItem(MUIA_Background, ops->ops_AttrList) == NULL) {
             int role = (int)GetTagData(UPA_Panel_Role, UPV_Panel_Role_Panel, ops->ops_AttrList);
             if ((unsigned)role < MUI_AA_PANEL_ROLES) {
-                struct TagItem more[2];
+                struct TagItem more[3];
                 struct opSet nm = *ops;
                 mui_theme_bg_spec(mui_aa_panel_rgb(mui_theme_tokens(), role), g_bg_spec[role], sizeof g_bg_spec[role]);
                 more[0].ti_Tag = MUIA_Background;
                 more[0].ti_Data = (ULONG)g_bg_spec[role];
-                more[1].ti_Tag = TAG_MORE;
-                more[1].ti_Data = (ULONG)(uintptr_t)ops->ops_AttrList;
+                more[1].ti_Tag = MUIA_FillArea; /* I685w: the draw paints the face; a MUI fill would be the snapped pen */
+                more[1].ti_Data = (ULONG)FALSE;
+                more[2].ti_Tag = TAG_MORE;
+                more[2].ti_Data = (ULONG)(uintptr_t)ops->ops_AttrList;
                 nm.ops_AttrList = more;
-                return DoSuperMethodA(cl, obj, (Msg)&nm);
+                {
+                    ULONG made = DoSuperMethodA(cl, obj, (Msg)&nm);
+                    if (made != 0) { /* I685w: the by-name panel has no UP_NewPanel to record the role the face is painted in */
+                        ((aapanel_data*)INST_DATA(cl, (Object*)made))->role = role;
+                    }
+                    return made;
+                }
             }
+        }
+        break;
+    }
+    case OM_GET: { /* I685w: children read the role to take their erase colour from the panel they sit in */
+        struct opGet* og = (struct opGet*)msg;
+        if (og->opg_AttrID == UPA_Panel_Role) {
+            *og->opg_Storage = (ULONG)((aapanel_data*)INST_DATA(cl, obj))->role;
+            return TRUE;
         }
         break;
     }
@@ -174,7 +206,7 @@ Object* UP_NewPanel(const struct TagItem* tags) {
         g_layout_hook.h_Entry = (__typeof__(g_layout_hook.h_Entry))(void (*)(void))HookEntry;
         g_layout_hook.h_SubEntry = (__typeof__(g_layout_hook.h_SubEntry))(void (*)(void))aapanel_layout;
     }
-    inner = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)FALSE, TAG_DONE);
+    inner = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)FALSE, MUIA_FillArea, (ULONG)FALSE, TAG_DONE); /* I685w: no snapped MUI fill under the children */
     if (inner == NULL) {
         return NULL;
     }

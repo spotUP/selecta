@@ -49,7 +49,8 @@ static ULONG demo_row(struct Hook* hook, Object* obj, UP_ListCell* cell) {
 /* One instance of class `index` with the tags that class needs to be valid on its own; every class is created by file name. */
 static Object* make(int index) {
     char path[32];
-    Object* spacer = MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE);
+    /* I685w: a stock Rectangle fills with MUI's snapped background pen; the filler is an UP-Text that erases in the panel token */
+    Object* spacer = MUI_NewObject((char*)"UP-Text.mcc", UPA_Text_Contents, (ULONG) " ", TAG_DONE);
     snprintf(path, sizeof path, "UP-%s.mcc", g_names[index]);
     switch (index) {
     case 0:
@@ -57,7 +58,7 @@ static Object* make(int index) {
     case 1:
         return MUI_NewObject(path, UPA_Text_Contents, (ULONG) "UP-Text from a library", TAG_DONE);
     case 2:
-        return MUI_NewObject(path, MUIA_Group_Child, (ULONG)spacer, TAG_DONE);
+        return MUI_NewObject(path, UPA_Panel_Role, (ULONG)UPV_Panel_Role_Raised, MUIA_Group_Child, (ULONG)spacer, TAG_DONE);
     case 3:
         return MUI_NewObject(path, UPA_Tabs_Captions, (ULONG)g_tab_captions, MUIA_Group_Child, (ULONG)spacer, TAG_DONE);
     case 4:
@@ -113,8 +114,8 @@ int main(int argc, char** argv) {
         for (i = 0; i < CLASS_COUNT; i++) {
             kids[k].ti_Tag = MUIA_Group_Child;
             if (i == 4) { /* I685w: the Balance is one gap wide; in a grid cell it sits in a horizontal group with a spacer so the cell has a shape */
-                kids[k++].ti_Data = (ULONG)MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, MUIA_Group_Child, (ULONG)obj[i], MUIA_Group_Child,
-                                                         (ULONG)MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE), TAG_DONE);
+                kids[k++].ti_Data = (ULONG)MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, MUIA_FillArea, (ULONG)FALSE, MUIA_Group_Child, (ULONG)obj[i],
+                                                         MUIA_Group_Child, (ULONG)MUI_NewObject((char*)"UP-Text.mcc", UPA_Text_Contents, (ULONG) " ", TAG_DONE), TAG_DONE);
             } else {
                 kids[k++].ti_Data = (ULONG)obj[i];
             }
@@ -149,6 +150,24 @@ int main(int argc, char** argv) {
             if (!is_open) {
                 printf("[ERROR] window did not open\n");
                 ok = 0;
+            }
+            if (is_open && hold) { /* I685w: the rig census reads the widget boxes from here, in screen pixels */
+                ULONG wptr = 0;
+                GetAttr(MUIA_Window_Window, win, &wptr);
+                Delay(50);
+                if (wptr != 0) {
+                    struct Window* w = (struct Window*)wptr;
+                    for (i = 0; i < CLASS_COUNT; i++) {
+                        ULONG l = 0, t = 0, ww = 0, hh = 0;
+                        GetAttr(MUIA_LeftEdge, obj[i], &l);
+                        GetAttr(MUIA_TopEdge, obj[i], &t);
+                        GetAttr(MUIA_Width, obj[i], &ww);
+                        GetAttr(MUIA_Height, obj[i], &hh);
+                        printf("[RECT] %s %ld %ld %ld %ld\n", g_names[i], (long)(w->LeftEdge + l), (long)(w->TopEdge + t), (long)ww, (long)hh);
+                    }
+                    printf("[RECT] Window %ld %ld %ld %ld\n", (long)w->LeftEdge, (long)w->TopEdge, (long)w->Width, (long)w->Height);
+                    fflush(stdout);
+                }
             }
             while (!quit_now && (hold || ticks < 30) && is_open) { /* about 3 s, or until the close gadget (HOLD: only that) */
                 ULONG id = DoMethod(app, MUIM_Application_NewInput, (ULONG)&sigs);

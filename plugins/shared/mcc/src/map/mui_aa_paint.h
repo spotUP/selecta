@@ -25,6 +25,9 @@ void mui_aa_paint_rect(const mui_aa_paint_ops* ops, int x0, int y0, int x1, int 
 void mui_aa_paint_round_fill(const mui_aa_paint_ops* ops, int x, int y, int w, int h, int radius, uint32_t rgb);
 /* round_fill that leaves the hole rectangle (hx, hy, hw, hh) untouched. */
 void mui_aa_paint_round_fill_hole(const mui_aa_paint_ops* ops, int x, int y, int w, int h, int radius, uint32_t rgb, int hx, int hy, int hw, int hh);
+#define MUI_AA_PAINT_MAX_HOLES 64
+/* round_fill that leaves up to MUI_AA_PAINT_MAX_HOLES rectangles untouched; holes is n quads x, y, w, h. */
+void mui_aa_paint_round_fill_holes(const mui_aa_paint_ops* ops, int x, int y, int w, int h, int radius, uint32_t rgb, const int* holes, int n);
 /* Only the four corner wedges outside the rounded shape. */
 void mui_aa_paint_round_corners(const mui_aa_paint_ops* ops, int x, int y, int w, int h, int radius, uint32_t rgb);
 /* One pixel rounded outline. */

@@ -47,6 +47,40 @@ void mui_aa_paint_round_fill_hole(const mui_aa_paint_ops* ops, int x, int y, int
     }
 }
 
+/* I685w: round_fill minus any number of hole rectangles (x, y, w, h quads). Per row the spans left of, between and right of the holes
+ * that cross the row are painted; used by the Panel around its children so stock MUI fills in the gaps never survive on truecolour. */
+void mui_aa_paint_round_fill_holes(const mui_aa_paint_ops* ops, int x, int y, int w, int h, int radius, uint32_t rgb, const int* holes, int n) {
+    int row, i;
+    for (row = 0; row < h; row++) {
+        int in = radius > 0 ? mui_aa_round_inset(w, h, radius, row) : 0, l = x + in, r = x + w - 1 - in, py = y + row, cur = l;
+        int used[MUI_AA_PAINT_MAX_HOLES], m = 0, a, b;
+        for (i = 0; i < n && m < MUI_AA_PAINT_MAX_HOLES; i++) {
+            if (holes[4 * i + 2] > 0 && holes[4 * i + 3] > 0 && py >= holes[4 * i + 1] && py < holes[4 * i + 1] + holes[4 * i + 3]) {
+                used[m++] = i;
+            }
+        }
+        for (a = 1; a < m; a++) { /* insertion sort by left edge */
+            int t = used[a];
+            for (b = a - 1; b >= 0 && holes[4 * used[b]] > holes[4 * t]; b--) {
+                used[b + 1] = used[b];
+            }
+            used[b + 1] = t;
+        }
+        for (a = 0; a < m; a++) {
+            int hl = holes[4 * used[a]], hr = hl + holes[4 * used[a] + 2] - 1;
+            if (hl > cur) {
+                mui_aa_paint_rect(ops, cur, py, hl - 1 < r ? hl - 1 : r, py, rgb);
+            }
+            if (hr + 1 > cur) {
+                cur = hr + 1;
+            }
+        }
+        if (cur <= r) {
+            mui_aa_paint_rect(ops, cur, py, r, py, rgb);
+        }
+    }
+}
+
 void mui_aa_paint_round_corners(const mui_aa_paint_ops* ops, int x, int y, int w, int h, int radius, uint32_t rgb) {
     int row;
     if (radius <= 0) {

@@ -59,6 +59,7 @@ void aa_rect(aa_ctx* c, struct RastPort* rp, int x0, int y0, int x1, int y1, uin
 void aa_round_fill(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb);
 /* aa_round_fill that leaves the hole rectangle (hx, hy, hw, hh) untouched: for a Group subclass that paints after its super call
  * around a child the super already drew. */
+void aa_round_fill_holes(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb, const int* holes, int n);
 void aa_round_fill_hole(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb, int hx, int hy, int hw, int hh);
 /* Only the four corner wedges outside the rounded shape, in rgb: rounds a box whose square face its background already filled. */
 void aa_round_corners(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb);

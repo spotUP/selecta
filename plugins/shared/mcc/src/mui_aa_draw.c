@@ -22,6 +22,7 @@
 #include "map/mui_theme.h"
 #include "map/mui_aa_paint.h"
 #include "mui_aa_rtg.h"
+#include "mcc/up.h"
 
 #define TTE_FontFile 0x6EDA0000UL
 #define TTE_FontSize 0x6EDA0003UL
@@ -223,6 +224,22 @@ static void ctx_unlink(aa_ctx* c) {
 #endif
 }
 
+/* I685w: the colour aa_erase fills: the role colour of the nearest UP-Panel above the object (design 5.2 item 2), else BACKGROUND. */
+static uint32_t ctx_bg(const aa_ctx* c) {
+    ULONG p = 0, role = 0;
+    Object* o = c->obj;
+    int depth;
+    for (depth = 0; depth < 12 && o != NULL; depth++) {
+        p = 0;
+        GetAttr(MUIA_Parent, o, &p);
+        o = (Object*)p;
+        if (o != NULL && GetAttr(UPA_Panel_Role, o, &role)) {
+            return mui_aa_panel_rgb(c->tok, (int)role);
+        }
+    }
+    return c->tok[SEL_GUI_TOKEN_BACKGROUND];
+}
+
 void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     int i, depth;
     if (c->linked) {
@@ -252,7 +269,7 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
         }
     }
     c->tc = mui_aa_truecolour(depth, g_p96 != NULL, g_cgx != NULL);
-    c->bg_rgb = c->tok[SEL_GUI_TOKEN_BACKGROUND];
+    c->bg_rgb = ctx_bg(c);
     {
         static int logged;
         if (!logged && (c->tc || depth >= 15)) {
@@ -379,6 +396,13 @@ void aa_round_fill_hole(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int
     struct paint_bind b;
     bind_init(&ops, &b, c, rp);
     mui_aa_paint_round_fill_hole(&ops, x, y, w, h, radius, rgb, hx, hy, hw, hh);
+}
+
+void aa_round_fill_holes(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb, const int* holes, int n) {
+    mui_aa_paint_ops ops;
+    struct paint_bind b;
+    bind_init(&ops, &b, c, rp);
+    mui_aa_paint_round_fill_holes(&ops, x, y, w, h, radius, rgb, holes, n);
 }
 
 void aa_round_corners(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb) {
@@ -564,7 +588,7 @@ static void ctx_release_pens(aa_ctx* c) {
 static void ctx_retheme(aa_ctx* c) {
     ctx_release_pens(c);
     memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
-    c->bg_rgb = c->tok[SEL_GUI_TOKEN_BACKGROUND];
+    c->bg_rgb = ctx_bg(c);
     if (aa_live(c->obj)) {
         MUI_Redraw(c->obj, MADF_DRAWOBJECT);
     }
