@@ -325,18 +325,72 @@ Rule:
 
 State after the build (I685e1, 2026-11-06), two places where the rule above does not apply as written:
 
-- Panel (exception, open as row I685e5). `mui_aapanel_new` hands the pad to MUI as `MUIA_InnerLeft/Right/Top/Bottom`
-  and group spacing at object creation. MUI 3.8 takes the inner offsets only at creation, and no DrawInfo exists
-  before `MUIM_Setup`, so the panel cannot read `_dri(obj)` for them. The panel spec therefore carries
-  `int aspect_q8`, filled by the program (Selecta passes `g_pixel_aspect_q8`). This keeps the global out of the
-  package, but a program must know its screen's pixel shape before it builds a panel; a public class should not ask
-  for that. Row I685e5 decides how the panel gets its vertical pad from its own screen at setup.
+- Panel (exception after I685e1, resolved by row I685e5; mechanism in 4.1.1). After I685e1 `mui_aapanel_new` handed
+  the pad to MUI as `MUIA_InnerLeft/Right/Top/Bottom` and group spacing at object creation, and the spec carried
+  `int aspect_q8` filled by the program (Selecta passed `g_pixel_aspect_q8`). A program then had to know its screen's
+  pixel shape before it built a panel; a public class should not ask for that. 4.1.1 replaces the inner offsets with
+  the panel's own layout and removes the spec field.
 - Field (no exception needed). `mui_aafield_new` calls `mui_aa_field_metrics(0, 256, &m)` and uses only `pad_x`,
   `pad_y` and `outline`, which are constants in that function; height and radius, the two aspect-dependent values,
   come from the call in setup with `d->aa.aspect_q8`.
 - Selecta side: the layout helpers that read the old global (`mui_button_height`, `mui_columns_format`,
   `mui_sidebar_chips_single`, `mui_viz_fit`, `mui_vizset_step`, `mui_vizarea_new`, `mui_model_icon_h`) take
   `aspect_q8` as an argument and get `g_pixel_aspect_q8` from mui_ui.c (rule point 4).
+
+#### 4.1.1 Panel pad from the panel's own screen (I685e5, design 2026-11-07)
+
+MUI 3.8 facts, read from `libraries/mui.h` (V19 header, the attribute flags are the autodoc's):
+
+- `MUIA_InnerLeft/Right/Top/Bottom` are `i.g`: init and get only. No set after creation, in any method.
+- `MUIA_Group_HorizSpacing` and `MUIA_Group_VertSpacing` are `isg`: a set in `MUIM_Setup` lands before the first
+  `MUIM_AskMinMax`. `MUIA_Group_Spacing` is `is.`.
+- `MUIA_Group_LayoutHook` (V11, `i..`) gives a group its own layout: MUI calls the hook with
+  `struct MUI_LayoutMsg` (`lm_Type` `MUILM_MINMAX` or `MUILM_LAYOUT`, `lm_Children` walked with `NextObject`,
+  `lm_MinMax` as the MINMAX result, `lm_Layout.Width/Height` as the LAYOUT input), and places each child with
+  `MUI_Layout(child, left, top, width, height, 0)`. Both calls come after `MUIM_Setup`, so `_dri(obj)` and the
+  child `_minwidth/_minheight/_defwidth/_defheight/_maxwidth/_maxheight` macros are valid inside the hook.
+- No DrawInfo exists before setup, so no creation-time attribute can know the screen. The pad therefore has to be
+  laid out by the class, not handed to MUI as inner offsets. The layout hook is MUI 3.8's documented way to do that;
+  overriding `MUIM_Layout` is not (the autodoc marks it internal).
+
+Mechanism, two objects per panel so MUI's own group layout keeps doing the children:
+
+- Outer object: the custom class on Group, as today (role colour as `MUIA_Background`, corner wedges in `MUIM_Draw`,
+  `aa_setup` in `MUIM_Setup`). Created with no inner offsets, `MUIA_Group_Spacing 0`, and `MUIA_Group_LayoutHook`
+  set to ONE static `struct Hook` shared by every panel (`h_Entry = HookEntry`, `h_SubEntry` = the C function; the
+  pattern of `g_list_hook` in mui_ui.c). Its only MUI child is the inner group; `mui_aapanel_new` adds it before it
+  returns.
+- Inner object: a plain `MUIC_Group`, vertical, the container of the program's children. `OM_ADDMEMBER` and
+  `OM_REMMEMBER` sent to the panel are forwarded to the inner group by the dispatcher, so callers keep adding to the
+  panel object and nothing outside the class changes. The inner group carries no background of its own and inherits
+  the role colour, so the pad and the gaps between children stay one colour, as before.
+- Hook, `MUILM_MINMAX`: `mui_aa_panel_pad(d->aa.tok, d->aa.aspect_q8, &px, &py)` (`d->aa.aspect_q8` was set by
+  `aa_setup` from `_dri(obj)->dri_Resolution`, rule point 2 above); the result is the inner group's min/def/max plus
+  `2*px` across and `2*py` down, a `MUI_MAXMAX` child maximum stays `MUI_MAXMAX`. `fixed_px > 0` (the art frame) means
+  `px = py = 0`, the fixed width and height stay on the outer object as today, so there is one layout path, not two.
+- Hook, `MUILM_LAYOUT`: `MUI_Layout(inner, px, py, lm_Layout.Width - 2*px, lm_Layout.Height - 2*py, 0)`, same `px`,
+  `py`.
+- `MUIM_Setup` (outer, after the super call, which set up the inner group): the same `mui_aa_panel_pad` values go to
+  the inner group as `MUIA_Group_HorizSpacing px` and `MUIA_Group_VertSpacing py`; both are `isg` and the first
+  `MUIM_AskMinMax` comes later. A live THEME change re-runs MINMAX through MUI's relayout, so the pad follows the
+  tokens the way the corner radius already does at draw.
+- Removed: the spec field `int aspect_q8` and its comment in `mui_aapanel_class.h`; the line
+  `sp.aspect_q8 = g_pixel_aspect_q8;` in mui_ui.c; every `MUIA_Inner*` in `mui_aapanel_class.c`. The program no
+  longer passes the screen to the panel; the panel reads it from the screen it opens on, which is rule 4.1 as written.
+- Cost: one extra MUI object per panel (Selecta's window builds a few dozen panels; the inner group is the same
+  object that held the children before, moved one level down). The hook runs once per layout, not per draw.
+
+Checks for row I685e5:
+
+- Host (no MUI runtime on the host, so the setup path is proven at the source): `mui_aapanel_spec` has no `aspect_q8`
+  member; `mui_aapanel_class.c` has no `MUIA_Inner`; `mui_aa_panel_pad(` appears in the class file only with
+  `d->aa.aspect_q8` as its aspect argument and not inside `mui_aapanel_new`; `MUIA_Group_LayoutHook` is passed in
+  `mui_aapanel_new`; the dispatcher forwards `OM_ADDMEMBER` and `OM_REMMEMBER`; mui_ui.c has no
+  `sp.aspect_q8`. `mui_aa_panel_pad` for 256 and 512 keeps its existing values (mui_contract_test.c, the I949e2
+  case), so the hook gets the same numbers the inner offsets got.
+- Rig (one run, in the MCC rig batch): PAL 640x256 and PAL laced 640x512, the panel pad and the spacing between
+  children match the screenshots from before the change, and every child added to a panel is visible (a missing
+  child means the OM_ADDMEMBER forwarding failed; that stops the row). RTG: unchanged.
 
 Checks for the row:
 
