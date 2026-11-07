@@ -1,3 +1,35 @@
+# I685n (design section 8.4): nm mode. Run as: cmake -DNM=<nm> -DBINARY=<.mcc/.mcp> -DNM_OUT=<file> -P mcc_check_classlibs.cmake
+# A class or prefs library must hold no token store and no retheme registry: those live in up-mcc.library only. Fails when the
+# binary defines a store or registry symbol (up_registry_*, the UP_Theme* implementations, the token array g_tokens*, the node list).
+if(DEFINED NM AND DEFINED BINARY)
+  execute_process(COMMAND "${NM}" "${BINARY}" OUTPUT_VARIABLE nm_out RESULT_VARIABLE nm_rc)
+  if(NOT nm_rc EQUAL 0)
+    message(FATAL_ERROR "mcc-classlibs-store: nm failed on ${BINARY}")
+  endif()
+  string(REPLACE "\n" ";" nm_lines "${nm_out}")
+  set(found "")
+  set(defined 0)
+  foreach(l ${nm_lines})
+    if(l MATCHES "^[0-9a-fA-F]+ [A-Za-z] (.*)$")
+      math(EXPR defined "${defined}+1")
+      set(sym "${CMAKE_MATCH_1}")
+      if(sym MATCHES "up_registry_|UP_Theme|g_tokens|g_node|g_reg_lock")
+        list(APPEND found "${sym}")
+      endif()
+    endif()
+  endforeach()
+  if(defined LESS 10)
+    message(FATAL_ERROR "mcc-classlibs-store: nm of ${BINARY} listed only ${defined} symbols")
+  endif()
+  if(found)
+    message(FATAL_ERROR "mcc-classlibs-store FAILED: ${BINARY} defines store symbols: ${found}")
+  endif()
+  if(DEFINED NM_OUT)
+    file(WRITE "${NM_OUT}" "store symbols: 0 (of ${defined} defined)\n")
+  endif()
+  message(STATUS "mcc-classlibs-store OK: ${BINARY}: no store symbols among ${defined} defined")
+  return()
+endif()
 # I685i (design 2026-11-06-mui-mcc-package.md section 3.2): the eleven UP-*.mcc libraries and sel_mcc_static compile the same
 # class sources. Run as: cmake -DLIB_SOURCES=<list> -DSTATIC_SOURCES=<list> -DLIB_COUNT=<n> -P mcc_check_classlibs.cmake
 # LIB_SOURCES: the class source of each library, one entry per library. STATIC_SOURCES: the class sources of sel_mcc_static.

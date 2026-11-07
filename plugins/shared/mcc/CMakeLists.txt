@@ -152,12 +152,21 @@ function(up_add_class_library name class_source desc)
     message(FATAL_ERROR "${tgt}: class source ${class_source} is not the one sel_mcc_static compiles")
   endif()
 endfunction()
+find_program(MCC_NM NAMES m68k-amigaos-nm HINTS "${AMIGA_GCC_ROOT}/bin" "$ENV{HOME}/opt/amiga/bin" REQUIRED)
+# I685n: post-build nm check on every .mcc/.mcp: no token store, no registry (cmake/mcc_check_classlibs.cmake, nm mode).
+function(up_check_no_store tgt)
+  add_custom_command(TARGET ${tgt} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${MCC_NM}" "-DBINARY=$<TARGET_FILE:${tgt}>" "-DNM_OUT=$<TARGET_FILE:${tgt}>.nm-store.txt"
+      -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_classlibs.cmake"
+    VERBATIM COMMENT "${tgt}: no theme store symbols")
+endfunction()
 foreach(row ${MCC_CLASS_LIBS})
   string(REPLACE "|" ";" cols "${row}")
   list(GET cols 0 n)
   list(GET cols 1 s)
   list(GET cols 2 d)
   up_add_class_library(${n} "${s}" ${d})
+  up_check_no_store(up_mcc_${n})
 endforeach()
 # I685j: UP-MCC.mcp from the same skeleton (UP_PREFS_LIBRARY: MCC_Query(1) returns the class).
 add_executable(up_mcc_prefs "${MCC_LIBINIT_O}" lib/classheader.c prefs/up_prefs.c ${MCC_CLIENT_SOURCES} ${MCC_SFD_HEADERS})
@@ -166,6 +175,7 @@ target_include_directories(up_mcc_prefs PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/
 target_compile_definitions(up_mcc_prefs PRIVATE "UP_CLASS_NAME=\"MCC\"" UP_CLASS_DESC=up_prefs_class_desc UP_MCC_LIBRARY UP_PREFS_LIBRARY UP_CLASS_LIBRARY)
 target_link_libraries(up_mcc_prefs PRIVATE sel_mcc_static)
 target_link_options(up_mcc_prefs PRIVATE -nostartfiles)
+up_check_no_store(up_mcc_prefs)
 add_custom_target(up_mcc_classes DEPENDS up_mcc_Button up_mcc_Text up_mcc_Panel up_mcc_Tabs up_mcc_Balance up_mcc_Slider up_mcc_Progress
   up_mcc_Cycle up_mcc_Field up_mcc_Scroller up_mcc_List up_mcc_prefs)
 
@@ -185,7 +195,6 @@ if(NOT "${_demo_inc}" STREQUAL "${MCC_DEMO_INCLUDES}" OR NOT "${_demo_libs}" STR
   message(FATAL_ERROR "up_demo: include/link interface differs from MCC_DEMO_INCLUDES/MCC_DEMO_LIBS (${_demo_inc} | ${_demo_libs})")
 endif()
 # Gate item 1 symbol check, part of the build: nm on the finished UP-Demo; the count goes to UP-Demo.nm-count.txt.
-find_program(MCC_NM NAMES m68k-amigaos-nm HINTS "${AMIGA_GCC_ROOT}/bin" "$ENV{HOME}/opt/amiga/bin" REQUIRED)
 add_custom_command(TARGET up_demo POST_BUILD
   COMMAND "${CMAKE_COMMAND}" "-DNM=${MCC_NM}" "-DBINARY=$<TARGET_FILE:up_demo>" "-DCOUNT_FILE=$<TARGET_FILE:up_demo>.nm-count.txt"
     -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_demo_symbols.cmake"
