@@ -1,0 +1,8 @@
+# UP-MCC theme: Light. Copy to ENV:UP-MCC/theme. Tokens not named here keep the built-in dark default.
+gui.background = 0xF4F4F6
+gui.surface = 0xFFFFFF
+gui.surface_raised = 0xEDEDF0
+gui.text = 0x1A1A1E
+gui.text_muted = 0x5C5C66
+gui.accent = 0x2563EB
+gui.divider = 0xD4D4DA
