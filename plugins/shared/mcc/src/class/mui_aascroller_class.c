@@ -1,6 +1,7 @@
 /* Selecta_AAScroller (I667i, design section 3.5). Same dispatcher pattern as mui_aacycle_class.c. Geometry and colours come from
  * map/mui_aa.c (mui_aa_scroller_*); drawn with aa_round_fill and held pens; no colour literal, no ObtainBestPen. */
 #include "mui_aascroller_class.h"
+#include "mui_aa_class.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -172,6 +173,7 @@ static ULONG aascroller_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 static ULONG __attribute__((used)) aascroller_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aascroller_dispatch(void);
+const struct aa_class_desc aascroller_class_desc = {MUIC_Area, sizeof(aascroller_data), aascroller_dispatch, &g_scroller_class};
 __asm__(".text\n.even\n.globl _aascroller_dispatch\n_aascroller_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aascroller_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -200,7 +202,7 @@ Object* UP_NewScroller(const struct TagItem* tags) {
     Object* o;
     struct TagItem def[2];
     if (g_scroller_class == NULL) {
-        g_scroller_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aascroller_data), (APTR)(uintptr_t)aascroller_dispatch);
+        g_scroller_class = AA_CLASS_CREATE(&aascroller_class_desc);
     }
     if (g_scroller_class == NULL) {
         return NULL;

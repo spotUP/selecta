@@ -2,6 +2,7 @@
  * map/mui_aa.c (mui_aa_list_*); drawn with aa_round_fill / aa_text and held pens; no colour literal, no ObtainBestPen. The group built by
  * mui_aalist_new pairs the list with an AAScroller; the two are kept in step with MUIM_Notify one way and set with MUIA_NoNotify the other. */
 #include "mui_aalist_class.h"
+#include "mui_aa_class.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -394,6 +395,7 @@ static ULONG aalist_getrow(struct IClass* cl, Object* obj, UP_ListGetRow* g) {
 static ULONG __attribute__((used)) aalist_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aalist_dispatch(void);
+const struct aa_class_desc aalist_class_desc = {MUIC_Area, sizeof(aalist_data), aalist_dispatch, &g_list_class};
 __asm__(".text\n.even\n.globl _aalist_dispatch\n_aalist_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aalist_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -430,7 +432,7 @@ Object* UP_NewList(const struct TagItem* tags, Object** list_out) {
     int max_rows = (int)GetTagData(UPA_List_MaxRows, 0, t);
     long count = (long)GetTagData(UPA_List_Count, 0, t);
     if (g_list_class == NULL) {
-        g_list_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aalist_data), (APTR)(uintptr_t)aalist_dispatch);
+        g_list_class = AA_CLASS_CREATE(&aalist_class_desc);
     }
     if (g_list_class == NULL) {
         return NULL;

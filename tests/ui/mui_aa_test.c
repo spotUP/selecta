@@ -986,7 +986,7 @@ static void test_list_source(void) {
     if (ui == NULL || cy == NULL || ls == NULL || sc == NULL || cm == NULL) {
         return;
     }
-    CHECK(count_of(cy, "MUIC_List") == 0 && count_of(cy, "mui_aalist_new(") == 1, "popup must be an AAList: stock %d, aalist %d", count_of(cy, "MUIC_List"), count_of(cy, "mui_aalist_new("));
+    CHECK(count_of(cy, "MUIC_List") == 0 && count_of(cy, "UP_NewList(") == 1, "popup must be an AAList: stock %d, aalist %d", count_of(cy, "MUIC_List"), count_of(cy, "UP_NewList("));
     CHECK(count_of(cy, "UPA_List_Picked") >= 1, "popup listens to UPA_List_Picked");
     CHECK(count_of(ui, "mui_aalist_class_free(") == 1, "AAList class freed once in mui_close");
     /* I667i2 (design 3.6): main, info, tracks, help and lyrics lists are AALists; no stock list, floattext or listview is left. */

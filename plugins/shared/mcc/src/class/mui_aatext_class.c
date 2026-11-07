@@ -4,6 +4,7 @@
  * is narrower than the text. The title tone opens the font at base + 4 px (mui_aa_tone_font_px). Width and height come from the
  * same font as the draw, so the line never clips. No MUIC_Text, no pen escapes. */
 #include "mui_aatext_class.h"
+#include "mui_aa_class.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -143,6 +144,7 @@ static ULONG aatext_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aatext_dispatch(void);
+const struct aa_class_desc aatext_class_desc = {MUIC_Area, sizeof(aatext_data), aatext_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aatext_dispatch\n_aatext_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aatext_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -172,7 +174,7 @@ Object* UP_NewText(const struct TagItem* tags) {
     const char* contents = (const char*)GetTagData(UPA_Text_Contents, (ULONG)(uintptr_t)"", (struct TagItem*)tags);
     const char* widest = (const char*)GetTagData(UPA_Text_Widest, (ULONG)(uintptr_t)contents, (struct TagItem*)tags);
     if (g_class == NULL) {
-        g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aatext_data), (APTR)(uintptr_t)aatext_dispatch);
+        g_class = AA_CLASS_CREATE(&aatext_class_desc);
     }
     if (g_class == NULL) {
         return NULL;

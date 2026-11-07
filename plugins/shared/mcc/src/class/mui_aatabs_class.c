@@ -4,6 +4,7 @@
  * underline under the active tab through mui_aa_tabs_line / mui_aa_tabs_rgb. Cursor left and right move the active tab while one of
  * the tab buttons has the focus (mui_aa_tabs_key). No hardcoded colour, no ObtainBestPen. */
 #include "mui_aatabs_class.h"
+#include "mui_aa_class.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -124,6 +125,7 @@ static ULONG aatabs_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 static ULONG __attribute__((used)) aatabs_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aatabs_dispatch(void);
+const struct aa_class_desc aatabs_class_desc = {MUIC_Group, sizeof(aatabs_data), aatabs_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aatabs_dispatch\n_aatabs_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aatabs_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -158,7 +160,7 @@ Object* UP_NewTabs(const struct TagItem* tags) {
         return NULL;
     }
     if (g_class == NULL) {
-        g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Group, NULL, sizeof(aatabs_data), (APTR)(uintptr_t)aatabs_dispatch);
+        g_class = AA_CLASS_CREATE(&aatabs_class_desc);
     }
     if (g_class == NULL) {
         return NULL;

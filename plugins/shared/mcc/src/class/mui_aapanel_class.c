@@ -4,6 +4,7 @@
  * paints after the super: only the corner wedges outside mui_aa_panel_radius, in the window BACKGROUND, through aa_round_corners
  * (held pen). No hardcoded colour, no ObtainBestPen. */
 #include "mui_aapanel_class.h"
+#include "mui_aa_class.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -104,6 +105,7 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
 static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aapanel_dispatch(void);
+const struct aa_class_desc aapanel_class_desc = {MUIC_Group, sizeof(aapanel_data), aapanel_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aapanel_dispatch\n_aapanel_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aapanel_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -139,7 +141,7 @@ Object* UP_NewPanel(const struct TagItem* tags) {
         return NULL;
     }
     if (g_class == NULL) {
-        g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Group, NULL, sizeof(aapanel_data), (APTR)(uintptr_t)aapanel_dispatch);
+        g_class = AA_CLASS_CREATE(&aapanel_class_desc);
     }
     if (g_class == NULL) {
         return NULL;

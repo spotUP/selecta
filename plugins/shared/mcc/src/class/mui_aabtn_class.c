@@ -5,6 +5,7 @@
  * (TC, palette ramp or plain backend, see mui_aa_draw.c). No bevel pens, no shine, no shadow. Press tracking stays with MUI
  * (RelVerify and MUIA_Selected, notification on MUIA_Pressed), hover is a mouse move handler. */
 #include "mui_aabtn_class.h"
+#include "mui_aa_class.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -272,6 +273,7 @@ static unsigned long g_n_setup, g_n_ask, g_n_show, g_n_draw;
 static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aabtn_dispatch(void);
+const struct aa_class_desc aabtn_class_desc = {MUIC_Area, sizeof(aabtn_data), aabtn_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aabtn_dispatch\n_aabtn_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aabtn_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -336,7 +338,7 @@ Object* UP_NewButton(const struct TagItem* tags) {
         icon = data != NULL ? AABTN_DATA_ICON : AABTN_NO_ICON;
     }
     if (g_class == NULL) {
-        g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aabtn_data), (APTR)(uintptr_t)aabtn_dispatch);
+        g_class = AA_CLASS_CREATE(&aabtn_class_desc);
     }
     if (g_class == NULL) {
         return NULL;

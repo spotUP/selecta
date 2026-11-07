@@ -2,6 +2,7 @@
  * map/mui_aa.c (mui_aa_field_*); drawing goes through aa_round_fill with held pens; no colour literal, no ObtainBestPen. The group has
  * MUIA_FillArea FALSE, so the corners keep the parent panel's face; the inner stock String keeps the MUI prefs font and pens. */
 #include "mui_aafield_class.h"
+#include "mui_aa_class.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -201,6 +202,7 @@ static ULONG aafield_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 static ULONG __attribute__((used)) aafield_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aafield_dispatch(void);
+const struct aa_class_desc aafield_class_desc = {MUIC_Group, sizeof(aafield_data), aafield_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aafield_dispatch\n_aafield_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aafield_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -246,7 +248,7 @@ Object* UP_NewField(const struct TagItem* tags) {
         return NULL;
     }
     if (g_class == NULL) {
-        g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Group, NULL, sizeof(aafield_data), (APTR)(uintptr_t)aafield_dispatch);
+        g_class = AA_CLASS_CREATE(&aafield_class_desc);
     }
     if (g_class == NULL) {
         return NULL;

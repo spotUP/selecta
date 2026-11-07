@@ -2,6 +2,7 @@
  * the Up/Down step come from map/mui_aa.c (mui_aa_cycle_*); drawing goes through aa_round_fill / aa_text with held pens; no colour
  * literal, no ObtainBestPen. The popup is a borderless window with a stock List (the AAList of section 3.6 replaces it later). */
 #include "mui_aacycle_class.h"
+#include "mui_aa_class.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -26,6 +27,7 @@ typedef struct aacycle_data {
     mui_aa_cycle_t m;
     aa_ctx aa;
     Object *popup, *list;
+    struct Hook row_hook; /* UPA_List_RowHook of the popup list: the entry text (h_Data is this data) */
     struct MUI_EventHandlerNode ehn;
 } aacycle_data;
 
@@ -148,15 +150,17 @@ static ULONG aacycle_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     return 0;
 }
 
-/* Row callback of the popup AAList: the entry text. */
-static const char* aacycle_row(void* ctx, long row) {
-    aacycle_data* d = (aacycle_data*)ctx;
-    return row >= 0 && row < d->n ? d->entries[row] : "";
+/* Row hook of the popup AAList (UPA_List_RowHook, msg UP_ListCell): the entry text. The package builds its own popup list through
+ * UP_NewList; it does not call a Selecta wrapper (I685i: a class library has no wrapper to link). */
+static const char* aacycle_row(struct Hook* hook, Object* obj, UP_ListCell* cell) {
+    aacycle_data* d = (aacycle_data*)hook->h_Data;
+    (void)obj;
+    return cell->row >= 0 && cell->row < d->n ? d->entries[cell->row] : "";
 }
 
 static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     Object *app = NULL, *list = NULL, *group;
-    mui_aalist_spec spec;
+    struct TagItem tl[6];
     struct Window* win = _window(obj);
     if (win == NULL || d->n <= 0 || d->popup != NULL) {
         return;
@@ -165,12 +169,15 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     if (app == NULL) {
         return;
     }
-    spec.count = d->n;
-    spec.active = d->active;
-    spec.row = aacycle_row;
-    spec.ctx = d;
-    spec.max_rows = 12;
-    group = mui_aalist_new(&spec, &list); /* I667i: the AAList look (padding, row spacing, flat scroller) instead of the stock List */
+    d->row_hook.h_Entry = (__typeof__(d->row_hook.h_Entry))(void (*)(void))HookEntry;
+    d->row_hook.h_SubEntry = (__typeof__(d->row_hook.h_SubEntry))(void (*)(void))aacycle_row;
+    d->row_hook.h_Data = d;
+    tl[0].ti_Tag = UPA_List_Count, tl[0].ti_Data = (ULONG)d->n;
+    tl[1].ti_Tag = UPA_List_Active, tl[1].ti_Data = (ULONG)d->active;
+    tl[2].ti_Tag = UPA_List_RowHook, tl[2].ti_Data = (ULONG)(uintptr_t)&d->row_hook;
+    tl[3].ti_Tag = UPA_List_MaxRows, tl[3].ti_Data = 12;
+    tl[4].ti_Tag = TAG_DONE, tl[4].ti_Data = 0;
+    group = UP_NewList(tl, &list); /* I667i: the AAList look (padding, row spacing, flat scroller) instead of the stock List */
     if (group == NULL) {
         return;
     }
@@ -278,6 +285,7 @@ static ULONG aacycle_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 static ULONG __attribute__((used)) aacycle_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aacycle_dispatch(void);
+const struct aa_class_desc aacycle_class_desc = {MUIC_Area, sizeof(aacycle_data), aacycle_dispatch, &g_cycle_class};
 __asm__(".text\n.even\n.globl _aacycle_dispatch\n_aacycle_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aacycle_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -308,7 +316,7 @@ Object* UP_NewCycle(const struct TagItem* tags) {
     Object* o;
     struct TagItem def[3];
     if (g_cycle_class == NULL) {
-        g_cycle_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aacycle_data), (APTR)(uintptr_t)aacycle_dispatch);
+        g_cycle_class = AA_CLASS_CREATE(&aacycle_class_desc);
     }
     if (g_cycle_class == NULL) {
         return NULL;

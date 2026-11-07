@@ -4,6 +4,7 @@
  * centred 1 px DIVIDER line (mui_aa_balance_line / mui_aa_balance_rgb) after the super draw (clip region, I667n); the box fill covers
  * the super's 3D bar, so no prefs frame or bar shows. No hardcoded colour, no ObtainBestPen (held pens through aa_pen). */
 #include "mui_aabalance_class.h"
+#include "mui_aa_class.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -85,6 +86,7 @@ static ULONG aabal_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
 static ULONG __attribute__((used)) aabal_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aabal_dispatch(void);
+const struct aa_class_desc aabal_class_desc = {MUIC_Balance, sizeof(aabal_data), aabal_dispatch, &g_class};
 __asm__(".text\n.even\n.globl _aabal_dispatch\n_aabal_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aabal_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -116,7 +118,7 @@ Object* UP_NewBalance(const struct TagItem* tags) {
     Object* o;
     struct TagItem def[2];
     if (g_class == NULL) {
-        g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Balance, NULL, sizeof(aabal_data), (APTR)(uintptr_t)aabal_dispatch);
+        g_class = AA_CLASS_CREATE(&aabal_class_desc);
     }
     if (g_class == NULL) {
         return aabal_stock();

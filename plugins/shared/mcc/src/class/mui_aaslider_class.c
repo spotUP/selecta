@@ -2,6 +2,7 @@
  * colour and position comes from map/mui_aa.c (mui_aa_slider_*, mui_aa_progress_fill_w), drawn with aa_round_fill and held pens;
  * no colour literal, no ObtainBestPen. The slider paints track and fill (no knob) after erasing its box to the parent background. */
 #include "mui_aaslider_class.h"
+#include "mui_aa_class.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -202,6 +203,7 @@ static ULONG aaslider_handle(struct IClass* cl, Object* obj, struct MUIP_HandleE
 static ULONG __attribute__((used)) aaslider_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aaslider_dispatch(void);
+const struct aa_class_desc aaslider_class_desc = {MUIC_Numeric, sizeof(aaslider_data), aaslider_dispatch, &g_slider_class};
 __asm__(".text\n.even\n.globl _aaslider_dispatch\n_aaslider_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aaslider_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -242,7 +244,7 @@ Object* UP_NewSlider(const struct TagItem* tags) {
     Object* o;
     struct TagItem def[3];
     if (g_slider_class == NULL) {
-        g_slider_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Numeric, NULL, sizeof(aaslider_data), (APTR)(uintptr_t)aaslider_dispatch);
+        g_slider_class = AA_CLASS_CREATE(&aaslider_class_desc);
     }
     if (g_slider_class == NULL) {
         return NULL;
@@ -341,6 +343,7 @@ static ULONG aaprogress_get(struct IClass* cl, Object* obj, struct opGet* msg) {
 static ULONG __attribute__((used)) aaprogress_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aaprogress_dispatch(void);
+const struct aa_class_desc aaprogress_class_desc = {MUIC_Area, sizeof(aaprogress_data), aaprogress_dispatch, &g_progress_class};
 __asm__(".text\n.even\n.globl _aaprogress_dispatch\n_aaprogress_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _aaprogress_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
@@ -367,7 +370,7 @@ Object* UP_NewProgress(const struct TagItem* tags) {
     Object* o;
     struct TagItem def[2];
     if (g_progress_class == NULL) {
-        g_progress_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aaprogress_data), (APTR)(uintptr_t)aaprogress_dispatch);
+        g_progress_class = AA_CLASS_CREATE(&aaprogress_class_desc);
     }
     if (g_progress_class == NULL) {
         return NULL;

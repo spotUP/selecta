@@ -10,6 +10,29 @@ set(MCC_AMIGA_SOURCES src/mui_aa_draw.c src/mui_aatip.c
   src/class/mui_aabtn_class.c src/class/mui_aatext_class.c src/class/mui_aapanel_class.c src/class/mui_aatabs_class.c
   src/class/mui_aabalance_class.c src/class/mui_aaslider_class.c src/class/mui_aacycle_class.c src/class/mui_aalist_class.c
   src/class/mui_aascroller_class.c src/class/mui_aafield_class.c)
+# I685i: the eleven UP-<Name>.mcc libraries (section 3.2/3.3), one row each: name | class source | description symbol of the file.
+# Slider and Progress both come from mui_aaslider_class.c. The class sources of the libraries must be the class sources of
+# sel_mcc_static (ctest mcc-classlibs-source; the Amiga part below also checks every library's SOURCES).
+set(MCC_CLASS_LIBS
+  "Button|src/class/mui_aabtn_class.c|aabtn_class_desc"
+  "Text|src/class/mui_aatext_class.c|aatext_class_desc"
+  "Panel|src/class/mui_aapanel_class.c|aapanel_class_desc"
+  "Tabs|src/class/mui_aatabs_class.c|aatabs_class_desc"
+  "Balance|src/class/mui_aabalance_class.c|aabal_class_desc"
+  "Slider|src/class/mui_aaslider_class.c|aaslider_class_desc"
+  "Progress|src/class/mui_aaslider_class.c|aaprogress_class_desc"
+  "Cycle|src/class/mui_aacycle_class.c|aacycle_class_desc"
+  "Field|src/class/mui_aafield_class.c|aafield_class_desc"
+  "Scroller|src/class/mui_aascroller_class.c|aascroller_class_desc"
+  "List|src/class/mui_aalist_class.c|aalist_class_desc")
+set(_mcc_lib_sources "")
+foreach(row ${MCC_CLASS_LIBS})
+  string(REPLACE "|" ";" cols "${row}")
+  list(GET cols 1 src)
+  list(APPEND _mcc_lib_sources "${src}")
+endforeach()
+set(MCC_CLASS_LIB_SOURCES "${_mcc_lib_sources}" CACHE INTERNAL "class source of each .mcc library")
+set(MCC_STATIC_SOURCES "${MCC_AMIGA_SOURCES}" CACHE INTERNAL "sources of sel_mcc_static that only the Amiga build compiles")
 set(MCC_SOURCES ${MCC_MAP_SOURCES} lib/support_lib.c)
 if(SEL_AMIGA)
   list(APPEND MCC_SOURCES ${MCC_AMIGA_SOURCES})
@@ -99,3 +122,30 @@ add_custom_command(
   DEPENDS "${MCC_SFD}" COMMENT "sfdc: headers of up-mcc.library")
 add_library(up_mcc_header_check OBJECT demo/support_header_check.c ${MCC_SFD_HEADERS})
 target_include_directories(up_mcc_header_check PRIVATE "${MCC_SFD_INC}" "${MCC_DIR}/include")
+
+# I685i: one library per class from lib/classheader.c. libinit.o first (Resident), -nostartfiles, the class file with
+# -DUP_MCC_LIBRARY so its constructors use the class the library init made, everything else from sel_mcc_static (open up-mcc.library
+# instead of linking the static support code is a later row). The check at the end compares each target's SOURCES with the list.
+function(up_add_class_library name class_source desc)
+  set(tgt "up_mcc_${name}")
+  add_executable(${tgt} "${MCC_LIBINIT_O}" lib/classheader.c "${class_source}")
+  set_target_properties(${tgt} PROPERTIES OUTPUT_NAME "UP-${name}.mcc")
+  target_include_directories(${tgt} PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include")
+  target_compile_definitions(${tgt} PRIVATE "UP_CLASS_NAME=\"${name}\"" "UP_CLASS_DESC=${desc}" UP_MCC_LIBRARY)
+  target_link_libraries(${tgt} PRIVATE sel_mcc_static)
+  target_link_options(${tgt} PRIVATE -nostartfiles)
+  set_source_files_properties(lib/classheader.c PROPERTIES COMPILE_OPTIONS "-fasm")
+  get_target_property(srcs ${tgt} SOURCES)
+  if(NOT "${class_source}" IN_LIST MCC_STATIC_SOURCES OR NOT "${class_source}" IN_LIST srcs)
+    message(FATAL_ERROR "${tgt}: class source ${class_source} is not the one sel_mcc_static compiles")
+  endif()
+endfunction()
+foreach(row ${MCC_CLASS_LIBS})
+  string(REPLACE "|" ";" cols "${row}")
+  list(GET cols 0 n)
+  list(GET cols 1 s)
+  list(GET cols 2 d)
+  up_add_class_library(${n} "${s}" ${d})
+endforeach()
+add_custom_target(up_mcc_classes DEPENDS up_mcc_Button up_mcc_Text up_mcc_Panel up_mcc_Tabs up_mcc_Balance up_mcc_Slider up_mcc_Progress
+  up_mcc_Cycle up_mcc_Field up_mcc_Scroller up_mcc_List)
