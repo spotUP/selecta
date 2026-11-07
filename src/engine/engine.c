@@ -10172,10 +10172,12 @@ static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
     }
     first = from;
     q->entries[first].flags |= SEL_QUEUE_FLAG_CONTEXT;
+    search_pin(e, s.plist[0]); /* I406b: a search hit that enters the queue is handed to the library, as queue_insert does */
     done = 1u;
     for (i = 1; i < s.pn; i++) {
         if (!sel_queue_insert(q, q->count, s.plist[i], &id)) break;
         q->entries[q->count - 1u].flags |= SEL_QUEUE_FLAG_CONTEXT;
+        search_pin(e, s.plist[i]);
         done++;
     }
     dropped = s.pn - done;
@@ -10669,6 +10671,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->pl_host.config_get = pl_config_get;
     e->pl_host.ctx = e;
     e->state.volume = 100;
+    e->state.ctx_name = e->ctx_name; /* I994e: never NULL, even before the first publish */
     sel_loudness_gain_set(&e->loud, 0, SEL_GAIN_UNITY);
     sel_timer_init(&e->timer);
     (void)local_ms(e); /* primes the C library time zone state outside the render path */

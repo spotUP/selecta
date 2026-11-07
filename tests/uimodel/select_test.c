@@ -109,6 +109,34 @@ int main(void) {
     CHECK(sel_uim_selset_bind(&s, q) == 1 && sel_uim_selset_count(&s) == 0u);
 
     sel_uim_selset_free(&s);
+
+    /* I994e: the PLAY_CONTEXT line per list kind (design 2026-11-02 section 6) */
+    {
+        char line[128];
+        struct {
+            uint32_t kind, id, ver, idx;
+            const char* name;
+            const char* want;
+        } c[] = {
+            {SEL_UIM_LIST_QUEUE, 0, 7, 3, NULL, "PLAY_CONTEXT queue 7 3"},
+            {SEL_UIM_LIST_VIEW, 0, 9, 0, "Search", "PLAY_CONTEXT view 9 0 \"Search\""},
+            {SEL_UIM_LIST_PLAYLIST, 12, 2, 4, "Mix", "PLAY_CONTEXT playlist:12 2 4 \"Mix\""},
+            {SEL_UIM_LIST_COLLECTION, 0, 5, 0xFFFFFFFFu, "Say \"hi\" \\ ok",
+             "PLAY_CONTEXT collection 5 4294967295 \"Say \\\"hi\\\" \\\\ ok\""},
+            {SEL_UIM_LIST_HITS, 0, 3, 2, "", "PLAY_CONTEXT hits 3 2"},
+        };
+        size_t k;
+        for (k = 0; k < sizeof c / sizeof c[0]; k++) {
+            size_t n = sel_uim_context_line(c[k].kind, c[k].id, c[k].ver, c[k].idx, c[k].name, line, sizeof line);
+            if (strcmp(line, c[k].want) != 0 || n != strlen(c[k].want)) {
+                printf("FAIL context line %zu: \"%s\" want \"%s\"\n", k, line, c[k].want);
+                g_fail++;
+            }
+        }
+        CHECK(sel_uim_context_line(99, 0, 1, 0, NULL, line, sizeof line) == 0u);
+        CHECK(sel_uim_context_line(SEL_UIM_LIST_QUEUE, 0, 1, 0, NULL, line, 8) == 0u); /* does not fit */
+    }
+
     if (g_fail == 0) printf("uim_select_ok\n");
     return g_fail == 0 ? 0 : 1;
 }

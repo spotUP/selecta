@@ -227,3 +227,46 @@ int sel_uim_selset_parse(sel_uim_selset* s, const char* text) {
     s->anchor = fresh.v[fresh.n - 1u].hi;
     return 1;
 }
+
+size_t sel_uim_context_line(uint32_t list_kind, uint32_t list_id, uint32_t version, uint32_t index, const char* name, char* out,
+                            size_t cap) {
+    char list[32];
+    size_t n, o;
+    if (cap == 0) return 0;
+    out[0] = '\0';
+    switch (list_kind) {
+        case SEL_UIM_LIST_QUEUE: snprintf(list, sizeof list, "queue"); break;
+        case SEL_UIM_LIST_VIEW: snprintf(list, sizeof list, "view"); break;
+        case SEL_UIM_LIST_PLAYLIST: snprintf(list, sizeof list, "playlist:%u", (unsigned)list_id); break;
+        case SEL_UIM_LIST_COLLECTION: snprintf(list, sizeof list, "collection"); break;
+        case SEL_UIM_LIST_HITS: snprintf(list, sizeof list, "hits"); break;
+        default: return 0;
+    }
+    n = (size_t)snprintf(out, cap, "PLAY_CONTEXT %s %u %u", list, (unsigned)version, (unsigned)index);
+    if (n >= cap) {
+        out[0] = '\0';
+        return 0;
+    }
+    if (name && name[0]) {
+        o = n;
+        if (o + 3 >= cap) goto nofit;
+        out[o++] = ' ';
+        out[o++] = '"';
+        for (; *name; name++) {
+            if (*name == '"' || *name == '\\') {
+                if (o + 1 >= cap) goto nofit;
+                out[o++] = '\\';
+            }
+            if (o + 1 >= cap) goto nofit;
+            out[o++] = *name;
+        }
+        if (o + 2 > cap) goto nofit;
+        out[o++] = '"';
+        out[o] = '\0';
+        n = o;
+    }
+    return n;
+nofit:
+    out[0] = '\0';
+    return 0;
+}

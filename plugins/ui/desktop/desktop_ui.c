@@ -116,6 +116,7 @@ typedef struct song_ref {
     uint32_t list_id;      /* I632d: which list of that kind (page, playlist id, drilldown) */
     uint32_t list_version; /* I632d: the list's version: a sort, filter, search or page change makes a new one */
     uint32_t list_index;   /* I632d: the row's position in the whole list (not in the window), the selection model's row number */
+    uint32_t ctx_pos;      /* I994e: the row's shown position on a playlist or collection page: the PLAY_CONTEXT start (list_index is the stored index on a playlist page) */
     int online;            /* I406b: an online search hit (path = the engine's `<source>:<path>` key): the last item saves it to the library */
 } song_ref;
 
@@ -512,7 +513,6 @@ typedef struct desk {
     uint32_t detail_hidden, np_toggle_clicks, np_add_clicks; /* I619: the Now Playing column is hidden; clicks on its top bar toggle and on the add button */
     sel_gui_rect np_add;                                      /* I619: the round add-to-library button beside the track title */
     char np_ctx_shown[96];                                     /* I619: the heading the last Now Playing draw showed */
-    char np_ctx[96];                                          /* I619: the playlist the playing song was started from, "" when none */
     uint32_t topbar_draws, topbar_home_clicks, topbar_browse_clicks; /* I615: top bar frames drawn, Home and Browse button clicks */
     uint32_t side_wide, side_plus_clicks, side_wide_clicks; /* I609: the sidebar is widened; header Create Playlist and width toggle clicks */
     uint32_t side_anim, side_from, side_to, side_tween_frames; /* I668: the width tween runs, its ends in logical px, frames relaid out by it */
@@ -1886,6 +1886,8 @@ static int desk_pls_import_pick(desk* d);
 static int desk_pls_folder_pick(desk* d);
 static int desk_send_path(desk* d, const char* verb, const char* path);
 static int desk_play_path(desk* d, const char* path);
+static int desk_play_context(desk* d, uint32_t kind, uint32_t id, uint32_t version, uint32_t index, const char* name);
+static int desk_play_ref(desk* d, const song_ref* r);
 static const sel_uim_action* desk_action_by_id(const char* id);
 
 static int32_t songs_top(const desk* d) {
@@ -3622,7 +3624,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                     snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)d->sm_ref.qid);
                     desk_send(d, line);
                 } else if (k == 0) {
-                    desk_play_path(d, d->sm_ref.path);
+                    desk_play_ref(d, &d->sm_ref);
                     d->row_plays++;
                 } else {
                     desk_send_path(d, k == 1 ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", d->sm_ref.path);
@@ -3656,6 +3658,9 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 memset(&ref, 0, sizeof ref);
                 snprintf(ref.path, sizeof ref.path, "%s", d->on_row[i].key);
                 ref.online = 1;
+                ref.list_kind = (uint32_t)SEL_UIM_LIST_HITS; /* I994e: the menu's Play continues with the next hits */
+                ref.list_version = sel_engine_state(d->engine)->search_serial;
+                ref.list_index = i;
                 song_menu_open(d, ev->x, ev->y, &ref);
                 draw_home(d);
                 return 1;
@@ -5543,39 +5548,16 @@ static int col_kind_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     return 0;
 }
 
-/* Play on a kind page: the first song plays and every other song of the collection queues behind it (queue_count = N). Shuffle
- * plays the same songs in a random order (Fisher-Yates over the indexes). */
+/* Play on a kind page: the engine plays row 0 (or a random row under Shuffle) and queues the rest of the page's collection behind
+ * it as the play context (I994e, D5): one command, no per-song QUEUE_ADD, no UI-side shuffle. */
 static int col_kind_play(desk* d, int shuffle) {
-    uint32_t i, n = d->pls_n, *ord, seed;
-    if (n == 0u) {
+    if (d->pls_n == 0u) {
         return 1;
-    }
-    ord = (uint32_t*)malloc(n * sizeof *ord);
-    if (ord == NULL) {
-        return 1;
-    }
-    for (i = 0; i < n; i++) {
-        ord[i] = i;
     }
     if (shuffle) {
-        seed = (uint32_t)time(NULL) ^ (n * 2654435761u) ^ 0x9E3779B9u;
-        for (i = n - 1u; i > 0u; i--) {
-            uint32_t j, t;
-            seed ^= seed << 13;
-            seed ^= seed >> 17;
-            seed ^= seed << 5;
-            j = seed % (i + 1u);
-            t = ord[i];
-            ord[i] = ord[j];
-            ord[j] = t;
-        }
+        desk_send(d, "SHUFFLE on");
     }
-    snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name);
-    desk_play_path(d, pls_key(d, ord[0]));
-    for (i = 1; i < n; i++) {
-        desk_send_path(d, "QUEUE_ADD", pls_key(d, ord[i]));
-    }
-    free(ord);
+    desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, shuffle ? SEL_CONTEXT_START_RANDOM : 0u, d->pls_name);
     d->repaint = 1;
     return 1;
 }
@@ -6094,6 +6076,11 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             e->ref.pl_id = d->pls_id;
             e->ref.pl_index = i;
             song_row_set_list(d, e, SEL_UIM_LIST_PLAYLIST, d->pls_id, d->pls_ver, i);
+        } else if (e != NULL) { /* I994e: kind pages are engine collection pages: the row joins that list by its shown position */
+            song_row_set_list(d, e, SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, pos);
+        }
+        if (e != NULL) {
+            e->ref.ctx_pos = pos;
         }
         fill = list_row_fill(d, r, d->col_kind != 0u && (int32_t)pos == d->col_focus); /* I678f2, I690b: focus, hover, or both */
         if (fill != 0u) {
@@ -6276,8 +6263,7 @@ static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
 
 /* Plays the song row at display position pos of the open playlist or collection page: the one path a click and Enter share. */
 static int pls_play_pos(desk* d, uint32_t pos) {
-    snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619 */
-    desk_play_path(d, pls_key(d, d->pls_ord[pos]));
+    desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, pos, d->pls_name);
     d->row_plays++;
     return 1;
 }
@@ -6286,7 +6272,6 @@ static int pls_play_pos(desk* d, uint32_t pos) {
 static int pls_pointer(desk* d, const sel_gui_input* ev) {
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t slot;
-    char line[48];
     if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
         return 0;
     }
@@ -6375,10 +6360,8 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         return col_kind_play(d, 0);
     }
     if (in_rect(pls_play_rect(d, mn), ev->x, ev->y)) {
-        snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619: the Now Playing panel names the playlist */
-        snprintf(line, sizeof line, "PLAYLIST_PLAY %u", (unsigned)d->pls_id);
         d->repaint = 1;
-        return desk_send(d, line);
+        return desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, 0u, d->pls_name);
     }
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && d->drl_page != 0u) { /* I790: a crumb goes back up, a drill row goes down */
         uint32_t ci;
@@ -7651,6 +7634,8 @@ static const char* library_dump_build(desk* d) {
         sel_engine_stats pes; /* I406b: the engine's pin counters: the sentinel that the library pin path ran */
         sel_engine_stats_get(d->engine, &pes);
         o = dump_put(d, o, "online_pin pins=%u pin_rows=%u\n", (unsigned)pes.source_pins, (unsigned)pes.pin_rows);
+        o = dump_put(d, o, "playctx plays=%u rows=%u ctx=[%s] queue=%u heading=[%s]\n", (unsigned)pes.context_plays, (unsigned)pes.context_rows,
+                     sel_engine_state(d->engine)->ctx_name, (unsigned)sel_engine_state(d->engine)->queue_count, d->np_ctx_shown); /* I994e */
     }
     {
         uint32_t oi;
@@ -9492,7 +9477,8 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
     }
     for (k = 0; k < d->on_n; k++) {
         if (d->on_row[k].drawn && in_rect(d->on_row[k].rect, x, y)) {
-            desk_play_path(d, d->on_row[k].key); /* the engine's key is `<source>:<path>` already */
+            /* I994e (D6): the hit plays inside the hit list, so the next hits follow; k is the engine's hit index (both cap at 120) */
+            desk_play_context(d, (uint32_t)SEL_UIM_LIST_HITS, 0u, sel_engine_state(d->engine)->search_serial, k, "Search");
             d->on_plays++;
             return 1;
         }
@@ -12220,7 +12206,7 @@ static void draw_nowplaying(desk* d) {
     }
     draw_panel(d, "detail");
     /* I619: the context the song plays from heads the panel (Spotify): the playlist, else the release, else the plain heading. */
-    ctx = d->np_ctx;
+    ctx = st->ctx_name; /* I994e: the engine names the context the playing song started from */
     if (ctx[0] == '\0' && st->panel != NULL) {
         const char* q = st->panel;
         while (*q != '\0') {
@@ -13557,7 +13543,7 @@ static int queue_list_key(desk* d, const sel_gui_input* ev) {
         }
         d->kb_activates++;
         d->row_plays++;
-        desk_play_path(d, st->queue_text + st->queue[d->q_focus].path_offset);
+        desk_play_context(d, (uint32_t)SEL_UIM_LIST_QUEUE, 0u, st->queue_version, (uint32_t)d->q_focus, "");
         return 1;
     }
     to = list_nav(ev->code, d->q_focus, n, page);
@@ -13847,7 +13833,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         if (ev->code == 13u && sr != NULL && sr->kind != (uint32_t)SEL_ROW_HEADING && !sr->album && sr->key != NULL) {
             d->kb_activates++;
             d->row_plays++;
-            return desk_play_path(d, sr->key);
+            return desk_play_context(d, (uint32_t)SEL_UIM_LIST_VIEW, (uint32_t)d->page, sv->version, sv->cursor, "Search");
         }
         d->kb_activates += ev->code == 13u;
     }
@@ -13956,8 +13942,7 @@ static int songs_send_path(desk* d, const char* verb, int32_t row) {
 
 /* Plays a display row: OPEN only loads, so the play intent sends OPEN then PLAY. */
 static int songs_play_row(desk* d, int32_t row) {
-    const sel_state* st = sel_engine_state(d->engine);
-    return desk_play_path(d, st->queue_text + st->queue[d->order[row]].path_offset);
+    return desk_play_context(d, (uint32_t)SEL_UIM_LIST_QUEUE, 0u, sel_engine_state(d->engine)->queue_version, d->order[row], "");
 }
 
 /* One pointer event (DUI-P3-2): the region is found on the layout tree first, then the part inside it. Returns 1 when
@@ -14025,7 +14010,7 @@ static int select_active(const desk* d, sel_uim_list_id* l, uint32_t* rows) {
         l->id = r->list_id;
         l->version = r->list_version;
         *rows = r->list_kind == (uint32_t)SEL_UIM_LIST_QUEUE ? st->queue_count
-              : r->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST ? d->pls_n
+              : r->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST || r->list_kind == (uint32_t)SEL_UIM_LIST_COLLECTION ? d->pls_n
               : r->list_id >= 1000u ? lib_list_n(st) : (st->view != NULL ? st->view->row_count : 0u);
         return 1;
     }
@@ -14106,7 +14091,7 @@ static int select_key(desk* d, const sel_gui_input* ev) {
         uint32_t next;
         sel_uim_selset_bind(&d->sel, l);
         if (sel_uim_selset_count(&d->sel) == 0u) {
-            int32_t f = l.kind == (uint32_t)SEL_UIM_LIST_QUEUE ? d->q_focus : l.kind == (uint32_t)SEL_UIM_LIST_PLAYLIST ? 0
+            int32_t f = l.kind == (uint32_t)SEL_UIM_LIST_QUEUE ? d->q_focus : l.kind == (uint32_t)SEL_UIM_LIST_PLAYLIST || l.kind == (uint32_t)SEL_UIM_LIST_COLLECTION ? 0
                       : l.id >= 1000u ? d->lib_focus : (st->view != NULL ? (int32_t)st->view->cursor : 0);
             d->sel_cur = f < 0 ? 0u : (uint32_t)f;
             sel_uim_selset_select_one(&d->sel, d->sel_cur);
@@ -14136,7 +14121,7 @@ static int song_row_dblclick(desk* d, const sel_gui_input* ev) {
             d->clicks++;
             d->double_clicks++;
             d->row_plays++;
-            desk_play_path(d, d->sm_rows[i].ref.path);
+            desk_play_ref(d, &d->sm_rows[i].ref);
             return 1;
         }
     }
@@ -14587,6 +14572,38 @@ static int desk_send_path(desk* d, const char* verb, const char* path) {
 static int desk_play_path(desk* d, const char* path) {
     desk_send_path(d, "OPEN", path);
     return desk_send(d, "PLAY");
+}
+
+/* I994e: PLAY_CONTEXT for one row of a tagged list: the engine plays that row and queues the rest of the list behind it (design
+ * 2026-11-02-I994 section 6). The formatter is the shared uimodel one. Returns 1 when the engine took the line. */
+static int desk_play_context(desk* d, uint32_t kind, uint32_t id, uint32_t version, uint32_t index, const char* name) {
+    char line[256];
+    if (sel_uim_context_line(kind, id, version, index, name, line, sizeof line) == 0u) {
+        return 0;
+    }
+    return desk_send(d, line);
+}
+
+/* The context name a list's rows start under: the open page's name, "Search" for a search list, none for the queue. */
+static const char* desk_ctx_name(const desk* d, uint32_t kind) {
+    if (kind == (uint32_t)SEL_UIM_LIST_PLAYLIST || kind == (uint32_t)SEL_UIM_LIST_COLLECTION) {
+        return d->pls_name;
+    }
+    if (kind == (uint32_t)SEL_UIM_LIST_HITS || (kind == (uint32_t)SEL_UIM_LIST_VIEW && d->page == SEL_UIM_PG_SEARCH)) {
+        return "Search";
+    }
+    return "";
+}
+
+/* Plays the row a song_ref names: inside its list when the row is tagged, else the single song. */
+static int desk_play_ref(desk* d, const song_ref* r) {
+    if (r->list_kind == 0u) {
+        return desk_play_path(d, r->path);
+    }
+    if (r->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST) {
+        return desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, r->ctx_pos, d->pls_name);
+    }
+    return desk_play_context(d, r->list_kind, r->list_id, r->list_version, r->list_index, desk_ctx_name(d, r->list_kind));
 }
 
 /* A dropped file or folder (DUI-P5-11). A folder runs the LIBRARY_SCAN that Add Folder runs; a lone file
