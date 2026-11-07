@@ -454,6 +454,146 @@ What reads which file: `UP_ThemeReload` reads `ENV:UP-MCC/theme`. The page write
 
 Open: the `.mcp` links its own static copy of the theme store, so `UP_ThemeReload` inside the prefs process does not reach the application until the classes open `up-mcc.library`. How the MUI prefs list shows the page is unverified until a rig run.
 
+### 5.2 Truecolour draw path (I685w)
+
+Evidence: thoughts/spot/agent-reports/I685v.md (rig 2, 800x600 depth 24, real MUI 3.8 muimaster 19.35, Amarchy palette).
+Every colour of the shipped classes reaches the screen through a palette pen: `obtain()` / `aa_pen()`
+(`plugins/shared/mcc/src/mui_aa_draw.c:166-189`, ObtainBestPenA, EXACT then GUI precision from
+`map/mui_theme.c:91-98`). Amarchy holds or recolours the Workbench pens, so every token snaps to a Tokyo Night pen
+(census: 0E0E14 59%, 1A1B26 29%, 7AA2F7 10%, no Dark token at all). Only ttengine text is direct RGB today
+(`TTE_Foreground`, mui_aa_draw.c:391; the I667n note at mui_theme.c:85). A second pen source sits outside aa_draw: the
+`MUIA_Background` strings `"2:rrrrrrrr,gggggggg,bbbbbbbb"` (`mui_theme_bg_spec`, mui_theme.c:13) used by Panel
+(mui_aapanel_class.c:124, :177-178), Balance (mui_aabalance_class.c:114) and Field (mui_aafield_class.c:258, :263). MUI
+3.8 resolves those specs to an obtained pen itself (it has no RGB backfill), so the Panel face 141418 became 0E0E14
+through MUI, not through our code.
+
+Invariant: **on a screen of 15 or more bits every token RGB reaches the screen unchanged; nearest-pen snapping happens
+only on screens of 8 bits or less** (Johan accepted it there). The classes keep passing RGB; `mui_aa_draw.c` alone picks
+pen or direct RGB.
+
+**1. Detection.** Depth is read once now, `GetBitMapAttr(..., BMA_DEPTH)` at mui_aa_draw.c:238 (graphics V39; P96 and
+CGX patch it to report 15/16/24/32), but it only steers the ttengine backend (:243-251): with no font the context is
+`AA_PLAIN` and the depth is dropped, which is exactly rig 2 (ttengine absent). Decision:
+- New field `aa_ctx.tc` (mui_aa_draw.h:20-33), set in `aa_setup` independent of the font:
+  `tc = mui_aa_truecolour(depth, have_p96, have_cgx)`, a pure function in `map/mui_aa.c` (host tested), true when
+  `depth >= 15` and a direct-RGB writer is open.
+- Writer order: `Picasso96API.library` first, because the Replay has no cybergraphics.library (p96_write.h:1-2,
+  mui_canvas_class.c:2, backend_rtg.c:2-3; Canvas already opens it, mui_canvas_class.c:122), then
+  `cybergraphics.library` V41 (CGX systems; also the P96 emulation library where installed). Both opened once per
+  process next to `TTEngineBase` (pattern of :113-117) and closed in `aa_free` (:429-434). The existing machine probe
+  `src/core/amiga/machine.c:136` opens cybergraphics the same way.
+- 15+ bits with neither library: `tc = 0`, pen path as today, one `aa_log` line ("up-mcc: no RTG library, pens on a
+  truecolour screen"). Selected writer is logged once ("up-mcc: truecolour via Picasso96API") for the rig check.
+- No MUI 4/5 call is used; MUI is not involved in the decision. 68020 baseline unaffected (two library opens).
+- `AA_TC` (ttengine blending) keeps its own `depth >= 15` test; ttengine writes its own RGB and does not need `tc`.
+
+**2. Draw API.** Decision: **one span primitive `aa_rect(c, rp, x0, y0, x1, y1, rgb)`; on `c->tc` it calls
+`p96RectFill(rp, MinX, MinY, MaxX, MaxY, 0x00RRGGBB)`, else `SetAPen(rp, aa_pen(c, rgb))` + `RectFill`.** Fallback writer
+when P96 is absent: cybergraphics `FillPixelArray(rp, x, y, w, h, ARGB)`.
+- LVOs from the SDK fd files (bias 30, 6 per entry): p96RectFill -126 (`PICASSO96API_LIB.FD`; cross-check: the same count
+  gives p96WritePixelArray -102 = 0x66 in p96_write.h:23, p96BestModeIDTagList -60 = 0x3c and p96GetModeIDAttr -84 =
+  0x54 in backend_rtg.c:50,53), FillPixelArray -150 (`CYBERGRAPHICS_LIB.FD`). Called through `<inline/macros.h>` LP
+  macros in `plugins/shared/amiga/p96_write.h` (the one P96 header; add `p96_rect_fill` there) and a new sibling
+  `plugins/shared/amiga/cgx_fill.h`.
+- Both take a RastPort, so the layer and the MUI clip region apply exactly as for RectFill (the I667n clip note,
+  mui_aabalance_class.c:69).
+- Why not `SetRPAttrs(RPTAG_APenColor)`: that tag is graphics V51+ (OS4/MorphOS); OS3.x graphics V40 ignores it
+  (from knowledge, not found in the tree). Why not WritePixelArray: every MCC draw is a single-colour span; a pixel
+  buffer adds memory and copies for nothing.
+- Signature change, so the classes cannot keep a pen: `aa_round_fill`, `aa_round_fill_hole`, `aa_round_corners`,
+  `aa_round_frame` (mui_aa_draw.h:52-59) take `(aa_ctx* c, struct RastPort* rp, ..., uint32_t rgb)` and end in
+  `aa_rect`. `aa_pen` becomes static in mui_aa_draw.c (pen path only). Pen -1 still skips the span (as :418).
+- Runs: one emitter `aa_runs(c, rp, x, y, const UBYTE* slot, int n, const uint32_t* slot_rgb)` replaces the three run
+  loops: ramp text (mui_aa_draw.c:411-424), button icon (mui_aabtn_class.c:164-184, four ramp steps from
+  `mui_aa_ramp_rgb`) and plain text below. The icon keeps its four steps on truecolour (exact colours, no per-pixel
+  blend; that is a later row if wanted).
+- Plain text on truecolour (`AA_PLAIN` branch, mui_aa_draw.c:380-387): `Text()` needs a pen, so on `tc` the string is
+  drawn with `Text()` into a one-plane scratch RastPort (`AllocBitMap(w, h, 1, BMF_CLEAR, NULL)`, process-wide, grown on
+  demand, freed in `aa_free`), read back row by row with `ReadPixelLine8` (graphics V36, valid for any bitmap layout;
+  plane pointers are not safe under P96), and the set pixels go out through `aa_runs` in `fg`. The contrast gate
+  `mui_theme_text_uses_token` already treats truecolour as exact; pass `c->tc` there instead of `backend == AA_TC`.
+- Backgrounds: on `tc` a class does not rely on a MUI background spec. Panel paints its own face with
+  `aa_round_fill(c, ..., panel rgb)` in `aapanel_draw` before its super call (it already has `MUIA_FillArea FALSE`,
+  :178), so the gaps between children are the token too. Each class that erased through MUI (Area super draw with the
+  default FillArea, or `MUIM_DrawBackground` as Slider :139) calls a new `aa_erase(c, obj, x, y, w, h)`: on `tc` it fills
+  `c->bg_rgb` (the parent role colour, `mui_aa_panel_rgb`, recorded in `aa_setup` from the parent Panel or BACKGROUND)
+  and the class sets `MUIA_FillArea FALSE`; on pen screens it calls `MUIM_DrawBackground` as today. The `"2:"` specs stay
+  for the pen path and for stock MUI children.
+
+**3. Migration list.** Grep `aa_pen\|SetAPen\|RectFill` over `plugins/shared/mcc/src`: 10 class files plus
+mui_aatip.c plus mui_aa_draw.c. Cross-check against the section 1 class list (11 classes in 10 files; Slider and
+Progress share mui_aaslider_class.c): all 10 files are hit, none missing, no extra. The private classes (Canvas,
+VizArea, Listview) live in `plugins/ui/mui/` and are out of scope. Pre-hold calls (result dropped, run in setup) are
+deleted on `tc` and otherwise become the `rgb[]` list `aa_setup` already takes (:220, :252-254).
+
+| File (src/) | Call sites to change |
+|---|---|
+| mui_aa_draw.c | :166-189 obtain/aa_pen to static; :238-251 add `tc`; :252-254 no pre-hold on `tc`; :294-355 four helpers to rgb + `aa_rect`; :378-387 plain text; :407-424 ramp runs to `aa_runs`; :429 aa_free closes P96/CGX and the scratch bitmap |
+| mui_aa_draw.h | :49-59 signatures; `aa_rect`, `aa_runs`, `aa_erase`; `tc`, `bg_rgb` in `aa_ctx` |
+| mui_aatip.c | :202-204 (corner SetAPen+RectFill, face fill) |
+| class/mui_aabtn_class.c | pre-hold :72-76; icon runs :164, :183-184; fills/frames :217, :225, :231, :248 |
+| class/mui_aatext_class.c | pre-hold :58-59; draw :96 super erase to `aa_erase` |
+| class/mui_aapanel_class.c | :100 corners; new face fill in `aapanel_draw` (:96-104) |
+| class/mui_aatabs_class.c | held pen :52; SetAPen+RectFill :76-77 |
+| class/mui_aabalance_class.c | held pens :44-45 to rgb fields; SetAPen+RectFill :76-77, :80-81 |
+| class/mui_aaslider_class.c | Slider pre-hold :71-74, fills :141, frame :147, erase :139; Progress pre-hold :272-273, fills :304, :307 |
+| class/mui_aacycle_class.c | pre-hold :70-74; :133, :142, :147 |
+| class/mui_aafield_class.c | :66, :123 (string background pens), :151 |
+| class/mui_aalist_class.c | pre-hold :106-113; :168, :190, :193, :202, :204 |
+| class/mui_aascroller_class.c | pre-hold :46-47; :88, :90 |
+
+Field: the inner edit area is a stock `MUIC_String` with the `"2:"` spec (mui_aafield_class.c:43, :258); MUI 3.8
+draws its background and text with its own pens, so on truecolour the edit area stays nearest-pen. Accepted for this
+row (listed under open risks at the end of this section); a fix would replace the stock String, which is not in scope.
+
+**4. Host test.** mui_aa_draw.c is not host compiled; the mui tests check its source text (tests/ui/mui_aa_test.c:131,
+:648; `AADRAW_SOURCE`, tests/CMakeLists.txt:623) and no graphics/cybergraphics host stubs exist. So the span logic moves
+into the host-compiled map layer, the same ops seam as `mui_fontprobe_ops` (mui_aa_draw.c:122-129):
+- `src/map/mui_aa_paint.c/.h`: `mui_aa_paint_ops { void* ctx; int tc; void (*rect_rgb)(ctx, x0, y0, x1, y1, rgb);
+  void (*rect_pen)(ctx, x0, y0, x1, y1, long pen); long (*pen)(ctx, rgb); }` plus the pure `mui_aa_paint_rect`,
+  `_round_fill`, `_round_fill_hole`, `_round_corners`, `_round_frame`, `_runs`. `aa_rect` and the helpers in
+  mui_aa_draw.c become thin bindings: `rect_rgb` = p96RectFill or FillPixelArray, `rect_pen` = SetAPen+RectFill,
+  `pen` = obtain. The rounding math moves with them (one copy).
+- One reachability test `mcc-truecolour-path`: drives the Button draw plan the class iterates (the op list from
+  `map/mui_aa.c` behind mui_aabtn_class.c:217, plus the body at :231) through `mui_aa_paint_*` with a recording ops.
+  tc=1: `rect_rgb` count > 0, `rect_pen` and `pen` counts 0, the Play body span carries 2A2A32 (SURFACE_RAISED Dark)
+  exactly and every recorded RGB is a Dark token or a `mui_aa_ramp_rgb` step. tc=0: `rect_pen` count > 0, `rect_rgb` 0,
+  the pen asked for 2A2A32 (pen path unchanged). Same test asserts the `mui_aa_truecolour` table: (24,1,0)=1,
+  (24,0,1)=1, (15,1,0)=1, (24,0,0)=0, (8,1,1)=0.
+- Source guard in the existing mui_aa_test pattern: no class file contains `SetAPen`, `RectFill(` or `aa_pen(`;
+  mui_aa_draw.c's helpers call `mui_aa_paint_` and hold no RectFill loop of their own.
+- Limit: the binding to the P96/CGX LVOs is proven only on the rig (item 5).
+
+**5. Rig check (rig 2, `--ram 256`, fs-uae state per memory note before the brief).** Install ttengine stays a
+separate step of the same row and runs after the census so the census measures the plain-text path first.
+- 24-bit: Dark.theme, `RAM:UP-Demo HOLD`, full-window pixel census as in I685v. PASS: the census contains 141418
+  (panel), 2A2A32 (Play body), 3B82F6 (accent), C8C8D0 (text) and none of 0E0E14, 1A1B26, 7AA2F7 inside widget faces;
+  the log has "truecolour via Picasso96API"; all 11 bodies visible; Johan's eyes pass.
+- 8-bit: the same demo on an 8-bit screen (Workbench switched to a 256-colour mode on the rig, or a public screen of
+  depth 8). Take the census once on the pre-fix build and once on the fixed build: PASS when both are equal (pen path
+  unchanged) and the truecolour log line is absent.
+
+**6. Remaining I685w items, decided from source.**
+- Window width: **Balance binds.** mui_aabalance_class.c:59-61 sets `MaxWidth = MinWidth = w` unconditionally. Text
+  is unbounded unless `UPA_Text_Fixed` (mui_aatext_class.c:81-82, `mui_aa_text_maxw` map/mui_aa.c:512-514 returns
+  `MUI_AA_TEXT_UNBOUNDED`), and updemo.c:48 creates Text without that tag. A fixed-width splitter is the class's job, so
+  the fix is in the demo (updemo.c:56, case 4): put Balance in a horizontal group with a spacer so its column is not
+  clamped. Rig PASS: window opens at Screen(40) (320x240 on 800x600 per MUI rounding), not 182x234.
+- Tabs, Balance, Button body, Scroller knob and track, Cycle face, List box face: pen cause (snapped onto the fill
+  colour); fixed by items 1-2, no own fix.
+- List "no rows": not the pen cause. updemo.c:68 passes only `UPA_List_Count 20` with no display hook, so rows have
+  no text; demo fix: give the List a display hook with row strings.
+- Progress "no 30% fill": not explained by pens. updemo.c:62 sets 30/100, mui_aaslider_class.c:305-307 fills accent,
+  and the same accent pen 4473FF was visible on the Slider. Own check after the truecolour build: rig census of the
+  Progress cell; if still missing, log `fw` and `_mwidth` from `aaprogress_draw` (one rig run).
+- Text caption: not explained by pens. C8C8D0 snaps to A9B1D6 under GUI precision (present elsewhere in the census),
+  not to the 0E0E14 cell. Own check after truecolour: if the cell is still empty, log the `aa_text` x/y/len and
+  `_mwidth` of the Text object (suspect: baseline or clip, unverified).
+
+Open risks: MUI 3.8 may refill a group's gaps with the `"2:"` spec pen on refresh after the Panel face is drawn (rig
+census shows it); the plain-text scratch bitmap path costs one RectFill per run (unmeasured on a 68020 RTG); the Field
+edit area stays nearest-pen (above).
+
 ## 6. Icons and the Lucide licence
 
 Facts: AAButton draws baked Lucide icons (`mui_icon_body_wh` etc., mui_aabtn_class.c:130-142) from
@@ -665,8 +805,9 @@ One sonnet agent of about 30 tool calls per row. "P" means it can run in paralle
 | I685j | `AA.mcp` prefs + theme files + `AA_ThemeReload` | `prefs/aa_prefs.c`, `dist/themes/` | rig 2: MUI prefs shows page, Save changes theme file, open window updates | I685i | P with I685l |
 | I685k | Demo + final gate (section 10) | `demo/aademo.c` | section 10 gate items 1-5 | I685i, I685j | none |
 | I685l | Distribution: Installer, README, AutoDocs extraction, licence files, lha target, CI release asset | `dist/`, CI workflow | `lha l` lists layout of section 9; Installer run on rig 2 installs to right directories | I685i | P with I685j |
+| I685w | Truecolour draw path (section 5.2): `aa_ctx.tc`, `mui_aa_truecolour`, `map/mui_aa_paint` ops seam, `aa_rect`/`aa_runs`/`aa_erase` on p96RectFill (CGX FillPixelArray fallback), 10 class files + aatip off `aa_pen`/`SetAPen`; UP-Demo Balance cell and List hook; then ttengine on rig 2 | `src/mui_aa_draw.c/.h`, `src/map/mui_aa_paint.c/.h`, `src/map/mui_aa.c`, the 10 files of 5.2 item 3, `src/mui_aatip.c`, `plugins/shared/amiga/p96_write.h`, new `cgx_fill.h`, `demo/updemo.c`, tests | host `mcc-truecolour-path` (5.2 item 4) + source guard; Amiga build links; rig 2 24-bit census and 8-bit unchanged census (5.2 item 5); Johan's eyes on Dark | I685k | none |
 
-11 rows. First: I685b (skeleton spike) and I685c (move) in parallel; I685b first if only one slot, because it is the
+11 rows plus I685w. First: I685b (skeleton spike) and I685c (move) in parallel; I685b first if only one slot, because it is the
 only row that can prove the plan wrong.
 
 Amiga exemption: none; every row builds for Amiga (RULES 4a).
