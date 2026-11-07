@@ -12,4 +12,7 @@ LONG UP_ThemeSetTokens(const ULONG * rgb, ULONG count) (a0,d0)
 const ULONG * UP_ThemeTokens() ()
 LONG UP_IconFind(STRPTR name) (a0)
 LONG UP_SetFontFile(STRPTR path) (a0)
+LONG UP_ThemeAttach(APTR key, APTR obj, APTR app, APTR hook) (a0,a1,a2,a3)
+LONG UP_ThemeDetach(APTR key) (a0)
+ULONG UP_ThemeObjects() ()
 ==end

@@ -10,8 +10,12 @@
 
 #include "map/mui_icons.h"
 #include "map/mui_theme.h"
+#include "map/up_store.h"
 #if defined(__amigaos__) || defined(AMIGA)
 #include "mui_aa_draw.h"
+
+#include <clib/alib_protos.h>
+#include <libraries/mui.h>
 #endif
 
 /* STRPTR is unsigned char on Amiga: the store takes const char*. The library's own theme file (D5: ENV:UP-MCC/). Selecta keeps
@@ -19,9 +23,23 @@
  * ENV:UP-MCC/<application base>.theme from the design is not read yet. */
 #define UP_THEME_ENV "ENV:UP-MCC/theme"
 
+#if defined(__amigaos__) || defined(AMIGA)
+/* I685n: a recolour reaches the objects of every process. MUI objects may only be touched from the task that runs their application
+ * (MUI_Redraw from another task races the window's own drawing), so nothing is redrawn here: each registered object's application
+ * gets MUIM_Application_PushMethod, which MUI documents as callable from any task, with MUIM_CallHook on the hook the object's class
+ * library registered. The hook then runs on the application's own task and recolours the object there (mui_aa_draw.c). */
+static void push_one(void* user, void* key, void* obj, void* app, void* hook) {
+    (void)user;
+    (void)obj;
+    DoMethod((Object*)app, MUIM_Application_PushMethod, (ULONG)(uintptr_t)app, 3UL, MUIM_CallHook, (ULONG)(uintptr_t)hook,
+             (ULONG)(uintptr_t)key);
+}
+#endif
+
 static void retheme(void) {
 #if defined(__amigaos__) || defined(AMIGA)
-    (void)aa_retheme_all();
+    (void)aa_retheme_all(); /* contexts of this process (the static build: Selecta's own objects) */
+    up_registry_each(push_one, NULL);
 #endif
 }
 
@@ -64,4 +82,18 @@ LONG UP_IconFind(STRPTR name) {
 
 LONG UP_SetFontFile(STRPTR path) {
     return mui_font_file_add((const char*)path);
+}
+
+/* I685n: the registry of the one store (src/map/up_store.c). key: the object's draw context; hook: a struct Hook* whose entry runs
+ * on the application's task. */
+LONG UP_ThemeAttach(void* key, void* obj, void* app, void* hook) {
+    return up_registry_attach(key, obj, app, hook) == 0 ? 0 : -1;
+}
+
+LONG UP_ThemeDetach(void* key) {
+    return up_registry_detach(key) == 0 ? 0 : -1;
+}
+
+ULONG UP_ThemeObjects(void) {
+    return (ULONG)up_registry_count();
 }

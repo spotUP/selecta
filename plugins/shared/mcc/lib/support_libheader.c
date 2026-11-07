@@ -12,6 +12,7 @@
 #include <proto/muimaster.h>
 
 #include "libinit.h"
+#include "map/up_store.h"
 
 #define LIB_NAME "up-mcc.library"
 #define LIB_VER 1
@@ -76,11 +77,13 @@ LONG __stdargs __UserLibInit(struct Library* lib, REG(a4, APTR a4)) {
         close_libs();
         return 1;
     }
+    up_registry_init();
     return 0;
 }
 
 VOID __stdargs __UserLibCleanup(REG(a4, APTR a4)) {
     (void)a4;
+    up_registry_free();
     close_libs();
 }
 
@@ -94,4 +97,7 @@ ADDTABL_2(UP_ThemeSetTokens, a0, d0)
 ADDTABL_0(UP_ThemeTokens)
 ADDTABL_1(UP_IconFind, a0)
 ADDTABL_1(UP_SetFontFile, a0)
+ADDTABL_4(UP_ThemeAttach, a0, a1, a2, a3)
+ADDTABL_1(UP_ThemeDetach, a0)
+ADDTABL_0(UP_ThemeObjects)
 ADDTABL_END()
