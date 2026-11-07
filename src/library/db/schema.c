@@ -490,10 +490,13 @@ static int migrate_fresh(sqlite3* db, const sel_host* host) {
 }
 
 static int migrate_steps(sqlite3* db, const sel_host* host) {
-    int v = sel_schema_version(db);
+    int v;
     char pragma[40];
     int i;
 
+    sel_library_trace(host, "user_version read begin", 0);
+    v = sel_schema_version(db);
+    sel_library_trace(host, "user_version read done", v);
     if (v < 0 || v > MIGRATION_COUNT) { /* newer DB than this build: refuse, never downgrade */
         return 0;
     }
@@ -530,6 +533,7 @@ int sel_schema_migrate(sqlite3* db, const sel_host* host) {
     int ok;
 
     sqlite3_exec(db, "PRAGMA temp_store=FILE", NULL, NULL, NULL);
+    sel_library_trace(host, "PRAGMA temp_store=FILE done", 0);
     ok = migrate_steps(db, host);
     sqlite3_exec(db, "PRAGMA temp_store=DEFAULT", NULL, NULL, NULL);
     return ok;

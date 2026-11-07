@@ -251,7 +251,14 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
         goto fail;
     }
     sel_library_trace(host, "sqlite3_open_v2 done", 0);
-    if (!set_cache_size(lib->db) || !sel_schema_migrate(lib->db, host) || !sel_library_register_regexp(lib->db)) {
+    /* I625a8f: one trace line per statement between open_v2 and "migrate begin", so the log says which one pays for the first
+     * sqlite_master parse. */
+    sel_library_trace(host, "first statement begin PRAGMA cache_size", 0);
+    if (!set_cache_size(lib->db)) {
+        goto fail;
+    }
+    sel_library_trace(host, "PRAGMA cache_size done", 0);
+    if (!sel_schema_migrate(lib->db, host) || !sel_library_register_regexp(lib->db)) {
         goto fail;
     }
     sel_library_trace(host, "migrate and regexp done", 0);

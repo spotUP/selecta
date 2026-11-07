@@ -226,6 +226,25 @@ static int template_checks(const sel_host* host, const char* tpl) {
     log = slurp(logp, &in_n);
     CHECK(count_of(log, "template copied") == 1);
     CHECK(count_of(log, "final schema created v") == 0);
+    /* I625a8f: the statements between open_v2 and "migrate begin" each have their own trace line, in this order. */
+    {
+        static const char* const order[] = {"sqlite3_open_v2 done", "first statement begin PRAGMA cache_size", "PRAGMA cache_size done",
+                                            "PRAGMA temp_store=FILE done", "user_version read begin", "user_version read done",
+                                            "migrate begin from_version"};
+        const char* at = log;
+        size_t k;
+
+        for (k = 0; k < sizeof order / sizeof order[0]; k++) {
+            const char* hit = log == NULL ? NULL : strstr(at, order[k]);
+
+            if (hit == NULL) {
+                printf("FAIL line %d: trace line '%s' missing or out of order\n", __LINE__, order[k]);
+                g_fail++;
+                break;
+            }
+            at = hit + 1;
+        }
+    }
     free(log);
     /* sel_library_open configures the SQLite heap, which only works before any other SQLite use in the process. */
     CHECK(sqlite3_open(":memory:", &fresh) == SQLITE_OK);
