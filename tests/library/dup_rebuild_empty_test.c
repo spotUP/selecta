@@ -17,6 +17,7 @@
 static int g_fail;
 static int g_stmts;
 static int g_print;
+static int g_alter_dup;
 
 #define CHECK(c)                                        \
     do {                                                \
@@ -32,6 +33,7 @@ static int on_trace(unsigned type, void* ctx, void* p, void* x) {
         const char* sql = (const char*)x;
 
         g_stmts++;
+        if (sql != NULL && strncmp(sql, "ALTER TABLE songs ADD COLUMN dup_", 33) == 0) g_alter_dup++;
         if (g_print) printf("stmt %d: %.110s\n", g_stmts, sql != NULL ? sql : "?");
     } else if (type == SQLITE_TRACE_PROFILE && g_print) {
         printf("   profile %lld ns (%s)\n", (long long)*(sqlite3_int64*)x, sqlite3_sql((sqlite3_stmt*)p) != NULL ? "stmt" : "?");
@@ -65,7 +67,12 @@ int main(int argc, char** argv) {
 
     g_print = argc > 1;
     CHECK(sqlite3_open(":memory:", &db) == SQLITE_OK);
+    /* A fresh database creates the dup columns with songs: each ALTER TABLE ADD COLUMN reloads the whole schema (721 ms apiece on a
+     * 68020, I625a8b rig trace), and the rebuild itself is 10 ms. */
+    sqlite3_trace_v2(db, SQLITE_TRACE_STMT, on_trace, NULL);
     CHECK(sel_schema_migrate(db, NULL) != 0);
+    sqlite3_trace_v2(db, 0, NULL, NULL);
+    CHECK(g_alter_dup == 0);
     CHECK(sel_schema_version(db) == 18);
     run(db,
         "DROP TRIGGER IF EXISTS source_songs_state_ad; DROP TABLE source_state; DROP INDEX songs_dup_of; DROP TABLE dup_pick;"
