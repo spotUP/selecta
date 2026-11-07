@@ -1,2 +1,0 @@
-# I685c/I685e3: quoted includes from plugins/shared/mcc/src that resolve outside plugins/shared/mcc. Empty since I685e3; never add a line.
-# Format: <file relative to plugins/shared/mcc>: <include spelling>

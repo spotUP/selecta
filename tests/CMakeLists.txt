@@ -503,7 +503,7 @@ endif()
 # I685c: the MUI class package source tree; every test that reads a shipped class source starts from this one path.
 set(MCC_DIR "${PROJECT_SOURCE_DIR}/plugins/shared/mcc")
 add_test(NAME mcc-include-check COMMAND "${CMAKE_COMMAND}" "-DMCC_DIR=${MCC_DIR}" "-DUI_DIR=${PROJECT_SOURCE_DIR}/plugins/ui/mui"
-  "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DALLOW=${MCC_DIR}/include_allowlist.txt" "-DROOTS=${MCC_CHECK_ROOTS}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake")
+  "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DROOTS=${MCC_CHECK_ROOTS}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake")
 set_tests_properties(mcc-include-check PROPERTIES TIMEOUT 30)
 if(NOT SEL_AMIGA)
   add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
@@ -637,6 +637,12 @@ if(NOT SEL_AMIGA)
     set_tests_properties(mcc-log-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
   # I685e2 part 2: the package font search list (setter, theme key font.file, default) and the source check that no Selecta:/RAM: path remains.
+  # I685e4: the package links alone (no mui_map on the link line) and serves the baked icon table.
+  add_executable(mcc_link_test ui/mcc_link_test.c)
+  target_link_libraries(mcc_link_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-link-no-map COMMAND mcc_link_test)
+  set_tests_properties(mcc-link-no-map PROPERTIES TIMEOUT 30 LABELS mui)
+
   add_executable(mcc_font_list_test ui/mcc_font_list_test.c)
   target_link_libraries(mcc_font_list_test PRIVATE sel_mcc_static)
   target_compile_definitions(mcc_font_list_test PRIVATE "MCC_DIR=\"${MCC_DIR}\"")

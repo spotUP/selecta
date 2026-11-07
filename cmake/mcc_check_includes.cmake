@@ -1,14 +1,11 @@
 # MUI class package include check (design 2026-11-06-mui-mcc-package.md section 3.1, row I685c). Run as
 #   cmake -DMCC_DIR=<plugins/shared/mcc> -DUI_DIR=<plugins/ui/mui> -DSDK_DIR=<include/selecta>
-#         -DALLOW=<allow-list file> "-DROOTS=<include roots, | separated>" -P mcc_check_includes.cmake
+#         "-DROOTS=<include roots, | separated>" -P mcc_check_includes.cmake
 # A source under plugins/shared/mcc/src may include include/selecta (rule 3), its own tree, and nothing from src/ or
 # plugins/ui/mui. Resolution mirrors the compiler: the including file's directory, then ROOTS. ROOTS comes from the real
 # target (the INCLUDE_DIRECTORIES sel_mcc_static is compiled with, a generator expression in plugins/shared/mcc/CMakeLists.txt)
-# plus plugins/shared, which the target only has on Amiga builds, so a host run still sees the Amiga-only sources' includes.
-# A quoted include that resolves to ANY file outside MCC_DIR is an offender, and an offender passes only while ALLOW lists
-# "<file relative to MCC_DIR>: <include spelling>".
-# The allow-list is the decoupling debt of row I685e (aa_log, screen aspect, mui_aabtn_minmax, gfxbase): it must only
-# shrink. An allow-list line that no longer matches an offender fails the check, so the list cannot go stale.
+# and UI_DIR. A quoted include that resolves to ANY file outside MCC_DIR is an offender and fails the check (the allow-list
+# of rows I685c..I685e3 is gone since I685e4).
 get_filename_component(MCC_DIR "${MCC_DIR}" REALPATH)
 get_filename_component(UI_DIR "${UI_DIR}" REALPATH)
 string(REPLACE "|" ";" roots "${ROOTS}")
@@ -49,19 +46,11 @@ foreach(file IN LISTS files)
     endif()
   endforeach()
 endforeach()
-file(STRINGS "${ALLOW}" allow REGEX "^[^#]")
 foreach(f IN LISTS found)
-  if(NOT f IN_LIST allow)
-    string(APPEND bad "  ${f} resolves outside plugins/shared/mcc and is not in the allow-list\n")
-  endif()
-endforeach()
-foreach(a IN LISTS allow)
-  if(NOT a IN_LIST found)
-    string(APPEND bad "  allow-list line '${a}' matches no include any more: delete it\n")
-  endif()
+  string(APPEND bad "  ${f} resolves outside plugins/shared/mcc\n")
 endforeach()
 list(LENGTH found n_found)
 if(bad)
   message(FATAL_ERROR "[ERROR] MCC include check failed:\n${bad}")
 endif()
-message(STATUS "[OK] MCC include check: ${n_found} allow-listed includes outside the package")
+message(STATUS "[OK] MCC include check: no include outside the package")
