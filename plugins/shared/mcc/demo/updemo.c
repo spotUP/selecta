@@ -36,6 +36,16 @@ static const char* const g_names[CLASS_COUNT] = {"Button", "Text", "Panel", "Tab
 static const char* const g_cycle_entries[] = {"First", "Second", "Third", NULL};
 static const char* const g_tab_captions[] = {"Songs", "Albums", NULL};
 
+/* I685w: the List shows 20 rows of text; without a row hook it had no text to draw. */
+static struct Hook g_row_hook;
+static ULONG demo_row(struct Hook* hook, Object* obj, UP_ListCell* cell) {
+    static char text[32];
+    (void)hook;
+    (void)obj;
+    snprintf(text, sizeof text, "Track %ld", (long)cell->row + 1);
+    return (ULONG)(uintptr_t)text;
+}
+
 /* One instance of class `index` with the tags that class needs to be valid on its own; every class is created by file name. */
 static Object* make(int index) {
     char path[32];
@@ -63,7 +73,9 @@ static Object* make(int index) {
     case 9:
         return MUI_NewObject(path, UPA_Scroller_Entries, 100UL, UPA_Scroller_Visible, 10UL, TAG_DONE);
     default:
-        return MUI_NewObject(path, UPA_List_Count, 20UL, TAG_DONE);
+        g_row_hook.h_Entry = (__typeof__(g_row_hook.h_Entry))(void (*)(void))HookEntry;
+        g_row_hook.h_SubEntry = (__typeof__(g_row_hook.h_SubEntry))(void (*)(void))demo_row;
+        return MUI_NewObject(path, UPA_List_Count, 20UL, UPA_List_RowHook, (ULONG)(uintptr_t)&g_row_hook, TAG_DONE);
     }
 }
 
@@ -100,7 +112,12 @@ int main(int argc, char** argv) {
     if (ok == CLASS_COUNT) {
         for (i = 0; i < CLASS_COUNT; i++) {
             kids[k].ti_Tag = MUIA_Group_Child;
-            kids[k++].ti_Data = (ULONG)obj[i];
+            if (i == 4) { /* I685w: the Balance is one gap wide; in a grid cell it sits in a horizontal group with a spacer so the cell has a shape */
+                kids[k++].ti_Data = (ULONG)MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, MUIA_Group_Child, (ULONG)obj[i], MUIA_Group_Child,
+                                                         (ULONG)MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE), TAG_DONE);
+            } else {
+                kids[k++].ti_Data = (ULONG)obj[i];
+            }
         }
         /* Two columns, so the 11 classes fit a readable window instead of one narrow tall strip. */
         kids[k].ti_Tag = MUIA_Group_Columns;
