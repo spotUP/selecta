@@ -666,6 +666,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(mcc_support_api_test PRIVATE sel_mcc_static)
   add_test(NAME mcc-support-api COMMAND mcc_support_api_test)
   set_tests_properties(mcc-support-api PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685n (section 8.4, gate item 2): two class-library clients (src/map/up_store_client.c) bound to one library see one token array and
+  # one registry. The client file is compiled here without UP_CLASS_LIBRARY: only the instance API, no mui_theme_tokens forwarders.
+  add_executable(mcc_shared_store_test ui/mcc_shared_store_test.c "${MCC_DIR}/src/map/up_store_client.c")
+  target_link_libraries(mcc_shared_store_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-shared-store COMMAND mcc_shared_store_test)
+  set_tests_properties(mcc-shared-store PROPERTIES TIMEOUT 30 LABELS mui)
   # I685j: the UP-MCC.mcp prefs page, host part: theme writer round trip, gadget/token mapping, shipped theme files, the CMake name.
   # I685k: UP-Demo is built from the release headers only (no Selecta include path, no sel_mcc_static); the checked lists are the
   # ones target up_demo is built from (asserted in the Amiga part of the package CMakeLists).
