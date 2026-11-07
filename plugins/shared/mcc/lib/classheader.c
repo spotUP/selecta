@@ -23,6 +23,7 @@
 #ifdef UP_PREFS_LIBRARY
 /* I685j: the same skeleton builds UP-MCC.mcp. UP_CLASS_NAME is "MCC"; MCC_Query(1) returns the prefs class. */
 #define LIB_NAME "UP-" UP_CLASS_NAME ".mcp"
+extern const struct aa_class_desc up_prefs_class_desc; /* prefs/up_prefs.c */
 #else
 #define LIB_NAME "UP-" UP_CLASS_NAME ".mcc"
 #endif

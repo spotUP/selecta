@@ -50,25 +50,36 @@ __asm__(".text\n.even\n.globl _up_prefs_dispatch\n_up_prefs_dispatch:\n"
         "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
         "\tjbsr _up_prefs_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
 
+/* Explicit MUI_NewObject calls: the proto header makes MUI_NewObject a function-like macro, so the StringObject ... End shortcuts
+ * of mui.h (which close the argument list with a macro) do not expand correctly here. */
 static Object* hex_string(void) {
-    return StringObject, StringFrame, MUIA_String_MaxLen, 10, MUIA_String_Accept, (ULONG) "0123456789abcdefABCDEFxX#", End;
+    return MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_String, MUIA_String_MaxLen, 10UL, MUIA_String_Accept,
+                         (ULONG) "0123456789abcdefABCDEFxX#", TAG_DONE);
+}
+
+static Object* label(const char* text) {
+    return (Object*)MUI_MakeObject(MUIO_Label, (ULONG)text, (ULONG)MUIO_Label_DoubleFrame);
 }
 
 static ULONG prefs_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     Object *file, *pop, *accent, *surface, *text, *background, *radius, *reset, *page;
     struct TagItem tags[3];
     prefs_data* d;
-    file = StringObject, StringFrame, MUIA_String_MaxLen, 255, End;
-    pop = PopaslObject, MUIA_Popasl_Type, ASL_FileRequest, MUIA_Popstring_String, file, MUIA_Popstring_Button, PopButton(MUII_PopFile), End;
+    file = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_String, MUIA_String_MaxLen, 255UL, TAG_DONE);
+    pop = MUI_NewObject((char*)MUIC_Popasl, MUIA_Popasl_Type, (ULONG)ASL_FileRequest, MUIA_Popstring_String, (ULONG)file,
+                        MUIA_Popstring_Button, (ULONG)MUI_MakeObject(MUIO_PopButton, (ULONG)MUII_PopFile), TAG_DONE);
     accent = hex_string();
     surface = hex_string();
     text = hex_string();
     background = hex_string();
-    radius = SliderObject, MUIA_Numeric_Min, 0, MUIA_Numeric_Max, 32, MUIA_Numeric_Value, 6, End;
-    reset = SimpleButton("Reset to defaults");
-    page = ColGroup(2), Child, Label2("Theme file"), Child, pop, Child, Label2("Accent colour"), Child, accent, Child, Label2("Surface colour"),
-           Child, surface, Child, Label2("Text colour"), Child, text, Child, Label2("Background colour"), Child, background, Child,
-           Label2("Corner radius"), Child, radius, Child, HVSpace, Child, reset, End;
+    radius = MUI_NewObject((char*)MUIC_Slider, MUIA_Numeric_Min, 0UL, MUIA_Numeric_Max, 32UL, MUIA_Numeric_Value, 6UL, TAG_DONE);
+    reset = (Object*)MUI_MakeObject(MUIO_Button, (ULONG) "Reset to defaults");
+    page = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Columns, 2UL, MUIA_Group_Child, (ULONG)label("Theme file"), MUIA_Group_Child,
+                         (ULONG)pop, MUIA_Group_Child, (ULONG)label("Accent colour"), MUIA_Group_Child, (ULONG)accent, MUIA_Group_Child,
+                         (ULONG)label("Surface colour"), MUIA_Group_Child, (ULONG)surface, MUIA_Group_Child, (ULONG)label("Text colour"),
+                         MUIA_Group_Child, (ULONG)text, MUIA_Group_Child, (ULONG)label("Background colour"), MUIA_Group_Child,
+                         (ULONG)background, MUIA_Group_Child, (ULONG)label("Corner radius"), MUIA_Group_Child, (ULONG)radius,
+                         MUIA_Group_Child, (ULONG)MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE), MUIA_Group_Child, (ULONG)reset, TAG_DONE);
     if (page == NULL) {
         return 0;
     }
