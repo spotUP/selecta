@@ -3276,6 +3276,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_schema_tx_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-schema-tx COMMAND library_schema_tx_test ${CMAKE_CURRENT_BINARY_DIR})
   set_tests_properties(library-schema-tx PROPERTIES PASS_REGULAR_EXPRESSION "schema_tx_ok")
+  # I625a8b: the v18 step on an empty songs table issues no slice statements (sel_dup_rebuild cost 1657 ms there at 68020 speed).
+  add_executable(library_dup_rebuild_empty_test library/dup_rebuild_empty_test.c)
+  target_include_directories(library_dup_rebuild_empty_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_dup_rebuild_empty_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-dup-rebuild-empty COMMAND library_dup_rebuild_empty_test)
+  set_tests_properties(library-dup-rebuild-empty PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "dup_rebuild_empty_ok")
   set_tests_properties(library-write-gen PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "write_gen_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
