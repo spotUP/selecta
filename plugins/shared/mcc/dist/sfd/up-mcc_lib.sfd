@@ -1,0 +1,15 @@
+==id $Id: up-mcc_lib.sfd 1.0 (07.11.2026) $
+* UP- MUI class package support library (design 2026-11-06-mui-mcc-package.md section 8.4). Table order = the ADDTABL order in lib/support_libheader.c.
+==base _UPMCCBase
+==basetype struct Library *
+==libname up-mcc.library
+==bias 30
+==public
+==include <exec/types.h>
+LONG UP_ThemeLoad(STRPTR path) (a0)
+LONG UP_ThemeReload() ()
+LONG UP_ThemeSetTokens(const ULONG * rgb, ULONG count) (a0,d0)
+const ULONG * UP_ThemeTokens() ()
+LONG UP_IconFind(STRPTR name) (a0)
+LONG UP_SetFontFile(STRPTR path) (a0)
+==end

@@ -16,6 +16,7 @@ typedef ULONG UP_Data; /* ti_Data */
 #include <stdint.h>
 typedef uint32_t ULONG;
 typedef int32_t LONG;
+typedef char* STRPTR;
 typedef uintptr_t UP_Data; /* ti_Data: wide enough for a pointer on the host */
 typedef ULONG Object;
 #define TAG_DONE 0UL
@@ -195,3 +196,6 @@ enum {
 };
 
 #endif
+
+/* Support library functions (UP_ThemeLoad, UP_IconFind, ...). */
+#include "up_lib.h"

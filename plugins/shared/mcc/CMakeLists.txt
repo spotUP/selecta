@@ -10,7 +10,7 @@ set(MCC_AMIGA_SOURCES src/mui_aa_draw.c src/mui_aatip.c
   src/class/mui_aabtn_class.c src/class/mui_aatext_class.c src/class/mui_aapanel_class.c src/class/mui_aatabs_class.c
   src/class/mui_aabalance_class.c src/class/mui_aaslider_class.c src/class/mui_aacycle_class.c src/class/mui_aalist_class.c
   src/class/mui_aascroller_class.c src/class/mui_aafield_class.c)
-set(MCC_SOURCES ${MCC_MAP_SOURCES})
+set(MCC_SOURCES ${MCC_MAP_SOURCES} lib/support_lib.c)
 if(SEL_AMIGA)
   list(APPEND MCC_SOURCES ${MCC_AMIGA_SOURCES})
 endif()
@@ -72,3 +72,30 @@ set_target_properties(mcc_spike PROPERTIES OUTPUT_NAME "mcc-spike")
 target_link_libraries(mcc_spike PRIVATE mui)
 # stabs.h emits the function table with asm() at file scope; -std=c99 hides the asm keyword, so the one file that uses it gets -fasm
 set_source_files_properties(lib/libheader.c PROPERTIES COMPILE_OPTIONS "-fasm")
+
+# I685h: up-mcc.library, the support library (theme, icons, font list; design section 8.4). Same skeleton as the spike; the
+# functions are lib/support_lib.c from sel_mcc_static (also linked by the Selecta plugin), the table is in lib/support_libheader.c.
+add_executable(up_mcc_library "${MCC_LIBINIT_O}" lib/support_libheader.c)
+set_target_properties(up_mcc_library PROPERTIES OUTPUT_NAME "up-mcc.library")
+target_include_directories(up_mcc_library PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include")
+target_link_libraries(up_mcc_library PRIVATE sel_mcc_static)
+target_link_options(up_mcc_library PRIVATE -nostartfiles)
+set_source_files_properties(lib/support_libheader.c PROPERTIES COMPILE_OPTIONS "-fasm")
+
+# The SFD file generates the C headers a client includes (proto/up_mcc.h, inline/up_mcc.h, clib/up_mcc_protos.h, pragmas) at build
+# time with sfdc. up_mcc_header_check compiles a client against them.
+set(MCC_SFDC "$ENV{HOME}/opt/amiga/bin/sfdc" CACHE FILEPATH "sfdc, the SFD to header generator")
+set(MCC_SFD "${CMAKE_CURRENT_SOURCE_DIR}/dist/sfd/up-mcc_lib.sfd")
+set(MCC_SFD_INC "${CMAKE_CURRENT_BINARY_DIR}/sfd_include")
+set(MCC_SFD_HEADERS "${MCC_SFD_INC}/proto/up_mcc.h" "${MCC_SFD_INC}/inline/up_mcc.h" "${MCC_SFD_INC}/clib/up_mcc_protos.h"
+  "${MCC_SFD_INC}/pragmas/up_mcc_pragmas.h")
+add_custom_command(
+  OUTPUT ${MCC_SFD_HEADERS}
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${MCC_SFD_INC}/proto" "${MCC_SFD_INC}/inline" "${MCC_SFD_INC}/clib" "${MCC_SFD_INC}/pragmas"
+  COMMAND "${MCC_SFDC}" -q --target=m68k-amigaos --mode=proto "${MCC_SFD}" -o "${MCC_SFD_INC}/proto/up_mcc.h"
+  COMMAND "${MCC_SFDC}" -q --target=m68k-amigaos --mode=macros "${MCC_SFD}" -o "${MCC_SFD_INC}/inline/up_mcc.h"
+  COMMAND "${MCC_SFDC}" -q --target=m68k-amigaos --mode=clib "${MCC_SFD}" -o "${MCC_SFD_INC}/clib/up_mcc_protos.h"
+  COMMAND "${MCC_SFDC}" -q --target=m68k-amigaos --mode=pragmas "${MCC_SFD}" -o "${MCC_SFD_INC}/pragmas/up_mcc_pragmas.h"
+  DEPENDS "${MCC_SFD}" COMMENT "sfdc: headers of up-mcc.library")
+add_library(up_mcc_header_check OBJECT demo/support_header_check.c ${MCC_SFD_HEADERS})
+target_include_directories(up_mcc_header_check PRIVATE "${MCC_SFD_INC}" "${MCC_DIR}/include")
