@@ -361,7 +361,7 @@ static int migration_apply(sqlite3* db, int index) {
 
 /* I625a8: a database with user_version 0 has nothing to protect, so all migrations run in ONE transaction and one COMMIT
  * (one journal create, sync and delete). The per-version commits of an upgrade cost 18 journal cycles on the 68020 IDE disk. */
-static int migrate_fresh(sqlite3* db, const sel_host* host) {
+static int migrate_chain_fresh(sqlite3* db, const sel_host* host) {
     char pragma[40];
     int i;
 
@@ -385,6 +385,10 @@ static int migrate_fresh(sqlite3* db, const sel_host* host) {
     }
     sel_library_trace(host, "fresh migration committed", MIGRATION_COUNT);
     return 1;
+}
+
+static int migrate_fresh(sqlite3* db, const sel_host* host) {
+    return migrate_chain_fresh(db, host);
 }
 
 static int migrate_steps(sqlite3* db, const sel_host* host) {
@@ -429,6 +433,17 @@ int sel_schema_migrate(sqlite3* db, const sel_host* host) {
 
     sqlite3_exec(db, "PRAGMA temp_store=FILE", NULL, NULL, NULL);
     ok = migrate_steps(db, host);
+    sqlite3_exec(db, "PRAGMA temp_store=DEFAULT", NULL, NULL, NULL);
+    return ok;
+}
+
+/* The migration chain alone, even on a user_version 0 database: the invariant test (library-schema-final) builds the reference schema
+ * with it and compares it with what sel_schema_migrate makes. Not used by the product. */
+int sel_schema_migrate_chain(sqlite3* db, const sel_host* host) {
+    int ok;
+
+    sqlite3_exec(db, "PRAGMA temp_store=FILE", NULL, NULL, NULL);
+    ok = sel_schema_version(db) == 0 ? migrate_chain_fresh(db, host) : migrate_steps(db, host);
     sqlite3_exec(db, "PRAGMA temp_store=DEFAULT", NULL, NULL, NULL);
     return ok;
 }

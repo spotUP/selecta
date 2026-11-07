@@ -3290,6 +3290,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_dup_rebuild_empty_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-dup-rebuild-empty COMMAND library_dup_rebuild_empty_test)
   set_tests_properties(library-dup-rebuild-empty PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "dup_rebuild_empty_ok")
+  # I625a8c: a fresh library.db comes from SCHEMA_FINAL (no ALTER) and equals what the 18 migrations leave.
+  add_executable(library_schema_final_test library/schema_final_test.c)
+  target_include_directories(library_schema_final_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_schema_final_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-schema-final COMMAND library_schema_final_test)
+  set_tests_properties(library-schema-final PROPERTIES LABELS "m3;library" TIMEOUT 30 PASS_REGULAR_EXPRESSION "schema_final_ok")
   set_tests_properties(library-write-gen PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "write_gen_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
