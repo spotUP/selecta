@@ -58,6 +58,8 @@ jobs:
   # song, and the two desktop-console frame rows need host targets not built here.
   amiga-68020:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     container:
       image: liv2/amiga-gcc:main@sha256:570461426e8eabdde4f7507da62ed985a9c07147ecb12d0754d85678255eb34d
     steps:
@@ -80,3 +82,29 @@ jobs:
         run: cmake --build build/host --target selecta-cli
       - name: Test (vamos)
         run: ctest --test-dir build/host -R amiga -E 'render-golden|amiga-machine$|amiga-text-ui-vamos|amiga-console-first-frame-vamos' --output-on-failure
+      # I685l: the UP-MCC package (design 2026-11-06-mui-mcc-package.md section 9). lha is not known to be in the image: try to install
+      # one (a failure is not fatal); without lha the staged drawer is zipped instead. No Aminet upload (row I685m).
+      - name: Build UP-MCC package
+        run: |
+          (apt-get install -y lha || apt-get install -y jlha-utils) >/dev/null 2>&1 || true
+          cmake -S . -B build/amiga >/dev/null
+          cmake --build build/amiga --target up_mcc_dist
+          cd build/amiga/plugins/shared/mcc/dist
+          if [ ! -f UP-MCC.lha ]; then cmake -E tar cf UP-MCC.zip --format=zip UP-MCC; fi
+          ls -l
+      - name: Upload UP-MCC package
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-MCC
+          path: |
+            build/amiga/plugins/shared/mcc/dist/UP-MCC.lha
+            build/amiga/plugins/shared/mcc/dist/UP-MCC.zip
+            build/amiga/plugins/shared/mcc/dist/UP-MCC.readme
+          if-no-files-found: error
+      - name: Attach UP-MCC to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd build/amiga/plugins/shared/mcc/dist
+          gh release upload "${GITHUB_REF_NAME}" UP-MCC.readme $(ls UP-MCC.lha UP-MCC.zip 2>/dev/null) --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
