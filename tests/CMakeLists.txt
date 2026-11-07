@@ -3313,6 +3313,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-schema-final COMMAND library_schema_final_test)
   set_tests_properties(library-schema-final PROPERTIES LABELS "m3;library" TIMEOUT 30 PASS_REGULAR_EXPRESSION "schema_final_ok")
   # I625a8e: the prebuilt template database equals SCHEMA_FINAL, and a missing library.db is copied from it.
+  add_dependencies(library_schema_final_test library_template)
   add_test(NAME library-template-schema COMMAND library_schema_final_test --template ${CMAKE_BINARY_DIR}/library-template.db)
   set_tests_properties(library-template-schema PROPERTIES LABELS "m3;library" TIMEOUT 30 PASS_REGULAR_EXPRESSION "template_ok")
   set_tests_properties(library-write-gen PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "write_gen_ok")

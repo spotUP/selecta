@@ -124,3 +124,29 @@ if(NOT SEL_AMIGA)
     message(STATUS "Song length database skipped: pass -DSELECTA_SONGLENGTHS_TSV=<songlengths.tsv> to bake songlengths.bin")
   endif()
 endif()
+
+# Prebuilt empty library database (I625a8e): a cold first start ran the 65 DDL statements of SCHEMA_FINAL, 3336 ms on a 68020
+# (I625a8d). tools/library_template_bake.c runs the same sel_schema_migrate at build time and writes <build>/library-template.db;
+# sel_library_open copies it next to the new library.db (SEL_LIBTEMPLATE_NAME, db.h) and falls back to the DDL when it is
+# missing. Install it in the same directory as library.db (the config dir), like songlengths.bin. A SQLite file is platform
+# independent. The Amiga cross build cannot run a tool it builds, so it takes the host-built one:
+# -DSELECTA_TEMPLATEBAKE_EXE=<path to the host library_template_bake>; without it no file is made and the DDL path stays.
+if(NOT SEL_AMIGA)
+  add_executable(library_template_bake ${PROJECT_SOURCE_DIR}/tools/library_template_bake.c)
+  target_link_libraries(library_template_bake PRIVATE selecta_library selecta_core)
+  set(LIBTEMPLATE_CMD library_template_bake)
+  set(LIBTEMPLATE_DEP library_template_bake)
+elseif(SELECTA_TEMPLATEBAKE_EXE)
+  set(LIBTEMPLATE_CMD "${SELECTA_TEMPLATEBAKE_EXE}")
+  set(LIBTEMPLATE_DEP "${SELECTA_TEMPLATEBAKE_EXE}")
+endif()
+if(LIBTEMPLATE_CMD)
+  add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/library-template.db
+    COMMAND ${LIBTEMPLATE_CMD} ${CMAKE_BINARY_DIR}/library-template.db
+    DEPENDS ${LIBTEMPLATE_DEP} ${CMAKE_CURRENT_SOURCE_DIR}/db/schema.c ${CMAKE_CURRENT_SOURCE_DIR}/db/schema.h
+    COMMENT "Baking the library template database")
+  add_custom_target(library_template ALL DEPENDS ${CMAKE_BINARY_DIR}/library-template.db)
+else()
+  message(STATUS "Library template database skipped: pass -DSELECTA_TEMPLATEBAKE_EXE=<host library_template_bake> on the Amiga build")
+endif()
