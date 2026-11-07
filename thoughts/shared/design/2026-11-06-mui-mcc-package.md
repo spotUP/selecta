@@ -329,7 +329,12 @@ State after the build (I685e1, 2026-11-06), two places where the rule above does
   the pad to MUI as `MUIA_InnerLeft/Right/Top/Bottom` and group spacing at object creation, and the spec carried
   `int aspect_q8` filled by the program (Selecta passed `g_pixel_aspect_q8`). A program then had to know its screen's
   pixel shape before it built a panel; a public class should not ask for that. 4.1.1 replaces the inner offsets with
-  the panel's own layout and removes the spec field.
+  the panel's own layout and removes the spec field. BUILT 2026-11-07 (I685e5, commits ef17bf66 rebased into main):
+  outer class plus an inner plain vertical group passed as `MUIA_Group_Child` at creation (not added afterwards: during
+  `OM_NEW` the forwarding target does not exist yet, so the add would fall to the super class), one shared static
+  `g_layout_hook`, the pad computed only in `aapanel_pad()` from the hook and from Setup, no `aspect_q8` in the spec,
+  no `MUIA_Inner*` in the class. Rig check still owed (MCC batch): PAL 640x256 and 640x512 pad 8,8 and 4,4 as before,
+  every child of the sidebar, player, main and detail panels visible, art frames without pad, RTG unchanged.
 - Field (no exception needed). `mui_aafield_new` calls `mui_aa_field_metrics(0, 256, &m)` and uses only `pad_x`,
   `pad_y` and `outline`, which are constants in that function; height and radius, the two aspect-dependent values,
   come from the call in setup with `d->aa.aspect_q8`.
@@ -360,7 +365,9 @@ Mechanism, two objects per panel so MUI's own group layout keeps doing the child
   set to ONE static `struct Hook` shared by every panel (`h_Entry = HookEntry`, `h_SubEntry` = the C function; the
   pattern of `g_list_hook` in mui_ui.c). Its only MUI child is the inner group; `mui_aapanel_new` adds it before it
   returns.
-- Inner object: a plain `MUIC_Group`, vertical, the container of the program's children. `OM_ADDMEMBER` and
+- Inner object: a plain `MUIC_Group`, vertical, the container of the program's children, passed to the outer object as
+  `MUIA_Group_Child` at creation (build note 2026-11-07: adding it after `OM_NEW` is impossible, the dispatcher's
+  forwarding target is the inner group itself and does not exist yet). `OM_ADDMEMBER` and
   `OM_REMMEMBER` sent to the panel are forwarded to the inner group by the dispatcher, so callers keep adding to the
   panel object and nothing outside the class changes. The inner group carries no background of its own and inherits
   the role colour, so the pad and the gaps between children stay one colour, as before.
