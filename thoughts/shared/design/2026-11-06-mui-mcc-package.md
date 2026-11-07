@@ -632,6 +632,16 @@ and after with zero assertions removed: count `mui-*` tests registered (145 on 2
    a CMake check compares `sel_mcc_static` sources with the union of `.mcc` sources and fails on any difference.
 5. Selecta on rig 2 runs its normal MUI rig suite (`rig-mui-*`) with the classes statically linked.
 
+**State after row I685k (2026-11-07):** `plugins/shared/mcc/demo/updemo.c` (target `up_demo`, output `UP-Demo`) is a
+plain MUI 3.8 program that includes only system headers and `<mcc/up.h>`. It creates all 11 classes by name with
+`MUI_NewObject("UP-<Name>.mcc")`, reads the sentinel attribute `UPA_Shared_Origin` (tag 0x33 in the shared class
+index, GET only, returns the library base, NULL in the static build) and prints `[OK] <class> from MUI:Libs/mui`
+or `[ERROR] <class>`; exit 0 or 20. The sentinel is answered by a dispatcher wrapper in the shared skeleton
+`lib/classheader.c`, not in the 11 class files; the static build is not wrapped and answers 0. Ctest
+`mcc-demo-headers-only` checks the demo uses release headers only; `mcc-shared-origin` tests the routing; a
+post-build `m68k-amigaos-nm` check on UP-Demo fails on `aa_*` or dispatcher symbols. Gate item 4 reuses ctest
+`mcc-classlibs-source`. Gate item 2 (theme reload) waits for I685n. Rig steps: `demo/RIGSTEPS-I685k.txt`.
+
 ---
 
 ## 11. Build rows
