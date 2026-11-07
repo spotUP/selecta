@@ -1,0 +1,22 @@
+Short:        MUI 3.8 custom classes with a modern flat look
+Author:       spotUP
+Uploader:     spotUP
+Type:         dev/mui
+Version:      1.0
+Architecture: m68k-amigaos >= 3.0.0
+Requires:     MUI 3.8
+URL:          https://github.com/spotUP/selecta
+Replaces:     -
+
+UP-MCC is a package of eleven MUI 3.8 custom classes (UP-Button, UP-Text, UP-Panel,
+UP-Tabs, UP-Balance, UP-Slider, UP-Progress, UP-Cycle, UP-Field, UP-Scroller, UP-List),
+a preferences class (UP-MCC.mcp), the support library up-mcc.library, the Inter font,
+dark and light theme files, programmer headers, AutoDoc files and a demonstration
+program with its source.
+
+Install with the Installer script Install-UP-MCC. The classes use ttengine.library for
+anti-aliased text when it is installed (optional, not included); without it they draw
+plain text.
+
+Licence: MIT for the package code. Lucide icons: ISC. Inter font: SIL Open Font License 1.1.
+Source: https://github.com/spotUP/selecta
