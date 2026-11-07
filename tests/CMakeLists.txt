@@ -636,6 +636,10 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-tagmap COMMAND mui_tagmap_test tags)
   add_test(NAME mui-tagmap-source COMMAND mui_tagmap_test source)
   set_tests_properties(mui-tagmap mui-tagmap-source PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685i: the eleven UP-*.mcc libraries compile the same class sources as sel_mcc_static (host check of the lists both builds use).
+  add_test(NAME mcc-classlibs-source COMMAND "${CMAKE_COMMAND}" "-DLIB_SOURCES=${MCC_CLASS_LIB_SOURCES}" "-DSTATIC_SOURCES=${MCC_AMIGA_SOURCES}"
+    -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_classlibs.cmake")
+  set_tests_properties(mcc-classlibs-source PROPERTIES TIMEOUT 30 LABELS mui)
   # I685e2: the package log gate (aa_log quiet unless UP_MCC_DEBUG / ENV:UP-MCC/Debug is set) and the source check that no other stderr writer remains.
   add_executable(mcc_log_test ui/mcc_log_test.c)
   target_link_libraries(mcc_log_test PRIVATE sel_mcc_static)
