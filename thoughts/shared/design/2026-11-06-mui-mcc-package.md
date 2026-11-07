@@ -323,6 +323,21 @@ Rule:
    today. Unverified on hardware: that Picasso96 (uaegfx) fills `dri_Resolution` with the same values as
    `DisplayInfo.Resolution`. The rig check below decides it.
 
+State after the build (I685e1, 2026-11-06), two places where the rule above does not apply as written:
+
+- Panel (exception, open as row I685e5). `mui_aapanel_new` hands the pad to MUI as `MUIA_InnerLeft/Right/Top/Bottom`
+  and group spacing at object creation. MUI 3.8 takes the inner offsets only at creation, and no DrawInfo exists
+  before `MUIM_Setup`, so the panel cannot read `_dri(obj)` for them. The panel spec therefore carries
+  `int aspect_q8`, filled by the program (Selecta passes `g_pixel_aspect_q8`). This keeps the global out of the
+  package, but a program must know its screen's pixel shape before it builds a panel; a public class should not ask
+  for that. Row I685e5 decides how the panel gets its vertical pad from its own screen at setup.
+- Field (no exception needed). `mui_aafield_new` calls `mui_aa_field_metrics(0, 256, &m)` and uses only `pad_x`,
+  `pad_y` and `outline`, which are constants in that function; height and radius, the two aspect-dependent values,
+  come from the call in setup with `d->aa.aspect_q8`.
+- Selecta side: the layout helpers that read the old global (`mui_button_height`, `mui_columns_format`,
+  `mui_sidebar_chips_single`, `mui_viz_fit`, `mui_vizset_step`, `mui_vizarea_new`, `mui_model_icon_h`) take
+  `aspect_q8` as an argument and get `g_pixel_aspect_q8` from mui_ui.c (rule point 4).
+
 Checks for the row:
 
 - Host: `mui_pixel_aspect_q8` cases stay; a new case proves each of the five metrics functions returns the tall-pixel
