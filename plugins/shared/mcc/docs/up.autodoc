@@ -116,6 +116,32 @@
 *
 ******/
 
+/****** UP-Slider.mcc/UP-Slider.mcc ******
+*
+*   NAME
+*       UP-Slider.mcc -- MUI class, themed horizontal slider
+*
+*   FUNCTION
+*       The class has no UPA_ attributes of its own: it is driven by the standard MUI numeric attributes MUIA_Numeric_Min, MUIA_Numeric_Max and MUIA_Numeric_Value (and MUIA_FixWidth). Create it with MUI_NewObject("UP-Slider.mcc", ...) or UP_NewSlider.
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP_NewSlider
+*
+******/
+
+/****** UP-Balance.mcc/UP-Balance.mcc ******
+*
+*   NAME
+*       UP-Balance.mcc -- MUI class, themed balance (divider) between two group children
+*
+*   FUNCTION
+*       The class has no UPA_ attributes of its own: it is used like the MUI Balance class. Create it with MUI_NewObject("UP-Balance.mcc", ...) or UP_NewBalance.
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP_NewBalance
+*
+******/
+
 /****** UP-Progress.mcc/UPA_Progress_Value ******
 *
 *   NAME
