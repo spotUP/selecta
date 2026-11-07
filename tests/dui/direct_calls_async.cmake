@@ -279,7 +279,7 @@ message(STATUS "site5_ok turn_ms_max=${s5_turn} pl_posts=${s5_posts} pl_takes=${
 
 # --- I906f write: picking the playlist `alpha` sends PLAYLIST_ADD_SONG, which the library write queue runs on the writer thread. The
 # write is slowed 300 ms (WRITE knob): the pump and the turn stay under 50 ms, no watched wait, and lib_writes_done proves the queued write ran.
-math(EXPR piy "${qy} + 12")
+math(EXPR piy "${qy} + 24 + 12") # I632: item 0 is New Playlist..., `alpha` is item 1
 sites_click(c6c 3300 1 "${qix},${piy}")
 sites_live(s6 "${c5a} ${c5b} ${c6c} q@6000" SOCK s6 KNOBS SELECTA_LIB_WRITE_SLOW_MS ARGS --db "${sites_db}" --view queue ${q5_exec})
 if(NOT "${s6}" MATCHES "ui_stats_pump id=desktop pump_ms_max=([0-9]+) lib_ui_guard_hits=([0-9]+) lib_ui_allowed_waits=([0-9]+) lib_ui_watched_waits=([0-9]+)")

@@ -452,6 +452,11 @@ typedef struct desk {
     song_row sm_rows[SM_ROWS]; /* the song rows drawn in the main region this frame: the one registry every page feeds */
     sel_engine_library_item sm_pls[8]; /* the song menu's Add to Playlist step: all playlists, not the sidebar's filtered list */
     uint32_t sm_pl_n, sm_want, sm_inflight, sm_posts, sm_takes; /* I906e: the Add to Playlist list is read on the engine's items slot, shared with the sidebar's (one at a time) */
+    uint32_t sm_multi_n;    /* I632: songs the open song menu acts on when it was opened on a selected row of a multi-selection (0 = the one row, sm_ref) */
+    uint32_t sm_multi_ver;  /* the selection's list version, frozen at open */
+    char sm_multi_list[24]; /* the engine's name of that list: queue, view or playlist:<id> */
+    char sm_multi_ranges[256]; /* the selection as ranges text in list order */
+    uint32_t sm_multi_adds; /* SONGS_PLAYLIST_ADD lines sent from the song menu */
     uint32_t sm_n, sm_opens, sm_picks, sm_pl_adds;
     sel_uim_selset sel; /* I632d: the one selection of the list on screen (src/uimodel/select.c) */
     size_t brf_cap; /* I948a: the answer buffer size the read was posted with */
@@ -2842,7 +2847,6 @@ static const char* song_menu_label(const desk* d, int32_t k) {
 
 /* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
 static int32_t song_menu_n(const desk* d) {
-    int32_t n = 1;
     if (d->sm_step == 0) {
         return song_menu_count(d);
     }
@@ -2858,8 +2862,7 @@ static int32_t song_menu_n(const desk* d) {
     if (d->sm_step == 3) {
         return d->sm_pl_folder ? 1 : 2;
     }
-    n = (int32_t)d->sm_pl_n;
-    return n > 0 ? n : 1;
+    return (int32_t)d->sm_pl_n + 1; /* I632: the first item is New Playlist..., then every saved playlist */
 }
 
 /* The window in canvas pixels: the one rectangle a floating menu is placed in and clipped to, whichever region the pointer was in. */
@@ -2926,8 +2929,31 @@ static void dev_route_sync(desk* d) {
 }
 #endif
 
+/* I632: a right-click on a row inside a selection of two or more songs opens the menu for the whole selection (design
+ * 2026-10-28-multi-select, lines 12-18); the list, its version and the ranges are frozen here so a later repaint cannot change them. */
+static void song_menu_selection(desk* d, const song_ref* ref) {
+    d->sm_multi_n = 0u;
+    if (ref->list_kind == 0u || d->sel.list.kind != ref->list_kind || d->sel.list.id != ref->list_id || d->sel.list.version != ref->list_version ||
+        sel_uim_selset_count(&d->sel) < 2u || !sel_uim_selset_contains(&d->sel, ref->list_index)) {
+        return;
+    }
+    if (sel_uim_selset_format(&d->sel, d->sm_multi_ranges, sizeof d->sm_multi_ranges) == 0u) {
+        return;
+    }
+    if (ref->list_kind == (uint32_t)SEL_UIM_LIST_QUEUE) {
+        snprintf(d->sm_multi_list, sizeof d->sm_multi_list, "queue");
+    } else if (ref->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST) {
+        snprintf(d->sm_multi_list, sizeof d->sm_multi_list, "playlist:%u", (unsigned)ref->list_id);
+    } else {
+        snprintf(d->sm_multi_list, sizeof d->sm_multi_list, "view");
+    }
+    d->sm_multi_ver = ref->list_version;
+    d->sm_multi_n = sel_uim_selset_count(&d->sel);
+}
+
 static void song_menu_open(desk* d, int32_t x, int32_t y, const song_ref* ref) {
     d->sm_ref = *ref;
+    song_menu_selection(d, ref);
     d->sm_open = 1;
     d->sm_step = 0;
     d->menu_x = x;
@@ -3074,7 +3100,7 @@ static void song_menu_draw(desk* d) {
             sel_gui_rect m = song_menu_item_rect(d, k);
             int lit = hover_weight(d, m) > 0;
             const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k)
-                              : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "No playlists";
+                              : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "New Playlist...";
             hover_reg(d, m);
             if (d->sm_step == 5) { /* I1039: output devices: System default, then the list; the pick is checked, AirPlay rows carry the AirPlay icon */
                 const char* cur = desk_pref(d, "output.device", "");
@@ -3140,8 +3166,8 @@ static void song_menu_draw(desk* d) {
                                    lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
                                    ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
             }
-            if (d->sm_step == 1 && (uint32_t)k < d->sm_pl_n) {
-                label = d->sm_pls[k].name;
+            if (d->sm_step == 1 && k > 0 && (uint32_t)k <= d->sm_pl_n) {
+                label = d->sm_pls[k - 1].name;
             }
             sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 8), m.y + lpx(d, 4), m.w - lpx(d, 16), semi->line_height), label,
                               ARGB(d->theme.token[lit ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]), 1, &d->text);
@@ -3529,7 +3555,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (d->sm_open) {
-        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 || d->sm_step == 5 ? song_menu_n(d) : 8;
+        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 || d->sm_step == 5 || d->sm_step == 1 ? song_menu_n(d) : 8;
         int keep = 0;
         if (d->sm_step == 4) { /* I611: the library sort and view menu: sort rows pick a sort, the strip a view, headers and the separator stay */
             for (k = 0; k < 8; k++) {
@@ -3584,14 +3610,24 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 d->queue_cmds++;
                 desk_send(d, line);
             } else if (d->sm_step == 1) {
-                uint32_t pid = (uint32_t)k < d->sm_pl_n ? d->sm_pls[k].id : 0u;
-                if (pid != 0u) {
-                    char line[640];
+                /* I632: item 0 is New Playlist... (playlist id 0 makes an empty one in the engine), then the saved playlists. The whole
+                 * selection goes in one SONGS_PLAYLIST_ADD when the menu was opened on a selected row, else the one song. */
+                uint32_t pid = k > 0 && (uint32_t)k <= d->sm_pl_n ? d->sm_pls[k - 1].id : 0u;
+                const char* pname = k > 0 && (uint32_t)k <= d->sm_pl_n ? d->sm_pls[k - 1].name : "New Playlist";
+                char line[1024], text[160];
+                if (d->sm_multi_n > 0u) {
+                    snprintf(line, sizeof line, "SONGS_PLAYLIST_ADD %u %s %u \"%s\"", (unsigned)pid, d->sm_multi_list, (unsigned)d->sm_multi_ver,
+                             d->sm_multi_ranges);
+                    d->sm_multi_adds++;
+                    snprintf(text, sizeof text, "Added %u songs to %s", (unsigned)d->sm_multi_n, pname);
+                } else {
                     snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)pid, d->sm_ref.path);
-                    desk_send(d, line);
-                    d->sm_pl_adds++;
-                    desk_toast(d, "Added to playlist");
+                    snprintf(text, sizeof text, "Added to %s", pname);
                 }
+                desk_send(d, line);
+                d->sm_pl_adds++;
+                d->side_stale = 1u; /* a new playlist joins the sidebar list */
+                desk_toast(d, text);
             } else if (k == SONG_MENU_ITEMS) { /* I633: the playlist page's own item */
                 char line[48];
                 snprintf(line, sizeof line, "PLAYLIST_REMOVE_SONG %u %u", (unsigned)d->sm_ref.pl_id, (unsigned)d->sm_ref.pl_index);
@@ -8273,6 +8309,8 @@ static const char* library_dump_build(desk* d) {
     if (o + 300u < sizeof d->library_dump) { /* I632d: the selection of the list on screen */
         char ranges[96];
         sel_uim_selset_format(&d->sel, ranges, sizeof ranges);
+        o = dump_put(d, o, "song_menu_multi n=%u adds=%u list=%s version=%u ranges=%s\n", (unsigned)d->sm_multi_n, (unsigned)d->sm_multi_adds,
+                     d->sm_multi_n > 0u ? d->sm_multi_list : "-", (unsigned)d->sm_multi_ver, d->sm_multi_n > 0u ? d->sm_multi_ranges : "-");
         o = dump_put(d, o, "select count=%u runs=%u list=%u,%u,%u ranges=%s clicks=%u keys=%u\n", (unsigned)sel_uim_selset_count(&d->sel),
                      (unsigned)sel_uim_selset_run_count(&d->sel), (unsigned)d->sel.list.kind, (unsigned)d->sel.list.id,
                      (unsigned)d->sel.list.version, ranges[0] != '\0' ? ranges : "-", (unsigned)d->sel_clicks, (unsigned)d->sel_keys);

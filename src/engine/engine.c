@@ -7028,6 +7028,10 @@ static void cmd_STREAM_ADD(sel_engine* e, const sel_message* m) {
 
 /* PLAYLIST_ADD_SONG id path (I241): appends one song to a saved playlist. */
 static void wq_playlist_add_song_run(sel_library* lib, sel_wq_op* op) {
+    if (op->u1 == 0u) { /* playlist 0: a new, empty playlist "New Playlist" gets the song (the song menu's New Playlist item) */
+        op->rc = sel_library_playlist_add(lib, "New Playlist", 0u, "", &op->u1);
+        if (op->rc != SEL_FOLDER_OK) return;
+    }
     op->rc = sel_library_playlist_add_song(lib, op->u1, op->s[0]);
 }
 
@@ -10206,6 +10210,10 @@ static void wq_songs_playlist_add_run(sel_library* lib, sel_wq_op* op) {
     const char* p = (const char*)op->res;
     uint32_t i;
     op->rc = SEL_FOLDER_OK;
+    if (op->u1 == 0u) { /* playlist 0: a new, empty playlist named op->s[0] (the song menu's New Playlist item); the queue is not copied into it */
+        op->rc = sel_library_playlist_add(lib, op->s[0], 0u, "", &op->u1);
+        if (op->rc != SEL_FOLDER_OK) return;
+    }
     for (i = 0; i < op->u2; i++, p += strlen(p) + 1u) {
         op->rc = sel_library_playlist_add_song(lib, op->u1, p);
         if (op->rc != SEL_FOLDER_OK) return;
@@ -10246,7 +10254,7 @@ static void cmd_SONGS_PLAYLIST_ADD(sel_engine* e, const sel_message* m) {
     sel_wq_op* op;
     if (!folder_ready(e, "SONGS_PLAYLIST_ADD")) return;
     if (!songs_open(e, "SONGS_PLAYLIST_ADD", m->args[1].v.s, m->args[2].v.u, m->args[3].v.s, &s)) return;
-    op = wq_new(e, wq_songs_playlist_add_run, wq_songs_playlist_add_done, NULL, NULL, NULL);
+    op = wq_new(e, wq_songs_playlist_add_run, wq_songs_playlist_add_done, "New Playlist", NULL, NULL);
     if (op != NULL && s.pn > 0u && !songs_wq_paths(e, op, s.plist, s.pn)) {
         wq_songs_discard(e, op);
         op = NULL;
