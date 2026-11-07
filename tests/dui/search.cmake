@@ -289,3 +289,28 @@ math(EXPR last_pos "${CMAKE_MATCH_3} + 1")
 if(NOT last_pos EQUAL CMAKE_MATCH_2)
   message(FATAL_ERROR "Alt+Right must end on the last history entry (n=${CMAKE_MATCH_2} pos=${CMAKE_MATCH_3}):\n${hist3_out}")
 endif()
+
+# I1011 (reopened): a pointer move onto an Albums or Artists result row repaints it. The move must register as a hover change
+# (hovers>=1) with the row as the hover box: list_row_fill alone only paints on a redraw, and only rows that hover_reg a box
+# repaint on a pointer move (Songs rows do through song_row_reg; Albums and Artists rows have no song_row_reg). The dump line
+# `searchplainrow` is the first such row.
+search_run(plain0 "${typed}wait 600\n")
+if(NOT "${plain0_out}" MATCHES "searchplainrow (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no searchplainrow line in:\n${plain0_out}")
+endif()
+set(px "${CMAKE_MATCH_1}")
+set(py "${CMAKE_MATCH_2}")
+set(pw "${CMAKE_MATCH_3}")
+set(ph "${CMAKE_MATCH_4}")
+if(pw EQUAL 0)
+  message(FATAL_ERROR "no Albums or Artists row drawn in:\n${plain0_out}")
+endif()
+set(plain_rect "${px} ${py} ${pw} ${ph}")
+math(EXPR plain_x "${px} + 40")
+math(EXPR plain_y "${py} + ${ph} / 2")
+search_run(plain1 "${typed}wait 600\nmove ${plain_x} ${plain_y}\nwait 50\n")
+expect("${plain1_out}" "hover_box ${plain_rect} fill=" "the move onto the Albums or Artists row must leave the row as hover_box (I1011)")
+dui_stat(plain_hv "${plain1_out}" desktop hovers)
+if(plain_hv LESS 1)
+  message(FATAL_ERROR "I1011: the move onto the Albums or Artists row counted no hover (hovers=${plain_hv})")
+endif()

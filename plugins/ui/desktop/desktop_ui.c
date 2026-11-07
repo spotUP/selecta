@@ -268,6 +268,7 @@ typedef struct desk {
     char si_composer_key[SEL_COMPOSER_MAX]; /* its composer canon, from the song's db row */
     char si_composer_ref[512]; /* the song path si_composer_key was read for */
     int32_t si_composer_row; /* the info row index of the Author tag, -1 when the song has none */
+    sel_gui_rect search_plain_row; /* I1011: the first Albums or Artists row drawn this frame (no song_row_reg), w 0 when none; dump line searchplainrow */
     uint32_t row_hover_fill; /* I690b: the fill the list row under the pointer was last painted with, 0 when none (dump line plhover) */
     uint32_t link_hover;     /* I690b: 1 artist or 2 album link of a track row is underlined under the pointer, 0 none (dump line pllink) */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
@@ -7755,6 +7756,7 @@ static const char* library_dump_build(desk* d) {
     }
     if (d->page == SEL_UIM_PG_SEARCH) { /* I1011: the fill list_row_fill last gave the row under the pointer (the shared list-row hover path) */
         o = dump_put(d, o, "searchhover fill=%08x\n", (unsigned)d->row_hover_fill);
+        o = dump_put(d, o, "searchplainrow %d %d %d %d\n", (int)d->search_plain_row.x, (int)d->search_plain_row.y, (int)d->search_plain_row.w, (int)d->search_plain_row.h);
     }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
     o = dump_put(d, o, "search scroll y=%d max=%d wheels=%u\n", d->search_q16, search_max_q16(d), (unsigned)d->search_wheels);
@@ -9788,6 +9790,7 @@ static void draw_search(desk* d) {
     sel_gui_clip_push(d->canvas, rect_of(mn.x, y, mn.w, mn.y + mn.h - y));
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
     d->search_sec_n = 0;
+    memset(&d->search_plain_row, 0, sizeof d->search_plain_row);
     d->search_sync_n = 0;
     if (desk_scope_online(d)) { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
@@ -9883,7 +9886,12 @@ static void draw_search(desk* d) {
                 {
                     /* I498, I1011: the keyboard focus row and the row under the pointer take the one list-row fill every song list uses */
                     sel_gui_rect rr = rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H));
-                    uint32_t rf = list_row_fill(d, rr, d->kb_list && v->window_start + k == v->cursor);
+                    uint32_t rf;
+                    hover_reg(d, rr); /* I1011: Albums and Artists rows have no song_row_reg; without a registered box a pointer move never repaints them */
+                    if (group != 1u && group != 4u && d->search_plain_row.w == 0) {
+                        d->search_plain_row = rr;
+                    }
+                    rf = list_row_fill(d, rr, d->kb_list && v->window_start + k == v->cursor);
                     if (rf != 0u) {
                         sel_gui_fill_rect(d->canvas, rr, rf);
                     }
