@@ -73,11 +73,34 @@ jobs:
       - name: Configure (host bake tools)
         run: cmake -S . -B build/host -G Ninja
       - name: Build (host bake tools)
-        run: cmake --build build/host --target gui_iconbake gui_fontbake
+        run: cmake --build build/host --target gui_iconbake gui_fontbake library_template_bake
       - name: Configure (68020)
-        run: cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DCMAKE_BUILD_TYPE=Debug -DAMIGA_GCC_ROOT=/opt/amiga -DSELECTA_ICONBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_iconbake -DSELECTA_FONTBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_fontbake
+        run: cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DCMAKE_BUILD_TYPE=Debug -DAMIGA_GCC_ROOT=/opt/amiga -DSELECTA_ICONBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_iconbake -DSELECTA_FONTBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_fontbake -DSELECTA_TEMPLATEBAKE_EXE=$PWD/build/host/src/library/library_template_bake
       - name: Build (68020)
         run: cmake --build build/amiga -j2
+      # I1137: the Selecta archive tree (program, library-template.db beside it, Install-Selecta, rexx), packed with lha when found, else zipped.
+      - name: Build Selecta package
+        run: |
+          (apt-get install -y lha || apt-get install -y jlha-utils) >/dev/null 2>&1 || true
+          cmake --build build/amiga --target selecta_dist
+          cd build/amiga/dist
+          if command -v lha >/dev/null 2>&1; then lha ao5 Selecta.lha Selecta; else cmake -E tar cf Selecta.zip --format=zip Selecta; fi
+          ls -l
+      - name: Upload Selecta package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Selecta-amiga
+          path: |
+            build/amiga/dist/Selecta.lha
+            build/amiga/dist/Selecta.zip
+          if-no-files-found: error
+      - name: Attach Selecta package to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd build/amiga/dist
+          gh release upload "${GITHUB_REF_NAME}" $(ls Selecta.lha Selecta.zip 2>/dev/null) --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build (host selecta-cli)
         run: cmake --build build/host --target selecta-cli
       - name: Test (vamos)

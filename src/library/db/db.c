@@ -5,6 +5,7 @@
 #include "db_internal.h"
 #include "schema.h"
 
+#include <selecta/engine.h>
 #include <selecta/machine.h>
 
 #include <stdio.h>
@@ -168,12 +169,32 @@ static int write_gen_hook(void* ctx) {
     return 0;
 }
 
+/* I1137: the directory of the running executable's resources: Contents/Resources in a macOS bundle, else the executable's own
+ * directory. 0 when unknown (always on the Amiga, where the template lies beside PROGDIR:library.db). Shares sel_app_exe_dir
+ * (appdir.c) with sel_app_plugin_dir (src/core/config_dir.c). */
+int sel_app_data_dir(char* out, size_t cap) {
+    char exe[512];
+    char* slash;
+    int n;
+    if (!sel_app_exe_dir(exe, sizeof exe)) {
+        return 0;
+    }
+    slash = strrchr(exe, '/');
+    if (slash != NULL && strcmp(slash, "/MacOS") == 0) {
+        *slash = '\0';
+        n = snprintf(out, cap, "%s/Resources", exe);
+    } else {
+        n = snprintf(out, cap, "%s", exe);
+    }
+    return n > 0 && (size_t)n < cap;
+}
+
 /* I625a8e: a missing database is made by copying the prebuilt template SEL_LIBTEMPLATE_NAME from the directory of `path` (the file the
  * build bakes with the same sel_schema_migrate), not by running the 65 DDL statements of SCHEMA_FINAL, which cost 3336 ms on a 68020.
  * The copy goes to <path>.part and is renamed, so an interrupted copy never leaves a half database. 0 = no template or copy failed;
  * the caller then creates the schema with the DDL as before. */
 static int copy_template(const sel_host* host, const char* path) {
-    char tpl[512], part[512];
+    char tpl[512], part[512], app[512];
     char buf[4096];
     size_t dirlen = 0, i, n;
     long total = 0;
@@ -196,7 +217,14 @@ static int copy_template(const sel_host* host, const char* path) {
     memcpy(tpl, path, dirlen);
     strcpy(tpl + dirlen, SEL_LIBTEMPLATE_NAME);
     sprintf(part, "%s.part", path);
-    if ((in = fopen(tpl, "rb")) == NULL) {
+    in = fopen(tpl, "rb");
+    /* I1137: the config directory is the user's, an installer cannot write there; the template ships with the app (Contents/Resources
+     * in a bundle, else the executable's directory) and is read from there when none lies beside the database. */
+    if (in == NULL && sel_app_data_dir(app, sizeof app) && strlen(app) + 1u + sizeof SEL_LIBTEMPLATE_NAME <= sizeof app) {
+        strcat(app, "/" SEL_LIBTEMPLATE_NAME);
+        in = fopen(app, "rb");
+    }
+    if (in == NULL) {
         return 0;
     }
     if ((out = fopen(part, "wb")) == NULL) {

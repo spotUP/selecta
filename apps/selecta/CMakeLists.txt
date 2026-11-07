@@ -76,3 +76,30 @@ if(APPLE AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
   add_dependencies(selecta_bundle_modules selecta_core ${_sel_bundle_mods})
   add_dependencies(selecta selecta_bundle_modules)
 endif()
+
+# I1137: the prebuilt empty library database (library_template, src/library/CMakeLists.txt) travels with every build of the app, in the
+# directory sel_library_open looks in: Contents/Resources of the macOS bundle and the executable's directory elsewhere (sel_app_data_dir,
+# src/library/db/db.c), which on the Amiga is PROGDIR: beside PROGDIR:library.db. `--target selecta` builds and copies it, so a fresh
+# start logs `template copied` instead of running the DDL. The Amiga dist (cmake/selecta_dist.cmake) stages it from the same place.
+if(TARGET library_template)
+  if(APPLE)
+    set(_sel_tpl_dir "$<TARGET_BUNDLE_CONTENT_DIR:selecta>/Resources")
+  else()
+    set(_sel_tpl_dir "$<TARGET_FILE_DIR:selecta>")
+  endif()
+  add_dependencies(selecta library_template)
+  add_custom_command(TARGET selecta POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_sel_tpl_dir}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/library-template.db" "${_sel_tpl_dir}/"
+    VERBATIM)
+endif()
+
+# I1137: the Selecta Amiga archive tree. cmake/selecta_dist.cmake stages Selecta/ (program, library-template.db, Install-Selecta, rexx);
+# the CI step packs it. The host test selecta-dist-layout runs the same staging with stand-in files.
+if(SEL_AMIGA AND TARGET library_template)
+  add_custom_target(selecta_dist
+    COMMAND ${CMAKE_COMMAND} -DMODE=stage "-DDEST=${CMAKE_BINARY_DIR}/dist/Selecta" "-DBIN_DIR=$<TARGET_FILE_DIR:selecta>"
+      "-DROOT=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/selecta_dist.cmake"
+    VERBATIM COMMENT "Staging the Selecta Amiga archive tree")
+  add_dependencies(selecta_dist selecta library_template)
+endif()

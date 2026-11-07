@@ -793,6 +793,25 @@ if(NOT SEL_AMIGA)
       -DSRC=${PROJECT_SOURCE_DIR}/apps/selecta/main.c
       -P ${CMAKE_CURRENT_SOURCE_DIR}/m1/start_phase_trace.cmake)
 
+  # I1137: the app ships library-template.db where sel_library_open looks (bundle Contents/Resources, else beside the executable), and a
+  # fresh start with an empty config directory logs `template copied`, not `final schema created`. Fail-before: nothing staged the file.
+  if(TARGET library_template)
+    if(APPLE)
+      set(_sel_tpl_stage "$<TARGET_BUNDLE_CONTENT_DIR:selecta>/Resources")
+    else()
+      set(_sel_tpl_stage "$<TARGET_FILE_DIR:selecta>")
+    endif()
+    add_test(NAME selecta-template-first-start
+      COMMAND ${CMAKE_COMMAND} -DSELECTA=$<TARGET_FILE:selecta> "-DTEMPLATE_DIR=${_sel_tpl_stage}"
+        -DWORK=${CMAKE_CURRENT_BINARY_DIR}/template_first_start -P ${CMAKE_CURRENT_SOURCE_DIR}/m1/template_first_start.cmake)
+    set_tests_properties(selecta-template-first-start PROPERTIES TIMEOUT 60 LABELS library)
+  endif()
+  # I1137: the Selecta Amiga archive tree holds library-template.db beside the program (PROGDIR:), the Installer script and the rexx
+  # scripts; the staging of cmake/selecta_dist.cmake runs here with stand-in files, the Amiga CI step runs it on the real build.
+  add_test(NAME selecta-dist-layout COMMAND "${CMAKE_COMMAND}" -DMODE=selftest "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/selecta_dist_selftest"
+    "-DROOT=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/selecta_dist.cmake")
+  set_tests_properties(selecta-dist-layout PROPERTIES TIMEOUT 30 LABELS library)
+
   # I916: a UI that refuses its flags hands the shell the reason (sel_ui_open_args.why); the start-up report names it
   # instead of "the UI could not open (no terminal?)". rc 1 is the WILL_FAIL half.
   if(SELECTA_UI_DESKTOP)

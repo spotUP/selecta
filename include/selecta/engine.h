@@ -365,6 +365,10 @@ int sel_config_dir(char* out, size_t cap);
 /* The app plugin folder beside the running executable (Contents/PlugIns in a macOS bundle, else <exe dir>/plugins);
  * 0 when unknown or it does not fit (always on the Amiga). The module loader and the About view read this one folder. */
 int sel_app_plugin_dir(char* out, size_t cap);
+/* I1137: the directory of the running executable (src/library/db/appdir.c); 0 when unknown (always on the Amiga). */
+int sel_app_exe_dir(char* out, size_t cap);
+/* I1137: where the app ships its data files: Contents/Resources in a macOS bundle, else the executable's directory (src/library/db/db.c). */
+int sel_app_data_dir(char* out, size_t cap);
 
 /* The default library DB: PROGDIR:library.db on the Amiga, else library.db in the config directory (created when
  * missing). NULL when no location is known. The shell and selecta-cli library scan share it. */
