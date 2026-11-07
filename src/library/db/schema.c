@@ -16,7 +16,8 @@ static const char SCHEMA_V1[] =
     " name TEXT, hidden INTEGER NOT NULL DEFAULT 0, md5 TEXT, size INTEGER, PRIMARY KEY(source, path)) WITHOUT ROWID;"
     "CREATE TABLE songs(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, source TEXT NOT NULL, path TEXT NOT NULL,"
     " name TEXT, artist TEXT, album TEXT, format TEXT, year INTEGER, genre TEXT, duration_ms INTEGER,"
-    " loudness_gain INTEGER, md5 TEXT, size INTEGER, added INTEGER NOT NULL DEFAULT 0);"
+    " loudness_gain INTEGER, md5 TEXT, size INTEGER, added INTEGER NOT NULL DEFAULT 0,"
+    " dup_of TEXT, dup_members INTEGER NOT NULL DEFAULT 1);" /* I625a8b: the v18 columns, created here so a fresh db needs no ALTER */
     "CREATE TABLE albums(id INTEGER PRIMARY KEY, name TEXT NOT NULL, artist TEXT, year INTEGER, source TEXT);"
     "CREATE TABLE artwork(album_id INTEGER NOT NULL, kind TEXT NOT NULL, data BLOB, PRIMARY KEY(album_id, kind));"
     "CREATE TABLE history(id INTEGER PRIMARY KEY, key TEXT NOT NULL, played_at INTEGER NOT NULL,"
@@ -283,9 +284,10 @@ static const char SCHEMA_V17[] =
 /* I1094a: maintained duplicate groups. dup_of: NULL on a unique song and on the best copy, else the best copy's key; dup_members: group size.
  * dup_pick holds the user's "Use This Copy" per md5. migrate_steps ends v18 with sel_dup_rebuild (bounded slices, I1094b) so an existing
  * library comes up resolved on every heap tier. */
-static const char SCHEMA_V18[] =
+static const char SCHEMA_V18_COLUMNS[] =
     "ALTER TABLE songs ADD COLUMN dup_of TEXT;"
-    "ALTER TABLE songs ADD COLUMN dup_members INTEGER NOT NULL DEFAULT 1;"
+    "ALTER TABLE songs ADD COLUMN dup_members INTEGER NOT NULL DEFAULT 1;";
+static const char SCHEMA_V18[] =
     "CREATE INDEX IF NOT EXISTS songs_dup_of ON songs(dup_of) WHERE dup_of IS NOT NULL;"
     "CREATE TABLE IF NOT EXISTS dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;";
 
@@ -335,8 +337,25 @@ void sel_library_trace(const sel_host* host, const char* what, int n) {
     }
 }
 
+/* I625a8b: every ALTER TABLE ADD COLUMN reloads the whole schema: 721 ms each at v18 on a 68020 (rig trace), 1.4 s for the two dup columns,
+ * against 10 ms for the rebuild itself. SCHEMA_V1 now creates the columns with songs, so only a database made before that (user_version
+ * 17 without them) runs the ALTERs. */
+static int has_dup_columns(sqlite3* db) {
+    sqlite3_stmt* st = NULL;
+    int n = 0;
+
+    if (sqlite3_prepare_v2(db, "SELECT count(*) FROM pragma_table_info('songs') WHERE name IN ('dup_of', 'dup_members')", -1, &st, NULL) ==
+            SQLITE_OK &&
+        sqlite3_step(st) == SQLITE_ROW) {
+        n = sqlite3_column_int(st, 0);
+    }
+    sqlite3_finalize(st);
+    return n == 2;
+}
+
 /* One migration's statements (v18 also recomputes the duplicate groups); the caller owns the transaction. */
 static int migration_apply(sqlite3* db, int index) {
+    if (index + 1 == 18 && !has_dup_columns(db) && sqlite3_exec(db, SCHEMA_V18_COLUMNS, NULL, NULL, NULL) != SQLITE_OK) return 0;
     return sqlite3_exec(db, g_migrations[index], NULL, NULL, NULL) == SQLITE_OK && (index + 1 != 18 || sel_dup_rebuild(db) == SQLITE_OK);
 }
 

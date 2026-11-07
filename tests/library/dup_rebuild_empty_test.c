@@ -10,14 +10,16 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Statements the whole v18 migrate may issue on an empty table (14 before I625a8b): the user_version read and temp_store pragmas, BEGIN,
- * the 4 statements of SCHEMA_V18, the MAX(id) probe of the rebuild, the user_version write and COMMIT. No slice statement is prepared. */
-#define MAX_STMTS_EMPTY 12
+/* Statements the whole stepped-back v18 migrate may issue on an empty table: the pragmas, BEGIN, the has-columns probe, 2 ALTERs and the
+ * FTS config read they cause, the index and table, the MAX(id) probe of the rebuild, the user_version write and COMMIT. Before I625a8b the
+ * rebuild also stepped its slice-edge SELECT (counted by g_slice, which must now be 0). */
+#define MAX_STMTS_EMPTY 14
 
 static int g_fail;
 static int g_stmts;
 static int g_print;
 static int g_alter_dup;
+static int g_slice;
 
 #define CHECK(c)                                        \
     do {                                                \
@@ -33,6 +35,7 @@ static int on_trace(unsigned type, void* ctx, void* p, void* x) {
         const char* sql = (const char*)x;
 
         g_stmts++;
+        if (sql != NULL && strncmp(sql, "SELECT COALESCE((SELECT md5", 27) == 0) g_slice++;
         if (sql != NULL && strncmp(sql, "ALTER TABLE songs ADD COLUMN dup_", 33) == 0) g_alter_dup++;
         if (g_print) printf("stmt %d: %.110s\n", g_stmts, sql != NULL ? sql : "?");
     } else if (type == SQLITE_TRACE_PROFILE && g_print) {
@@ -88,6 +91,7 @@ int main(int argc, char** argv) {
     printf("v18 on an empty table: %d statements\n", g_stmts);
     CHECK(sel_db_dup_rebuilds() == rb0 + 1); /* the rebuild ran (sentinel) */
     CHECK(g_stmts <= MAX_STMTS_EMPTY);
+    CHECK(g_slice == 0); /* no slice statement ran on an empty table */
     sqlite3_trace_v2(db, 0, NULL, NULL);
     CHECK(scalar(db, "SELECT count(*) FROM sqlite_master WHERE name IN ('songs_dup_of', 'dup_pick')") == 2);
     CHECK(scalar(db, "SELECT count(*) FROM pragma_table_info('songs') WHERE name IN ('dup_of', 'dup_members')") == 2);
