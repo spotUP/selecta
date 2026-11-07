@@ -550,11 +550,22 @@ State after row I685f. Prefix scheme: `UPA_<Class>_<Name>` attributes, `UPM_<Cla
 
 ### 8.4 Support library API
 
-`AA_ThemeLoad(path)`, `AA_ThemeReload()`, `AA_ThemeSetTokens(const ULONG *rgb, ULONG count)` (what Selecta's
-`mui_theme_tokens_set` becomes), `AA_ThemeTokens()`, `AA_IconFind(name)`, `AA_SetFontFile(path)`. Function table via
-`stabs.h` ADDTABL. SFD file `dist/sfd/aa_lib.sfd` generates the pragmas/inline/proto headers with `sfdc` (whether
-`sfdc` is installed in `~/opt/amiga` is OPEN: not examined; fallback: hand-written LP inlines like
-mui_aa_draw.c:34-56).
+`UP_ThemeLoad(path)`, `UP_ThemeReload()`, `UP_ThemeSetTokens(const ULONG *rgb, ULONG count)` (what Selecta's
+`mui_theme_tokens_set` becomes; it also runs `aa_retheme_all`), `UP_ThemeTokens()`, `UP_IconFind(name)`,
+`UP_SetFontFile(path)`. Declared in `include/mcc/up_lib.h` (included from `up.h`), implemented once in
+`lib/support_lib.c`, which both `sel_mcc_static` (Selecta plugin, host tests) and `up-mcc.library` compile. Function
+table via `stabs.h` ADDTABL in `lib/support_libheader.c`. SFD file `dist/sfd/up-mcc_lib.sfd` generates the
+proto/inline/clib/pragmas headers with `sfdc` (`~/opt/amiga/bin/sfdc`, installed and working; no hand-written LP
+fallback was needed) at build time into `<build>/plugins/shared/mcc/sfd_include`.
+
+State after row I685h. Exists: the six functions, the Amiga target `up_mcc_library` (`up-mcc.library`, `$VER: up-mcc.library
+1.0 (07.11.2026)`, libinit.o first, `-nostartfiles`, links `sel_mcc_static`), the sfdc header generation with the compile
+check `up_mcc_header_check`, and the host test `mcc-support-api` (tokens round trip, icon index, font list, failed theme
+load leaves the tokens). The library opens dos, utility, graphics, intuition and muimaster v19 (`mui_aa_draw.c` calls
+`MUI_ObtainPen`), sets `sel_mui_GfxBase`, and defines a private `exit()` because libnix stdio start-up (pulled in by the
+store's `fopen`/`snprintf`) names it. Open: no rig run yet (loading from `LIBS:`, a client calling through the inline
+headers, stdio inside the library, `aa_retheme_all` from a client task); the class libraries (I685i) still link
+`sel_mcc_static` themselves instead of opening this library; `UP_ThemeLoad` uses `ENV:Selecta/theme` as the env file.
 
 ### 8.5 AutoDocs and versions
 
