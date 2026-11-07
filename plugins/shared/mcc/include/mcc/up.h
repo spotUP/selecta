@@ -135,13 +135,18 @@ typedef struct UP_ListGetRow {
 /* UP-Button */
 #define UPA_Button_Caption UP_TAG(UP_CLS_BUTTON, 0x01)     /* I STRPTR shown text */
 #define UPA_Button_Widest UP_TAG(UP_CLS_BUTTON, 0x02)      /* I STRPTR longest caption (sets the minimum width); absent = fit the caption */
-#define UPA_Button_Icon UP_TAG(UP_CLS_BUTTON, 0x03)        /* I LONG sel_gui_icon id, -1 none */
-#define UPA_Button_AltIcon UP_TAG(UP_CLS_BUTTON, 0x04)     /* I LONG icon swapped in by mui_aabtn_set_alt, -1 none */
+#define UPA_Button_Icon UP_TAG(UP_CLS_BUTTON, 0x03)        /* I STRPTR Lucide icon name of the baked set ("play", "skip-forward"); NULL, absent or unknown = none */
+#define UPA_Button_AltIcon UP_TAG(UP_CLS_BUTTON, 0x04)     /* I STRPTR icon name swapped in by mui_aabtn_set_alt; NULL, absent or unknown = none */
 #define UPA_Button_IconOnly UP_TAG(UP_CLS_BUTTON, 0x05)    /* I BOOL no caption drawn */
 #define UPA_Button_Role UP_TAG(UP_CLS_BUTTON, 0x06)        /* I UPV_Button_Role_* */
 #define UPA_Button_FixedWidth UP_TAG(UP_CLS_BUTTON, 0x07)  /* I LONG exact width in px, 0 = from the contents */
 #define UPA_Button_FixedHeight UP_TAG(UP_CLS_BUTTON, 0x08) /* I LONG exact height in px, 0 = from the contents */
 #define UPA_Button_Align UP_TAG(UP_CLS_BUTTON, 0x09)       /* I UPV_Button_Align_* */
+#define UPA_Button_IconData UP_TAG(UP_CLS_BUTTON, 0x0A)    /* I struct UP_IconData*: caller icon for a glyph not in the set; used when UPA_Button_Icon names none. The struct and its mask are NOT copied: they must stay valid until the object is disposed */
+typedef struct UP_IconData { /* an alpha mask, w x h bytes row by row (0 clear .. 255 full); drawn like a baked icon, scaled to the icon box */
+    const unsigned char* alpha;
+    LONG w, h;
+} UP_IconData;
 enum { UPV_Button_Role_Normal, UPV_Button_Role_Accent, UPV_Button_Role_Ghost, UPV_Button_Role_Toggle, UPV_Button_Role_Tab };
 enum { UPV_Button_Align_Left, UPV_Button_Align_Centre, UPV_Button_Align_Right };
 

@@ -175,8 +175,6 @@ Object* UP_NewTabs(const struct TagItem* tags) {
     for (i = 0; i < n; i++) {
         struct TagItem bt[] = {{UPA_Button_Caption, (ULONG)(uintptr_t)captions[i]},
                                {UPA_Button_Widest, (ULONG)(uintptr_t)captions[i]},
-                               {UPA_Button_Icon, (ULONG)-1},
-                               {UPA_Button_AltIcon, (ULONG)-1},
                                {UPA_Button_Role, UPV_Button_Role_Tab},
                                {UPA_Button_Align, UPV_Button_Align_Centre},
                                {MUIA_Weight, 0},

@@ -1,5 +1,6 @@
 /* Spec to tag list (I685f, design 2026-11-06-mui-mcc-package.md section 8.3); see mui_aatagmap.h. */
 #include "mui_aatagmap.h"
+#include "mui_iconmap.h"
 #if defined(__amigaos__) || defined(AMIGA)
 #include <libraries/mui.h> /* the MUIA_* values the builders write (up.h has stand-ins only for the host) */
 #endif
@@ -42,8 +43,12 @@ int mui_aabtn_tags(const mui_aabtn_spec* sp, struct TagItem* out, size_t cap) {
     if (help != NULL) {
         tw_add(&w, MUIA_ShortHelp, UP_D(help));
     }
-    tw_add(&w, UPA_Button_Icon, UP_D(sp->icon));
-    tw_add(&w, UPA_Button_AltIcon, UP_D(sp->alt_icon));
+    if (mui_icon_name(sp->icon) != NULL) { /* the package takes the Lucide name; a spec icon of -1 sends no tag */
+        tw_add(&w, UPA_Button_Icon, UP_D(mui_icon_name(sp->icon)));
+    }
+    if (mui_icon_name(sp->alt_icon) != NULL) {
+        tw_add(&w, UPA_Button_AltIcon, UP_D(mui_icon_name(sp->alt_icon)));
+    }
     tw_add(&w, UPA_Button_IconOnly, UP_D(sp->icon_only));
     tw_add(&w, UPA_Button_Role, UP_D(sp->role));
     tw_add(&w, MUIA_Selected, UP_D(sp->selected));

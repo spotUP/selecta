@@ -15,6 +15,7 @@
 #include "map/mui_theme.h"
 #include "map/mui_fontprobe.h"
 #include "map/mui_pens.h"
+#include "map/mui_iconmap.h"
 #include "map/mui_icons.h"
 #include "map/mui_route.h"
 #include <selecta/uimodel/doors.h>

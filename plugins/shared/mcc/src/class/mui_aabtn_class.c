@@ -29,6 +29,7 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aabtn_data {
     char caption[48], widest[48];
+    const UP_IconData* data; /* UPA_Button_IconData, caller owned */
     int icon[2], alt, icon_only, role, hover, backend, minw, minh, align, on, fit, fixed_w, fixed_h;
     mui_aa_metrics_t m;
     aa_ctx aa;
@@ -49,8 +50,11 @@ static int aabtn_state(Object* obj, const aabtn_data* d) {
     return dis ? MUI_AA_DISABLED : sel ? MUI_AA_PRESSED : d->on ? MUI_AA_SELECTED : d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
 }
 
+/* Icon slots: a body index of the baked set, AABTN_NO_ICON, or AABTN_DATA_ICON (the caller's UP_IconData). */
+enum { AABTN_NO_ICON = -1, AABTN_DATA_ICON = -2 };
+
 static int aabtn_cur_icon(const aabtn_data* d) {
-    return d->icon[d->alt] >= 0 ? d->icon[d->alt] : d->icon[0];
+    return d->icon[d->alt] != AABTN_NO_ICON ? d->icon[d->alt] : d->icon[0];
 }
 
 static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
@@ -95,9 +99,9 @@ static void aabtn_measure(Object* obj, aabtn_data* d) {
     if (!d->icon_only) {
         tw = aa_text_width(&d->aa, obj, d->widest);
     }
-    d->minw = 2 * d->m.pad_x + (aabtn_cur_icon(d) >= 0 ? d->m.icon_px : 0) + (tw > 0 ? (aabtn_cur_icon(d) >= 0 ? d->m.icon_gap : 0) + tw : 0);
+    d->minw = 2 * d->m.pad_x + (aabtn_cur_icon(d) != AABTN_NO_ICON ? d->m.icon_px : 0) + (tw > 0 ? (aabtn_cur_icon(d) != AABTN_NO_ICON ? d->m.icon_gap : 0) + tw : 0);
     d->minh = d->m.height;
-    if (aabtn_cur_icon(d) >= 0 && d->m.icon_h + 2 * d->m.pad_y > d->minh) {
+    if (aabtn_cur_icon(d) != AABTN_NO_ICON && d->m.icon_h + 2 * d->m.pad_y > d->minh) {
         d->minh = d->m.icon_h + 2 * d->m.pad_y;
     }
     if (!d->icon_only && aa_text_height(&d->aa, obj) + 2 * d->m.pad_y > d->minh) {
@@ -128,8 +132,12 @@ static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinM
  * as horizontal runs of one ramp pen from the face colour to the caption colour. */
 static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int y, int px, int ph, uint32_t face, uint32_t ink) {
     int bp = px, bh = ph;
-    const uint8_t* body = mui_icon_body_wh(icon, px, ph); /* I949e2: the exact px x ph set (the 16x8 body on tall pixels) first */
-    if (body == NULL) {
+    const uint8_t* body = icon >= 0 ? mui_icon_body_wh(icon, px, ph) : NULL; /* I949e2: the exact px x ph set (the 16x8 body on tall pixels) first */
+    const UP_IconData* data = icon == AABTN_DATA_ICON ? d->data : NULL;
+    if (data != NULL && (data->alpha == NULL || data->w <= 0 || data->h <= 0)) {
+        return;
+    }
+    if (body == NULL && data == NULL && icon >= 0) {
         bh = px;
         body = mui_icon_body(icon, px);
     }
@@ -137,13 +145,17 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
     uint32_t col[4];
     LONG pen[4];
     int i;
-    if (body == NULL && mui_icon_size_count > 0) {
+    if (body == NULL && data == NULL && icon >= 0 && mui_icon_size_count > 0) {
         bp = (int)mui_icon_sizes[mui_icon_size_count - 1];
         bh = bp;
         body = mui_icon_body_wh(icon, bp, (int)mui_icon_heights[mui_icon_size_count - 1]);
     }
-    if (body == NULL || px <= 0 || ph <= 0) {
+    if ((body == NULL && data == NULL) || px <= 0 || ph <= 0) {
         return;
+    }
+    if (data != NULL) { /* the caller's alpha mask: the same four pen steps the bake uses (48, 112, 184) */
+        bp = (int)data->w;
+        bh = (int)data->h;
     }
     rb = ((bp + 15) / 16) * 2;
     for (i = 1; i < 4; i++) {
@@ -151,14 +163,19 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
         pen[i] = aa_pen(&d->aa, col[i]);
     }
     for (dy = 0; dy < ph; dy++) { /* I949e: ph rows for a px wide icon: a square icon on tall pixels is px x ph */
-        const uint8_t* row = body + (size_t)(dy * bh / ph) * (size_t)rb * 2u;
+        const uint8_t* row = data != NULL ? data->alpha + (size_t)(dy * bh / ph) * (size_t)bp : body + (size_t)(dy * bh / ph) * (size_t)rb * 2u;
         run0 = 0;
         run_pen = 0;
         for (dx = 0; dx <= px; dx++) {
             int p = 0;
             if (dx < px) {
                 int sx = dx * bp / px;
-                p = ((row[sx >> 3] >> (7 - (sx & 7))) & 1) | (((row[rb + (sx >> 3)] >> (7 - (sx & 7))) & 1) << 1);
+                if (data != NULL) {
+                    unsigned a = row[sx];
+                    p = a < 48u ? 0 : a < 112u ? 1 : a < 184u ? 2 : 3;
+                } else {
+                    p = ((row[sx >> 3] >> (7 - (sx & 7))) & 1) | (((row[rb + (sx >> 3)] >> (7 - (sx & 7))) & 1) << 1);
+                }
             }
             if (dx == px || p != run_pen) {
                 if (run_pen != 0 && pen[run_pen] >= 0) {
@@ -215,9 +232,9 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         tw = aa_text_width(&d->aa, obj, d->caption);
         th = aa_text_height(&d->aa, obj);
     }
-    cw = (icon >= 0 ? d->m.icon_px : 0) + (icon >= 0 && tw > 0 ? d->m.icon_gap : 0) + tw;
+    cw = (icon != AABTN_NO_ICON ? d->m.icon_px : 0) + (icon != AABTN_NO_ICON && tw > 0 ? d->m.icon_gap : 0) + tw;
     x = l + mui_aa_btn_content_x(d->align, w, cw, d->m.pad_x);
-    if (icon >= 0) {
+    if (icon != AABTN_NO_ICON) {
         aabtn_icon(d, rp, icon, x, t + (h - d->m.icon_h) / 2, d->m.icon_px, d->m.icon_h, face, text);
         x += d->m.icon_px + d->m.icon_gap;
     }
@@ -313,7 +330,11 @@ Object* UP_NewButton(const struct TagItem* tags) {
     int role = (int)GetTagData(UPA_Button_Role, UPV_Button_Role_Normal, (struct TagItem*)tags);
     const char* caption = (const char*)GetTagData(UPA_Button_Caption, (ULONG)(uintptr_t)"", (struct TagItem*)tags);
     const char* widest = (const char*)GetTagData(UPA_Button_Widest, 0, (struct TagItem*)tags);
-    int icon = (int)GetTagData(UPA_Button_Icon, (ULONG)-1, (struct TagItem*)tags);
+    const UP_IconData* data = (const UP_IconData*)(uintptr_t)GetTagData(UPA_Button_IconData, 0, (struct TagItem*)tags);
+    int icon = mui_icon_index((const char*)(uintptr_t)GetTagData(UPA_Button_Icon, 0, (struct TagItem*)tags));
+    if (icon < 0) {
+        icon = data != NULL ? AABTN_DATA_ICON : AABTN_NO_ICON;
+    }
     if (g_class == NULL) {
         g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aabtn_data), (APTR)(uintptr_t)aabtn_dispatch);
     }
@@ -331,8 +352,12 @@ Object* UP_NewButton(const struct TagItem* tags) {
         strncpy(d->widest, widest != NULL ? widest : caption, sizeof d->widest - 1);
         d->fit = widest == NULL;
         d->icon[0] = icon;
-        d->icon[1] = (int)GetTagData(UPA_Button_AltIcon, (ULONG)-1, (struct TagItem*)tags);
-        d->icon_only = GetTagData(UPA_Button_IconOnly, FALSE, (struct TagItem*)tags) && icon >= 0;
+        d->data = data;
+        d->icon[1] = mui_icon_index((const char*)(uintptr_t)GetTagData(UPA_Button_AltIcon, 0, (struct TagItem*)tags));
+        if (d->icon[1] < 0) {
+            d->icon[1] = AABTN_NO_ICON;
+        }
+        d->icon_only = GetTagData(UPA_Button_IconOnly, FALSE, (struct TagItem*)tags) && icon != AABTN_NO_ICON;
         d->role = role;
         d->align = (int)GetTagData(UPA_Button_Align, UPV_Button_Align_Left, (struct TagItem*)tags);
         d->fixed_w = (int)GetTagData(UPA_Button_FixedWidth, 0, (struct TagItem*)tags);

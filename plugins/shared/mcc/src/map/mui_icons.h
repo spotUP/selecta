@@ -44,11 +44,7 @@ int mui_icon_index(const char* name);
 /* The body of a Lucide name at exactly w x h (as mui_icon_body_wh), NULL for an unknown name or a size with no set. */
 const uint8_t* mui_icon_by_name(const char* name, int w, int h);
 
-/* Icon id (a sel_gui_icon value) for a button key: a transport or extra action id ("play", "pitch_up"), a sidebar door page
- * ("home") or a toolbar label ("Clear Queue"); the breadcrumb button uses "crumb". -1 when the key has no icon. Counts each
- * resolved lookup (mui_icon_resolved). */
-int mui_icon_id(const char* key);
-/* The Bodychunk body of an icon at px edge (px square, 2 planes, row interleaved), NULL for an id out of range. */
+/* The Bodychunk body of body index icon at px edge (px square, 2 planes, row interleaved), NULL for an id out of range. */
 const uint8_t* mui_icon_body(int icon, int px);
 /* The body of exactly w x h (mui_icon_sizes / mui_icon_heights), NULL when no set has that shape. mui_icon_body(icon, px) is w = h = px. */
 const uint8_t* mui_icon_body_wh(int icon, int w, int h);
@@ -59,9 +55,6 @@ int mui_model_icon_px(int aspect_q8);
 int mui_model_icon_h(int aspect_q8);
 /* I667m sentinel: mui_icon_body lookups that found a body of this size since start. */
 uint32_t mui_icon_body_lookups(int px);
-/* Number of successful mui_icon_id lookups since start (sentinel for the build path test). */
-uint32_t mui_icon_resolved(void);
-
 /* MUIA_Bitmap_SourceColors for 4 pens: 12 ULONG values (RGB32, each channel 0xRRRRRRRR). themed: pen 0 and the fade start
  * at the button face (SURFACE_RAISED), pen 3 is the TEXT token; unthemed: MUI's grey face 0xAAAAAA and black. Pens 1 and 2
  * are one third and two thirds of the way. tokens is the SEL_GUI_TOKEN_COUNT array of a txt_theme. */

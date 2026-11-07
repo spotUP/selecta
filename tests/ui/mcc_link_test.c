@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 int main(void) {
-    int id = mui_icon_id("play");
+    int id = mui_icon_index("play");
     const uint8_t* body;
     if (id < 0) {
         fprintf(stderr, "[ERROR] icon play not found in the baked table\n");

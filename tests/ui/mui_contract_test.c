@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 
 #include "mui_aa.h"
+#include "mui_iconmap.h"
 #include "mui_icons.h"
 #include "mui_route.h"
 #include <selecta/library_item.h>
