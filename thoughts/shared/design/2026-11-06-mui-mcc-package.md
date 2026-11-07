@@ -446,6 +446,14 @@ use the file and one storage is the single source of truth.
 
 ---
 
+### State after row I685j (2026-11-07)
+
+The prefs class and the theme files exist. `plugins/shared/mcc/prefs/up_prefs.c` is the Mccprefs subclass `UP-MCC.mcp`: one page with the theme file (Popasl), four colour strings (accent, surface, text, background, six hex digits; the mui.h of the SDK has no pen-spec attribute for Poppen), the corner radius slider and a reset button. It is built by `lib/classheader.c` with `-DUP_PREFS_LIBRARY` (same skeleton as the `.mcc` libraries, name `UP-MCC.mcp`, `MCC_Query(1)` returns the class), CMake target `up_mcc_prefs`, file name in the cache variable `MCC_PREFS_NAME`, part of `up_mcc_classes`. The pure gadget/token mapping is `src/map/up_prefs_map.c` (host tested, `mcc-prefs-*`). The writer `txt_theme_write` sits next to the one parser `txt_theme_parse` in `src/uimodel/theme.c`.
+
+What reads which file: `UP_ThemeReload` reads `ENV:UP-MCC/theme`. The page writes `ENV:UP-MCC/theme` and `ENVARC:UP-MCC/theme` on every GadgetsToConfig, because MUI does not tell Use from Save. The shipped `dist/themes/Dark.theme` (equal to the built-in defaults) and `Light.theme` (seven overrides, values chosen for this row) are read only through the theme file gadget; nothing installs them yet. The per-application file `ENV:UP-MCC/<application>.theme` is not read yet.
+
+Open: the `.mcp` links its own static copy of the theme store, so `UP_ThemeReload` inside the prefs process does not reach the application until the classes open `up-mcc.library`. How the MUI prefs list shows the page is unverified until a rig run.
+
 ## 6. Icons and the Lucide licence
 
 Facts: AAButton draws baked Lucide icons (`mui_icon_body_wh` etc., mui_aabtn_class.c:130-142) from

@@ -3,6 +3,8 @@
 #ifndef SELECTA_TEXT_THEME_H
 #define SELECTA_TEXT_THEME_H
 
+#include <stddef.h>
+
 #include <selecta/uimodel/style.h>
 #include <selecta/uimodel/tokens.h>
 
@@ -52,6 +54,10 @@ void txt_theme_default(txt_theme* t);
  * applied, or -1 with the 1-based line number in *bad_line on the first bad line
  * (earlier lines stay applied). */
 int txt_theme_parse(txt_theme* t, const char* text, int* bad_line);
+/* I685j: the writer beside the parser. Writes `gui.<name> = 0xRRGGBB` (decimal for the sized tokens) for every token in token order,
+ * plus `font.file = <path>` when set, so txt_theme_parse reads the text back to the same values. Returns the text length (without
+ * the terminating NUL), or -1 when cap is too small (out then holds a truncated, terminated text). */
+int txt_theme_write(const txt_theme* t, char* out, size_t cap);
 const char* txt_role_name(txt_role r);
 
 #ifdef __cplusplus

@@ -20,7 +20,12 @@
 #include "libinit.h"
 #include "mui_aa_class.h"
 
+#ifdef UP_PREFS_LIBRARY
+/* I685j: the same skeleton builds UP-MCC.mcp. UP_CLASS_NAME is "MCC"; MCC_Query(1) returns the prefs class. */
+#define LIB_NAME "UP-" UP_CLASS_NAME ".mcp"
+#else
 #define LIB_NAME "UP-" UP_CLASS_NAME ".mcc"
+#endif
 #define LIB_VER 1
 #define LIB_REV 0
 #define LIB_ID "$VER: " LIB_NAME " 1.0 (07.11.2026) UP- MUI class " UP_CLASS_NAME
@@ -104,7 +109,11 @@ VOID __stdargs __UserLibCleanup(REG(a4, APTR a4)) {
 
 /* First user vector (LVO -30). which: 0 class, 1 prefs class, 2 prefs image (both live in a .mcp, NULL here). */
 ULONG MCC_Query(LONG which) {
+#ifdef UP_PREFS_LIBRARY
+    return which == 1 ? (ULONG)(uintptr_t)g_lib_class : 0;
+#else
     return which == 0 ? (ULONG)(uintptr_t)g_lib_class : 0;
+#endif
 }
 
 ADDTABL_1(MCC_Query, d0)

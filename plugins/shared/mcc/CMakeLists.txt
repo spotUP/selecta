@@ -5,7 +5,7 @@
 #   src/class/ the ten shipped Selecta_AA* classes, Amiga only
 # File names are unchanged in this row; the UP- rename is row I685d.
 set(MCC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set(MCC_MAP_SOURCES src/map/mui_aa.c src/map/mui_aatip.c src/map/mui_theme.c src/map/mui_icons.c src/map/mui_fontprobe.c src/map/mui_log.c)
+set(MCC_MAP_SOURCES src/map/mui_aa.c src/map/mui_aatip.c src/map/mui_theme.c src/map/mui_icons.c src/map/mui_fontprobe.c src/map/mui_log.c src/map/up_prefs_map.c)
 set(MCC_AMIGA_SOURCES src/mui_aa_draw.c src/mui_aatip.c
   src/class/mui_aabtn_class.c src/class/mui_aatext_class.c src/class/mui_aapanel_class.c src/class/mui_aatabs_class.c
   src/class/mui_aabalance_class.c src/class/mui_aaslider_class.c src/class/mui_aacycle_class.c src/class/mui_aalist_class.c
@@ -74,6 +74,9 @@ add_custom_target(mcc-include-check
     -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake"
   VERBATIM COMMENT "Include check of the MUI class package")
 add_dependencies(sdk-isolation mcc-include-check)
+
+# I685j: file name of the MUI prefs class library; tests/ui/mcc_prefs_test.c checks it against the target below.
+set(MCC_PREFS_NAME "UP-MCC.mcp" CACHE STRING "file name of the MUI prefs class library")
 
 if(NOT SEL_AMIGA)
   return()
@@ -147,5 +150,12 @@ foreach(row ${MCC_CLASS_LIBS})
   list(GET cols 2 d)
   up_add_class_library(${n} "${s}" ${d})
 endforeach()
+# I685j: UP-MCC.mcp from the same skeleton (UP_PREFS_LIBRARY: MCC_Query(1) returns the class).
+add_executable(up_mcc_prefs "${MCC_LIBINIT_O}" lib/classheader.c prefs/up_prefs.c)
+set_target_properties(up_mcc_prefs PROPERTIES OUTPUT_NAME "${MCC_PREFS_NAME}")
+target_include_directories(up_mcc_prefs PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include")
+target_compile_definitions(up_mcc_prefs PRIVATE "UP_CLASS_NAME=\"MCC\"" UP_CLASS_DESC=up_prefs_class_desc UP_MCC_LIBRARY UP_PREFS_LIBRARY)
+target_link_libraries(up_mcc_prefs PRIVATE sel_mcc_static)
+target_link_options(up_mcc_prefs PRIVATE -nostartfiles)
 add_custom_target(up_mcc_classes DEPENDS up_mcc_Button up_mcc_Text up_mcc_Panel up_mcc_Tabs up_mcc_Balance up_mcc_Slider up_mcc_Progress
-  up_mcc_Cycle up_mcc_Field up_mcc_Scroller up_mcc_List)
+  up_mcc_Cycle up_mcc_Field up_mcc_Scroller up_mcc_List up_mcc_prefs)

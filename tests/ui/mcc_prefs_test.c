@@ -23,14 +23,14 @@
     } while (0)
 
 static char* slurp(const char* path) {
-    char* buf = malloc(8192);
+    char* buf = malloc(65536);
     FILE* f = fopen(path, "rb");
     if (buf == NULL || f == NULL) {
         free(buf);
         if (f != NULL) fclose(f);
         return NULL;
     }
-    size_t n = fread(buf, 1, 8191, f);
+    size_t n = fread(buf, 1, 65535, f);
     buf[n] = '\0';
     fclose(f);
     return buf;
@@ -117,7 +117,7 @@ static int t_cmake(const char* cmake_file, const char* name) {
     char* text = slurp(cmake_file);
     CHECK(text != NULL, "cannot read %s", cmake_file);
     CHECK(strstr(text, "up_mcc_prefs") != NULL, "no up_mcc_prefs target");
-    CHECK(strstr(text, "OUTPUT_NAME \"UP-MCC.mcp\"") != NULL, "OUTPUT_NAME UP-MCC.mcp missing");
+    CHECK(strstr(text, "up_mcc_prefs PROPERTIES OUTPUT_NAME \"${MCC_PREFS_NAME}\"") != NULL && strstr(text, "set(MCC_PREFS_NAME \"UP-MCC.mcp\"") != NULL, "OUTPUT_NAME of up_mcc_prefs is not the UP-MCC.mcp cache variable");
     free(text);
     CHECK(strcmp(name, "UP-MCC.mcp") == 0, "cache variable MCC_PREFS_NAME is %s", name);
     return 0;
