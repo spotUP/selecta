@@ -13,6 +13,7 @@
 
 #include "map/mui_map.h"
 #include "map/mui_theme.h"
+#include "map/mui_fontprobe.h"
 #include "map/mui_pens.h"
 #include "map/mui_icons.h"
 #include "map/mui_route.h"
@@ -781,6 +782,8 @@ static int mui_theme_live_now(void) {
     ops.palette = mui_live_palette;
     ops.classes = mui_live_classes;
     ops.ctx = NULL;
+    /* I625a6a: a retheme re-probes the font files (the user may have installed one); the miss memory is otherwise kept per list. */
+    mui_fontprobe_reset();
     return mui_theme_apply_live(&ops, MUI_THEME_ENV_PATH, g_theme_arg[0] != '\0' ? g_theme_arg : NULL);
 }
 
