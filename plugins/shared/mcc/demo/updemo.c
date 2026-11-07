@@ -34,31 +34,68 @@ struct Library* MUIMasterBase;
 static const char* const g_names[CLASS_COUNT] = {"Button", "Text", "Panel", "Tabs", "Balance", "Slider",
                                                  "Progress", "Cycle", "Field", "Scroller", "List"};
 static const char* const g_cycle_entries[] = {"First", "Second", "Third", NULL};
-static const char* const g_tab_captions[] = {"Songs", "Albums", NULL};
+static const char* const g_tab_captions[] = {"Songs", "Albums", "Artists", "Playlists", NULL};
+static const char* const g_artists[] = {"Virgill", "Jogeir Liljedahl", "Purple Motion", "Zabutom", "Dubmood", "Chipzel"};
+static const char* const g_times[] = {"3:42", "4:05", "2:58", "5:21", "3:09", "4:47"};
+static UP_ListColumns g_columns = {3, {3, 2, 0}, {NULL, NULL, "0:00"}};
 
-/* I685w: the List shows 20 rows of text; without a row hook it had no text to draw. */
+/* I685w run 3: three columns (title, artist, time) and a title row; the hook gets row -1 for the column titles. */
 static struct Hook g_row_hook;
-static ULONG demo_row(struct Hook* hook, Object* obj, UP_ListCell* cell) {
-    static char text[32];
+static ULONG demo_cell(struct Hook* hook, Object* obj, UP_ListCell* cell) {
+    static char text[40];
+    static const char* const heads[] = {"Title", "Artist", "Time"};
     (void)hook;
     (void)obj;
-    snprintf(text, sizeof text, "Track %ld", (long)cell->row + 1);
-    return (ULONG)(uintptr_t)text;
+    if (cell->row < 0) {
+        return (ULONG)(uintptr_t)heads[cell->col % 3];
+    }
+    if (cell->col == 0) {
+        snprintf(text, sizeof text, "Track %ld", (long)cell->row + 1);
+        return (ULONG)(uintptr_t)text;
+    }
+    return (ULONG)(uintptr_t)(cell->col == 1 ? g_artists[cell->row % 6] : g_times[cell->row % 6]);
+}
+
+/* A caption line in a tone. */
+static Object* label(const char* text, ULONG tone) {
+    return MUI_NewObject((char*)"UP-Text.mcc", UPA_Text_Contents, (ULONG)text, UPA_Text_Tone, tone, TAG_DONE);
+}
+
+/* A vertical or horizontal group of up to 6 children (NULLs skipped). Stock groups with MUIA_FillArea FALSE, so the panel face shows. */
+static Object* box(ULONG horiz, Object* a, Object* b, Object* c, Object* d, Object* e, Object* f) {
+    struct TagItem t[10];
+    Object* kids[6];
+    int i, n = 0;
+    kids[0] = a, kids[1] = b, kids[2] = c, kids[3] = d, kids[4] = e, kids[5] = f;
+    t[n].ti_Tag = MUIA_Group_Horiz, t[n++].ti_Data = horiz;
+    t[n].ti_Tag = MUIA_FillArea, t[n++].ti_Data = (ULONG)FALSE;
+    for (i = 0; i < 6; i++) {
+        if (kids[i] != NULL) {
+            t[n].ti_Tag = MUIA_Group_Child, t[n++].ti_Data = (ULONG)kids[i];
+        }
+    }
+    t[n].ti_Tag = TAG_DONE, t[n].ti_Data = 0;
+    return MUI_NewObjectA((char*)MUIC_Group, t);
+}
+
+/* A raised card: a heading line, then the widgets. */
+static Object* card(const char* title, Object* a, Object* b, Object* c, Object* d) {
+    return MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Raised, MUIA_Group_Child, (ULONG)label(title, UPV_Text_Tone_Title),
+                         MUIA_Group_Child, (ULONG)box(FALSE, a, b, c, d, NULL, NULL), TAG_DONE);
 }
 
 /* One instance of class `index` with the tags that class needs to be valid on its own; every class is created by file name. */
 static Object* make(int index) {
     char path[32];
-    /* I685w: a stock Rectangle fills with MUI's snapped background pen; the filler is an UP-Text that erases in the panel token */
-    Object* spacer = MUI_NewObject((char*)"UP-Text.mcc", UPA_Text_Contents, (ULONG) " ", TAG_DONE);
     snprintf(path, sizeof path, "UP-%s.mcc", g_names[index]);
     switch (index) {
     case 0:
-        return MUI_NewObject(path, UPA_Button_Caption, (ULONG) "Play", TAG_DONE);
+        return MUI_NewObject(path, UPA_Button_Caption, (ULONG) "Play", UPA_Button_Icon, (ULONG) "play", UPA_Button_Role, (ULONG)UPV_Button_Role_Accent, TAG_DONE);
     case 1:
-        return MUI_NewObject(path, UPA_Text_Contents, (ULONG) "UP-Text from a library", TAG_DONE);
+        return MUI_NewObject(path, UPA_Text_Contents, (ULONG) "Welcome back. Every control below is a UP class loaded by name.", UPA_Text_Tone, (ULONG)UPV_Text_Tone_Muted, TAG_DONE);
     case 2:
-        return MUI_NewObject(path, UPA_Panel_Role, (ULONG)UPV_Panel_Role_Raised, MUIA_Group_Child, (ULONG)spacer, TAG_DONE);
+        return MUI_NewObject(path, UPA_Panel_Role, (ULONG)UPV_Panel_Role_Surface, MUIA_Group_Child, (ULONG)label("Panel: a Surface role card", UPV_Text_Tone_Normal),
+                             MUIA_Group_Child, (ULONG)label("It paints its face in the theme token.", UPV_Text_Tone_Muted), TAG_DONE);
     case 3:
         return MUI_NewObject(path, UPA_Tabs_Captions, (ULONG)g_tab_captions, TAG_DONE);
     case 4:
@@ -66,28 +103,28 @@ static Object* make(int index) {
     case 5:
         return MUI_NewObject(path, MUIA_Numeric_Min, 0UL, MUIA_Numeric_Max, 100UL, MUIA_Numeric_Value, 40UL, TAG_DONE);
     case 6:
-        return MUI_NewObject(path, UPA_Progress_Value, 30UL, UPA_Progress_Max, 100UL, TAG_DONE);
+        return MUI_NewObject(path, UPA_Progress_Value, 62UL, UPA_Progress_Max, 100UL, TAG_DONE);
     case 7:
         return MUI_NewObject(path, UPA_Cycle_Entries, (ULONG)g_cycle_entries, TAG_DONE);
     case 8:
-        return MUI_NewObject(path, MUIA_Group_Child, (ULONG)spacer, TAG_DONE);
+        return MUI_NewObject(path, UPA_Field_Placeholder, (ULONG) "Search songs, albums, artists", TAG_DONE);
     case 9:
         return MUI_NewObject(path, UPA_Scroller_Entries, 100UL, UPA_Scroller_Visible, 10UL, TAG_DONE);
     default:
         g_row_hook.h_Entry = (__typeof__(g_row_hook.h_Entry))(void (*)(void))HookEntry;
-        g_row_hook.h_SubEntry = (__typeof__(g_row_hook.h_SubEntry))(void (*)(void))demo_row;
-        return MUI_NewObject(path, UPA_List_Count, 20UL, UPA_List_RowHook, (ULONG)(uintptr_t)&g_row_hook, TAG_DONE);
+        g_row_hook.h_SubEntry = (__typeof__(g_row_hook.h_SubEntry))(void (*)(void))demo_cell;
+        return MUI_NewObject(path, UPA_List_Count, 20UL, UPA_List_CellHook, (ULONG)(uintptr_t)&g_row_hook, UPA_List_Columns, (ULONG)(uintptr_t)&g_columns,
+                             UPA_List_Title, (ULONG)TRUE, UPA_List_MaxRows, 5UL, TAG_DONE);
     }
 }
 
 int main(int argc, char** argv) {
     Object* obj[CLASS_COUNT];
     Object *app = NULL, *win, *root;
-    struct TagItem kids[CLASS_COUNT + 4];
     ULONG sigs = 0, is_open = 0;
     int quit_now = argc > 1 && argv[1] != NULL && strcmp(argv[1], "QUIT") == 0;
     int hold = argc > 1 && argv[1] != NULL && strcmp(argv[1], "HOLD") == 0;
-    int i, ok = 0, ticks = 0, k = 0;
+    int i, ok = 0, ticks = 0;
 
     memset(obj, 0, sizeof obj);
     MUIMasterBase = OpenLibrary((CONST_STRPTR) "muimaster.library", 19);
@@ -111,24 +148,22 @@ int main(int argc, char** argv) {
         ok++;
     }
     if (ok == CLASS_COUNT) {
-        for (i = 0; i < CLASS_COUNT; i++) {
-            kids[k].ti_Tag = MUIA_Group_Child;
-            if (i == 4) { /* I685w: the Balance is one gap wide; in a grid cell it sits in a horizontal group with a spacer so the cell has a shape */
-                kids[k++].ti_Data = (ULONG)MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, MUIA_FillArea, (ULONG)FALSE, MUIA_Group_Child, (ULONG)obj[i],
-                                                         MUIA_Group_Child, (ULONG)MUI_NewObject((char*)"UP-Text.mcc", UPA_Text_Contents, (ULONG) " ", TAG_DONE), TAG_DONE);
-            } else {
-                kids[k++].ti_Data = (ULONG)obj[i];
-            }
+        {   /* I685w run 3: titled cards, the Balance between the two columns. Each of the 11 objects is in the tree once. */
+            Object* ctl = card("Controls",
+                               box(TRUE, obj[0], MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Shuffle", UPA_Button_Icon, (ULONG) "shuffle", TAG_DONE),
+                                   MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Queue", UPA_Button_Role, (ULONG)UPV_Button_Role_Ghost, TAG_DONE),
+                                   MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Repeat", UPA_Button_Role, (ULONG)UPV_Button_Role_Toggle, TAG_DONE), NULL, NULL),
+                               label("Search", UPV_Text_Tone_Muted), obj[8], obj[7]);
+            Object* left = card("Library", obj[3], label("128 songs in your library", UPV_Text_Tone_Muted), obj[2], obj[10]);
+            Object* right = card("Playback", label("Volume 40", UPV_Text_Tone_Muted), obj[5], label("Elapsed 2:05 of 3:22", UPV_Text_Tone_Muted),
+                                 box(FALSE, obj[6], label("Scroll position", UPV_Text_Tone_Muted), obj[9], NULL, NULL, NULL));
+            root = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Panel, MUIA_Group_Child, (ULONG)label("UP-Demo", UPV_Text_Tone_Title),
+                                 MUIA_Group_Child, (ULONG)obj[1], MUIA_Group_Child, (ULONG)ctl,
+                                 MUIA_Group_Child, (ULONG)box(TRUE, left, obj[4], right, NULL, NULL, NULL), TAG_DONE);
         }
-        /* Two columns, so the 11 classes fit a readable window instead of one narrow tall strip. */
-        kids[k].ti_Tag = MUIA_Group_Columns;
-        kids[k++].ti_Data = 2;
-        kids[k].ti_Tag = TAG_DONE;
-        kids[k].ti_Data = 0;
-        root = MUI_NewObjectA((char*)"UP-Panel.mcc", kids);
         win = root == NULL ? NULL
-                           : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431, MUIA_Window_Width, (ULONG)MUIV_Window_Width_Screen(40),
-                                           MUIA_Window_Height, (ULONG)MUIV_Window_Height_Screen(40),
+                           : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431, MUIA_Window_Width, (ULONG)MUIV_Window_Width_Screen(90),
+                                           MUIA_Window_Height, (ULONG)MUIV_Window_Height_Screen(90),
                                            MUIA_Window_RootObject, (ULONG)root, TAG_DONE);
         if (win != NULL) {
             app = MUI_NewObject((char*)MUIC_Application, MUIA_Application_Title, (ULONG) "UP-Demo", MUIA_Application_Base,
