@@ -11,6 +11,10 @@ static int isqrt(int v) {
     return r;
 }
 
+int mui_aa_truecolour(int depth, int have_p96, int have_cgx) {
+    return depth >= 15 && (have_p96 || have_cgx);
+}
+
 int mui_aa_round_inset(int w, int h, int r, int y) {
     int dy2, half;
     if (w <= 0 || h <= 0 || y < 0 || y >= h) {

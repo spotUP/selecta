@@ -16,6 +16,9 @@ extern "C" {
 /* Pixels left uncovered at the left and right end of row y (0 = top) of a w x h rounded rectangle with corner radius r
  * (clamped to h/2 and w/2). Row centres are sampled against the corner circle; the middle rows return 0. */
 int mui_aa_round_inset(int w, int h, int r, int y);
+/* I685w (design 5.2 item 1): 1 when the MCC fills write exact RGB (screen of 15+ bits and Picasso96API or cybergraphics open),
+ * 0 when they go through palette pens (8 bits or less, or no RTG library). */
+int mui_aa_truecolour(int depth, int have_p96, int have_cgx);
 /* Ramp slot (0 = background .. steps-1 = full foreground) for an 8-bit glyph coverage; steps >= 2. */
 int mui_aa_ramp_index(int coverage, int steps);
 /* Colour (0xRRGGBB) of ramp slot i between bg (slot 0) and fg (slot steps-1). */
