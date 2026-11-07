@@ -667,6 +667,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME mcc-support-api COMMAND mcc_support_api_test)
   set_tests_properties(mcc-support-api PROPERTIES TIMEOUT 30 LABELS mui)
   # I685j: the UP-MCC.mcp prefs page, host part: theme writer round trip, gadget/token mapping, shipped theme files, the CMake name.
+  # I685k: UP-Demo is built from the release headers only (no Selecta include path, no sel_mcc_static); the checked lists are the
+  # ones target up_demo is built from (asserted in the Amiga part of the package CMakeLists).
+  add_test(NAME mcc-demo-headers-only COMMAND "${CMAKE_COMMAND}" "-DINCLUDES=${MCC_DEMO_INCLUDES}" "-DLIBS=${MCC_DEMO_LIBS}"
+    "-DSOURCE=${MCC_DIR}/demo/updemo.c" "-DRELEASE_INC=${MCC_RELEASE_INC}" "-DSOURCE_ROOT=${PROJECT_SOURCE_DIR}" "-DBINARY_ROOT=${PROJECT_BINARY_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_demo.cmake")
+  set_tests_properties(mcc-demo-headers-only PROPERTIES TIMEOUT 30 LABELS mui)
   # I685k: the sentinel attribute UPA_Shared_Origin is 0 in the static build, the library base in a .mcc (gate item 1).
   add_executable(mcc_origin_test ui/mcc_origin_test.c)
   target_link_libraries(mcc_origin_test PRIVATE sel_mcc_static)

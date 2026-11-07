@@ -5,7 +5,7 @@
 #   src/class/ the ten shipped Selecta_AA* classes, Amiga only
 # File names are unchanged in this row; the UP- rename is row I685d.
 set(MCC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set(MCC_MAP_SOURCES src/map/mui_aa.c src/map/mui_aatip.c src/map/mui_theme.c src/map/mui_icons.c src/map/mui_fontprobe.c src/map/mui_log.c src/map/up_prefs_map.c)
+set(MCC_MAP_SOURCES src/map/mui_aa.c src/map/mui_aatip.c src/map/mui_theme.c src/map/mui_icons.c src/map/mui_fontprobe.c src/map/mui_log.c src/map/up_prefs_map.c src/map/up_origin.c)
 set(MCC_AMIGA_SOURCES src/mui_aa_draw.c src/mui_aatip.c
   src/class/mui_aabtn_class.c src/class/mui_aatext_class.c src/class/mui_aapanel_class.c src/class/mui_aatabs_class.c
   src/class/mui_aabalance_class.c src/class/mui_aaslider_class.c src/class/mui_aacycle_class.c src/class/mui_aalist_class.c
@@ -77,6 +77,12 @@ add_dependencies(sdk-isolation mcc-include-check)
 
 # I685j: file name of the MUI prefs class library; tests/ui/mcc_prefs_test.c checks it against the target below.
 set(MCC_PREFS_NAME "UP-MCC.mcp" CACHE STRING "file name of the MUI prefs class library")
+
+# I685k: UP-Demo is built against the release headers only. MCC_DEMO_INCLUDES / MCC_DEMO_LIBS are the whole include and link
+# interface of target up_demo (asserted below on the real target); ctest mcc-demo-headers-only checks them and the demo source.
+set(MCC_RELEASE_INC "${CMAKE_CURRENT_BINARY_DIR}/release_include" CACHE INTERNAL "staged release headers of the package")
+set(MCC_DEMO_INCLUDES "${MCC_RELEASE_INC}" "${CMAKE_CURRENT_BINARY_DIR}/sfd_include" CACHE INTERNAL "include directories of up_demo")
+set(MCC_DEMO_LIBS "mui" CACHE INTERNAL "link libraries of up_demo")
 
 if(NOT SEL_AMIGA)
   return()
@@ -159,3 +165,25 @@ target_link_libraries(up_mcc_prefs PRIVATE sel_mcc_static)
 target_link_options(up_mcc_prefs PRIVATE -nostartfiles)
 add_custom_target(up_mcc_classes DEPENDS up_mcc_Button up_mcc_Text up_mcc_Panel up_mcc_Tabs up_mcc_Balance up_mcc_Slider up_mcc_Progress
   up_mcc_Cycle up_mcc_Field up_mcc_Scroller up_mcc_List up_mcc_prefs)
+
+# I685k: UP-Demo (demo/updemo.c). Headers: the release set staged here (include/mcc/*.h plus the one header up.h needs,
+# selecta/uimodel/tokens.h, which the release archive carries as Include/selecta/uimodel/tokens.h) and the sfdc headers. No Selecta
+# include path and no link against sel_mcc_static.
+configure_file("${MCC_DIR}/include/mcc/up.h" "${MCC_RELEASE_INC}/mcc/up.h" COPYONLY)
+configure_file("${MCC_DIR}/include/mcc/up_lib.h" "${MCC_RELEASE_INC}/mcc/up_lib.h" COPYONLY)
+configure_file("${PROJECT_SOURCE_DIR}/include/selecta/uimodel/tokens.h" "${MCC_RELEASE_INC}/selecta/uimodel/tokens.h" COPYONLY)
+add_executable(up_demo demo/updemo.c ${MCC_SFD_HEADERS})
+set_target_properties(up_demo PROPERTIES OUTPUT_NAME "UP-Demo")
+target_include_directories(up_demo PRIVATE ${MCC_DEMO_INCLUDES})
+target_link_libraries(up_demo PRIVATE ${MCC_DEMO_LIBS})
+get_target_property(_demo_inc up_demo INCLUDE_DIRECTORIES)
+get_target_property(_demo_libs up_demo LINK_LIBRARIES)
+if(NOT "${_demo_inc}" STREQUAL "${MCC_DEMO_INCLUDES}" OR NOT "${_demo_libs}" STREQUAL "${MCC_DEMO_LIBS}")
+  message(FATAL_ERROR "up_demo: include/link interface differs from MCC_DEMO_INCLUDES/MCC_DEMO_LIBS (${_demo_inc} | ${_demo_libs})")
+endif()
+# Gate item 1 symbol check, part of the build: nm on the finished UP-Demo; the count goes to UP-Demo.nm-count.txt.
+find_program(MCC_NM NAMES m68k-amigaos-nm HINTS "${AMIGA_GCC_ROOT}/bin" "$ENV{HOME}/opt/amiga/bin" REQUIRED)
+add_custom_command(TARGET up_demo POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" "-DNM=${MCC_NM}" "-DBINARY=$<TARGET_FILE:up_demo>" "-DCOUNT_FILE=$<TARGET_FILE:up_demo>.nm-count.txt"
+    -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_demo_symbols.cmake"
+  VERBATIM COMMENT "UP-Demo: no class code symbols")
