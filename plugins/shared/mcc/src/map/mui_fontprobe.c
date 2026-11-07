@@ -13,3 +13,5 @@ void* mui_fontprobe_open(const mui_fontprobe_ops* ops, const char* const* names)
     ops->quiet_end(ops->ctx, saved);
     return font;
 }
+
+void mui_fontprobe_reset(void) {}

@@ -20,6 +20,12 @@ typedef struct mui_fontprobe_ops {
  * that font handle, or NULL when every name failed. quiet_end runs exactly once either way. */
 void* mui_fontprobe_open(const mui_fontprobe_ops* ops, const char* const* names);
 
+/* I625a6a: miss memory. A name that failed to open is remembered (per name, not per pixel size: a file that does not open is a
+ * fact about the file) and skipped by later calls, so one font list costs one probe per name, not one per class instance. The
+ * memory holds a copy of the list it was built against; a call with a list whose strings or order differ clears it first.
+ * mui_fontprobe_reset clears it unconditionally (tests, and the live retheme: a font installed meanwhile must be found). */
+void mui_fontprobe_reset(void);
+
 #ifdef __cplusplus
 }
 #endif
