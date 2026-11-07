@@ -19,6 +19,7 @@
 
 #include "libinit.h"
 #include "mui_aa_class.h"
+#include "map/up_origin.h"
 
 #ifdef UP_PREFS_LIBRARY
 /* I685j: the same skeleton builds UP-MCC.mcp. UP_CLASS_NAME is "MCC"; MCC_Query(1) returns the prefs class. */
@@ -53,7 +54,32 @@ void exit(int code) {
 
 static struct MUI_CustomClass* g_lib_class;
 
+/* I685k: the class is created with this wrapper instead of its own dispatcher. A GET of UPA_Shared_Origin is answered here with the
+ * library base (src/map/up_origin.c) for every class at once; everything else runs the class's own dispatcher unchanged. The asm
+ * stub has the register ABI of the class stubs (a0 class, a2 object, a1 message); up_origin_route returns 0 when it answered and
+ * the class dispatcher's address otherwise, which the stub tail-jumps to with the registers restored. One class per library. */
+static ULONG (*g_real_dispatch)(void);
+
+static ULONG __attribute__((used)) up_origin_route(struct IClass* cl, Object* obj, Msg msg) {
+    (void)cl;
+    (void)obj;
+    if (msg->MethodID == OM_GET && up_origin_get(((struct opGet*)msg)->opg_AttrID, ((struct opGet*)msg)->opg_Storage)) {
+        return 0;
+    }
+    return (ULONG)(uintptr_t)g_real_dispatch;
+}
+
+extern ULONG up_origin_dispatch(void);
+__asm__(".text\n.even\n.globl _up_origin_dispatch\n_up_origin_dispatch:\n"
+        "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
+        "\tjbsr _up_origin_route\n"
+        "\tmove.l (sp)+,a0\n\tmove.l (sp)+,a2\n\tmove.l (sp)+,a1\n"
+        "\ttst.l d0\n\tbeq.s 1f\n"
+        "\tmove.l d0,-(sp)\n\trts\n"
+        "1:\tmoveq #1,d0\n\trts\n");
+
 static void close_libs(void) {
+    up_origin_set(NULL);
     if (g_lib_class != NULL) {
         MUI_DeleteCustomClass(g_lib_class);
         g_lib_class = NULL;
@@ -94,7 +120,9 @@ LONG __stdargs __UserLibInit(struct Library* lib, REG(a4, APTR a4)) {
         close_libs();
         return 1;
     }
-    g_lib_class = MUI_CreateCustomClass(lib, (char*)UP_CLASS_DESC.super, NULL, UP_CLASS_DESC.size, (APTR)(uintptr_t)UP_CLASS_DESC.dispatcher);
+    g_real_dispatch = UP_CLASS_DESC.dispatcher;
+    up_origin_set(lib);
+    g_lib_class = MUI_CreateCustomClass(lib, (char*)UP_CLASS_DESC.super, NULL, UP_CLASS_DESC.size, (APTR)(uintptr_t)up_origin_dispatch);
     if (g_lib_class == NULL) {
         close_libs();
         return 1;

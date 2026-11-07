@@ -169,6 +169,12 @@ enum { UPV_Panel_Role_Panel, UPV_Panel_Role_Surface, UPV_Panel_Role_Raised, UPV_
 /* Shared: tooltip (private to the package) */
 #define UPM_Shared_Fire UP_TAG(UP_CLS_SHARED, 0x31) /* private method the timer node sends to the owner */
 #define UPA_Shared_Side UP_TAG(UP_CLS_SHARED, 0x32) /* I/S: preferred side, MUI_AA_TIP_* */
+/* UPA_Shared_Origin
+ *   G  struct Library*  The base of the UP-<Name>.mcc library the object's class was loaded from. Every class answers it; the
+ *                       answer is non-NULL for an object made by name from MUI:Libs/mui and NULL (not answered, storage left 0)
+ *                       in the static Selecta build. Proof that a program uses the shipped library and not linked-in class code
+ *                       (gate item 1, section 10). Not settable, not notified. */
+#define UPA_Shared_Origin UP_TAG(UP_CLS_SHARED, 0x33)
 
 /* ---- Constructors: the tag list is the whole interface. Defaults a caller does not give (no frame, cycle chain) are the class's. ---- */
 #if defined(__amigaos__) || defined(AMIGA)
