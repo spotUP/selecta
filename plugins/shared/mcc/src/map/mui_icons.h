@@ -37,6 +37,13 @@ extern const uint32_t mui_icon_sizes[];
 extern const uint32_t mui_icon_heights[];
 extern const uint32_t mui_icon_body_count;
 
+/* I685g: the Lucide name of each body (the bake writes it next to the bodies), same index as mui_icon_sets[z]. */
+extern const char* const mui_icon_names[];
+/* Body index of a Lucide name ("play", "skip-forward"); -1 for an unknown, empty or NULL name. */
+int mui_icon_index(const char* name);
+/* The body of a Lucide name at exactly w x h (as mui_icon_body_wh), NULL for an unknown name or a size with no set. */
+const uint8_t* mui_icon_by_name(const char* name, int w, int h);
+
 /* Icon id (a sel_gui_icon value) for a button key: a transport or extra action id ("play", "pitch_up"), a sidebar door page
  * ("home") or a toolbar label ("Clear Queue"); the breadcrumb button uses "crumb". -1 when the key has no icon. Counts each
  * resolved lookup (mui_icon_resolved). */

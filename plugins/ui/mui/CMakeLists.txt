@@ -1,7 +1,7 @@
 # Amiga MUI UI (plan 2026-10-25-amiga-mui.md, MUI-P1-1). The mapping functions in map/ are pure C and build everywhere
 # so host tests reach them; the plugin entry (mui_ui.c, the only file that will include MUI headers) is registered
 # with the shell on the Amiga only, as sel_add_plugin does for text_ui and desktop_ui.
-add_library(mui_map STATIC map/mui_style.c map/mui_wait.c map/mui_probe.c map/mui_menu.c map/mui_layout.c map/mui_controls.c map/mui_list.c map/mui_views.c map/mui_sidebar.c map/mui_canvas.c map/mui_viz.c map/mui_copper.c map/mui_drop.c map/mui_p8.c map/mui_pens.c map/mui_screen.c map/mui_route.c map/mui_tiles.c map/mui_overlay.c map/mui_aatagmap.c)
+add_library(mui_map STATIC map/mui_style.c map/mui_wait.c map/mui_probe.c map/mui_menu.c map/mui_layout.c map/mui_controls.c map/mui_list.c map/mui_views.c map/mui_sidebar.c map/mui_canvas.c map/mui_viz.c map/mui_copper.c map/mui_drop.c map/mui_p8.c map/mui_pens.c map/mui_screen.c map/mui_route.c map/mui_tiles.c map/mui_overlay.c map/mui_aatagmap.c map/mui_iconmap.c)
 # I685c/I685e4: aa, aatip, theme and icons (with the baked Lucide table) live in plugins/shared/mcc (sel_mcc_static); the
 # package references no mui_map symbol, so only this side links the other.
 target_link_libraries(mui_map PUBLIC selecta_uimodel selecta_gui sel_mcc_static)

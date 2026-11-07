@@ -47,6 +47,16 @@ int mui_icon_id(const char* key) {
     return -1;
 }
 
+const char* const mui_icon_names[1] = {NULL}; /* stub, replaced by the bake */
+int mui_icon_index(const char* name) {
+    (void)name;
+    return -1;
+}
+const uint8_t* mui_icon_by_name(const char* name, int w, int h) {
+    (void)name; (void)w; (void)h;
+    return NULL;
+}
+
 const uint8_t* mui_icon_body_wh(int icon, int w, int h) {
     uint32_t z;
     if (icon < 0 || (uint32_t)icon >= mui_icon_body_count) {

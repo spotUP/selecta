@@ -7,7 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <selecta/gui/gui_icons.h>
+
 #include "mui_aatagmap.h"
+#include "mui_iconmap.h"
+#include "mui_icons.h"
 
 static int failures;
 #define CHECK(cond, ...)                                \
@@ -53,8 +57,8 @@ static void test_button(void) {
     sp.caption = "Cap";
     sp.widest = "Widest caption";
     sp.help = "Help";
-    sp.icon = 11;
-    sp.alt_icon = 12;
+    sp.icon = SEL_GUI_ICON_MINUS;
+    sp.alt_icon = SEL_GUI_ICON_PLUS;
     sp.icon_only = 1;
     sp.role = UPV_Button_Role_Toggle;
     sp.id = 0x7701;
@@ -68,8 +72,12 @@ static void test_button(void) {
     has_tag(t, UPA_Button_Caption, UP_D(sp.caption), "button");
     has_tag(t, UPA_Button_Widest, UP_D(sp.widest), "button");
     has_tag(t, MUIA_ShortHelp, UP_D(sp.help), "button");
-    has_tag(t, UPA_Button_Icon, 11, "button");
-    has_tag(t, UPA_Button_AltIcon, 12, "button");
+    CHECK(has_tag(t, UPA_Button_Icon, UP_D(mui_icon_name(SEL_GUI_ICON_MINUS)), "button") && mui_icon_name(SEL_GUI_ICON_MINUS) != NULL &&
+              !strcmp(mui_icon_name(SEL_GUI_ICON_MINUS), "minus"),
+          "button: UPA_Button_Icon carries the Lucide name \"minus\"");
+    CHECK(has_tag(t, UPA_Button_AltIcon, UP_D(mui_icon_name(SEL_GUI_ICON_PLUS)), "button") && mui_icon_name(SEL_GUI_ICON_PLUS) != NULL &&
+              !strcmp(mui_icon_name(SEL_GUI_ICON_PLUS), "plus"),
+          "button: UPA_Button_AltIcon carries the Lucide name \"plus\"");
     has_tag(t, UPA_Button_IconOnly, 1, "button");
     has_tag(t, UPA_Button_Role, UPV_Button_Role_Toggle, "button");
     has_tag(t, MUIA_Selected, 1, "button");
@@ -81,6 +89,32 @@ static void test_button(void) {
     n = mui_aabtn_tags(&sp, t, MUI_AATAGMAP_MAX);
     has_tag(t, MUIA_ShortHelp, UP_D(sp.caption), "button without help falls back to the caption");
     CHECK(mui_aabtn_tags(&sp, t, 5) == 0, "button: a short cap must fail, not overrun");
+}
+
+/* I685g: every sel_gui_icon (counted from the enum: SEL_GUI_ICON_COUNT) maps to a Lucide name in the Selecta wrapper, and that
+ * name resolves in the package to the body the enum index resolved to before, at every baked size. Unknown names resolve to nothing. */
+static void test_icons(void) {
+    int i;
+    uint32_t z;
+    CHECK(SEL_GUI_ICON_COUNT > 0 && (uint32_t)SEL_GUI_ICON_COUNT == mui_icon_body_count, "enum has %d icons, the bake %u bodies", (int)SEL_GUI_ICON_COUNT, (unsigned)mui_icon_body_count);
+    for (i = 0; i < SEL_GUI_ICON_COUNT; i++) {
+        const char* name = mui_icon_name(i);
+        CHECK(name != NULL && name[0] != 0, "icon %d has no name", i);
+        if (name == NULL) {
+            continue;
+        }
+        CHECK(mui_icon_index(name) == i, "icon %d name '%s' resolves to index %d", i, name, mui_icon_index(name));
+        CHECK(mui_icon_names[i] != NULL && !strcmp(mui_icon_names[i], name), "icon %d: wrapper name '%s' differs from the baked name", i, name);
+        for (z = 0; z < mui_icon_size_count; z++) {
+            const uint8_t* want = mui_icon_body_wh(i, (int)mui_icon_sizes[z], (int)mui_icon_heights[z]);
+            const uint8_t* got = mui_icon_by_name(name, (int)mui_icon_sizes[z], (int)mui_icon_heights[z]);
+            CHECK(want != NULL && got == want, "icon '%s' size %ux%u: name body %p, enum body %p", name, (unsigned)mui_icon_sizes[z], (unsigned)mui_icon_heights[z], (const void*)got, (const void*)want);
+        }
+    }
+    CHECK(mui_icon_name(-1) == NULL && mui_icon_name(SEL_GUI_ICON_COUNT) == NULL, "out of range enum values have no name");
+    CHECK(mui_icon_index("no-such-icon") == -1 && mui_icon_index("") == -1 && mui_icon_index(NULL) == -1, "unknown names resolve to index -1");
+    CHECK(mui_icon_by_name("no-such-icon", 16, 16) == NULL && mui_icon_by_name(NULL, 16, 16) == NULL, "unknown names resolve to no body");
+    CHECK(mui_icon_by_name("play", 7, 7) == NULL, "a size without a baked set has no body");
 }
 
 static void test_text(void) {
@@ -322,6 +356,7 @@ int main(int argc, char** argv) {
     int all = !strcmp(t, "all");
     if (all || !strcmp(t, "tags")) {
         test_button();
+        test_icons();
         test_text();
         test_slider();
         test_cycle_tabs_field_panel();
