@@ -543,6 +543,9 @@ notify. Mapping:
 
 Tag names in this table use the prefix `AAA_` as a placeholder. The final prefix depends on D1.
 
+State after row I685f. Prefix scheme: `UPA_<Class>_<Name>` attributes, `UPM_<Class>_<Name>` methods, `UPV_<Class>_<Name>_<Value>` values, all in `include/mcc/up.h` (the only file that writes `UP_TAG(`); the host build gets stand-in types there. Constructors: `UP_NewButton/Text/Slider/Progress/Cycle/Tabs/Scroller/List/Field/Panel/Balance(tags)`. Selecta side: `mui_aa<class>_tags(spec, out, cap)` in `plugins/ui/mui/map/mui_aatagmap.c` (pure C, host-tested by `mui_tagmap_test`; the list variant also takes caller-owned hook storage), and `mui_aa<class>_new(spec)` in `plugins/ui/mui/mui_aawrap.c`, which owns the list hook structs, calls `UP_New*` and adds the ReturnID notify. Deviations from the table: (1) tag constructors parse in the constructor function, not in OM_NEW; (2) slider width is `MUIA_FixWidth`, emitted only when above 0; (3) the wrapper resolves a missing help text to the caption for `MUIA_ShortHelp`; (4) `UPA_Field_String` (get-only) was added so the wrapper can attach the notify without the class knowing the id; (5) background (omitted when 0), hidden (`MUIA_ShowMe` = not hidden) and frame map to MUIA tags; (6) the tip tags are `UPM_Shared_Fire` / `UPA_Shared_Side`, moved from `mui_aatip.h` to up.h; (7) the cell hook wins over the row hook when a spec has both; (8) `mui_aascroller_new` and `mui_aabalance_new` are gone (no spec, no callers), callers use `UP_NewScroller` / `UP_NewBalance`; (9) the button key goes in as `MUIA_ControlChar` through a `TAG_MORE` chain. up.h includes no `libraries/mui.h` on Amiga, because the MUI `get` macro broke the map layer.
+
+
 ### 8.4 Support library API
 
 `AA_ThemeLoad(path)`, `AA_ThemeReload()`, `AA_ThemeSetTokens(const ULONG *rgb, ULONG count)` (what Selecta's
