@@ -21,6 +21,8 @@ typedef void (*up_registry_visit)(void* user, void* key, void* obj, void* app, v
 /* Calls fn for every node with the registry locked; fn must not attach or detach. */
 void up_registry_each(up_registry_visit fn, void* user);
 void up_registry_init(void); /* library open: sets up the lock */
+/* Library open (lib/support_lib.c): up_registry_init plus the theme file's tokens into the store; env_path NULL is ENV:UP-MCC/theme. */
+void up_lib_init(const char* env_path);
 void up_registry_free(void); /* library expunge: drops leftover nodes */
 
 /* --- client side (up_store_client.c) --- */

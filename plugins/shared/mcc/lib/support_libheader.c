@@ -77,7 +77,7 @@ LONG __stdargs __UserLibInit(struct Library* lib, REG(a4, APTR a4)) {
         close_libs();
         return 1;
     }
-    up_registry_init();
+    up_lib_init(NULL); /* registry lock and the ENV:UP-MCC/theme tokens, before any class draws (I685t) */
     return 0;
 }
 

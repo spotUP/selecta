@@ -43,6 +43,17 @@ static void retheme(void) {
 #endif
 }
 
+/* Library open (lib/support_libheader.c __UserLibInit; the host test calls it with a temp file): the token store holds the theme
+ * before any class draws, so a theme file in ENV:UP-MCC/ is in force without the prefs page ever running UP_ThemeReload. No retheme
+ * here: nothing is registered yet at open, and a failed or missing file leaves the built-in default tokens (mui_theme_resolve). The
+ * static build (Selecta) never calls this; it keeps its own mui_theme_load. env_path NULL: UP_THEME_ENV. */
+void up_lib_init(const char* env_path) {
+    txt_theme th;
+    up_registry_init();
+    mui_theme_resolve(&th, env_path != NULL ? env_path : UP_THEME_ENV, NULL);
+    mui_theme_tokens_set(th.token);
+}
+
 LONG UP_ThemeReload(void) {
     txt_theme th;
     mui_theme_resolve(&th, UP_THEME_ENV, NULL);
