@@ -2,7 +2,7 @@
  * mui_aatabs_class.c. Dragging, the resize maths and the weights stay MUI's (super class). The class overrides AskMinMax (box width =
  * the panel gap, mui_aa_balance_width) and Draw: MADF_DRAWOBJECT / MADF_DRAWUPDATE paints the whole box in the BACKGROUND pen and a
  * centred 1 px DIVIDER line (mui_aa_balance_line / mui_aa_balance_rgb) after the super draw (clip region, I667n); the box fill covers
- * the super's 3D bar, so no prefs frame or bar shows. No hardcoded colour, no ObtainBestPen (held pens through aa_pen). */
+ * the super's 3D bar, so no prefs frame or bar shows. No hardcoded colour; fills go through aa_rect (direct RGB on truecolour, a held pen otherwise). */
 #include "mui_aabalance_class.h"
 #include "mui_aa_class.h"
 
@@ -26,7 +26,6 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aabal_data {
     aa_ctx aa;
-    LONG box_pen, line_pen;
 } aabal_data;
 
 static struct MUI_CustomClass* g_class;
@@ -41,8 +40,8 @@ static ULONG aabal_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     aa_setup(obj, &d->aa, NULL, 0);
     mui_aa_balance_rgb(d->aa.tok, &box, &line);
-    d->box_pen = aa_pen(&d->aa, box);
-    d->line_pen = aa_pen(&d->aa, line);
+    aa_hold(&d->aa, box);
+    aa_hold(&d->aa, line);
     return TRUE;
 }
 
@@ -66,6 +65,7 @@ static ULONG aabal_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aabal_data* d = INST_DATA(cl, obj);
     struct RastPort* rp = _rp(obj);
     int lx, ly, lw, lh;
+    uint32_t box, line;
     /* I667n: the Area super class installs the object's clip region and the window layer lock for the draw; without it every RectFill
      * below was clipped away (rig 2: box and line measured as the parent background only). The super paints its own bar first, the
      * box fill below covers all of it. */
@@ -73,12 +73,11 @@ static ULONG aabal_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) || rp == NULL) {
         return 0;
     }
-    SetAPen(rp, (ULONG)d->box_pen);
-    RectFill(rp, _mleft(obj), _mtop(obj), _mright(obj), _mbottom(obj));
+    mui_aa_balance_rgb(d->aa.tok, &box, &line); /* read at draw: a live THEME changes both */
+    aa_rect(&d->aa, rp, _mleft(obj), _mtop(obj), _mright(obj), _mbottom(obj), box);
     mui_aa_balance_line(d->aa.tok, d->aa.font_px, _mwidth(obj), _mheight(obj), &lx, &ly, &lw, &lh);
     if (lw > 0 && lh > 0) {
-        SetAPen(rp, (ULONG)d->line_pen);
-        RectFill(rp, _mleft(obj) + lx, _mtop(obj) + ly, _mleft(obj) + lx + lw - 1, _mtop(obj) + ly + lh - 1);
+        aa_rect(&d->aa, rp, _mleft(obj) + lx, _mtop(obj) + ly, _mleft(obj) + lx + lw - 1, _mtop(obj) + ly + lh - 1, line);
     }
     return 0;
 }

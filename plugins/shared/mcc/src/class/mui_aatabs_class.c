@@ -27,7 +27,6 @@ typedef struct aatabs_data {
     int n, active;
     Object* btn[MUI_AATABS_MAX];
     aa_ctx aa;
-    LONG line_pen;
     struct MUI_EventHandlerNode ehn;
 } aatabs_data;
 
@@ -49,7 +48,7 @@ static ULONG aatabs_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     aa_setup(obj, &d->aa, NULL, 0);
     mui_aa_tabs_rgb(d->aa.tok, &line, NULL, NULL);
-    d->line_pen = aa_pen(&d->aa, line);
+    aa_hold(&d->aa, line);
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
@@ -72,9 +71,10 @@ static ULONG aatabs_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     if ((msg->flags & MADF_DRAWOBJECT) && d->n > 0) {
         Object* b = d->btn[d->active];
         int lx, ly, lw, lh;
+        uint32_t line;
+        mui_aa_tabs_rgb(d->aa.tok, &line, NULL, NULL);
         mui_aa_tabs_line(d->aa.font_px, _mleft(b), _mtop(b), _mwidth(b), _mheight(b), &lx, &ly, &lw, &lh);
-        SetAPen(_rp(obj), (ULONG)d->line_pen);
-        RectFill(_rp(obj), lx, ly, lx + lw - 1, ly + lh - 1);
+        aa_rect(&d->aa, _rp(obj), lx, ly, lx + lw - 1, ly + lh - 1, line);
     }
     return r;
 }

@@ -20,6 +20,8 @@
 
 #include <selecta/uimodel/theme.h>
 #include "map/mui_theme.h"
+#include "map/mui_aa_paint.h"
+#include "mui_aa_rtg.h"
 
 #define TTE_FontFile 0x6EDA0000UL
 #define TTE_FontSize 0x6EDA0003UL
@@ -33,6 +35,10 @@ struct TTE_Pixmap {
     UBYTE* data;
 };
 static struct Library* TTEngineBase;
+/* I685w: the RTG fill library of the truecolour path, opened once per process in aa_setup, closed in aa_free. */
+static struct Library* g_p96;
+static struct Library* g_cgx;
+static int g_rtg_tried;
 static APTR tte_open_font(struct TagItem* tl) {
     return LP1(0x1E, APTR, TT_OpenFontA, struct TagItem*, tl, a0, , TTEngineBase);
 }
@@ -173,7 +179,7 @@ static LONG obtain(struct ColorMap* cm, uint32_t rgb) {
     return pen;
 }
 
-LONG aa_pen(aa_ctx* c, uint32_t rgb) {
+static LONG aa_pen(aa_ctx* c, uint32_t rgb) {
     int i;
     for (i = 0; i < c->npens; i++) {
         if (c->pen_rgb[i] == rgb) {
@@ -238,6 +244,23 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     depth = (int)GetBitMapAttr(c->scr->RastPort.BitMap, BMA_DEPTH);
     /* I685e1: the screen's pixel shape from its DrawInfo (valid MUIM_Setup..MUIM_Cleanup, as this context); no display database call per object. */
     c->aspect_q8 = _dri(obj) != NULL ? mui_pixel_aspect_q8((int)_dri(obj)->dri_Resolution.X, (int)_dri(obj)->dri_Resolution.Y) : 256;
+    if (!g_rtg_tried) {
+        g_rtg_tried = 1;
+        g_p96 = OpenLibrary((CONST_STRPTR) "Picasso96API.library", 0);
+        if (g_p96 == NULL) {
+            g_cgx = OpenLibrary((CONST_STRPTR) "cybergraphics.library", 41);
+        }
+    }
+    c->tc = mui_aa_truecolour(depth, g_p96 != NULL, g_cgx != NULL);
+    c->bg_rgb = c->tok[SEL_GUI_TOKEN_BACKGROUND];
+    {
+        static int logged;
+        if (!logged && (c->tc || depth >= 15)) {
+            logged = 1;
+            aa_log(c->tc ? (g_p96 != NULL ? "up-mcc: truecolour via Picasso96API\n" : "up-mcc: truecolour via cybergraphics\n")
+                         : "up-mcc: no RTG library, pens on a truecolour screen\n");
+        }
+    }
     c->font_px = mui_aa_font_px(c->scr->Height, c->scr->Width);
     c->font = c->font_px > 0 ? font_get(c->scr, c->font_px) : NULL;
     if (c->font == NULL) {
@@ -249,7 +272,7 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
         c->backend = AA_PAL;
         c->kind = depth <= 4 ? MUI_AA_RAMP_AGA : MUI_AA_RAMP_RTG;
     }
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n && !c->tc; i++) {
         aa_pen(c, rgb[i]);
     }
 }
@@ -291,67 +314,147 @@ void aa_cleanup(aa_ctx* c) {
     }
 }
 
-void aa_round_fill(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen) {
-    int row;
-    SetAPen(rp, pen);
-    if (radius <= 0) {
-        RectFill(rp, x, y, x + w - 1, y + h - 1);
+/* The stock String gadget draws through pens even on a truecolour screen, so its background needs a real pen. */
+LONG aa_nearest_pen(aa_ctx* c, uint32_t rgb) {
+    return aa_pen(c, rgb);
+}
+
+void aa_hold(aa_ctx* c, uint32_t rgb) {
+    if (!c->tc) {
+        (void)aa_pen(c, rgb);
+    }
+}
+
+/* I685w: the three thin bindings of the mui_aa_paint_ops seam. The shapes themselves live in map/mui_aa_paint.c (host tested). */
+struct paint_bind {
+    aa_ctx* c;
+    struct RastPort* rp;
+};
+
+static void bind_rect_rgb(void* ctx, int x0, int y0, int x1, int y1, uint32_t rgb) {
+    struct paint_bind* b = (struct paint_bind*)ctx;
+    if (g_p96 != NULL) {
+        aa_p96_rect_fill(g_p96, b->rp, x0, y0, x1, y1, rgb & 0xFFFFFFu);
+    } else {
+        aa_cgx_fill_pixel_array(g_cgx, b->rp, x0, y0, x1 - x0 + 1, y1 - y0 + 1, rgb & 0xFFFFFFu);
+    }
+}
+
+static void bind_rect_pen(void* ctx, int x0, int y0, int x1, int y1, long pen) {
+    struct paint_bind* b = (struct paint_bind*)ctx;
+    SetAPen(b->rp, (ULONG)pen);
+    RectFill(b->rp, x0, y0, x1, y1);
+}
+
+static long bind_pen(void* ctx, uint32_t rgb) {
+    return (long)aa_pen(((struct paint_bind*)ctx)->c, rgb);
+}
+
+static void bind_init(mui_aa_paint_ops* ops, struct paint_bind* b, aa_ctx* c, struct RastPort* rp) {
+    b->c = c;
+    b->rp = rp;
+    ops->ctx = b;
+    ops->tc = c->tc;
+    ops->rect_rgb = bind_rect_rgb;
+    ops->rect_pen = bind_rect_pen;
+    ops->pen = bind_pen;
+}
+
+void aa_rect(aa_ctx* c, struct RastPort* rp, int x0, int y0, int x1, int y1, uint32_t rgb) {
+    mui_aa_paint_ops ops;
+    struct paint_bind b;
+    bind_init(&ops, &b, c, rp);
+    mui_aa_paint_rect(&ops, x0, y0, x1, y1, rgb);
+}
+
+void aa_round_fill(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb) {
+    mui_aa_paint_ops ops;
+    struct paint_bind b;
+    bind_init(&ops, &b, c, rp);
+    mui_aa_paint_round_fill(&ops, x, y, w, h, radius, rgb);
+}
+
+void aa_round_fill_hole(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb, int hx, int hy, int hw, int hh) {
+    mui_aa_paint_ops ops;
+    struct paint_bind b;
+    bind_init(&ops, &b, c, rp);
+    mui_aa_paint_round_fill_hole(&ops, x, y, w, h, radius, rgb, hx, hy, hw, hh);
+}
+
+void aa_round_corners(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb) {
+    mui_aa_paint_ops ops;
+    struct paint_bind b;
+    bind_init(&ops, &b, c, rp);
+    mui_aa_paint_round_corners(&ops, x, y, w, h, radius, rgb);
+}
+
+void aa_round_frame(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb) {
+    mui_aa_paint_ops ops;
+    struct paint_bind b;
+    bind_init(&ops, &b, c, rp);
+    mui_aa_paint_round_frame(&ops, x, y, w, h, radius, rgb);
+}
+
+void aa_runs(aa_ctx* c, struct RastPort* rp, int x, int y, const unsigned char* slot, int n, const uint32_t* slot_rgb) {
+    mui_aa_paint_ops ops;
+    struct paint_bind b;
+    bind_init(&ops, &b, c, rp);
+    mui_aa_paint_runs(&ops, x, y, slot, n, slot_rgb);
+}
+
+void aa_erase(aa_ctx* c, Object* obj, int x, int y, int w, int h) {
+    if (c->tc) {
+        struct RastPort* rp = _rp(obj);
+        if (rp != NULL) {
+            aa_rect(c, rp, x, y, x + w - 1, y + h - 1, c->bg_rgb);
+        }
         return;
     }
-    for (row = 0; row < h; row++) {
-        int in = mui_aa_round_inset(w, h, radius, row);
-        RectFill(rp, x + in, y + row, x + w - 1 - in, y + row);
-    }
+    DoMethod(obj, MUIM_DrawBackground, x, y, w, h, x, y, 0);
 }
 
-void aa_round_fill_hole(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen, int hx, int hy, int hw, int hh) {
-    int row;
-    SetAPen(rp, pen);
-    for (row = 0; row < h; row++) {
-        int in = radius > 0 ? mui_aa_round_inset(w, h, radius, row) : 0, l = x + in, r = x + w - 1 - in, py = y + row;
-        if (py < hy || py >= hy + hh) {
-            RectFill(rp, l, py, r, py);
-            continue;
-        }
-        if (l < hx) {
-            RectFill(rp, l, py, hx - 1 < r ? hx - 1 : r, py);
-        }
-        if (r >= hx + hw) {
-            RectFill(rp, l > hx + hw ? l : hx + hw, py, r, py);
-        }
-    }
-}
-
-void aa_round_corners(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen) {
-    int row;
-    if (radius <= 0) {
+/* I685w: plain (no ttengine) text on a truecolour screen. Text() draws into a one plane scratch bitmap; each run of set bits goes out
+ * as one aa_rect in fg. The glyphs are the screen font, one bit coverage, exact token colour. The bitmap lives for this call only. */
+static void plain_text_tc(aa_ctx* c, Object* obj, struct RastPort* rp, int x, int y, const char* str, uint32_t fg) {
+    struct TextFont* f = _font(obj);
+    struct RastPort tmp;
+    struct BitMap* bm;
+    int len = (int)strlen(str), tw, th, row;
+    InitRastPort(&tmp);
+    SetFont(&tmp, f);
+    tw = (int)TextLength(&tmp, (CONST_STRPTR)str, (ULONG)len);
+    th = (int)f->tf_YSize;
+    if (tw <= 0 || th <= 0) {
         return;
     }
-    SetAPen(rp, pen);
-    for (row = 0; row < h; row++) {
-        int in = mui_aa_round_inset(w, h, radius, row);
-        if (in > 0) {
-            RectFill(rp, x, y + row, x + in - 1, y + row);
-            RectFill(rp, x + w - in, y + row, x + w - 1, y + row);
+    bm = AllocBitMap((ULONG)tw, (ULONG)th, 1, BMF_CLEAR, NULL);
+    if (bm == NULL) {
+        return;
+    }
+    tmp.BitMap = bm;
+    SetAPen(&tmp, 1);
+    SetDrMd(&tmp, JAM1);
+    Move(&tmp, 0, f->tf_Baseline);
+    Text(&tmp, (CONST_STRPTR)str, (ULONG)len);
+    WaitBlit();
+    for (row = 0; row < th; row++) {
+        const UBYTE* bits = (const UBYTE*)bm->Planes[0] + (size_t)row * bm->BytesPerRow;
+        int px;
+        for (px = 0; px < tw;) {
+            int run;
+            if (!(bits[px >> 3] & (0x80u >> (px & 7)))) {
+                px++;
+                continue;
+            }
+            run = px + 1;
+            while (run < tw && (bits[run >> 3] & (0x80u >> (run & 7)))) {
+                run++;
+            }
+            aa_rect(c, rp, x + px, y + row, x + run - 1, y + row, fg);
+            px = run;
         }
     }
-}
-
-void aa_round_frame(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen) {
-    int row;
-    SetAPen(rp, pen);
-    for (row = 0; row < h; row++) {
-        int in = mui_aa_round_inset(w, h, radius, row);
-        if (radius <= 0 || row == 0 || row == h - 1) {
-            RectFill(rp, x + in, y + row, x + w - 1 - in, y + row);
-        } else {
-            /* Join to the neighbour row nearer the edge so the corner stays closed. */
-            int up = mui_aa_round_inset(w, h, radius, row < h / 2 ? row - 1 : row + 1);
-            int end = up - 1 > in ? up - 1 : in;
-            RectFill(rp, x + in, y + row, x + end, y + row);
-            RectFill(rp, x + w - 1 - end, y + row, x + w - 1 - in, y + row);
-        }
-    }
+    FreeBitMap(bm);
 }
 
 int aa_text_width(aa_ctx* c, Object* obj, const char* str) {
@@ -377,6 +480,10 @@ int aa_text_height(aa_ctx* c, Object* obj) {
 
 void aa_text(aa_ctx* c, Object* obj, struct RastPort* rp, int x, int y, const char* str, uint32_t fg, uint32_t bg) {
     int len = (int)strlen(str);
+    if (c->backend == AA_PLAIN && c->tc) {
+        plain_text_tc(c, obj, rp, x, y, str, fg);
+        return;
+    }
     if (!mui_theme_text_uses_token(c->backend == AA_TC, c->backend == AA_PLAIN, fg, bg)) {
         LONG pen = c->backend == AA_PLAIN ? aa_pen(c, fg) : (LONG)_dri(obj)->dri_Pens[TEXTPEN];
         SetFont(rp, _font(obj));
@@ -431,6 +538,15 @@ void aa_free(void) {
         CloseLibrary(TTEngineBase);
         TTEngineBase = NULL;
     }
+    if (g_p96 != NULL) {
+        CloseLibrary(g_p96);
+        g_p96 = NULL;
+    }
+    if (g_cgx != NULL) {
+        CloseLibrary(g_cgx);
+        g_cgx = NULL;
+    }
+    g_rtg_tried = 0;
 }
 
 static void ctx_release_pens(aa_ctx* c) {
@@ -448,6 +564,7 @@ static void ctx_release_pens(aa_ctx* c) {
 static void ctx_retheme(aa_ctx* c) {
     ctx_release_pens(c);
     memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
+    c->bg_rgb = c->tok[SEL_GUI_TOKEN_BACKGROUND];
     if (aa_live(c->obj)) {
         MUI_Redraw(c->obj, MADF_DRAWOBJECT);
     }

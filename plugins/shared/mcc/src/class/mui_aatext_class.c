@@ -1,6 +1,6 @@
 /* Selecta_AAText (I667d, design section 3.7). MUI 3.8: MUI_CreateCustomClass on Area, same dispatcher pattern as
  * mui_aabtn_class.c. Draw: the super class fills the parent background, then the contents through aa_text in the tone colour
- * (mui_aa_tone_token, held as an exact pen by aa_pen), aligned (mui_aa_align_x) and cut with "..." (mui_aa_text_fit) when the box
+ * (mui_aa_tone_token, held by aa_hold on palette screens, exact RGB on truecolour), aligned (mui_aa_align_x) and cut with "..." (mui_aa_text_fit) when the box
  * is narrower than the text. The title tone opens the font at base + 4 px (mui_aa_tone_font_px). Width and height come from the
  * same font as the draw, so the line never clips. No MUIC_Text, no pen escapes. */
 #include "mui_aatext_class.h"
@@ -54,9 +54,10 @@ static ULONG aatext_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     d->self = obj;
     aa_setup(obj, &d->aa, NULL, 0);
+    d->aa.bg_rgb = d->aa.tok[SEL_GUI_TOKEN_PANEL];
     aa_set_font_px(&d->aa, mui_aa_tone_font_px(d->tone, d->aa.font_px));
-    aa_pen(&d->aa, d->aa.tok[mui_aa_tone_token(d->tone)]);
-    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_PANEL]);
+    aa_hold(&d->aa, d->aa.tok[mui_aa_tone_token(d->tone)]);
+    aa_hold(&d->aa, d->aa.tok[SEL_GUI_TOKEN_PANEL]);
     dots = aa_text_width(&d->aa, obj, "...");
     d->defw = aa_text_width(&d->aa, obj, d->widest);
     d->minw = d->ellipsis ? (dots < d->defw ? dots : d->defw) : d->defw;
@@ -94,6 +95,9 @@ static ULONG aatext_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     int w, h, tw, th;
     uint32_t bg = d->aa.tok[SEL_GUI_TOKEN_PANEL];
     DoSuperMethodA(cl, obj, (Msg)msg);
+    if ((msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) && d->aa.tc) {
+        aa_erase(&d->aa, obj, _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)); /* I685w: cover MUI's grey fill with the panel token */
+    }
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) || d->text[0] == '\0') {
         return 0;
     }

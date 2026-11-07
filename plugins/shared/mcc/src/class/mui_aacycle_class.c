@@ -67,11 +67,11 @@ static ULONG aacycle_setup(struct IClass* cl, Object* obj, Msg msg) {
     mui_aa_cycle_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_DISABLED; st++) {
         mui_aa_cycle_rgb(d->aa.tok, st, &face, &text, &chev, NULL, NULL);
-        aa_pen(&d->aa, face);
-        aa_pen(&d->aa, text);
-        aa_pen(&d->aa, chev);
+        aa_hold(&d->aa, face);
+        aa_hold(&d->aa, text);
+        aa_hold(&d->aa, chev);
     }
-    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
+    aa_hold(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
     th = aa_text_height(&d->aa, obj) + 12;
     if (th > d->m.height) {
         d->m.height = th;
@@ -130,7 +130,7 @@ static ULONG aacycle_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     h = _mheight(obj);
     state = aacycle_state(obj, d);
     mui_aa_cycle_rgb(d->aa.tok, state, &face, &text, &chev, NULL, NULL);
-    aa_round_fill(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, face));
+    aa_round_fill(&d->aa, rp, l, t, w, h, d->m.radius, face);
     if (d->n > 0) {
         th = aa_text_height(&d->aa, obj);
         aa_text(&d->aa, obj, rp, l + d->m.pad_x, t + (h - th) / 2, d->entries[d->active], text, face);
@@ -139,12 +139,12 @@ static ULONG aacycle_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     cy = t + (h - d->m.chev_h) / 2;
     for (r = 0; r < d->m.chev_h; r++) {
         mui_aa_cycle_chevron_row(&d->m, r, &rx, &rw);
-        aa_round_fill(rp, cx + rx, cy + r, rw, 1, 0, aa_pen(&d->aa, chev));
+        aa_round_fill(&d->aa, rp, cx + rx, cy + r, rw, 1, 0, chev);
     }
     if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
-            aa_round_frame(rp, l + 1, t + 1, w - 2, h - 2, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+            aa_round_frame(&d->aa, rp, l + 1, t + 1, w - 2, h - 2, d->m.radius, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
         }
     }
     return 0;

@@ -43,8 +43,8 @@ static ULONG aascroller_setup(struct IClass* cl, Object* obj, Msg msg) {
     mui_aa_scroller_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_PRESSED; st++) {
         mui_aa_scroller_rgb(d->aa.tok, st, &track, &thumb);
-        aa_pen(&d->aa, track);
-        aa_pen(&d->aa, thumb);
+        aa_hold(&d->aa, track);
+        aa_hold(&d->aa, thumb);
     }
     d->hover = d->drag = 0;
     d->ehn.ehn_Priority = 0;
@@ -85,9 +85,9 @@ static ULONG aascroller_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* m
         return 0;
     }
     mui_aa_scroller_rgb(d->aa.tok, aascroller_state(d), &track, &thumb);
-    aa_round_fill(_rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), 0, aa_pen(&d->aa, track));
+    aa_round_fill(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), 0, track);
     if (mui_aa_scroller_geom(&d->m, _mheight(obj), d->first, d->visible, d->entries, &ty, &th)) {
-        aa_round_fill(_rp(obj), _mleft(obj), _mtop(obj) + ty, _mwidth(obj), th, d->m.radius, aa_pen(&d->aa, thumb));
+        aa_round_fill(&d->aa, _rp(obj), _mleft(obj), _mtop(obj) + ty, _mwidth(obj), th, d->m.radius, thumb);
     }
     return 0;
 }

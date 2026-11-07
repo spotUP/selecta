@@ -21,6 +21,8 @@ typedef struct aa_ctx {
     struct ColorMap* cm;
     struct Screen* scr;
     int backend, kind, font_px;
+    int tc;                /* I685w: 15+ bit screen with an RTG fill library open: direct RGB fills, no pens */
+    uint32_t bg_rgb;       /* I685w: what aa_erase fills on tc; the Background token unless the class sets another */
     int aspect_q8;         /* I685e1: pixel height over width x 256 of this object's screen (DrawInfo resolution), 256..512 */
     APTR font;
     int npens;
@@ -46,17 +48,26 @@ void aa_cleanup(aa_ctx* c);
  * garbage window crashed the Amiga (I684a, AACycle set before the window opened). Use this before every redraw from
  * OM_SET or an outside call. */
 int aa_live(Object* obj);
-/* Held pen for an RGB, obtained on first use; -1 when the table is full. */
-LONG aa_pen(aa_ctx* c, uint32_t rgb);
-/* Rows of RectFill with the insets of mui_aa_round_inset; radius 0 is one RectFill. */
-void aa_round_fill(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
+/* I685w: every fill takes the 0xRRGGBB itself. On a truecolour screen (c->tc) the RGB reaches the screen unchanged through
+ * p96RectFill or FillPixelArray; on a palette screen it goes through the nearest held pen. Classes never see a pen. */
+/* Palette screens: hold the pen of rgb now, so a later draw cannot find the colour table full. A no-op on truecolour. */
+void aa_hold(aa_ctx* c, uint32_t rgb);
+LONG aa_nearest_pen(aa_ctx* c, uint32_t rgb);
+/* Inclusive rectangle (x0, y0)-(x1, y1). */
+void aa_rect(aa_ctx* c, struct RastPort* rp, int x0, int y0, int x1, int y1, uint32_t rgb);
+/* Rows with the insets of mui_aa_round_inset; radius 0 is one rectangle. */
+void aa_round_fill(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb);
 /* aa_round_fill that leaves the hole rectangle (hx, hy, hw, hh) untouched: for a Group subclass that paints after its super call
  * around a child the super already drew. */
-void aa_round_fill_hole(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen, int hx, int hy, int hw, int hh);
-/* Only the four corner wedges outside the rounded shape, in pen: rounds a box whose square face its background already filled. */
-void aa_round_corners(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
+void aa_round_fill_hole(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb, int hx, int hy, int hw, int hh);
+/* Only the four corner wedges outside the rounded shape, in rgb: rounds a box whose square face its background already filled. */
+void aa_round_corners(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb);
 /* One pixel rounded outline, same inset maths. */
-void aa_round_frame(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
+void aa_round_frame(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb);
+/* Runs of equal nonzero slot in one row of n cells at (x, y); slot_rgb[slot] is the colour (glyph rows). */
+void aa_runs(aa_ctx* c, struct RastPort* rp, int x, int y, const unsigned char* slot, int n, const uint32_t* slot_rgb);
+/* Clear the box (x, y, w, h) of obj to its background: bg_rgb on truecolour, MUIM_DrawBackground otherwise. */
+void aa_erase(aa_ctx* c, Object* obj, int x, int y, int w, int h);
 /* Caption pixel size. */
 int aa_text_width(aa_ctx* c, Object* obj, const char* str);
 int aa_text_height(aa_ctx* c, Object* obj);

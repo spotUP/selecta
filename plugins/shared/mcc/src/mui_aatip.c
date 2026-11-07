@@ -199,9 +199,8 @@ ULONG aatip_fire(Object* obj, aa_ctx* aa, const aatip_slot* t) {
     }
     g_tip.win = w;
     rp = w->RPort;
-    SetAPen(rp, aa_pen(aa, p.corner));
-    RectFill(rp, 0, 0, p.w - 1, p.h - 1);
-    aa_round_fill(rp, 0, 0, p.w, p.h, p.radius, aa_pen(aa, p.face));
+    aa_rect(aa, rp, 0, 0, p.w - 1, p.h - 1, p.corner);
+    aa_round_fill(aa, rp, 0, 0, p.w, p.h, p.radius, p.face);
     aa_text(aa, obj, rp, p.pad_x, p.pad_y, t->text, p.text, p.face);
     if (g_shows++ == 0) {
         aa_log("up-mcc: tip shown side=%d w=%d h=%d backend=%s\n", side, p.w, p.h, aa->backend == AA_TC ? "TC" : aa->backend == AA_PAL ? "PAL" : "PLAIN");

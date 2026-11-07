@@ -63,7 +63,7 @@ static ULONG aafield_setup(struct IClass* cl, Object* obj, Msg msg) {
     for (k = 0; k < 2; k++) {
         n = mui_aa_field_plan(d->aa.tok, &d->m, k, ops);
         while (n-- > 0) {
-            aa_pen(&d->aa, ops[n].rgb);
+            aa_hold(&d->aa, ops[n].rgb);
         }
     }
     DoMethod(_win(obj), MUIM_Notify, MUIA_Window_ActiveObject, MUIV_EveryTime, (ULONG)obj, 1, UPM_Field_Redraw);
@@ -120,7 +120,7 @@ static void aafield_string_pens(aafield_data* d) {
         return;
     }
     for (k = 0; k < 2; k++) {
-        pen[k] = aa_pen(&d->aa, mui_aa_field_string_bg(d->aa.tok, k));
+        pen[k] = aa_nearest_pen(&d->aa, mui_aa_field_string_bg(d->aa.tok, k));
     }
     if (!d->pens_logged) {
         aa_log("up-mcc: field string pens %u/%u active %u/%u -> background %ld/%ld\n", (unsigned)si->Extension->Pens[0],
@@ -147,8 +147,8 @@ static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         struct RastPort* rp = _rp(obj);
         int n = mui_aa_field_plan(d->aa.tok, &d->m, aafield_focus(obj, d), ops), k;
         for (k = 0; k < n; k++) {
-            aa_round_fill_hole(rp, _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
-                               ops[k].radius, aa_pen(&d->aa, ops[k].rgb), _left(d->str), _top(d->str), _width(d->str), _height(d->str));
+            aa_round_fill_hole(&d->aa, rp, _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
+                               ops[k].radius, ops[k].rgb, _left(d->str), _top(d->str), _width(d->str), _height(d->str));
         }
     }
     if ((msg->flags & MADF_DRAWOBJECT) && d->placeholder != NULL) { /* I733 (design 3.4): after the super, so it lands on the String's box */

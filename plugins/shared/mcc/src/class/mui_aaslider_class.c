@@ -68,10 +68,10 @@ static ULONG aaslider_setup(struct IClass* cl, Object* obj, Msg msg) {
     mui_aa_slider_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_DISABLED; st++) {
         mui_aa_slider_rgb(d->aa.tok, st, &track, &fill);
-        aa_pen(&d->aa, track);
-        aa_pen(&d->aa, fill);
+        aa_hold(&d->aa, track);
+        aa_hold(&d->aa, fill);
     }
-    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
+    aa_hold(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
@@ -136,15 +136,15 @@ static ULONG aaslider_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg
     for (i = 0; i < n; i++) {
         if (ops[i].kind == MUI_AA_SLIDER_ERASE) {
             /* the parent background, as the super class paints it on a full draw */
-            DoMethod(obj, MUIM_DrawBackground, l, t, w, h, l, t, 0);
+            aa_erase(&d->aa, obj, l, t, w, h);
         } else {
-            aa_round_fill(rp, l + ops[i].x, t + ops[i].y, ops[i].w, ops[i].h, ops[i].radius, aa_pen(&d->aa, ops[i].rgb));
+            aa_round_fill(&d->aa, rp, l + ops[i].x, t + ops[i].y, ops[i].w, ops[i].h, ops[i].radius, ops[i].rgb);
         }
     }
     if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
-            aa_round_frame(rp, l, t + (h - d->m.track_h) / 2, w, d->m.track_h, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+            aa_round_frame(&d->aa, rp, l, t + (h - d->m.track_h) / 2, w, d->m.track_h, d->m.radius, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
         }
     }
     return 0;
@@ -269,8 +269,8 @@ static ULONG aaprogress_setup(struct IClass* cl, Object* obj, Msg msg) {
     aa_setup(obj, &d->aa, NULL, 0);
     mui_aa_slider_metrics(d->aa.font_px, d->aa.aspect_q8, &d->m);
     mui_aa_slider_rgb(d->aa.tok, MUI_AA_NORMAL, &track, &fill);
-    aa_pen(&d->aa, track);
-    aa_pen(&d->aa, fill);
+    aa_hold(&d->aa, track);
+    aa_hold(&d->aa, fill);
     return TRUE;
 }
 
@@ -301,10 +301,10 @@ static ULONG aaprogress_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* m
         return 0;
     }
     mui_aa_slider_rgb(d->aa.tok, MUI_AA_NORMAL, &track, &fill);
-    aa_round_fill(_rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), d->m.track_h, d->m.radius, aa_pen(&d->aa, track));
+    aa_round_fill(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), d->m.track_h, d->m.radius, track);
     fw = mui_aa_progress_fill_w(_mwidth(obj), d->value, d->max);
     if (fw > 0) {
-        aa_round_fill(_rp(obj), _mleft(obj), _mtop(obj), fw, d->m.track_h, d->m.radius, aa_pen(&d->aa, fill));
+        aa_round_fill(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), fw, d->m.track_h, d->m.radius, fill);
     }
     return 0;
 }

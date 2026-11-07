@@ -645,7 +645,7 @@ static void test_i667n(void) {
     if (bal != NULL) {
         const char* draw = strstr(bal, "static ULONG aabal_draw(");
         const char* sup = draw != NULL ? strstr(draw, "DoSuperMethodA(cl, obj, (Msg)msg);") : NULL;
-        const char* fill = draw != NULL ? strstr(draw, "RectFill(") : NULL;
+        const char* fill = draw != NULL ? strstr(draw, "aa_rect(") : NULL;
         CHECK(sup != NULL && fill != NULL && sup < fill, "balance draws before the super draw: no clip region, nothing paints");
     }
     if (fld != NULL) {
@@ -706,6 +706,18 @@ static void test_i667n_root(void) {
         const char* end = ob != NULL ? strstr(ob, "\n}\n") : NULL;
         const char* use = ob != NULL ? strstr(ob, "mui_theme_pen_precisions(") : NULL;
         CHECK(use != NULL && end != NULL && use < end && strstr(drw, "PRECISION_GUI") == NULL, "aa_pen obtains through the precision plan, no fixed GUI precision");
+    }
+    if (drw != NULL) { /* I685w: every fill goes through the paint seam; the classes hold no pen of their own and call no RectFill */
+        char* bal = slurp(AABALANCE_SOURCE);
+        char* tab = slurp(AATABS_SOURCE);
+        CHECK(strstr(drw, "mui_aa_paint_rect(") != NULL && strstr(drw, "mui_aa_paint_round_fill(") != NULL && strstr(drw, "p96_rect_fill(") != NULL &&
+                  strstr(drw, "cgx_fill_pixel_array(") != NULL,
+              "draw helpers bind the paint seam to p96RectFill and FillPixelArray");
+        CHECK(bal != NULL && tab != NULL && strstr(bal, "SetAPen") == NULL && strstr(bal, "RectFill(") == NULL && strstr(tab, "SetAPen") == NULL && strstr(tab, "RectFill(") == NULL &&
+                  strstr(bal, "aa_pen(") == NULL && strstr(tab, "aa_pen(") == NULL,
+              "balance and tabs paint through aa_rect only");
+        free(bal);
+        free(tab);
     }
     free(fld);
     free(drw);

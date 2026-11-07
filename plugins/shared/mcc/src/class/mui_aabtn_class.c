@@ -69,11 +69,11 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
     mui_aa_metrics_aspect(d->aa.font_px, d->aa.aspect_q8, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_SELECTED; st++) {
         mui_aa_button_rgb(d->aa.tok, d->role, st, &face, &text);
-        aa_pen(&d->aa, face);
+        aa_hold(&d->aa, face);
     }
-    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
-    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_TEXT_MUTED]);
-    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_SURFACE]);
+    aa_hold(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
+    aa_hold(&d->aa, d->aa.tok[SEL_GUI_TOKEN_TEXT_MUTED]);
+    aa_hold(&d->aa, d->aa.tok[SEL_GUI_TOKEN_SURFACE]);
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
@@ -142,9 +142,10 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
         bh = px;
         body = mui_icon_body(icon, px);
     }
-    int rb, dy, dx, run0, run_pen;
+    int rb, dy, dx;
     uint32_t col[4];
-    LONG pen[4];
+    uint32_t slot_rgb[4];
+    unsigned char slots[256];
     int i;
     if (body == NULL && data == NULL && icon >= 0 && mui_icon_size_count > 0) {
         bp = (int)mui_icon_sizes[mui_icon_size_count - 1];
@@ -161,32 +162,25 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
     rb = ((bp + 15) / 16) * 2;
     for (i = 1; i < 4; i++) {
         col[i] = mui_aa_ramp_rgb(ink, face, 4, i);
-        pen[i] = aa_pen(&d->aa, col[i]);
+        slot_rgb[i] = col[i];
+    }
+    slot_rgb[0] = face;
+    if (px > (int)sizeof slots) {
+        px = (int)sizeof slots;
     }
     for (dy = 0; dy < ph; dy++) { /* I949e: ph rows for a px wide icon: a square icon on tall pixels is px x ph */
         const uint8_t* row = data != NULL ? data->alpha + (size_t)(dy * bh / ph) * (size_t)bp : body + (size_t)(dy * bh / ph) * (size_t)rb * 2u;
-        run0 = 0;
-        run_pen = 0;
-        for (dx = 0; dx <= px; dx++) {
-            int p = 0;
-            if (dx < px) {
-                int sx = dx * bp / px;
-                if (data != NULL) {
-                    unsigned a = row[sx];
-                    p = a < 48u ? 0 : a < 112u ? 1 : a < 184u ? 2 : 3;
-                } else {
-                    p = ((row[sx >> 3] >> (7 - (sx & 7))) & 1) | (((row[rb + (sx >> 3)] >> (7 - (sx & 7))) & 1) << 1);
-                }
+        for (dx = 0; dx < px; dx++) {
+            int sx = dx * bp / px, p;
+            if (data != NULL) {
+                unsigned a = row[sx];
+                p = a < 48u ? 0 : a < 112u ? 1 : a < 184u ? 2 : 3;
+            } else {
+                p = ((row[sx >> 3] >> (7 - (sx & 7))) & 1) | (((row[rb + (sx >> 3)] >> (7 - (sx & 7))) & 1) << 1);
             }
-            if (dx == px || p != run_pen) {
-                if (run_pen != 0 && pen[run_pen] >= 0) {
-                    SetAPen(rp, (ULONG)pen[run_pen]);
-                    RectFill(rp, x + run0, y + dy, x + dx - 1, y + dy);
-                }
-                run0 = dx;
-                run_pen = p;
-            }
+            slots[dx] = (unsigned char)p;
         }
+        aa_runs(&d->aa, rp, x, y + dy, slots, px, slot_rgb);
     }
 }
 
@@ -214,7 +208,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         int n = mui_aa_check_plan(d->aa.tok, &d->m, state, ops), k;
         for (k = 0; k < n; k++) {
             int iv = ops[k].inset > 0 ? mui_aa_rows(ops[k].inset, asp) : 0; /* I949e: the inset is a physical length, fewer rows on tall pixels */
-            aa_round_fill(rp, bx + ops[k].inset, by + iv, cp - 2 * ops[k].inset, ch - 2 * iv, ops[k].radius, aa_pen(&d->aa, ops[k].rgb));
+            aa_round_fill(&d->aa, rp, bx + ops[k].inset, by + iv, cp - 2 * ops[k].inset, ch - 2 * iv, ops[k].radius, ops[k].rgb);
         }
         if (state == MUI_AA_SELECTED) {
             aabtn_icon(d, rp, icon, bx + 2, by + mui_aa_rows(2, asp), cp - 4, ch - 2 * mui_aa_rows(2, asp), face, text);
@@ -222,13 +216,13 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         if (aa_live(obj)) {
             GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
             if ((Object*)active == obj) {
-                aa_round_frame(rp, bx, by, cp, ch, ops[n - 1].inset > 0 ? ops[n - 1].radius + ops[n - 1].inset : ops[n - 1].radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+                aa_round_frame(&d->aa, rp, bx, by, cp, ch, ops[n - 1].inset > 0 ? ops[n - 1].radius + ops[n - 1].inset : ops[n - 1].radius, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
             }
         }
         d->backend = d->aa.backend + 1;
         return 0;
     }
-    aa_round_fill(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, face));
+    aa_round_fill(&d->aa, rp, l, t, w, h, d->m.radius, face);
     if (!d->icon_only) {
         tw = aa_text_width(&d->aa, obj, d->caption);
         th = aa_text_height(&d->aa, obj);
@@ -245,7 +239,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
-            aa_round_frame(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+            aa_round_frame(&d->aa, rp, l, t, w, h, d->m.radius, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
         }
     }
     d->backend = d->aa.backend + 1;

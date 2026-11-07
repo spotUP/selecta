@@ -103,14 +103,14 @@ static ULONG aalist_setup(struct IClass* cl, Object* obj, Msg msg) {
             continue;
         }
         mui_aa_list_row_rgb(d->aa.tok, st, 0, &face, &text);
-        aa_pen(&d->aa, face);
-        aa_pen(&d->aa, text);
+        aa_hold(&d->aa, face);
+        aa_hold(&d->aa, text);
     }
     mui_aa_list_row_rgb(d->aa.tok, MUI_AA_NORMAL, 1, NULL, &text);
-    aa_pen(&d->aa, text);
+    aa_hold(&d->aa, text);
     mui_aa_list_header_rgb(d->aa.tok, &text, &face);
-    aa_pen(&d->aa, text);
-    aa_pen(&d->aa, face);
+    aa_hold(&d->aa, text);
+    aa_hold(&d->aa, face);
     d->hover = -1;
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
@@ -165,7 +165,7 @@ static ULONG aalist_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     }
     mui_aa_list_row_rgb(d->aa.tok, MUI_AA_NORMAL, 0, &face, &text);
     mui_aa_list_header_rgb(d->aa.tok, &muted, &divider);
-    aa_round_fill(rp, l, t, w, h, 0, aa_pen(&d->aa, face));
+    aa_round_fill(&d->aa, rp, l, t, w, h, 0, face);
     th = aa_text_height(&d->aa, obj);
     n = d->cols.n < 1 ? 1 : d->cols.n;
     th_h = aalist_title_h(d);
@@ -187,10 +187,10 @@ static ULONG aalist_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
             mui_aa_text_fit(aalist_text(d, -1, c), cw[c], aalist_width, &fit, buf, (int)sizeof buf);
             aa_text(&d->aa, obj, rp, l + mui_aa_list_col_x(&d->m, c, cw), y0 + (d->m.row_h - th) / 2, buf, muted, face);
         }
-        aa_round_fill(rp, l, y0 + th_h - 1, w, 1, 0, aa_pen(&d->aa, divider));
+        aa_round_fill(&d->aa, rp, l, y0 + th_h - 1, w, 1, 0, divider);
     }
     for (c = 1; c < n; c++) {
-        aa_round_fill(rp, l + mui_aa_list_col_x(&d->m, c, cw) - d->m.gap - 1, y0, 1, h - 2 * d->m.pad_y, 0, aa_pen(&d->aa, divider));
+        aa_round_fill(&d->aa, rp, l + mui_aa_list_col_x(&d->m, c, cw) - d->m.gap - 1, y0, 1, h - 2 * d->m.pad_y, 0, divider);
     }
     for (k = 0; k < vis && d->first + k < d->count; k++) {
         int y = y0 + th_h + (int)k * d->m.row_h;
@@ -199,9 +199,9 @@ static ULONG aalist_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         st = row == d->active ? MUI_AA_SELECTED : row == d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
         mui_aa_list_row_rgb(d->aa.tok, st, row == d->playing, &face, &text);
         if (st != MUI_AA_NORMAL) {
-            aa_round_fill(rp, l + 2, y, w - 4, d->m.row_h, d->m.radius, aa_pen(&d->aa, face));
+            aa_round_fill(&d->aa, rp, l + 2, y, w - 4, d->m.row_h, d->m.radius, face);
             for (c = 1; c < n; c++) { /* the column dividers stay visible over the row highlight */
-                aa_round_fill(rp, l + mui_aa_list_col_x(&d->m, c, cw) - d->m.gap - 1, y, 1, d->m.row_h, 0, aa_pen(&d->aa, divider));
+                aa_round_fill(&d->aa, rp, l + mui_aa_list_col_x(&d->m, c, cw) - d->m.gap - 1, y, 1, d->m.row_h, 0, divider);
             }
         }
         for (c = 0; c < n; c++) {
