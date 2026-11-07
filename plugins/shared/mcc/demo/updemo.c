@@ -8,8 +8,9 @@
  * class came from. A NULL origin counts as an error, because it means the class code is not coming from a library.
  * Backend: the demo uses whatever the classes pick. Without ttengine they fall back to PLAIN text; the success criterion is the same
  * (gate item 3), so there is no switch here.
- * Not covered here: gate item 2 (live theme reload from UP-MCC.mcp). The theme store is private to each library until row I685n
- * lands, so a reload in the prefs library cannot reach the classes yet. Run: UP-Demo [QUIT] (QUIT closes the window at once). */
+ * Gate item 2 (live theme reload from UP-MCC.mcp, row I685n): the token store and the retheme list live in up-mcc.library, so a
+ * Save in the prefs recolours this window. Run: UP-Demo [QUIT | HOLD] (QUIT closes the window at once, HOLD keeps it open until
+ * the close gadget, so the prefs can be opened and saved meanwhile). */
 #include <stdio.h>
 #include <string.h>
 
@@ -72,6 +73,7 @@ int main(int argc, char** argv) {
     struct TagItem kids[CLASS_COUNT + 3];
     ULONG sigs = 0, is_open = 0;
     int quit_now = argc > 1 && argv[1] != NULL && strcmp(argv[1], "QUIT") == 0;
+    int hold = argc > 1 && argv[1] != NULL && strcmp(argv[1], "HOLD") == 0;
     int i, ok = 0, ticks = 0, k = 0;
 
     memset(obj, 0, sizeof obj);
@@ -119,13 +121,15 @@ int main(int argc, char** argv) {
                 MUI_DisposeObject(root);
             }
         } else {
+            DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, (ULONG)app, 2UL, MUIM_Application_ReturnID,
+                     (ULONG)MUIV_Application_ReturnID_Quit);
             SetAttrs(win, MUIA_Window_Open, TRUE, TAG_DONE);
             GetAttr(MUIA_Window_Open, win, &is_open);
             if (!is_open) {
                 printf("[ERROR] window did not open\n");
                 ok = 0;
             }
-            while (!quit_now && ticks < 30 && is_open) { /* about 3 s, or until the close gadget */
+            while (!quit_now && (hold || ticks < 30) && is_open) { /* about 3 s, or until the close gadget (HOLD: only that) */
                 ULONG id = DoMethod(app, MUIM_Application_NewInput, (ULONG)&sigs);
                 if (id == (ULONG)MUIV_Application_ReturnID_Quit) {
                     break;

@@ -1,0 +1,20 @@
+RIGSTEPS I685n: shared theme store, live retheme across tasks, rig 2 (run by the integrator, not by row I685n)
+Design: thoughts/shared/design/2026-11-06-mui-mcc-package.md section 8.4, gate item 2.
+
+Build (build/amiga): cmake --build build/amiga --target up_mcc_library up_mcc_classes up_mcc_prefs up_demo
+Products in build/amiga/plugins/shared/mcc/: 11 UP-*.mcc, UP-MCC.mcp, UP-Demo, up-mcc.library.
+
+1. Start rig 2 with --ram 256 and --purpose "<session>: UP-MCC live retheme check". Keep audio off.
+2. Copy: the 11 UP-*.mcc and UP-MCC.mcp -> MUI:Libs/mui/ ; up-mcc.library -> LIBS: ; UP-Demo -> RAM:
+   All three must be the I685n build. The class libraries now refuse to open without up-mcc.library v1 in LIBS:.
+3. Shell 1: RAM:UP-Demo HOLD     (the demo window stays open until its close gadget)
+4. Open MUI Preferences (Workbench Prefs/MUI), pick the UP-MCC page. Change the accent colour to a clearly different one
+   (for example from the default to red). Press Save (not Use).
+5. PASS: the UP-Demo window recolours at once, without restarting UP-Demo and without touching the demo window.
+   FAIL: the window keeps the old accent until UP-Demo is started again (the old per-library store behaviour).
+6. Negative check: close UP-Demo, move up-mcc.library out of LIBS:, run RAM:UP-Demo QUIT.
+   PASS: every class prints [ERROR] (the class library refuses to open), exit code 20, no crash, no Guru.
+   Put the library back afterwards.
+7. Close UP-Demo and check that the library can be flushed: Avail FLUSH, then the library is gone from the Version list
+   (open count returned to zero: every object detached from the registry at dispose).
+8. Stop the rig after the last command (rig.py stop) and delete its build directory.
