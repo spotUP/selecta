@@ -70,7 +70,7 @@ static Object* make(int index) {
 int main(int argc, char** argv) {
     Object* obj[CLASS_COUNT];
     Object *app = NULL, *win, *root;
-    struct TagItem kids[CLASS_COUNT + 3];
+    struct TagItem kids[CLASS_COUNT + 4];
     ULONG sigs = 0, is_open = 0;
     int quit_now = argc > 1 && argv[1] != NULL && strcmp(argv[1], "QUIT") == 0;
     int hold = argc > 1 && argv[1] != NULL && strcmp(argv[1], "HOLD") == 0;
@@ -102,11 +102,15 @@ int main(int argc, char** argv) {
             kids[k].ti_Tag = MUIA_Group_Child;
             kids[k++].ti_Data = (ULONG)obj[i];
         }
+        /* Two columns, so the 11 classes fit a readable window instead of one narrow tall strip. */
+        kids[k].ti_Tag = MUIA_Group_Columns;
+        kids[k++].ti_Data = 2;
         kids[k].ti_Tag = TAG_DONE;
         kids[k].ti_Data = 0;
         root = MUI_NewObjectA((char*)"UP-Panel.mcc", kids);
         win = root == NULL ? NULL
-                           : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431,
+                           : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431, MUIA_Window_Width, (ULONG)MUIV_Window_Width_Screen(40),
+                                           MUIA_Window_Height, (ULONG)MUIV_Window_Height_Screen(40),
                                            MUIA_Window_RootObject, (ULONG)root, TAG_DONE);
         if (win != NULL) {
             app = MUI_NewObject((char*)MUIC_Application, MUIA_Application_Title, (ULONG) "UP-Demo", MUIA_Application_Base,
