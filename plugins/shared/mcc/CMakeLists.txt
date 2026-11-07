@@ -31,6 +31,13 @@ foreach(row ${MCC_CLASS_LIBS})
   list(GET cols 1 src)
   list(APPEND _mcc_lib_sources "${src}")
 endforeach()
+set(_mcc_names "")
+foreach(row ${MCC_CLASS_LIBS})
+  string(REPLACE "|" ";" cols "${row}")
+  list(GET cols 0 n)
+  list(APPEND _mcc_names "${n}")
+endforeach()
+set(MCC_CLASS_NAMES "${_mcc_names}" CACHE INTERNAL "class names of the .mcc libraries (UP-<Name>.mcc)")
 set(MCC_CLASS_LIB_SOURCES "${_mcc_lib_sources}" CACHE INTERNAL "class source of each .mcc library")
 set(MCC_STATIC_SOURCES "${MCC_AMIGA_SOURCES}" CACHE INTERNAL "sources of sel_mcc_static that only the Amiga build compiles")
 set(MCC_SOURCES ${MCC_MAP_SOURCES} lib/support_lib.c)
@@ -199,3 +206,22 @@ add_custom_command(TARGET up_demo POST_BUILD
   COMMAND "${CMAKE_COMMAND}" "-DNM=${MCC_NM}" "-DBINARY=$<TARGET_FILE:up_demo>" "-DCOUNT_FILE=$<TARGET_FILE:up_demo>.nm-count.txt"
     -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_demo_symbols.cmake"
   VERBATIM COMMENT "UP-Demo: no class code symbols")
+
+# I685l: the distribution tree (design section 9). cmake/mcc_dist.cmake stages UP-MCC/ from the build products and the sources, checks
+# the layout, and when lha is found packs UP-MCC.lha next to it. No lha: the staged tree stays and the CI step zips it.
+set(MCC_DIST_DIR "${CMAKE_CURRENT_BINARY_DIR}/dist")
+find_program(MCC_LHA NAMES lha)
+add_custom_target(up_mcc_dist
+  COMMAND "${CMAKE_COMMAND}" -DMODE=stage "-DDEST=${MCC_DIST_DIR}/UP-MCC" "-DBIN_DIR=${CMAKE_CURRENT_BINARY_DIR}" "-DSFD_INC=${MCC_SFD_INC}"
+    "-DROOT=${PROJECT_SOURCE_DIR}" "-DCLASS_NAMES=${MCC_CLASS_NAMES}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_dist.cmake"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${MCC_DIR}/dist/UP-MCC.readme" "${MCC_DIST_DIR}/UP-MCC.readme"
+  VERBATIM COMMENT "Staging UP-MCC (section 9)")
+add_dependencies(up_mcc_dist up_mcc_library up_mcc_classes up_demo up_mcc_header_check)
+if(MCC_LHA)
+  add_custom_command(TARGET up_mcc_dist POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E remove -f "${MCC_DIST_DIR}/UP-MCC.lha"
+    COMMAND "${MCC_LHA}" ao5 "${MCC_DIST_DIR}/UP-MCC.lha" UP-MCC
+    WORKING_DIRECTORY "${MCC_DIST_DIR}" VERBATIM COMMENT "Packing UP-MCC.lha")
+else()
+  message(STATUS "up_mcc_dist: lha not found, the staged tree is not packed (CI zips it)")
+endif()

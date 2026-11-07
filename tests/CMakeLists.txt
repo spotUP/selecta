@@ -690,6 +690,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME mcc-prefs-themes COMMAND mcc_prefs_test themes "${MCC_DIR}/dist/themes")
   add_test(NAME mcc-prefs-cmake COMMAND mcc_prefs_test cmake "${MCC_DIR}/CMakeLists.txt" "${MCC_PREFS_NAME}")
   set_tests_properties(mcc-prefs-writer mcc-prefs-mapping mcc-prefs-themes mcc-prefs-cmake PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685l: every public UPA_/UPM_ name in up.h and UP_ function in up_lib.h has an AutoDoc entry (section 8.5), and the staging of the
+  # distribution tree (section 9) produces every path of the layout (empty stand-ins for the Amiga build products).
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME mcc-autodoc COMMAND "${Python3_EXECUTABLE}" -I "${PROJECT_SOURCE_DIR}/tools/mcc_autodoc.py" check)
+  add_test(NAME mcc-dist-layout COMMAND "${CMAKE_COMMAND}" -DMODE=selftest "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mcc_dist_selftest"
+    "-DROOT=${PROJECT_SOURCE_DIR}" "-DCLASS_NAMES=${MCC_CLASS_NAMES}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_dist.cmake")
+  set_tests_properties(mcc-autodoc mcc-dist-layout PROPERTIES TIMEOUT 30 LABELS mui)
   # I970: the baked 16x8 tall-pixel icon bodies (List, Repeat, Stop) keep their detail; the revert proof is the old baker.
   add_executable(mui_icon_fit_test ui/mui_icon_fit_test.c)
   target_include_directories(mui_icon_fit_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
