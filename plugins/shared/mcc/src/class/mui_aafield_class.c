@@ -199,6 +199,52 @@ static ULONG aafield_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     return DoSuperMethodA(cl, obj, (Msg)msg);
 }
 
+/* OM_NEW: a by-name MUI_NewObject("UP-Field.mcc") has no MUIA_Group_Child, so the field builds its own String and the two flexible
+ * spacers here (the same object UP_NewField assembles); UP_NewField passes its children and goes straight through. */
+static ULONG aafield_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aafield_data* d;
+    struct opSet nm;
+    struct TagItem def[12];
+    struct TagItem* tags = msg->ops_AttrList;
+    Object* str = NULL;
+    mui_aa_field_t m;
+    if (FindTagItem(MUIA_Group_Child, tags) == NULL) {
+        mui_aa_field_metrics(0, 256, &m);
+        mui_theme_bg_spec(mui_theme_tokens()[MUI_AA_FIELD_FACE], g_bg_spec, sizeof g_bg_spec);
+        str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_String_MaxLen,
+                            GetTagData(MUIA_String_MaxLen, 80, tags), MUIA_String_Contents, (ULONG) "", TAG_DONE);
+        if (str == NULL) {
+            return 0;
+        }
+        def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+        def[1].ti_Tag = MUIA_Background, def[1].ti_Data = (ULONG)g_bg_spec;
+        def[2].ti_Tag = MUIA_FillArea, def[2].ti_Data = (ULONG)FALSE;
+        def[3].ti_Tag = MUIA_Group_Spacing, def[3].ti_Data = 0;
+        def[4].ti_Tag = MUIA_InnerLeft, def[4].ti_Data = (ULONG)m.pad_x;
+        def[5].ti_Tag = MUIA_InnerRight, def[5].ti_Data = (ULONG)m.pad_x;
+        def[6].ti_Tag = MUIA_InnerTop, def[6].ti_Data = (ULONG)(m.pad_y + m.outline);
+        def[7].ti_Tag = MUIA_InnerBottom, def[7].ti_Data = (ULONG)(m.pad_y + m.outline);
+        def[8].ti_Tag = MUIA_Group_Child, def[8].ti_Data = (ULONG)MUI_NewObject((char*)MUIC_Rectangle, MUIA_VertWeight, 100UL, TAG_DONE);
+        def[9].ti_Tag = MUIA_Group_Child, def[9].ti_Data = (ULONG)str;
+        def[10].ti_Tag = MUIA_Group_Child, def[10].ti_Data = (ULONG)MUI_NewObject((char*)MUIC_Rectangle, MUIA_VertWeight, 100UL, TAG_DONE);
+        def[11].ti_Tag = TAG_MORE, def[11].ti_Data = (ULONG)(uintptr_t)tags;
+        nm = *msg;
+        nm.ops_AttrList = def;
+        msg = &nm;
+    }
+    obj = (Object*)aatip_super_set(cl, obj, msg, offsetof(aafield_data, tip));
+    if (obj == NULL) {
+        return 0;
+    }
+    if (str != NULL) {
+        d = INST_DATA(cl, obj);
+        d->str = str;
+        d->max_w = (int)GetTagData(UPA_Field_MaxWidth, 0, tags);
+        d->placeholder = (const char*)GetTagData(UPA_Field_Placeholder, 0, tags);
+    }
+    return (ULONG)obj;
+}
+
 static ULONG __attribute__((used)) aafield_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aafield_dispatch(void);
@@ -210,7 +256,7 @@ __asm__(".text\n.even\n.globl _aafield_dispatch\n_aafield_dispatch:\n"
 static ULONG __attribute__((used)) aafield_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
     case OM_NEW:
-        return aatip_super_set(cl, obj, (struct opSet*)msg, offsetof(aafield_data, tip));
+        return aafield_new(cl, obj, (struct opSet*)msg);
     case OM_SET:
         return aafield_set(cl, obj, (struct opSet*)msg);
     case OM_GET:

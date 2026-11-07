@@ -262,6 +262,50 @@ static ULONG aabtn_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEven
     return 0;
 }
 
+/* OM_NEW: the one place UPA_Button_* are parsed, so UP_NewButton and a by-name MUI_NewObject("UP-Button.mcc") build the same object.
+ * Defaults: no frame, on the cycle chain, input mode by role (toggle or release); MUIA_ShortHelp, MUIA_Selected, MUIA_Weight,
+ * MUIA_ControlChar pass through to the Area. */
+static ULONG aabtn_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aabtn_data* d;
+    struct opSet nm;
+    struct TagItem def[4];
+    struct TagItem* tags = msg->ops_AttrList;
+    int role = (int)GetTagData(UPA_Button_Role, UPV_Button_Role_Normal, tags);
+    const char* caption = (const char*)GetTagData(UPA_Button_Caption, (ULONG)(uintptr_t) "", tags);
+    const char* widest = (const char*)GetTagData(UPA_Button_Widest, 0, tags);
+    const UP_IconData* data = (const UP_IconData*)(uintptr_t)GetTagData(UPA_Button_IconData, 0, tags);
+    int icon = mui_icon_index((const char*)(uintptr_t)GetTagData(UPA_Button_Icon, 0, tags));
+    if (icon < 0) {
+        icon = data != NULL ? AABTN_DATA_ICON : AABTN_NO_ICON;
+    }
+    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
+    def[1].ti_Tag = MUIA_InputMode, def[1].ti_Data = role == MUI_AA_ROLE_TOGGLE ? MUIV_InputMode_Toggle : MUIV_InputMode_RelVerify;
+    def[2].ti_Tag = MUIA_CycleChain, def[2].ti_Data = (ULONG)TRUE;
+    def[3].ti_Tag = TAG_MORE, def[3].ti_Data = (ULONG)(uintptr_t)tags;
+    nm = *msg;
+    nm.ops_AttrList = def;
+    obj = (Object*)aatip_super_set(cl, obj, &nm, offsetof(aabtn_data, tip));
+    if (obj == NULL) {
+        return 0;
+    }
+    d = INST_DATA(cl, obj);
+    strncpy(d->caption, caption, sizeof d->caption - 1);
+    strncpy(d->widest, widest != NULL ? widest : caption, sizeof d->widest - 1);
+    d->fit = widest == NULL;
+    d->icon[0] = icon;
+    d->data = data;
+    d->icon[1] = mui_icon_index((const char*)(uintptr_t)GetTagData(UPA_Button_AltIcon, 0, tags));
+    if (d->icon[1] < 0) {
+        d->icon[1] = AABTN_NO_ICON;
+    }
+    d->icon_only = GetTagData(UPA_Button_IconOnly, FALSE, tags) && icon != AABTN_NO_ICON;
+    d->role = role;
+    d->align = (int)GetTagData(UPA_Button_Align, UPV_Button_Align_Left, tags);
+    d->fixed_w = (int)GetTagData(UPA_Button_FixedWidth, 0, tags);
+    d->fixed_h = (int)GetTagData(UPA_Button_FixedHeight, 0, tags);
+    return (ULONG)obj;
+}
+
 /* I625a6: first-call guards of the --log trace (one line per method, the first button that reaches it). */
 static unsigned long g_n_setup, g_n_ask, g_n_show, g_n_draw;
 static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
@@ -275,6 +319,7 @@ __asm__(".text\n.even\n.globl _aabtn_dispatch\n_aabtn_dispatch:\n"
 static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
     case OM_NEW:
+        return aabtn_new(cl, obj, (struct opSet*)msg);
     case OM_SET:
         return aatip_super_set(cl, obj, (struct opSet*)msg, offsetof(aabtn_data, tip));
     case OM_GET:
@@ -317,47 +362,16 @@ static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* o
     return DoSuperMethodA(cl, obj, msg);
 }
 
-/* Tags: UPA_Button_* are read here; MUIA_ShortHelp, MUIA_Selected, MUIA_Weight, MUIA_ControlChar pass through to the Area. Defaults: no
- * frame, on the cycle chain, input mode by role (toggle or release). */
 Object* UP_NewButton(const struct TagItem* tags) {
     Object* o;
-    aabtn_data* d;
-    struct TagItem def[4];
-    int role = (int)GetTagData(UPA_Button_Role, UPV_Button_Role_Normal, (struct TagItem*)tags);
-    const char* caption = (const char*)GetTagData(UPA_Button_Caption, (ULONG)(uintptr_t)"", (struct TagItem*)tags);
-    const char* widest = (const char*)GetTagData(UPA_Button_Widest, 0, (struct TagItem*)tags);
-    const UP_IconData* data = (const UP_IconData*)(uintptr_t)GetTagData(UPA_Button_IconData, 0, (struct TagItem*)tags);
-    int icon = mui_icon_index((const char*)(uintptr_t)GetTagData(UPA_Button_Icon, 0, (struct TagItem*)tags));
-    if (icon < 0) {
-        icon = data != NULL ? AABTN_DATA_ICON : AABTN_NO_ICON;
-    }
     if (g_class == NULL) {
         g_class = AA_CLASS_CREATE(&aabtn_class_desc);
     }
     if (g_class == NULL) {
         return NULL;
     }
-    def[0].ti_Tag = MUIA_Frame, def[0].ti_Data = (ULONG)MUIV_Frame_None;
-    def[1].ti_Tag = MUIA_InputMode, def[1].ti_Data = role == MUI_AA_ROLE_TOGGLE ? MUIV_InputMode_Toggle : MUIV_InputMode_RelVerify;
-    def[2].ti_Tag = MUIA_CycleChain, def[2].ti_Data = (ULONG)TRUE;
-    def[3].ti_Tag = TAG_MORE, def[3].ti_Data = (ULONG)(uintptr_t)tags;
-    o = NewObjectA(g_class->mcc_Class, NULL, def);
+    o = NewObjectA(g_class->mcc_Class, NULL, (struct TagItem*)tags);
     if (o != NULL) {
-        d = INST_DATA(g_class->mcc_Class, o);
-        strncpy(d->caption, caption, sizeof d->caption - 1);
-        strncpy(d->widest, widest != NULL ? widest : caption, sizeof d->widest - 1);
-        d->fit = widest == NULL;
-        d->icon[0] = icon;
-        d->data = data;
-        d->icon[1] = mui_icon_index((const char*)(uintptr_t)GetTagData(UPA_Button_AltIcon, 0, (struct TagItem*)tags));
-        if (d->icon[1] < 0) {
-            d->icon[1] = AABTN_NO_ICON;
-        }
-        d->icon_only = GetTagData(UPA_Button_IconOnly, FALSE, (struct TagItem*)tags) && icon != AABTN_NO_ICON;
-        d->role = role;
-        d->align = (int)GetTagData(UPA_Button_Align, UPV_Button_Align_Left, (struct TagItem*)tags);
-        d->fixed_w = (int)GetTagData(UPA_Button_FixedWidth, 0, (struct TagItem*)tags);
-        d->fixed_h = (int)GetTagData(UPA_Button_FixedHeight, 0, (struct TagItem*)tags);
         g_made++;
     }
     return o;
