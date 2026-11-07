@@ -200,16 +200,6 @@ static int template_checks(const sel_host* host, const char* tpl) {
     FILE *in, *out;
     char buf[4096];
 
-    CHECK(sqlite3_open(":memory:", &fresh) == SQLITE_OK);
-    CHECK(sel_schema_migrate(fresh, host) == 1);
-    want = dump(fresh);
-    CHECK(sqlite3_open_v2(tpl, &t, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK);
-    got = dump(t);
-    if (strcmp(want, got) != 0) {
-        printf("FAIL template dump differs from SCHEMA_FINAL\n  want: %.200s\n  got:  %.200s\n", want, got);
-        g_fail++;
-    }
-    sqlite3_close(t);
     /* sel_library_open on a missing path with the template beside it. */
     snprintf(dir, sizeof dir, "%s.d", tpl);
     snprintf(copy, sizeof copy, "%s/" SEL_LIBTEMPLATE_NAME, dir);
@@ -237,6 +227,17 @@ static int template_checks(const sel_host* host, const char* tpl) {
     CHECK(count_of(log, "template copied") == 1);
     CHECK(count_of(log, "final schema created v") == 0);
     free(log);
+    /* sel_library_open configures the SQLite heap, which only works before any other SQLite use in the process. */
+    CHECK(sqlite3_open(":memory:", &fresh) == SQLITE_OK);
+    CHECK(sel_schema_migrate(fresh, host) == 1);
+    want = dump(fresh);
+    CHECK(sqlite3_open_v2(tpl, &t, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK);
+    got = dump(t);
+    if (strcmp(want, got) != 0) {
+        printf("FAIL template dump differs from SCHEMA_FINAL\n  want: %.200s\n  got:  %.200s\n", want, got);
+        g_fail++;
+    }
+    sqlite3_close(t);
     CHECK(sqlite3_open_v2(db, &o, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK);
     got2 = dump(o);
     /* The library adds meta rows, not schema: the dump of sqlite_master and user_version must stay equal. */
