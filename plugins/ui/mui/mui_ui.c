@@ -74,6 +74,7 @@ static void mui_libs_close(void) {
 #include "mui_aalist_class.h"
 #include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
+#include "mui_aawrap.h"
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
 #include "map/mui_aa.h"
@@ -3269,9 +3270,9 @@ static void* mui_open(const sel_ui_open_args* a) {
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1),
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(s, g_screen_rtg),
-                    Child, s->balance[0] = mui_aabalance_new(),
+                    Child, s->balance[0] = UP_NewBalance(NULL),
                     Child, s->slot[MUI_SLOT_MAIN] = mui_main_pages(s),
-                    Child, s->balance[1] = mui_aabalance_new(),
+                    Child, s->balance[1] = UP_NewBalance(NULL),
                     Child, s->slot[MUI_SLOT_DETAIL] = mui_detail_group(s),
                 End,
                 Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
@@ -3476,6 +3477,7 @@ static void mui_close(void* state) {
         s->canvas = NULL;
         mui_canvas_class_free();
         mui_vizarea_class_free();
+        mui_aawrap_free(); /* I685f: the list hooks, after the objects are gone */
         mui_aatext_class_free();
         mui_aapanel_class_free();
         mui_aatabs_class_free();
