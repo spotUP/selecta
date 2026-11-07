@@ -93,6 +93,53 @@ int main(void) {
     n = search(lib, "tune", out, sizeof out);
     check(n == 2, "on again");
 
+    /* meta fill: the sixth field is the group size above 1, else empty */
+    {
+        static char keys[400], meta[800];
+        sel_lib_job job;
+        const char* m = meta;
+        int f;
+
+        memset(&job, 0, sizeof job);
+        job.text = "tune";
+        job.out = keys;
+        job.out_cap = sizeof keys;
+        job.meta = meta;
+        job.meta_cap = sizeof meta;
+        check(sel_library_run(lib, SEL_LIB_REQ_SEARCH, &job) && job.count == 2, "meta search");
+        for (f = 0; f < 5; f++) m += strlen(m) + 1u; /* k1: title, artist, format, duration, album */
+        check(strcmp(m, "2") == 0, "meta: k1 copies 2");
+        m += strlen(m) + 1u;
+        for (f = 0; f < 5; f++) m += strlen(m) + 1u;
+        check(m[0] == '\0', "meta: k3 copies empty");
+        check(m + 1u == meta + job.meta_used, "meta: two rows of six fields");
+    }
+
+    /* the index arm: an index exported from this catalogue carries dup_of, so a library that only has the index hides k2 too */
+    {
+        static const char idx_path[] = "hide_dups_index.db";
+        sel_library* b;
+        uint32_t rows = 0;
+
+        remove(idx_path);
+        check(sel_library_export_index(lib, "local", idx_path, &rows) && rows == 303u, "export index");
+        b = sel_library_open(host, sel_machine_fake("a060"), 0, ":memory:");
+        check(b != NULL && sel_library_attach_index(b, idx_path) && b->idx_dup == 1, "attach index with dup columns");
+        if (b != NULL) {
+            n = search(b, "tune", out, sizeof out);
+            check(n == 2 && has(out, n, "local:k1") && !has(out, n, "local:k2"), "index arm: hidden copy skipped");
+            n = search(b, "bulk", out, sizeof out);
+            check(n == 240, "index arm: 240 visible bulk rows");
+            n = search(b, "duplicate:yes name:tune", out, sizeof out);
+            check(n == 1 && has(out, n, "local:k2"), "index arm: duplicate:yes shows the hidden one");
+            sel_library_set_hide_duplicates(b, "off");
+            n = search(b, "tune", out, sizeof out);
+            check(n == 3, "index arm: off shows all");
+            sel_library_close(b);
+        }
+        remove(idx_path);
+    }
+
     sel_library_close(lib);
     if (fails == 0) printf("hide_dups_ok\n");
     return fails != 0;

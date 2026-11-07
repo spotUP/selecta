@@ -815,7 +815,7 @@ struct sel_engine {
     uint32_t sm_key;      /* smart download plan made for this queue version, playing entry and prefs generation (I169); 0 = none */
     char* res_text;       /* last query result: keys, each NUL terminated */
     uint32_t res_count;
-    char* res_meta;       /* last query result: title, artist, format, duration, album per key, each NUL terminated */
+    char* res_meta;       /* last query result: title, artist, format, duration, album, copies per key, each NUL terminated */
     uint32_t res_meta_used;
     char* qmeta;          /* snapshot of res_meta taken with qview (VIEW_SOURCE query) */
     uint32_t* qmeta_off;  /* qmeta offset of each qview row; UINT32_MAX: no metadata */
@@ -9078,10 +9078,10 @@ static void snapshot_meta(sel_engine* e) {
     e->qmeta_rows = rows;
     for (i = 0; i < rows; i++) {
         uint32_t f, start = at;
-        for (f = 0; f < 5u && at < e->res_meta_used; f++) {
+        for (f = 0; f < 6u && at < e->res_meta_used; f++) {
             at += (uint32_t)strlen(e->qmeta + at) + 1u;
         }
-        e->qmeta_off[i] = f == 5u ? start : UINT32_MAX;
+        e->qmeta_off[i] = f == 6u ? start : UINT32_MAX;
     }
 }
 

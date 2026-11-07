@@ -60,6 +60,7 @@ struct sel_library {
     uint32_t account;
     sqlite3* db;
     int has_index;     /* a read-only index is attached as schema idx (index.c) */
+    int idx_dup;       /* the attached index has dup_of / dup_members (exported at schema v18 or later; I1094c) */
     char src_off[160]; /* comma separated ids of the switched-off sources (library.sources_off, I265); read by search and radio */
     int hide_dups;     /* library.hide_duplicates (I1094c): searches and collection lists skip songs.dup_of IS NOT NULL; default on */
     sel_spsc requests; /* caller -> worker */

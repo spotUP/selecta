@@ -214,7 +214,7 @@ typedef struct sel_lib_job {
     long long now;     /* SEARCH: seconds since the epoch for relative times */
     char* out;         /* SEARCH: keys, each NUL terminated */
     uint32_t out_cap;
-    char* meta;         /* SEARCH, optional: per key in `out`, four NUL terminated fields: title, artist, format, duration "m:ss" ("" unknown) */
+    char* meta;         /* SEARCH, optional: per key in `out`, six NUL terminated fields: title, artist, format, duration "m:ss" ("" unknown), album, copies (group size when above 1, else "") */
     uint32_t meta_cap;
     uint32_t meta_used; /* out: bytes of `meta` written (whole rows) */
     uint32_t count;     /* out: keys stored (SEARCH), rows imported (IMPORT) */
