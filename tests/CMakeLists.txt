@@ -657,6 +657,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME mcc-font-list-order COMMAND mcc_font_list_test order "${CMAKE_CURRENT_BINARY_DIR}/mcc_font_list_theme.txt")
   add_test(NAME mcc-font-list-source COMMAND mcc_font_list_test source)
   set_tests_properties(mcc-font-list-order mcc-font-list-source PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685h: the up-mcc.library API (lib/support_lib.c, compiled into sel_mcc_static and into the Amiga library) through the static build.
+  add_executable(mcc_support_api_test ui/mcc_support_api_test.c)
+  target_link_libraries(mcc_support_api_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-support-api COMMAND mcc_support_api_test)
+  set_tests_properties(mcc-support-api PROPERTIES TIMEOUT 30 LABELS mui)
   # I970: the baked 16x8 tall-pixel icon bodies (List, Repeat, Stop) keep their detail; the revert proof is the old baker.
   add_executable(mui_icon_fit_test ui/mui_icon_fit_test.c)
   target_include_directories(mui_icon_fit_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
