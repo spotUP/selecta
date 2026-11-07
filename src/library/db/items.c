@@ -400,7 +400,7 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
             /* I994d5: an entry may hold the bare local path (PLAYLIST_ADD_SONG path); the song row is keyed local:<path> (sel_song_key_of), as song_briefs resolves it */
             /* I994d4: LEFT JOIN: an entry whose song is not (yet) a library row stays on the page, as the old key read showed it */
             return "SELECT pe.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),"
-                   "(SELECT COUNT(*) FROM history h WHERE h.key=pe.key AND h.skipped=0),IFNULL(s.added,0),IFNULL(s.duration_ms,0)"
+                   "(SELECT COUNT(*) FROM history h WHERE h.key IN (pe.key,'local:'||pe.key) AND h.skipped=0),IFNULL(s.added,0),IFNULL(s.duration_ms,0)"
                    " FROM playlist_entries pe LEFT JOIN songs s ON s.key IN (pe.key,'local:'||pe.key) WHERE pe.playlist_id=CAST(?1 AS INTEGER) ORDER BY pe.pos";
         }
         return NULL;
