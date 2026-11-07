@@ -128,11 +128,17 @@ static APTR font_get(struct Screen* scr, int px) {
         ops.quiet_end = probe_quiet_end;
         ops.open = probe_open;
         n_probe++;
-        snprintf(tl_, sizeof tl_, "mcc: Inter font probe %lu begin (%d px)", n_probe, px);
-        aa_trace(tl_);
+        /* Every probe is one DOS Open per name; tracing each one cost about 8 ms a line on the rig, so only the first probe and every
+         * 32nd are traced (the count in the line carries the rest). */
+        if (n_probe == 1 || n_probe % 32 == 0) {
+            snprintf(tl_, sizeof tl_, "mcc: Inter font probe %lu begin (%d px)", n_probe, px);
+            aa_trace(tl_);
+        }
         f = mui_fontprobe_open(&ops, mui_font_files());
-        snprintf(tl_, sizeof tl_, "mcc: Inter font probe %lu done (%d px, %s)", n_probe, px, f != NULL ? "opened" : "not found");
-        aa_trace(tl_);
+        if (n_probe == 1 || n_probe % 32 == 0) {
+            snprintf(tl_, sizeof tl_, "mcc: Inter font probe %lu done (%d px, %s)", n_probe, px, f != NULL ? "opened" : "not found");
+            aa_trace(tl_);
+        }
         if (f != NULL) {
             g_fonts[free_slot].px = px;
             g_fonts[free_slot].refs = 1;
