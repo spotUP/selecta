@@ -189,6 +189,18 @@ LONG aa_pen(aa_ctx* c, uint32_t rgb) {
 }
 
 static aa_ctx* g_ctx_list;
+#ifdef UP_CLASS_LIBRARY
+#include <clib/alib_protos.h>
+#include "map/up_store.h"
+static ULONG retheme_hook_fn(struct Hook* hook, APTR app, ULONG* msg);
+static struct Hook g_retheme_hook;
+static void retheme_hook_init(void) {
+    if (g_retheme_hook.h_Entry == NULL) {
+        g_retheme_hook.h_Entry = (__typeof__(g_retheme_hook.h_Entry))(void (*)(void))HookEntry;
+        g_retheme_hook.h_SubEntry = (__typeof__(g_retheme_hook.h_SubEntry))(void (*)(void))retheme_hook_fn;
+    }
+}
+#endif
 
 static void ctx_unlink(aa_ctx* c) {
     aa_ctx** p;
@@ -200,6 +212,9 @@ static void ctx_unlink(aa_ctx* c) {
     }
     c->next = NULL;
     c->linked = 0;
+#ifdef UP_CLASS_LIBRARY
+    (void)up_store_detach(c);
+#endif
 }
 
 void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
@@ -213,6 +228,11 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     g_ctx_list = c;
     c->linked = 1;
     memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
+#ifdef UP_CLASS_LIBRARY
+    /* I685n: a recolour started in another process (the prefs Save) reaches this object through the registry of up-mcc.library. */
+    retheme_hook_init();
+    (void)up_store_attach(c, obj, (void*)_app(obj), &g_retheme_hook);
+#endif
     c->scr = _screen(obj);
     c->cm = c->scr->ViewPort.ColorMap;
     depth = (int)GetBitMapAttr(c->scr->RastPort.BitMap, BMA_DEPTH);
@@ -425,17 +445,41 @@ static void ctx_release_pens(aa_ctx* c) {
     c->npens = 0;
 }
 
+static void ctx_retheme(aa_ctx* c) {
+    ctx_release_pens(c);
+    memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
+    if (aa_live(c->obj)) {
+        MUI_Redraw(c->obj, MADF_DRAWOBJECT);
+    }
+}
+
 uint32_t aa_retheme_all(void) {
     aa_ctx* c;
     uint32_t n = 0;
     aatip_drop(NULL); /* I731: an open tip holds pens of the old palette */
     for (c = g_ctx_list; c != NULL; c = c->next) {
-        ctx_release_pens(c);
-        memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
-        if (aa_live(c->obj)) {
-            MUI_Redraw(c->obj, MADF_DRAWOBJECT);
-        }
+        ctx_retheme(c);
         n++;
     }
     return n;
 }
+
+#ifdef UP_CLASS_LIBRARY
+/* I685n: runs on the application's task (MUIM_Application_PushMethod + MUIM_CallHook from up-mcc.library). msg[0] is the key given to
+ * UP_ThemeAttach, the context. The method may arrive after the object left the window, so the context is looked up in this
+ * library's own list first; a gone context is ignored. */
+static ULONG retheme_hook_fn(struct Hook* hook, APTR app, ULONG* msg) {
+    aa_ctx* c;
+    (void)hook;
+    (void)app;
+    aatip_drop(NULL);
+    for (c = g_ctx_list; c != NULL; c = c->next) {
+        if ((ULONG)(uintptr_t)c == msg[0]) {
+            ctx_retheme(c);
+            break;
+        }
+    }
+    return 0;
+}
+
+#endif
