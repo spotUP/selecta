@@ -22,6 +22,7 @@
 #include "map/mui_theme.h"
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
+#include "map/mui_log.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -123,7 +124,7 @@ static void aafield_string_pens(aafield_data* d) {
         pen[k] = aa_pen(&d->aa, mui_aa_field_string_bg(d->aa.tok, k));
     }
     if (!d->pens_logged) {
-        fprintf(stderr, "selecta mui: field string pens %u/%u active %u/%u -> background %ld/%ld\n", (unsigned)si->Extension->Pens[0],
+        aa_log("up-mcc: field string pens %u/%u active %u/%u -> background %ld/%ld\n", (unsigned)si->Extension->Pens[0],
                 (unsigned)si->Extension->Pens[1], (unsigned)si->Extension->ActivePens[0], (unsigned)si->Extension->ActivePens[1], (long)pen[0], (long)pen[1]);
         d->pens_logged = 1;
     }

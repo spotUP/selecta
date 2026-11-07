@@ -1,4 +1,5 @@
 #include "mui_theme.h"
+#include "mui_log.h"
 
 #include <selecta/uimodel/tokens.h>
 
@@ -150,7 +151,7 @@ static int theme_apply_file(txt_theme* t, const char* path) {
     fclose(f);
     buf[n] = '\0';
     if (txt_theme_parse(&work, buf, &bad) < 0) {
-        fprintf(stderr, "selecta mui: theme '%s' line %d is not a role or token line in range, ignored\n", path, bad);
+        aa_log("up-mcc: theme '%s' line %d is not a role or token line in range, ignored\n", path, bad);
         return 0;
     }
     *t = work;

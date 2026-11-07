@@ -1,5 +1,6 @@
 /* mui_aa_draw: see mui_aa_draw.h. The ttengine V6 calls come from the I665 spike (tags and LVOs from its Developer/include). */
 #include "mui_aa_draw.h"
+#include "map/mui_log.h"
 #include "mui_aatip.h"
 #include "map/mui_fontprobe.h"
 
@@ -133,7 +134,7 @@ static APTR font_get(struct Screen* scr, int px) {
     }
     if (!g_missing_logged) {
         g_missing_logged = 1;
-        fprintf(stderr, "selecta: mui: ttengine or Inter missing, plain text\n");
+        aa_log("up-mcc: ttengine or Inter missing, plain text\n");
     }
     return NULL;
 }
