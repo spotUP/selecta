@@ -29,5 +29,7 @@ Names: Installer script Install-UP-MCC, classes MUI:Libs/mui/UP-*.mcc, library L
    FAIL: any "[ERROR]" line, fewer than 11 "[OK]" lines, exit code 20, a crash or a Guru.
 8. Stop the rig after the last command (rig.py stop) and delete its build directory.
 9. I685o: copy Themes/Light.theme to ENV:UP-MCC/theme, run UP-Demo.
-   PASS: list rows, selection, buttons and status bar are light-coloured, no dark remnants (all 39 tokens come from the file).
-   FAIL: any dark list row, selection, button fill, status colour or scrollbar on the white surface.
+   PASS: list rows, selection, buttons, status bar and the window area inside the frame are light-coloured (the UP-Demo root is
+   an UP-Panel, so the window area follows the theme). On a palette-limited screen Light F4F4F6 may show as the nearest pen.
+   The screen title bar and window border keep the screen colours; they are MUI/Intuition, not UP tokens.
+   FAIL: any dark list row, selection, button fill, status colour, scrollbar or dark window area inside the frame.
