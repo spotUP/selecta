@@ -112,6 +112,26 @@ __asm__(".text\n.even\n.globl _aapanel_dispatch\n_aapanel_dispatch:\n"
 
 static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW: {
+        /* I685u: created by name (UP-Panel.mcc, no UP_NewPanel) the object has no background tag, so MUI would paint the window
+         * background. Add the role colour from the theme store, exactly what UP_NewPanel passes. */
+        struct opSet* ops = (struct opSet*)msg;
+        if (FindTagItem(MUIA_Background, ops->ops_AttrList) == NULL) {
+            int role = (int)GetTagData(UPA_Panel_Role, UPV_Panel_Role_Panel, ops->ops_AttrList);
+            if ((unsigned)role < MUI_AA_PANEL_ROLES) {
+                struct TagItem more[2];
+                struct opSet nm = *ops;
+                mui_theme_bg_spec(mui_aa_panel_rgb(mui_theme_tokens(), role), g_bg_spec[role], sizeof g_bg_spec[role]);
+                more[0].ti_Tag = MUIA_Background;
+                more[0].ti_Data = (ULONG)g_bg_spec[role];
+                more[1].ti_Tag = TAG_MORE;
+                more[1].ti_Data = (ULONG)(uintptr_t)ops->ops_AttrList;
+                nm.ops_AttrList = more;
+                return DoSuperMethodA(cl, obj, (Msg)&nm);
+            }
+        }
+        break;
+    }
     case MUIM_Setup:
         return aapanel_setup(cl, obj, msg);
     case MUIM_Cleanup:

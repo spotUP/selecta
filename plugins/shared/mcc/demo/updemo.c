@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
         }
         kids[k].ti_Tag = TAG_DONE;
         kids[k].ti_Data = 0;
-        root = MUI_NewObjectA((char*)MUIC_Group, kids);
+        root = MUI_NewObjectA((char*)"UP-Panel.mcc", kids);
         win = root == NULL ? NULL
                            : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431,
                                            MUIA_Window_RootObject, (ULONG)root, TAG_DONE);
