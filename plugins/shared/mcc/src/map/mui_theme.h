@@ -58,6 +58,10 @@ int mui_theme_pick_pen(const uint32_t* pen_rgb, uint32_t n, const uint32_t* toke
  * ENV:Selecta/theme, written by Amarchy) is applied first, then arg_path (--theme <file>) over it, so --theme wins token by
  * token. A NULL, missing, unreadable or malformed file leaves *t exactly as it was (no error dialog; a note on stderr for a
  * malformed one). Returns how many of the two files were applied (0..2). */
+/* I685t: replaces the file reader of mui_theme_load (default stdio). rd fills buf with up to cap bytes of path and returns the count,
+ * or -1 when the file cannot be opened; NULL restores stdio. */
+typedef long (*mui_theme_reader)(const char* path, char* buf, size_t cap);
+void mui_theme_set_reader(mui_theme_reader rd);
 int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path);
 /* I676b: ARexx THEME. mui_theme_request refuses (-1, nothing stored) a path, or with no path the env_path file, that is missing or
  * malformed; otherwise it remembers the path (none: the ENV file) for the next window open and returns 0. mui_theme_resolve is the

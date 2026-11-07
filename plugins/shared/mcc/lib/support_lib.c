@@ -15,6 +15,10 @@
 #include "mui_aa_draw.h"
 
 #include <clib/alib_protos.h>
+#include <dos/dos.h>
+#include <dos/dosextens.h>
+#include <proto/dos.h>
+#include <proto/exec.h>
 #include <libraries/mui.h>
 #endif
 
@@ -43,19 +47,65 @@ static void retheme(void) {
 #endif
 }
 
-/* Library open (lib/support_libheader.c __UserLibInit; the host test calls it with a temp file): the token store holds the theme
- * before any class draws, so a theme file in ENV:UP-MCC/ is in force without the prefs page ever running UP_ThemeReload. No retheme
- * here: nothing is registered yet at open, and a failed or missing file leaves the built-in default tokens (mui_theme_resolve). The
- * static build (Selecta) never calls this; it keeps its own mui_theme_load. env_path NULL: UP_THEME_ENV. */
+#if defined(__amigaos__) || defined(AMIGA)
+/* I685t: dos.library reader for the theme file (no stdio in the library). Runs with the calling process's pr_WindowPtr = -1 so a
+ * missing assign never opens a requester; restored after. The caller is a process (lazy_load checks). */
+static long dos_read(const char* path, char* buf, size_t cap) {
+    struct Process* me = (struct Process*)FindTask(NULL);
+    APTR saved = me->pr_WindowPtr;
+    BPTR fh;
+    long n = -1;
+    me->pr_WindowPtr = (APTR)-1L;
+    fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    if (fh != 0) {
+        n = Read(fh, buf, (LONG)cap);
+        Close(fh);
+        if (n < 0) {
+            n = -1;
+        }
+    }
+    me->pr_WindowPtr = saved;
+    return n;
+}
+static int is_process(void) {
+    struct Task* t = FindTask(NULL);
+    return t != NULL && t->tc_Node.ln_Type == NT_PROCESS;
+}
+#else
+static int is_process(void) {
+    return 1;
+}
+#endif
+
+static const char* g_lazy_env = UP_THEME_ENV;
+
+/* Library open (lib/support_libheader.c __UserLibInit; the host test calls it with a path). No file I/O: LibInit runs inside
+ * OpenLibrary, where dos/stdio file access hung rig 2 (attempt 1). The registry lock is set up and the lazy theme load is armed;
+ * lazy_load reads the file on the first token read from a client process. The static build (Selecta) never calls this and keeps its
+ * own mui_theme_load. env_path NULL: UP_THEME_ENV. */
 void up_lib_init(const char* env_path) {
-    txt_theme th;
     up_registry_init();
-    mui_theme_resolve(&th, env_path != NULL ? env_path : UP_THEME_ENV, NULL);
+    g_lazy_env = env_path != NULL ? env_path : UP_THEME_ENV;
+#if defined(__amigaos__) || defined(AMIGA)
+    mui_theme_set_reader(dos_read);
+#endif
+    up_store_lazy_arm();
+}
+
+/* Once, on the first token read from a DOS process: ENV theme into the store. A non-process caller leaves it pending (next call). A
+ * missing or bad file leaves the built-in tokens (mui_theme_resolve). No retheme: nothing is drawn with other tokens yet. */
+static void lazy_load(void) {
+    txt_theme th;
+    if (!up_store_lazy_pending() || !is_process() || !up_store_lazy_take()) {
+        return;
+    }
+    mui_theme_resolve(&th, g_lazy_env, NULL);
     mui_theme_tokens_set(th.token);
 }
 
 LONG UP_ThemeReload(void) {
     txt_theme th;
+    up_store_lazy_cancel();
     mui_theme_resolve(&th, UP_THEME_ENV, NULL);
     mui_theme_tokens_set(th.token);
     retheme();
@@ -63,6 +113,7 @@ LONG UP_ThemeReload(void) {
 }
 
 LONG UP_ThemeLoad(STRPTR path) {
+    up_store_lazy_cancel();
     if (mui_theme_request(UP_THEME_ENV, (const char*)path) != 0) {
         return -1;
     }
@@ -74,6 +125,8 @@ LONG UP_ThemeSetTokens(const ULONG* rgb, ULONG count) {
     if (rgb == NULL || count == 0) {
         return -1;
     }
+    lazy_load();
+    up_store_lazy_cancel();
     memcpy(tokens, mui_theme_tokens(), sizeof tokens);
     for (ULONG i = 0; i < count && i < SEL_GUI_TOKEN_COUNT; i++) {
         tokens[i] = (uint32_t)rgb[i];
@@ -84,6 +137,7 @@ LONG UP_ThemeSetTokens(const ULONG* rgb, ULONG count) {
 }
 
 const ULONG* UP_ThemeTokens(void) {
+    lazy_load();
     return (const ULONG*)(const void*)mui_theme_tokens();
 }
 

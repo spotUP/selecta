@@ -21,8 +21,15 @@ typedef void (*up_registry_visit)(void* user, void* key, void* obj, void* app, v
 /* Calls fn for every node with the registry locked; fn must not attach or detach. */
 void up_registry_each(up_registry_visit fn, void* user);
 void up_registry_init(void); /* library open: sets up the lock */
-/* Library open (lib/support_lib.c): up_registry_init plus the theme file's tokens into the store; env_path NULL is ENV:UP-MCC/theme. */
+/* Library open (lib/support_lib.c): up_registry_init plus arming the lazy theme load. NO file I/O here (LibInit runs inside
+ * OpenLibrary): the ENV theme file is read once, on the first UP_ThemeTokens call from a DOS process. env_path NULL: ENV:UP-MCC/theme. */
 void up_lib_init(const char* env_path);
+/* The once flag, under the store lock (up_store.c). arm: pending; take: 1 for exactly one caller while pending, then 0; cancel: an
+ * explicit load/reload/set-tokens makes the lazy load moot. pending: 1 while armed and not yet taken. */
+void up_store_lazy_arm(void);
+int up_store_lazy_pending(void);
+int up_store_lazy_take(void);
+void up_store_lazy_cancel(void);
 void up_registry_free(void); /* library expunge: drops leftover nodes */
 
 /* --- client side (up_store_client.c) --- */

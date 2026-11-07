@@ -68,6 +68,29 @@ void up_registry_init(void) {
 #endif
 }
 
+static int g_lazy_pending;
+void up_store_lazy_arm(void) {
+    lock();
+    g_lazy_pending = 1;
+    unlock();
+}
+int up_store_lazy_pending(void) {
+    return g_lazy_pending;
+}
+int up_store_lazy_take(void) {
+    int was;
+    lock();
+    was = g_lazy_pending;
+    g_lazy_pending = 0;
+    unlock();
+    return was;
+}
+void up_store_lazy_cancel(void) {
+    lock();
+    g_lazy_pending = 0;
+    unlock();
+}
+
 int up_registry_attach(void* key, void* obj, void* app, void* hook) {
     up_node* n;
     if (key == NULL || hook == NULL) {

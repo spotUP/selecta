@@ -137,18 +137,33 @@ uint32_t mui_theme_applied_role(mui_theme_role role) {
     return (unsigned)role < MUI_TH_COUNT ? g_applied[role] : 0;
 }
 
+/* I685t: the file reader. Default stdio; up-mcc.library installs a dos.library reader (mui_theme_set_reader) because libnix stdio
+ * must not run where the library is opened. Returns the bytes read, -1 when the file cannot be opened. */
+static long stdio_read(const char* path, char* buf, size_t cap) {
+    FILE* f = fopen(path, "rb");
+    size_t n;
+    if (f == NULL) {
+        return -1;
+    }
+    n = fread(buf, 1, cap, f);
+    fclose(f);
+    return (long)n;
+}
+static mui_theme_reader g_reader = stdio_read;
+
+void mui_theme_set_reader(mui_theme_reader rd) {
+    g_reader = rd != NULL ? rd : stdio_read;
+}
+
 /* Parses one theme file over *t; *t is untouched unless the whole file is readable and valid. */
 static int theme_apply_file(txt_theme* t, const char* path) {
     char buf[4096];
-    size_t n;
+    long n;
     int bad = 0;
     txt_theme work = *t;
-    FILE* f;
-    if (path == NULL || path[0] == '\0' || (f = fopen(path, "rb")) == NULL) {
+    if (path == NULL || path[0] == '\0' || (n = g_reader(path, buf, sizeof buf - 1)) < 0) {
         return 0;
     }
-    n = fread(buf, 1, sizeof buf - 1, f);
-    fclose(f);
     buf[n] = '\0';
     if (txt_theme_parse(&work, buf, &bad) < 0) {
         aa_log("up-mcc: theme '%s' line %d is not a role or token line in range, ignored\n", path, bad);
