@@ -34,3 +34,14 @@ void aa_log(const char* fmt, ...) {
     vfprintf(stderr, fmt, ap);
     va_end(ap);
 }
+
+/* I625a6: trace sink set by the host; the package never writes it anywhere itself. */
+static void (*g_trace_fn)(const char*);
+void aa_trace_set(void (*fn)(const char* phase)) {
+    g_trace_fn = fn;
+}
+void aa_trace(const char* phase) {
+    if (g_trace_fn != NULL) {
+        g_trace_fn(phase);
+    }
+}

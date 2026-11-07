@@ -111,10 +111,14 @@ static APTR font_get(struct Screen* scr, int px) {
         }
     }
     if (TTEngineBase == NULL) {
+        aa_trace("mcc: ttengine.library open begin");
         TTEngineBase = OpenLibrary((CONST_STRPTR) "ttengine.library", 6);
+        aa_trace(TTEngineBase != NULL ? "mcc: ttengine.library open done (found)" : "mcc: ttengine.library open done (missing)");
     }
     if (TTEngineBase != NULL && free_slot >= 0) {
         struct font_probe fp;
+        char tl_[64];
+        static unsigned long n_probe;
         mui_fontprobe_ops ops;
         APTR f;
         fp.scr = scr;
@@ -123,7 +127,12 @@ static APTR font_get(struct Screen* scr, int px) {
         ops.quiet_begin = probe_quiet_begin;
         ops.quiet_end = probe_quiet_end;
         ops.open = probe_open;
+        n_probe++;
+        snprintf(tl_, sizeof tl_, "mcc: Inter font probe %lu begin (%d px)", n_probe, px);
+        aa_trace(tl_);
         f = mui_fontprobe_open(&ops, mui_font_files());
+        snprintf(tl_, sizeof tl_, "mcc: Inter font probe %lu done (%d px, %s)", n_probe, px, f != NULL ? "opened" : "not found");
+        aa_trace(tl_);
         if (f != NULL) {
             g_fonts[free_slot].px = px;
             g_fonts[free_slot].refs = 1;

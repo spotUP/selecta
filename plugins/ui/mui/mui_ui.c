@@ -76,6 +76,7 @@ static void mui_libs_close(void) {
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
 #include "map/mui_aa.h"
+#include "map/mui_log.h"
 #include "mui_canvas_class.h"
 #include "mui_vizarea_class.h"
 #include "mui_listview_class.h"
@@ -3295,7 +3296,13 @@ static void* mui_open(const sel_ui_open_args* a) {
      * never got that far. */
     /* I949b open ladder: the same window object is opened again after each refusal with the next more compact layout
      * (rig 2 proved MUI 3.8 reopens after ShowMe changes); the failure is reported only after the last step is refused. */
+    aa_trace_set(mui_trace); /* I625a6: the package's method-level lines land in the same --log */
     for (step = 0; mui_layout_for_screen(s, step); step++) {
+        {
+            char tb[64];
+            snprintf(tb, sizeof tb, "ui: ladder step %lu layout applied, MUIA_Window_Open set begins", (unsigned long)step);
+            mui_trace(tb);
+        }
         set(s->win, MUIA_Window_Open, TRUE);
         GetAttr(MUIA_Window_Open, s->win, &open); /* MUI opens the window inside the set; 0 here means it failed */
         mui_trace(open ? "ui: window open attempt returned, window open (ladder step)" : "ui: window open attempt returned, refused (ladder step)");
@@ -3304,6 +3311,13 @@ static void* mui_open(const sel_ui_open_args* a) {
              * stay in the object after a refusal) next to the screen it had to fit. --log on the rig records one line per step. */
             struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
             /* I963: the maximum heights next to it; a body panel whose maximum is bounded caps the window height. */
+            {   /* I625a6: what the step refused on, in the --log as well as on stderr */
+                char tb[160];
+                snprintf(tb, sizeof tb, "ui: ladder step %lu %s: window minimum %ldx%ld, screen %dx%d", (unsigned long)step,
+                         open ? "opened" : "refused", (long)_minwidth(s->root), (long)_minheight(s->root),
+                         scr != NULL ? (int)scr->Width : 0, scr != NULL ? (int)scr->Height : 0);
+                mui_trace(tb);
+            }
             fprintf(stderr, "selecta mui: ladder step %lu window minimum %ldx%ld max height %ld (sidebar %ld main %ld detail %ld), screen %dx%d, open %lu\n",
                     (unsigned long)step, (long)_minwidth(s->root), (long)_minheight(s->root), (long)_maxheight(s->root),
                     (long)_maxheight(s->slot[MUI_SLOT_SIDEBAR]), (long)_maxheight(s->slot[MUI_SLOT_MAIN]), (long)_maxheight(s->slot[MUI_SLOT_DETAIL]),

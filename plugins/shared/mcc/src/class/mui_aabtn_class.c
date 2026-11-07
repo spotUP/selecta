@@ -23,6 +23,7 @@
 #include "mui_aa.h"
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
+#include "map/mui_log.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -249,6 +250,8 @@ static ULONG aabtn_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEven
     return 0;
 }
 
+/* I625a6: first-call guards of the --log trace (one line per method, the first button that reaches it). */
+static unsigned long g_n_setup, g_n_ask, g_n_show, g_n_draw;
 static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aabtn_dispatch(void);
@@ -273,13 +276,27 @@ static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* o
     case MUIM_Hide:
         aatip_drop(obj);
         break;
+    case MUIM_Show:
+        if (g_n_show++ == 0) {
+            aa_trace("mcc: first MUIM_Show reached a button (window is open, layout done)");
+        }
+        break;
     case MUIM_Setup:
+        if (g_n_setup++ == 0) {
+            aa_trace("mcc: first MUIM_Setup reached a button");
+        }
         return aabtn_setup(cl, obj, msg);
     case MUIM_Cleanup:
         return aabtn_cleanup(cl, obj, msg);
     case MUIM_AskMinMax:
+        if (g_n_ask++ == 0) {
+            aa_trace("mcc: first MUIM_AskMinMax reached a button");
+        }
         return aabtn_askminmax(cl, obj, (struct MUIP_AskMinMax*)msg);
     case MUIM_Draw:
+        if (g_n_draw++ == 0) {
+            aa_trace("mcc: first MUIM_Draw reached a button");
+        }
         return aabtn_draw(cl, obj, (struct MUIP_Draw*)msg);
     case MUIM_HandleEvent:
         return aabtn_handle(cl, obj, (struct MUIP_HandleEvent*)msg);

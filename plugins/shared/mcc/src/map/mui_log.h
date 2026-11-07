@@ -14,6 +14,10 @@ void aa_log(const char* fmt, ...)
 #endif
     ;
 
+/* I625a6: the host's trace sink (a "t_ms phase" line in its --log). Null by default, so the package traces nothing on its own. */
+void aa_trace_set(void (*fn)(const char* phase));
+void aa_trace(const char* phase);
+
 #ifdef __cplusplus
 }
 #endif
