@@ -730,6 +730,7 @@ int main(int argc, char** argv)
          * never touches the user's default DB, so a test does not depend on the machine it runs on. */
         const char* db = option(argc, argv, "--db", NULL);
         char dbpath[300];
+        sel_library_trace_enable(g_trace || g_phase_trace);
         if (db == NULL && !has_keys && !is_null) {
             db = default_db_path(dbpath, sizeof dbpath);
         }

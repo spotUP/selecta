@@ -7,6 +7,7 @@
 
 #include <sqlite3.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
 static const char SCHEMA_V1[] =
@@ -318,6 +319,55 @@ static void migrate_failed(sqlite3* db, const sel_host* host, int version, const
     }
 }
 
+static int g_trace;
+static uint32_t g_trace_t0;
+
+void sel_library_trace_enable(int on) {
+    g_trace = on;
+}
+
+void sel_library_trace(const sel_host* host, const char* what, int n) {
+    if (g_trace && host != NULL && host->clock_ms != NULL) {
+        uint32_t now = host->clock_ms(host);
+        fprintf(stderr, "trace lib dt_ms=%u %s %d\n", (unsigned)(g_trace_t0 == 0 ? 0 : now - g_trace_t0), what, n);
+        fflush(stderr);
+        g_trace_t0 = now;
+    }
+}
+
+/* One migration's statements (v18 also recomputes the duplicate groups); the caller owns the transaction. */
+static int migration_apply(sqlite3* db, int index) {
+    return sqlite3_exec(db, g_migrations[index], NULL, NULL, NULL) == SQLITE_OK && (index + 1 != 18 || sel_dup_rebuild(db) == SQLITE_OK);
+}
+
+/* I625a8: a database with user_version 0 has nothing to protect, so all migrations run in ONE transaction and one COMMIT
+ * (one journal create, sync and delete). The per-version commits of an upgrade cost 18 journal cycles on the 68020 IDE disk. */
+static int migrate_fresh(sqlite3* db, const sel_host* host) {
+    char pragma[40];
+    int i;
+
+    if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
+        migrate_failed(db, host, 1, "BEGIN");
+        return 0;
+    }
+    for (i = 0; i < MIGRATION_COUNT; i++) {
+        if (!migration_apply(db, i)) {
+            migrate_failed(db, host, i + 1, "statements");
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+            return 0;
+        }
+        sel_library_trace(host, "migration applied v", i + 1);
+    }
+    sqlite3_snprintf((int)sizeof pragma, pragma, "PRAGMA user_version=%d", MIGRATION_COUNT);
+    if (sqlite3_exec(db, pragma, NULL, NULL, NULL) != SQLITE_OK || sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        migrate_failed(db, host, MIGRATION_COUNT, "COMMIT");
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        return 0;
+    }
+    sel_library_trace(host, "fresh migration committed", MIGRATION_COUNT);
+    return 1;
+}
+
 static int migrate_steps(sqlite3* db, const sel_host* host) {
     int v = sel_schema_version(db);
     char pragma[40];
@@ -326,13 +376,16 @@ static int migrate_steps(sqlite3* db, const sel_host* host) {
     if (v < 0 || v > MIGRATION_COUNT) { /* newer DB than this build: refuse, never downgrade */
         return 0;
     }
-    for (i = v; i < MIGRATION_COUNT; i++) {
+    sel_library_trace(host, "migrate begin from_version", v);
+    if (v == 0) {
+        return migrate_fresh(db, host);
+    }
+    for (i = v; i < MIGRATION_COUNT; i++) { /* an upgrade keeps one transaction per version: a half-applied step rolls back alone */
         if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
             migrate_failed(db, host, i + 1, "BEGIN");
             return 0;
         }
-        if (sqlite3_exec(db, g_migrations[i], NULL, NULL, NULL) != SQLITE_OK ||
-            (i + 1 == 18 && sel_dup_rebuild(db) != SQLITE_OK)) {
+        if (!migration_apply(db, i)) {
             migrate_failed(db, host, i + 1, "statements");
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
@@ -344,6 +397,7 @@ static int migrate_steps(sqlite3* db, const sel_host* host) {
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
         }
+        sel_library_trace(host, "migration committed v", i + 1);
     }
     return 1;
 }

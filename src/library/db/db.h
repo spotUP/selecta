@@ -454,6 +454,11 @@ uint32_t sel_library_deferred(void);
 /* I829 sentinel: mark the calling thread as the UI/command thread (returns the previous setting); sel_library_watched_waits counts
  * every library request such a thread sent and waited on. The pump thread must keep it at 0. */
 int sel_library_watch(int on);
+
+/* I625a8: one stderr line per library-open step when on (set by the shell with --log or --stats); costs ~8 ms a line on a 68020. */
+void sel_library_trace_enable(int on);
+void sel_library_trace(const sel_host* host, const char* what, int n);
+
 uint32_t sel_library_watched_waits(void);
 /* I946: host clock ms the watched threads spent blocked in library requests (call lock queue plus reply). Unlike a turn's wall time it does not
  * grow when the machine is loaded and the UI thread is merely descheduled, so a test gates on it to prove no slowed read ran on the UI thread. */

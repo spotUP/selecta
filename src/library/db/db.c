@@ -171,6 +171,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     sel_library* lib = host->mem_alloc(host, sizeof *lib, SEL_MEM_FAST);
     char sql[80];
 
+    sel_library_trace(host, "sel_library_open entered", 0);
     if (lib == NULL) {
         return NULL;
     }
@@ -185,18 +186,31 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     }
     lib->heap_bytes = g_heap_bytes;
     lib->heap_allocs = g_heap_allocs;
+    sel_library_trace(host, "sqlite heap acquired bytes", (int)g_heap_bytes);
+    sel_library_trace(host, "open begin", 0);
     if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL) !=
-            SQLITE_OK ||
-        !set_cache_size(lib->db) || !sel_schema_migrate(lib->db, host) || !sel_library_register_regexp(lib->db)) {
+            SQLITE_OK) {
         goto fail;
     }
+    sel_library_trace(host, "sqlite3_open_v2 done", 0);
+    if (!set_cache_size(lib->db) || !sel_schema_migrate(lib->db, host) || !sel_library_register_regexp(lib->db)) {
+        goto fail;
+    }
+    sel_library_trace(host, "migrate and regexp done", 0);
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);
     sel_user_rating_pending_refresh(lib);
+    sel_library_trace(host, "pending ratings refresh done", 0);
     sel_library_source_mirror_open(lib);
+    sel_library_trace(host, "source mirror open done", 0);
     sqlite3_commit_hook(lib->db, write_gen_hook, lib);
-    if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK || !sel_worker_start(lib)) {
+    if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK) {
         goto fail;
     }
+    sel_library_trace(host, "account row written", 0);
+    if (!sel_worker_start(lib)) {
+        goto fail;
+    }
+    sel_library_trace(host, "worker started", 0);
     return lib;
 fail:
     sqlite3_close(lib->db);
