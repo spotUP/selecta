@@ -75,6 +75,7 @@ static void mui_libs_close(void) {
 #include "mui_aalist_class.h"
 #include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
+#include "mui_text.h"
 #include "mui_aawrap.h"
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
@@ -323,7 +324,7 @@ static void mui_song_menu_items(Object* parent, uint32_t which) {
     static const char* const keys[SEL_UIM_SONG_MENU_ITEMS] = {"1", "2", "3", "4", "5"};
     uint32_t i;
     for (i = 0; i < SEL_UIM_SONG_MENU_ITEMS; i++) {
-        Object* it = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)sel_uim_song_menu_label(i, 0),
+        Object* it = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_l1_keep(sel_uim_song_menu_label(i, 0)),
                                    MUIA_Menuitem_Shortcut, (ULONG)keys[i], TAG_DONE);
         g_sm_item[which][i] = it;
         if (it != NULL) {
@@ -357,7 +358,7 @@ static Object* menu_child(Object* parent, ULONG cls_is_menu, const char* title, 
         }
     }
     o = MUI_NewObject(cls_is_menu ? (char*)MUIC_Menu : (char*)MUIC_Menuitem,
-                      cls_is_menu ? MUIA_Menu_Title : MUIA_Menuitem_Title, (ULONG)title, TAG_DONE);
+                      cls_is_menu ? MUIA_Menu_Title : MUIA_Menuitem_Title, (ULONG)mui_l1_keep(title), TAG_DONE);
     if (o != NULL) {
         DoMethod(parent, OM_ADDMEMBER, o);
         names[*count] = want; /* the lookup key (the same one compared above), not the title: else every item of a sub menu made its own */
@@ -400,7 +401,7 @@ static Object* mui_menu_strip(void) {
         }
         g_menu_sc[i][0] = m->shortcut;
         g_menu_sc[i][1] = '\0';
-        item = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)m->item,
+        item = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_l1_keep(m->item),
                              MUIA_Menuitem_Shortcut, (ULONG)(m->shortcut != '\0' ? g_menu_sc[i] : NULL), TAG_DONE);
         if (item == NULL) {
             continue;
@@ -429,7 +430,7 @@ static Object* mui_menu_strip(void) {
             Object* pi;
             pane_sc[p][0] = mui_pane_shortcut(p);
             pane_sc[p][1] = '\0';
-            pi = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_pane_title(p), MUIA_Menuitem_Shortcut,
+            pi = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_l1_keep(mui_pane_title(p)), MUIA_Menuitem_Shortcut,
                                (ULONG)(pane_sc[p][0] != '\0' ? pane_sc[p] : NULL), TAG_DONE);
             if (pi != NULL) {
                 DoMethod(view, OM_ADDMEMBER, pi);
@@ -789,6 +790,26 @@ static int mui_theme_live_now(void) {
     return mui_theme_apply_live(&ops, MUI_THEME_ENV_PATH, g_theme_arg[0] != '\0' ? g_theme_arg : NULL);
 }
 
+/* I1139 (map/mui_text.h): uimodel text is UTF-8, MUI draws Latin-1. Selecta converts on its side of every handoff; the UP- classes
+ * (plugins/shared/mcc) take Latin-1 untouched. These are the set calls and the read-back of a string gadget. */
+static void mui_text_set(Object* obj, const char* utf8) {
+    char b[MUI_L1_TEXT];
+    mui_text_set(obj, mui_l1(b, sizeof b, utf8));
+}
+
+static void mui_caption_set(Object* obj, const char* utf8) {
+    char b[MUI_L1_TEXT];
+    mui_caption_set(obj, mui_l1(b, sizeof b, utf8));
+}
+
+/* The string gadget's contents (Latin-1 as typed) as UTF-8 in buf[cap]. */
+static const char* mui_str_utf8(Object* str, char* buf, size_t cap) {
+    ULONG v = 0;
+    GetAttr(MUIA_String_Contents, str, &v);
+    mui_l1_to_utf8(buf, cap, v != 0 ? (const char*)v : "");
+    return buf;
+}
+
 /* I667b (design 2026-10-28-mui-custom-classes.md section 3.1): the one button constructor. Every Selecta button (transport,
  * extras, doors, toolbar, crumbs) is a Selecta_AAButton (mui_aabtn_class.c): flat rounded face in the role and state token
  * colour, baked Lucide icon, antialiased caption. alt_key names a second icon shown after mui_aabtn_set_alt (play/pause).
@@ -916,7 +937,7 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
         }
         return win;
     }
-    return MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, da.titled ? (ULONG)title : (ULONG)NULL, MUIA_Window_ID, id,
+    return MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, da.titled ? (ULONG)mui_l1_keep(title) : (ULONG)NULL, MUIA_Window_ID, id,
                          MUIA_Window_Borderless, (ULONG)da.borderless, MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget,
                          MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
 }
@@ -949,6 +970,10 @@ static void mui_set_tip(mui_state* s, uint32_t slot, Object* obj, uint32_t kind,
         return;
     }
     if (mui_tip(kind, index, f, flag, s->tip[slot], sizeof s->tip[slot]) > 0u) {
+        char l1[sizeof s->tip[slot]];
+        if (mui_l1(l1, sizeof l1, s->tip[slot]) == l1) { /* I1139: the tip buffer is rebuilt on every call, so convert it in place */
+            memcpy(s->tip[slot], l1, sizeof l1);
+        }
         SetAttrs(obj, MUIA_ShortHelp, (ULONG)s->tip[slot], TAG_DONE);
     }
 }
@@ -1234,7 +1259,7 @@ static void mui_subsong_sync(mui_state* s, const sel_uim_frame* f) {
     }
     if (show && strcmp(label, s->sub_buf) != 0) {
         snprintf(s->sub_buf, sizeof s->sub_buf, "%s", label);
-        mui_aatext_set(s->sub_txt, s->sub_buf);
+        mui_text_set(s->sub_txt, s->sub_buf);
     }
     if (show != s->sub_shown) {
         s->sub_shown = show;
@@ -1945,11 +1970,11 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     mui_flat(s->np_buf[0], sizeof s->np_buf[0], title != NULL && title[0] != '\0' ? title : " ");
     mui_flat(s->np_buf[1], sizeof s->np_buf[1], artist != NULL && artist[0] != '\0' ? artist : " ");
     mui_flat(s->np_buf[2], sizeof s->np_buf[2], album != NULL && album[0] != '\0' ? album : " ");
-    mui_aatext_set(s->np_title, s->np_buf[0]);
-    mui_aatext_set(s->np_artist, s->np_buf[1]);
-    mui_aatext_set(s->np_album, s->np_buf[2]);
+    mui_text_set(s->np_title, s->np_buf[0]);
+    mui_text_set(s->np_artist, s->np_buf[1]);
+    mui_text_set(s->np_album, s->np_buf[2]);
     mui_flat(s->np_buf[3], sizeof s->np_buf[3], sel_uim_np_note(so) != NULL ? sel_uim_np_note(so) : " "); /* I1127c */
-    mui_aatext_set(s->np_note, s->np_buf[3]);
+    mui_text_set(s->np_note, s->np_buf[3]);
     /* Lyrics: plain text whole; synced lyrics show the current line and the next. */
     lyr = st->lyric_text;
     if (lyr != NULL) {
@@ -1972,7 +1997,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     for (i = 0; i < 3u; i++) {
         const char* p = n + i < st->queue_count && st->queue != NULL ? st->queue_text + st->queue[n + i].path_offset : NULL;
         mui_flat(s->np_up_buf[i], sizeof s->np_up_buf[i], p != NULL ? mui_base_name(p) : " ");
-        mui_aatext_set(s->np_up[i], s->np_up_buf[i]);
+        mui_text_set(s->np_up[i], s->np_up_buf[i]);
     }
     if (title != NULL && title[0] != '\0') {
         s->p4[P4_NP]++;
@@ -2082,7 +2107,7 @@ static void mui_home_fill(mui_state* s, const sel_view_state* v, const sel_route
         int on = !on_shelf && k < s->home.quick_n;
         if (on) {
             const char* text = v->rows[s->home.quick_first + k].text;
-            mui_aabtn_set_caption(s->quick_btn[k], text != NULL ? text : " ");
+            mui_caption_set(s->quick_btn[k], text != NULL ? text : " ");
         }
         set(s->quick_btn[k], MUIA_ShowMe, on ? TRUE : FALSE);
     }
@@ -2102,7 +2127,7 @@ static void mui_home_fill(mui_state* s, const sel_view_state* v, const sel_route
             s->shelf_first[k] = sh.first;
             s->shelf_id[k] = sh.id;
             snprintf(s->shelf_head_buf[k], sizeof s->shelf_head_buf[k], "%s", text != NULL ? text : " ");
-            mui_aatext_set(s->shelf_head[k], s->shelf_head_buf[k]);
+            mui_text_set(s->shelf_head[k], s->shelf_head_buf[k]);
             SetAttrs(s->shelf_list[k], UPA_List_Count, (ULONG)sh.count, UPA_List_Active, (ULONG)-1L, TAG_DONE);
         }
         set(s->shelf_all[k], MUIA_ShowMe, on && !on_shelf ? TRUE : FALSE);
@@ -2128,7 +2153,7 @@ static void mui_browse_fill(mui_state* s, const sel_state* st) {
         if (k < n) {
             char cap[160];
             mui_tile_caption(&t[k], cap, sizeof cap);
-            mui_aabtn_set_caption(s->tile_btn[k], cap);
+            mui_caption_set(s->tile_btn[k], cap);
         }
         set(s->tile_btn[k], MUIA_ShowMe, k < n ? TRUE : FALSE);
     }
@@ -2207,8 +2232,8 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
             size_t n = strlen(s->col_meta_buf);
             snprintf(s->col_meta_buf + n, sizeof s->col_meta_buf - n, " - %u", (unsigned)pg->year);
         }
-        mui_aatext_set(s->col_title, s->col_title_buf);
-        mui_aatext_set(s->col_meta, s->col_meta_buf);
+        mui_text_set(s->col_title, s->col_title_buf);
+        mui_text_set(s->col_meta, s->col_meta_buf);
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
     }
@@ -2228,7 +2253,7 @@ static void mui_refresh(mui_state* s) {
     }
     if (mui_toast_tick(&s->toast, mui_now_ms())) { /* MUI-P4-11: the toast went away after 3 s (6 s for an error) */
         snprintf(s->status_buf, sizeof s->status_buf, "Ready");
-        mui_aatext_set(s->status, s->status_buf);
+        mui_text_set(s->status, s->status_buf);
         s->p4[P4_TOAST]++;
     }
     mui_route_sync(s, st);
@@ -2256,7 +2281,7 @@ static void mui_refresh(mui_state* s) {
         if (s->txt[a] != NULL) {
             const char* t = mui_attr_text(a, f);
             snprintf(s->txt_buf[a], sizeof s->txt_buf[a], "%s", t != NULL && t[0] != '\0' ? t : " ");
-            mui_aatext_set(s->txt[a], s->txt_buf[a]);
+            mui_text_set(s->txt[a], s->txt_buf[a]);
         } else if (a == MUI_ATTR_SEEK) {
             s->seek_set = (LONG)f->progress_q16;
             set(s->seek, MUIA_Numeric_Value, s->seek_set);
@@ -2271,7 +2296,7 @@ static void mui_refresh(mui_state* s) {
             s->btn_label[i] = label;
             if (s->btn[i] != NULL) {
                 const char* act = mui_transport_action(i, f);
-                mui_aabtn_set_caption(s->btn[i], label);
+                mui_caption_set(s->btn[i], label);
                 mui_aabtn_set_on(s->btn[i], mui_transport_on((uint32_t)i, f));
                 mui_aabtn_set_alt(s->btn[i], i == MUI_BTN_PLAY && act != NULL && strcmp(act, "pause") == 0);
                 mui_set_tip(s, MUI_TS_BTN + i, s->btn[i], MUI_TIP_TRANSPORT, i, f, 0); /* set_caption replaced the ShortHelp */
@@ -2299,7 +2324,7 @@ static void mui_refresh(mui_state* s) {
             mui_list_breadcrumb(v, crumb, sizeof crumb);
             if (drill && strcmp(crumb, s->crumb_buf) != 0) {
                 snprintf(s->crumb_buf, sizeof s->crumb_buf, "%s", crumb);
-                mui_aatext_set(s->crumb, s->crumb_buf);
+                mui_text_set(s->crumb, s->crumb_buf);
             }
             set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
         }
@@ -2319,7 +2344,7 @@ static void mui_refresh(mui_state* s) {
                 for (k = 0; k < MUI_CRUMB_MAX; k++) {
                     if (k < np) {
                         snprintf(s->crumb_lbl[k], sizeof s->crumb_lbl[k], "%s", pieces[k].name);
-                        mui_aabtn_set_caption(s->crumb_btn[k], s->crumb_lbl[k]);
+                        mui_caption_set(s->crumb_btn[k], s->crumb_lbl[k]);
                     }
                     set(s->crumb_btn[k], MUIA_ShowMe, k < np ? TRUE : FALSE);
                 }
@@ -2339,7 +2364,7 @@ static void mui_refresh(mui_state* s) {
                 if (sparent != 0) {
                     DoMethod((Object*)sparent, MUIM_Group_InitChange);
                 }
-                mui_aatext_set(s->state_txt, (s->state_buf[0] != '\0' ? s->state_buf : " "));
+                mui_text_set(s->state_txt, (s->state_buf[0] != '\0' ? s->state_buf : " "));
                 set(s->state_txt, MUIA_ShowMe, s->state_buf[0] != '\0' ? TRUE : FALSE);
                 if (sparent != 0) {
                     DoMethod((Object*)sparent, MUIM_Group_ExitChange);
@@ -2503,7 +2528,7 @@ static void mui_p4_note(mui_state* s, uint32_t which, const char* line) {
     s->p4[which]++;
     snprintf(s->status_buf, sizeof s->status_buf, "%s: %s", p4_name[which], line);
     mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
-    mui_aatext_set(s->status, s->status_buf);
+    mui_text_set(s->status, s->status_buf);
 }
 
 /* MUI-P4-14: the Help window, one List row per action table row (mui_help_row). Built once, then only opened. */
@@ -2567,14 +2592,15 @@ static void mui_palette_show(mui_state* s) {
 
 /* Live filter: the String text changed, so narrow the shared palette and redraw the list (called from mui_refresh). */
 static void mui_palette_sync(mui_state* s) {
-    ULONG text = 0, open = 0;
+    ULONG open = 0;
+    char text[160];
     if (s->pal_win == NULL || s->pal_str == NULL || s->pal_list == NULL) {
         return;
     }
     GetAttr(MUIA_Window_Open, s->pal_win, &open);
-    GetAttr(MUIA_String_Contents, s->pal_str, &text);
-    if (open != 0 && text != 0 && strcmp((const char*)text, s->pal.query) != 0) {
-        mui_palette_filter(&s->pal, (const char*)text);
+    mui_str_utf8(s->pal_str, text, sizeof text); /* I1139: typed Latin-1 to UTF-8 */
+    if (open != 0 && strcmp(text, s->pal.query) != 0) {
+        mui_palette_filter(&s->pal, text);
         SetAttrs(s->pal_list, UPA_List_Count, (ULONG)s->pal.count, UPA_List_Active, (ULONG)0, TAG_DONE);
     }
 }
@@ -2587,7 +2613,10 @@ static void mui_palette_choose(mui_state* s, long row) {
     r = mui_palette_pick(&s->pal, row, mui_cmd_send, s, fill, sizeof fill);
     if (r == MUI_PAL_RUN || r == MUI_PAL_FILL) {
         if (r == MUI_PAL_FILL) {
-            set(s->str_cmd, MUIA_String_Contents, (ULONG)fill);
+            {
+                char l1[sizeof fill * 2]; /* I1139 */
+                set(s->str_cmd, MUIA_String_Contents, (ULONG)mui_l1(l1, sizeof l1, fill));
+            }
         }
         snprintf(s->status_buf, sizeof s->status_buf, r == MUI_PAL_RUN ? "Command sent: %s" : "Command needs arguments: %s", s->pal.last_verb);
         mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
@@ -2671,7 +2700,10 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
     } else {
         o = mui_make_string(id, 0, r->label);
         if (o != NULL) {
-            set(o, MUIA_String_Contents, (ULONG)cur);
+            {
+                char l1[256]; /* I1139 */
+                set(o, MUIA_String_Contents, (ULONG)mui_l1(l1, sizeof l1, cur));
+            }
         }
     }
     return o;
@@ -2727,8 +2759,7 @@ static void mui_pref_fire(mui_state* s, uint32_t i) {
         GetAttr(MUIA_Numeric_Value, s->set_ctl[i], &v);
         snprintf(val, sizeof val, "%ld", (long)v);
     } else {
-        GetAttr(MUIA_String_Contents, s->set_ctl[i], &v);
-        snprintf(val, sizeof val, "%s", v != 0 ? (const char*)v : "");
+        mui_str_utf8(s->set_ctl[i], val, sizeof val); /* I1139 */
     }
     sel_uim_pref_line(r->key, val, line, sizeof line);
     if (mui_engine_line(s, line)) {
@@ -2740,16 +2771,17 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     char line[200], lines[3][160];
     const sel_view_state* view;
     const sel_view_row* row = mui_cursor_row(s, &view);
-    ULONG text = 0, act = 0;
+    ULONG act = 0;
+    char text[160]; /* I1139: gadget contents as UTF-8 */
     uint32_t n, i;
     switch (which) {
     case P4_SEARCH:
-        GetAttr(MUIA_String_Contents, s->str_search, &text);
-        n = mui_search_lines((const char*)text, lines);
+        mui_str_utf8(s->str_search, text, sizeof text);
+        n = mui_search_lines(text, lines);
         for (i = 0; i < n; i++) {
             mui_engine_line(s, lines[i]);
         }
-        if (n > 0 && mui_search_all_line((const char*)text, line, sizeof line)) {
+        if (n > 0 && mui_search_all_line(text, line, sizeof line)) {
             mui_engine_line(s, line); /* I1019g: the From <source> sections, on Return only */
         }
         if (n > 0) {
@@ -2757,9 +2789,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         }
         break;
     case P4_CMD:
-        GetAttr(MUIA_String_Contents, s->str_cmd, &text);
-        if (mui_cmdline_submit(mui_cmd_send, s, (const char*)text)) {
-            mui_p4_note(s, which, (const char*)text);
+        mui_str_utf8(s->str_cmd, text, sizeof text);
+        if (mui_cmdline_submit(mui_cmd_send, s, text)) {
+            mui_p4_note(s, which, text);
         }
         break;
     case P4_LIKE:
@@ -2832,9 +2864,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_PRENAME:
     case P4_PDELETE:
         if (row != NULL && row->kind == (uint32_t)SEL_ROW_PLAYLIST) {
-            GetAttr(MUIA_String_Contents, s->str_cmd, &text);
+            mui_str_utf8(s->str_cmd, text, sizeof text);
             s->sm_playlist = row->id;
-            if (mui_playlist_line(which == P4_POPEN ? "open" : which == P4_PRENAME ? "rename" : "delete", row->id, (const char*)text, line, sizeof line)
+            if (mui_playlist_line(which == P4_POPEN ? "open" : which == P4_PRENAME ? "rename" : "delete", row->id, text, line, sizeof line)
                 && mui_engine_line(s, line)) {
                 mui_p4_note(s, which, line);
             }
@@ -2842,8 +2874,8 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_PNEW:
         /* The name comes from the command field (as Rename does); empty gives the default "New Playlist" (mui_viewbtn_fire). */
-        GetAttr(MUIA_String_Contents, s->str_cmd, &text);
-        if (mui_viewbtn_fire(1, (const char*)text, 0, mui_p8_send, s)) {
+        mui_str_utf8(s->str_cmd, text, sizeof text);
+        if (mui_viewbtn_fire(1, text, 0, mui_p8_send, s)) {
             mui_p4_note(s, which, "New Playlist");
         }
         break;
@@ -3516,7 +3548,10 @@ static void mui_report(mui_fail why, const char* detail) {
     es.es_Title = (UBYTE*)"Selecta";
     es.es_TextFormat = (UBYTE*)"%s";
     es.es_GadgetFormat = (UBYTE*)"Continue";
-    EasyRequest(NULL, &es, NULL, (ULONG)text);
+    {
+        char l1[sizeof text]; /* I1139 */
+        EasyRequest(NULL, &es, NULL, (ULONG)mui_l1(l1, sizeof l1, text));
+    }
 }
 #else
 static void mui_report(mui_fail why, const char* detail) {

@@ -1,6 +1,7 @@
 /* Spec to tag list (I685f, design 2026-11-06-mui-mcc-package.md section 8.3); see mui_aatagmap.h. */
 #include "mui_aatagmap.h"
 #include "mui_iconmap.h"
+#include "mui_text.h"
 #if defined(__amigaos__) || defined(AMIGA)
 #include <libraries/mui.h> /* the MUIA_* values the builders write (up.h has stand-ins only for the host) */
 #endif
@@ -121,15 +122,16 @@ int mui_aapanel_tags(const mui_aapanel_spec* sp, struct TagItem* out, size_t cap
 /* The hook bodies: the class passes a UP_ListCell, the owner's function takes row and column. The hook is the first member of its
  * holder in mui_aalist_hooks, which keeps the owner's function; h_Data is the spec's ctx. */
 static UP_Data list_row_hook(struct Hook* h, void* obj, UP_ListCell* m) {
-    const mui_aalist_row_hook* r = (const mui_aalist_row_hook*)h;
+    mui_aalist_row_hook* r = (mui_aalist_row_hook*)h;
     (void)obj;
-    return UP_D(r->fn(h->h_Data, m->row));
+    /* I1139: the owner (Selecta) holds UTF-8; the class draws Latin-1 and is never converted itself. */
+    return UP_D(mui_l1(r->l1, sizeof r->l1, r->fn(h->h_Data, m->row)));
 }
 
 static UP_Data list_cell_hook(struct Hook* h, void* obj, UP_ListCell* m) {
-    const mui_aalist_cell_hook* c = (const mui_aalist_cell_hook*)h;
+    mui_aalist_cell_hook* c = (mui_aalist_cell_hook*)h;
     (void)obj;
-    return UP_D(c->fn(h->h_Data, m->row, (int)m->col));
+    return UP_D(mui_l1(c->l1, sizeof c->l1, c->fn(h->h_Data, m->row, (int)m->col)));
 }
 
 int mui_aalist_tags(const mui_aalist_spec* sp, mui_aalist_hooks* hooks, struct TagItem* out, size_t cap) {

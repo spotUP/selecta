@@ -12,6 +12,7 @@
 
 #include "mui_aatagmap.h"
 #include "mui_aawrap.h"
+#include "mui_text.h"
 
 static void notify_id(Object* o, ULONG attr, ULONG trigger, LONG id) {
     DoMethod(o, MUIM_Notify, attr, trigger, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
@@ -25,6 +26,7 @@ typedef struct hook_node {
 static hook_node* g_hooks;
 
 void mui_aawrap_free(void) {
+    mui_text_free();
     while (g_hooks != NULL) {
         hook_node* n = g_hooks;
         g_hooks = n->next;
@@ -32,10 +34,14 @@ void mui_aawrap_free(void) {
     }
 }
 
-static Object* button_new(const mui_aabtn_spec* sp, ULONG key) {
+static Object* button_new(const mui_aabtn_spec* usp, ULONG key) {
+    char c0[MUI_L1_TEXT], c1[MUI_L1_TEXT], c2[MUI_L1_TEXT];
+    mui_aabtn_spec lsp;
+    const mui_aabtn_spec* sp = &lsp;
     struct TagItem tl[MUI_AATAGMAP_MAX];
     struct TagItem more[3];
     Object* o;
+    mui_aabtn_spec_l1(usp, &lsp, c0, c1, c2); /* I1139: Latin-1 for the class */
     if (mui_aabtn_tags(sp, tl, MUI_AATAGMAP_MAX) == 0) {
         return NULL;
     }
@@ -60,9 +66,12 @@ Object* mui_aabtn_new_key(const mui_aabtn_spec* sp, ULONG key) {
     return button_new(sp, key);
 }
 
-Object* mui_aatext_new(const mui_aatext_spec* sp) {
+Object* mui_aatext_new(const mui_aatext_spec* usp) {
+    char c0[MUI_L1_TEXT], c1[MUI_L1_TEXT];
+    mui_aatext_spec lsp;
     struct TagItem tl[MUI_AATAGMAP_MAX];
-    return mui_aatext_tags(sp, tl, MUI_AATAGMAP_MAX) != 0 ? UP_NewText(tl) : NULL;
+    mui_aatext_spec_l1(usp, &lsp, c0, c1); /* I1139 */
+    return mui_aatext_tags(&lsp, tl, MUI_AATAGMAP_MAX) != 0 ? UP_NewText(tl) : NULL;
 }
 
 Object* mui_aaslider_new(const mui_aaslider_spec* sp) {
@@ -99,8 +108,11 @@ Object* mui_aatabs_new(const mui_aatabs_spec* sp) {
     return mui_aatabs_tags(sp, tl, MUI_AATAGMAP_MAX) != 0 ? UP_NewTabs(tl) : NULL;
 }
 
-Object* mui_aafield_new(const mui_aafield_spec* sp) {
+Object* mui_aafield_new(const mui_aafield_spec* usp) {
+    mui_aafield_spec lsp;
+    const mui_aafield_spec* sp = &lsp;
     struct TagItem tl[MUI_AATAGMAP_MAX];
+    mui_aafield_spec_l1(usp, &lsp); /* I1139 */
     Object* o = mui_aafield_tags(sp, tl, MUI_AATAGMAP_MAX) != 0 ? UP_NewField(tl) : NULL;
     if (o != NULL && sp->id != 0) {
         ULONG str = 0;

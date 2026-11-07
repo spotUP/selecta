@@ -17,6 +17,7 @@
 #include "mui_aatabs_class.h"
 #include "mui_aatext_class.h"
 
+#define MUI_AATAGMAP_CELL 256 /* bytes of one list cell as Latin-1 (I1139) */
 #define MUI_AATAGMAP_MAX 24 /* items every builder needs at most, TAG_DONE included */
 
 int mui_aabtn_tags(const mui_aabtn_spec* sp, struct TagItem* out, size_t cap);
@@ -33,10 +34,12 @@ int mui_aapanel_tags(const mui_aapanel_spec* sp, struct TagItem* out, size_t cap
 typedef struct mui_aalist_row_hook {
     struct Hook hook; /* first: the hook body finds its holder from the Hook pointer */
     mui_aalist_row_fn fn;
+    char l1[MUI_AATAGMAP_CELL]; /* I1139: the owner's UTF-8 row text as Latin-1, valid until the next call of this hook */
 } mui_aalist_row_hook;
 typedef struct mui_aalist_cell_hook {
     struct Hook hook;
     mui_aalist_cell_fn fn;
+    char l1[MUI_AATAGMAP_CELL]; /* I1139: as in the row hook */
 } mui_aalist_cell_hook;
 typedef struct mui_aalist_hooks {
     mui_aalist_row_hook row;

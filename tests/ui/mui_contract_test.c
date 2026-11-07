@@ -15,6 +15,8 @@
 
 #include "mui_aa.h"
 #include "mui_iconmap.h"
+#include "mui_aatagmap.h"
+#include "mui_text.h"
 #include "mui_icons.h"
 #include "mui_route.h"
 #include <selecta/library_item.h>
@@ -1218,6 +1220,70 @@ static void test_doors(void) {
         lines += (uint32_t)sel_uim_door_shown(i, 0);
     }
     CHECK(lines == 7u, "seven doors on the bitmap tier");
+}
+
+/* I1139 sidebar bullet drawn as Latin-1 middle dot: the sidebar subtitle "Playlist \xe2\x80\xa2 12 songs" is UTF-8 in the uimodel and MUI
+ * on OS3 draws Latin-1, so it showed "Playlist â¢ 12 songs". Selecta converts on its side of the handoff (map/mui_text.c): the text spec
+ * and the list hooks. The UP- classes take Latin-1 untouched, so a third party's "Bj\xf6rk" must still arrive as 0xF6. */
+static const char* bullet_row_fn(void* ctx, long row) {
+    (void)ctx;
+    (void)row;
+    return "Playlist \xe2\x80\xa2 12 songs";
+}
+typedef UP_Data (*bullet_hook_sub)(struct Hook*, void*, UP_ListCell*);
+static const char* tag_text(const struct TagItem* t, int n) {
+    int i;
+    for (i = 0; i < n; i++) {
+        if (t[i].ti_Tag == UPA_Text_Contents) {
+            return (const char*)(uintptr_t)t[i].ti_Data;
+        }
+    }
+    return NULL;
+}
+static void test_sidebar_bullet_latin1(void) {
+    sel_engine_library_item it[1];
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    mui_aatext_spec sp, lsp;
+    struct TagItem t[MUI_AATAGMAP_MAX];
+    char a[MUI_L1_TEXT], b[MUI_L1_TEXT], line[200];
+    mui_aalist_spec ls;
+    mui_aalist_hooks hk;
+    UP_ListCell cell;
+    const char* got;
+    int n;
+    memset(it, 0, sizeof it);
+    memset(&in, 0, sizeof in);
+    it[0].kind = SEL_LIB_ITEM_LIKED; it[0].pinned = 1; snprintf(it[0].name, sizeof it[0].name, "Liked Songs"); it[0].songs = 12;
+    in.items = it; in.item_n = 1; in.filter = "";
+    mui_sidebar_build(&in, &m);
+    snprintf(line, sizeof line, "%s  %s  %s", m.row[0].mark, m.row[0].title, m.row[0].subtitle);
+    CHECK(strstr(line, "\xe2\x80\xa2") != NULL, "the uimodel row is UTF-8: '%s'", line); /* premise */
+    /* the spec route mui_side_text takes (mui_aawrap.c mui_aatext_new) */
+    memset(&sp, 0, sizeof sp);
+    sp.contents = line;
+    mui_aatext_spec_l1(&sp, &lsp, a, b);
+    n = mui_aatext_tags(&lsp, t, MUI_AATAGMAP_MAX);
+    got = tag_text(t, n);
+    CHECK(got != NULL && strstr(got, "\xe2") == NULL && strstr(got, "Playlist \xb7 12 songs") != NULL, "text tag holds '%s'", got != NULL ? got : "(none)");
+    /* the list hook route */
+    memset(&ls, 0, sizeof ls);
+    ls.row = bullet_row_fn;
+    n = mui_aalist_tags(&ls, &hk, t, MUI_AATAGMAP_MAX);
+    memset(&cell, 0, sizeof cell);
+    cell.row = 0;
+    got = (const char*)(uintptr_t)((bullet_hook_sub)(uintptr_t)hk.row.hook.h_SubEntry)(&hk.row.hook, NULL, &cell);
+    CHECK(n > 0 && got != NULL && strcmp(got, "Playlist \xb7 12 songs") == 0, "list hook returns '%s'", got != NULL ? got : "(none)");
+    /* the UP- class side takes Latin-1 untouched: the tag map never converts */
+    memset(&sp, 0, sizeof sp);
+    sp.contents = "Bj\xf6rk";
+    n = mui_aatext_tags(&sp, t, MUI_AATAGMAP_MAX);
+    got = tag_text(t, n);
+    CHECK(got != NULL && strcmp(got, "Bj\xf6rk") == 0, "UP- text input stays Latin-1");
+    mui_aatext_spec_l1(&sp, &lsp, a, b); /* already Latin-1 would be mangled by a UTF-8 reader; ASCII lead bytes only here */
+    /* a Latin-1 string that is not valid UTF-8 never reaches mui_l1: Selecta hands UTF-8 only; the converter keeps the letter anyway */
+    CHECK(mui_l1(a, sizeof a, "Bj\xc3\xb6rk") == a && strcmp(a, "Bj\xf6rk") == 0, "UTF-8 o-umlaut becomes 0xF6: '%s'", a);
+    CHECK(mui_l1(a, sizeof a, "plain") != a, "ASCII is passed through untouched");
 }
 
 /* I793 (drift doc S3 to S9): the MUI Your Library sidebar has the Mac sidebar's parts: header, chips, item rows, empty state and
@@ -3396,6 +3462,8 @@ int main(int argc, char** argv) {
         test_doors();
     } else if (strcmp(argv[1], "sidebar") == 0) {
         test_sidebar();
+    } else if (strcmp(argv[1], "sidebar-bullet-latin1") == 0) {
+        test_sidebar_bullet_latin1();
     } else if (strcmp(argv[1], "home") == 0) {
         test_home();
     } else if (strcmp(argv[1], "panes") == 0) {

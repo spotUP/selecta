@@ -59,6 +59,80 @@ int sel_utf8_to_latin1(char* dst, size_t n, const char* src) {
     return 1;
 }
 
+static const char* draw_fallback(unsigned cp) {
+    switch (cp) {
+    case 0x2022u:
+        return "\xB7"; /* bullet to middle dot */
+    case 0x2018u:
+    case 0x2019u:
+        return "'";
+    case 0x201Cu:
+    case 0x201Du:
+        return "\"";
+    case 0x2013u:
+    case 0x2014u:
+        return "-";
+    case 0x2026u:
+        return "...";
+    default:
+        return "?";
+    }
+}
+
+size_t sel_utf8_to_latin1_draw(char* dst, size_t n, const char* src) {
+    size_t o = 0;
+    const unsigned char* p = (const unsigned char*)src;
+
+    if (n == 0) {
+        return 0;
+    }
+    while (*p != 0u) {
+        unsigned c = *p, cp = c, need = 0, i = 1;
+        char one[2] = {'?', '\0'};
+        const char* rep = one;
+        size_t rl;
+
+        if (c >= 0x80u) {
+            if (c >= 0xC2u && c <= 0xDFu) {
+                need = 1;
+                cp = c & 0x1Fu;
+            } else if (c >= 0xE0u && c <= 0xEFu) {
+                need = 2;
+                cp = c & 0x0Fu;
+            } else if (c >= 0xF0u && c <= 0xF4u) {
+                need = 3;
+                cp = c & 0x07u;
+            }
+            while (i <= need && (p[i] & 0xC0u) == 0x80u) {
+                cp = (cp << 6) | (p[i] & 0x3Fu);
+                i++;
+            }
+        }
+        if (need != 0u && i <= need) { /* truncated sequence */
+            p++;
+        } else if (c >= 0x80u && need == 0u) { /* stray continuation or invalid lead */
+            p++;
+        } else if ((need == 1u && cp < 0x80u) || (need == 2u && cp < 0x800u) || (need == 3u && cp < 0x10000u)) { /* overlong form */
+            p++;
+        } else {
+            p += need + 1u;
+            if (cp <= 0xFFu) {
+                one[0] = (char)cp;
+            } else {
+                rep = draw_fallback(cp);
+            }
+        }
+        rl = strlen(rep);
+        if (o + rl + 1u > n) {
+            break;
+        }
+        memcpy(dst + o, rep, rl);
+        o += rl;
+    }
+    dst[o] = '\0';
+    return o;
+}
+
 int sel_utf8_valid(const char* s) {
     const unsigned char* p = (const unsigned char*)s;
 
