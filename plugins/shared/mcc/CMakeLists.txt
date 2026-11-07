@@ -97,14 +97,26 @@ endif()
 
 # I685b spike: a real MUI external class library (UP-Spike.mcc) and a program that opens it by name. Added from
 # plugins/shared/CMakeLists.txt only inside if(SEL_AMIGA), so host builds never see this directory.
-# Skeleton: libnix libinit.o (Resident + RTF_AUTOINIT + Open/Close/Expunge/Reserved) + sys-include/stabs.h, no startup code.
-set(MCC_LIBINIT_O "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/lib/libinit.o")
-set_source_files_properties("${MCC_LIBINIT_O}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
-# libinit.o first: the Resident must be the first thing in the hunk, with its -1 returning code ahead of it
-add_executable(up_spike_mcc "${MCC_LIBINIT_O}" lib/libheader.c lib/spike_class.c)
+# Skeleton: lib/up_libinit.c (Resident + RTF_AUTOINIT + Open/Close/Expunge/Reserved, libnix libinit.o transcribed) +
+# sys-include/stabs.h, no startup code. Not libinit.o itself: its Resident has rt_Version 0, and ramlib refuses
+# OpenLibrary(name, n) for a disk library whose Resident version is below n (I685p). MCC_LIB_VERSION is the one version
+# source: the Resident (UP_LIB_VERSION in up_libinit.c) and LibVersion in each header file. Post-build check: cmake/mcc_check_romtag.cmake.
+set(MCC_LIB_VERSION 1)
+set(MCC_LIBINIT_SRC lib/up_libinit.c)
+set_source_files_properties(${MCC_LIBINIT_SRC} PROPERTIES COMPILE_OPTIONS "-fasm")
+function(up_mcc_lib_skeleton tgt)
+  target_compile_definitions(${tgt} PRIVATE "UP_LIB_VERSION=${MCC_LIB_VERSION}")
+  add_custom_command(TARGET ${tgt} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" "-DBINARY=$<TARGET_FILE:${tgt}>" "-DVERSION=${MCC_LIB_VERSION}"
+      -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_romtag.cmake"
+    VERBATIM COMMENT "${tgt}: Resident version ${MCC_LIB_VERSION}")
+endfunction()
+# up_libinit.c first: the Resident must be in the first hunk, with its -1 returning code ahead of it
+add_executable(up_spike_mcc ${MCC_LIBINIT_SRC} lib/libheader.c lib/spike_class.c)
 set_target_properties(up_spike_mcc PROPERTIES OUTPUT_NAME "UP-Spike.mcc")
 target_include_directories(up_spike_mcc PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include")
 target_link_options(up_spike_mcc PRIVATE -nostartfiles)
+up_mcc_lib_skeleton(up_spike_mcc)
 
 add_executable(mcc_spike demo/spike.c)
 set_target_properties(mcc_spike PROPERTIES OUTPUT_NAME "mcc-spike")
@@ -114,11 +126,12 @@ set_source_files_properties(lib/libheader.c PROPERTIES COMPILE_OPTIONS "-fasm")
 
 # I685h: up-mcc.library, the support library (theme, icons, font list; design section 8.4). Same skeleton as the spike; the
 # functions are lib/support_lib.c from sel_mcc_static (also linked by the Selecta plugin), the table is in lib/support_libheader.c.
-add_executable(up_mcc_library "${MCC_LIBINIT_O}" lib/support_libheader.c)
+add_executable(up_mcc_library ${MCC_LIBINIT_SRC} lib/support_libheader.c)
 set_target_properties(up_mcc_library PROPERTIES OUTPUT_NAME "up-mcc.library")
 target_include_directories(up_mcc_library PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include")
 target_link_libraries(up_mcc_library PRIVATE sel_mcc_static)
 target_link_options(up_mcc_library PRIVATE -nostartfiles)
+up_mcc_lib_skeleton(up_mcc_library)
 set_source_files_properties(lib/support_libheader.c PROPERTIES COMPILE_OPTIONS "-fasm")
 
 # The SFD file generates the C headers a client includes (proto/up_mcc.h, inline/up_mcc.h, clib/up_mcc_protos.h, pragmas) at build
@@ -139,7 +152,7 @@ add_custom_command(
 add_library(up_mcc_header_check OBJECT demo/support_header_check.c ${MCC_SFD_HEADERS})
 target_include_directories(up_mcc_header_check PRIVATE "${MCC_SFD_INC}" "${MCC_DIR}/include")
 
-# I685i: one library per class from lib/classheader.c. libinit.o first (Resident), -nostartfiles, the class file with
+# I685i: one library per class from lib/classheader.c. up_libinit.c first (Resident), -nostartfiles, the class file with
 # -DUP_MCC_LIBRARY so its constructors use the class the library init made, everything else from sel_mcc_static (open up-mcc.library
 # instead of linking the static support code is a later row). The check at the end compares each target's SOURCES with the list.
 # I685n: what every .mcc/.mcp compiles itself, ahead of the archive, so the linker never pulls the archive's token store and registry
@@ -147,12 +160,13 @@ target_include_directories(up_mcc_header_check PRIVATE "${MCC_SFD_INC}" "${MCC_D
 set(MCC_CLIENT_SOURCES src/map/up_store_client.c src/mui_aa_draw.c)
 function(up_add_class_library name class_source desc)
   set(tgt "up_mcc_${name}")
-  add_executable(${tgt} "${MCC_LIBINIT_O}" lib/classheader.c "${class_source}" ${MCC_CLIENT_SOURCES} ${MCC_SFD_HEADERS})
+  add_executable(${tgt} ${MCC_LIBINIT_SRC} lib/classheader.c "${class_source}" ${MCC_CLIENT_SOURCES} ${MCC_SFD_HEADERS})
   set_target_properties(${tgt} PROPERTIES OUTPUT_NAME "UP-${name}.mcc")
   target_include_directories(${tgt} PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include" "${MCC_SFD_INC}")
   target_compile_definitions(${tgt} PRIVATE "UP_CLASS_NAME=\"${name}\"" "UP_CLASS_DESC=${desc}" UP_MCC_LIBRARY UP_CLASS_LIBRARY)
   target_link_libraries(${tgt} PRIVATE sel_mcc_static)
   target_link_options(${tgt} PRIVATE -nostartfiles)
+  up_mcc_lib_skeleton(${tgt})
   set_source_files_properties(lib/classheader.c PROPERTIES COMPILE_OPTIONS "-fasm")
   get_target_property(srcs ${tgt} SOURCES)
   if(NOT "${class_source}" IN_LIST MCC_STATIC_SOURCES OR NOT "${class_source}" IN_LIST srcs)
@@ -176,12 +190,13 @@ foreach(row ${MCC_CLASS_LIBS})
   up_check_no_store(up_mcc_${n})
 endforeach()
 # I685j: UP-MCC.mcp from the same skeleton (UP_PREFS_LIBRARY: MCC_Query(1) returns the class).
-add_executable(up_mcc_prefs "${MCC_LIBINIT_O}" lib/classheader.c prefs/up_prefs.c ${MCC_CLIENT_SOURCES} ${MCC_SFD_HEADERS})
+add_executable(up_mcc_prefs ${MCC_LIBINIT_SRC} lib/classheader.c prefs/up_prefs.c ${MCC_CLIENT_SOURCES} ${MCC_SFD_HEADERS})
 set_target_properties(up_mcc_prefs PROPERTIES OUTPUT_NAME "${MCC_PREFS_NAME}")
 target_include_directories(up_mcc_prefs PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include" "${MCC_SFD_INC}")
 target_compile_definitions(up_mcc_prefs PRIVATE "UP_CLASS_NAME=\"MCC\"" UP_CLASS_DESC=up_prefs_class_desc UP_MCC_LIBRARY UP_PREFS_LIBRARY UP_CLASS_LIBRARY)
 target_link_libraries(up_mcc_prefs PRIVATE sel_mcc_static)
 target_link_options(up_mcc_prefs PRIVATE -nostartfiles)
+up_mcc_lib_skeleton(up_mcc_prefs)
 up_check_no_store(up_mcc_prefs)
 add_custom_target(up_mcc_classes DEPENDS up_mcc_Button up_mcc_Text up_mcc_Panel up_mcc_Tabs up_mcc_Balance up_mcc_Slider up_mcc_Progress
   up_mcc_Cycle up_mcc_Field up_mcc_Scroller up_mcc_List up_mcc_prefs)

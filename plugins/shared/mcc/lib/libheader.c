@@ -1,11 +1,11 @@
 /* MUI external class library skeleton (I685b, design 2026-11-06-mui-mcc-package.md section 3.3). Built on the libnix
- * startup object libinit.o (Resident with RTF_AUTOINIT, LibOpen / LibClose / LibExpunge / LibExtFunc, first code
+ * startup object lib/up_libinit.c (Resident with RTF_AUTOINIT, LibOpen / LibClose / LibExpunge / LibExtFunc, first code
  * returns -1 so the file is not runnable) and sys-include/stabs.h (ADDTABL_*, ADDTABL_END). Link with -nostartfiles and
- * libinit.o FIRST so the Resident is the first thing in the hunk.
+ * up_libinit.c FIRST so the Resident is the first thing in the hunk.
  *
- * Vectors: Open (-6), Close (-12), Expunge (-18), Reserved (-24) from libinit.o, then MCC_Query (-30).
+ * Vectors: Open (-6), Close (-12), Expunge (-18), Reserved (-24) from lib/up_libinit.c, then MCC_Query (-30).
  * MCC_Query(0) = the MUI_CustomClass, 1 and 2 = NULL (prefs class and image live in a .mcp).
- * Expunge: libinit.o refuses while the open count is above 0 and then calls __UserLibCleanup, which deletes the class
+ * Expunge: up_libinit.c refuses while the open count is above 0 and then calls __UserLibCleanup, which deletes the class
  * and closes the libraries. */
 #include <stdint.h>
 
@@ -22,7 +22,7 @@
 #include "spike_class.h"
 
 #define LIB_NAME "UP-Spike.mcc"
-#define LIB_VER 1
+#define LIB_VER UP_LIB_VERSION
 #define LIB_REV 0
 #define LIB_ID "UP-Spike.mcc 1.0 (06.11.2026) Selecta MCC spike"
 
@@ -62,7 +62,7 @@ static void close_libs(void) {
     }
 }
 
-/* Returns 0 on success (libinit.o fails the library load on non-zero). */
+/* Returns 0 on success (up_libinit.c fails the library load on non-zero). */
 LONG __stdargs __UserLibInit(struct Library* lib, REG(a4, APTR a4)) {
     (void)a4;
     SysBase = *(struct ExecBase**)4;

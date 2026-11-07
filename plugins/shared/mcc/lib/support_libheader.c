@@ -1,5 +1,5 @@
 /* up-mcc.library (I685h, design 2026-11-06-mui-mcc-package.md section 8.4): the support library of the UP- MUI classes. Same libnix
- * skeleton as lib/libheader.c (libinit.o first on the link line, stabs.h function table), but no class: the functions are
+ * skeleton as lib/libheader.c (lib/up_libinit.c first on the link line, stabs.h function table), but no class: the functions are
  * lib/support_lib.c, linked from sel_mcc_static, so the static build and the library share one source.
  * Vectors from -30 in the order of dist/sfd/up-mcc_lib.sfd. The store lives in the library's data, shared by every opener. */
 #include <stdint.h>
@@ -15,7 +15,7 @@
 #include "map/up_store.h"
 
 #define LIB_NAME "up-mcc.library"
-#define LIB_VER 1
+#define LIB_VER UP_LIB_VERSION
 #define LIB_REV 0
 #define LIB_ID "$VER: up-mcc.library 1.0 (07.11.2026) UP- MUI class package support library"
 
@@ -63,7 +63,7 @@ static void close_libs(void) {
     }
 }
 
-/* Returns 0 on success (libinit.o fails the library load on non-zero). */
+/* Returns 0 on success (up_libinit.c fails the library load on non-zero). */
 LONG __stdargs __UserLibInit(struct Library* lib, REG(a4, APTR a4)) {
     (void)lib;
     (void)a4;

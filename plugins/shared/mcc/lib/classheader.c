@@ -1,10 +1,10 @@
 /* One generic UP-<Name>.mcc class library (I685i, design 2026-11-06-mui-mcc-package.md section 3.3). Same libnix skeleton as
- * lib/libheader.c (libinit.o first on the link line, stabs.h function table, -nostartfiles); compiled once per class with
+ * lib/libheader.c (lib/up_libinit.c first on the link line, stabs.h function table, -nostartfiles); compiled once per class with
  *   -DUP_CLASS_NAME="Button"  -DUP_CLASS_DESC=aabtn_class_desc
  * UP_CLASS_DESC names the aa_class_desc the class file exports (src/class/mui_aa_class.h): superclass, instance size, dispatcher
  * and the class pointer of the file. The class file is compiled into the same library with -DUP_MCC_LIBRARY, so its constructor
  * code uses the class created here. MUI_CreateCustomClass fills the mcc_* base fields of the MUI_CustomClass itself.
- * Vectors: Open (-6), Close (-12), Expunge (-18), Reserved (-24) from libinit.o, then MCC_Query (-30). Expunge: libinit.o
+ * Vectors: Open (-6), Close (-12), Expunge (-18), Reserved (-24) from lib/up_libinit.c, then MCC_Query (-30). Expunge: up_libinit.c
  * refuses while the open count is above 0, then calls __UserLibCleanup, which deletes the class and closes the libraries. */
 #include <stdint.h>
 
@@ -33,7 +33,7 @@ extern const struct aa_class_desc up_prefs_class_desc; /* prefs/up_prefs.c */
 #else
 #define LIB_NAME "UP-" UP_CLASS_NAME ".mcc"
 #endif
-#define LIB_VER 1
+#define LIB_VER UP_LIB_VERSION
 #define LIB_REV 0
 #define LIB_ID "$VER: " LIB_NAME " 1.0 (07.11.2026) UP- MUI class " UP_CLASS_NAME
 
@@ -131,7 +131,7 @@ static void close_libs(void) {
     }
 }
 
-/* Returns 0 on success (libinit.o fails the library load on non-zero). */
+/* Returns 0 on success (up_libinit.c fails the library load on non-zero). */
 LONG __stdargs __UserLibInit(struct Library* lib, REG(a4, APTR a4)) {
     (void)a4;
     SysBase = *(struct ExecBase**)4;
