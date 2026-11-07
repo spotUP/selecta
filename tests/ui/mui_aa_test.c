@@ -258,6 +258,24 @@ static void test_panel_source(void) {
           "class does not draw through the shared panel helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
     CHECK(strstr(cm, "mui_aapanel_class.c") != NULL, "class not in the build");
+    /* I685e5 (design 4.1.1): the pad comes from the panel's own screen through a layout hook, not from creation-time inner offsets. */
+    {
+        char hpath[512];
+        char* hdr;
+        snprintf(hpath, sizeof hpath, "%s", AAPANEL_SOURCE);
+        hpath[strlen(hpath) - 1] = 'h';
+        hdr = slurp(hpath);
+        const char* nw = cls != NULL ? strstr(cls, "Object* mui_aapanel_new(") : NULL;
+        const char* pad = cls != NULL ? strstr(cls, "mui_aa_panel_pad(") : NULL;
+        CHECK(hdr != NULL && strstr(hdr, "aspect_q8") == NULL, "mui_aapanel_spec still has aspect_q8");
+        CHECK(strstr(cls, "MUIA_Inner") == NULL, "the panel class still passes MUIA_Inner*");
+        CHECK(count_of(cls, "mui_aa_panel_pad(") == 1 && pad != NULL && nw != NULL && pad < nw && strstr(cls, "mui_aa_panel_pad(d->aa.tok, d->aa.aspect_q8,") != NULL,
+              "mui_aa_panel_pad must be called once, with d->aa.aspect_q8, outside mui_aapanel_new: %d", count_of(cls, "mui_aa_panel_pad("));
+        CHECK(nw != NULL && strstr(nw, "MUIA_Group_LayoutHook") != NULL && strstr(cls, "case OM_ADDMEMBER:") != NULL && strstr(cls, "case OM_REMMEMBER:") != NULL,
+              "layout hook not passed in mui_aapanel_new, or the dispatcher does not forward OM_ADDMEMBER / OM_REMMEMBER");
+        CHECK(strstr(ui, "sp.aspect_q8") == NULL, "mui_ui.c still sets sp.aspect_q8");
+        free(hdr);
+    }
     free(ui);
     free(cls);
     free(cm);

@@ -23,19 +23,65 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aapanel_data {
     int role;
+    int fixed;      /* > 0: the art frame, no pad */
+    Object* inner;  /* I685e5: the plain vertical group that holds the program's children */
     aa_ctx aa;
 } aapanel_data;
 
 static struct MUI_CustomClass* g_class;
 static uint32_t g_made;
+static struct Hook g_layout_hook; /* I685e5: one hook for every panel */
 static char g_bg_spec[MUI_AA_PANEL_ROLES][40]; /* MUIA_Background strings; MUI keeps the pointer, so they live for the process */
+
+/* I685e5: the pad comes from the screen the panel opened on (d->aa.aspect_q8, set in aa_setup), so it cannot be a creation-time
+ * inner offsets (init-only in MUI 3.8, and no DrawInfo exists then). The layout hook adds it around the inner group. */
+static void aapanel_pad(const aapanel_data* d, int* px, int* py) {
+    *px = 0;
+    *py = 0;
+    if (d->fixed <= 0) {
+        mui_aa_panel_pad(d->aa.tok, d->aa.aspect_q8, px, py);
+    }
+}
+
+static ULONG aapanel_layout(struct Hook* hook, Object* obj, struct MUI_LayoutMsg* lm) {
+    aapanel_data* d = INST_DATA(g_class->mcc_Class, obj);
+    int px, py;
+    (void)hook;
+    aapanel_pad(d, &px, &py);
+    switch (lm->lm_Type) {
+    case MUILM_MINMAX: {
+        Object* in = d->inner;
+        if (in == NULL) {
+            return 0;
+        }
+        lm->lm_MinMax.MinWidth = (WORD)(_minwidth(in) + 2 * px);
+        lm->lm_MinMax.MinHeight = (WORD)(_minheight(in) + 2 * py);
+        lm->lm_MinMax.DefWidth = (WORD)(_defwidth(in) + 2 * px);
+        lm->lm_MinMax.DefHeight = (WORD)(_defheight(in) + 2 * py);
+        lm->lm_MinMax.MaxWidth = _maxwidth(in) >= MUI_MAXMAX ? MUI_MAXMAX : (WORD)(_maxwidth(in) + 2 * px);
+        lm->lm_MinMax.MaxHeight = _maxheight(in) >= MUI_MAXMAX ? MUI_MAXMAX : (WORD)(_maxheight(in) + 2 * py);
+        return 0;
+    }
+    case MUILM_LAYOUT:
+        if (d->inner != NULL) {
+            MUI_Layout(d->inner, px, py, lm->lm_Layout.Width - 2 * px, lm->lm_Layout.Height - 2 * py, 0);
+        }
+        return TRUE;
+    }
+    return (ULONG)MUILM_UNKNOWN;
+}
 
 static ULONG aapanel_setup(struct IClass* cl, Object* obj, Msg msg) {
     aapanel_data* d = INST_DATA(cl, obj);
+    int px, py;
     if (!DoSuperMethodA(cl, obj, msg)) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
+    aapanel_pad(d, &px, &py);
+    if (d->inner != NULL) {
+        SetAttrs(d->inner, MUIA_Group_HorizSpacing, (ULONG)px, MUIA_Group_VertSpacing, (ULONG)py, TAG_DONE);
+    }
     return TRUE;
 }
 
@@ -69,13 +115,20 @@ static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object*
         return aapanel_cleanup(cl, obj, msg);
     case MUIM_Draw:
         return aapanel_draw(cl, obj, (struct MUIP_Draw*)msg);
+    case OM_ADDMEMBER:
+    case OM_REMMEMBER: {
+        aapanel_data* d = INST_DATA(cl, obj);
+        if (d->inner != NULL) { /* I685e5: callers add to the panel, the children live in the inner group */
+            return DoMethodA(d->inner, msg);
+        }
+        break;
+    }
     }
     return DoSuperMethodA(cl, obj, msg);
 }
 
 Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
-    Object* o;
-    int pad, padv;
+    Object *o, *inner;
     if ((unsigned)sp->role >= MUI_AA_PANEL_ROLES) {
         return NULL;
     }
@@ -85,19 +138,26 @@ Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
     if (g_class == NULL) {
         return NULL;
     }
-    pad = 0;
-    padv = 0;
-    if (sp->fixed_px <= 0) {
-        mui_aa_panel_pad(sp->tokens, sp->aspect_q8, &pad, &padv);
+    if (g_layout_hook.h_Entry == NULL) {
+        g_layout_hook.h_Entry = (__typeof__(g_layout_hook.h_Entry))(void (*)(void))HookEntry;
+        g_layout_hook.h_SubEntry = (__typeof__(g_layout_hook.h_SubEntry))(void (*)(void))aapanel_layout;
+    }
+    inner = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)FALSE, TAG_DONE);
+    if (inner == NULL) {
+        return NULL;
     }
     mui_theme_bg_spec(mui_aa_panel_rgb(sp->tokens, sp->role), g_bg_spec[sp->role], sizeof g_bg_spec[sp->role]);
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec[sp->role], MUIA_FillArea, (ULONG)FALSE,
-                  MUIA_Group_HorizSpacing, (ULONG)pad, MUIA_Group_VertSpacing, (ULONG)padv, MUIA_InnerLeft, (ULONG)pad, MUIA_InnerRight, (ULONG)pad,
-                  MUIA_InnerTop, (ULONG)padv, MUIA_InnerBottom, (ULONG)padv, sp->fixed_px > 0 ? (ULONG)MUIA_FixWidth : (ULONG)TAG_IGNORE, (ULONG)sp->fixed_px,
+                  MUIA_Group_Spacing, (ULONG)0, MUIA_Group_LayoutHook, (ULONG)(uintptr_t)&g_layout_hook, MUIA_Group_Child, (ULONG)(uintptr_t)inner,
+                  sp->fixed_px > 0 ? (ULONG)MUIA_FixWidth : (ULONG)TAG_IGNORE, (ULONG)sp->fixed_px,
                   sp->fixed_px > 0 ? (ULONG)MUIA_FixHeight : (ULONG)TAG_IGNORE, (ULONG)(sp->fixed_h > 0 ? sp->fixed_h : sp->fixed_px), TAG_DONE);
-    if (o != NULL) {
+    if (o == NULL) {
+        MUI_DisposeObject(inner);
+    } else {
         aapanel_data* d = INST_DATA(g_class->mcc_Class, o);
         d->role = sp->role;
+        d->fixed = sp->fixed_px;
+        d->inner = inner;
         g_made++;
     }
     return o;

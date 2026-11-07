@@ -981,7 +981,6 @@ static Object* mui_aapanel_wh(int role, int fixed_px, int fixed_h) {
     sp.role = role;
     sp.fixed_px = fixed_px;
     sp.fixed_h = fixed_h;
-    sp.aspect_q8 = g_pixel_aspect_q8;
     return mui_aapanel_new(&sp);
 }
 

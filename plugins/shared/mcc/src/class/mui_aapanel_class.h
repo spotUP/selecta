@@ -14,7 +14,6 @@ typedef struct mui_aapanel_spec {
     int role;               /* MUI_AA_PANEL_PANEL, _SURFACE or _RAISED */
     int fixed_px;           /* > 0: fixed width and height with no inner padding (the art frame) */
     int fixed_h;            /* I949d: > 0 with fixed_px: the fixed height when it differs from the width (tall pixels) */
-    int aspect_q8;          /* I685e1: pixel aspect of the screen the panel will open on (256..512); the inner padding is fixed at construction, before any DrawInfo exists */
 } mui_aapanel_spec;
 
 /* A panel; children are added with OM_ADDMEMBER. */
