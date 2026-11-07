@@ -20,6 +20,11 @@
 #include "libinit.h"
 #include "mui_aa_class.h"
 #include "map/up_origin.h"
+#include "map/up_store.h"
+
+/* I685n: the theme store and the object registry belong to up-mcc.library (design section 8.4). The sfdc headers give the calls
+ * through UPMCCBase; the library is opened at library open and the class code reaches it through the ops table below. */
+#include <proto/up_mcc.h>
 
 #ifdef UP_PREFS_LIBRARY
 /* I685j: the same skeleton builds UP-MCC.mcp. UP_CLASS_NAME is "MCC"; MCC_Query(1) returns the prefs class. */
@@ -43,6 +48,7 @@ struct Library* sel_mui_GfxBase; /* the package rename of the graphics base (src
 struct Library* IntuitionBase;
 struct Library* DOSBase;
 struct Library* MUIMasterBase;
+struct Library* UPMCCBase; /* up-mcc.library, version 1 */
 
 /* libnix's stdio start-up (pulled in by the theme store's fopen / snprintf) names exit(); a library never exits a process. */
 void exit(int code) {
@@ -53,6 +59,20 @@ void exit(int code) {
 }
 
 static struct MUI_CustomClass* g_lib_class;
+
+static const uint32_t* store_tokens(void) {
+    return (const uint32_t*)(const void*)UP_ThemeTokens();
+}
+static int store_set(const uint32_t* rgb, uint32_t count) {
+    return (int)UP_ThemeSetTokens((const ULONG*)(const void*)rgb, count);
+}
+static int store_attach(void* key, void* obj, void* app, void* hook) {
+    return (int)UP_ThemeAttach(key, obj, app, hook);
+}
+static int store_detach(void* key) {
+    return (int)UP_ThemeDetach(key);
+}
+static const up_store_ops g_store_ops = {store_tokens, store_set, store_attach, store_detach};
 
 /* I685k: the class is created with this wrapper instead of its own dispatcher. A GET of UPA_Shared_Origin is answered here with the
  * library base (src/map/up_origin.c) for every class at once; everything else runs the class's own dispatcher unchanged. The asm
@@ -105,6 +125,10 @@ static void close_libs(void) {
         CloseLibrary(DOSBase);
         DOSBase = NULL;
     }
+    if (UPMCCBase != NULL) { /* last: deleting the class disposes objects, which detach from the library's registry */
+        CloseLibrary(UPMCCBase);
+        UPMCCBase = NULL;
+    }
 }
 
 /* Returns 0 on success (libinit.o fails the library load on non-zero). */
@@ -116,10 +140,12 @@ LONG __stdargs __UserLibInit(struct Library* lib, REG(a4, APTR a4)) {
     sel_mui_GfxBase = OpenLibrary((CONST_STRPTR) "graphics.library", 36);
     IntuitionBase = OpenLibrary((CONST_STRPTR) "intuition.library", 36);
     MUIMasterBase = OpenLibrary((CONST_STRPTR) "muimaster.library", 19);
-    if (MUIMasterBase == NULL || DOSBase == NULL || UtilityBase == NULL || sel_mui_GfxBase == NULL || IntuitionBase == NULL) {
+    UPMCCBase = OpenLibrary((CONST_STRPTR) "up-mcc.library", 1);
+    if (UPMCCBase == NULL || MUIMasterBase == NULL || DOSBase == NULL || UtilityBase == NULL || sel_mui_GfxBase == NULL || IntuitionBase == NULL) {
         close_libs();
         return 1;
     }
+    up_store_bind(&g_store_ops);
     g_real_dispatch = UP_CLASS_DESC.dispatcher;
     up_origin_set(lib);
     g_lib_class = MUI_CreateCustomClass(lib, (char*)UP_CLASS_DESC.super, NULL, UP_CLASS_DESC.size, (APTR)(uintptr_t)up_origin_dispatch);

@@ -26,6 +26,11 @@
 
 #include "map/mui_theme.h"
 #include "map/up_prefs_map.h"
+#ifdef UP_CLASS_LIBRARY
+/* I685n: Save recolours through up-mcc.library (opened by lib/classheader.c), not through a copy of the store in this library. */
+#include <proto/up_mcc.h>
+extern struct Library* UPMCCBase;
+#endif
 
 #define UP_CLS_PREFS 0x0A
 #define UPM_Prefs_Load UP_TAG(UP_CLS_PREFS, 0x01)  /* the theme file string changed: read it into the colour gadgets */
@@ -180,7 +185,7 @@ static ULONG prefs_gadgets_to_config(struct IClass* cl, Object* obj) {
     write_theme_file(PREFS_ENV_DIR, PREFS_ENV_FILE, text, (size_t)n);
     write_theme_file(PREFS_ENVARC_DIR, PREFS_ENVARC_FILE, text, (size_t)n);
     d->th = out;
-    /* The static copy of the theme store inside this library; the application's copy follows once the classes open up-mcc.library. */
+    /* The library's store, shared by every process: UP_ThemeReload reads the file just written and recolours all registered objects. */
     (void)UP_ThemeReload();
     return 0;
 }

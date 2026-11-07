@@ -5,7 +5,7 @@
 #   src/class/ the ten shipped Selecta_AA* classes, Amiga only
 # File names are unchanged in this row; the UP- rename is row I685d.
 set(MCC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set(MCC_MAP_SOURCES src/map/mui_aa.c src/map/mui_aatip.c src/map/mui_theme.c src/map/mui_icons.c src/map/mui_fontprobe.c src/map/mui_log.c src/map/up_prefs_map.c src/map/up_origin.c)
+set(MCC_MAP_SOURCES src/map/mui_aa.c src/map/mui_aatip.c src/map/mui_theme.c src/map/mui_icons.c src/map/mui_fontprobe.c src/map/mui_log.c src/map/up_prefs_map.c src/map/up_origin.c src/map/up_store.c)
 set(MCC_AMIGA_SOURCES src/mui_aa_draw.c src/mui_aatip.c
   src/class/mui_aabtn_class.c src/class/mui_aatext_class.c src/class/mui_aapanel_class.c src/class/mui_aatabs_class.c
   src/class/mui_aabalance_class.c src/class/mui_aaslider_class.c src/class/mui_aacycle_class.c src/class/mui_aalist_class.c
@@ -135,12 +135,15 @@ target_include_directories(up_mcc_header_check PRIVATE "${MCC_SFD_INC}" "${MCC_D
 # I685i: one library per class from lib/classheader.c. libinit.o first (Resident), -nostartfiles, the class file with
 # -DUP_MCC_LIBRARY so its constructors use the class the library init made, everything else from sel_mcc_static (open up-mcc.library
 # instead of linking the static support code is a later row). The check at the end compares each target's SOURCES with the list.
+# I685n: what every .mcc/.mcp compiles itself, ahead of the archive, so the linker never pulls the archive's token store and registry
+# (src/map/up_store.c) or its draw context list: the client of the store (UP_CLASS_LIBRARY) and the draw code that registers with it.
+set(MCC_CLIENT_SOURCES src/map/up_store_client.c src/mui_aa_draw.c)
 function(up_add_class_library name class_source desc)
   set(tgt "up_mcc_${name}")
-  add_executable(${tgt} "${MCC_LIBINIT_O}" lib/classheader.c "${class_source}")
+  add_executable(${tgt} "${MCC_LIBINIT_O}" lib/classheader.c "${class_source}" ${MCC_CLIENT_SOURCES} ${MCC_SFD_HEADERS})
   set_target_properties(${tgt} PROPERTIES OUTPUT_NAME "UP-${name}.mcc")
-  target_include_directories(${tgt} PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include")
-  target_compile_definitions(${tgt} PRIVATE "UP_CLASS_NAME=\"${name}\"" "UP_CLASS_DESC=${desc}" UP_MCC_LIBRARY)
+  target_include_directories(${tgt} PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include" "${MCC_SFD_INC}")
+  target_compile_definitions(${tgt} PRIVATE "UP_CLASS_NAME=\"${name}\"" "UP_CLASS_DESC=${desc}" UP_MCC_LIBRARY UP_CLASS_LIBRARY)
   target_link_libraries(${tgt} PRIVATE sel_mcc_static)
   target_link_options(${tgt} PRIVATE -nostartfiles)
   set_source_files_properties(lib/classheader.c PROPERTIES COMPILE_OPTIONS "-fasm")
@@ -157,10 +160,10 @@ foreach(row ${MCC_CLASS_LIBS})
   up_add_class_library(${n} "${s}" ${d})
 endforeach()
 # I685j: UP-MCC.mcp from the same skeleton (UP_PREFS_LIBRARY: MCC_Query(1) returns the class).
-add_executable(up_mcc_prefs "${MCC_LIBINIT_O}" lib/classheader.c prefs/up_prefs.c)
+add_executable(up_mcc_prefs "${MCC_LIBINIT_O}" lib/classheader.c prefs/up_prefs.c ${MCC_CLIENT_SOURCES} ${MCC_SFD_HEADERS})
 set_target_properties(up_mcc_prefs PROPERTIES OUTPUT_NAME "${MCC_PREFS_NAME}")
-target_include_directories(up_mcc_prefs PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include")
-target_compile_definitions(up_mcc_prefs PRIVATE "UP_CLASS_NAME=\"MCC\"" UP_CLASS_DESC=up_prefs_class_desc UP_MCC_LIBRARY UP_PREFS_LIBRARY)
+target_include_directories(up_mcc_prefs PRIVATE "${AMIGA_GCC_ROOT}/m68k-amigaos/libnix/include" "${MCC_SFD_INC}")
+target_compile_definitions(up_mcc_prefs PRIVATE "UP_CLASS_NAME=\"MCC\"" UP_CLASS_DESC=up_prefs_class_desc UP_MCC_LIBRARY UP_PREFS_LIBRARY UP_CLASS_LIBRARY)
 target_link_libraries(up_mcc_prefs PRIVATE sel_mcc_static)
 target_link_options(up_mcc_prefs PRIVATE -nostartfiles)
 add_custom_target(up_mcc_classes DEPENDS up_mcc_Button up_mcc_Text up_mcc_Panel up_mcc_Tabs up_mcc_Balance up_mcc_Slider up_mcc_Progress
