@@ -37,7 +37,7 @@ uint32_t up_store_client_calls(const up_store_client* c) {
 
 #ifdef UP_CLASS_LIBRARY
 #include "map/mui_theme.h"
-#include "selecta/uimodel/theme.h"
+#include <selecta/uimodel/theme.h>
 
 static up_store_client g_lib_client;
 
