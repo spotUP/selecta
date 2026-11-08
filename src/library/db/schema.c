@@ -511,7 +511,10 @@ static int migrate_steps(sqlite3* db, const sel_host* host) {
     sel_library_trace(host, "user_version read begin", 0);
     v = sel_schema_version(db);
     sel_library_trace(host, "user_version read done", v);
-    if (v < 0 || v > MIGRATION_COUNT) { /* newer DB than this build: refuse, never downgrade */
+    if (v < 0) { /* user_version unreadable: sel_schema_version already failed, nothing to migrate from */
+        return 0;
+    }
+    if (v > MIGRATION_COUNT) { /* newer DB than this build: refuse, never downgrade, and say why */
         schema_refused(host, v);
         return 0;
     }
