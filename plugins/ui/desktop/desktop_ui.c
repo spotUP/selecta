@@ -686,6 +686,7 @@ enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 static int in_rect(sel_gui_rect r, int32_t x, int32_t y);
+static int pointer_on_song_menu(const desk* d);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
 static const char* desk_slot_action(const desk* d, uint32_t i);
@@ -1072,7 +1073,7 @@ static uint32_t row_ink(desk* d, sel_gui_rect row, uint32_t rest) {
  * the pointer shows on every row, the selected one included. 0 = no fill. The pointer is read directly (not through hover_box) so
  * a link inside the row, which owns the hover box while the pointer is on it, does not take the row's fill away. */
 static uint32_t list_row_fill(desk* d, sel_gui_rect row, int selected) {
-    int hovered = d->overlay == 0 && in_rect(row, d->ptr_x, d->ptr_y);
+    int hovered = d->overlay == 0 && !pointer_on_song_menu(d) && in_rect(row, d->ptr_x, d->ptr_y); /* I1146: a row under the open menu's panel is not hovered */
     uint32_t fill = hovered ? ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_SURFACE_PRESSED : SEL_GUI_TOKEN_SURFACE_HOVER])
                             : selected ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) : 0u;
     if (hovered) {
@@ -2887,6 +2888,17 @@ static sel_gui_rect song_menu_item_rect(const desk* d, int32_t k) {
         y = mn.y;
     }
     return rect_of(x, y + k * lpx(d, SONG_MENU_ITEM_H), w, lpx(d, SONG_MENU_ITEM_H));
+}
+
+/* I1146: 1 while the song menu is open and the pointer is on its panel. The panel is a window-level overlay: a list row the panel covers
+ * takes no hover fill, else the fill changes under the panel's anti-aliased edge and shadow as the pointer crosses the items (I655). */
+static int pointer_on_song_menu(const desk* d) {
+    sel_gui_rect first;
+    if (!d->sm_open) {
+        return 0;
+    }
+    first = song_menu_item_rect(d, 0);
+    return in_rect(rect_of(first.x, first.y, first.w, first.h * song_menu_n(d)), d->ptr_x, d->ptr_y);
 }
 
 /* I1039: sends a device pick (the pref the output plugin polls in its pump) and closes the device menu. */
