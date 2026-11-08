@@ -145,6 +145,21 @@ void mui_np_page_plan(const mui_aa_metrics_t* m, uint32_t main_w, mui_np_page_pl
     info = out->info_rows * out->list_h;
     out->page_h = lyr > info ? lyr : info;
     out->min_h = out->heading_h + out->top_h + out->tabs_h + out->page_h;
+    if (out->min_h > (uint32_t)MUI_NP_PAGE_BUDGET_H && out->art_h > out->text_rows * out->text_h + 2u) {
+        /* I960b: a square pixel makes the art taller than the text block; cap the art to what the budget leaves for the top block
+         * (never below the text block) and shrink its width to stay square on screen. */
+        uint32_t fixed = out->heading_h + out->tabs_h + out->page_h;
+        uint32_t room = (uint32_t)MUI_NP_PAGE_BUDGET_H > fixed ? (uint32_t)MUI_NP_PAGE_BUDGET_H - fixed : 0u;
+        uint32_t floor_h = out->text_rows * out->text_h + 2u;
+        uint32_t ah = room > floor_h ? room : floor_h;
+        if (ah < out->art_h) {
+            uint32_t aw = (ah * (uint32_t)(m->aspect_q8 > 0 ? m->aspect_q8 : 256) + 128u) / 256u;
+            out->art_w = aw < out->art_w ? aw : out->art_w;
+            out->art_h = mui_art_height(out->art_w, m->aspect_q8);
+            out->top_h = out->art_h > floor_h ? out->art_h : floor_h;
+            out->min_h = out->heading_h + out->top_h + out->tabs_h + out->page_h;
+        }
+    }
 }
 
 uint32_t mui_player_centre_y(const mui_player_band_t* pb, uint32_t child_h) {

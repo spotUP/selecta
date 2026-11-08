@@ -1232,7 +1232,7 @@ static void test_np_page_plan(void) {
     CHECK(tall.next_rows == 3u && tall.text_rows == 4u && tall.min_h == tall.heading_h + tall.top_h + tall.tabs_h + tall.page_h, "plan parts do not add up");
     mui_aa_metrics_aspect(0, 256, &m);
     mui_np_page_plan(&m, 436u, &sq);
-    CHECK(sq.art_w == 64u && sq.art_h == 64u && sq.min_h <= 220u, "square plan art %ux%u min_h %u", (unsigned)sq.art_w, (unsigned)sq.art_h, (unsigned)sq.min_h);
+    CHECK(sq.min_h <= (uint32_t)MUI_NP_PAGE_BUDGET_H && sq.art_h >= 32u && sq.art_w <= 64u, "square plan art %ux%u min_h %u over budget %u", (unsigned)sq.art_w, (unsigned)sq.art_h, (unsigned)sq.min_h, (unsigned)MUI_NP_PAGE_BUDGET_H);
     mui_np_page_plan(&m, 90u, &narrow);
     CHECK(narrow.art_w == 30u && narrow.art_h == 30u, "narrow column art %ux%u", (unsigned)narrow.art_w, (unsigned)narrow.art_h);
     CHECK(mui_np_page_plans() == before + 3u, "plan sentinel did not count");
