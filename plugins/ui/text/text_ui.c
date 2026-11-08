@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "grid.h"
+#include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel.h>
@@ -76,7 +77,7 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[23];
+    sel_tag stats[24];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -88,6 +89,9 @@ typedef struct tui {
     uint32_t table_actions;                /* I1184 sentinel: keys that fired a line of the shared action table */
     char table_log[192];                   /* I1184: those lines in order, '|' separated (the tail is kept) */
     int lib_screen;                        /* the query view is the Library screen */
+    uint32_t lib_mode;                     /* I1187: the Library mode (sel_uim_libmode_name) the last mode key or Library opening set */
+    int lib_mode_on;                       /* I1187: lib_mode is in force (cleared when Browse, Folders or Home take the pane) */
+    uint32_t mode_keys, scope_keys;        /* I1187 sentinels: library mode keys and queue scope keys taken */
     int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
 
@@ -284,6 +288,10 @@ static void tui_library_search(tui* u, const char* query) {
     }
     u->lib_screen = 1;
     u->lib_searches++;
+    if (!u->lib_mode_on) { /* the Library opens as Tree, grouped by format */
+        u->lib_mode = 1u;
+        u->lib_mode_on = 1;
+    }
     u->lib_empty_query = query[0] == '\0';
 }
 
@@ -291,8 +299,39 @@ static void tui_library_open(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
     if (!u->lib_screen || v == NULL || v->source != SEL_VIEW_QUERY) {
         u->lib_screen = 0;
+        u->lib_mode_on = 0;
         tui_library_search(u, "");
     }
+}
+
+/* I1187: the Library modes the text UI cycles through (sel_uim_libmode_lines, the lines the desktop sends too): Composers, Tree,
+ * Columns, Files, History. Sources is exempt: the desktop retired it (I678i, nothing sets it) and it lists no view rows. */
+static void tui_next_lib_mode(tui* u) {
+    char lines[SEL_UIM_LIB_LINES][SEL_UIM_LIB_LINE_MAX];
+    uint32_t i, n, mode = u->lib_mode_on ? (u->lib_mode + 1u) % SEL_UIM_LIB_SOURCES : 1u;
+    n = sel_uim_libmode_lines(mode, tui_main_rows(u), lines);
+    for (i = 0; i < n; i++) {
+        tui_send(u, lines[i]);
+    }
+    if (mode == 1u || mode == 2u) { /* the query modes are the Library screen */
+        u->lib_opens += u->lib_screen ? 0u : 1u;
+        u->lib_screen = 1;
+        u->lib_searches++;
+        u->lib_empty_query = 1;
+    } else {
+        u->lib_screen = 0;
+    }
+    u->lib_mode = mode;
+    u->lib_mode_on = 1;
+    u->mode_keys++;
+}
+
+/* I1187: the queue scope Library, Album, Playlist (SCOPE <name>, as the desktop Scope button sends). */
+static void tui_next_scope(tui* u, const sel_state* s) {
+    char line[32];
+    (void)sel_uim_scope_line((sel_uim_scope_index(s->options[SEL_OPT_SCOPE]) + 1u) % SEL_UIM_QUEUE_SCOPES, line, sizeof line);
+    tui_send(u, line);
+    u->scope_keys++;
 }
 
 /* UI-local actions (`@name` in the binding table). Returns 0 for an unknown name. */
@@ -320,23 +359,31 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         uint32_t src = s->view != NULL ? s->view->source : SEL_VIEW_QUEUE;
         if (src == SEL_VIEW_BROWSE) {
             u->lib_screen = 0;
+            u->lib_mode_on = 0;
             tui_send(u, "VIEW_SHOW queue");
         } else if (src == SEL_VIEW_QUEUE) {
             tui_library_open(u);
         } else {
             u->lib_screen = 0;
+            u->lib_mode_on = 0;
             tui_send(u, "VIEW_SHOW browse");
         }
+    } else if (strcmp(name, "lib_mode") == 0) {
+        tui_next_lib_mode(u);
+    } else if (strcmp(name, "queue_scope") == 0) {
+        tui_next_scope(u, s);
     } else if (strcmp(name, "library") == 0) {
         tui_library_open(u);
     } else if (strcmp(name, "folders") == 0) {
         /* The playlist folder tree (design doc 9c): the engine's folders view source. */
         u->lib_screen = 0;
+        u->lib_mode_on = 0;
         u->folder_opens++;
         tui_send(u, "VIEW_SOURCE folders");
     } else if (strcmp(name, "home") == 0) {
         /* Recently played, jump back in, new this week (I191): the engine's home view source. */
         u->lib_screen = 0;
+        u->lib_mode_on = 0;
         tui_send(u, "VIEW_SOURCE home");
     } else if (strcmp(name, "stats") == 0) {
         /* The statistics screen (F24, I192): the engine reads the stats SQL views; b again closes it. */
@@ -775,6 +822,14 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         snprintf(buf, sizeof buf, "Home");
     } else {
         sel_uim_queue_title(buf, sizeof buf, v, u->lib_screen);
+    }
+    if (u->lib_mode_on) { /* I1187: the desktop's mode tab and Scope button, as words on the pane title */
+        size_t at = strlen(buf);
+        snprintf(buf + at, sizeof buf - at, "  Mode %s", sel_uim_libmode_name(u->lib_mode));
+    }
+    if (v->source == SEL_VIEW_QUERY || v->source == SEL_VIEW_QUEUE) {
+        size_t at = strlen(buf);
+        snprintf(buf + at, sizeof buf - at, "  %s", sel_uim_scope_label(sel_uim_scope_index(s->options[SEL_OPT_SCOPE])));
     }
     txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
     if (v->source == SEL_VIEW_HOME && v->row_count == 0) {
@@ -1567,8 +1622,11 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[20].value = u->sid_frames;
     u->stats[21].tag = SEL_UI_STAT_STYLE;
     u->stats[21].value = u->style_draws << 8 | u->style_drawn;
-    u->stats[22].tag = SEL_TAG_END;
-    u->stats[22].value = 0;
+    u->stats[22].tag = SEL_UI_STAT_LIBMODE;
+    u->stats[22].value = u->scope_keys << 16 | u->mode_keys << 8 | (u->lib_mode_on ? u->lib_mode : 15u) << 4 |
+                         sel_uim_scope_index(sel_engine_state(u->engine)->options[SEL_OPT_SCOPE]);
+    u->stats[23].tag = SEL_TAG_END;
+    u->stats[23].value = 0;
     return u->stats;
 }
 

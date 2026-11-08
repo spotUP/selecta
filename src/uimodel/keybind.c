@@ -14,7 +14,7 @@ static const char* const k_actions[] = {
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
     "library",    "search",       "show_list",    "folders",     "home",
-    "stats",      "forward",
+    "stats",      "forward",    "lib_mode",   "queue_scope",
     "viz",        "pattern",    "solo",         "voice1",        "voice2",       "voice3",
     "voice4",     "voice5",     "voice6",       "voice7",        "voice8",       "voice9",
 };
@@ -162,7 +162,8 @@ static const struct {
     {"C-Left", "TEMPO -5"},
     {"l", "@library"},          {"/", "@search"},
     {"f", "@folders"},         {"b", "@stats"},
-    {"H", "@home"},
+    {"H", "@home"},          {"c", "@lib_mode"},
+    {"x", "@queue_scope"},
     {"M-l", "FILTER_LED toggle"},
     /* Context rows. Left and Right page a list and seek when the pattern or viz panel fills the
        main pane; Alt+arrows seek everywhere. Terminal.app sends Option+Left and Option+Right as
