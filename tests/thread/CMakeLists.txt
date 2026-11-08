@@ -50,3 +50,11 @@ if(UNIX)
 endif()
 
 sel_isolate_config() # I989b
+
+# I1082e G4: pattern_request from the UI thread goes through a mailbox the pump drains (TSan build for the race proof).
+if(UNIX)
+  add_executable(pattern_tsan_test pattern_tsan_test.c)
+  target_link_libraries(pattern_tsan_test PRIVATE selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME thread-pattern COMMAND pattern_tsan_test)
+  set_tests_properties(thread-pattern PROPERTIES LABELS m3 TIMEOUT 300 PASS_REGULAR_EXPRESSION "pattern_tsan_ok")
+endif()

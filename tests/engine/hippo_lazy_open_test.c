@@ -49,6 +49,14 @@ static unsigned log_count(const char* path, const char* needle) {
     return n;
 }
 
+/* I1082e: with SELECTA_TEST_SNAP set the engine runs in snapshot mode: the UI side (this thread) acquires after each pump and the
+ * take defers its folder reload to the pump. */
+static int g_snap;
+static void pump1(sel_engine* e) {
+    sel_engine_pump(e, sink, NULL);
+    (void)sel_engine_ui_acquire(e);
+}
+
 static long ms_since(const struct timespec* t0) {
     struct timespec t1;
 
@@ -63,7 +71,7 @@ static uint32_t pump_reads(sel_engine* e, uint32_t base, uint32_t want) {
 
     clock_gettime(CLOCK_MONOTONIC, &t0);
     for (;;) {
-        sel_engine_pump(e, sink, NULL);
+        pump1(e);
         sel_engine_stats_get(e, &s);
         if (s.lib_reads_applied >= base + want || ms_since(&t0) > 15000) return s.lib_reads_applied - base;
         usleep(2000);
@@ -84,9 +92,9 @@ static void settle(sel_engine* e) {
 
     clock_gettime(CLOCK_MONOTONIC, &t0);
     do {
-        sel_engine_pump(e, sink, NULL);
+        pump1(e);
         if (!sel_engine_reads_pending(e)) {
-            sel_engine_pump(e, sink, NULL);
+            pump1(e);
             if (!sel_engine_reads_pending(e)) return;
         }
         usleep(2000);
@@ -118,11 +126,13 @@ int main(int argc, char** argv) {
     cfg.registry_get = sel_registry_get;
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
+    g_snap = getenv("SELECTA_TEST_SNAP") != NULL;
+    if (g_snap) CHECK(sel_engine_publish_enable(e, 1u) == 1);
 
     prg0 = log_count(logp, ".prg");
     clock_gettime(CLOCK_MONOTONIC, &t0);
     while (ms_since(&t0) < 300) { /* settle: reads the engine posts on its own at start are not this test's */
-        sel_engine_pump(e, sink, NULL);
+        pump1(e);
         usleep(2000);
     }
     db_enter(lib);
@@ -138,13 +148,18 @@ int main(int argc, char** argv) {
     CHECK(sel_engine_playlist_keys_post(e, id, sizeof keys) == 1);
     clock_gettime(CLOCK_MONOTONIC, &t0);
     while (!taken && ms_since(&t0) < 15000) {
-        sel_engine_pump(e, sink, NULL);
+        pump1(e);
         taken = (uint32_t)sel_engine_playlist_keys_take(e, &got_id, keys, sizeof keys, &n, &ok);
         if (!taken) usleep(2000);
     }
     CHECK(taken == 1u && got_id == id && ok == 1 && n > 0u);
     CHECK(log_count(logp, ".prg") == prg0 + 1u);
     CHECK(pump_reads(e, base, 1) >= 1u); /* I1058e: the take posted a folders reload */
+    if (g_snap) {
+        sel_engine_stats st;
+        sel_engine_stats_get(e, &st);
+        CHECK(st.playlist_reloads == 1u); /* I1082e sentinel: the reload was posted by the pump, not by the taking thread */
+    }
 
     /* 3. Already filled: no new request, no reload. */
     settle(e);
@@ -153,13 +168,13 @@ int main(int argc, char** argv) {
     taken = 0;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     while (!taken && ms_since(&t0) < 15000) {
-        sel_engine_pump(e, sink, NULL);
+        pump1(e);
         taken = (uint32_t)sel_engine_playlist_keys_take(e, &got_id, keys, sizeof keys, &n, &ok);
         if (!taken) usleep(2000);
     }
     CHECK(taken == 1u && ok == 1 && n > 0u);
     CHECK(log_count(logp, ".prg") == prg0 + 1u);
-    sel_engine_pump(e, sink, NULL);
+    pump1(e);
     CHECK(reads_now(e) == base);
 
     printf("hippo_lazy_open: playlist %u keys %u prg requests %u\n", (unsigned)id, (unsigned)n, log_count(logp, ".prg") - prg0);
