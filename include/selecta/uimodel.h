@@ -157,6 +157,10 @@ int sel_uim_rom_install(const char* config_dir, uint32_t slot, const char* src, 
 int sel_uim_rom_is_user(const char* config_dir, uint32_t slot);   /* 1: the user's file is in force */
 const char* sel_uim_rom_source_text(int user);                    /* "Your ROM" or "Open ROMs (bundled)" */
 int sel_uim_rom_reset(const char* config_dir, uint32_t slot);     /* removes the copied file; 1 when none is left */
+/* The nth choice of a cycle row's comma list copied to out; returns the list length. */
+uint32_t sel_uim_pref_choice(const char* choices, uint32_t n, char* out, size_t cap);
+/* The index of the choice equal to cur, 0 when none is (the first choice is the default). */
+uint32_t sel_uim_pref_choice_index(const char* choices, const char* cur);
 /* PREF_SET key "value" */
 void sel_uim_pref_line(const char* key, const char* value, char* out, size_t cap);
 

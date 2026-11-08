@@ -1102,6 +1102,13 @@ int main(int argc, char** argv)
            (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) >> 16 & 0xFFu));
     printf("text_style=%u style_draws=%u\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_STYLE, 0) & 0xFFu),
            (unsigned)(sel_tag_find(ust, SEL_UI_STAT_STYLE, 0) >> 8));
+    {
+        const sel_host* ph = sel_engine_plugin_host(e);
+        uintptr_t st = sel_tag_find(ust, SEL_UI_STAT_SETTINGS, 0);
+        printf("text_settings_sets=%u settings_opens=%u settings_row=%u crossfeed=%s stereo_width=%s\n", (unsigned)(st & 0xFFu),
+               (unsigned)(st >> 8 & 0xFFu), (unsigned)(st >> 16 & 0xFFu), ph != NULL ? ph->config_get(ph, "dsp.crossfeed", "") : "",
+               ph != NULL ? ph->config_get(ph, "mix.stereo_width", "") : "");
+    }
     printf("seek_path=%u volume=%d view_cursor=%u\n", (unsigned)est.seek_path, (int)sel_engine_state(e)->volume,
            (unsigned)sel_engine_state(e)->view->cursor);
     printf("view_window=%u\n", (unsigned)sel_engine_state(e)->view->window_rows);

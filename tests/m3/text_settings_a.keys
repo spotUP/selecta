@@ -1,0 +1,11 @@
+wait 300
+S
+wait 200
+Down
+wait 100
+Right
+wait 200
+Down
+Down
+Left
+wait 200

@@ -18,9 +18,12 @@ extern "C" {
 #endif
 
 #define TXT_PAL_QUERY 48u
+/* I1188: entries that are not engine verbs but screens of the text UI. Their ids follow the verbs (id >= SEL_CMD_COUNT);
+ * the picked name is the screen's word, bound to the "@<name>" action. */
+#define TXT_PAL_LOCAL_COUNT 1u
 
 typedef struct txt_palette_item {
-    uint32_t id;       /* sel_cmd_id */
+    uint32_t id;       /* sel_cmd_id; SEL_CMD_COUNT + n for a local entry */
     const char* name;  /* verb */
     const char* area;  /* transport, queue, playlists, view, protocol */
     char key[24];      /* bound key name, "" when none */
@@ -36,7 +39,7 @@ typedef enum txt_pal_result {
 typedef struct txt_palette {
     char query[TXT_PAL_QUERY];
     uint32_t len;
-    txt_palette_item items[SEL_CMD_COUNT]; /* the matches, best first; grouped by area when the query is empty */
+    txt_palette_item items[SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT]; /* the matches, best first; grouped by area when the query is empty */
     uint32_t count;
     uint32_t cursor;
     const txt_bindings* binds;

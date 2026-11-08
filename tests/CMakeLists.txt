@@ -4247,3 +4247,15 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode.cmake")
   set_tests_properties(text-ui-libmode PROPERTIES LABELS m3)
 endif()
+
+# I1188: the text UI Settings screen (key S, palette entry) over the shared pref rows; every change is a PREF_SET.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-settings
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings_c.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_settings"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings.cmake")
+  set_tests_properties(text-ui-settings PROPERTIES LABELS m3)
+endif()

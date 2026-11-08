@@ -46,7 +46,7 @@ typedef struct tui {
     txt_bindings binds;
     txt_cmdline cmd;
     int cmd_mode; /* the command line has the keys */
-    int overlay;  /* 0 none, 1 command palette, 2 help (read only) */
+    int overlay;  /* 0 none, 1 command palette, 2 help (read only), 3 Settings (I1188) */
     txt_palette pal;
     char marks[TUI_MARKS][TUI_MARK_BYTES]; /* selected browse files for `!` */
     uint32_t mark_n;
@@ -77,7 +77,7 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[24];
+    sel_tag stats[25];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -92,6 +92,9 @@ typedef struct tui {
     uint32_t lib_mode;                     /* I1187: the Library mode (sel_uim_libmode_name) the last mode key or Library opening set */
     int lib_mode_on;                       /* I1187: lib_mode is in force (cleared when Browse, Folders or Home take the pane) */
     uint32_t mode_keys, scope_keys;        /* I1187 sentinels: library mode keys and queue scope keys taken */
+    uint32_t set_focus, set_opens, set_sets; /* I1188: the Settings row under the cursor; openings; PREF_SET lines its keys sent */
+    int set_edit;                          /* I1188: a string row is being typed into set_buf */
+    char set_buf[96];
     int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
 
@@ -334,6 +337,99 @@ static void tui_next_scope(tui* u, const sel_state* s) {
     u->scope_keys++;
 }
 
+/* ---- I1188: the Settings screen. The rows are the shared table (sel_uim_pref_row_at, the filter the desktop Settings page and
+ * the MUI window use, hidden for the other machine); a value is read with the engine pref the way desk_pref does, a change
+ * is the PREF_SET line sel_uim_pref_line builds. Exempt: the UI Zoom of the desktop (a pixel scale, a character grid has
+ * none) and the C64 ROM file chooser (a file dialog; the screen shows which ROM is in force, Reset to Bundled is the Delete key). ---- */
+
+static const char* tui_pref(const tui* u, const char* key) {
+    const sel_host* h = sel_engine_plugin_host(u->engine);
+    const char* v = h != NULL && h->config_get != NULL ? h->config_get(h, key, "") : "";
+    return v != NULL ? v : "";
+}
+
+static void tui_pref_send(tui* u, const sel_uim_pref_row* r, const char* val) {
+    char line[300];
+    sel_uim_pref_line(r->key, val, line, sizeof line);
+    tui_send(u, line);
+    u->set_sets++;
+}
+
+/* Left (dir -1) and Right, Enter, Space (dir +1) on the row under the cursor. */
+static void tui_settings_step(tui* u, const sel_uim_pref_row* r, int dir) {
+    const char* cur = tui_pref(u, r->key);
+    char val[48];
+    if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+        uint32_t n = sel_uim_pref_choice(r->choices, 0u, val, sizeof val);
+        uint32_t at = sel_uim_pref_choice_index(r->choices, cur);
+        at = dir > 0 ? (at + 1u) % n : (at + n - 1u) % n;
+        sel_uim_pref_choice(r->choices, at, val, sizeof val);
+        tui_pref_send(u, r, val);
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+        tui_pref_send(u, r, cur[0] == '1' ? "0" : "1");
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+        long lo = 0, hi = 100, v = cur[0] != '\0' ? strtol(cur, NULL, 10) : 0;
+        sscanf(r->choices, "%ld,%ld", &lo, &hi);
+        v = v < lo ? lo : (v > hi ? hi : v);
+        v += dir * 5;
+        v = v < lo ? lo : (v > hi ? hi : v);
+        snprintf(val, sizeof val, "%ld", v);
+        tui_pref_send(u, r, val);
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_STRING && dir > 0) {
+        snprintf(u->set_buf, sizeof u->set_buf, "%s", cur);
+        u->set_edit = 1;
+    }
+}
+
+static void tui_settings_open(tui* u) {
+    u->overlay = 3;
+    u->set_edit = 0;
+    u->set_opens++;
+    if (u->set_focus >= sel_uim_pref_row_count()) {
+        u->set_focus = 0;
+    }
+}
+
+static void tui_settings_key(tui* u, const txt_key* k) {
+    uint32_t n = sel_uim_pref_row_count();
+    const sel_uim_pref_row* r = sel_uim_pref_row_at(u->set_focus);
+    size_t len = strlen(u->set_buf);
+    if (u->set_edit) {
+        if (k->code == 13u && r != NULL) {
+            tui_pref_send(u, r, u->set_buf);
+            u->set_edit = 0;
+        } else if (k->code == 27u) {
+            u->set_edit = 0;
+        } else if (k->code == 127u && len > 0) {
+            u->set_buf[len - 1u] = '\0';
+        } else if (k->mods == 0 && k->code >= 0x20u && k->code < 0x7Fu && len + 1u < sizeof u->set_buf) {
+            u->set_buf[len] = (char)k->code;
+            u->set_buf[len + 1u] = '\0';
+        }
+        return;
+    }
+    if (k->code == 27u || k->code == 'q' || k->code == 'S') {
+        u->overlay = 0;
+    } else if ((k->code == TXT_KEY_UP || k->code == 'k') && u->set_focus > 0) {
+        u->set_focus--;
+    } else if ((k->code == TXT_KEY_DOWN || k->code == 'j') && u->set_focus + 1u < n) {
+        u->set_focus++;
+    } else if (k->code == TXT_KEY_HOME) {
+        u->set_focus = 0;
+    } else if (k->code == TXT_KEY_END && n > 0) {
+        u->set_focus = n - 1u;
+    } else if (r != NULL && (k->code == TXT_KEY_LEFT || k->code == 'h')) {
+        tui_settings_step(u, r, -1);
+    } else if (r != NULL && (k->code == TXT_KEY_RIGHT || k->code == 'l' || k->code == 13u || k->code == ' ')) {
+        tui_settings_step(u, r, 1);
+    } else if (r != NULL && r->ui == (uint32_t)SEL_UIM_PREF_ROM && k->code == TXT_KEY_DELETE) {
+        int slot = sel_uim_rom_slot(r->choices);
+        if (slot >= 0) {
+            (void)sel_uim_rom_reset(tui_pref(u, "config.dir"), (uint32_t)slot);
+        }
+    }
+}
+
 /* UI-local actions (`@name` in the binding table). Returns 0 for an unknown name. */
 static int tui_local(tui* u, const char* name, const txt_key* k) {
     const sel_state* s = sel_engine_state(u->engine);
@@ -370,6 +466,8 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         }
     } else if (strcmp(name, "lib_mode") == 0) {
         tui_next_lib_mode(u);
+    } else if (strcmp(name, "settings") == 0) {
+        tui_settings_open(u);
     } else if (strcmp(name, "queue_scope") == 0) {
         tui_next_scope(u, s);
     } else if (strcmp(name, "library") == 0) {
@@ -464,7 +562,12 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
 }
 
 static void tui_overlay_key(tui* u, const txt_key* k) {
-    txt_pal_result r = txt_palette_key(&u->pal, k->code, k->mods);
+    txt_pal_result r;
+    if (u->overlay == 3) {
+        tui_settings_key(u, k);
+        return;
+    }
+    r = txt_palette_key(&u->pal, k->code, k->mods);
     if (r == TXT_PAL_EDITING) {
         return;
     }
@@ -472,7 +575,11 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
         /* the palette runs the bare verb; commands with arguments are typed on the command line */
         const char* verb = txt_palette_picked(&u->pal);
         u->overlay = 0;
-        if (verb != NULL) {
+        if (verb != NULL && u->pal.items[u->pal.cursor].id >= SEL_CMD_COUNT) { /* a local entry: its action word */
+            if (strcmp(verb, "settings") == 0) {
+                tui_settings_open(u);
+            }
+        } else if (verb != NULL) {
             tui_send(u, verb);
         }
         return;
@@ -970,6 +1077,57 @@ static void tui_overlay(tui* u) {
     }
 }
 
+/* I1188: the Settings screen, one row per shared table row: the label, then the value. */
+static void tui_settings(tui* u) {
+    uint32_t n = sel_uim_pref_row_count(), cols = u->grid.cols, rows = u->grid.rows > 4u ? u->grid.rows - 4u : 1u;
+    uint32_t i, first = 0, y = 2, lw = 26;
+    txt_style nrm = tui_style(u, TXT_ROLE_NORMAL), dim = tui_style(u, TXT_ROLE_DIM), cur = tui_style(u, TXT_ROLE_CURSOR);
+    char line[160];
+    for (i = 1; i <= rows + 1u; i++) {
+        txt_grid_fill(&u->grid, 0, i, cols, 1, ' ', nrm);
+    }
+    txt_grid_text(&u->grid, 2, 1, "Settings", cols - 4u, nrm);
+    if (u->set_focus >= rows) {
+        first = u->set_focus + 1u - rows;
+    }
+    for (i = first; i < n && y < rows + 1u; i++, y++) {
+        const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
+        const char* v = tui_pref(u, r->key);
+        txt_style st = i == u->set_focus ? cur : nrm;
+        char shown[64];
+        if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+            sel_uim_pref_choice(r->choices, sel_uim_pref_choice_index(r->choices, v), shown, sizeof shown);
+            snprintf(line, sizeof line, "< %s >", shown);
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+            snprintf(line, sizeof line, "[%c] %s", v[0] == '1' ? 'x' : ' ', v[0] == '1' ? "On" : "Off");
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+            long lo = 0, hi = 100, x = v[0] != '\0' ? strtol(v, NULL, 10) : lo;
+            uint32_t fill, k;
+            char bar[21];
+            sscanf(r->choices, "%ld,%ld", &lo, &hi);
+            x = x < lo ? lo : (x > hi ? hi : x);
+            fill = hi > lo ? (uint32_t)((x - lo) * 20 / (hi - lo)) : 0u;
+            for (k = 0; k < 20u; k++) {
+                bar[k] = k < fill ? '#' : '-';
+            }
+            bar[20] = '\0';
+            snprintf(line, sizeof line, "%3ld [%s]", x, bar);
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_ROM) {
+            int slot = sel_uim_rom_slot(r->choices);
+            snprintf(line, sizeof line, "%s",
+                     sel_uim_rom_source_text(slot >= 0 && sel_uim_rom_is_user(tui_pref(u, "config.dir"), (uint32_t)slot)));
+        } else if (u->set_edit && i == u->set_focus) {
+            snprintf(line, sizeof line, "%s_", u->set_buf);
+        } else {
+            snprintf(line, sizeof line, "%s", v[0] != '\0' ? v : "(default)");
+        }
+        txt_grid_fill(&u->grid, 0, y, cols, 1, ' ', st);
+        txt_grid_text(&u->grid, 2, y, r->label, lw, st);
+        txt_grid_text(&u->grid, 2u + lw + 2u, y, line, cols > lw + 6u ? cols - lw - 6u : 1u, st);
+    }
+    txt_grid_text(&u->grid, 2, rows + 1u, "Up Down move   Left Right change   Enter edit text   Esc close", cols - 4u, dim);
+}
+
 /* ---- viz and pattern panels (M1.3 I101) ---- */
 
 static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum", "Note dots", "Phase", "SID registers"};
@@ -1260,7 +1418,9 @@ static void tui_draw(tui* u) {
         }
         tui_info(u, s, width + 2u);
     }
-    if (u->overlay) {
+    if (u->overlay == 3) {
+        tui_settings(u);
+    } else if (u->overlay) {
         tui_overlay(u);
     }
     txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_DIM));
@@ -1625,8 +1785,10 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[22].tag = SEL_UI_STAT_LIBMODE;
     u->stats[22].value = u->scope_keys << 16 | u->mode_keys << 8 | (u->lib_mode_on ? u->lib_mode : 15u) << 4 |
                          sel_uim_scope_index(sel_engine_state(u->engine)->options[SEL_OPT_SCOPE]);
-    u->stats[23].tag = SEL_TAG_END;
-    u->stats[23].value = 0;
+    u->stats[23].tag = SEL_UI_STAT_SETTINGS;
+    u->stats[23].value = u->set_focus << 16 | u->set_opens << 8 | u->set_sets;
+    u->stats[24].tag = SEL_TAG_END;
+    u->stats[24].value = 0;
     return u->stats;
 }
 
