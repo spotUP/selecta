@@ -81,9 +81,10 @@ static ULONG aapanel_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    aapanel_pad(d, &px, &py);
-    if (d->inner != NULL) {
-        SetAttrs(d->inner, MUIA_Group_HorizSpacing, (ULONG)px, MUIA_Group_VertSpacing, (ULONG)py, TAG_DONE);
+    if (d->inner != NULL) { /* I685w run 6: the gap between children is its own rung of the spacing scale, not the card pad */
+        int gx, gy;
+        mui_aa_panel_gap(d->aa.tok, d->aa.aspect_q8, d->role, &gx, &gy);
+        SetAttrs(d->inner, MUIA_Group_HorizSpacing, (ULONG)gx, MUIA_Group_VertSpacing, (ULONG)gy, TAG_DONE);
     }
     return TRUE;
 }
@@ -92,6 +93,48 @@ static ULONG aapanel_cleanup(struct IClass* cl, Object* obj, Msg msg) {
     aapanel_data* d = INST_DATA(cl, obj);
     aa_cleanup(&d->aa);
     return DoSuperMethodA(cl, obj, msg);
+}
+
+/* I685w run 6: the rectangles the face must not cover. A plain MUI Group (the program's own row and column boxes) fills its gaps
+ * with MUI's pen-snapped copy of the inherited background, a second colour inside one card; so the walk goes through plain groups
+ * (only the shown page of a page group) and keeps their leaves as holes. A UP object, a nested panel included, paints itself. */
+static int aapanel_holes(Object* grp, int* holes, int n, int depth) {
+    struct List* kids = NULL;
+    Object *state, *child;
+    static struct IClass* group_cl;
+    LONG page = -1;
+    ULONG pm = 0;
+    if (group_cl == NULL) {
+        group_cl = MUI_GetClass((char*)MUIC_Group);
+    }
+    GetAttr(MUIA_Group_ChildList, grp, (ULONG*)&kids);
+    if (kids == NULL) {
+        return n;
+    }
+    if (GetAttr(MUIA_Group_PageMode, grp, &pm) && pm) {
+        ULONG ap = 0;
+        GetAttr(MUIA_Group_ActivePage, grp, &ap);
+        page = (LONG)ap;
+    }
+    state = (Object*)kids->lh_Head;
+    {
+        LONG i = 0;
+        while (n < MUI_AA_PAINT_MAX_HOLES && (child = NextObject(&state)) != NULL) {
+            if (page >= 0 && i++ != page) {
+                continue;
+            }
+            if (depth < 8 && group_cl != NULL && OCLASS(child) == group_cl) {
+                n = aapanel_holes(child, holes, n, depth + 1);
+                continue;
+            }
+            holes[4 * n] = _left(child);
+            holes[4 * n + 1] = _top(child);
+            holes[4 * n + 2] = _width(child);
+            holes[4 * n + 3] = _height(child);
+            n++;
+        }
+    }
+    return n;
 }
 
 static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
@@ -103,17 +146,7 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
             Object* grp = d->inner != NULL ? d->inner : obj;
             struct List* kids = NULL;
             Object *state, *child;
-            GetAttr(MUIA_Group_ChildList, grp, (ULONG*)&kids);
-            if (kids != NULL) {
-                state = (Object*)kids->lh_Head;
-                while (n < MUI_AA_PAINT_MAX_HOLES && (child = NextObject(&state)) != NULL) {
-                    holes[4 * n] = _left(child);
-                    holes[4 * n + 1] = _top(child);
-                    holes[4 * n + 2] = _width(child);
-                    holes[4 * n + 3] = _height(child);
-                    n++;
-                }
-            }
+            n = aapanel_holes(grp, holes, 0, 0);
             {   /* I685w: the window margin around the root object is filled by MUI with the snapped spec too; the root repaints the ring in exact RGB */
                 ULONG root = 0, wptr = 0;
                 GetAttr(MUIA_Window_RootObject, _win(obj), &root);
@@ -146,6 +179,69 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     return r;
 }
 
+static void aapanel_hook_init(void) {
+    if (g_layout_hook.h_Entry == NULL) {
+        g_layout_hook.h_Entry = (__typeof__(g_layout_hook.h_Entry))(void (*)(void))HookEntry;
+        g_layout_hook.h_SubEntry = (__typeof__(g_layout_hook.h_SubEntry))(void (*)(void))aapanel_layout;
+    }
+}
+
+/* I685u / I685w run 6: created by name (UP-Panel.mcc, no UP_NewPanel) the object has no background tag, so MUI would paint the
+ * window background. Add the role colour from the theme store, exactly what UP_NewPanel passes, and build the same shape: the
+ * program's MUIA_Group_Child objects go into the inner group and the layout hook puts the card pad around it. Without the inner
+ * group and the hook the pad (aapanel_pad) was never reached for a by-name panel: children sat on the card edge. */
+static ULONG aapanel_new_by_name(struct IClass* cl, Object* obj, struct opSet* ops, int role) {
+    struct TagItem *tag, *state = ops->ops_AttrList, *copy, *t;
+    struct opSet nm = *ops;
+    Object* inner;
+    ULONG made, horiz = GetTagData(MUIA_Group_Horiz, FALSE, ops->ops_AttrList);
+    int count = 0;
+    while (NextTagItem(&state) != NULL) {
+        count++;
+    }
+    copy = (struct TagItem*)AllocVec((ULONG)(count + 8) * sizeof(struct TagItem), MEMF_ANY);
+    inner = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, horiz, MUIA_FillArea, (ULONG)FALSE, TAG_DONE);
+    if (copy == NULL || inner == NULL) {
+        if (inner != NULL) {
+            MUI_DisposeObject(inner);
+        }
+        if (copy != NULL) {
+            FreeVec(copy);
+        }
+        return 0;
+    }
+    mui_theme_bg_spec(mui_aa_panel_rgb(mui_theme_tokens(), role), g_bg_spec[role], sizeof g_bg_spec[role]);
+    aapanel_hook_init();
+    t = copy;
+    t->ti_Tag = MUIA_Background, (t++)->ti_Data = (ULONG)g_bg_spec[role];
+    t->ti_Tag = MUIA_FillArea, (t++)->ti_Data = (ULONG)FALSE; /* I685w: the draw paints the face; a MUI fill would be the snapped pen */
+    t->ti_Tag = MUIA_Frame, (t++)->ti_Data = (ULONG)MUIV_Frame_None;
+    t->ti_Tag = MUIA_Group_Spacing, (t++)->ti_Data = 0;
+    t->ti_Tag = MUIA_Group_LayoutHook, (t++)->ti_Data = (ULONG)(uintptr_t)&g_layout_hook;
+    t->ti_Tag = MUIA_Group_Child, (t++)->ti_Data = (ULONG)(uintptr_t)inner;
+    state = ops->ops_AttrList;
+    while ((tag = NextTagItem(&state)) != NULL) {
+        if (tag->ti_Tag == MUIA_Group_Child) {
+            if (tag->ti_Data != 0) {
+                DoMethod(inner, OM_ADDMEMBER, tag->ti_Data);
+            }
+        } else if (tag->ti_Tag != MUIA_Group_Horiz && tag->ti_Tag != MUIA_Background && tag->ti_Tag != MUIA_FillArea) {
+            *t++ = *tag;
+        }
+    }
+    t->ti_Tag = TAG_DONE;
+    nm.ops_AttrList = copy;
+    made = DoSuperMethodA(cl, obj, (Msg)&nm); /* on failure the Group super disposes its children, the inner group with them */
+    FreeVec(copy);
+    if (made != 0) { /* I685w: the by-name panel has no UP_NewPanel to record the role the face is painted in */
+        aapanel_data* d = (aapanel_data*)INST_DATA(cl, (Object*)made);
+        d->role = role;
+        d->inner = inner;
+        g_made++;
+    }
+    return made;
+}
+
 static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aapanel_dispatch(void);
@@ -157,29 +253,11 @@ __asm__(".text\n.even\n.globl _aapanel_dispatch\n_aapanel_dispatch:\n"
 static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
     case OM_NEW: {
-        /* I685u: created by name (UP-Panel.mcc, no UP_NewPanel) the object has no background tag, so MUI would paint the window
-         * background. Add the role colour from the theme store, exactly what UP_NewPanel passes. */
         struct opSet* ops = (struct opSet*)msg;
         if (FindTagItem(MUIA_Background, ops->ops_AttrList) == NULL) {
             int role = (int)GetTagData(UPA_Panel_Role, UPV_Panel_Role_Panel, ops->ops_AttrList);
             if ((unsigned)role < MUI_AA_PANEL_ROLES) {
-                struct TagItem more[3];
-                struct opSet nm = *ops;
-                mui_theme_bg_spec(mui_aa_panel_rgb(mui_theme_tokens(), role), g_bg_spec[role], sizeof g_bg_spec[role]);
-                more[0].ti_Tag = MUIA_Background;
-                more[0].ti_Data = (ULONG)g_bg_spec[role];
-                more[1].ti_Tag = MUIA_FillArea; /* I685w: the draw paints the face; a MUI fill would be the snapped pen */
-                more[1].ti_Data = (ULONG)FALSE;
-                more[2].ti_Tag = TAG_MORE;
-                more[2].ti_Data = (ULONG)(uintptr_t)ops->ops_AttrList;
-                nm.ops_AttrList = more;
-                {
-                    ULONG made = DoSuperMethodA(cl, obj, (Msg)&nm);
-                    if (made != 0) { /* I685w: the by-name panel has no UP_NewPanel to record the role the face is painted in */
-                        ((aapanel_data*)INST_DATA(cl, (Object*)made))->role = role;
-                    }
-                    return made;
-                }
+                return aapanel_new_by_name(cl, obj, ops, role);
             }
         }
         break;
@@ -226,10 +304,7 @@ Object* UP_NewPanel(const struct TagItem* tags) {
     if (g_class == NULL) {
         return NULL;
     }
-    if (g_layout_hook.h_Entry == NULL) {
-        g_layout_hook.h_Entry = (__typeof__(g_layout_hook.h_Entry))(void (*)(void))HookEntry;
-        g_layout_hook.h_SubEntry = (__typeof__(g_layout_hook.h_SubEntry))(void (*)(void))aapanel_layout;
-    }
+    aapanel_hook_init();
     inner = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)FALSE, MUIA_FillArea, (ULONG)FALSE, TAG_DONE); /* I685w: no snapped MUI fill under the children */
     if (inner == NULL) {
         return NULL;

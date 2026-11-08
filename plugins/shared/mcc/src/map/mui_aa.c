@@ -128,9 +128,14 @@ void mui_aa_button_rgb(const uint32_t* token, int role, int state, uint32_t* fac
         t = token[SEL_GUI_TOKEN_TEXT];
         f = state == MUI_AA_SELECTED ? token[SEL_GUI_TOKEN_SURFACE_RAISED] : mui_aa_state_rgb(token, f, state == MUI_AA_DISABLED ? MUI_AA_NORMAL : state);
     } else if (role == MUI_AA_ROLE_TAB) {
-        /* AATabs: the tab sits on the PANEL the detail pane is built on; the active tab is told by TEXT and the underline, not by a face. */
-        f = state == MUI_AA_HOVER ? mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_PANEL], state) : token[SEL_GUI_TOKEN_PANEL];
-        t = state == MUI_AA_SELECTED || state == MUI_AA_PRESSED ? token[SEL_GUI_TOKEN_TEXT] : token[SEL_GUI_TOKEN_TEXT_MUTED];
+        /* I685w run 6: AATabs as the Mac Home filter chips: the active chip is an ACCENT face with ACCENT_TEXT, the others a raised chip in TEXT. */
+        if (state == MUI_AA_SELECTED || state == MUI_AA_PRESSED) {
+            f = token[SEL_GUI_TOKEN_ACCENT];
+            t = token[SEL_GUI_TOKEN_ACCENT_TEXT];
+        } else {
+            f = mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_SURFACE_RAISED], state);
+            t = token[SEL_GUI_TOKEN_TEXT];
+        }
     } else {
         f = mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_SURFACE_RAISED], state);
         t = token[SEL_GUI_TOKEN_TEXT];
@@ -327,6 +332,14 @@ void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad
     *pad_y = mui_aa_rows(sp, aspect_q8);
 }
 
+void mui_aa_panel_gap(const uint32_t* token, int aspect_q8, int role, int* gap_x, int* gap_y) {
+    /* I685w run 6: spacing scale 8 / 16 / 24. Inside a card (Raised, Surface) children sit one unit apart; on the page (Panel role) the
+     * cards sit two units apart; the card pad is three (mui_aa_panel_pad). */
+    int sp = mui_aa_panel_spacing(token) * (role == MUI_AA_PANEL_PANEL ? MUI_AA_PAGE_GAP_UNITS : MUI_AA_CARD_GAP_UNITS);
+    *gap_x = aspect_q8 > 256 ? sp / 2 : sp;
+    *gap_y = mui_aa_rows(sp, aspect_q8);
+}
+
 static uint32_t g_slider_calls;
 
 uint32_t mui_aa_slider_calls(void) {
@@ -336,7 +349,7 @@ uint32_t mui_aa_slider_calls(void) {
 void mui_aa_slider_metrics(int font_px, int aspect_q8, mui_aa_slider_t* out) {
     g_slider_calls++;
     /* I965: vertical sizes count in rows (mui_aa_rows) at the screen aspect, so a 2x-tall pixel counts as two; square (256): unchanged. */
-    out->track_h = font_px <= 0 ? mui_aa_rows(2, aspect_q8) : 4;
+    out->track_h = font_px <= 0 ? mui_aa_rows(2, aspect_q8) : 6; /* I685w run 6: the Mac track reads about 6 px; 4 looked like a hairline on rig 2 */
     out->radius = out->track_h / 2;
     out->min_w = 80;
     out->height = font_px <= 0 ? mui_aa_rows(12, aspect_q8) : font_px < 15 ? 16 : font_px < 17 ? 18 : 20; /* hit height; only the track and fill are drawn */
@@ -609,7 +622,8 @@ void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint
         *track = token[SEL_GUI_TOKEN_SURFACE];
     }
     if (thumb != NULL) {
-        *thumb = (state == MUI_AA_HOVER || state == MUI_AA_PRESSED) ? token[SEL_GUI_TOKEN_SURFACE_PRESSED] : token[SEL_GUI_TOKEN_TRACK];
+        /* I685w run 6: TRACK (3A3A44) on SURFACE (1E1E24) was near invisible on rig 2; the thumb takes the disabled-text grey, muted text on hover */
+        *thumb = (state == MUI_AA_HOVER || state == MUI_AA_PRESSED) ? token[SEL_GUI_TOKEN_TEXT_MUTED] : token[SEL_GUI_TOKEN_TEXT_DISABLED];
     }
 }
 

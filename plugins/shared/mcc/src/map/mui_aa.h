@@ -101,6 +101,9 @@ enum { MUI_AA_ALIGN_LEFT = UPV_Text_Align_Left, MUI_AA_ALIGN_CENTRE = UPV_Text_A
 #define MUI_AA_HEADING_FACTOR 2
 /* I685w run 5: card padding = this many SPACING units (Mac 24 px = 3 x 8). */
 #define MUI_AA_PANEL_PAD_UNITS 3
+/* I685w run 6: gap between the children of a card (1 unit, 8 px) and between the cards on the page (2 units, 16 px). */
+#define MUI_AA_CARD_GAP_UNITS 1
+#define MUI_AA_PAGE_GAP_UNITS 2
 /* SEL_GUI_TOKEN_* a tone draws in: normal and title TEXT, muted TEXT_MUTED. */
 int mui_aa_tone_token(int tone);
 /* Font pixel size of a tone for the screen base size from mui_aa_font_px: title = base + 4, others = base; the bitmap tier (0) stays 0. */
@@ -130,6 +133,8 @@ int mui_aa_panel_radius(const uint32_t* token, int font_px);
 int mui_aa_panel_spacing(const uint32_t* token);
 /* I949e2: group inner padding and spacing across (pad_x) and down (pad_y) for a screen of aspect_q8. 256 gives SPACING both ways. */
 void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad_y);
+/* I685w run 6: spacing between the children of a panel of this role (same aspect packing as the pad). */
+void mui_aa_panel_gap(const uint32_t* token, int aspect_q8, int role, int* gap_x, int* gap_y);
 
 /* I667f (design 3.2, AASlider and AAProgress): track height and radius per tier, the colours by state, and the value <-> pixel maths.
  * No knob (owner decision 2026-10-29): only the TRACK track and the ACCENT fill are drawn, like the Mac desktop seek bar. */

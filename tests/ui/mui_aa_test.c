@@ -233,6 +233,15 @@ static void test_text_source(void) {
     CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
           "class does not draw through the shared tone, fit and text helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
+    /* I685w run 6 regression: on the PLAIN backend (no ttengine, rig 2) aa_set_font_px returns early, so the heading tone drew in the
+     * MUI font. The text class must hand the tone to aa_plain_font, and every PLAIN draw path must use aa_plain_textfont. */
+    CHECK(strstr(cls, "aa_plain_font(&d->aa, obj, mui_aa_tone_font_px(d->tone,") != NULL, "text class does not size the PLAIN tone font");
+    {
+        char* dr = slurp(AADRAW_SOURCE);
+        CHECK(dr != NULL && count_of(dr, "aa_plain_textfont(c, obj)") >= 4 && count_of(dr, "OpenDiskFont(") == 1 && strstr(dr, "CloseFont(c->plain)") != NULL,
+              "PLAIN draw paths do not use the tone font: %d", dr != NULL ? count_of(dr, "aa_plain_textfont(c, obj)") : -1);
+        free(dr);
+    }
     CHECK(strstr(cm, "mui_aatext_class.c") != NULL, "class not in the build");
     /* I716b: the text is readable by GetAttr(UPA_Text_Contents) so wasabid's uitree lists it (rig check MUI-P3-1 waits for "Playing"). */
     CHECK(strstr(cls, "case OM_GET:") != NULL && strstr(cls, "msg->opg_AttrID == UPA_Text_Contents") != NULL && strstr(cls, "*msg->opg_Storage = (ULONG)(uintptr_t)d->text") != NULL,
@@ -275,6 +284,17 @@ static void test_panel_source(void) {
               "mui_aa_panel_pad must be called once, with d->aa.aspect_q8, outside UP_NewPanel: %d", count_of(cls, "mui_aa_panel_pad("));
         CHECK(nw != NULL && strstr(nw, "MUIA_Group_LayoutHook") != NULL && strstr(cls, "case OM_ADDMEMBER:") != NULL && strstr(cls, "case OM_REMMEMBER:") != NULL,
               "layout hook not passed in UP_NewPanel, or the dispatcher does not forward OM_ADDMEMBER / OM_REMMEMBER");
+        /* I685w run 6 regression: UP-Demo builds panels by name (MUI_NewObject("UP-Panel.mcc")), and that OM_NEW path made no inner
+         * group and no layout hook, so mui_aa_panel_pad never ran and the card pad never reached the screen. Both paths share one hook init. */
+        {
+            const char* bn = strstr(cls, "static ULONG aapanel_new_by_name(");
+            const char* bn_end = bn != NULL ? strstr(bn, "\n}\n") : NULL;
+            CHECK(bn != NULL && bn_end != NULL && count_of(cls, "aapanel_hook_init()") == 2, "by-name OM_NEW and UP_NewPanel do not share aapanel_hook_init");
+            CHECK(bn != NULL && strstr(bn, "MUIA_Group_LayoutHook") != NULL && strstr(bn, "MUIA_Group_LayoutHook") < bn_end && strstr(bn, "OM_ADDMEMBER") < bn_end && strstr(bn, "d->inner =") < bn_end,
+                  "by-name UP-Panel has no layout hook or inner group, so the pad never applies");
+            CHECK(strstr(cls, "return aapanel_new_by_name(") != NULL, "OM_NEW does not route by-name panels through aapanel_new_by_name");
+            CHECK(strstr(cls, "mui_aa_panel_gap(d->aa.tok, d->aa.aspect_q8, d->role,") != NULL, "panel group spacing not from mui_aa_panel_gap");
+        }
         CHECK(strstr(ui, "sp.aspect_q8") == NULL, "mui_ui.c still sets sp.aspect_q8");
         free(hdr);
     }
@@ -309,9 +329,9 @@ static void test_tabs(void) {
     CHECK(line == th.token[SEL_GUI_TOKEN_ACCENT] && line == 0x3B82F6u, "underline is ACCENT 3B82F6");
     CHECK(idle == th.token[SEL_GUI_TOKEN_TEXT_MUTED] && act == th.token[SEL_GUI_TOKEN_TEXT], "idle TEXT_MUTED, active TEXT");
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TAB, MUI_AA_NORMAL, &face, &text);
-    CHECK(text == idle && face == th.token[SEL_GUI_TOKEN_PANEL], "idle tab button: muted text on the panel");
+    CHECK(text == th.token[SEL_GUI_TOKEN_TEXT] && face == th.token[SEL_GUI_TOKEN_SURFACE_RAISED], "idle tab chip: TEXT on SURFACE_RAISED (I685w run 6)");
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TAB, MUI_AA_SELECTED, &face, &text);
-    CHECK(text == act && face == th.token[SEL_GUI_TOKEN_PANEL], "lit tab button: TEXT, face unchanged");
+    CHECK(text == th.token[SEL_GUI_TOKEN_ACCENT_TEXT] && face == th.token[SEL_GUI_TOKEN_ACCENT], "active tab chip: ACCENT face (I685w run 6)");
     CHECK(mui_aa_tabs_calls() > before, "tabs helpers did not run");
 }
 
@@ -393,7 +413,7 @@ static void test_balance_source(void) {
 static void test_slider_geom(void) {
     static const int fonts[4] = {0, 13, 15, 17};
     static const int heights[4] = {12, 16, 18, 20};
-    static const int tracks[4] = {2, 4, 4, 4};
+    static const int tracks[4] = {2, 6, 6, 6}; /* I685w run 6: 6 px track as the Mac */
     txt_theme th;
     uint32_t track, fill;
     uint32_t before = mui_aa_slider_calls();
@@ -879,9 +899,9 @@ static void test_scroller_geom(void) {
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 50, 100, &ty, &th_h) == 1 && th_h == 100, "half visible gives half track: %d", th_h);
     CHECK(mui_aa_scroller_first_at(&m, 200, 10, -50, 10, 100) == 0 && mui_aa_scroller_first_at(&m, 200, 10, 900, 10, 100) == 90, "drag ends clamp");
     mui_aa_scroller_rgb(th.token, MUI_AA_NORMAL, &track, &thumb);
-    CHECK(track == th.token[SEL_GUI_TOKEN_SURFACE] && thumb == th.token[SEL_GUI_TOKEN_TRACK] && thumb == 0x3A3A44u, "normal colours %06X %06X", (unsigned)track, (unsigned)thumb);
+    CHECK(track == th.token[SEL_GUI_TOKEN_SURFACE] && thumb == th.token[SEL_GUI_TOKEN_TEXT_DISABLED] && thumb == 0x62626Eu, "normal colours %06X %06X", (unsigned)track, (unsigned)thumb);
     mui_aa_scroller_rgb(th.token, MUI_AA_HOVER, &track, &thumb);
-    CHECK(thumb == th.token[SEL_GUI_TOKEN_SURFACE_PRESSED] && thumb == 0x3E3E4Au, "hover thumb %06X", (unsigned)thumb);
+    CHECK(thumb == th.token[SEL_GUI_TOKEN_TEXT_MUTED] && thumb == 0xA0A0ACu, "hover thumb %06X", (unsigned)thumb);
     CHECK(mui_aa_scroller_calls() > calls0, "sentinel did not move");
 }
 
@@ -1108,6 +1128,13 @@ static void test_tight_pad(void) {
     CHECK(px == 12 && py == mui_aa_rows(24, 512), "tight panel pad %d,%d", px, py);
     mui_aa_panel_pad(tok, 256, &px, &py);
     CHECK(px == 24 && py == 24, "square panel pad %d,%d is the Mac 24 px", px, py);
+    /* I685w run 6: group gaps 8 inside a card, 16 between cards (Mac 8/16 over SPACING 8); tall pixels pack across by half. */
+    mui_aa_panel_gap(tok, 256, MUI_AA_PANEL_RAISED, &px, &py);
+    CHECK(px == 8 && py == 8, "card gap %d,%d", px, py);
+    mui_aa_panel_gap(tok, 256, MUI_AA_PANEL_PANEL, &px, &py);
+    CHECK(px == 16 && py == 16, "page gap %d,%d", px, py);
+    mui_aa_panel_gap(tok, 512, MUI_AA_PANEL_PANEL, &px, &py);
+    CHECK(px == 8 && py == mui_aa_rows(16, 512), "tight page gap %d,%d", px, py);
 }
 
 /* I972: on RTG 800x600 the text stayed 8 px: the own screen kept the Workbench font, and MUI's stock objects and the PLAIN
