@@ -65,6 +65,14 @@ int txt_key_parse(const char* name, uint32_t* code, uint32_t* mods);
 int txt_key_parse_ctx(const char* name, uint32_t* ctx, uint32_t* code, uint32_t* mods);
 int txt_key_name(uint32_t code, uint32_t mods, char* out, size_t cap);
 
+/* Amiga raw key code to a key code, for keys that have no character: arrows,
+ * function keys, the edit block, Enter, Escape, Tab, Backspace. 0 when the raw
+ * key carries a character (the caller maps it with MapRawKey). Shared by the
+ * desktop and MUI front ends so both read the keyboard the same way. */
+uint32_t txt_key_from_amiga_raw(unsigned raw);
+/* Amiga IEQUALIFIER bits to TXT_MOD_* flags (Shift, Control, Alt). */
+uint32_t txt_mods_from_amiga_qual(unsigned qual);
+
 /* 1 when `name` (without the @) is a UI-local action. */
 int txt_action_known(const char* name);
 

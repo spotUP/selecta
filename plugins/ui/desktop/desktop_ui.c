@@ -13251,13 +13251,7 @@ static int desk_transport_click(desk* d, uint32_t i) {
 }
 
 /* The keys of the action table become the desktop bindings, loaded through the same txt_bindings the text UI uses. */
-/* The text UI's page keys and the page each opens: the one table both the key load and the key dispatch read (I279). */
-static const struct {
-    const char* action;
-    desk_page page;
-} k_page_keys[] = {{"@home", SEL_UIM_PG_HOME},       {"@library", SEL_UIM_PG_FOLDERS}, {"@folders", SEL_UIM_PG_PLAYLISTS},
-                   {"@info", SEL_UIM_PG_SONGINFO},   {"@viz", SEL_UIM_PG_VIZ},         {"@pattern", SEL_UIM_PG_TRACKER}};
-
+/* The text UI's page keys and the page each opens: sel_uim_page_key_at, the one table the key load and the key dispatch read (I279). */
 static void desk_bind_actions(desk* d) {
     uint32_t i, n = sel_uim_action_count();
     memset(&d->binds, 0, sizeof d->binds);
@@ -13275,8 +13269,14 @@ static void desk_bind_actions(desk* d) {
         txt_bindings def;
         uint32_t k;
         txt_bindings_default(&def);
-        for (k = 0; k < sizeof overlay_actions / sizeof overlay_actions[0] + sizeof k_page_keys / sizeof k_page_keys[0]; k++) {
-            const char* action = k < sizeof overlay_actions / sizeof overlay_actions[0] ? overlay_actions[k] : k_page_keys[k - sizeof overlay_actions / sizeof overlay_actions[0]].action;
+        for (k = 0; k < sizeof overlay_actions / sizeof overlay_actions[0] + SEL_UIM_PAGE_KEY_COUNT; k++) {
+            const char* action = NULL;
+            uint32_t kpage;
+            if (k < sizeof overlay_actions / sizeof overlay_actions[0]) {
+                action = overlay_actions[k];
+            } else {
+                sel_uim_page_key_at(k - (uint32_t)(sizeof overlay_actions / sizeof overlay_actions[0]), &action, &kpage);
+            }
             char key[24], row[64];
             if (txt_bindings_key_for(&def, action, key, sizeof key) != NULL) {
                 snprintf(row, sizeof row, "%s %s\n", key, action);
@@ -14190,10 +14190,12 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     }
     if (act != NULL) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
         uint32_t k;
-        for (k = 0; k < sizeof k_page_keys / sizeof k_page_keys[0]; k++) {
-            if (strcmp(act, k_page_keys[k].action) == 0) {
+        const char* pact;
+        uint32_t ppage;
+        for (k = 0; sel_uim_page_key_at(k, &pact, &ppage); k++) {
+            if (strcmp(act, pact) == 0) {
                 d->nav_keys++;
-                return desk_page_goto(d, k_page_keys[k].page);
+                return desk_page_goto(d, ppage);
             }
         }
     }

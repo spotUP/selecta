@@ -338,3 +338,43 @@ const char* txt_bindings_key_for(const txt_bindings* b, const char* action, char
     }
     return NULL;
 }
+
+uint32_t txt_key_from_amiga_raw(unsigned raw) {
+    switch (raw) {
+    case 0x4C: return TXT_KEY_UP;
+    case 0x4D: return TXT_KEY_DOWN;
+    case 0x4E: return TXT_KEY_RIGHT;
+    case 0x4F: return TXT_KEY_LEFT;
+    case 0x46: return TXT_KEY_DELETE;
+    case 0x47: return TXT_KEY_INSERT;
+    case 0x48: return TXT_KEY_PAGE_UP;
+    case 0x49: return TXT_KEY_PAGE_DOWN;
+    case 0x70: return TXT_KEY_HOME;
+    case 0x71: return TXT_KEY_END;
+    case 0x4B: return TXT_KEY_F1 + 10;
+    case 0x6F: return TXT_KEY_F1 + 11;
+    case 0x44: case 0x43: return 13;
+    case 0x45: return 27;
+    case 0x42: return 9;
+    case 0x41: return 127;
+    default: break;
+    }
+    if (raw >= 0x50 && raw <= 0x59) {
+        return TXT_KEY_F1 + (uint32_t)(raw - 0x50);
+    }
+    return 0;
+}
+
+uint32_t txt_mods_from_amiga_qual(unsigned qual) {
+    uint32_t m = 0;
+    if (qual & 0x0003u) { /* IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT */
+        m |= TXT_MOD_SHIFT;
+    }
+    if (qual & 0x0008u) { /* IEQUALIFIER_CONTROL */
+        m |= TXT_MOD_CTRL;
+    }
+    if (qual & 0x0030u) { /* IEQUALIFIER_LALT | IEQUALIFIER_RALT */
+        m |= TXT_MOD_ALT;
+    }
+    return m;
+}

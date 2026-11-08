@@ -42,6 +42,10 @@ uint32_t sel_uim_page_by_name(const char* name);
 uint32_t sel_uim_page_of_route(uint32_t rp);
 /* The route page id the history writes for page `id`. */
 uint32_t sel_uim_page_route(uint32_t id);
+/* The text UI's page keys and the page each opens (I279): the one table the desktop and MUI key loads and dispatches read. */
+#define SEL_UIM_PAGE_KEY_COUNT 6u
+/* Row i: the `@action` name in *action and the page it opens in *page; 0 past SEL_UIM_PAGE_KEY_COUNT. */
+int sel_uim_page_key_at(uint32_t i, const char** action, uint32_t* page);
 
 #ifdef __cplusplus
 }

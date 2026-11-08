@@ -84,6 +84,7 @@ static void mui_libs_close(void) {
 #include "mui_canvas_class.h"
 #include "mui_vizarea_class.h"
 #include "mui_listview_class.h"
+#include "mui_keys_class.h"
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
 
 /* The SDK's sfdc inline MUI_NewObject is a function-like macro; the SDK's ApplicationObject/End idiom nests object-like
@@ -187,6 +188,7 @@ typedef struct mui_state {
     char col_fmt[128];               /* the shown column set as MUI format text (mui_columns_format), the rig read-back */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
     Object* str_search;             /* MUI-P4-3 */
+    Object* keys;                   /* I1171: Selecta_Keys, the window key handler */
     Object* str_cmd;                /* MUI-P4-13 */
     Object* cyc_rating;             /* MUI-P4-7 */
     Object* cyc_subsong;            /* MUI-P4-9 */
@@ -309,6 +311,7 @@ static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCL
  * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
 #define MENU_MAX 160
 #define MENU_ID_BASE 0x1000L
+#define CTL_KEY_BASE 0x2B00L /* I1171: window action keys (Space, Enter, Home, End, M-*, C-*), CTL_KEY_BASE + mui_key_row index */
 #define CTL_SM_BASE 0x2500L /* MUI-P4-6: Song menu items, CTL_SM_BASE + item */
 #define CTL_PREF_BASE 0x2600L /* MUI-P4-10: Settings gadgets, CTL_PREF_BASE + pref row */
 #define CTL_CLIP_COPY 0x2120L /* Edit > Copy Song Title (MUI-P5-6), outside the MENU_ID_BASE + row range */
@@ -3163,6 +3166,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
                 s->p4[P4_CRUMB]++;
             }
         }
+    } else if (id >= CTL_KEY_BASE && id < CTL_KEY_BASE + (LONG)mui_key_row_count()) {
+        const mui_key_row* kr = mui_key_row_at((uint32_t)(id - CTL_KEY_BASE)); /* I1171: the action rows; door and pane rows send their own ids */
+        if (kr != NULL && kr->kind == MUI_KEYROW_ACTION) {
+            mui_action_fire(kr->id, mui_p8_send, s);
+        }
     } else if (id >= CTL_SM_BASE && id < CTL_SM_BASE + (LONG)SEL_UIM_SONG_MENU_ITEMS) {
         mui_song_menu_fire(s, (uint32_t)(id - CTL_SM_BASE));
     } else if (id >= CTL_PREF_BASE && id < CTL_PREF_BASE + (LONG)MUI_PREF_MAX) {
@@ -3360,6 +3368,7 @@ static void* mui_open(const sel_ui_open_args* a) {
                     Child, s->slot[MUI_SLOT_DETAIL] = np_compact ? (Object*)MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE) : np_detail,
                 End,
                 Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
+                Child, s->keys = mui_keys_new((ULONG)CTL_KEY_BASE, (ULONG)CTL_DOOR_BASE, (ULONG)CTL_PANE_BASE), /* I1165, I1171 */
             End, End, End;
     if (s->app == NULL) {
         if (strip != NULL) {
@@ -3370,6 +3379,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_WINDOW, "(MUI could not create the objects)");
         return NULL;
     }
+    mui_keys_targets(s->str_search, s->list); /* I1165: Down from Search enters the results */
     mui_trace("ui: application and window object tree built (classes created)");
     fprintf(stderr, "selecta mui: tier font on %d window roots (%s)\n", g_font_applied, g_scr_font != NULL ? "applied" : "none");
     DoMethod(s->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, s->app, 2, MUIM_Application_ReturnID,
@@ -3572,6 +3582,7 @@ static void mui_close(void* state) {
         mui_aafield_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();
+        mui_keys_class_free();
     }
     mui_timer_close(s);
     if (MUIMasterBase != NULL) {
