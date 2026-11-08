@@ -407,6 +407,9 @@ typedef struct sel_sf_entry {
 struct sel_engine {
     const sel_host* host;
     sel_snap* snap;                 /* I1082d: the published triple-buffer snapshot, NULL until sel_engine_publish_enable */
+    char* aux_pool;                 /* I1082e: scratch the pump fills with row paths and the cursor key before each publish */
+    uint32_t* aux_off;
+    uint32_t aux_pool_cap, aux_off_cap;
     unsigned snap_mode;             /* 0 off, 1 publish and serve sel_engine_state from it, 2 publish only (measure) */
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
     sel_host pl_host;               /* copy of host whose config_get answers engine prefs first (I177b) */
@@ -5018,7 +5021,7 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
     } while ((a & 1u) != 0u || a != e->scan_seq);
 }
 
-void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out) {
+static void sync_progress_live(const sel_engine* e, sel_sync_progress* out) {
     memset(out, 0, sizeof *out);
     out->active = (uint32_t)(e->sync_running != 0);
     if (out->active) {
@@ -9090,6 +9093,8 @@ static void view_sync(sel_engine* e) {
  * I912: a result is bounded by its text bytes, not by rows, so a big catalogue returns more rows than
  * qmeta_off holds (queue capacity). The query view holds at most that many rows (qview has the same
  * capacity), so the snapshot stops there too. */
+static void stats_get_live(const sel_engine* e, sel_engine_stats* out);
+static void publish_aux(sel_engine* e, sel_snap_aux* a);
 static void snapshot_meta(sel_engine* e) {
     uint32_t i, at = 0;
     uint32_t rows = e->res_count < e->qview.capacity ? e->res_count : e->qview.capacity;
@@ -9431,7 +9436,7 @@ const char* sel_view_source_label(uint32_t source) {
     return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : source == SEL_VIEW_HOME ? "home" : source == SEL_VIEW_SEARCH ? "search" : "unknown";
 }
 
-const char* sel_engine_view_cursor_key(sel_engine* e) {
+static const char* view_cursor_key_live(sel_engine* e) {
     const sel_view_state* v = &e->view.pub;
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     uint32_t at;
@@ -9714,7 +9719,7 @@ uint32_t sel_engine_lib_deferred(void) {
     return sel_library_deferred();
 }
 
-int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
+static int view_row_path_live(sel_engine* e, uint32_t row, char* out, size_t cap) {
     const sel_view_state* v = &e->view.pub;
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     const char* path;
@@ -10828,6 +10833,8 @@ void sel_engine_destroy(sel_engine* e) {
         SEL_THREAD_NOT_AUDIO(e);
         uint32_t i;
         if (e->snap != NULL) {
+            free(e->aux_pool);
+            free(e->aux_off);
             sel_snap_free(e->snap);
             e->host->mem_free(e->host, e->snap);
             e->snap = NULL;
@@ -11179,7 +11186,7 @@ void sel_engine_hw_step(sel_engine* e, uint32_t frames) {
     }
 }
 
-int sel_engine_sources_pending(const sel_engine* e) {
+static int sources_pending_live(const sel_engine* e) {
     (void)e; /* I961c: SOURCES reads the library mirror and is never sent short; the UI call stays */
     return 0;
 }
@@ -11299,9 +11306,113 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     e->result_overflow = 0;
     sel_spsc_release(&e->cmd_q); /* the popped commands' strings (events may point at them) are done with (I1082b) */
     if (e->snap != NULL) {
-        (void)sel_snap_publish(e->snap, &e->state); /* I1082d: the deep copy the UI thread reads */
+        sel_snap_aux aux;
+        publish_aux(e, &aux);
+        (void)sel_snap_publish(e->snap, &e->state, &aux); /* I1082d: the deep copy the UI thread reads */
     }
     return delivered;
+}
+
+/* I1082e: the answers of the class D accessors that read engine memory (stats, sync progress, cursor key, row paths) are computed
+ * here, on the engine thread, and travel inside the snapshot. */
+#define AUX_PATH_MAX 4096u
+static void aux_str(char* dst, size_t cap, uint8_t* has, const char* src) {
+    *has = src != NULL;
+    snprintf(dst, cap, "%s", src != NULL ? src : "");
+}
+
+static int aux_put(sel_engine* e, uint32_t i, uint32_t* used, const char* s, size_t len) {
+    if (*used + len + 1u > e->aux_pool_cap) {
+        uint32_t cap = e->aux_pool_cap == 0u ? 4096u : e->aux_pool_cap * 2u;
+        char* n;
+        while (cap < *used + len + 1u) cap *= 2u;
+        n = (char*)realloc(e->aux_pool, cap);
+        if (n == NULL) return 0;
+        e->aux_pool = n;
+        e->aux_pool_cap = cap;
+    }
+    memcpy(e->aux_pool + *used, s, len + 1u);
+    e->aux_off[i] = *used;
+    *used += (uint32_t)len + 1u;
+    return 1;
+}
+
+static void publish_aux(sel_engine* e, sel_snap_aux* a) {
+    uint32_t n = e->view.pub.row_n, i, used = 0;
+    const char* ck;
+    char path[AUX_PATH_MAX];
+    unsigned k;
+
+    memset(a, 0, sizeof *a);
+    stats_get_live(e, &a->stats);
+    aux_str(a->s_replayer, sizeof a->s_replayer, &a->has_replayer, a->stats.replayer);
+    aux_str(a->s_dup, sizeof a->s_dup, &a->has_dup, a->stats.dup_played);
+    aux_str(a->s_member, sizeof a->s_member, &a->has_member, a->stats.archive_member);
+    aux_str(a->s_loud, sizeof a->s_loud, &a->has_loud, a->stats.loudness_source);
+    for (k = 0; k < SEL_STATS_SEARCH_SRC; k++) {
+        aux_str(a->s_src[k], sizeof a->s_src[k], &a->has_src[k], a->stats.search_src_id[k]);
+    }
+    sync_progress_live(e, &a->sync);
+    a->sources_pending = sources_pending_live(e);
+    if (e->aux_off_cap < n + 1u) {
+        uint32_t* o = (uint32_t*)realloc(e->aux_off, (size_t)(n + 1u) * sizeof *o);
+        if (o == NULL) return;
+        e->aux_off = o;
+        e->aux_off_cap = n + 1u;
+    }
+    for (i = 0; i < n; i++) {
+        e->aux_off[i] = SEL_SNAP_NO_PATH;
+        path[0] = '\0';
+        if (view_row_path_live(e, i, path, sizeof path) && !aux_put(e, i, &used, path, strlen(path))) return;
+    }
+    e->aux_off[n] = SEL_SNAP_NO_PATH;
+    ck = view_cursor_key_live(e);
+    if (ck != NULL && !aux_put(e, n, &used, ck, strlen(ck))) return;
+    a->path_rows = n;
+    a->path_off = e->aux_off;
+    a->path_pool = e->aux_pool;
+    a->path_bytes = used;
+}
+
+void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out) {
+    if (e->snap != NULL && e->snap_mode == 1u) {
+        *out = sel_snap_aux_get(e->snap)->sync;
+        return;
+    }
+    sync_progress_live(e, out);
+}
+
+void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
+    if (e->snap != NULL && e->snap_mode == 1u) {
+        *out = sel_snap_aux_get(e->snap)->stats;
+        return;
+    }
+    stats_get_live(e, out);
+}
+
+int sel_engine_sources_pending(const sel_engine* e) {
+    return e->snap != NULL && e->snap_mode == 1u ? sel_snap_aux_get(e->snap)->sources_pending : sources_pending_live(e);
+}
+
+const char* sel_engine_view_cursor_key(sel_engine* e) {
+    if (e->snap != NULL && e->snap_mode == 1u) {
+        const sel_snap_aux* a = sel_snap_aux_get(e->snap);
+        return a->path_off != NULL && a->path_off[a->path_rows] != SEL_SNAP_NO_PATH ? a->path_pool + a->path_off[a->path_rows] : NULL;
+    }
+    return view_cursor_key_live(e);
+}
+
+int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
+    if (e->snap != NULL && e->snap_mode == 1u) {
+        const sel_snap_aux* a = sel_snap_aux_get(e->snap);
+        const char* p;
+        if (row >= a->path_rows || cap == 0u || a->path_off[row] == SEL_SNAP_NO_PATH) return 0;
+        p = a->path_pool + a->path_off[row];
+        if (strlen(p) >= cap) return 0;
+        memcpy(out, p, strlen(p) + 1u);
+        return 1;
+    }
+    return view_row_path_live(e, row, out, cap);
 }
 
 const sel_state* sel_engine_state(const sel_engine* e) {
@@ -11454,7 +11565,7 @@ void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks) {
     }
 }
 
-void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
+static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
     const sel_slot* sl = e->audio_slot < SEL_SLOT_COUNT ? &e->slot[e->audio_slot] : NULL;
     out->ticks = sl ? sl->ticks : 0;
     out->voice_ops = sl ? sl->mixer.voice_ops : 0;

@@ -25,6 +25,14 @@ if(UNIX)
   set_tests_properties(thread-snapshot PROPERTIES LABELS m3 TIMEOUT 300 PASS_REGULAR_EXPRESSION "snapshot_tsan_ok")
 endif()
 
+# I1082e: the accessors of the state-read class answer from the snapshot (same harness; run it in the TSan build dir for the proof).
+if(UNIX)
+  add_executable(accessors_tsan_test accessors_tsan_test.c)
+  target_link_libraries(accessors_tsan_test PRIVATE selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME thread-accessors COMMAND accessors_tsan_test)
+  set_tests_properties(thread-accessors PROPERTIES LABELS m3 TIMEOUT 300 PASS_REGULAR_EXPRESSION "accessors_tsan_ok")
+endif()
+
 # I1162: a second Selecta opens the library database while another process holds its lock (the text UI beside the desktop app).
 if(UNIX)
   add_test(NAME library-second-instance

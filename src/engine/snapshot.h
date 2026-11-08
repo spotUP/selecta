@@ -17,7 +17,25 @@ typedef struct sel_snap_blob {
     uint32_t cap;
 } sel_snap_blob;
 
+/* I1082e: answers of the accessors that used to read engine memory from the UI thread, computed by the engine thread and published
+ * with the state. The strings of `stats` point into this struct (relinked after the copy). Row paths and the cursor key sit in
+ * one pool: path_off[i] for view row i, path_off[path_rows] for the cursor key; SEL_SNAP_NO_PATH marks "none". The pointers path_*
+ * the caller passes to sel_snap_publish are only valid during that call; the buffer holds its own copy. */
+#define SEL_SNAP_NO_PATH 0xFFFFFFFFu
+typedef struct sel_snap_aux {
+    sel_engine_stats stats;
+    char s_replayer[64], s_dup[256], s_member[256], s_loud[24], s_src[SEL_STATS_SEARCH_SRC][48];
+    uint8_t has_replayer, has_dup, has_member, has_loud, has_src[SEL_STATS_SEARCH_SRC];
+    sel_sync_progress sync;
+    int sources_pending;
+    uint32_t path_rows, path_bytes;
+    const uint32_t* path_off;
+    const char* path_pool;
+} sel_snap_aux;
+
 typedef struct sel_snap_buf {
+    sel_snap_aux aux;
+    sel_snap_blob paths; /* offsets (path_rows + 1), then the pool */
     sel_state st;
     sel_snap_blob core;  /* everything but the queue and the collection song block; rebuilt every publish */
     sel_snap_blob queue; /* entries, then path text */
@@ -38,10 +56,12 @@ typedef struct sel_snap {
 int sel_snap_init(sel_snap* s, const sel_host* host);
 void sel_snap_free(sel_snap* s);
 /* Publisher thread: copies `live` into the write buffer and publishes it. 0 on no memory (the previous snapshot stays). */
-int sel_snap_publish(sel_snap* s, const sel_state* live);
+int sel_snap_publish(sel_snap* s, const sel_state* live, const sel_snap_aux* aux);
 /* UI thread: takes the newest published snapshot. 1 when it moved. */
 int sel_snap_acquire(sel_snap* s);
 /* UI thread: the acquired snapshot (zeroed before the first publish). */
 const sel_state* sel_snap_state(const sel_snap* s);
+/* UI thread: the acquired snapshot's accessor answers (zeroed before the first publish). */
+const sel_snap_aux* sel_snap_aux_get(const sel_snap* s);
 
 #endif
