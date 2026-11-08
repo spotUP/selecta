@@ -520,6 +520,49 @@ static int pref_known(const char* line) {
     return 0;
 }
 
+/* I1173: Full, Window, Mini, Visual. One path: the action (menu item or its Ctrl-1..4 key row) sends PREF_SET ui.desktop.mode <name>;
+ * the engine answers SEL_EVT_PREFS_CHANGED (key, value); mui_on_event hands it to mui_mode_from_pref; the map under that mode is what
+ * mui_apply_layout shows. mui_mode_applies() is the sentinel that the mode code ran. */
+static void test_layout_modes(void) {
+    static const char* const ids[4] = {"layout_full", "layout_window", "layout_mini", "layout_visual"};
+    static const char* const names[4] = {"full", "window", "mini", "visual"};
+    uint32_t i, base = mui_mode_applies(), flips = 0, dummy;
+    mui_layout_map_t m;
+    for (i = 0; i < 4u; i++) {
+        fake_engine e;
+        char key[40], val[16];
+        uint32_t mode = 99, j, found = 0;
+        memset(&e, 0, sizeof e);
+        CHECK(mui_action_fire(ids[i], fake_send, &e) == 1 && e.n == 1u, "%s not sent", ids[i]);
+        CHECK(sscanf(e.lines[0], "PREF_SET %39s %15s", key, val) == 2 && strcmp(val, names[i]) == 0, "%s sent '%s'", ids[i], e.lines[0]);
+        CHECK(mui_mode_from_pref(key, val, &mode) == 1 && mode == i, "%s: mode %u", ids[i], (unsigned)mode);
+        for (j = 0; j < mui_key_row_count(); j++) {
+            found += mui_key_row_at(j)->kind == MUI_KEYROW_ACTION && strcmp(mui_key_row_at(j)->id, ids[i]) == 0;
+        }
+        CHECK(found == 1u, "%s: %u key rows", ids[i], (unsigned)found);
+        mui_layout_map_mode(&m, 1280, 720, SEL_UIM_TIER_DEFAULT, 0, mode);
+        CHECK(m.mode == mode, "map mode");
+        if (mode == SEL_UIM_LAYOUT_FULL) {
+            CHECK(m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER], "Full shows all regions");
+        } else if (mode == SEL_UIM_LAYOUT_WINDOW) {
+            CHECK(m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN] && !m.show[MUI_SLOT_DETAIL] && m.show[MUI_SLOT_PLAYER],
+                  "Window drops Now Playing only");
+        } else if (mode == SEL_UIM_LAYOUT_MINI) {
+            CHECK(!m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_MAIN] && !m.show[MUI_SLOT_DETAIL] && !m.show[MUI_SLOT_TOPBAR] &&
+                      m.show[MUI_SLOT_PLAYER],
+                  "Mini shows the player only");
+        } else {
+            CHECK(!m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN] && !m.show[MUI_SLOT_DETAIL] && m.show[MUI_SLOT_PLAYER],
+                  "Visual shows main and player");
+        }
+        mui_layout_relayout(&m, 1280, 720, SEL_UIM_TIER_DEFAULT, &flips);
+        CHECK(m.mode == mode, "relayout keeps mode %s", names[i]);
+    }
+    CHECK(!mui_mode_from_pref("ui.desktop.viz", "visual", &dummy) && !mui_mode_from_pref("ui.desktop.mode", "lowered", &dummy),
+          "foreign pref or value accepted");
+    CHECK(mui_mode_applies() - base >= 3u, "sentinel: %u maps under a non-Full mode", (unsigned)(mui_mode_applies() - base));
+}
+
 static void test_pref_keys(void) {
     char o[SEL_UIM_CMD_MAX];
     uint32_t i;
@@ -567,6 +610,8 @@ int main(int argc, char** argv) {
         test_window_keys();
     } else if (strcmp(argv[1], "statistics") == 0) {
         test_statistics();
+    } else if (strcmp(argv[1], "layout-modes") == 0) {
+        test_layout_modes();
     } else if (strcmp(argv[1], "pref-keys") == 0) {
         test_pref_keys();
     } else {

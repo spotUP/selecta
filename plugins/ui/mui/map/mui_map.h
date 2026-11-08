@@ -75,6 +75,7 @@ typedef struct mui_layout_map_t {
     uint32_t weight_h[MUI_SLOT_COUNT];
     uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
     uint8_t compact;       /* I949c: the compact class (mui_layout_compact): the sidebar is the labelled door rail */
+    uint8_t mode;          /* I1173: SEL_UIM_LAYOUT_* the shared layout actions chose (ui.desktop.mode) */
     uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
 } mui_layout_map_t;
 /* I949c: the compact class of a 640x256-class screen: the bitmap tier at the icon-sidebar breakpoint (width 600-699) and at most
@@ -153,6 +154,12 @@ uint32_t mui_layout_rows(uint32_t screen_h, int laced);
 void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier);
 /* I798 (T2, R3): as mui_layout_map with the Now Playing column hidden when `detail_hidden`; relayout keeps the flag. */
 void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
+/* I1173: the map under a layout mode (SEL_UIM_LAYOUT_*); relayout keeps the mode. mui_mode_from_pref reads the SEL_EVT_PREFS_CHANGED
+ * pair (key, value): 1 and the mode when it is ui.desktop.mode with a valid value. mui_mode_applies() counts the maps built under a
+ * non-Full mode (call-count sentinel). */
+void mui_layout_map_mode(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t mode);
+int mui_mode_from_pref(const char* key, const char* value, uint32_t* mode);
+uint32_t mui_mode_applies(void);
 /* I798: 1 when the Hide / Show Now Playing button exists (three column breakpoint, top bar shown), as the Mac np_toggle_rect. */
 uint32_t mui_np_toggle_shown(const mui_layout_map_t* m);
 /* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
