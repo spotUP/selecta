@@ -68,7 +68,12 @@ static ULONG aatabs_cleanup(struct IClass* cl, Object* obj, Msg msg) {
 
 static ULONG aatabs_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aatabs_data* d = INST_DATA(cl, obj);
-    ULONG r = DoSuperMethodA(cl, obj, (Msg)msg);
+    ULONG r;
+    if ((msg->flags & MADF_DRAWOBJECT) && d->aa.tc) {
+        /* I685w run 6: the strip has MUIA_FillArea FALSE; on truecolour paint the gaps between the chips in the exact panel token, not MUI's snapped pen */
+        aa_rect(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mright(obj), _mbottom(obj), d->aa.bg_rgb);
+    }
+    r = DoSuperMethodA(cl, obj, (Msg)msg);
     if ((msg->flags & MADF_DRAWOBJECT) && d->n > 0) {
         Object* b = d->btn[d->active];
         int lx, ly, lw, lh;
@@ -129,7 +134,7 @@ static ULONG __attribute__((used)) aatabs_dispatch_c(struct IClass* cl, Object* 
  * so the strip packs left. No captions fails the object. */
 static ULONG aatabs_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     aatabs_data* d;
-    struct TagItem def[4];
+    struct TagItem def[5];
     struct opSet ns = *msg;
     int i, n = 0, active;
     char** captions = (char**)GetTagData(UPA_Tabs_Captions, 0, msg->ops_AttrList);
@@ -142,7 +147,8 @@ static ULONG aatabs_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     def[0].ti_Tag = MUIA_Group_Horiz, def[0].ti_Data = (ULONG)TRUE;
     def[1].ti_Tag = MUIA_Group_Spacing, def[1].ti_Data = 0;
     def[2].ti_Tag = MUIA_Frame, def[2].ti_Data = (ULONG)MUIV_Frame_None;
-    def[3].ti_Tag = TAG_MORE, def[3].ti_Data = (ULONG)(uintptr_t)msg->ops_AttrList;
+    def[3].ti_Tag = MUIA_FillArea, def[3].ti_Data = (ULONG)FALSE;
+    def[4].ti_Tag = TAG_MORE, def[4].ti_Data = (ULONG)(uintptr_t)msg->ops_AttrList;
     ns.ops_AttrList = def;
     obj = (Object*)DoSuperMethodA(cl, obj, (Msg)&ns);
     if (obj == NULL) {
@@ -165,6 +171,11 @@ static ULONG aatabs_new(struct IClass* cl, Object* obj, struct opSet* msg) {
         if (d->btn[i] == NULL) {
             CoerceMethod(cl, obj, OM_DISPOSE);
             return 0;
+        }
+        if (i > 0) {
+            /* I685w run 6: a one-space UP-Text keeps the chips apart; a group spacing would fill the gap with MUI's snapped pen */
+            struct TagItem gt[] = {{UPA_Text_Contents, (ULONG)(uintptr_t)" "}, {MUIA_Weight, 0}, {TAG_DONE, 0}};
+            DoMethod(obj, OM_ADDMEMBER, UP_NewText(gt));
         }
         DoMethod(obj, OM_ADDMEMBER, d->btn[i]);
         DoMethod(d->btn[i], MUIM_Notify, MUIA_Pressed, FALSE, obj, 3, MUIM_Set, UPA_Tabs_Active, (ULONG)i);

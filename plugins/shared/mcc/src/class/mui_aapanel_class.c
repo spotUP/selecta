@@ -43,6 +43,7 @@ static void aapanel_pad(const aapanel_data* d, int* px, int* py) {
     *py = 0;
     if (d->fixed <= 0) {
         mui_aa_panel_pad(d->aa.tok, d->aa.aspect_q8, px, py);
+        mui_aa_panel_role_pad(d->role, px, py);
     }
 }
 
@@ -74,6 +75,26 @@ static ULONG aapanel_layout(struct Hook* hook, Object* obj, struct MUI_LayoutMsg
     return (ULONG)MUILM_UNKNOWN;
 }
 
+/* I685w run 6: the program's own row and column boxes (plain MUI Groups) inside the panel take the panel gap across and half of it
+ * down, else they keep MUI's prefs spacing (2 px) and the card packs tight. The full gap down made the UP-Demo minimum taller than
+ * the 600 row rig screen (the window did not open). A UP object, a nested panel included, keeps its own spacing. */
+static void aapanel_space(Object* grp, int gx, int gy, int depth) {
+    struct List* kids = NULL;
+    Object *state, *child;
+    struct IClass* group_cl = MUI_GetClass((char*)MUIC_Group);
+    SetAttrs(grp, MUIA_Group_HorizSpacing, (ULONG)gx, MUIA_Group_VertSpacing, (ULONG)gy, TAG_DONE);
+    GetAttr(MUIA_Group_ChildList, grp, (ULONG*)&kids);
+    if (kids == NULL || depth >= 8 || group_cl == NULL) {
+        return;
+    }
+    state = (Object*)kids->lh_Head;
+    while ((child = NextObject(&state)) != NULL) {
+        if (OCLASS(child) == group_cl) {
+            aapanel_space(child, gx, depth == 0 ? gy / 2 : gy, depth + 1);
+        }
+    }
+}
+
 static ULONG aapanel_setup(struct IClass* cl, Object* obj, Msg msg) {
     aapanel_data* d = INST_DATA(cl, obj);
     if (!DoSuperMethodA(cl, obj, msg)) {
@@ -83,7 +104,7 @@ static ULONG aapanel_setup(struct IClass* cl, Object* obj, Msg msg) {
     if (d->inner != NULL) { /* I685w run 6: the gap between children is its own rung of the spacing scale, not the card pad */
         int gx, gy;
         mui_aa_panel_gap(d->aa.tok, d->aa.aspect_q8, d->role, &gx, &gy);
-        SetAttrs(d->inner, MUIA_Group_HorizSpacing, (ULONG)gx, MUIA_Group_VertSpacing, (ULONG)gy, TAG_DONE);
+        aapanel_space(d->inner, gx, gy, 0);
     }
     return TRUE;
 }
@@ -263,6 +284,10 @@ static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object*
         struct opGet* og = (struct opGet*)msg;
         if (og->opg_AttrID == UPA_Panel_Role) {
             *og->opg_Storage = (ULONG)((aapanel_data*)INST_DATA(cl, obj))->role;
+            return TRUE;
+        }
+        if (og->opg_AttrID == UPA_Panel_Self) {
+            *og->opg_Storage = (ULONG)(uintptr_t)obj;
             return TRUE;
         }
         break;

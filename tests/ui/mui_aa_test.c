@@ -294,6 +294,17 @@ static void test_panel_source(void) {
                   "by-name UP-Panel has no layout hook or inner group, so the pad never applies");
             CHECK(strstr(cls, "return aapanel_new_by_name(") != NULL, "OM_NEW does not route by-name panels through aapanel_new_by_name");
             CHECK(strstr(cls, "mui_aa_panel_gap(d->aa.tok, d->aa.aspect_q8, d->role,") != NULL, "panel group spacing not from mui_aa_panel_gap");
+            CHECK(strstr(cls, "mui_aa_panel_role_pad(d->role, px, py)") != NULL, "panel pad not scaled by role");
+            CHECK(strstr(cls, "aapanel_space(d->inner, gx, gy, 0)") != NULL, "the program's plain boxes in a panel keep MUI's prefs spacing");
+            /* I685w run 6 regression (rig 2 shot): a plain Group passes the Role OM_GET on to its children, so a text in a by-name
+             * panel erased in a nested card's colour (heading band 2A2A32 on the 141418 page). The walk must check Self first. */
+            CHECK(strstr(cls, "og->opg_AttrID == UPA_Panel_Self") != NULL, "UP-Panel does not answer UPA_Panel_Self");
+            {
+                char* dr = slurp(AADRAW_SOURCE);
+                CHECK(dr != NULL && strstr(dr, "GetAttr(UPA_Panel_Self, o, &self) && (Object*)self == o && GetAttr(UPA_Panel_Role, o, &role)") != NULL,
+                      "ctx_bg takes a Role answer forwarded by a plain Group");
+                free(dr);
+            }
         }
         CHECK(strstr(ui, "sp.aspect_q8") == NULL, "mui_ui.c still sets sp.aspect_q8");
         free(hdr);
@@ -1128,6 +1139,11 @@ static void test_tight_pad(void) {
     CHECK(px == 12 && py == mui_aa_rows(24, 512), "tight panel pad %d,%d", px, py);
     mui_aa_panel_pad(tok, 256, &px, &py);
     CHECK(px == 24 && py == 24, "square panel pad %d,%d is the Mac 24 px", px, py);
+    mui_aa_panel_role_pad(MUI_AA_PANEL_SURFACE, &px, &py);
+    CHECK(px == 12 && py == 12, "nested Surface card pad %d,%d is the Mac 12 px", px, py);
+    px = py = 24;
+    mui_aa_panel_role_pad(MUI_AA_PANEL_RAISED, &px, &py);
+    CHECK(px == 24 && py == 24, "Raised card pad %d,%d changed", px, py);
     /* I685w run 6: group gaps 8 inside a card, 16 between cards (Mac 8/16 over SPACING 8); tall pixels pack across by half. */
     mui_aa_panel_gap(tok, 256, MUI_AA_PANEL_RAISED, &px, &py);
     CHECK(px == 8 && py == 8, "card gap %d,%d", px, py);

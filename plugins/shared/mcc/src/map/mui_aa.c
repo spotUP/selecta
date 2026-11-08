@@ -332,6 +332,15 @@ void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad
     *pad_y = mui_aa_rows(sp, aspect_q8);
 }
 
+void mui_aa_panel_role_pad(int role, int* pad_x, int* pad_y) {
+    /* I685w run 6: a Surface card sits inside a card (Mac: the sidebar's "Create your first playlist" box, 12 px against the 24 px
+     * of the outer card), so its pad is half the card pad. Panel and Raised keep the full pad. */
+    if (role == MUI_AA_PANEL_SURFACE) {
+        *pad_x /= 2;
+        *pad_y /= 2;
+    }
+}
+
 void mui_aa_panel_gap(const uint32_t* token, int aspect_q8, int role, int* gap_x, int* gap_y) {
     /* I685w run 6: spacing scale 8 / 16 / 24. Inside a card (Raised, Surface) children sit one unit apart; on the page (Panel role) the
      * cards sit two units apart; the card pad is three (mui_aa_panel_pad). */

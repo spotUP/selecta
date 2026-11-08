@@ -133,6 +133,8 @@ int mui_aa_panel_radius(const uint32_t* token, int font_px);
 int mui_aa_panel_spacing(const uint32_t* token);
 /* I949e2: group inner padding and spacing across (pad_x) and down (pad_y) for a screen of aspect_q8. 256 gives SPACING both ways. */
 void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad_y);
+/* I685w run 6: scale a pad from mui_aa_panel_pad for the role: a Surface (nested) card takes half. */
+void mui_aa_panel_role_pad(int role, int* pad_x, int* pad_y);
 /* I685w run 6: spacing between the children of a panel of this role (same aspect packing as the pad). */
 void mui_aa_panel_gap(const uint32_t* token, int aspect_q8, int role, int* gap_x, int* gap_y);
 
