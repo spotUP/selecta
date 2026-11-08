@@ -570,6 +570,61 @@ static void test_layout_modes(void) {
     CHECK(mui_mode_applies() - base >= 3u, "sentinel: %u maps under a non-Full mode", (unsigned)(mui_mode_applies() - base));
 }
 
+/* I1174: Grid, Cover Flow, Compact. One path: the style action (menu item or key row) sends VIEW_STYLE <name>; the engine view then
+ * carries that style and mui_style_pack turns the window into the List rows mui_refresh shows. The tile step numbers are the desktop's
+ * (sel_uim_tile_step). mui_style_packs() is the sentinel that the packing ran. */
+static void test_library_styles(void) {
+    static const char* const ids[6] = {"style_regular", "style_tree", "style_drilldown", "style_grid", "style_coverflow", "style_compact"};
+    static const char* const names[6] = {"regular", "tree", "drilldown", "grid", "coverflow", "compact"};
+    mui_list_entry in[12], out[12];
+    uint32_t i, base = mui_style_packs(), step, n;
+    memset(in, 0, sizeof in);
+    for (i = 0; i < 12u; i++) {
+        in[i].index = 100u + i;
+        snprintf(in[i].label, sizeof in[i].label, "Song %u", (unsigned)i);
+        snprintf(in[i].text, sizeof in[i].text, "  Song %u (1)", (unsigned)i);
+    }
+    for (i = 0; i < 6u; i++) {
+        fake_engine e;
+        char want[40];
+        memset(&e, 0, sizeof e);
+        CHECK(mui_action_fire(ids[i], fake_send, &e) == 1 && e.n == 1u, "%s not sent", ids[i]);
+        snprintf(want, sizeof want, "VIEW_STYLE %s", names[i]);
+        CHECK(strcmp(e.lines[0], want) == 0, "%s sent '%s'", ids[i], e.lines[0]);
+    }
+    /* the planar tier has no Cover Flow (written exemption: the art strip needs the RTG chunky canvas); Grid and Compact are offered on both */
+    CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_GRID)) && (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COMPACT)) &&
+              !(mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) && (mui_style_mask(1) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)),
+          "tier style masks");
+    CHECK(mui_style_kind(SEL_VIEW_STYLE_REGULAR) == MUI_STYLE_LIST && mui_style_kind(SEL_VIEW_STYLE_TREE) == MUI_STYLE_LIST &&
+              mui_style_kind(SEL_VIEW_STYLE_DRILLDOWN) == MUI_STYLE_LIST && mui_style_kind(SEL_VIEW_STYLE_GRID) == MUI_STYLE_GRID &&
+              mui_style_kind(SEL_VIEW_STYLE_COVERFLOW) == MUI_STYLE_COVERFLOW && mui_style_kind(SEL_VIEW_STYLE_COMPACT) == MUI_STYLE_COMPACT,
+          "style kinds");
+    CHECK(mui_style_pack(SEL_VIEW_STYLE_REGULAR, 3, 12, in, 12, 0, out, 12) == 0u && mui_style_packs() == base, "list style packed");
+    /* tile steps: cell width follows the desktop's step px, columns shrink as the step grows, the step clamps */
+    for (step = 0; step < SEL_UIM_TILE_STEPS; step++) {
+        CHECK(mui_style_cell_chars(step) == (uint32_t)(sel_uim_tile_step(step) / 8), "cell chars step %u", (unsigned)step);
+    }
+    CHECK(mui_style_grid_cols(80, 0) > mui_style_grid_cols(80, SEL_UIM_TILE_STEPS - 1u) && mui_style_grid_cols(4, 4) == 1u, "cols by step");
+    CHECK(mui_tile_step_move(2, 1) == 3u && mui_tile_step_move(2, -1) == 1u && mui_tile_step_move(4, 1) == 4u && mui_tile_step_move(0, -1) == 0u,
+          "step move clamp");
+    /* Grid: 12 cells in rows of 5 -> 3 rows; the cursor cell is marked; a click maps to the first cell, or keeps the cursor in its row */
+    n = mui_style_pack(SEL_VIEW_STYLE_GRID, 5, 12, in, 12, 7, out, 12);
+    CHECK(n == 3u && out[0].index == 100u && out[1].index == 105u && out[2].index == 110u, "grid rows %u", (unsigned)n);
+    CHECK(strstr(out[1].text, "[Song 7") != NULL && strstr(out[0].text, "[") == NULL && strstr(out[0].text, "Song 4") != NULL, "grid text '%s'", out[1].text);
+    CHECK(mui_style_row_index(SEL_VIEW_STYLE_GRID, 5, 2, 7) == 10 && mui_style_row_index(SEL_VIEW_STYLE_GRID, 5, 1, 7) == 7, "grid click map");
+    CHECK(mui_style_packed_cursor(SEL_VIEW_STYLE_GRID, 5, 7) == 1 && mui_style_packed_cursor(SEL_VIEW_STYLE_GRID, 5, -1) == -1, "grid cursor row");
+    /* Cover Flow: one row, the cursor between two neighbours each side */
+    n = mui_style_pack(SEL_VIEW_STYLE_COVERFLOW, 1, 14, in, 12, 5, out, 12);
+    CHECK(n == 1u && out[0].index == 105u && strstr(out[0].text, "[Song 5") != NULL && strstr(out[0].text, "Song 3") != NULL &&
+              strstr(out[0].text, "Song 7") != NULL && strstr(out[0].text, "Song 8") == NULL, "coverflow '%s'", out[0].text);
+    CHECK(mui_style_row_index(SEL_VIEW_STYLE_COVERFLOW, 1, 0, 5) == 5, "coverflow click");
+    /* Compact: one dense label per row, no indent or count */
+    n = mui_style_pack(SEL_VIEW_STYLE_COMPACT, 1, 12, in, 12, 0, out, 12);
+    CHECK(n == 12u && strcmp(out[3].text, "Song 3") == 0, "compact '%s'", out[3].text);
+    CHECK(mui_style_packs() - base == 3u, "sentinel: %u packs, want 3", (unsigned)(mui_style_packs() - base));
+}
+
 static void test_pref_keys(void) {
     char o[SEL_UIM_CMD_MAX];
     uint32_t i;
@@ -619,6 +674,8 @@ int main(int argc, char** argv) {
         test_statistics();
     } else if (strcmp(argv[1], "layout-modes") == 0) {
         test_layout_modes();
+    } else if (strcmp(argv[1], "library-styles") == 0) {
+        test_library_styles();
     } else if (strcmp(argv[1], "pref-keys") == 0) {
         test_pref_keys();
     } else {

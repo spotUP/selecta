@@ -184,6 +184,8 @@ typedef struct mui_state {
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
     mui_aalist_cols main_cols;       /* I667i2: weights and fixed-width samples of the shown columns */
+    uint32_t style_kind, style_cols, tile_step; /* I1174: how the library style is shown (MUI_STYLE_*), Grid cells per row, the tile size step */
+    int32_t style_cursor;            /* I1174: window position of the cursor row before packing */
     uint32_t cell_n;                 /* I1079d: how many of cell[] hold the rows now listed (the absent-column rule reads them) */
     char lyric_line[256];            /* I667i2: the lyrics line handed to the lyrics AAList */
     char col_fmt[128];               /* the shown column set as MUI format text (mui_columns_format), the rig read-back */
@@ -1723,6 +1725,7 @@ static Object* mui_main_group(mui_state* s) {
     set(s->listview, MUIA_ContextMenu, (ULONG)mui_song_context_menu()); /* MUI-P4-6: right mouse button */
     DoMethod(s->list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
     DoMethod(s->list, MUIM_Notify, UPA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
+    s->tile_step = 2u; /* I1174: the desktop's TILE_STEP_DEFAULT; no pinch on the Amiga, so the step stays until a control moves it (mui_tile_step_move) */
     s->list_active_set = -1;
     {
         Object* tools = mui_tool_group(s);
@@ -2428,6 +2431,23 @@ static void mui_refresh(mui_state* s) {
     if (v != NULL) {
         int32_t active = -1;
         uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active);
+        uint32_t packed = mui_style_kind(v->style) != MUI_STYLE_LIST;
+        if (packed) { /* I1174: Grid, Cover Flow, Compact: pack the window into List rows; a click maps back through mui_style_row_index */
+            static mui_list_entry raw[MUI_ROWS_MAX];
+            uint32_t chars = s->lay.width / 8u;
+            if (s->lay.weight_w[MUI_SLOT_SIDEBAR] + s->lay.weight_w[MUI_SLOT_MAIN] + s->lay.weight_w[MUI_SLOT_DETAIL] > 0u) {
+                chars = chars * s->lay.weight_w[MUI_SLOT_MAIN] /
+                        (s->lay.weight_w[MUI_SLOT_SIDEBAR] + s->lay.weight_w[MUI_SLOT_MAIN] + s->lay.weight_w[MUI_SLOT_DETAIL]);
+            }
+            memcpy(raw, s->entries, n * sizeof raw[0]);
+            s->style_kind = mui_style_kind(v->style);
+            s->style_cursor = active;
+            s->style_cols = mui_style_grid_cols(chars, s->tile_step);
+            n = mui_style_pack(v->style, s->style_cols, mui_style_cell_chars(s->tile_step), raw, n, active, s->entries, MUI_ROWS_MAX);
+            active = mui_style_packed_cursor(v->style, s->style_cols, active);
+        } else {
+            s->style_kind = MUI_STYLE_LIST;
+        }
         uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id;
         const char* c;
         active = mui_list_pending_resolve(&s->list_pending, active);
@@ -2505,8 +2525,10 @@ static void mui_refresh(mui_state* s) {
             s->list_sig = sig;
             for (i = 0; i < n; i++) {
                 snprintf(s->cell[i].title, sizeof s->cell[i].title, "%s", s->entries[i].text);
-                snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", mui_row_cell(&v->rows[i], MUI_COL_ARTIST));
-                {
+                snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", packed ? "" : mui_row_cell(&v->rows[i], MUI_COL_ARTIST));
+                if (packed) {
+                    memset(&s->cell[i].extra, 0, sizeof s->cell[i].extra);
+                } else {
                     char rpath[256], grp[64];
                     grp[0] = '\0';
                     if (sel_engine_view_row_path(s->engine, i, rpath, sizeof rpath)) {
@@ -2514,7 +2536,7 @@ static void mui_refresh(mui_state* s) {
                     }
                     mui_row_extra_fill(st, &v->rows[i], grp, &s->cell[i].extra);
                 }
-                if (v->rows[i].kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && v->rows[i].id == st->song.queue_id) {
+                if (!packed && v->rows[i].kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && v->rows[i].id == st->song.queue_id) {
                     playing = (long)i;
                 }
                 s->entry_ptr[i] = (const char*)&s->cell[i];
@@ -3297,6 +3319,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
         if (view == NULL || v < 0 || (id == CTL_LIST_SEL && v == s->list_active_set)) {
             return;
+        }
+        if (s->style_kind != MUI_STYLE_LIST) { /* I1174: a packed row stands for several window rows */
+            s->list_active_set = v;
+            v = mui_style_row_index(view->style, s->style_cols, (uint32_t)v, s->style_cursor);
+            s->style_cursor = v;
         }
         s->list_active_set = v;
         if (id == CTL_LIST_DBL && view->style == SEL_VIEW_STYLE_TREE && (uint32_t)v < view->row_n && view->rows[v].kind == SEL_ROW_NODE) {
