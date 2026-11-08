@@ -359,7 +359,8 @@ typedef struct sel_play_meta {
     char best[SEL_BROWSE_PATH_MAX];
     char cfg[256];
     int32_t cdb;
-    int has_best, loud_ok, provisional, valid;
+    char lengths[SEL_STICKER_VALUE_MAX]; /* I434f: the song's lengths_ms sticker, so the catalogue length needs no UI-thread round trip */
+    int has_best, loud_ok, provisional, has_lengths, valid;
 } sel_play_meta;
 #define SEL_PLAY_META_N 4u
 enum { SEL_VOTE_CACHE = 256, SEL_VOTE_BATCH = 64, SEL_VOTE_BLK = 8192 };
@@ -1877,6 +1878,7 @@ static void catalogue_length_read(sel_engine* e, sel_slot* sl) {
     uint32_t sub = sl->subsong, d0, ms = 0;
     int was, got;
     const char* site;
+    const sel_play_meta* pm;
     if (sl->cat_sub == sub + 1u) return;
     sl->cat_retry = 0;
     if (e->lib == NULL || sl->path == NULL || !sel_song_key_of(sl->path, key, sizeof key)) {
@@ -1884,12 +1886,19 @@ static void catalogue_length_read(sel_engine* e, sel_slot* sl) {
         sl->cat_ms = 0;
         return;
     }
-    d0 = sel_library_deferred();
-    was = sel_library_nowait(1);
-    site = sel_library_site("catalogue_length_read");
-    got = sel_library_sticker_get(e->lib, key, "lengths_ms", v, sizeof v);
-    sel_library_site(site);
-    sel_library_nowait(was);
+    pm = play_meta_find(e, sl->path); /* the song-start read already holds the sticker (I906g): no library call on this thread */
+    if (pm != NULL) {
+        got = pm->has_lengths;
+        if (got) snprintf(v, sizeof v, "%s", pm->lengths);
+        d0 = sel_library_deferred();
+    } else {
+        d0 = sel_library_deferred();
+        was = sel_library_nowait(1);
+        site = sel_library_site("catalogue_length_read");
+        got = sel_library_sticker_get(e->lib, key, "lengths_ms", v, sizeof v);
+        sel_library_site(site);
+        sel_library_nowait(was);
+    }
     if (sel_library_deferred() != d0) { /* busy library: no answer yet, the pump asks again */
         sl->cat_retry = sub + 1u;
         return;
@@ -2885,6 +2894,9 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         sel_engine_report_error(e, "start_failed", err_detail);
         return 0;
     }
+    /* I434f: take the catalogue length from the song-start read now; begin_song drops that entry right after this, and the first
+     * song_length_ms (display duration) would otherwise ask the library on the UI thread. */
+    if (play_meta_find(e, path) != NULL) catalogue_length_read(e, sl);
     if (skip_ms > 0) {
         /* The target is converted from ms to a frame once, here. */
         uint32_t target = (uint32_t)((uint64_t)skip_ms * e->rate / 1000u);
@@ -2936,6 +2948,7 @@ static void play_meta_run(sel_engine* e) {
     sel_library_song_config_get(e->lib, m->path, m->cfg, sizeof m->cfg);
     song_key(m->path, key, sizeof key);
     if (key[0] != '\0') m->loud_ok = sel_library_loudness_get_ex(e->lib, key, &m->cdb, &m->provisional) != 0;
+    if (key[0] != '\0') m->has_lengths = sel_library_sticker_get(e->lib, key, "lengths_ms", m->lengths, sizeof m->lengths) != 0;
     m->valid = 1;
 }
 
