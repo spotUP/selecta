@@ -32,6 +32,8 @@ typedef struct aa_ctx {
     Object* obj;           /* I676c: the owning class object, for the live THEME redraw */
     struct aa_ctx* next;   /* I676c: every set-up context is in one list (aa_setup .. aa_cleanup) */
     int linked;
+    struct TextFont* plain; /* I685w run 6: PLAIN backend tone font (diskfont), NULL = the object's MUI font */
+    int plain_bold;         /* I685w run 6: PLAIN backend draws the title and heading tones in algorithmic bold */
 } aa_ctx;
 
 /* Backend, font, and the n colours in rgb[] as held pens. Call from MUIM_Setup after the super class. */
@@ -41,6 +43,13 @@ void aa_set_font_px(aa_ctx* c, int px);
 /* I676c (live THEME): every set-up context drops its pens, copies the tokens in force (mui_theme_tokens), and its object redraws;
  * pens are re-obtained lazily by aa_pen at the next draw. Returns how many contexts were refreshed. */
 uint32_t aa_retheme_all(void);
+/* I685w run 6: the PLAIN backend (no ttengine or no Inter, rig 2) has no scalable font, so aa_set_font_px cannot grow a tone there.
+ * This opens the bitmap disk font (mui_aa_screen_font: helvetica at the largest stock size not above px + 1) for the tone and
+ * draws it bold when asked. No-op on the antialiased backends, for px <= 0 or when the open fails (the MUI font stays).
+ * Call after aa_setup; aa_cleanup closes it. */
+void aa_plain_font(aa_ctx* c, Object* obj, int px, int bold);
+/* I685w run 6: the font the PLAIN backend draws in for this context (the tone font, else the object's MUI font). */
+struct TextFont* aa_plain_textfont(const aa_ctx* c, Object* obj);
 /* Releases every held pen and the font reference. Call from MUIM_Cleanup. */
 void aa_cleanup(aa_ctx* c);
 /* True when obj sits in an open window (between MUIM_Setup and MUIM_Cleanup). _win(obj) alone reads through the render

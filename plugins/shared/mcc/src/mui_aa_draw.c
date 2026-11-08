@@ -14,6 +14,9 @@
 #include <dos/dosextens.h>
 #include <proto/exec.h>
 #include "mui_gfxbase.h"
+/* I685w run 6: diskfont.library for the PLAIN tone fonts; own base name, opened on first use (same reason as mui_gfxbase.h). */
+#define DiskfontBase up_aa_DiskfontBase
+#include <proto/diskfont.h>
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 #include <proto/utility.h>
@@ -37,6 +40,7 @@ struct TTE_Pixmap {
 };
 static struct Library* TTEngineBase;
 /* I685w: the RTG fill library of the truecolour path, opened once per process in aa_setup, closed in aa_free. */
+static struct Library* DiskfontBase;
 static struct Library* g_p96;
 static struct Library* g_cgx;
 static int g_rtg_tried;
@@ -307,6 +311,41 @@ void aa_set_font_px(aa_ctx* c, int px) {
     }
 }
 
+void aa_plain_font(aa_ctx* c, Object* obj, int px, int bold) {
+    mui_aa_screen_font_t sf;
+    struct TextAttr ta;
+    struct TextFont* f;
+    if (c->backend != AA_PLAIN || px <= 0) {
+        return;
+    }
+    c->plain_bold = bold;
+    if (!mui_aa_screen_font(px, &sf) || sf.ysize <= (int)_font(obj)->tf_YSize) {
+        return; /* no larger stock size than the MUI font: keep it */
+    }
+    if (DiskfontBase == NULL) {
+        DiskfontBase = OpenLibrary((CONST_STRPTR) "diskfont.library", 36);
+    }
+    if (DiskfontBase == NULL) {
+        return;
+    }
+    ta.ta_Name = (STRPTR)sf.name;
+    ta.ta_YSize = (UWORD)sf.ysize;
+    ta.ta_Style = FS_NORMAL;
+    ta.ta_Flags = 0;
+    f = OpenDiskFont(&ta);
+    if (f != NULL) {
+        if (c->plain != NULL) {
+            CloseFont(c->plain);
+        }
+        c->plain = f;
+        aa_log("up-mcc: plain tone font opened\n");
+    }
+}
+
+struct TextFont* aa_plain_textfont(const aa_ctx* c, Object* obj) {
+    return c->plain != NULL ? c->plain : _font(obj);
+}
+
 int aa_live(Object* obj) {
     return obj != NULL && muiRenderInfo(obj) != NULL && _win(obj) != NULL;
 }
@@ -325,6 +364,10 @@ void aa_cleanup(aa_ctx* c) {
     }
     c->npens = 0;
     c->cm = NULL;
+    if (c->plain != NULL) {
+        CloseFont(c->plain);
+        c->plain = NULL;
+    }
     if (c->font != NULL) {
         font_put(c->font);
         c->font = NULL;
@@ -440,13 +483,16 @@ void aa_erase(aa_ctx* c, Object* obj, int x, int y, int w, int h) {
 /* I685w: plain (no ttengine) text on a truecolour screen. Text() draws into a one plane scratch bitmap; each run of set bits goes out
  * as one aa_rect in fg. The glyphs are the screen font, one bit coverage, exact token colour. The bitmap lives for this call only. */
 static void plain_text_tc(aa_ctx* c, Object* obj, struct RastPort* rp, int x, int y, const char* str, uint32_t fg) {
-    struct TextFont* f = _font(obj);
+    struct TextFont* f = aa_plain_textfont(c, obj);
     struct RastPort tmp;
     struct BitMap* bm;
     int len = (int)strlen(str), tw, th, row;
     InitRastPort(&tmp);
     SetFont(&tmp, f);
-    tw = (int)TextLength(&tmp, (CONST_STRPTR)str, (ULONG)len);
+    if (c->plain_bold) {
+        SetSoftStyle(&tmp, FSF_BOLD, AskSoftStyle(&tmp));
+    }
+    tw = (int)TextLength(&tmp, (CONST_STRPTR)str, (ULONG)len) + (c->plain_bold ? 1 : 0);
     th = (int)f->tf_YSize;
     if (tw <= 0 || th <= 0) {
         return;
@@ -487,8 +533,11 @@ int aa_text_width(aa_ctx* c, Object* obj, const char* str) {
     if (c->backend == AA_PLAIN) {
         struct RastPort tmp;
         InitRastPort(&tmp);
-        SetFont(&tmp, _font(obj));
-        return (int)TextLength(&tmp, (CONST_STRPTR)str, (ULONG)strlen(str));
+        SetFont(&tmp, aa_plain_textfont(c, obj));
+        if (c->plain_bold) {
+            SetSoftStyle(&tmp, FSF_BOLD, AskSoftStyle(&tmp));
+        }
+        return (int)TextLength(&tmp, (CONST_STRPTR)str, (ULONG)strlen(str)) + (c->plain_bold ? 1 : 0);
     }
     pm = tte_pixmap(c->font, str, (ULONG)strlen(str));
     w = pm != NULL ? (int)pm->width : 0;
@@ -499,7 +548,7 @@ int aa_text_width(aa_ctx* c, Object* obj, const char* str) {
 }
 
 int aa_text_height(aa_ctx* c, Object* obj) {
-    return c->backend == AA_PLAIN ? (int)_font(obj)->tf_YSize : c->font_px + c->font_px / 4;
+    return c->backend == AA_PLAIN ? (int)aa_plain_textfont(c, obj)->tf_YSize : c->font_px + c->font_px / 4;
 }
 
 void aa_text(aa_ctx* c, Object* obj, struct RastPort* rp, int x, int y, const char* str, uint32_t fg, uint32_t bg) {
@@ -510,10 +559,12 @@ void aa_text(aa_ctx* c, Object* obj, struct RastPort* rp, int x, int y, const ch
     }
     if (!mui_theme_text_uses_token(c->backend == AA_TC, c->backend == AA_PLAIN, fg, bg)) {
         LONG pen = c->backend == AA_PLAIN ? aa_pen(c, fg) : (LONG)_dri(obj)->dri_Pens[TEXTPEN];
-        SetFont(rp, _font(obj));
+        struct TextFont* tf = c->backend == AA_PLAIN ? aa_plain_textfont(c, obj) : _font(obj);
+        SetFont(rp, tf);
+        SetSoftStyle(rp, c->backend == AA_PLAIN && c->plain_bold ? FSF_BOLD : FS_NORMAL, AskSoftStyle(rp));
         SetAPen(rp, pen);
         SetDrMd(rp, JAM1);
-        Move(rp, x, y + _font(obj)->tf_Baseline);
+        Move(rp, x, y + tf->tf_Baseline);
         Text(rp, (CONST_STRPTR)str, (ULONG)len);
         return;
     }

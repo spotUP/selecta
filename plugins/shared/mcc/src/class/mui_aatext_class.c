@@ -58,6 +58,8 @@ static ULONG aatext_setup(struct IClass* cl, Object* obj, Msg msg) {
         d->aa.bg_rgb = d->aa.tok[SEL_GUI_TOKEN_PANEL]; /* on truecolour aa_setup took the role colour of the UP-Panel above (design 5.2) */
     }
     aa_set_font_px(&d->aa, mui_aa_tone_font_px(d->tone, d->aa.font_px));
+    /* I685w run 6: without ttengine (rig 2) aa_set_font_px cannot scale; the tone goes to a bitmap disk font sized off the MUI font */
+    aa_plain_font(&d->aa, obj, mui_aa_tone_font_px(d->tone, (int)_font(obj)->tf_YSize), d->tone == MUI_AA_TONE_TITLE || d->tone == MUI_AA_TONE_HEADING);
     aa_hold(&d->aa, d->aa.tok[mui_aa_tone_token(d->tone)]);
     aa_hold(&d->aa, d->aa.bg_rgb);
     dots = aa_text_width(&d->aa, obj, "...");
