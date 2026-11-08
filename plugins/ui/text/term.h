@@ -14,6 +14,8 @@ extern "C" {
 typedef struct txt_term {
     int in_fd, out_fd;
     int active;      /* raw mode and screen modes are on */
+    int err_saved;   /* POSIX: the terminal's own stderr fd while stderr is held in err_hold, else -1 (row I1169) */
+    int err_hold;    /* POSIX: the file that takes stderr while the UI owns the screen, else -1 */
     /* opaque saved terminal state, inside the struct so no allocation is needed */
     unsigned long long saved_bytes[32];
 } txt_term;
