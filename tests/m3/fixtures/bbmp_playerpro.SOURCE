@@ -1,0 +1,5 @@
+PlayerPRO MAD test songs for tests/m3/playerpro_decode.sh (bbmp_playerpro module, I710aq). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/PlayerPro/Benjamin%20Birney/mantra%2001%20opening.mad  6b3778032b5c056c4a950dce4d2a5b851287be3002dcaea9bd3445392567b6ee
+https://modland.com/pub/modules/PlayerPro/Benjamin%20Birney/mantra%2004%20town.mad  4bdd147c74ceb67d329015d3bde334e563e220f564e2206704cb3cfbda6ba2b1
+Engine licence: GPL-3.0-or-later (bbmp csrc/pc/playerpro_engine.c, third_party/bbmp_playerpro); PlayerPROCore public domain.

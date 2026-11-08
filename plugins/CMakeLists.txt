@@ -219,6 +219,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_buzz)
 endif()
 
+# bbmp_playerpro (I710aq): PlayerPRO MAD songs (.mad), bbmp csrc/pc/playerpro_engine (GPL 3 or later glue) on PlayerPROCore (public domain), behind the GPL-plugin gate. Host
+# only (exemption in row I710aq).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_playerpro)
+endif()
+
 # bbmp_fac (I710ak): FAC SoundTracker for MSX (.mus), GPL-3.0 bbmp engine on the MIT emu8950 / emu2413 chips, behind the GPL-plugin
 # gate. Host only (C++17 engine, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

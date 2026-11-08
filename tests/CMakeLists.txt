@@ -2124,6 +2124,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710aq: PlayerPRO MAD songs (.mad) play through the render entry point (bbmp_playerpro module, GPL-3.0 bbmp engine on PlayerPROCore). Songs are fetched by checksum,
+  # exit 77 = skip. An Mlat Adlib Tracker shaped .mad (adplug's), a zero file and a cut-off song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/playerpro-decode)
+    add_test(NAME playerpro-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/playerpro_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/playerpro-decode)
+    set_tests_properties(playerpro-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "playerpro_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ak: FAC SoundTracker (MSX .mus) songs play through the render entry point (bbmp_fac module, GPL-3.0). Songs and
   # drum kits are fetched by checksum, exit 77 = skip. A non-FAC .mus must not be claimed.
   if(SELECTA_GPL_PLUGINS)
