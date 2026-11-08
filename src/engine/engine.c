@@ -703,6 +703,8 @@ struct sel_engine {
 #endif
     /* I961c: the playlist page's key read as a posted read, same pattern as br_*: pk_state 0 idle, 1 running, 2 result ready. */
     int pk_state;
+    uint32_t pk_reloads; /* I1082e sentinel: reloads the pump posted for a UI-thread take */
+    int pk_reload; /* I1082e: set by a UI-thread take in snapshot mode; the pump posts the folder reload (atomic) */
     int pk_filled; /* I1058e: the worker fetched an unfetched Hippo list; the pump reloads the folder rows when it takes the answer */
     uint32_t pk_id, pk_n;
     char* pk_out;
@@ -876,6 +878,11 @@ struct sel_engine {
      * never reads torn parameters. */
     volatile uint32_t pat_req, pat_ack;
     uint32_t pat_order, pat_row_lo, pat_rows;
+    /* I1082e: in snapshot mode the UI thread cannot write the request fields (the audio side reads them), so it fills this
+     * mailbox and raises pm_pending; the pump copies it into pat_* and raises pat_req. pm_* are written by the UI thread
+     * only while pm_pending is 0, and read by the pump only after it saw pm_pending 1. */
+    uint32_t pm_order, pm_row_lo, pm_rows, pm_num;
+    int pm_pending;
     /* Sample audition (DUI-P4-12). SAMPLE_PLAY writes smp_want and raises smp_gen; the audio thread, which owns the
      * replayer, starts the voice at its next render call (smp_seen) and re-reads the sample from the replayer every
      * block, so a closed song stops the voice instead of leaving a dangling pointer. */
@@ -9305,6 +9312,10 @@ static void lib_reads_collect(sel_engine* e) {
         txt_publish(e);
     }
     txt_post(e);
+    if (__atomic_exchange_n(&e->pk_reload, 0, __ATOMIC_ACQ_REL) != 0) {
+        e->pk_reloads++;
+        folders_reload_posted(e);
+    }
     if (lib_read_take(&e->rd_grp)) {
         e->lib_reads_applied++;
         grp_publish(e);
@@ -9701,7 +9712,11 @@ int sel_engine_playlist_keys_take(sel_engine* e, uint32_t* id, char* out, size_t
     e->pk_out = NULL;
     if (e->pk_filled) { /* I1058e: the list now has songs, so the tree count is stale; posted, never read here (I829) */
         e->pk_filled = 0;
-        folders_reload_posted(e);
+        if (e->snap != NULL && e->snap_mode == 1u) {
+            __atomic_store_n(&e->pk_reload, 1, __ATOMIC_RELEASE); /* I1082e: the UI thread never posts an engine read; the pump does */
+        } else {
+            folders_reload_posted(e);
+        }
     }
     __atomic_store_n(&e->pk_state, 0, __ATOMIC_RELEASE);
     return 1;
@@ -11057,8 +11072,17 @@ static void refresh_snapshot(sel_engine* e) {
         sel_viz_analyse(&e->viz, (int)e->viz_spectrum);
     }
     e->state.viz = sel_viz_current(&e->viz);
-    if (e->pat_ack == e->pat_req && e->pat_res.seq != e->pat_pub.seq) {
+    if (__atomic_load_n(&e->pat_ack, __ATOMIC_ACQUIRE) == __atomic_load_n(&e->pat_req, __ATOMIC_ACQUIRE) &&
+        e->pat_res.seq != e->pat_pub.seq) {
         e->pat_pub = e->pat_res;
+    }
+    if (__atomic_load_n(&e->pm_pending, __ATOMIC_ACQUIRE) != 0 &&
+        __atomic_load_n(&e->pat_ack, __ATOMIC_ACQUIRE) == __atomic_load_n(&e->pat_req, __ATOMIC_ACQUIRE)) {
+        e->pat_order = e->pm_order;
+        e->pat_row_lo = e->pm_row_lo;
+        e->pat_rows = e->pm_rows;
+        __atomic_store_n(&e->pat_req, e->pm_num, __ATOMIC_RELEASE);
+        __atomic_store_n(&e->pm_pending, 0, __ATOMIC_RELEASE);
     }
     e->state.pattern = &e->pat_pub;
     memset(song, 0, sizeof *song);
@@ -11686,6 +11710,7 @@ static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
     out->art_reads = e->art_reads;
     out->total_reads = e->total_reads;
     out->text_reads = e->txt_reads;
+    out->playlist_reloads = e->pk_reloads;
     out->group_reads = e->grp_reads;
     out->stats_queries = e->stats_queries;
     out->lyric_fetches = e->lyr_fetches;
@@ -12215,7 +12240,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     e->loud.gain_q16 = e->loud_ref;
     sel_loudness_gain_process(&e->loud, stereo, frames);
     viz_feed(e, sl, stereo, frames);
-    if (e->pat_ack != e->pat_req) {
+    if (__atomic_load_n(&e->pat_ack, __ATOMIC_ACQUIRE) != __atomic_load_n(&e->pat_req, __ATOMIC_ACQUIRE)) {
         answer_pattern(e, sl);
     }
     return frames;
@@ -12229,7 +12254,7 @@ uint32_t sel_engine_render_calls(const sel_engine* e) {
  * slot being mixed. The replayer is read here because the audio thread owns it. */
 static void answer_pattern(sel_engine* e, const sel_slot* sl) {
     sel_pattern_view* v = &e->pat_res;
-    uint32_t req = e->pat_req, rows = e->pat_rows, ch;
+    uint32_t req = __atomic_load_n(&e->pat_req, __ATOMIC_ACQUIRE), rows = e->pat_rows, ch;
     sel_rp_cell col[SEL_PATTERN_ROWS];
     memset(v, 0, sizeof *v);
     v->order = e->pat_order;
@@ -12249,10 +12274,25 @@ static void answer_pattern(sel_engine* e, const sel_slot* sl) {
         }
     }
     v->seq = req;
-    e->pat_ack = req;
+    __atomic_store_n(&e->pat_ack, req, __ATOMIC_RELEASE);
 }
 
 uint32_t sel_engine_pattern_request(sel_engine* e, uint32_t order, uint32_t row_lo, uint32_t rows) {
+    if (e->snap != NULL && e->snap_mode == 1u) {
+        /* UI thread: hand the request to the pump through the mailbox; the number is the seq the answer will carry. */
+        if (__atomic_load_n(&e->pm_pending, __ATOMIC_ACQUIRE) != 0) {
+            return 0;
+        }
+        if (__atomic_load_n(&e->pat_ack, __ATOMIC_ACQUIRE) != __atomic_load_n(&e->pat_req, __ATOMIC_ACQUIRE)) {
+            return 0;
+        }
+        e->pm_order = order;
+        e->pm_row_lo = row_lo;
+        e->pm_rows = rows;
+        e->pm_num = __atomic_load_n(&e->pat_req, __ATOMIC_ACQUIRE) + 1u;
+        __atomic_store_n(&e->pm_pending, 1, __ATOMIC_RELEASE);
+        return e->pm_num;
+    }
     if (e->pat_ack != e->pat_req) {
         return 0;
     }
