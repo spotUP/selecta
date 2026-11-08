@@ -32,8 +32,8 @@ static void enter(mui_route* r, const sel_route_entry* e, int restore, mui_route
         send(ctx, "VIEW_SOURCE search");
     } else if (e->page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
         char head[40];
-        if (e->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST || e->key[0] == '\0') {
-            return; /* a playlist page is the Playlists door's; the MUI has no sidebar row for it */
+        if (e->key[0] == '\0') {
+            return;
         }
         snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)e->kind);
         if (mui_path_line(head, e->key, line, sizeof line) != 0u) {
@@ -110,7 +110,7 @@ const sel_route_entry* mui_route_cur(const mui_route* r) { return r->rh.n > 0u &
 
 int mui_route_on_collection(const mui_route* r) {
     const sel_route_entry* e = mui_route_cur(r);
-    return e != NULL && e->page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION && e->kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST;
+    return e != NULL && e->page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION; /* I1172: a playlist page too (its key is the playlist id, design 11.6) */
 }
 
 int mui_route_on_shelf(const mui_route* r) {
