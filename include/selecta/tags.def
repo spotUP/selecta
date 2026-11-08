@@ -429,6 +429,9 @@ SEL_TAG(UI, STAT_STYLE,               0x50F9, INT)
 SEL_TAG(UI, STAT_LIBMODE,             0x50FA, INT)
 /* I1188: the text UI Settings screen. Bits 0-7 PREF_SET lines its keys sent, 8-15 times it was opened, 16-23 the focused row. */
 SEL_TAG(UI, STAT_SETTINGS,            0x50FB, INT)
+/* I1189: the text UI Shelf and Collection pages. Bits 0-7 Shelf pages opened, 8-15 Collection pages opened, 16-23 rows the page drew in
+ * its latest frame, 24-27 page on screen now (0 none, 1 Shelf, 2 Collection). */
+SEL_TAG(UI, STAT_PAGES,               0x50FD, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

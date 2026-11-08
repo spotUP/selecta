@@ -22,6 +22,9 @@
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
+#include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/route.h>
+#include <selecta/library_item.h>
 #include "spawn.h"
 #include "splash.h"
 #include "term.h"
@@ -77,7 +80,7 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[25];
+    sel_tag stats[26];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -95,6 +98,10 @@ typedef struct tui {
     uint32_t set_focus, set_opens, set_sets; /* I1188: the Settings row under the cursor; openings; PREF_SET lines its keys sent */
     int set_edit;                          /* I1188: a string row is being typed into set_buf */
     char set_buf[96];
+    sel_route_hist rh;                     /* I1189: the page history (route.h) */
+    int pg;                                /* I1189: page on screen, 0 none, 1 Shelf, 2 Collection */
+    uint32_t pg_shelf, pg_cur, pg_serial, pg_kind, pg_opens_shelf, pg_opens_coll, pg_rows;
+    char pg_key[128], pg_title[96];
     int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
 
@@ -431,11 +438,335 @@ static void tui_settings_key(tui* u, const txt_key* k) {
 }
 
 /* UI-local actions (`@name` in the binding table). Returns 0 for an unknown name. */
+static txt_style tui_style(const tui* u, txt_role r);
+
+/* ---- Shelf and Collection pages (I1189) ----
+ * The same pages the desktop opens (uimodel/pages.h, route.h): the Show all page of a Home shelf and the album, artist, composer
+ * and playlist pages. The route table says which click opens which page and the history walks Back; the Home shelf split
+ * (sel_uim_home_shelves) and the tile route (sel_uim_tile_route) are the shared ones. The engine builds a Collection page:
+ * COLLECTION_OPEN fills state.collection, which the page lists. */
+
+enum { TUI_PAGE_NONE = 0, TUI_PAGE_SHELF = 1, TUI_PAGE_COLLECTION = 2, TUI_SHELF_MAX = 8 };
+
+static const char* const k_coll_shelf[SEL_COLLECTION_SHELVES] = {"Albums", "Appears On", "More by", "Spellings"};
+
+/* Builds `COLLECTION_OPEN <kind> "<key>"[ 1]` ; " 1" rebuilds without touching Recents (Back and Forward). */
+static void tui_collection_open(tui* u, uint32_t kind, const char* key, int restore) {
+    char line[320];
+    size_t o = (size_t)snprintf(line, sizeof line, "COLLECTION_OPEN %u \"", (unsigned)kind);
+    const sel_collection_page* pg = sel_engine_state(u->engine)->collection;
+    for (const char* c = key; *c != '\0' && o + 8u < sizeof line; c++) {
+        if (*c == '"' || *c == '\\') {
+            line[o++] = '\\';
+        }
+        line[o++] = *c;
+    }
+    line[o++] = '"';
+    line[o] = '\0';
+    if (restore) {
+        snprintf(line + o, sizeof line - o, " 1");
+    }
+    u->pg_serial = pg != NULL ? pg->serial : 0u;
+    tui_send(u, line);
+}
+
+/* Shows the page entry `e`: the history decided it, this fills it. */
+static void tui_page_enter(tui* u, const sel_route_entry* e, int restore) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    u->pg_cur = 0;
+    if (e->page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
+        u->pg = TUI_PAGE_SHELF;
+        u->pg_shelf = e->id > 0u ? e->id - 1u : 0u;
+        u->pg_opens_shelf++;
+        if (v == NULL || v->source != SEL_VIEW_HOME) {
+            tui_send(u, "VIEW_SOURCE home");
+        }
+    } else if (e->page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
+        u->pg = TUI_PAGE_COLLECTION;
+        u->pg_kind = e->kind;
+        snprintf(u->pg_key, sizeof u->pg_key, "%s", e->key);
+        snprintf(u->pg_title, sizeof u->pg_title, "%s", e->name);
+        u->pg_opens_coll++;
+        tui_collection_open(u, e->kind, e->key, restore);
+    } else {
+        u->pg = TUI_PAGE_NONE;
+    }
+}
+
+/* One click: the route table resolves it, the history takes the entry, the page opens. Returns 1 when a page opened. */
+static int tui_route(tui* u, sel_route_target target, uint32_t kind, uint32_t id, const char* key, const char* name, const char* sub) {
+    sel_route_entry e;
+    if (u->rh.n == 0u) { /* the page the screen is on when the first click comes */
+        sel_route_entry home;
+        memset(&home, 0, sizeof home);
+        home.page = (uint32_t)SEL_ROUTE_PAGE_HOME;
+        sel_route_hist_seed(&u->rh, &home);
+    }
+    if (!sel_route_go(&u->rh, target, kind, id, key, name, sub, &e)) {
+        return 0;
+    }
+    sel_route_hist_scroll(&u->rh, (int32_t)u->pg_cur);
+    sel_route_hist_push(&u->rh, &e);
+    tui_page_enter(u, &e, 0);
+    return 1;
+}
+
+/* Back: the page before in the history; the Home entry shows the plain view again. Returns 1 when a page was left. */
+static int tui_page_back(tui* u) {
+    const sel_route_entry* w;
+    sel_route_entry e;
+    if (u->pg == TUI_PAGE_NONE) {
+        return 0;
+    }
+    if (!sel_route_hist_can(&u->rh, -1)) {
+        u->pg = TUI_PAGE_NONE;
+        return 1;
+    }
+    w = sel_route_hist_walk(&u->rh, -1);
+    e = *w;
+    tui_page_enter(u, &e, 1);
+    u->pg_cur = (uint32_t)(e.scroll > 0 ? e.scroll : 0);
+    return 1;
+}
+
+/* The Home shelf `u->pg_shelf` of the view; 0 when the shelf is gone. */
+static int tui_page_shelf(const tui* u, const sel_view_state* v, sel_uim_shelf* out) {
+    sel_uim_shelf sh[TUI_SHELF_MAX];
+    uint32_t n = sel_uim_home_shelves(v, sh, TUI_SHELF_MAX);
+    if (u->pg_shelf >= n) {
+        return 0;
+    }
+    *out = sh[u->pg_shelf];
+    return 1;
+}
+
+/* Line `i` of a Collection page (the shelf rows in shelf order, then the songs); 0 past the end. `tile` is set when Enter on the line
+ * opens another page, `song` points at the song key when it is a song line. */
+static int tui_coll_line(const sel_collection_page* pg, uint32_t i, char* buf, size_t cap, sel_uim_tile* tile, const char** song) {
+    uint32_t s, k;
+    const char* r;
+    *song = NULL;
+    memset(tile, 0, sizeof *tile);
+    for (s = 0; s < SEL_COLLECTION_SHELVES; s++) {
+        if (i < pg->shelf_n[s]) {
+            const sel_engine_collection_row* row = &pg->shelf[s][i];
+            if (s == 3u) { /* Spellings: a composer spelling, not a page */
+                snprintf(buf, cap, "%s: %s  %u songs", k_coll_shelf[s], row->name, (unsigned)row->songs);
+            } else {
+                snprintf(buf, cap, "%s: %s  %s %u  %u songs", k_coll_shelf[s], row->name, row->artist, (unsigned)row->year, (unsigned)row->songs);
+                tile->kind = (uint32_t)SEL_LIB_ITEM_ALBUM;
+                tile->id = row->id;
+                snprintf(tile->key, sizeof tile->key, "%u", (unsigned)row->id);
+                snprintf(tile->name, sizeof tile->name, "%s", row->name);
+                snprintf(tile->sub, sizeof tile->sub, "%s", row->artist);
+            }
+            return 1;
+        }
+        i -= pg->shelf_n[s];
+    }
+    r = pg->rows;
+    for (k = 0; r != NULL && k < pg->songs && *r != '\0'; k++) {
+        const char* plays = r + strlen(r) + 1u;
+        if (k == i) {
+            const char* base = strrchr(r, '/');
+            snprintf(buf, cap, "%s  %s plays", base != NULL ? base + 1 : r, plays);
+            *song = r;
+            return 1;
+        }
+        r = plays + strlen(plays) + 1u;
+    }
+    return 0;
+}
+
+static uint32_t tui_page_count(const tui* u, const sel_state* s) {
+    uint32_t n = 0, i;
+    if (u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        return s->view != NULL && tui_page_shelf(u, s->view, &sh) ? sh.rows : 0u;
+    }
+    if (s->collection != NULL) {
+        for (i = 0; i < SEL_COLLECTION_SHELVES; i++) {
+            n += s->collection->shelf_n[i];
+        }
+        n += s->collection->songs;
+    }
+    return n;
+}
+
+/* Enter on the page line under the cursor. */
+static void tui_page_activate(tui* u) {
+    const sel_state* s = sel_engine_state(u->engine);
+    sel_uim_tile tile;
+    char buf[320];
+    const char* song;
+    if (u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        if (s->view == NULL || !tui_page_shelf(u, s->view, &sh) || u->pg_cur >= sh.rows) {
+            return;
+        }
+        if (sel_uim_tile_route(&s->view->rows[sh.first + u->pg_cur], &tile)) {
+            (void)tui_route(u, SEL_ROUTE_HOME_TILE, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+        } else { /* a song tile plays */
+            snprintf(buf, sizeof buf, "VIEW_CURSOR %u", (unsigned)(s->view->window_start + sh.first + u->pg_cur));
+            tui_send(u, buf);
+            tui_send(u, "VIEW_ACTIVATE");
+        }
+    } else if (s->collection != NULL && tui_coll_line(s->collection, u->pg_cur, buf, sizeof buf, &tile, &song)) {
+        if (song != NULL) {
+            snprintf(buf, sizeof buf, "QUEUE_ADD %s", song);
+            tui_send(u, buf);
+        } else if (tile.kind != 0u) {
+            (void)tui_route(u, SEL_ROUTE_ALBUM_CARD, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+        }
+    }
+}
+
+/* Keys of an open page. Returns 1 when the page took the key. */
+static int tui_page_key(tui* u, const txt_key* k) {
+    uint32_t n = tui_page_count(u, sel_engine_state(u->engine));
+    if (k->mods != 0) {
+        return 0;
+    }
+    if (k->code == TXT_KEY_UP || k->code == 'k') {
+        u->pg_cur -= u->pg_cur > 0u;
+    } else if (k->code == TXT_KEY_DOWN || k->code == 'j') {
+        u->pg_cur += u->pg_cur + 1u < n;
+    } else if (k->code == 13u) {
+        tui_page_activate(u);
+    } else if (k->code == 27u || k->code == 127u) {
+        (void)tui_page_back(u);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+/* e and r: the artist or album under the cursor (or the playing song's artist) opens its Collection page. */
+static void tui_open_field(tui* u, int album) {
+    const sel_state* s = sel_engine_state(u->engine);
+    const sel_view_state* v = s->view;
+    const sel_view_row* r = NULL;
+    const char* author = (const char*)sel_tag_find(s->song.meta, SEL_META_AUTHOR, 0);
+    if (v != NULL && u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        if (tui_page_shelf(u, v, &sh) && u->pg_cur < sh.rows) {
+            r = &v->rows[sh.first + u->pg_cur];
+        }
+    } else if (v != NULL && u->pg == TUI_PAGE_NONE && v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n) {
+        r = &v->rows[v->cursor - v->window_start];
+    }
+    if (album) {
+        if (r != NULL && r->art_id != 0u) {
+            char key[16];
+            snprintf(key, sizeof key, "%u", (unsigned)r->art_id);
+            (void)tui_route(u, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, r->art_id, key, r->key != NULL ? r->key : r->text,
+                            r->artist != NULL ? r->artist : "");
+        } else {
+            snprintf(u->cmd.status, sizeof u->cmd.status, "No album under the cursor");
+        }
+        return;
+    }
+    if (r != NULL && r->artist != NULL && r->artist[0] != '\0') {
+        author = r->artist;
+    }
+    if (author != NULL && author[0] != '\0' && (uintptr_t)author != (uintptr_t)-1) {
+        (void)tui_route(u, SEL_ROUTE_TRACK_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, author, author, "");
+    } else {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "No artist under the cursor");
+    }
+}
+
+/* Enter on a Home tile that opens a page (composer, album, item card) opens it; 0 for a song tile. */
+static int tui_home_tile_enter(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    sel_uim_tile tile;
+    if (v == NULL || v->source != SEL_VIEW_HOME || v->cursor < v->window_start || v->cursor - v->window_start >= v->row_n) {
+        return 0;
+    }
+    if (!sel_uim_tile_route(&v->rows[v->cursor - v->window_start], &tile)) {
+        return 0;
+    }
+    return tui_route(u, SEL_ROUTE_HOME_TILE, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+}
+
+/* Enter with the engine cursor on the heading of a Home shelf opens its Show all page (the desktop's shelf_header_enter). */
+static int tui_shelf_header_enter(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    sel_uim_shelf sh[TUI_SHELF_MAX];
+    uint32_t s, n, at;
+    if (v == NULL || v->source != SEL_VIEW_HOME || v->cursor < v->window_start) {
+        return 0;
+    }
+    at = v->cursor - v->window_start;
+    n = sel_uim_home_shelves(v, sh, TUI_SHELF_MAX);
+    for (s = 0; s < n; s++) {
+        if (sh[s].head == at && sh[s].tiles > 0u) {
+            return tui_route(u, SEL_ROUTE_SHOW_ALL, 0u, s + 1u, "", "", "");
+        }
+    }
+    return 0;
+}
+
+static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
+    char buf[320];
+    uint32_t i, n, drawn = 0, rows = tui_main_rows(u);
+    txt_style label = tui_style(u, TXT_ROLE_LABEL);
+    sel_uim_tile tile;
+    const char* song;
+    if (u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        if (s->view == NULL || !tui_page_shelf(u, s->view, &sh)) {
+            txt_grid_text(&u->grid, 1, 2, "Shelf", width - 1u, label);
+            return;
+        }
+        snprintf(buf, sizeof buf, "%s  Show all  %u rows", s->view->rows[sh.head].text, (unsigned)sh.rows);
+        txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+        for (i = 0; i < sh.rows && i < rows; i++) {
+            const sel_view_row* r = &s->view->rows[sh.first + i];
+            txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
+            snprintf(buf, sizeof buf, " %s%s%s", r->text, r->artist != NULL && r->artist[0] ? "  - " : "", r->artist != NULL ? r->artist : "");
+            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+            drawn++;
+        }
+    } else {
+        const sel_collection_page* pg = s->collection;
+        int ready = pg != NULL && pg->serial != u->pg_serial && pg->kind == u->pg_kind;
+        snprintf(buf, sizeof buf, "%s  %s", sel_route_kind_name(u->pg_kind), ready ? pg->title : u->pg_title);
+        if (ready && pg->sub[0] != '\0') {
+            size_t at = strlen(buf);
+            snprintf(buf + at, sizeof buf - at, "  - %s", pg->sub);
+        }
+        txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+        n = ready ? tui_page_count(u, s) : 0u;
+        for (i = 0; i < n && i < rows; i++) {
+            txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
+            if (!tui_coll_line(pg, i, buf + 1, sizeof buf - 1u, &tile, &song)) {
+                break;
+            }
+            buf[0] = ' ';
+            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+            drawn++;
+        }
+        if (!ready) {
+            txt_grid_text(&u->grid, 1, 3, "Loading", width - 1u, tui_style(u, TXT_ROLE_DIM));
+        }
+    }
+    u->pg_rows = drawn;
+}
+
 static int tui_local(tui* u, const char* name, const txt_key* k) {
     const sel_state* s = sel_engine_state(u->engine);
     char line[48];
     (void)k;
-    if (strcmp(name, "page_up") == 0 || strcmp(name, "page_down") == 0) {
+    if (u->pg != TUI_PAGE_NONE && strstr("home library folders switch_view search settings", name) != NULL) {
+        u->pg = TUI_PAGE_NONE; /* another screen takes the pane: the page history ends */
+        sel_route_hist_init(&u->rh);
+    }
+    if (strcmp(name, "artist_page") == 0 || strcmp(name, "album_page") == 0) {
+        tui_open_field(u, name[1] == 'l');
+    } else if (strcmp(name, "page_up") == 0 || strcmp(name, "page_down") == 0) {
         snprintf(line, sizeof line, "%c%u", name[5] == 'u' ? '-' : '+', (unsigned)tui_main_rows(u));
         tui_cursor(u, line);
     } else if (strcmp(name, "next_style") == 0) {
@@ -443,7 +774,7 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     } else if (strcmp(name, "next_group") == 0) {
         tui_next_group(u);
     } else if (strcmp(name, "back") == 0) { /* the parent directory is always the first browse row */
-        if (tui_drill_back(u, s->view)) {
+        if (tui_page_back(u) || tui_drill_back(u, s->view)) {
             return 1;
         }
         if (s->view != NULL && s->view->source == SEL_VIEW_BROWSE) {
@@ -675,6 +1006,16 @@ static void tui_key(tui* u, const txt_key* k) {
         u->key_count++;
         u->dirty = 1;
         tui_send(u, "STATS_HIDE");
+        return;
+    }
+    if (u->pg != TUI_PAGE_NONE && tui_page_key(u, k)) {
+        u->key_count++;
+        u->dirty = 1;
+        return;
+    }
+    if (u->pg == TUI_PAGE_NONE && k->code == 13u && k->mods == 0 && (tui_shelf_header_enter(u) || tui_home_tile_enter(u))) {
+        u->key_count++;
+        u->dirty = 1;
         return;
     }
     action = txt_bindings_lookup(&u->binds, tui_bind_ctx(u), k->code, k->mods);
@@ -1409,6 +1750,8 @@ static void tui_draw(tui* u) {
         tui_pattern_panel(u, s, width);
     } else if (u->viz) {
         tui_viz_panel(u, s, width);
+    } else if (u->pg != TUI_PAGE_NONE) {
+        tui_page_draw(u, s, width);
     } else {
         tui_pane(u, s, width);
     }
@@ -1787,8 +2130,10 @@ static const sel_tag* tui_stats(void* state) {
                          sel_uim_scope_index(sel_engine_state(u->engine)->options[SEL_OPT_SCOPE]);
     u->stats[23].tag = SEL_UI_STAT_SETTINGS;
     u->stats[23].value = u->set_focus << 16 | u->set_opens << 8 | u->set_sets;
-    u->stats[24].tag = SEL_TAG_END;
-    u->stats[24].value = 0;
+    u->stats[24].tag = SEL_UI_STAT_PAGES;
+    u->stats[24].value = (u->pg_opens_shelf & 0xFFu) | (u->pg_opens_coll & 0xFFu) << 8 | (u->pg_rows & 0xFFu) << 16 | ((uint32_t)u->pg & 0xFu) << 24;
+    u->stats[25].tag = SEL_TAG_END;
+    u->stats[25].value = 0;
     return u->stats;
 }
 

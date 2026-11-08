@@ -5,6 +5,7 @@
 #define SELECTA_UIMODEL_PAGES_H
 
 #include <stdint.h>
+#include <selecta/engine.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,6 +47,30 @@ uint32_t sel_uim_page_route(uint32_t id);
 #define SEL_UIM_PAGE_KEY_COUNT 6u
 /* Row i: the `@action` name in *action and the page it opens in *page; 0 past SEL_UIM_PAGE_KEY_COUNT. */
 int sel_uim_page_key_at(uint32_t i, const char** action, uint32_t* page);
+
+/* I1189: the Home shelves, one split for every UI. A heading row starts a shelf; the rows after it are its tiles; the quick-pick grid
+ * (a heading with `quick` set) is not a shelf; a heading with no row under it is not a shelf either (I311). */
+typedef struct sel_uim_shelf {
+    uint32_t head;  /* index of the heading in the view window */
+    uint32_t first; /* index of the first row after it */
+    uint32_t tiles; /* rows with a key */
+    uint32_t rows;  /* rows after the heading */
+} sel_uim_shelf;
+
+/* Splits the HOME window of `v` into at most `max` shelves in `out`; returns the count, 0 when `v` is not the HOME source. */
+uint32_t sel_uim_home_shelves(const sel_view_state* v, sel_uim_shelf* out, uint32_t max);
+
+/* I1189: the page a Home tile opens. A composer tile opens that composer's page, an album tile with an album id opens the album page
+ * by that id, an item card opens its item's page; any other tile plays (the function returns 0). The strings are copies: a page
+ * change replaces the view the row lives in. Feed kind/id/key/name/sub to sel_route_go with SEL_ROUTE_HOME_TILE. */
+typedef struct sel_uim_tile {
+    uint32_t kind; /* SEL_LIB_ITEM_* */
+    uint32_t id;
+    char key[160];
+    char name[256];
+    char sub[160];
+} sel_uim_tile;
+int sel_uim_tile_route(const sel_view_row* r, sel_uim_tile* out);
 
 #ifdef __cplusplus
 }
