@@ -166,11 +166,45 @@ void sel_snap_free(sel_snap* s) {
         if (s->buf[i].core.p != NULL) s->host->mem_free(s->host, s->buf[i].core.p);
         if (s->buf[i].queue.p != NULL) s->host->mem_free(s->host, s->buf[i].queue.p);
         if (s->buf[i].rows.p != NULL) s->host->mem_free(s->host, s->buf[i].rows.p);
+        if (s->buf[i].paths.p != NULL) s->host->mem_free(s->host, s->buf[i].paths.p);
     }
     memset(s, 0, sizeof *s);
 }
 
-int sel_snap_publish(sel_snap* s, const sel_state* live) {
+static void relink_aux(sel_snap_aux* a) {
+    unsigned k;
+    a->stats.replayer = a->has_replayer ? a->s_replayer : NULL;
+    a->stats.dup_played = a->has_dup ? a->s_dup : NULL;
+    a->stats.archive_member = a->has_member ? a->s_member : NULL;
+    a->stats.loudness_source = a->has_loud ? a->s_loud : NULL;
+    for (k = 0; k < SEL_STATS_SEARCH_SRC; k++) a->stats.search_src_id[k] = a->has_src[k] ? a->s_src[k] : NULL;
+}
+
+/* The accessor answers: a plain copy, then the offsets and the pool into this buffer's own blob. A pool that cannot grow leaves
+ * the paths of the previous publish out (path_off NULL: every row answers "none"). */
+static void copy_aux(sel_snap* s, sel_snap_buf* b, const sel_snap_aux* aux) {
+    if (aux == NULL) {
+        memset(&b->aux, 0, sizeof b->aux);
+        return;
+    }
+    b->aux = *aux;
+    relink_aux(&b->aux);
+    b->aux.path_off = NULL;
+    b->aux.path_pool = NULL;
+    if (aux->path_off != NULL) {
+        uint32_t offb = align8((aux->path_rows + 1u) * (uint32_t)sizeof(uint32_t));
+        if (blob_grow(s->host, &b->paths, offb + aux->path_bytes + 8u)) {
+            memcpy(b->paths.p, aux->path_off, (aux->path_rows + 1u) * sizeof(uint32_t));
+            if (aux->path_bytes > 0u) memcpy(b->paths.p + offb, aux->path_pool, aux->path_bytes);
+            b->aux.path_off = (const uint32_t*)(const void*)b->paths.p;
+            b->aux.path_pool = b->paths.p + offb;
+        } else {
+            b->aux.path_rows = 0u;
+        }
+    }
+}
+
+int sel_snap_publish(sel_snap* s, const sel_state* live, const sel_snap_aux* aux) {
     sel_snap_buf* b = &s->buf[s->write];
     uint64_t t0 = now_us(), dt;
     uint32_t bytes, old, qoff = 0;
@@ -248,6 +282,7 @@ int sel_snap_publish(sel_snap* s, const sel_state* live) {
         tmp.queue_text = NULL;
     }
     b->st = tmp;
+    copy_aux(s, b, aux);
     bytes = (uint32_t)sizeof b->st + c.used + (b->q_valid ? qoff + b->q_bytes : 0u) + (b->r_valid ? b->r_len : 0u);
     old = SEL_ATOMIC_XCHG(&s->middle, s->write | 4u);
     s->write = old & 3u;
@@ -268,4 +303,8 @@ int sel_snap_acquire(sel_snap* s) {
 
 const sel_state* sel_snap_state(const sel_snap* s) {
     return &s->buf[s->read].st;
+}
+
+const sel_snap_aux* sel_snap_aux_get(const sel_snap* s) {
+    return &s->buf[s->read].aux;
 }

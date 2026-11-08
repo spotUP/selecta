@@ -238,7 +238,7 @@ static int part_synthetic(void) {
     pthread_create(&rd, NULL, syn_reader, NULL);
     for (i = 0; i < SYN_ROUNDS; i++) {
         syn_rewrite(i);
-        if (!sel_snap_publish(&s_snap, &s_live)) {
+        if (!sel_snap_publish(&s_snap, &s_live, NULL)) {
             puts("FAIL: publish ran out of memory");
             __atomic_store_n(&g_syn_stop, 1, __ATOMIC_RELEASE);
             pthread_join(rd, NULL);
