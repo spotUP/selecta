@@ -14,6 +14,12 @@
 # Search list follows the cursor (I1161, Johan: "the list dont scroll with the selected line so i can navigate out of the visible area"):
 # 6. a copy of the fixture with 80 extra songs named zq..., query "zq", 30 Down: the list scrolls (search_scroll > 0) and
 #    search_follows counts one scroll-into-view per moved row (the sentinel, >= 30); the cursor row stays inside the list area.
+# Keys follow the focus ring (I1164, Johan: "the focus border changes position but up/down still moves up/down in the list... so input is
+# not following the focus ring"). Home page, Tab counts are focus stops (the focus stat is the stop + 1, 0 = no stop):
+# 7. Tab to the sidebar stop, 3 Down: view_cursor stays at its start value and focus_route_sidebar counts the 3 keys (the sentinel);
+# 8. Tab to the player stop, Down, Down, Up: the player: bindings VOLUME -5, -5, +5 leave the volume 5 under the no-key run (100, the
+#    maximum, so the Up alone would not show) and focus_route_player is 3;
+# 9. Tab to the main stop, 3 Down: view_cursor moves as in the unfocused run and focus_route_main counts the 3 keys.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -69,7 +75,7 @@ function(live tag timed)
   endif()
   set(${tag}_frames ${nfr} PARENT_SCOPE)
   set(${tag}_repaints ${CMAKE_MATCH_1} PARENT_SCOPE)
-  foreach(k focus_moves view_cursor focus search_skips search_scroll search_follows)
+  foreach(k focus_moves view_cursor focus search_skips search_scroll search_follows volume focus_route_main focus_route_player focus_route_sidebar focus_route_detail)
     if("${o}" MATCHES " ${k}=([0-9]+)")
       set(${tag}_${k} ${CMAKE_MATCH_1} PARENT_SCOPE)
     endif()
@@ -93,6 +99,22 @@ if(down_extra LESS 3)
 endif()
 if(NOT tab_focus_moves EQUAL 3 OR tab_extra LESS 3)
   message(FATAL_ERROR "3 Tab keys must move the focus 3 times (${tab_focus_moves}) and draw at least 3 frames after the first key (${tab_frames})")
+endif()
+
+# 7-9. (I1164) arrow keys act on the focused stop only.
+live(fside "k9@2000 k40000051@2600 k40000051@3200 k40000051@3800 q@5000")
+live(fplay "k9@2000 k9@2200 k9@2400 k9@2600 k40000051@3200 k40000051@3800 k40000052@4400 q@6000")
+live(fmain "k9@2000 k9@2400 k40000051@2600 k40000051@3200 k40000051@3800 q@5000")
+message(STATUS "focus routes: sidebar focus=${fside_focus} cursor=${fside_view_cursor} route=${fside_focus_route_sidebar}; player focus=${fplay_focus} volume=${fplay_volume} (none ${none_volume}) route=${fplay_focus_route_player}; main focus=${fmain_focus} cursor=${fmain_view_cursor} route=${fmain_focus_route_main}")
+if(NOT fside_focus EQUAL 1 OR NOT fside_focus_route_sidebar EQUAL 3 OR NOT fside_view_cursor EQUAL none_view_cursor)
+  message(FATAL_ERROR "3 Down on the sidebar stop must not move the page list: focus=${fside_focus} (want 1) route_sidebar=${fside_focus_route_sidebar} (want 3) view_cursor=${fside_view_cursor} (want ${none_view_cursor})")
+endif()
+math(EXPR want_vol "${none_volume} - 5") # the volume starts at its 100 maximum: Down, Down, Up is -5 -5 +5
+if(NOT fplay_focus_route_player EQUAL 3 OR NOT fplay_volume EQUAL want_vol OR NOT fplay_view_cursor EQUAL none_view_cursor)
+  message(FATAL_ERROR "Up on the player stop must send VOLUME -5, -5, +5: route_player=${fplay_focus_route_player} (want 3) volume=${fplay_volume} (want ${want_vol}) view_cursor=${fplay_view_cursor} (want ${none_view_cursor})")
+endif()
+if(NOT fmain_focus_route_main EQUAL 3 OR NOT fmain_view_cursor EQUAL down_view_cursor OR fmain_view_cursor EQUAL none_view_cursor)
+  message(FATAL_ERROR "3 Down on the main stop must move the page list as without a focus: route_main=${fmain_focus_route_main} (want 3) view_cursor=${fmain_view_cursor} (want ${down_view_cursor}, not ${none_view_cursor})")
 endif()
 
 live(sdown "ta@2000 k40000051@2600 k40000051@3200 k40000052@3800 q@5500" search)

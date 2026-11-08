@@ -385,6 +385,7 @@ typedef struct desk {
     int search_restore;      /* I1012: 1 while search_restore_q16 waits for the search to fire, 2 while it waits for the results to be tall enough */
     uint32_t search_wheels;  /* sentinel: wheel notches the Search page scroll path took */
     uint32_t search_follows; /* sentinel (I1161): keyboard moves that ran the Search list scroll-follow */
+    uint32_t route_main, route_player, route_sidebar, route_detail; /* sentinels (I1164): arrow and Enter keys routed by the focused stop */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
     int32_t set_y_q16;       /* I799a: Settings scroll offset in logical pixels, Q16 */
@@ -13146,6 +13147,43 @@ static void desk_focus_move(desk* d, int32_t dir) {
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
+/* I1164: arrow keys and Enter act on the focused stop only. Returns 1 when the key was taken here (the focused stop is the
+ * player, the sidebar or the detail panel), 0 for the main region and for no stop, which keep the page list handling.
+ * The player stop reuses the text UI's `player:` bindings (Up/Down volume, Left/Right seek, Enter play/pause). The sidebar's
+ * Your Library list has no keyboard cursor yet, so its stop moves no list; the detail panel has no list. */
+static int desk_focus_route(desk* d, const sel_gui_input* ev) {
+    int32_t f = d->focus;
+    int arrow = ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT;
+    if (ev->mods != 0u || (!arrow && ev->code != 13u)) {
+        return 0;
+    }
+    if (f >= 0 && f == region_stop(d, "player")) {
+        txt_bindings def;
+        const char* act;
+        txt_bindings_default(&def);
+        act = txt_bindings_lookup(&def, TXT_CTX_PLAYER, ev->code, ev->mods);
+        d->route_player++;
+        if (act != NULL && strcmp(act, "@play_pause") == 0) {
+            desk_send(d, sel_engine_state(d->engine)->play == SEL_STOPPED ? "PLAY" : "PAUSE");
+        } else if (act != NULL && act[0] != '@') {
+            desk_send(d, act);
+        }
+        return 1;
+    }
+    if (f >= 0 && f == region_stop(d, "sidebar")) {
+        d->route_sidebar++;
+        return 1;
+    }
+    if (f >= 0 && f == region_stop(d, "detail")) {
+        d->route_detail++;
+        return 1;
+    }
+    if (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u) {
+        d->route_main++;
+    }
+    return 0;
+}
+
 /* The ring of the focused stop: two logical pixels in the focus-ring token. The search stop is the field at the top
  * of the main region. */
 static void desk_draw_focus(desk* d) {
@@ -14047,6 +14085,9 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
+    }
+    if (desk_focus_route(d, ev)) {
+        return 0; /* the engine answers a player key; the page list did not move */
     }
     if (d->songs && songs_list_key(d, ev)) {
         return 1;
@@ -17252,6 +17293,14 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = (uint32_t)(d->search_q16 >> 16);
         d->stats[n].tag = SEL_UI_STAT_SEARCH_FOLLOWS;
         d->stats[n++].value = d->search_follows;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_MAIN;
+        d->stats[n++].value = d->route_main;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_PLAYER;
+        d->stats[n++].value = d->route_player;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_SIDEBAR;
+        d->stats[n++].value = d->route_sidebar;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_DETAIL;
+        d->stats[n++].value = d->route_detail;
         d->stats[n].tag = SEL_TAG_END;
     }
 

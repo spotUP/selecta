@@ -384,6 +384,12 @@ SEL_TAG(UI, STAT_VIZ_FALLOFF_RUNS,  0x50EB, INT)
 /* I1161: Search page list scroll offset (logical px) and the times the list scrolled to follow the keyboard cursor. */
 SEL_TAG(UI, STAT_SEARCH_SCROLL,     0x50EC, INT)
 SEL_TAG(UI, STAT_SEARCH_FOLLOWS,    0x50ED, INT)
+/* I1164: arrow keys and Enter routed by the focused stop: main region or no stop (the page list), player (the player: key bindings),
+ * sidebar and detail (no page list move). One counter per route, the sentinels of the focus-follows-input test. */
+SEL_TAG(UI, STAT_FOCUS_ROUTE_MAIN,    0x50EE, INT)
+SEL_TAG(UI, STAT_FOCUS_ROUTE_PLAYER,  0x50EF, INT)
+SEL_TAG(UI, STAT_FOCUS_ROUTE_SIDEBAR, 0x50F0, INT)
+SEL_TAG(UI, STAT_FOCUS_ROUTE_DETAIL,  0x50F1, INT)
 /* Amiga MUI UI (plan 2026-10-25-amiga-mui.md MUI-P1-5): windows opened; only the mui plugin lists it. */
 SEL_TAG(UI, STAT_OPEN_MUI,        0x50DB, INT)
 /* I526: text lookups served by the bitmap fonts mini4, mini6, mini8 and by the Inter headline sizes 18 and 24. */
