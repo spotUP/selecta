@@ -70,8 +70,8 @@ static ULONG aascroller_askminmax(struct IClass* cl, Object* obj, struct MUIP_As
     msg->MinMaxInfo->MinWidth += d->m.width;
     msg->MinMaxInfo->DefWidth += d->m.width;
     msg->MinMaxInfo->MaxWidth += d->m.width;
-    msg->MinMaxInfo->MinHeight += d->m.min_thumb;
-    msg->MinMaxInfo->DefHeight += d->m.min_thumb;
+    msg->MinMaxInfo->MinHeight += d->m.min_h;
+    msg->MinMaxInfo->DefHeight += d->m.min_h;
     msg->MinMaxInfo->MaxHeight = MUI_MAXMAX;
     return 0;
 }

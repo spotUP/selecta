@@ -195,6 +195,8 @@ static void test_text_tone(void) {
     CHECK(mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 15) == 19, "title is font + 4: %d", mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 15));
     CHECK(mui_aa_tone_font_px(MUI_AA_TONE_NORMAL, 15) == 15 && mui_aa_tone_font_px(MUI_AA_TONE_MUTED, 15) == 15, "other tones keep the font");
     CHECK(mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 0) == 0, "bitmap tier stays on its font");
+    CHECK(mui_aa_tone_font_px(MUI_AA_TONE_HEADING, 16) == 32 && mui_aa_tone_font_px(MUI_AA_TONE_HEADING, 0) == 0, "heading is twice the base (Mac 32 over 16), bitmap stays");
+    CHECK(mui_aa_tone_token(MUI_AA_TONE_HEADING) == SEL_GUI_TOKEN_TEXT, "heading tone is TEXT");
     CHECK(mui_pens_label_tone(MUI_LBL_TITLE) == MUI_AA_TONE_TITLE, "title label");
     CHECK(mui_pens_label_slot(MUI_LBL_ALBUM) != MUI_PEN_TEXT_MUTED || mui_pens_label_tone(MUI_LBL_ALBUM) == MUI_AA_TONE_MUTED, "muted label slot gives muted tone");
     CHECK(mui_pens_label_tone(MUI_LBL_SECTION) == (mui_pens_label_slot(MUI_LBL_SECTION) == MUI_PEN_TEXT_MUTED ? MUI_AA_TONE_MUTED : MUI_AA_TONE_NORMAL), "section label tone follows its pen slot");
@@ -869,7 +871,7 @@ static void test_scroller_geom(void) {
     txt_theme_default(&th);
     mui_aa_scroller_metrics(13, 256, &m);
     mui_aa_scroller_metrics(0, 256, &ms);
-    CHECK(m.width == 10 && ms.width == 6 && m.radius == 4 && ms.radius == 2 && m.min_thumb == 20, "metrics %d/%d %d/%d %d", m.width, ms.width, m.radius, ms.radius, m.min_thumb);
+    CHECK(m.width == 10 && ms.width == 6 && m.radius == 4 && ms.radius == 2 && m.min_thumb == 20 && m.min_h == 80, "metrics %d/%d %d/%d %d", m.width, ms.width, m.radius, ms.radius, m.min_thumb);
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 20, 20, &ty, &th_h) == 0 && th_h == 0, "no thumb when everything fits");
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 10, 100, &ty, &th_h) == 1 && ty == 0 && th_h == 20, "top thumb %d %d (min 20)", ty, th_h);
     CHECK(mui_aa_scroller_geom(&m, 200, 90, 10, 100, &ty, &th_h) == 1 && ty + th_h == 200, "bottom thumb ends at the track end: %d+%d", ty, th_h);
@@ -1101,7 +1103,11 @@ static void test_tight_pad(void) {
               mui_model_icon_px(256), mui_model_icon_h(256), mui_model_icon_px(512), mui_model_icon_h(512));
     }
     mui_aa_panel_pad(tok, 512, &px, &py);
-    CHECK(mui_aa_balance_width(tok, 0) == px, "balance width %d equals tight panel pad_x %d", mui_aa_balance_width(tok, 0), px);
+    CHECK(mui_aa_balance_width(tok, 0) == mui_aa_panel_spacing(tok) / 2, "balance width %d is half the SPACING token", mui_aa_balance_width(tok, 0));
+    /* I685w run 5: card pad is 3 SPACING units (Mac 24 px over 8); tall pixels pack across by half. */
+    CHECK(px == 12 && py == mui_aa_rows(24, 512), "tight panel pad %d,%d", px, py);
+    mui_aa_panel_pad(tok, 256, &px, &py);
+    CHECK(px == 24 && py == 24, "square panel pad %d,%d is the Mac 24 px", px, py);
 }
 
 /* I972: on RTG 800x600 the text stayed 8 px: the own screen kept the Workbench font, and MUI's stock objects and the PLAIN

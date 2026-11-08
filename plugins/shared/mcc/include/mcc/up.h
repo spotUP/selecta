@@ -78,7 +78,7 @@ struct Hook { /* the three fields the package reads; the Amiga struct has a MinN
 #define UPA_Text_Align UP_TAG(UP_CLS_TEXT, 0x04)    /* I UPV_Text_Align_* */
 #define UPA_Text_Ellipsis UP_TAG(UP_CLS_TEXT, 0x05) /* I BOOL cut with "..." when wider than the box */
 #define UPA_Text_Fixed UP_TAG(UP_CLS_TEXT, 0x06)    /* I BOOL never wider than the default width of the widest text */
-enum { UPV_Text_Tone_Normal, UPV_Text_Tone_Muted, UPV_Text_Tone_Title };
+enum { UPV_Text_Tone_Normal, UPV_Text_Tone_Muted, UPV_Text_Tone_Title, UPV_Text_Tone_Heading };
 enum { UPV_Text_Align_Left, UPV_Text_Align_Centre, UPV_Text_Align_Right };
 
 /* UP-Progress and the slider value */

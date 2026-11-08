@@ -94,9 +94,13 @@ int mui_pixel_aspect_q8(int res_x, int res_y);
 uint32_t mui_pixel_aspect_calls(void);
 
 /* I667d (design 3.7, AAText): text tones, alignment and the ellipsis cut. Pure maths, tested on the host. */
-enum { MUI_AA_TONE_NORMAL = UPV_Text_Tone_Normal, MUI_AA_TONE_MUTED = UPV_Text_Tone_Muted, MUI_AA_TONE_TITLE = UPV_Text_Tone_Title };
+enum { MUI_AA_TONE_NORMAL = UPV_Text_Tone_Normal, MUI_AA_TONE_MUTED = UPV_Text_Tone_Muted, MUI_AA_TONE_TITLE = UPV_Text_Tone_Title, MUI_AA_TONE_HEADING = UPV_Text_Tone_Heading };
 enum { MUI_AA_ALIGN_LEFT = UPV_Text_Align_Left, MUI_AA_ALIGN_CENTRE = UPV_Text_Align_Centre, MUI_AA_ALIGN_RIGHT = UPV_Text_Align_Right };
 #define MUI_AA_TITLE_EXTRA_PX 4
+/* I685w run 5: heading tone = twice the base size (Mac heading 32 px over a 16 px body); the bitmap tier stays on its font. */
+#define MUI_AA_HEADING_FACTOR 2
+/* I685w run 5: card padding = this many SPACING units (Mac 24 px = 3 x 8). */
+#define MUI_AA_PANEL_PAD_UNITS 3
 /* SEL_GUI_TOKEN_* a tone draws in: normal and title TEXT, muted TEXT_MUTED. */
 int mui_aa_tone_token(int tone);
 /* Font pixel size of a tone for the screen base size from mui_aa_font_px: title = base + 4, others = base; the bitmap tier (0) stays 0. */
@@ -216,7 +220,7 @@ uint32_t mui_aa_field_calls(void);
 /* I667i (design 3.5, AAScroller): the flat thumb-only scroll bar. Width 10 (tier S 6), thumb radius 4 (S 2), thumb minimum 20 high, track
  * SURFACE (the list face), thumb TRACK, SURFACE_PRESSED while hovered or dragged. No arrow buttons. Tested on the host (mui-scroller-geom). */
 typedef struct mui_aa_scroller_t {
-    int width, radius, min_thumb;
+    int width, radius, min_thumb, min_h; /* min_h: smallest track height, so the bar is never a stub (I685w run 5) */
 } mui_aa_scroller_t;
 void mui_aa_scroller_metrics(int font_px, int aspect_q8, mui_aa_scroller_t* out);
 void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* thumb);

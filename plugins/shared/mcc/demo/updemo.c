@@ -84,6 +84,27 @@ static Object* card(const char* title, Object* a, Object* b, Object* c, Object* 
                          MUIA_Group_Child, (ULONG)box(FALSE, a, b, c, d, NULL, NULL), TAG_DONE);
 }
 
+static const char* const g_page_lines[4][2] = {{"Virgill - Past Tense", "Purple Motion - Second Reality"},
+                                               {"Chipzel - Spectra", "Dubmood - Cheeky Little Buggers"},
+                                               {"Zabutom", "Jogeir Liljedahl"},
+                                               {"Morning mix", "Late night tracker tunes"}};
+
+/* One page per tab: a page group whose active page follows UPA_Tabs_Active (I685w run 5). */
+static Object* tab_pages(Object* tabs) {
+    Object* pg[4];
+    Object* grp;
+    int i;
+    for (i = 0; i < 4; i++) {
+        pg[i] = box(FALSE, label(g_page_lines[i][0], UPV_Text_Tone_Normal), label(g_page_lines[i][1], UPV_Text_Tone_Muted), NULL, NULL, NULL, NULL);
+    }
+    grp = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, (ULONG)TRUE, MUIA_Group_Child, (ULONG)pg[0], MUIA_Group_Child, (ULONG)pg[1], MUIA_Group_Child, (ULONG)pg[2],
+                        MUIA_Group_Child, (ULONG)pg[3], TAG_DONE);
+    if (grp != NULL) {
+        DoMethod(tabs, MUIM_Notify, UPA_Tabs_Active, MUIV_EveryTime, (ULONG)grp, 3UL, MUIM_Set, MUIA_Group_ActivePage, (ULONG)MUIV_TriggerValue);
+    }
+    return grp;
+}
+
 /* One instance of class `index` with the tags that class needs to be valid on its own; every class is created by file name. */
 static Object* make(int index) {
     char path[32];
@@ -152,12 +173,13 @@ int main(int argc, char** argv) {
             Object* ctl = card("Controls",
                                box(TRUE, obj[0], MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Shuffle", UPA_Button_Icon, (ULONG) "shuffle", TAG_DONE),
                                    MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Queue", UPA_Button_Role, (ULONG)UPV_Button_Role_Ghost, TAG_DONE),
-                                   MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Repeat", UPA_Button_Role, (ULONG)UPV_Button_Role_Toggle, TAG_DONE), NULL, NULL),
-                               label("Search", UPV_Text_Tone_Muted), obj[8], obj[7]);
-            Object* left = card("Library", obj[3], label("128 songs in your library", UPV_Text_Tone_Muted), obj[2], obj[10]);
+                                   NULL, NULL, NULL),
+                               box(TRUE, MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Role, (ULONG)UPV_Button_Role_Toggle, TAG_DONE), label("Repeat", UPV_Text_Tone_Normal), NULL, NULL, NULL, NULL),
+                               box(FALSE, label("Search", UPV_Text_Tone_Muted), obj[8], obj[7], NULL, NULL, NULL), NULL);
+            Object* left = card("Library", box(FALSE, obj[3], tab_pages(obj[3]), NULL, NULL, NULL, NULL), label("128 songs in your library", UPV_Text_Tone_Muted), obj[2], obj[10]);
             Object* right = card("Playback", label("Volume 40", UPV_Text_Tone_Muted), obj[5], label("Elapsed 2:05 of 3:22", UPV_Text_Tone_Muted),
                                  box(FALSE, obj[6], label("Scroll position", UPV_Text_Tone_Muted), obj[9], NULL, NULL, NULL));
-            root = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Panel, MUIA_Group_Child, (ULONG)label("UP-Demo", UPV_Text_Tone_Title),
+            root = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Panel, MUIA_Group_Child, (ULONG)label("UP-Demo", UPV_Text_Tone_Heading),
                                  MUIA_Group_Child, (ULONG)obj[1], MUIA_Group_Child, (ULONG)ctl,
                                  MUIA_Group_Child, (ULONG)box(TRUE, left, obj[4], right, NULL, NULL, NULL), TAG_DONE);
         }

@@ -258,6 +258,9 @@ int mui_aa_tone_token(int tone) {
 }
 
 int mui_aa_tone_font_px(int tone, int base_px) {
+    if (base_px > 0 && tone == MUI_AA_TONE_HEADING) {
+        return base_px * MUI_AA_HEADING_FACTOR;
+    }
     return tone == MUI_AA_TONE_TITLE && base_px > 0 ? base_px + MUI_AA_TITLE_EXTRA_PX : base_px;
 }
 
@@ -318,7 +321,7 @@ int mui_aa_panel_spacing(const uint32_t* token) {
 }
 
 void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad_y) {
-    int sp = mui_aa_panel_spacing(token);
+    int sp = mui_aa_panel_spacing(token) * MUI_AA_PANEL_PAD_UNITS;
     /* I949e2 (answer 4): on tall pixels the group spacing packs: half across, the same length counted in rows down. Square: unchanged. */
     *pad_x = aspect_q8 > 256 ? sp / 2 : sp;
     *pad_y = mui_aa_rows(sp, aspect_q8);
@@ -597,6 +600,7 @@ void mui_aa_scroller_metrics(int font_px, int aspect_q8, mui_aa_scroller_t* out)
     out->width = font_px <= 0 ? (aspect_q8 > 256 ? 4 : 6) : 10; /* I965: tight tier (tall pixels, small font) packs across */
     out->radius = font_px <= 0 ? 2 : 4;
     out->min_thumb = 20;
+    out->min_h = 4 * out->min_thumb;
 }
 
 void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* thumb) {

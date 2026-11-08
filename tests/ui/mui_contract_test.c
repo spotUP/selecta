@@ -3382,7 +3382,7 @@ static void test_aa_aspect(void) {
         /* item 5: group spacing packs on tall pixels, square unchanged. */
         mui_aa_panel_pad(tok, 256, &sx, &sy);
         mui_aa_panel_pad(tok, 512, &px, &py);
-        CHECK(sx == 8 && sy == 8 && px == 4 && py == 4, "panel pad square %d,%d tight %d,%d", sx, sy, px, py);
+        CHECK(sx == 24 && sy == 24 && px == 12 && py == 12, "panel pad square %d,%d tight %d,%d", sx, sy, px, py);
         CHECK(pn > 0 && strstr(pan, "mui_aa_panel_pad(") != NULL && strstr(pan, "MUIA_Group_VertSpacing") != NULL, "the panel class does not take its spacing from the aspect");
     }
     }
