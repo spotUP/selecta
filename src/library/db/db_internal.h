@@ -97,6 +97,7 @@ struct sel_library {
     void* task_ctx;
     volatile unsigned task_cancel; /* also the net cancel generation while the task runs (I832), so a cancel ends its network wait */
     volatile unsigned write_gen;   /* I1077b: committed write transactions (commit hook, writer thread) */
+    unsigned busy_waits;           /* I1162: busy-handler waits for another process's lock on the database file */
     volatile unsigned pin_gen;     /* I1077b: of those, commits made by pin batches */
     volatile unsigned in_pin;      /* I1077b: the writer is inside a pin batch */
     volatile unsigned touch_gen;   /* I1130a: of those, commits made by Recents touches (SEL_USER_LIBRARY_TOUCH: the opened table only) */

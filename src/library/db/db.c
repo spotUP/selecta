@@ -159,6 +159,28 @@ static int set_cache_size(sqlite3* db) {
     return sqlite3_exec(db, sql, NULL, NULL, NULL) == SQLITE_OK;
 }
 
+/* I1162: another process (a second Selecta: the text UI beside the desktop app) may hold a lock on the same database file.
+ * Without a busy handler SQLite answers SQLITE_BUSY at once, so the open's first write failed and startup said "cannot open the
+ * library database", and either instance's later writes could fail the same way. Wait in 20 ms steps for up to 5 s instead.
+ * The Amiga build uses the unix-none VFS (no file locking), so it never waits. */
+#define SEL_LIBRARY_BUSY_STEP_MS 20
+#define SEL_LIBRARY_BUSY_MAX_MS 5000
+
+static int busy_wait(void* ctx, int count) {
+    sel_library* lib = (sel_library*)ctx;
+
+    if (count * SEL_LIBRARY_BUSY_STEP_MS >= SEL_LIBRARY_BUSY_MAX_MS) {
+        sel_library_trace(lib->host, "library busy, gave up after waits", count);
+        return 0;
+    }
+    if (count == 0) {
+        sel_library_trace(lib->host, "library busy, waiting for another process's lock", 0);
+    }
+    lib->busy_waits++;
+    sqlite3_sleep(SEL_LIBRARY_BUSY_STEP_MS);
+    return 1;
+}
+
 /* I1077b: one count per committed write transaction, on the writer's connection. Returning 0 lets the commit go on. */
 static int write_gen_hook(void* ctx) {
     sel_library* lib = (sel_library*)ctx;
@@ -279,6 +301,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
         goto fail;
     }
     sel_library_trace(host, "sqlite3_open_v2 done", 0);
+    sqlite3_busy_handler(lib->db, busy_wait, lib);
     /* I625a8f: one trace line per statement between open_v2 and "migrate begin", so the log says which one pays for the first
      * sqlite_master parse. */
     sel_library_trace(host, "first statement begin PRAGMA cache_size", 0);
@@ -306,6 +329,9 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     sel_library_trace(host, "worker started", 0);
     return lib;
 fail:
+    if (lib->db != NULL) {
+        sel_library_trace(host, sqlite3_errmsg(lib->db), sqlite3_errcode(lib->db));
+    }
     sqlite3_close(lib->db);
     if (lib->cache != NULL) {
         host->mem_free(host, lib->cache);

@@ -25,4 +25,12 @@ if(UNIX)
   set_tests_properties(thread-snapshot PROPERTIES LABELS m3 TIMEOUT 300 PASS_REGULAR_EXPRESSION "snapshot_tsan_ok")
 endif()
 
+# I1162: a second Selecta opens the library database while another process holds its lock (the text UI beside the desktop app).
+if(UNIX)
+  add_test(NAME library-second-instance
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/library_second_instance"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/library_second_instance.cmake")
+  set_tests_properties(library-second-instance PROPERTIES TIMEOUT 60)
+endif()
+
 sel_isolate_config() # I989b
