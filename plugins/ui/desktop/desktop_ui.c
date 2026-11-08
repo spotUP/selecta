@@ -589,7 +589,7 @@ typedef struct desk {
     uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
-    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 13];
+    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 15];
     int sleeping;           /* a `sleep` script line is waiting for its wall-clock deadline */
     uint32_t sleep_until;   /* host clock_ms at which it ends */
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
@@ -651,6 +651,8 @@ typedef struct desk {
     uint32_t viz_cap;            /* pixels viz_px holds */
     uint32_t viz_seq;            /* sequence number of the newest frame drawn */
     uint32_t viz_frames;         /* frames drawn to screen, one per new engine frame (sentinel) */
+    uint32_t viz_tip_up;         /* I292a: visualizer frames drawn while a tooltip was up (sentinel) */
+    uint32_t viz_tip_drawn;      /* I292a: of those, the frames that drew the tooltip again over the repainted area */
     uint32_t viz_prims;          /* primitives the last render reported */
     uint32_t viz_panes;          /* panes the last Visualizer page drew */
     uint32_t viz_sigpath;        /* signal path texts drawn */
@@ -676,7 +678,7 @@ static sel_gui_rect settings_entry_rect(desk* d);
 static int desk_present(desk* d);
 static int desk_event_frame(desk* d, int changed);
 static void desk_draw_focus(desk* d);
-static void desk_draw_tip(desk* d);
+static int desk_draw_tip(desk* d);
 static void desk_draw_overlay(desk* d);
 static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home);
 static uint32_t desk_toast_wait(const desk* d);
@@ -7220,6 +7222,12 @@ static int viz_tick(desk* d) {
         sel_gui_clip_push(d->canvas, where == VIZ_PAGE ? d->viz_pane[0] : d->np_viz);
     }
     desk_draw_window_overlays(d);
+    /* I292a: a tooltip over the visualizer was painted over by the frame above and only a full frame restored it, so it
+     * flickered. The tooltip box is opaque; drawn again under the same clip it repaints only its part inside the area. */
+    if (d->tip_shown > 0) {
+        d->viz_tip_up++;
+        d->viz_tip_drawn += (uint32_t)desk_draw_tip(d);
+    }
     if (where != VIZ_VISUAL) {
         sel_gui_clip_pop(d->canvas);
     }
@@ -7732,10 +7740,10 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
                           (unsigned)d->viz_n, (unsigned)d->uim.layout, (unsigned)d->viz_panes, (unsigned)d->viz_sigpath,
                           (unsigned)d->viz_prims, (unsigned)d->viz_visual_draws, d->np_viz.w > 0);
-    o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d\n",
+    o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d np_viz %d %d %d %d\n",
                           (unsigned)d->viz_clicks, (int)d->viz_btn[0][0].x, (int)d->viz_btn[0][0].y, (int)d->viz_btn[0][0].w,
                           (int)d->viz_btn[0][0].h, (int)d->viz_btn[1][0].x, (int)d->viz_btn[1][0].y, (int)d->viz_btn[1][0].w,
-                          (int)d->viz_btn[1][0].h);
+                          (int)d->viz_btn[1][0].h, (int)d->np_viz.x, (int)d->np_viz.y, (int)d->np_viz.w, (int)d->np_viz.h);
     for (p = st->panel, i = 0; p != NULL && *p != '\0' && i < 16u && o + 400u < sizeof d->library_dump; i++) {
         const char* v = p + strlen(p) + 1;
         o = dump_put(d, o, "meta %u %s|%s\n", (unsigned)i, p, v);
@@ -12682,17 +12690,17 @@ static void draw_transport(desk* d) {
 
 /* The tooltip box above its button; the fade tween moves the box and the text from the surface to their final
  * colours. */
-static void desk_draw_tip(desk* d) {
+static int desk_draw_tip(desk* d) {
     sel_gui_rect b, box;
     int32_t door;
     const sel_gui_atlas* at;
     int32_t w, pad, q;
     if (d->tip_shown <= 0) {
-        return;
+        return 0;
     }
     at = desk_font(d, 0, 13);
     if (at == NULL) {
-        return;
+        return 0;
     }
     q = sel_gui_tween_value(&d->tl, ANIM_KEY_TIP, 65536);
     door = d->tip_shown - 1 - (int32_t)TRANSPORT_COUNT;
@@ -12722,6 +12730,7 @@ static void desk_draw_tip(desk* d) {
     draw_text(d, rect_of(box.x + pad, box.y, w - 2 * pad, box.h), d->tip_text, 0, 13,
               desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE_PRESSED], d->theme.token[SEL_GUI_TOKEN_TEXT], q));
     sel_gui_dirty_add(d->canvas, box);
+    return 1;
 }
 
 /* I244: the action-bound controls besides the transport row share its tooltip path. Control c: 0..5 are the visualizer
@@ -17190,6 +17199,10 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->shelf_album_art_draws;
         d->stats[n].tag = SEL_UI_STAT_TOOLTIP_TARGETS;
         d->stats[n++].value = desk_tip_targets(d);
+        d->stats[n].tag = SEL_UI_STAT_VIZ_TIP_UP;
+        d->stats[n++].value = d->viz_tip_up;
+        d->stats[n].tag = SEL_UI_STAT_VIZ_TIP_DRAWN;
+        d->stats[n++].value = d->viz_tip_drawn;
         d->stats[n].tag = SEL_TAG_END;
     }
 
