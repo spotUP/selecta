@@ -45,6 +45,7 @@ endif()
 if(UNIX)
   add_test(NAME library-newer-schema
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/library_newer_schema"
+            "-DLAUNCHER=$<$<PLATFORM_ID:Darwin>:${PROJECT_BINARY_DIR}/apps/selecta/selecta>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/library_newer_schema.cmake")
   set_tests_properties(library-newer-schema PROPERTIES TIMEOUT 60)
 endif()

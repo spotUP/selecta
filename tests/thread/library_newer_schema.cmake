@@ -5,7 +5,9 @@
 # Fixture: a database Selecta made, then user_version raised past what any build supports. Driven through the real selecta binary:
 # 1. exit 1 and the start-up message "cannot open the library database" (the refusal is still a refusal);
 # 2. the reason on stderr: "library schema v999 is newer than this build" (the sentinel: the refusal path ran and spoke).
-# -DSELECTA -DWORK
+# 3. (I1162e) the same refusal through <bin>/apps/selecta/selecta, the path Johan types: on macOS it was a stale pre-bundle
+#    executable from 3 Nov that printed no reason; it must now be the generated launcher for this build's Selecta.app.
+# -DSELECTA -DWORK [-DLAUNCHER]
 find_program(SQLITE3 sqlite3)
 if(NOT SQLITE3)
   message(FATAL_ERROR "library-newer-schema needs the sqlite3 command line tool to raise user_version")
@@ -30,5 +32,11 @@ if(rc EQUAL 0 OR NOT e MATCHES "cannot open the library database")
 endif()
 if(NOT e MATCHES "library schema v999 is newer than this build")
   message(FATAL_ERROR "the refusal gave no reason:\n${e}")
+endif()
+if(LAUNCHER)
+  execute_process(COMMAND "${LAUNCHER}" ${args} RESULT_VARIABLE rc OUTPUT_VARIABLE o ERROR_VARIABLE e)
+  if(rc EQUAL 0 OR NOT e MATCHES "library schema v999 is newer than this build")
+    message(FATAL_ERROR "${LAUNCHER} does not run this build's Selecta (exit ${rc}, no newer-schema reason):\n${e}")
+  endif()
 endif()
 message(STATUS "library-newer-schema: refused with a reason")
