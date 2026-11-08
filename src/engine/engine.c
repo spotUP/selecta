@@ -80,6 +80,7 @@
 #include "net/devilbox.h"
 #include "sources/modland_sync.h"
 #include "scheduler.h"
+#include "snapshot.h"
 #include "spsc.h"
 #include "thread.h"
 
@@ -405,6 +406,8 @@ typedef struct sel_sf_entry {
 
 struct sel_engine {
     const sel_host* host;
+    sel_snap* snap;                 /* I1082d: the published triple-buffer snapshot, NULL until sel_engine_publish_enable */
+    unsigned snap_mode;             /* 0 off, 1 publish and serve sel_engine_state from it, 2 publish only (measure) */
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
     sel_host pl_host;               /* copy of host whose config_get answers engine prefs first (I177b) */
     char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
@@ -10824,6 +10827,11 @@ void sel_engine_destroy(sel_engine* e) {
     if (e) {
         SEL_THREAD_NOT_AUDIO(e);
         uint32_t i;
+        if (e->snap != NULL) {
+            sel_snap_free(e->snap);
+            e->host->mem_free(e->host, e->snap);
+            e->snap = NULL;
+        }
         sel_viz_tap_free(&e->viz);
         if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) { /* I787: end the in-flight sidebar read */
 #if defined(SEL_LI_THREAD)
@@ -11125,6 +11133,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.lyric_next = e->lyr.count > 0 ? sel_lrc_text(&e->lyr, (uint32_t)(e->state.lyric_line + 1)) : NULL;
     e->state.queue = e->queue.entries;
     e->state.queue_text = e->queue.text;
+    e->state.queue_text_bytes = e->queue.text_used;
     e->state.queue_count = e->queue.count;
     e->state.queue_playing = e->q_playing;
     e->state.queue_version = e->queue.version;
@@ -11289,11 +11298,37 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     e->result_used = 0; /* every RESULT line was delivered */
     e->result_overflow = 0;
     sel_spsc_release(&e->cmd_q); /* the popped commands' strings (events may point at them) are done with (I1082b) */
+    if (e->snap != NULL) {
+        (void)sel_snap_publish(e->snap, &e->state); /* I1082d: the deep copy the UI thread reads */
+    }
     return delivered;
 }
 
 const sel_state* sel_engine_state(const sel_engine* e) {
-    return &e->state;
+    return e->snap != NULL && e->snap_mode == 1u ? sel_snap_state(e->snap) : &e->state;
+}
+
+int sel_engine_publish_enable(sel_engine* e, unsigned mode) {
+    if (mode == 0u || e->snap != NULL) {
+        return mode == 0u && e->snap == NULL;
+    }
+    e->snap = (sel_snap*)e->host->mem_alloc(e->host, sizeof *e->snap, SEL_MEM_FAST);
+    if (e->snap == NULL || !sel_snap_init(e->snap, e->host)) {
+        e->snap = NULL;
+        return 0;
+    }
+    e->snap_mode = mode;
+    return 1;
+}
+
+int sel_engine_ui_acquire(sel_engine* e) {
+    return e->snap != NULL && e->snap_mode == 1u ? sel_snap_acquire(e->snap) : 0;
+}
+
+void sel_engine_publish_stats(const sel_engine* e, uint32_t* publishes, uint32_t* bytes_max, uint32_t* us_max) {
+    *publishes = e->snap != NULL ? SEL_ATOMIC_LOAD_ACQ(&e->snap->publishes) : 0u;
+    *bytes_max = e->snap != NULL ? SEL_ATOMIC_LOAD_ACQ(&e->snap->bytes_max) : 0u;
+    *us_max = e->snap != NULL ? SEL_ATOMIC_LOAD_ACQ(&e->snap->us_max) : 0u;
 }
 
 const sel_host* sel_engine_plugin_host(const sel_engine* e) {

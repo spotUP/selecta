@@ -65,7 +65,7 @@ uint32_t sel_spsc_count(const sel_spsc* q) {
  * 0 when they do not fit. */
 /* Copies a tag list (MORE and SKIP followed) into buf at *used as a flat END-terminated array, string-typed values
  * included. PTR and INT values stay as they are (a PTR points into engine memory that outlives the event). */
-static int copy_tags(sel_arg* dst, const sel_tag* src, char* buf, uint32_t cap, uint32_t* used) {
+int sel_spsc_copy_tags(sel_arg* dst, const sel_tag* src, char* buf, uint32_t cap, uint32_t* used) {
     uint32_t n = sel_tag_count(src), off = (*used + (uint32_t)sizeof(uintptr_t) - 1u) & ~((uint32_t)sizeof(uintptr_t) - 1u), i = 0, len;
     sel_tag* out;
     const sel_tag* it = src;
@@ -108,7 +108,7 @@ static int copy_strings(sel_message* dst, const sel_message* src, char* buf, uin
             dst->args[i].v.s = buf + used;
             used += n;
         } else if (src->args[i].type == SEL_ARG_TAGS && src->args[i].v.t != NULL &&
-                   !copy_tags(&dst->args[i], src->args[i].v.t, buf, cap, &used)) {
+                   !sel_spsc_copy_tags(&dst->args[i], src->args[i].v.t, buf, cap, &used)) {
             return 0;
         }
     }

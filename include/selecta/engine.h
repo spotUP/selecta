@@ -274,6 +274,7 @@ typedef struct sel_state {
     const char* lyric_current;  /* text of that line, NULL when lyric_line is -1 */
     const char* lyric_prev;     /* DUI-P4-7: text of the line before the current one, NULL when there is none */
     const char* lyric_next;     /* DUI-P4-7: text of the line after the current one (the first line while lyric_line is -1), NULL when none */
+    uint32_t queue_text_bytes;  /* I1082d: bytes of `queue_text` in use (the published snapshot copies that much) */
 } sel_state;
 
 struct sel_library;
@@ -417,6 +418,15 @@ int sel_engine_sources_pending(const sel_engine* e);
 uint32_t sel_engine_pump_reads(sel_engine* e, sel_event_sink sink, void* ctx, unsigned timeout_ms);
 
 const sel_state* sel_engine_state(const sel_engine* e);
+/* I1082d (design doc 2026-11-05-I1082-engine-thread section 2.1): the published snapshot. mode 1: every pump ends with a deep
+ * copy of sel_state into a triple buffer and sel_engine_state returns the copy the UI thread last acquired (call
+ * sel_engine_ui_acquire at the start of each UI turn); mode 2: publish and count only, sel_engine_state stays live (measuring);
+ * mode 0 (the default, single-thread shells): nothing is published. Call before the engine thread starts. 0 on no memory. */
+int sel_engine_publish_enable(sel_engine* e, unsigned mode);
+/* UI thread: takes the newest published snapshot (no-op when none is newer, or when publishing is off). Returns 1 when it moved. */
+int sel_engine_ui_acquire(sel_engine* e);
+/* Snapshot cost: publishes done, the largest copy in bytes and the longest copy in microseconds (sentinels pub_bytes_max=, pub_us_max=). */
+void sel_engine_publish_stats(const sel_engine* e, uint32_t* publishes, uint32_t* bytes_max, uint32_t* us_max);
 /* The host to hand to plugins outside playback (integrations, I177b): a copy of the engine's host whose
  * config_get answers a non-empty engine pref (include/selecta/prefs.def) first, then the real host. Valid until
  * sel_engine_destroy. */
