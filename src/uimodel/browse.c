@@ -149,6 +149,11 @@ static const char* const g_side_text[SEL_UIM_SIDE_TEXTS] = {
     "Your Library", "Create Playlist", "Expand Library", "Collapse Library", "All", "By You", "Nothing here yet.", "No playlists yet.",
     "Create your first playlist", "Name it, then add songs from your library", "Create playlist"};
 
+const char* sel_uim_side_col_name(uint32_t i) {
+    static const char* const k_cols[4] = {"Title", "Type", "Date Added", "Played"};
+    return i < 4u ? k_cols[i] : NULL;
+}
+
 const char* sel_uim_side_chip_name(uint32_t i) {
     return i < SEL_UIM_SIDE_CHIPS ? g_side_chip_name[i] : (const char*)0;
 }

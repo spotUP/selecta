@@ -12141,10 +12141,9 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     if (labels && side_table(d)) { /* I678d: the table header over the rows */
         uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
         int32_t hy = v.y - side_table_head_h(d), k;
-        static const char* const heads[SLC_N] = {"Title", "Type", "Date Added", "Played"};
         for (k = 0; k < SLC_N; k++) {
             if (scw[k] > 0) {
-                draw_text(d, rect_of(v.x + pad + scx[k], hy, scw[k], side_table_head_h(d)), heads[k], 1, 12, muted);
+                draw_text(d, rect_of(v.x + pad + scx[k], hy, scw[k], side_table_head_h(d)), sel_uim_side_col_name((uint32_t)k), 1, 12, muted);
             }
         }
     }

@@ -227,6 +227,8 @@ void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t he
                                   uint32_t bar_height, uint32_t expand, uint32_t detail_hidden);
 /* I798: compute_panel with the default bar and no rail. */
 void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
+/* I1166b: compute_tier_panel with the Expand Library sidebar of compute_expand. */
+void sel_uim_layout_compute_tier_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t expand);
 /* I798: tooltip texts both UIs share for the controls that are not table actions: the Now Playing add button and the top bar
  * Hide / Show Now Playing button. */
 const char* sel_uim_tip_like(int liked);

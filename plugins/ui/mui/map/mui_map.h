@@ -75,6 +75,7 @@ typedef struct mui_layout_map_t {
     uint32_t weight_h[MUI_SLOT_COUNT];
     uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
     uint8_t compact;       /* I949c: the compact class (mui_layout_compact): the sidebar is the labelled door rail */
+    uint8_t side_wide;     /* I1166b: Expand Library is on (desktop side_wide): the sidebar takes the widened width of the layout */
     uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
 } mui_layout_map_t;
 /* I949c: the compact class of a 640x256-class screen: the bitmap tier at the icon-sidebar breakpoint (width 600-699) and at most
@@ -155,6 +156,11 @@ void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32
 void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
 /* I798: 1 when the Hide / Show Now Playing button exists (three column breakpoint, top bar shown), as the Mac np_toggle_rect. */
 uint32_t mui_np_toggle_shown(const mui_layout_map_t* m);
+/* I1166b: as mui_layout_map_panel with Expand Library `side_wide` (layout.c expanded_side); relayout and the Now Playing toggle keep it. */
+void mui_layout_map_wide(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t side_wide);
+/* I1166b: flip Expand / Collapse Library; returns the new side_wide. mui_side_toggles() counts the flips (sentinel). */
+uint32_t mui_side_wide_toggle(mui_layout_map_t* m);
+uint32_t mui_side_toggles(void);
 /* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
  * the slots whose visibility changed), 0 when only weights move. */
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips);
@@ -701,6 +707,7 @@ typedef struct mui_sidebar_in {
     uint32_t chip;   /* 0 All, 1..SEL_UIM_SIDE_CHIPS a kind chip */
     uint32_t by_you_only; /* the By You sub-chip of Playlists */
     uint32_t wide;   /* Expand is on */
+    int64_t now;     /* I1166b: epoch seconds for the Date Added / Played columns of the wide table (0: shown as "-") */
     int bitmap;      /* the bitmap tier */
     int rail;        /* I949c: the compact class rail: doors only (see mui_layout_compact) */
     int chips_single; /* I669: the chips do not fit the sidebar, S5 is the one label with the chevrons (mui_sidebar_chips_single) */
@@ -710,6 +717,7 @@ typedef struct mui_sidebar_in {
 } mui_sidebar_in;
 typedef struct mui_sidebar_row {
     char mark[4], title[96], subtitle[96], type[16];
+    char added[24], played[24]; /* I1166b: the wide table columns, sel_uim_relative_time (desktop draw_side_lib) */
     uint32_t kind, id;
 } mui_sidebar_row;
 typedef struct mui_sidebar_model {
@@ -727,6 +735,7 @@ typedef struct mui_sidebar_model {
     mui_sidebar_row row[MUI_SIDEBAR_ROWS];
     uint32_t row_n, cols;
     int wide;
+    char head[4][16];                         /* I1166b: the wide table header: Title, Type, Date Added, Played (sel_uim_side_col_name) */
     char empty[32];                           /* "" when no empty state shows */
     int rail;                                 /* I949c: doors only; brand, header, chips, rows, empty state and card are all empty */
     int card;

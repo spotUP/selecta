@@ -88,12 +88,19 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
             put(r->title, sizeof r->title, it->name);
             sel_uim_library_item_subtitle(it->kind, it->sub, it->songs, r->subtitle, sizeof r->subtitle);
             put(r->type, sizeof r->type, sel_uim_library_item_type(it->kind)); /* S7: the Expand columns */
+            if (in->wide) { /* the desktop table: a playlist has no Date Added */
+                sel_uim_relative_time(in->now, it->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST ? 0u : it->added, r->added, sizeof r->added);
+                sel_uim_relative_time(in->now, it->last_played, r->played, sizeof r->played);
+            }
             r->kind = it->kind;
             r->id = it->id;
         }
     }
     m->wide = in->wide != 0u; /* S7: Title, Type, Date Added, Played */
     m->cols = in->wide ? 4u : 1u;
+    for (k = 0; in->wide && k < 4u; k++) {
+        put(m->head[k], sizeof m->head[k], sel_uim_side_col_name(k));
+    }
     put(m->empty, sizeof m->empty, sel_uim_side_empty(in->chip, m->row_n, in->bitmap)); /* S8 */
     m->card = sel_uim_side_card_shown(in->chip, in->filter != NULL && in->filter[0] != '\0', playlists, in->bitmap); /* S9 */
     if (m->card) {

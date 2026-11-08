@@ -129,6 +129,11 @@ void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32
     sel_uim_layout_compute_panel(l, width, height, tier, 0u, BAR_H, 0u, detail_hidden);
 }
 
+/* I1166b: as compute_tier_panel with the Expand Library sidebar (`expand`, the desktop side_wide) for the MUI window. */
+void sel_uim_layout_compute_tier_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t expand) {
+    sel_uim_layout_compute_panel(l, width, height, tier, 0u, BAR_H, expand, detail_hidden);
+}
+
 /* I619: as compute_expand; a non-zero `detail_hidden` drops the Now Playing column of the three column breakpoint, the main
  * region taking its width. */
 void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
