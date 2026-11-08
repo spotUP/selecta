@@ -3,4 +3,5 @@ git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for th
 https://modland.com/pub/modules/GoatTracker%202/Cadaver/dojo.sng  0dc659f11a7fbf1c0199d42e4b6827a3cf9bd67b6bc1f8930ecdace3aea330c5  (GTS2)
 https://modland.com/pub/modules/GoatTracker%202/Jammer/my%20own%20hyperspace.sng  8f888cf8aa157d8bfd0a7b871aaca7e4fc512456ba5c91d21bc776a3fa26cf04  (GTS2)
 https://modland.com/pub/modules/GoatTracker/Aeuk/metal%20warrior%204%20-%20streets.sng  34da331cf5ecacc7150caca940e5a631daf3fd871a02acee5e4758c2fa64a4ad  (GTS!, GoatTracker 1)
+https://modland.com/pub/modules/GoatTracker/Barfington/metal%20warrior%204%20-%20research%20facility.sng  18af18cc587f2ce8ebc645de734af4bb7bc9cc7f7e8a5f424a0d42467cb209e2  (GTS!, GoatTracker 1; channels with unequal loop lengths, no joint position repeat)
 Engine licence: GoatTracker 2.77 play routine GPL-2.0, GoatTracker 1.53 song conversion GPL-2.0-or-later, reSID GPL-2.0-or-later; Selecta glue GPL-2.0-or-later.

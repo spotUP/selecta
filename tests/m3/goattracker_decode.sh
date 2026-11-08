@@ -35,6 +35,10 @@ s3=$(fetch "https://modland.com/pub/modules/GoatTracker/Aeuk/metal%20warrior%204
 check "$s1" 161 165
 check "$s2" 251 256
 check "$s3" 215 220
+# Barfington: a GT1 song whose three channels loop their order lists at different lengths (7936, 9472 and 8896 frames per loop), so the
+# combined position never repeats. The song ends once every channel played its loop twice (about 380 s), not at the 20 minute cap.
+s4=$(fetch "https://modland.com/pub/modules/GoatTracker/Barfington/metal%20warrior%204%20-%20research%20facility.sng" 18af18cc587f2ce8ebc645de734af4bb7bc9cc7f7e8a5f424a0d42467cb209e2 barfington.sng) || exit $?
+check "$s4" 375 390
 claimed() { # <file> <label>
   out=$("$cli" render "$1" --output fd_gt.wav --seconds 1 --rate "$rate" 2>/dev/null) || true
   [ "$(field "$out" replayer)" != "goattracker" ] || fail "goattracker claimed $2"

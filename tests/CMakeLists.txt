@@ -2379,6 +2379,12 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/goattracker-decode)
     set_tests_properties(goattracker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "goattracker_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I710al1: hostile .sng input (fixed-seed byte mutations of a GT1 and a GT2 song) never crashes or hangs the loader; SELECTA_GT_MAX_SECONDS caps each scan.
+    add_test(NAME goattracker-mutate
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/goattracker_mutate.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/goattracker-decode)
+    set_tests_properties(goattracker-mutate PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "goattracker_mutate_ok" SKIP_RETURN_CODE 77 TIMEOUT 600
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules;SELECTA_GT_MAX_SECONDS=3")
   endif()
 
   # I710an: Synder SNG-Player songs (.sng) play through the render entry point (bbmp_synder module, GPL-3.0 bbmp-synder). Songs are fetched by checksum, exit 77 = skip.
