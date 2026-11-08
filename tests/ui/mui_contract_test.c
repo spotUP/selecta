@@ -1833,6 +1833,54 @@ static void test_screen_plan(void) {
     CHECK(strstr(src, "_minheight(s->root)") != NULL, "mui_open does not report the measured window minimum");
 }
 
+/* I949f reachability (design 5. Rows): the open path of a 640x256 screen applies the compact class and opens. mui_open is Amiga-only, so
+ * the proof drives the same chain it runs: mui_open_ladder step 0 -> mui_layout_map_panel with the step's layout size (what
+ * mui_layout_for_screen does) -> the rail sidebar and the compact player band that the build functions take from that class. The
+ * sentinels (ladder calls, rail builds, compact band builds) prove each stage ran; the source checks prove mui_open reaches them. The
+ * measured root minimum (<= 600x220) is a rig number: the log line "ladder step 0 window minimum". */
+static void test_open_compact_reach(void) {
+    mui_open_step_t st;
+    mui_layout_map_t m, mini;
+    mui_player_band_t pb;
+    mui_sidebar_in in;
+    mui_sidebar_model rail;
+    uint32_t l0 = mui_open_ladder_calls(), r0 = mui_sidebar_rail_builds(), c0 = mui_player_band_compact_builds();
+    char* src = ui_source();
+    const char* lfs = src != NULL ? strstr(src, "static uint32_t mui_layout_for_screen(") : NULL;
+    const char* lfe = lfs != NULL ? strstr(lfs, "\n}\n") : NULL;
+    const char* lcall = lfs != NULL ? strstr(lfs, "mui_layout_map_panel(&s->lay, st.layout_w, st.layout_h") : NULL;
+    const char* op = src != NULL ? strstr(src, "static void* mui_open(const sel_ui_open_args* a) {") : NULL;
+    const char* loop = op != NULL ? strstr(op, "for (step = 0; mui_layout_for_screen(s, step); step++) {") : NULL;
+    CHECK(mui_open_ladder(0, 640u, 256u, 0, &st) == 1 && st.step == 0u && st.layout_w == 640u && st.layout_h == 256u, "step 0 layout %ux%u",
+          (unsigned)st.layout_w, (unsigned)st.layout_h);
+    mui_layout_map_panel(&m, st.layout_w, st.layout_h, SEL_UIM_TIER_BITMAP, 0u);
+    CHECK(m.compact == 1 && m.show[MUI_SLOT_SIDEBAR] && m.weight_w[MUI_SLOT_SIDEBAR] >= 160u && m.height <= (uint32_t)MUI_COMPACT_MAX_ROWS,
+          "640x256 step 0 is the compact class: compact %d sidebar %u rows %u", (int)m.compact, (unsigned)m.weight_w[MUI_SLOT_SIDEBAR], (unsigned)m.height);
+    memset(&in, 0, sizeof in);
+    in.filter = "";
+    in.bitmap = 1;
+    in.rail = (int)m.compact;
+    mui_sidebar_build(&in, &rail);
+    mui_player_band(&pb, m.compact, mui_pixel_aspect_q8(22, 44), m.width, 0u);
+    CHECK(rail.rail == 1 && rail.row_n == 0u, "the compact class builds the door rail, rows %u", (unsigned)rail.row_n);
+    CHECK(pb.compact == 1 && pb.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "compact player band %u rows", (unsigned)pb.height);
+    CHECK(mui_open_ladder_calls() == l0 + 1u && mui_sidebar_rail_builds() == r0 + 1u && mui_player_band_compact_builds() == c0 + 1u,
+          "sentinels: ladder %u rail %u band %u", (unsigned)(mui_open_ladder_calls() - l0), (unsigned)(mui_sidebar_rail_builds() - r0),
+          (unsigned)(mui_player_band_compact_builds() - c0));
+    /* A refusal of step 0 steps down to the mini layout (width 599), which is NOT the compact class: the compact class is the first try. */
+    CHECK(mui_open_ladder(1, 640u, 256u, 0, &st) == 1, "step 1 exists");
+    mui_layout_map_panel(&mini, st.layout_w, st.layout_h, SEL_UIM_TIER_BITMAP, 0u);
+    CHECK(mini.compact == 0 && mini.width == MUI_COMPACT_W, "refused compact class falls to the mini layout: compact %d width %u", (int)mini.compact,
+          (unsigned)mini.width);
+    /* Wiring: mui_open loops the ladder, each step lays out through mui_layout_for_screen with the step's size, and the build functions
+     * read the compact class from the screen. */
+    CHECK(loop != NULL && lfs != NULL && lfe != NULL && lcall != NULL && lcall < lfe && strstr(lfs, "mui_apply_layout(s);") != NULL,
+          "mui_open does not reach the layout through the ladder step");
+    CHECK(strstr(src, "s->side_rail = mui_screen_compact();") != NULL && strstr(src, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u") != NULL,
+          "the rail sidebar and the compact player band are not chosen from the screen's compact class");
+    CHECK(strstr(src, "ladder step %lu window minimum") != NULL, "the root minimum is not logged for the rig check");
+}
+
 /* I675 (D-M4-3): on the own SELECTA screen the main window is a borderless backdrop window without drag bar, depth, size or
  * close gadget; on Workbench (compact mode) it keeps normal borders. mui_open must take the attributes from
  * mui_window_attrs (sentinel counter + source wiring), decided by the same g_scr test TH_SCR uses. */
@@ -3616,6 +3664,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "icon-rows") == 0) {
         test_icon_button_rows();
         test_layout_before_open();
+    } else if (strcmp(argv[1], "open-compact-reach") == 0) {
+        test_open_compact_reach();
     } else if (strcmp(argv[1], "screen-plan") == 0) {
         test_screen_plan();
         test_open_layout_cap();
