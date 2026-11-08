@@ -385,6 +385,8 @@ typedef struct desk {
     int search_restore;      /* I1012: 1 while search_restore_q16 waits for the search to fire, 2 while it waits for the results to be tall enough */
     uint32_t search_wheels;  /* sentinel: wheel notches the Search page scroll path took */
     uint32_t search_follows; /* sentinel (I1161): keyboard moves that ran the Search list scroll-follow */
+    int32_t side_cur;        /* I1183: the sidebar stop's keyboard cursor: shown doors in slot order, then the Your Library rows; -1 = none */
+    uint32_t side_cur_draws; /* frames that drew the cursor (sentinel) */
     uint32_t route_main, route_player, route_sidebar, route_detail; /* sentinels (I1164): arrow and Enter keys routed by the focused stop */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
@@ -1290,6 +1292,8 @@ static uint32_t art_keys(const sel_state* st, const char** out, uint32_t cap);
 static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
 static int32_t side_lib_at(const desk* d, int32_t x, int32_t y);
+static int32_t side_cur_count(const desk* d); /* I1183 */
+static sel_gui_rect side_cur_rect(const desk* d, int32_t p);
 static int32_t side_lib_max_q16(const desk* d);
 static void side_lib_reload(desk* d);
 static void sm_lib_want(desk* d);
@@ -12290,6 +12294,16 @@ static void draw_sidebar(desk* d) {
         d->home_parts |= HP_NAV;
     }
     side_lib_draw(d, sb);
+    if (d->focus >= 0 && d->focus == region_stop(d, "sidebar") && d->side_cur >= 0 && d->side_cur < side_cur_count(d)) { /* I1183: the keyboard cursor */
+        sel_gui_rect cr = side_cur_rect(d, d->side_cur);
+        int32_t t = lpx(d, 2);
+        uint32_t col = ARGB(d->theme.token[SEL_GUI_TOKEN_FOCUS_RING]);
+        if (cr.w > 2 * t && cr.h > 2 * t) {
+            sel_gui_round_frame(d->canvas, cr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), t, col);
+            sel_gui_dirty_add(d->canvas, cr);
+            d->side_cur_draws++;
+        }
+    }
 }
 
 /* The player bar's left block (mockup footer): artwork of the playing song with its title and artist beside it. Hidden
@@ -13147,6 +13161,92 @@ static void desk_focus_move(desk* d, int32_t dir) {
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
+/* A sidebar door opens its page: the one path a click and the keyboard cursor (I1183) share. */
+static int sidebar_door_open(desk* d, int32_t door) {
+    d->nav_clicks++;
+    return desk_route_door(d, door_page((uint32_t)door));
+}
+
+/* A Your Library row opens that item in the main region: the one path a click and the keyboard cursor share. */
+static int side_row_open(desk* d, uint32_t i) {
+    d->side_opens++;
+    desk_item_open(d, SEL_ROUTE_SIDEBAR_ROW, d->side_items[i].kind, d->side_items[i].id, d->side_items[i].key, d->side_items[i].name, d->side_items[i].sub);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return 1;
+}
+
+/* I1183: the sidebar stop's rows in cursor order: the shown doors by slot, then the Your Library rows. */
+static int32_t side_cur_count(const desk* d) {
+    return (int32_t)desk_door_slot(d, DOOR_COUNT) + (int32_t)d->side_n;
+}
+
+/* The door whose slot is p, -1 when p is past the doors. */
+static int32_t side_cur_door(const desk* d, int32_t p) {
+    uint32_t k;
+    for (k = 0; k < DOOR_COUNT; k++) {
+        if (desk_door_shown(d, k) && (int32_t)desk_door_slot(d, k) == p) {
+            return (int32_t)k;
+        }
+    }
+    return -1;
+}
+
+/* The canvas rectangle of cursor position p; zero-sized when a library row is scrolled out of the view. */
+static sel_gui_rect side_cur_rect(const desk* d, int32_t p) {
+    int32_t nd = (int32_t)desk_door_slot(d, DOOR_COUNT);
+    if (p < nd) {
+        int32_t door = side_cur_door(d, p);
+        return door >= 0 ? sidebar_door_rect(d, (uint32_t)door) : rect_of(0, 0, 0, 0);
+    }
+    return side_lib_row_rect(d, (uint32_t)(p - nd));
+}
+
+/* Scrolls the Your Library list so library row i is inside the view. */
+static void side_cur_follow(desk* d, uint32_t i) {
+    sel_gui_rect v = side_lib_view_rect(d), r = side_lib_row_rect(d, i);
+    int32_t max = side_lib_max_q16(d);
+    if (r.y < v.y) {
+        d->side_y_q16 -= px_to_logical_ceil(d, v.y - r.y) << 16;
+    } else if (r.y + r.h > v.y + v.h) {
+        d->side_y_q16 += px_to_logical_ceil(d, r.y + r.h - (v.y + v.h)) << 16;
+    }
+    d->side_y_q16 = d->side_y_q16 < 0 ? 0 : (d->side_y_q16 > max ? max : d->side_y_q16);
+}
+
+/* I1183: Up/Down/Home/End move the sidebar cursor, Enter opens its row through the click handlers. */
+static void side_cur_key(desk* d, uint32_t code) {
+    int32_t n = side_cur_count(d), nd = (int32_t)desk_door_slot(d, DOOR_COUNT), p = d->side_cur;
+    if (n <= 0) {
+        return;
+    }
+    if (code == 13u) {
+        if (p >= 0 && p < n) {
+            if (p < nd) {
+                sidebar_door_open(d, side_cur_door(d, p));
+            } else {
+                side_row_open(d, (uint32_t)(p - nd));
+            }
+        }
+        return;
+    }
+    if (code == TXT_KEY_DOWN) {
+        p = p < 0 ? 0 : (p + 1 < n ? p + 1 : p);
+    } else if (code == TXT_KEY_UP) {
+        p = p < 0 ? 0 : (p > 0 ? p - 1 : 0);
+    } else if (code == TXT_KEY_HOME) {
+        p = 0;
+    } else if (code == TXT_KEY_END) {
+        p = n - 1;
+    }
+    d->side_cur = p;
+    if (p >= nd) {
+        side_cur_follow(d, (uint32_t)(p - nd));
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
 /* I1164: arrow keys and Enter act on the focused stop only. Returns 1 when the key was taken here (the focused stop is the
  * player, the sidebar or the detail panel), 0 for the main region and for no stop, which keep the page list handling.
  * The player stop reuses the text UI's `player:` bindings (Up/Down volume, Left/Right seek, Enter play/pause). The sidebar's
@@ -13154,7 +13254,8 @@ static void desk_focus_move(desk* d, int32_t dir) {
 static int desk_focus_route(desk* d, const sel_gui_input* ev) {
     int32_t f = d->focus;
     int arrow = ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT;
-    if (ev->mods != 0u || (!arrow && ev->code != 13u)) {
+    int home_end = ev->code == TXT_KEY_HOME || ev->code == TXT_KEY_END;
+    if (ev->mods != 0u || (!arrow && ev->code != 13u && !(home_end && f >= 0 && f == region_stop(d, "sidebar")))) {
         return 0;
     }
     if (f >= 0 && f == region_stop(d, "player")) {
@@ -13172,6 +13273,7 @@ static int desk_focus_route(desk* d, const sel_gui_input* ev) {
     }
     if (f >= 0 && f == region_stop(d, "sidebar")) {
         d->route_sidebar++;
+        side_cur_key(d, ev->code);
         return 1;
     }
     if (f >= 0 && f == region_stop(d, "detail")) {
@@ -14482,8 +14584,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* a sidebar door opens its page */
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
         if (door >= 0) {
-            d->nav_clicks++;
-            return desk_route_door(d, door_page((uint32_t)door));
+            return sidebar_door_open(d, door);
         }
         if (in_rect(side_hdr_title_rect(d), ev->x, ev->y)) { /* I678h (D1): the "Your Library" title opens nothing; the route table counts the click */
             d->nav_clicks++;
@@ -14528,12 +14629,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         }
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
-            d->side_opens++;
-            desk_item_open(d, SEL_ROUTE_SIDEBAR_ROW, d->side_items[door].kind, d->side_items[door].id, d->side_items[door].key, d->side_items[door].name,
-                           d->side_items[door].sub);
-            d->repaint = 1;
-            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-            return 1;
+            return side_row_open(d, (uint32_t)door);
         }
     }
     if ((in_main || (ev->kind == SEL_GUI_IN_MOVE && ev->code == 1u)) && lib_bar_pointer(d, ev)) { /* I541: the Library scrollbar */
@@ -16436,6 +16532,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         }
     }
     d->focus = -1;
+    d->side_cur = -1;
     desk_bind_actions(d);
     if (desk_opt(a, "--scale") != NULL) {
         int sc = atoi(desk_opt(a, "--scale"));
@@ -17303,6 +17400,12 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->route_sidebar;
         d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_DETAIL;
         d->stats[n++].value = d->route_detail;
+        d->stats[n].tag = SEL_UI_STAT_SIDE_CURSOR;
+        d->stats[n++].value = (uint32_t)(d->side_cur + 1);
+        d->stats[n].tag = SEL_UI_STAT_SIDE_CURSOR_DRAWS;
+        d->stats[n++].value = d->side_cur_draws;
+        d->stats[n].tag = SEL_UI_STAT_PAGE;
+        d->stats[n++].value = (uint32_t)d->page;
         d->stats[n].tag = SEL_TAG_END;
     }
 
