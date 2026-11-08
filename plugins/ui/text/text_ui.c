@@ -69,13 +69,14 @@ typedef struct tui {
     uint32_t meta_panel_rows; /* catalogue rows the info panel drew in the latest frame (I185 sentinel) */
     int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase, 6 SID registers (V cycles) */
     uint32_t layout; /* I1185: SEL_UIM_LAYOUT_* (pref ui.desktop.mode): full, window (list only), mini (header only), visual (panel only) */
+    uint32_t style_drawn, style_draws; /* I1186 sentinels: style of the last pane draw; draws in Grid, Cover Flow, Compact */
     uint32_t layout_sets, sid_frames; /* I1185 sentinels: layout / visualizer pref keys taken; SID register panels drawn with a feed */
     int pattern; /* pattern panel shown (P toggles); excludes the viz panel */
     uint32_t voice; /* 1-based voice the digit keys touched last; S solos it */
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[22];
+    sel_tag stats[23];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -165,11 +166,12 @@ static int tui_queue_view(const sel_view_state* v) {
     return v != NULL && v->source != SEL_VIEW_BROWSE; /* the queue and the library query share the styles */
 }
 
-/* v: regular -> tree -> drilldown -> regular. */
+/* y: regular -> tree -> drilldown -> grid -> cover flow -> compact -> regular. */
 static void tui_next_style(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
-    static const char* const next[] = {"VIEW_STYLE tree", "VIEW_STYLE drilldown", "VIEW_STYLE regular"};
-    if (tui_queue_view(v) && v->style <= SEL_VIEW_STYLE_DRILLDOWN) {
+    static const char* const next[SEL_VIEW_STYLE_COUNT] = {"VIEW_STYLE tree",      "VIEW_STYLE drilldown", "VIEW_STYLE grid",
+                                                            "VIEW_STYLE coverflow", "VIEW_STYLE compact",   "VIEW_STYLE regular"};
+    if (tui_queue_view(v) && v->style < SEL_VIEW_STYLE_COUNT) {
         tui_send(u, next[v->style]);
     }
 }
@@ -698,6 +700,64 @@ static void tui_header(tui* u, const sel_state* s) {
 }
 
 
+#define TUI_GRID_CELL 24u
+
+/* I1186: the Grid, Cover Flow and Compact library styles as text. The engine lists the flat rows of the regular style for
+ * them (view.c mode_of); the text UI lays them out. Grid: cells in columns. Cover Flow: the cursor row in the middle with
+ * its neighbours around it (artwork has no text form, so the cover itself is exempt). Compact: one dense line per song. */
+static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
+    const sel_view_state* v = s->view;
+    uint32_t rows = tui_main_rows(u), i, cur = v->cursor >= v->window_start ? v->cursor - v->window_start : 0;
+    char buf[300];
+    if (v->style == SEL_VIEW_STYLE_GRID) {
+        uint32_t cols = (width - 1u) / TUI_GRID_CELL;
+        cols = cols == 0 ? 1u : cols;
+        for (i = 0; i < v->row_n && i / cols < rows; i++) {
+            const sel_view_row* r = &v->rows[i];
+            int at = v->window_start + i == v->cursor;
+            int playing = r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
+            txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : playing ? TXT_ROLE_PLAYING : TXT_ROLE_FILE);
+            uint32_t x = 1u + (i % cols) * TUI_GRID_CELL, y = 3u + i / cols;
+            snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
+            txt_grid_fill(&u->grid, x, y, TUI_GRID_CELL - 1u, 1, ' ', st);
+            txt_grid_text(&u->grid, x, y, buf, TUI_GRID_CELL - 2u, st);
+        }
+    } else if (v->style == SEL_VIEW_STYLE_COVERFLOW) {
+        uint32_t mid = rows / 2u, d;
+        for (d = 0; d < rows; d++) {
+            int64_t idx = (int64_t)cur + (int64_t)d - (int64_t)mid;
+            const sel_view_row* r;
+            uint32_t dist = d > mid ? d - mid : mid - d;
+            txt_style st;
+            if (idx < 0 || idx >= (int64_t)v->row_n) {
+                continue;
+            }
+            r = &v->rows[idx];
+            st = tui_style(u, dist == 0 ? TXT_ROLE_CURSOR : dist == 1 ? TXT_ROLE_FILE : TXT_ROLE_DIM);
+            if (dist == 0) {
+                snprintf(buf, sizeof buf, "<  %s%s%s  >", r->text, r->artist != NULL && r->artist[0] ? "  -  " : "",
+                         r->artist != NULL ? r->artist : "");
+            } else {
+                snprintf(buf, sizeof buf, "%*s%s", (int)(2u * dist > 8u ? 8u : 2u * dist), "", r->text);
+            }
+            txt_grid_fill(&u->grid, 0, 3u + d, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + d, buf, width - 1u, st);
+        }
+    } else {
+        for (i = 0; i < v->row_n && i < rows; i++) {
+            const sel_view_row* r = &v->rows[i];
+            int at = v->window_start + i == v->cursor;
+            int playing = r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
+            txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : playing ? TXT_ROLE_PLAYING : TXT_ROLE_FILE);
+            snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
+            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+        }
+    }
+    u->style_drawn = v->style;
+    u->style_draws++;
+}
+
 static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     const sel_view_state* v = s->view;
     char buf[300];
@@ -729,6 +789,11 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
                                          : "No songs match the search",
                       width - 1u, tui_style(u, TXT_ROLE_DIM));
     }
+    if (tui_queue_view(v) && v->style >= SEL_VIEW_STYLE_GRID && v->style < SEL_VIEW_STYLE_COUNT) {
+        tui_styled_rows(u, s, width);
+        return;
+    }
+    u->style_drawn = v->style;
     for (i = 0; i < v->row_n && i < tui_main_rows(u); i++) {
         const sel_view_row* r = &v->rows[i];
         uint32_t y = 3u + i;
@@ -1500,8 +1565,10 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[19].value = u->layout_sets << 8 | u->layout;
     u->stats[20].tag = SEL_UI_STAT_SID_FRAMES;
     u->stats[20].value = u->sid_frames;
-    u->stats[21].tag = SEL_TAG_END;
-    u->stats[21].value = 0;
+    u->stats[21].tag = SEL_UI_STAT_STYLE;
+    u->stats[21].value = u->style_draws << 8 | u->style_drawn;
+    u->stats[22].tag = SEL_TAG_END;
+    u->stats[22].value = 0;
     return u->stats;
 }
 
@@ -1525,7 +1592,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[3], SEL_UI_WAIT, SEL_TAG_FN(tui_wait));
     set(&g_hooks[4], SEL_UI_CLOSE, SEL_TAG_FN(tui_close));
     set(&g_hooks[5], SEL_UI_STATS, SEL_TAG_FN(tui_stats));
-    set(&g_hooks[6], SEL_UI_VIEW_STYLES, SEL_VIEW_STYLES_CLASSIC);
+    set(&g_hooks[6], SEL_UI_VIEW_STYLES, SEL_VIEW_STYLES_ALL);
     set(&g_hooks[7], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);

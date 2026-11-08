@@ -421,6 +421,9 @@ SEL_TAG(UI, STAT_TABLE_ACTION_LOG,    0x50F6, STR)
  * the SID register panels drawn from a register feed. */
 SEL_TAG(UI, STAT_LAYOUT,              0x50F7, INT)
 SEL_TAG(UI, STAT_SID_FRAMES,          0x50F8, INT)
+/* I1186: the library style the text pane drew last (sel_view_style, low 8 bits) with the count of pane draws in the Grid,
+ * Cover Flow and Compact styles above it. */
+SEL_TAG(UI, STAT_STYLE,               0x50F9, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
