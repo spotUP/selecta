@@ -7,6 +7,8 @@
 #include <stdint.h>
 
 #include <selecta/engine.h>
+#include <selecta/protocol.h>
+#include <selecta/source.h>
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/keybind.h>
@@ -607,6 +609,7 @@ uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx
 enum { MUI_LIBMODE_COUNT = 6, MUI_SCOPE_COUNT = 3 };
 const char* mui_libmode_label(uint32_t i);
 uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, void* ctx);
+uint32_t mui_libmode_joined(uint32_t i, uint32_t window_rows, char* out, size_t cap); /* I1175: the mode's lines joined with ';' (one route entry), returns the line count */
 const char* mui_scope_label(uint32_t i);
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_view_fires(void);
@@ -666,6 +669,26 @@ uint32_t mui_offer_sync(const sel_uim_source* s, uint32_t n, uint32_t ticked, mu
 const char* mui_search_source_label(uint32_t i);
 uint32_t mui_search_source_set(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_source_fires(void); /* call-count sentinel */
+
+/* I1175: the Sources page. One mui_srcs holds the engine's SOURCES rows (LIBRARY_RESULT tags with SRC_KEY, as the desktop's d->src) and
+ * the pending and failed sync masks. mui_srcs_toggle and mui_srcs_sync fire the shared lines through mui_source_toggle and
+ * mui_source_sync; mui_srcs_row is the page's row text (name, switch state, kind, shared sync status). */
+typedef struct mui_src {
+    char key[32], kind[16], name[64], path[256];
+    int enabled, syncable;
+    uint32_t count;
+    int64_t synced;
+} mui_src;
+typedef struct mui_srcs {
+    mui_src it[SEL_SOURCE_MAX];
+    uint32_t n, pending, failed, gen; /* gen counts changes, so the window refills only when it moved */
+    int wait;                         /* a SOURCES ask is out: the next answer starts the list again */
+} mui_srcs;
+void mui_srcs_asked(mui_srcs* m);
+int mui_srcs_event(mui_srcs* m, const sel_message* evt); /* 1 when the event was a SOURCES row */
+uint32_t mui_srcs_row(const mui_srcs* m, uint32_t i, char* out, size_t cap);
+uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx); /* lines sent, 0 for a row that is not there */
+uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);   /* 0 unless the row is a switched-on syncable remote */
 
 /* MUI-P8-9: info line pieces. */
 int32_t mui_info_mode_key(char key);

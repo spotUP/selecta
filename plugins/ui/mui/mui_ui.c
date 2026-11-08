@@ -280,7 +280,19 @@ typedef struct mui_state {
     Object* facet_row;              /* I795 (P5): the Search facet chips above the results */
     Object* facet_btn[SEL_UIM_SEARCH_FACETS];
     uint32_t search_facet;
-    int home_shown, browse_shown, facet_shown;
+    int home_shown, browse_shown, facet_shown, modes_shown;
+    mui_srcs srcs;                  /* I1175: the Sources page rows (map/mui_sources.c), filled by mui_on_event on the engine pump */
+    Object* src_page;               /* I1175: the Sources page: row list, Switch and Sync */
+    Object* src_list;
+    Object* src_switch;
+    Object* src_sync;
+    Object* mode_row;               /* I1175: the Library mode Cycle above the list */
+    Object* cyc_libmode;
+    const char* libmode_ent[MUI_LIBMODE_COUNT + 1u];
+    int src_shown;
+    uint32_t src_gen_seen;
+    long src_pick;
+    char src_rowbuf[128];
 #endif
 } mui_state;
 
@@ -503,6 +515,10 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SHELF_LIST_BASE 0x2A20L /* I795 (P1): a row of a shelf slot was picked */
 #define CTL_TILE_BASE 0x2A40L       /* I795 (P4): the Browse tiles, CTL_TILE_BASE + slot */
 #define CTL_FACET_BASE 0x2A80L      /* I795 (P5): the Search facet chips, CTL_FACET_BASE + facet */
+#define CTL_LIBMODE 0x2AC0L         /* I1175: the Library mode Cycle (Composers, Tree, Columns, Files, History, Sources) */
+#define CTL_SRC_LIST 0x2AC1L        /* I1175: a row of the Sources page was picked */
+#define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
+#define CTL_SRC_SYNC 0x2AC3L        /* I1175: the Sources page Sync button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
 #define CTL_SIDE_BASE 0x2900L /* I793: the Your Library sidebar presses, CTL_SIDE_BASE + MUI_SIDE_* */
@@ -1561,7 +1577,13 @@ static const char* mui_col_row(void* ctx, long row) {
     return base != NULL ? base + 1 : r;
 }
 
-static int mui_route_send(void* ctx, const char* line) { return mui_engine_line((mui_state*)ctx, line); }
+static int mui_route_send(void* ctx, const char* line) {
+    mui_state* s = (mui_state*)ctx;
+    if (line != NULL && strcmp(line, "SOURCES") == 0) {
+        mui_srcs_asked(&s->srcs); /* I1175: the next SOURCES rows replace the Sources page rows */
+    }
+    return mui_engine_line(s, line);
+}
 
 /* I1172: a playlist row opens its collection page like the desktop sidebar row (SIDEBAR_ROW, key = the playlist id). */
 static int mui_playlist_page(mui_state* s, const sel_view_row* row, const char* name) {
@@ -1676,6 +1698,60 @@ static Object* mui_browse_page_group(mui_state* s) {
     return g;
 }
 
+/* I1175: the text of Sources page row `row` (mui_srcs_row: name, On or Off, Local or the shared sync status). */
+static const char* mui_src_row(void* ctx, long row) {
+    mui_state* s = (mui_state*)ctx;
+    if (row < 0 || (uint32_t)row >= s->srcs.n) {
+        return "";
+    }
+    mui_srcs_row(&s->srcs, (uint32_t)row, s->src_rowbuf, sizeof s->src_rowbuf);
+    return s->src_rowbuf;
+}
+
+/* I1175: the Sources page (desktop PG source page): one row per source with its switch and sync status, a Switch and a Sync button. */
+static Object* mui_sources_page_group(mui_state* s) {
+    mui_aalist_spec sp;
+    Object* lg;
+    Object* bar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    memset(&sp, 0, sizeof sp);
+    sp.active = -1;
+    sp.row = mui_src_row;
+    sp.ctx = s;
+    sp.max_rows = (int)SEL_SOURCE_MAX;
+    sp.double_pick = 0;
+    lg = mui_aalist_new(&sp, &s->src_list);
+    s->src_switch = mui_make_button_w("Switch On or Off", "tile", CTL_SRC_SWITCH, 0);
+    s->src_sync = mui_make_button_w("Sync", "tile", CTL_SRC_SYNC, 0);
+    if (g == NULL || bar == NULL || lg == NULL || s->src_list == NULL || s->src_switch == NULL || s->src_sync == NULL) {
+        return NULL;
+    }
+    DoMethod(s->src_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_SRC_LIST);
+    DoMethod(bar, OM_ADDMEMBER, s->src_switch);
+    DoMethod(bar, OM_ADDMEMBER, s->src_sync);
+    DoMethod(bar, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, lg);
+    DoMethod(g, OM_ADDMEMBER, bar);
+    return g;
+}
+
+/* I1175: the Library mode row: the shared mode names (Composers, Tree, Columns, Files, History, Sources) as one Cycle. */
+static Object* mui_mode_row_group(mui_state* s) {
+    uint32_t k;
+    s->mode_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+    for (k = 0; k < MUI_LIBMODE_COUNT; k++) {
+        s->libmode_ent[k] = mui_libmode_label(k);
+    }
+    s->libmode_ent[MUI_LIBMODE_COUNT] = NULL;
+    s->cyc_libmode = mui_make_cycle(s->libmode_ent, 0, CTL_LIBMODE);
+    if (s->mode_row == NULL || s->cyc_libmode == NULL) {
+        return NULL;
+    }
+    DoMethod(s->mode_row, OM_ADDMEMBER, s->cyc_libmode);
+    DoMethod(s->mode_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return s->mode_row;
+}
+
 /* I795 (P5): the Search facet chips (sel_uim_search_facets: All, Songs, Albums, Artists), shown while the list's source is Search. */
 static Object* mui_facet_row_group(mui_state* s) {
     uint32_t k;
@@ -1762,11 +1838,14 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->col_page);
     s->home_page = mui_home_page_group(s);
     s->browse_page = mui_browse_page_group(s);
-    if (s->home_page == NULL || s->browse_page == NULL || mui_facet_row_group(s) == NULL) {
+    s->src_page = mui_sources_page_group(s);
+    if (s->home_page == NULL || s->browse_page == NULL || s->src_page == NULL || mui_facet_row_group(s) == NULL || mui_mode_row_group(s) == NULL) {
         return NULL;
     }
     DoMethod(g, OM_ADDMEMBER, s->home_page);
     DoMethod(g, OM_ADDMEMBER, s->browse_page);
+    DoMethod(g, OM_ADDMEMBER, s->src_page);
+    DoMethod(g, OM_ADDMEMBER, s->mode_row);
     DoMethod(g, OM_ADDMEMBER, s->facet_row);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
@@ -2242,7 +2321,7 @@ static void mui_browse_fill(mui_state* s, const sel_state* st) {
 static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_entry* cur, int col) {
     const sel_view_state* v = st->view;
     char key[128];
-    int home = 0, browse = 0, facet = 0;
+    int home = 0, browse = 0, facet = 0, srcp = 0, modes = 0;
     if (v != NULL && v->source == SEL_VIEW_HOME && (cur == NULL || cur->page == (uint32_t)SEL_ROUTE_PAGE_HOME || cur->page == (uint32_t)SEL_ROUTE_PAGE_SHELF)) {
         home = 1;
     }
@@ -2250,6 +2329,10 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
     if (cur != NULL && cur->page >= (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE && strcmp(cur->key, key) == 0) {
         browse = 1;
     }
+    if (cur != NULL && cur->page >= (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE && strncmp(cur->key, "SOURCES", 7) == 0 && (cur->key[7] == '\0' || cur->key[7] == ';')) {
+        srcp = 1; /* I1175: the Sources tile and the Sources mode both enter this page */
+    }
+    modes = !col && !home && !browse;
     if (v != NULL && v->source == SEL_VIEW_SEARCH && !col) {
         facet = 1;
     }
@@ -2259,13 +2342,19 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
     if (browse) {
         mui_browse_fill(s, st);
     }
-    if (col != s->col_shown || home != s->home_shown || browse != s->browse_shown || facet != s->facet_shown) {
+    if (srcp && s->src_gen_seen != s->srcs.gen) {
+        s->src_gen_seen = s->srcs.gen;
+        SetAttrs(s->src_list, UPA_List_Count, (ULONG)s->srcs.n, TAG_DONE);
+    }
+    if (col != s->col_shown || home != s->home_shown || browse != s->browse_shown || facet != s->facet_shown || srcp != s->src_shown || modes != s->modes_shown) {
         ULONG parent = 0;
         uint32_t k;
         s->col_shown = col;
         s->home_shown = home;
         s->browse_shown = browse;
         s->facet_shown = facet;
+        s->src_shown = srcp;
+        s->modes_shown = modes;
         GetAttr(MUIA_Parent, s->col_page, &parent);
         if (parent != 0) {
             DoMethod((Object*)parent, MUIM_Group_InitChange);
@@ -2274,7 +2363,9 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
         set(s->home_page, MUIA_ShowMe, home ? TRUE : FALSE);
         set(s->browse_page, MUIA_ShowMe, browse ? TRUE : FALSE);
         set(s->facet_row, MUIA_ShowMe, facet ? TRUE : FALSE);
-        set(s->listview, MUIA_ShowMe, col || home || browse ? FALSE : TRUE);
+        set(s->src_page, MUIA_ShowMe, srcp ? TRUE : FALSE);
+        set(s->mode_row, MUIA_ShowMe, modes ? TRUE : FALSE);
+        set(s->listview, MUIA_ShowMe, col || home || browse || srcp ? FALSE : TRUE);
         for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
             mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
         }
@@ -2356,6 +2447,9 @@ static void mui_on_event(void* state, const sel_message* evt) {
     if (s != NULL && evt != NULL && evt->id == SEL_EVT_PREFS_CHANGED && evt->argc > 1u && evt->args[0].type == SEL_ARG_STR &&
         evt->args[1].type == SEL_ARG_STR && mui_mode_from_pref(evt->args[0].v.s, evt->args[1].v.s, &mode)) {
         s->mode_pending = mode + 1u;
+    }
+    if (s != NULL && evt != NULL) {
+        mui_srcs_event(&s->srcs, evt); /* I1175: SOURCES rows, sync completion and sync errors */
     }
 }
 
@@ -3206,6 +3300,26 @@ static void mui_control_fire(mui_state* s, LONG id) {
         GetAttr(UPA_List_Picked, s->shelf_list[k], (ULONG*)&picked);
         if (view != NULL && picked >= 0 && s->shelf_first[k] + (uint32_t)picked < view->row_n) {
             mui_home_row_fire(s, view, s->shelf_first[k] + (uint32_t)picked);
+        }
+    } else if (id == CTL_LIBMODE) { /* I1175: the Library mode Cycle: the shared mode lines as one route entry */
+        ULONG act = 0;
+        char joined[512];
+        GetAttr(UPA_Cycle_Active, s->cyc_libmode, &act);
+        if (mui_libmode_joined((uint32_t)act, 12u, joined, sizeof joined) > 0u) {
+            mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 4u, joined, mui_route_send, s);
+        }
+    } else if (id == CTL_SRC_LIST) {
+        long picked = -1;
+        GetAttr(UPA_List_Picked, s->src_list, (ULONG*)&picked);
+        s->src_pick = picked;
+    } else if (id == CTL_SRC_SWITCH) {
+        if (s->src_pick >= 0) {
+            mui_srcs_toggle(&s->srcs, (uint32_t)s->src_pick, mui_p8_send, s);
+        }
+    } else if (id == CTL_SRC_SYNC) {
+        if (s->src_pick >= 0) {
+            mui_srcs_sync(&s->srcs, (uint32_t)s->src_pick, mui_p8_send, s);
+            SetAttrs(s->src_list, UPA_List_Count, (ULONG)s->srcs.n, TAG_DONE);
         }
     } else if (id >= CTL_TILE_BASE && id < CTL_TILE_BASE + (LONG)MUI_TILE_MAX) { /* I795 (P4): a Browse tile */
         mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE));
