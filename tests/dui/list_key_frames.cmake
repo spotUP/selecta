@@ -11,6 +11,9 @@
 #    sidebar's 1) and skips the group heading at row 0 to row 1, the next Down goes to row 2, Up back to row 1 (view_cursor=1);
 #    search_skips counts the moves the heading-skip path sent, one per key (the sentinel, 3);
 # 5. typed query, Tab: Tab leaves the field (focus_moves=1).
+# Search list follows the cursor (I1161, Johan: "the list dont scroll with the selected line so i can navigate out of the visible area"):
+# 6. a copy of the fixture with 80 extra songs named zq..., query "zq", 30 Down: the list scrolls (search_scroll > 0) and
+#    search_follows counts one scroll-into-view per moved row (the sentinel, >= 30); the cursor row stays inside the list area.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -66,7 +69,7 @@ function(live tag timed)
   endif()
   set(${tag}_frames ${nfr} PARENT_SCOPE)
   set(${tag}_repaints ${CMAKE_MATCH_1} PARENT_SCOPE)
-  foreach(k focus_moves view_cursor focus search_skips)
+  foreach(k focus_moves view_cursor focus search_skips search_scroll search_follows)
     if("${o}" MATCHES " ${k}=([0-9]+)")
       set(${tag}_${k} ${CMAKE_MATCH_1} PARENT_SCOPE)
     endif()
@@ -103,4 +106,32 @@ if(NOT sdown_view_cursor EQUAL 1 OR NOT sdown_search_skips EQUAL 3)
 endif()
 if(NOT stab_focus_moves EQUAL 1)
   message(FATAL_ERROR "Tab in the search field must move the focus (focus_moves=${stab_focus_moves})")
+endif()
+
+# 6. (I1161) the Search list scrolls with the keyboard cursor.
+set(db_main "${db}")
+set(db "${WORK}/lib_many.db")
+file(COPY_FILE "${db_main}" "${db}")
+execute_process(COMMAND "${SQLITE3}" "${db}"
+  "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<79) INSERT INTO songs(key, source, path, name, artist, album, added) SELECT 'local:zq'||i||'.mod','local','zq'||i||'.mod','zq'||i,'Zed','ZAlb',1000+i FROM n;"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "adding the extra songs failed: ${err}")
+endif()
+set(keys "tzq@2000")
+foreach(i RANGE 0 29)
+  math(EXPR t "2600 + ${i} * 120")
+  string(APPEND keys " k40000051@${t}")
+endforeach()
+string(APPEND keys " q@7500")
+live(sfollow "${keys}" search)
+message(STATUS "search follow: view_cursor=${sfollow_view_cursor} search_scroll=${sfollow_search_scroll} search_follows=${sfollow_search_follows}")
+if(NOT sfollow_view_cursor GREATER 20)
+  message(FATAL_ERROR "30 Down keys in an 80-row search list must move the cursor past row 20, view_cursor=${sfollow_view_cursor}")
+endif()
+if(NOT sfollow_search_follows GREATER_EQUAL 30)
+  message(FATAL_ERROR "every Down must run the scroll-into-view step, search_follows=${sfollow_search_follows} (want >= 30)")
+endif()
+if(NOT sfollow_search_scroll GREATER 0)
+  message(FATAL_ERROR "the cursor moved to row ${sfollow_view_cursor} but the search list did not scroll (search_scroll=${sfollow_search_scroll})")
 endif()

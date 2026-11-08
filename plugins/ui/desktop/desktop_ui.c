@@ -384,6 +384,7 @@ typedef struct desk {
     int32_t search_restore_q16; /* I1012: the scroll a Back or Forward to the Search page puts back once its results are sent again */
     int search_restore;      /* I1012: 1 while search_restore_q16 waits for the search to fire, 2 while it waits for the results to be tall enough */
     uint32_t search_wheels;  /* sentinel: wheel notches the Search page scroll path took */
+    uint32_t search_follows; /* sentinel (I1161): keyboard moves that ran the Search list scroll-follow */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
     int32_t set_y_q16;       /* I799a: Settings scroll offset in logical pixels, Q16 */
@@ -7872,7 +7873,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "searchplainrow %d %d %d %d\n", (int)d->search_plain_row.x, (int)d->search_plain_row.y, (int)d->search_plain_row.w, (int)d->search_plain_row.h);
     }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
-    o = dump_put(d, o, "search scroll y=%d max=%d wheels=%u\n", d->search_q16, search_max_q16(d), (unsigned)d->search_wheels);
+    o = dump_put(d, o, "search scroll y=%d max=%d wheels=%u follows=%u\n", d->search_q16, search_max_q16(d), (unsigned)d->search_wheels, (unsigned)d->search_follows);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
@@ -9838,7 +9839,7 @@ static int desk_search_out(const desk* d) {
     return 0;
 }
 
-static int32_t search_content_h(desk* d) {
+static int32_t search_rows_h(desk* d, uint32_t upto) {
     const sel_state* st = sel_engine_state(d->engine);
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     uint32_t k, group = 0;
@@ -9850,7 +9851,7 @@ static int32_t search_content_h(desk* d) {
     if (v == NULL || d->browse_filter || v->style == (uint32_t)SEL_VIEW_STYLE_GRID || v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW) {
         return 0;
     }
-    for (k = 0; k < v->row_n; k++) {
+    for (k = 0; k < v->row_n && k < upto; k++) {
         const sel_view_row* r = &v->rows[k];
         if (r->kind == SEL_ROW_HEADING) {
             const char* t = r->text != NULL ? r->text : "";
@@ -9865,6 +9866,11 @@ static int32_t search_content_h(desk* d) {
         }
     }
     return h;
+}
+
+/* The whole drawn height of the results (search_rows_h over every row). */
+static int32_t search_content_h(desk* d) {
+    return search_rows_h(d, UINT32_MAX);
 }
 
 static int32_t search_max_q16(desk* d) {
@@ -13894,6 +13900,20 @@ static int search_list_step(desk* d, const sel_view_state* v, int first, int dir
     if (to < 0) {
         return 0;
     }
+    { /* I1161: the list scrolls with the cursor row, as every other keyboard list does (list_scroll_into); the heading
+       * right above the row comes into view with it */
+        sel_gui_rect mn = panel_rect(d, "main");
+        int32_t view_h = px_to_logical(d, mn.y + mn.h - search_body_y(d, mn));
+        int32_t row_top = px_to_logical(d, search_rows_h(d, (uint32_t)to)), rh = SEARCH_ROW_H, max_q16 = search_max_q16(d);
+        if (to > 0 && v->rows[to - 1].kind == SEL_ROW_HEADING) {
+            row_top -= 32;
+            rh += 32;
+        }
+        d->search_q16 = list_scroll_into(d->search_q16, row_top < 0 ? 0 : row_top, rh, view_h);
+        d->search_q16 = d->search_q16 > max_q16 ? max_q16 : d->search_q16;
+        d->search_restore = 0; /* the user moves: a waiting restore is dropped */
+        d->search_follows++;
+    }
     snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)to);
     d->search_want = to;
     d->search_want_from = (int64_t)v->cursor;
@@ -17228,6 +17248,10 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->viz_tip_drawn;
         d->stats[n].tag = SEL_UI_STAT_VIZ_FALLOFF_RUNS;
         d->stats[n++].value = d->viz_falloff_runs;
+        d->stats[n].tag = SEL_UI_STAT_SEARCH_SCROLL;
+        d->stats[n++].value = (uint32_t)(d->search_q16 >> 16);
+        d->stats[n].tag = SEL_UI_STAT_SEARCH_FOLLOWS;
+        d->stats[n++].value = d->search_follows;
         d->stats[n].tag = SEL_TAG_END;
     }
 
