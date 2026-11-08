@@ -164,6 +164,8 @@ enum { UPV_Button_Align_Left, UPV_Button_Align_Centre, UPV_Button_Align_Right };
 #define UPA_Panel_Role UP_TAG(UP_CLS_PANEL, 0x02)        /* I UPV_Panel_Role_* */
 #define UPA_Panel_FixedWidth UP_TAG(UP_CLS_PANEL, 0x03)  /* I LONG > 0: fixed width and height, no inner padding */
 #define UPA_Panel_FixedHeight UP_TAG(UP_CLS_PANEL, 0x04) /* I LONG > 0 with FixedWidth: the fixed height when it differs */
+#define UPA_Panel_Self UP_TAG(UP_CLS_PANEL, 0x05)        /* G Object*: the panel itself. A MUI Group passes an unknown OM_GET on to its \
+                                                            children, so a Role answer counts only when Self names the asked object */
 enum { UPV_Panel_Role_Panel, UPV_Panel_Role_Surface, UPV_Panel_Role_Raised, UPV_Panel_Role_Count };
 
 /* Shared: tooltip (private to the package) */

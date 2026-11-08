@@ -883,6 +883,27 @@
 *
 ******/
 
+/****** UP-Panel.mcc/UPA_Panel_Self ******
+*
+*   NAME
+*       UPA_Panel_Self -- attribute of UP-Panel.mcc
+*
+*   FUNCTION
+*       Object*: the panel itself. A MUI Group passes an unknown OM_GET on
+*       to its children, so a UPA_Panel_Role answer counts only when
+*       UPA_Panel_Self names the object that was asked.
+*
+*   INPUTS
+*       UPA_Panel_Self - access G. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Panel.mcc, UPA_Panel_Role
+*
+******/
+
 /****** UP-Panel.mcc/UPA_Panel_FixedWidth ******
 *
 *   NAME

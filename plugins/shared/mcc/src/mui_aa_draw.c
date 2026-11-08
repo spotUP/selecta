@@ -228,16 +228,19 @@ static void ctx_unlink(aa_ctx* c) {
 #endif
 }
 
-/* I685w: the colour aa_erase fills: the role colour of the nearest UP-Panel above the object (design 5.2 item 2), else BACKGROUND. */
+/* I685w: the colour aa_erase fills: the role colour of the nearest UP-Panel above the object (design 5.2 item 2), else BACKGROUND.
+ * Run 6: a plain MUI Group (a by-name panel's inner group) passes the Role OM_GET on to its children, so the answer came from a
+ * nested card below and the text face was the child card's colour. A Role answer counts only when Self names the asked object. */
 static uint32_t ctx_bg(const aa_ctx* c) {
-    ULONG p = 0, role = 0;
+    ULONG p = 0, role = 0, self = 0;
     Object* o = c->obj;
     int depth;
     for (depth = 0; depth < 12 && o != NULL; depth++) {
         p = 0;
         GetAttr(MUIA_Parent, o, &p);
         o = (Object*)p;
-        if (o != NULL && GetAttr(UPA_Panel_Role, o, &role)) {
+        self = 0;
+        if (o != NULL && GetAttr(UPA_Panel_Self, o, &self) && (Object*)self == o && GetAttr(UPA_Panel_Role, o, &role)) {
             return mui_aa_panel_rgb(c->tok, (int)role);
         }
     }
