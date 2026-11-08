@@ -1848,7 +1848,7 @@ static void test_open_compact_reach(void) {
     char* src = ui_source();
     const char* lfs = src != NULL ? strstr(src, "static uint32_t mui_layout_for_screen(") : NULL;
     const char* lfe = lfs != NULL ? strstr(lfs, "\n}\n") : NULL;
-    const char* lcall = lfs != NULL ? strstr(lfs, "mui_layout_map_panel(&s->lay, st.layout_w, st.layout_h") : NULL;
+    const char* lcall = lfs != NULL ? strstr(lfs, "mui_layout_map_wide(&s->lay, st.layout_w, st.layout_h") : NULL;
     const char* op = src != NULL ? strstr(src, "static void* mui_open(const sel_ui_open_args* a) {") : NULL;
     const char* loop = op != NULL ? strstr(op, "for (step = 0; mui_layout_for_screen(s, step); step++) {") : NULL;
     CHECK(mui_open_ladder(0, 640u, 256u, 0, &st) == 1 && st.step == 0u && st.layout_w == 640u && st.layout_h == 256u, "step 0 layout %ux%u",
@@ -3241,6 +3241,33 @@ static void test_overlays(void) {
     CHECK(m.detail_hidden && !m.show[MUI_SLOT_DETAIL] && mui_np_toggle_shown(&m), "a resize keeps the panel hidden and the button shown");
     CHECK(mui_np_toggle(&m) == 0u && m.show[MUI_SLOT_DETAIL], "toggle shows the panel again");
     CHECK(mui_np_toggles() - before_np == 2u, "sentinel: %u flips", (unsigned)(mui_np_toggles() - before_np));
+    /* I1166b: Expand Library through the layout the press handler drives (mui_side_wide_toggle), sentinel mui_side_toggles */
+    {
+        uint32_t before_side = mui_side_toggles(), narrow;
+        mui_sidebar_in sin;
+        mui_sidebar_model sm;
+        sel_engine_library_item sit[1];
+        mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_DEFAULT);
+        narrow = m.weight_w[MUI_SLOT_SIDEBAR];
+        CHECK(mui_side_wide_toggle(&m) == 1u && m.side_wide && m.weight_w[MUI_SLOT_SIDEBAR] > narrow && m.show[MUI_SLOT_DETAIL],
+              "Expand widens the sidebar from %u to %u", (unsigned)narrow, (unsigned)m.weight_w[MUI_SLOT_SIDEBAR]);
+        mui_layout_relayout(&m, 1500u, 800u, SEL_UIM_TIER_DEFAULT, NULL);
+        CHECK(m.side_wide && m.weight_w[MUI_SLOT_SIDEBAR] > narrow, "a resize keeps the sidebar expanded");
+        mui_np_toggle(&m);
+        CHECK(m.side_wide, "the Now Playing toggle keeps the sidebar expanded");
+        CHECK(mui_side_wide_toggle(&m) == 0u && m.weight_w[MUI_SLOT_SIDEBAR] == narrow, "Collapse returns the sidebar width");
+        CHECK(mui_side_toggles() - before_side == 2u, "sentinel: %u side flips", (unsigned)(mui_side_toggles() - before_side));
+        memset(&sin, 0, sizeof sin);
+        memset(sit, 0, sizeof sit);
+        sit[0].kind = SEL_LIB_ITEM_ALBUM; snprintf(sit[0].name, sizeof sit[0].name, "Nexus"); sit[0].added = 1000u; sit[0].last_played = 2000u;
+        sin.items = sit; sin.item_n = 1u; sin.filter = ""; sin.wide = 1u; sin.now = 2000 + 7200;
+        mui_sidebar_build(&sin, &sm);
+        CHECK(sm.wide && sm.cols == 4u && strcmp(sm.head[2], "Date Added") == 0 && strcmp(sm.row[0].type, "Album") == 0 && sm.row[0].played[0] != '\0' &&
+                  strcmp(sm.expand, "Collapse Library") == 0, "wide model: table header, type, dates, Collapse label");
+        sin.wide = 0u;
+        mui_sidebar_build(&sin, &sm);
+        CHECK(!sm.wide && sm.cols == 1u && sm.head[0][0] == '\0' && strcmp(sm.expand, "Expand Library") == 0, "narrow model has no table");
+    }
     mui_layout_map(&m, 1000u, 800u, SEL_UIM_TIER_DEFAULT);
     CHECK(!mui_np_toggle_shown(&m), "two columns have no panel to hide");
     mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_BITMAP);
@@ -3253,9 +3280,11 @@ static void test_overlays(void) {
     CHECK(strstr(src, "mui_tip(kind, index, f, flag,") != NULL && strstr(src, "MUIA_ShortHelp") != NULL && strstr(src, "MUI_TIP_DOOR,") != NULL &&
               strstr(src, "MUI_TIP_TRANSPORT,") != NULL && strstr(src, "MUI_TIP_LIKE,") == NULL && strstr(src, "MUI_TIP_SEEK,") != NULL,
           "tooltips are not set from mui_tip");
-    CHECK(strstr(src, "CTL_NP_TOGGLE") != NULL && strstr(src, "mui_np_toggle(&s->lay)") != NULL && strstr(src, "mui_layout_map_panel(&s->lay") != NULL &&
+    CHECK(strstr(src, "CTL_NP_TOGGLE") != NULL && strstr(src, "mui_np_toggle(&s->lay)") != NULL && strstr(src, "mui_layout_map_wide(&s->lay") != NULL &&
               strstr(src, "mui_np_toggle_shown(&s->lay)") != NULL,
           "the Now Playing toggle is not wired");
+    CHECK(strstr(src, "k == MUI_SIDE_EXPAND") != NULL && strstr(src, "mui_side_wide_toggle(&s->lay)") != NULL && strstr(src, "in.wide = s != NULL && s->lay.side_wide") != NULL,
+          "the Expand Library button is not wired to the layout");
     CHECK(strstr(src, "CTL_PAL_BTN") != NULL && strstr(src, "mui_palette_open(&s->pal)") != NULL && strstr(src, "mui_palette_filter(&s->pal,") != NULL &&
               strstr(src, "mui_palette_pick(&s->pal,") != NULL && strstr(src, "mui_palette_sync(s)") != NULL,
           "the command palette is not wired");

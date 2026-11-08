@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "map/mui_map.h"
 #include "map/mui_theme.h"
@@ -230,6 +231,7 @@ typedef struct mui_state {
     Object* info_list;              /* MUI-P4-9 song info rows */
     uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
     int side_rail;                  /* I949c: the sidebar is the compact door rail, side_dyn stays NULL */
+    Object* side_expand_btn;        /* I1166b: the Expand / Collapse Library button, its chevron turns with the layout */
     Object* side_dyn;               /* I669: the sidebar's S5 to S9 group, rebuilt from the model when the filter or the width moves */
     int side_top_bar, side_single;  /* the top bar flag of the build; the chips-or-label decision the dyn group was built with */
     sel_engine_library_item side_items[MUI_SIDEBAR_ROWS]; /* the rows the shared filter pass (sel_uim_lfilter_pass) returned for lib_filter */
@@ -1042,6 +1044,25 @@ static void mui_side_text(Object* g, const char* text, int tone) {
     mui_side_add(g, mui_aatext(text, tone, MUI_AA_ALIGN_LEFT, 0));
 }
 
+/* I1166b: one table line of the expanded sidebar, four cells; the title cell is twice as wide as the others. */
+static void mui_side_cells(Object* g, const char* a, const char* b, const char* c, const char* d, int tone) {
+    Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    const char* txt[4];
+    uint32_t k;
+    txt[0] = a; txt[1] = b; txt[2] = c; txt[3] = d;
+    if (row == NULL) {
+        return;
+    }
+    for (k = 0; k < 4u; k++) {
+        Object* t = mui_aatext(txt[k], tone, MUI_AA_ALIGN_LEFT, 0);
+        if (t != NULL) {
+            SetAttrs(t, MUIA_HorizWeight, k == 0u ? 200 : 100, TAG_DONE);
+            DoMethod(row, OM_ADDMEMBER, t);
+        }
+    }
+    DoMethod(g, OM_ADDMEMBER, row);
+}
+
 static void mui_side_button(Object* g, const char* label, LONG id) {
     mui_side_add(g, mui_make_button_left(label, NULL, id));
 }
@@ -1075,10 +1096,17 @@ static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
         }
         mui_side_add(d, row);
     }
+    if (m->wide) {
+        mui_side_cells(d, m->head[0], m->head[1], m->head[2], m->head[3], MUI_AA_TONE_MUTED);
+    }
     for (i = 0; i < m->row_n; i++) { /* S6: mark, title, subtitle; the model rows are the filtered rows, the only row list */
         char line[200];
         snprintf(line, sizeof line, "%s  %s  %s", m->row[i].mark, m->row[i].title, m->row[i].subtitle);
-        mui_side_text(d, line, MUI_AA_TONE_NORMAL);
+        if (m->wide) { /* I1166b: Expand Library, the table: Title | Type | Date Added | Played (the Mac side_table rows) */
+            mui_side_cells(d, line, m->row[i].type, m->row[i].added, m->row[i].played, MUI_AA_TONE_NORMAL);
+        } else {
+            mui_side_text(d, line, MUI_AA_TONE_NORMAL);
+        }
     }
     if (m->empty[0] != '\0') { /* S8 */
         mui_side_text(d, m->empty, MUI_AA_TONE_MUTED);
@@ -1104,6 +1132,8 @@ static void mui_sidebar_model_for(mui_state* s, int top_bar, mui_sidebar_model* 
     in.bitmap = 0;
     in.rail = s != NULL && s->side_rail; /* I949c */
     in.chip = s != NULL ? s->lib_filter : 0u;
+    in.wide = s != NULL && s->lay.side_wide; /* I1166b: Expand Library */
+    in.now = (int64_t)time(NULL);
     in.chips_single = mui_sidebar_chips_single(!g_screen_rtg, s != NULL && s->lay.weight_w[MUI_SLOT_SIDEBAR] > 0u ? s->lay.weight_w[MUI_SLOT_SIDEBAR] : 0u, g_pixel_aspect_q8);
     in.filter = "";
     in.item_n = s != NULL ? s->side_item_n : 0u;
@@ -1159,10 +1189,11 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     if (hd != NULL) {
         Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT, 0, 0);
         Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE, 0, 0);
-        Object* x = mui_make_button_ex(m.expand, m.expand, "crumb", NULL, CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE, 0, 0);
+        Object* x = mui_make_button_ex(m.expand, m.expand, "nav_forward", "nav_back", CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE, 0, 0);
         if (t != NULL) { DoMethod(hd, OM_ADDMEMBER, t); }
         if (c != NULL) { DoMethod(hd, OM_ADDMEMBER, c); }
         if (x != NULL) { DoMethod(hd, OM_ADDMEMBER, x); }
+        if (s != NULL) { s->side_expand_btn = x; if (x != NULL) { mui_aabtn_set_alt(x, s->lay.side_wide != 0u); } }
         DoMethod(g, OM_ADDMEMBER, hd);
     }
     if (s != NULL && !m.rail) {
@@ -3155,7 +3186,12 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_viewbtn_fire(1, "", 0, mui_p8_send, s); /* S4, S9: PLAYLIST_CREATE, as the Playlists page New button */
         } else if (k >= MUI_SIDE_CHIP) {
             mui_lib_press(s, 0, (int)(k - MUI_SIDE_CHIP)); /* I669: a click on a fitting chip toggles the filter */
-        } else if (k != MUI_SIDE_EXPAND) {
+        } else if (k == MUI_SIDE_EXPAND) {
+            mui_side_wide_toggle(&s->lay); /* I1166b: Expand / Collapse Library, the layout gives the sidebar its widened weight (desktop side_wide_toggle) */
+            mui_apply_layout(s);
+            mui_aabtn_set_alt(s->side_expand_btn, s->lay.side_wide != 0u);
+            mui_sidebar_refresh(s);
+        } else {
             mui_engine_line(s, mui_door_line(3)); /* the header and the kind chips open the playlists page (I673) */
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
@@ -3283,8 +3319,8 @@ static uint32_t mui_layout_for_screen(mui_state* s, uint32_t step) {
         return 0;
     }
     s->open_layout_w = st.layout_w;
-    mui_layout_map_panel(&s->lay, st.layout_w, st.layout_h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP,
-                         s->lay.detail_hidden);
+    mui_layout_map_wide(&s->lay, st.layout_w, st.layout_h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP,
+                        s->lay.detail_hidden, s->lay.side_wide);
     mui_apply_layout(s);
     return 1;
 }

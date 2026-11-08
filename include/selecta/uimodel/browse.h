@@ -70,6 +70,8 @@ uint32_t sel_uim_relative_time(int64_t now, uint32_t then, char* out, uint32_t c
  * (map/mui_sidebar.c). The chips are the kinds a library lists in Spotify's order (I610); each hands the library call a kind mask
  * (I678b). */
 #define SEL_UIM_SIDE_CHIPS 6u
+/* I1166b: the header of column i of the expanded Your Library table: "Title", "Type", "Date Added", "Played"; NULL past 3. */
+const char* sel_uim_side_col_name(uint32_t i);
 const char* sel_uim_side_chip_name(uint32_t i); /* "Playlists", "Albums", "Artists", "Composers", "Sources", "Local Files"; NULL past the count */
 uint32_t sel_uim_side_chip_mask(uint32_t i);    /* the SEL_LIB_ITEM_BIT mask of chip i, 0 past the count */
 typedef enum sel_uim_side_text {
