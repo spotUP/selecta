@@ -67,13 +67,15 @@ typedef struct tui {
     int splash_shown;   /* the frame being drawn is the start screen */
     uint32_t splash_frames; /* flushes that carried the start screen: STAT_SPLASH_FRAMES */
     uint32_t meta_panel_rows; /* catalogue rows the info panel drew in the latest frame (I185 sentinel) */
-    int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase (V cycles) */
+    int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase, 6 SID registers (V cycles) */
+    uint32_t layout; /* I1185: SEL_UIM_LAYOUT_* (pref ui.desktop.mode): full, window (list only), mini (header only), visual (panel only) */
+    uint32_t layout_sets, sid_frames; /* I1185 sentinels: layout / visualizer pref keys taken; SID register panels drawn with a feed */
     int pattern; /* pattern panel shown (P toggles); excludes the viz panel */
     uint32_t voice; /* 1-based voice the digit keys touched last; S solos it */
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[20];
+    sel_tag stats[22];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -353,7 +355,7 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     } else if (strcmp(name, "info") == 0) {
         u->info = !u->info;
     } else if (strcmp(name, "viz") == 0) {
-        u->viz = (u->viz + 1) % 6;
+        u->viz = (u->viz + 1) % 7;
         u->pattern = 0;
     } else if (strcmp(name, "pattern") == 0) {
         u->pattern = !u->pattern;
@@ -434,7 +436,39 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
 
 /* The binding context: the pattern and viz panels replace the list pane. */
 static uint32_t tui_bind_ctx(const tui* u) {
-    return (u->pattern || u->viz) ? TXT_CTX_PLAYER : TXT_CTX_LIST;
+    return (u->pattern || u->viz || u->layout == SEL_UIM_LAYOUT_MINI || u->layout == SEL_UIM_LAYOUT_VISUAL) ? TXT_CTX_PLAYER
+                                                                                                          : TXT_CTX_LIST;
+}
+
+/* I1185: the shared table's layout and visualizer keys (PREF_SET ui.desktop.mode / ui.desktop.viz) answered with the
+ * text panels: Full is the list with the info pane, Window the list alone, Mini the header alone, Visual the
+ * visualizer panel alone; the viz ids pick the panel the `v` key cycles through. */
+static void tui_pref_local(tui* u, const char* line) {
+    static const struct {
+        const char* id;
+        int viz;
+    } viz_ids[] = {{"viz_levels", 1}, {"viz_scope", 2}, {"viz_spectrum", 3}, {"viz_sidregs", 6}};
+    static const char* const modes[] = {"full", "window", "mini", "visual"};
+    const char* v = line + strlen("PREF_SET ui.desktop.");
+    size_t i;
+    if (strncmp(v, "mode ", 5) == 0) {
+        for (i = 0; i < 4u; i++) {
+            if (strcmp(v + 5, modes[i]) == 0) {
+                u->layout = (uint32_t)i;
+                u->pattern = 0;
+                u->viz = i == SEL_UIM_LAYOUT_VISUAL ? (u->viz != 0 ? u->viz : 2) : 0;
+                u->layout_sets++;
+            }
+        }
+    } else if (strncmp(v, "viz ", 4) == 0) {
+        for (i = 0; i < sizeof viz_ids / sizeof viz_ids[0]; i++) {
+            if (strcmp(v + 4, viz_ids[i].id) == 0) {
+                u->viz = viz_ids[i].viz;
+                u->pattern = 0;
+                u->layout_sets++;
+            }
+        }
+    }
 }
 
 /* I1184 sentinel: a bound line that is a row of the shared action table (src/uimodel/actions.c) counts and is logged. */
@@ -497,6 +531,9 @@ static void tui_key(tui* u, const txt_key* k) {
         (void)tui_local(u, action + 1, k);
     } else {
         tui_table_note(u, action);
+        if (strncmp(action, "PREF_SET ui.desktop.", 20) == 0) {
+            tui_pref_local(u, action);
+        }
         tui_send(u, action);
     }
 }
@@ -586,8 +623,12 @@ static int tui_file_step(tui* u, uint32_t timeout_ms) {
         snprintf(alt + 1, sizeof alt - 1u, "%s", rest);
         bytes = alt;
     } else if (bytes == NULL && strncmp(line, "Ctrl-", 5) == 0 && line[5] != '\0' && line[6] == '\0') {
-        alt[0] = (char)(line[5] & 0x1F); /* Ctrl-b, Ctrl-d */
-        alt[1] = '\0';
+        if (line[5] >= '0' && line[5] <= '9') { /* I1185: a Ctrl digit has no control byte; CSI code ; 5 u */
+            snprintf(alt, sizeof alt, "\x1b[%d;5u", (int)line[5]);
+        } else {
+            alt[0] = (char)(line[5] & 0x1F); /* Ctrl-b, Ctrl-d */
+            alt[1] = '\0';
+        }
         bytes = alt;
     }
     if (bytes == NULL) {
@@ -811,7 +852,7 @@ static void tui_overlay(tui* u) {
 
 /* ---- viz and pattern panels (M1.3 I101) ---- */
 
-static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum", "Note dots", "Phase"};
+static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum", "Note dots", "Phase", "SID registers"};
 
 
 /* Phase panel: the last post-mix frames as an L (x) against R (y) plot in 2x4 braille cells, plus
@@ -852,6 +893,45 @@ static void tui_phase_panel(tui* u, const sel_state* s, uint32_t width) {
 }
 
 
+/* SID registers panel (I1185, desktop viz_sidregs, plugins/viz/sidregs/sidregs.c): per chip and voice the frequency,
+ * pulse width, the gate and waveform flags, the envelope level and the filter route; per chip the filter cutoff,
+ * resonance, mode flags and volume. The registers come from the engine's HW feed (f->sid), decoded as sidregs.c does. */
+static void tui_sid_panel(tui* u, const sel_state* s, uint32_t width) {
+    const sel_viz_frame* f = s->viz;
+    txt_style label = tui_style(u, TXT_ROLE_LABEL);
+    txt_style norm = tui_style(u, TXT_ROLE_NORMAL);
+    txt_style dim = tui_style(u, TXT_ROLE_DIM);
+    uint32_t chips = f->sid_chips > SEL_VIZ_SID_CHIPS ? SEL_VIZ_SID_CHIPS : f->sid_chips;
+    uint32_t rows = tui_main_rows(u), k, v, y = 3;
+    char buf[96];
+    if (chips == 0u) {
+        txt_grid_text(&u->grid, 1, 3, "No SID register feed for this song", width - 1u, dim);
+        return;
+    }
+    u->sid_frames++;
+    for (k = 0; k < chips && y + 5u <= rows + 2u; k++) {
+        const sel_viz_sid_chip* c = &f->sid[k];
+        uint32_t cutoff = ((uint32_t)c->reg[0x16] << 3) | ((uint32_t)c->reg[0x15] & 7u);
+        snprintf(buf, sizeof buf, "Chip %u", (unsigned)(k + 1u));
+        txt_grid_text(&u->grid, 1, y++, buf, width - 1u, label);
+        for (v = 0; v < 3u; v++) {
+            const uint8_t* r = &c->reg[7u * v];
+            uint32_t ctl = r[4];
+            snprintf(buf, sizeof buf, "Voice%u Fr %04X Pw %03X %s%s%s%s%s%s%s%s Env %2u%s", (unsigned)(v + 1u),
+                     (unsigned)((uint32_t)r[0] | ((uint32_t)r[1] << 8)),
+                     (unsigned)(((uint32_t)r[2] | ((uint32_t)r[3] << 8)) & 0xFFFu), (ctl & 1u) ? "Gate " : "",
+                     (ctl & 16u) ? "Tri " : "", (ctl & 32u) ? "Saw " : "", (ctl & 64u) ? "Pul " : "",
+                     (ctl & 128u) ? "Noi " : "", (ctl & 2u) ? "Sync " : "", (ctl & 4u) ? "Ring " : "",
+                     (ctl & 8u) ? "Test " : "", (unsigned)c->env[v], ((c->reg[0x17] >> v) & 1u) ? " Flt" : "");
+            txt_grid_text(&u->grid, 1, y++, buf, width - 1u, norm);
+        }
+        snprintf(buf, sizeof buf, "Filter %04u Reso %2u %s%s%s Volume %2u", (unsigned)cutoff,
+                 (unsigned)(c->reg[0x17] >> 4), (c->reg[0x18] & 16u) ? "LP " : "", (c->reg[0x18] & 32u) ? "BP " : "",
+                 (c->reg[0x18] & 64u) ? "HP" : "", (unsigned)(c->reg[0x18] & 15u));
+        txt_grid_text(&u->grid, 1, y++, buf, width - 1u, dim);
+    }
+}
+
 static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
     const sel_viz_frame* f = s->viz;
     txt_style label = tui_style(u, TXT_ROLE_LABEL);
@@ -883,6 +963,10 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
     }
     if (u->viz == 5) {
         tui_phase_panel(u, s, width);
+        return;
+    }
+    if (u->viz == 6) {
+        tui_sid_panel(u, s, width);
         return;
     }
     if (f->voice_count == 0) {
@@ -1024,7 +1108,9 @@ static void tui_splash_draw(tui* u) {
 
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
-    uint32_t width = u->info && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS : u->grid.cols;
+    uint32_t width = u->info && u->layout == SEL_UIM_LAYOUT_FULL && u->grid.cols > TUI_INFO_COLS + 20u
+                         ? u->grid.cols - TUI_INFO_COLS
+                         : u->grid.cols;
     uint32_t y;
     if (s->song.path != NULL) {
         u->splash_off = 1;
@@ -1039,6 +1125,8 @@ static void tui_draw(tui* u) {
     tui_header(u, s);
     if (s->stats != NULL) {
         tui_stats_pane(u, s, width);
+    } else if (u->layout == SEL_UIM_LAYOUT_MINI) {
+        ; /* the header alone */
     } else if (u->pattern) {
         tui_pattern_panel(u, s, width);
     } else if (u->viz) {
@@ -1408,8 +1496,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[17].value = u->table_actions;
     u->stats[18].tag = SEL_UI_STAT_TABLE_ACTION_LOG;
     u->stats[18].value = (uintptr_t)u->table_log;
-    u->stats[19].tag = SEL_TAG_END;
-    u->stats[19].value = 0;
+    u->stats[19].tag = SEL_UI_STAT_LAYOUT;
+    u->stats[19].value = u->layout_sets << 8 | u->layout;
+    u->stats[20].tag = SEL_UI_STAT_SID_FRAMES;
+    u->stats[20].value = u->sid_frames;
+    u->stats[21].tag = SEL_TAG_END;
+    u->stats[21].value = 0;
     return u->stats;
 }
 

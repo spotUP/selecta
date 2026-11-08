@@ -249,6 +249,14 @@ int txt_keys_feed(txt_keys* k, uint8_t b, txt_key* out) {
                     emit(k, out, code, mods);
                     return 1;
                 }
+            } else if (b == 'u' && k->nparams >= 1 && k->params[0] >= 0x21u && k->params[0] < 0x7Fu) {
+                /* I1185: CSI code ; mods u (kitty / fixterms), the only way a terminal sends Ctrl-1..Ctrl-8 */
+                emit(k, out, k->params[0], k->nparams > 1 ? xterm_mods(k->params[1]) : 0u);
+                return 1;
+            } else if (b == '~' && k->nparams >= 3 && k->params[0] == 27u && k->params[2] >= 0x21u &&
+                       k->params[2] < 0x7Fu) { /* xterm modifyOtherKeys: CSI 27 ; mods ; code ~ */
+                emit(k, out, k->params[2], xterm_mods(k->params[1]));
+                return 1;
             } else {
                 code = (b == '~') ? tilde_key(k->params[0]) : final_key(b);
                 if (code) {
