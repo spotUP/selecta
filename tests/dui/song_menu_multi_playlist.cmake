@@ -121,6 +121,17 @@ endif()
 playlist_songs(resF "${dbF}" alpha)
 expect_eq("F playlist content, in list order" "${resF}" "3:a.mod;b.mod;c.mod")
 
+# G (I1147 Johan 2026-11-08 after F, Mac: "i see the "..." in the list when i hover"): with the Add to Playlist step open and the
+#   pointer on its panel, no queue row behind the panel draws its trailing "..." hover button (smenu_rowmore 0; it was 1).
+mp_run(G "${dbF}" queue "${select3}move ${ix} ${first_y}\nwait 1\n" ${q_execs})
+if(NOT "${G}" MATCHES "smenu_pl step=([0-9]+) ")
+  message(FATAL_ERROR "G: the Add to Playlist step is not open in:\n${G}")
+endif()
+if(NOT "${G}" MATCHES "smenu_rowmore ([0-9]+)")
+  message(FATAL_ERROR "G: no smenu_rowmore line in:\n${G}")
+endif()
+expect_eq("G rows behind the open menu showing their \"...\" button" "${CMAKE_MATCH_1}" 0)
+
 # B: no saved playlist: New Playlist... creates one holding the selection.
 set(dbB "${WORK}/b.db")
 mp_run(B "${dbB}" queue "${select3}click ${ix} ${np_y}\nwait 2\n" ${q_execs})

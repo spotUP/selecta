@@ -293,6 +293,7 @@ typedef struct desk {
     char add_name[96];
     uint32_t add_sent;       /* I652b: PLAYLIST_ADD_SONG lines sent from the Library page in add mode */
     uint32_t add_drawn;      /* I652b: Add controls drawn on the Library rows this frame */
+    uint32_t row_more_hover; /* I1147: song rows that drew their trailing "..." this frame because the pointer is on them */
     int imp_wait;            /* I652c: a playlist dialog is open, its answer arrives as a drop: 1 playlist file, 2 folder (I652d) */
     uint32_t addf_sent, addf_seen; /* I652d sentinels: PLAYLIST_ADD_FOLDER lines sent / engine folder adds the UI has shown */
     uint32_t pl_fail_seen; /* I652e: engine import / add-folder failures the UI has shown */
@@ -1072,8 +1073,14 @@ static uint32_t row_ink(desk* d, sel_gui_rect row, uint32_t rest) {
  * A selected row takes the raised surface, a row under the pointer the hover surface, a row that is both the pressed surface, so
  * the pointer shows on every row, the selected one included. 0 = no fill. The pointer is read directly (not through hover_box) so
  * a link inside the row, which owns the hover box while the pointer is on it, does not take the row's fill away. */
+/* 1 while the pointer hovers a list row: no dialog overlay is up and the pointer is not on the open song menu's panel, which
+ * covers the rows under it (I1146 hover fill, I1147 trailing "..." button). The one test every row hover look reads. */
+static int row_hovered(const desk* d, sel_gui_rect row) {
+    return d->overlay == 0 && !pointer_on_song_menu(d) && in_rect(row, d->ptr_x, d->ptr_y);
+}
+
 static uint32_t list_row_fill(desk* d, sel_gui_rect row, int selected) {
-    int hovered = d->overlay == 0 && !pointer_on_song_menu(d) && in_rect(row, d->ptr_x, d->ptr_y); /* I1146: a row under the open menu's panel is not hovered */
+    int hovered = row_hovered(d, row);
     uint32_t fill = hovered ? ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_SURFACE_PRESSED : SEL_GUI_TOKEN_SURFACE_HOVER])
                             : selected ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) : 0u;
     if (hovered) {
@@ -3049,7 +3056,10 @@ static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_
         d->add_drawn++;
         return e;
     }
-    if (in_rect(r, d->ptr_x, d->ptr_y) || (d->sm_open && strcmp(d->sm_ref.path, path) == 0)) {
+    if (row_hovered(d, r) || (d->sm_open && strcmp(d->sm_ref.path, path) == 0)) { /* I1147: not for a row under the open menu's panel */
+        if (row_hovered(d, r)) {
+            d->row_more_hover++;
+        }
         hover_reg(d, e->more);
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_ELLIPSIS, e->more, eh,
                           row_ink(d, e->more, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED])));
@@ -8108,6 +8118,7 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect m0 = song_menu_item_rect(d, 0);
             o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
             o = dump_put(d, o, "smenu_lit %d\n", d->sm_lit);
+            o = dump_put(d, o, "smenu_rowmore %u\n", (unsigned)d->row_more_hover); /* I1147: rows showing "..." from the pointer while the menu is open */
             o = dump_put(d, o, "smenu_pl step=%d playlists=%u sidebar_rows=%u\n", d->sm_step, (unsigned)d->sm_pl_n, (unsigned)d->side_n);
         }
         o = dump_put(d, o, "srcpaint gen=%u painted=%u\n", (unsigned)d->src_gen, (unsigned)d->src_painted);
@@ -10235,6 +10246,7 @@ static void draw_home_content(desk* d) {
     const char** akeys = NULL;
     uint32_t akn = 0;
     d->sm_n = 0;
+    d->row_more_hover = 0u;
     np_title_reg(d);
     hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
     if (d->page == SEL_UIM_PG_BROWSE) {
