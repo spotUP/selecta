@@ -281,6 +281,23 @@ typedef struct mui_list_entry {
 /* Fill out[] from the visible window only (at most window_rows and cap entries); *active is the List cursor
  * position inside the window, -1 when the cursor row is outside it. Returns the entries filled. */
 uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active);
+/* I1174: library styles on the List. mui_style_kind maps a sel_view_style to how MUI shows it. mui_style_pack turns the window's
+ * entries into the packed List rows (Grid: `cols` cells of `cell_chars` per row, cursor cell in [ ]; Cover Flow: one row, cursor cell
+ * between its neighbours; Compact: one dense label per row) and returns the row count, 0 for a plain list style. The cell width is
+ * the desktop's tile step (sel_uim_tile_step / 8 chars); mui_style_grid_cols fits cells into list_chars. mui_style_row_index maps a
+ * clicked packed row back to the window position, mui_style_packed_cursor the window cursor to its packed row. mui_tile_step_move
+ * clamps a step change (desktop pinch). mui_style_packs() counts packs (call-count sentinel). */
+enum { MUI_STYLE_LIST = 0, MUI_STYLE_GRID, MUI_STYLE_COVERFLOW, MUI_STYLE_COMPACT };
+uint32_t mui_style_kind(uint32_t style);
+uint32_t mui_style_cell_chars(uint32_t step);
+uint32_t mui_style_grid_cols(uint32_t list_chars, uint32_t step);
+uint32_t mui_tile_step_move(uint32_t step, int dir);
+struct mui_list_entry;
+uint32_t mui_style_pack(uint32_t style, uint32_t cols, uint32_t cell_chars, const struct mui_list_entry* in, uint32_t n, int32_t cursor,
+                        struct mui_list_entry* out, uint32_t cap);
+int32_t mui_style_row_index(uint32_t style, uint32_t cols, uint32_t packed_row, int32_t cursor);
+int32_t mui_style_packed_cursor(uint32_t style, uint32_t cols, int32_t cursor);
+uint32_t mui_style_packs(void);
 /* MUI-P3-1: the user's row click is sent to the engine as VIEW_CURSOR, but sel_engine_state() is only a snapshot the pump
  * updates later. Until it shows the new cursor, a list rebuild must keep the clicked row selected, not the snapshot's old
  * cursor row (else a double-click right after reads the old row back and activates it). */
