@@ -130,6 +130,10 @@ static ULONG aacycle_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     h = _mheight(obj);
     state = aacycle_state(obj, d);
     mui_aa_cycle_rgb(d->aa.tok, state, &face, &text, &chev, NULL, NULL);
+    if (d->aa.tc) {
+        /* I685x: the super filled the corner wedges with the snapped parent pen; on truecolour repaint them in the exact parent RGB. */
+        aa_round_corners(&d->aa, rp, l, t, w, h, d->m.radius, d->aa.bg_rgb);
+    }
     aa_round_fill(&d->aa, rp, l, t, w, h, d->m.radius, face);
     if (d->n > 0) {
         th = aa_text_height(&d->aa, obj);

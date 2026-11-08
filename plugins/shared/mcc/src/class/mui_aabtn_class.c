@@ -222,6 +222,10 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         d->backend = d->aa.backend + 1;
         return 0;
     }
+    if (d->aa.tc) {
+        /* I685x: the super filled the corner wedges with the snapped parent pen; on truecolour repaint them in the exact parent RGB. */
+        aa_round_corners(&d->aa, rp, l, t, w, h, d->m.radius, d->aa.bg_rgb);
+    }
     aa_round_fill(&d->aa, rp, l, t, w, h, d->m.radius, face);
     if (!d->icon_only) {
         tw = aa_text_width(&d->aa, obj, d->caption);

@@ -146,6 +146,10 @@ static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
         struct RastPort* rp = _rp(obj);
         int n = mui_aa_field_plan(d->aa.tok, &d->m, aafield_focus(obj, d), ops), k;
+        if (d->aa.tc && n > 0) {
+            /* I685x: the super filled the outer corner wedges with the snapped parent pen; on truecolour repaint them in the exact parent RGB. */
+            aa_round_corners(&d->aa, rp, _left(obj), _top(obj), _width(obj), _height(obj), ops[0].radius, d->aa.bg_rgb);
+        }
         for (k = 0; k < n; k++) {
             aa_round_fill_hole(&d->aa, rp, _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
                                ops[k].radius, ops[k].rgb, _left(d->str), _top(d->str), _width(d->str), _height(d->str));
@@ -157,6 +161,10 @@ static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         GetAttr(MUIA_String_Contents, d->str, &cont);
         if (mui_aa_field_placeholder(d->aa.tok, (const char*)cont, aafield_focus(obj, d), &rgb)) {
             int th = aa_text_height(&d->aa, obj);
+            if (d->aa.tc) {
+                /* I685x: the empty String box carries the snapped face pen; on truecolour the face under the placeholder is the exact FACE RGB. */
+                aa_rect(&d->aa, _rp(obj), _left(d->str), _top(d->str), _left(d->str) + _width(d->str) - 1, _top(d->str) + _height(d->str) - 1, d->aa.tok[MUI_AA_FIELD_FACE]);
+            }
             aa_text(&d->aa, obj, _rp(obj), _left(d->str), _top(d->str) + (_height(d->str) - th) / 2, d->placeholder, rgb, d->aa.tok[MUI_AA_FIELD_FACE]);
         }
     }

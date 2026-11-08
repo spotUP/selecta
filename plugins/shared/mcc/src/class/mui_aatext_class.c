@@ -100,7 +100,8 @@ static ULONG aatext_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     uint32_t bg = d->aa.bg_rgb;
     DoSuperMethodA(cl, obj, (Msg)msg);
     if ((msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) && d->aa.tc) {
-        aa_erase(&d->aa, obj, _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)); /* I685w: cover MUI's grey fill with the panel token */
+        /* I685w: cover MUI's grey fill with the panel token. I685x: the super fills the whole box, inner spacing included, so erase the whole box, not only the inner one. */
+        aa_erase(&d->aa, obj, _left(obj), _top(obj), _width(obj), _height(obj));
     }
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) || d->text[0] == '\0') {
         return 0;
