@@ -1,0 +1,8 @@
+# I1189: H, Enter on the first quick tile (Liked Songs) opens its Collection page.
+wait 400
+H
+wait 500
+Down
+wait 100
+Enter
+wait 400

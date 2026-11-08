@@ -1,6 +1,9 @@
 /* The page table (I792): see include/selecta/uimodel/pages.h. */
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <selecta/library_item.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/route.h>
 
@@ -64,4 +67,66 @@ int sel_uim_page_key_at(uint32_t i, const char** action, uint32_t* page) {
     *action = k_page_keys[i].action;
     *page = k_page_keys[i].page;
     return 1;
+}
+
+uint32_t sel_uim_home_shelves(const sel_view_state* v, sel_uim_shelf* out, uint32_t max) {
+    uint32_t i, k, n = 0;
+    int in_quick = 0;
+    if (v == NULL || v->source != SEL_VIEW_HOME) {
+        return 0;
+    }
+    for (i = 0; i < v->row_n; i++) {
+        if (v->rows[i].kind == SEL_ROW_HEADING) {
+            in_quick = (int)v->rows[i].quick; /* I478: the quick-pick grid is not a shelf */
+            if (in_quick) {
+                continue;
+            }
+            if (n == max) {
+                break;
+            }
+            out[n].head = i;
+            out[n].first = i + 1u;
+            out[n].tiles = 0;
+            out[n].rows = 0;
+            n++;
+        } else if (n > 0u && !in_quick) {
+            out[n - 1u].rows++;
+            out[n - 1u].tiles += v->rows[i].key != NULL;
+        }
+    }
+    for (i = 0, k = 0; i < n; i++) {
+        if (out[i].rows > 0u) {
+            out[k++] = out[i];
+        }
+    }
+    return k;
+}
+
+int sel_uim_tile_route(const sel_view_row* r, sel_uim_tile* out) {
+    const char* key = r->key != NULL ? r->key : "";
+    const char* art = r->artist != NULL ? r->artist : "";
+    memset(out, 0, sizeof *out);
+    if (r->composer) { /* I479: the composer's collection page, key and name are the canon */
+        out->kind = (uint32_t)SEL_LIB_ITEM_COMPOSER;
+        snprintf(out->key, sizeof out->key, "%s", key);
+        snprintf(out->name, sizeof out->name, "%s", key);
+        return 1;
+    }
+    if (r->album && r->art_id != 0u) { /* I678h2: the album page by the id the row carries */
+        out->kind = (uint32_t)SEL_LIB_ITEM_ALBUM;
+        out->id = r->art_id;
+        snprintf(out->key, sizeof out->key, "%u", (unsigned)r->art_id);
+        snprintf(out->name, sizeof out->name, "%s", key);
+        snprintf(out->sub, sizeof out->sub, "%s", art);
+        return 1;
+    }
+    if (r->item_kind != 0u) { /* I678j: an item card opens that item's page */
+        out->kind = r->item_kind - 1u;
+        out->id = (uint32_t)strtoul(key, NULL, 10);
+        snprintf(out->key, sizeof out->key, "%s", key);
+        snprintf(out->name, sizeof out->name, "%s", r->text);
+        snprintf(out->sub, sizeof out->sub, "%s", art);
+        return 1;
+    }
+    return 0;
 }

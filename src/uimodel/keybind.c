@@ -164,6 +164,7 @@ static const struct {
     {"f", "@folders"},         {"b", "@stats"},
     {"H", "@home"},          {"c", "@lib_mode"},
     {"x", "@queue_scope"},    {"S", "@settings"},
+    {"e", "@artist_page"},   {"r", "@album_page"},
     {"M-l", "FILTER_LED toggle"},
     /* Context rows. Left and Right page a list and seek when the pattern or viz panel fills the
        main pane; Alt+arrows seek everywhere. Terminal.app sends Option+Left and Option+Right as

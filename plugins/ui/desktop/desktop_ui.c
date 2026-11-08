@@ -2262,47 +2262,12 @@ enum { SHELF_MAX = 8, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_
  * tiles each, see home_reload): Home scrolls by pixels, not by window, so a row past the window is a shelf that never shows. */
 enum { HOME_WINDOW_ROWS = 128 };
 
-typedef struct shelf {
-    uint32_t head;  /* index of the heading in the view window */
-    uint32_t first; /* index of the first row after it */
-    uint32_t tiles; /* rows with a key */
-    uint32_t rows;  /* rows after the heading */
-} shelf;
+typedef sel_uim_shelf shelf; /* I1189: the split lives in uimodel/pages.c */
 
 /* Splits the HOME window into shelves; 0 when the view is not the HOME source. A heading with no row under it is not a
  * shelf (I311): it draws nothing and the shelves below move up. */
 static uint32_t home_shelves(const sel_state* st, shelf* out) {
-    const sel_view_state* v = st->view;
-    uint32_t i, k, n = 0;
-    int in_quick = 0;
-    if (v == NULL || v->source != SEL_VIEW_HOME) {
-        return 0;
-    }
-    for (i = 0; i < v->row_n; i++) {
-        if (v->rows[i].kind == SEL_ROW_HEADING) {
-            in_quick = (int)v->rows[i].quick; /* I478: the quick-pick grid is not a shelf; home_quick reads it */
-            if (in_quick) {
-                continue;
-            }
-            if (n == SHELF_MAX) {
-                break;
-            }
-            out[n].head = i;
-            out[n].first = i + 1u;
-            out[n].tiles = 0;
-            out[n].rows = 0;
-            n++;
-        } else if (n > 0u && !in_quick) {
-            out[n - 1u].rows++;
-            out[n - 1u].tiles += v->rows[i].key != NULL;
-        }
-    }
-    for (i = 0, k = 0; i < n; i++) {
-        if (out[i].rows > 0u) {
-            out[k++] = out[i];
-        }
-    }
-    return k;
+    return sel_uim_home_shelves(st->view, (sel_uim_shelf*)out, SHELF_MAX); /* I1189: the one split every UI shares */
 }
 
 /* 1 when the HOME source holds at least one tile: the shelves replace the queue grid. */
@@ -2664,33 +2629,13 @@ static void shelf_activate_row(desk* d, uint32_t row) {
     if (row == 0xFFFFFFFFu) {
         return;
     }
-    if (st->view->rows[row].composer) { /* I479: a composer tile opens that composer's page */
-        char canon[SEL_COMPOSER_MAX]; /* copied first: the page change replaces the view */
-        snprintf(canon, sizeof canon, "%s", st->view->rows[row].key);
-        desk_route(d, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, canon, canon, ""); /* I678f/I678h2: the composer's collection page */
-        d->shelf_plays++;
-        return;
-    }
-    if (st->view->rows[row].album && st->view->rows[row].art_id != 0u) { /* I678h2: an album tile opens the album page by the id its row carries */
-        char key[16], name[96], sub[96];
-        uint32_t id = st->view->rows[row].art_id; /* copied first: the page change replaces the view */
-        snprintf(key, sizeof key, "%u", (unsigned)id);
-        snprintf(name, sizeof name, "%s", st->view->rows[row].key != NULL ? st->view->rows[row].key : "");
-        snprintf(sub, sizeof sub, "%s", st->view->rows[row].artist != NULL ? st->view->rows[row].artist : "");
-        desk_route(d, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_ALBUM, id, key, name, sub);
-        d->shelf_plays++;
-        return;
-    }
-    if (st->view->rows[row].item_kind != 0u) { /* I678j: an item card opens that item's page */
-        char key[160], name[256], sub[160]; /* copied first: the page change replaces the view */
-        uint32_t kind = st->view->rows[row].item_kind - 1u;
-        const char* art = st->view->rows[row].artist;
-        snprintf(key, sizeof key, "%s", st->view->rows[row].key != NULL ? st->view->rows[row].key : "");
-        snprintf(name, sizeof name, "%s", st->view->rows[row].text);
-        snprintf(sub, sizeof sub, "%s", art != NULL ? art : "");
-        desk_item_open(d, SEL_ROUTE_HOME_TILE, kind, (uint32_t)strtoul(key, NULL, 10), key, name, sub);
-        d->shelf_plays++;
-        return;
+    { /* I1189: composer, album and item tiles open their page; the shared helper says which (uimodel/pages.c) */
+        sel_uim_tile tile; /* copies: the page change replaces the view */
+        if (sel_uim_tile_route(&st->view->rows[row], &tile)) {
+            desk_item_open(d, SEL_ROUTE_HOME_TILE, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+            d->shelf_plays++;
+            return;
+        }
     }
     snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + row));
     desk_send(d, line);

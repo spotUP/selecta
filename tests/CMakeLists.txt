@@ -4259,3 +4259,16 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings.cmake")
   set_tests_properties(text-ui-settings PROPERTIES LABELS m3)
 endif()
+# I1189: the text UI Shelf page (Show all) and Collection page (tile Enter, keys e and r) over uimodel/pages.h.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-pages
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_d.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_pages"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages.cmake")
+  set_tests_properties(text-ui-pages PROPERTIES LABELS m3)
+endif()

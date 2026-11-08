@@ -1104,6 +1104,9 @@ int main(int argc, char** argv)
            (unsigned)(sel_tag_find(ust, SEL_UI_STAT_STYLE, 0) >> 8));
     {
         const sel_host* ph = sel_engine_plugin_host(e);
+        uintptr_t pgs = sel_tag_find(ust, SEL_UI_STAT_PAGES, 0);
+        printf("text_pages shelf_opens=%u collection_opens=%u page_rows=%u page=%u\n", (unsigned)(pgs & 0xFFu),
+               (unsigned)((pgs >> 8) & 0xFFu), (unsigned)((pgs >> 16) & 0xFFu), (unsigned)((pgs >> 24) & 0xFu));
         uintptr_t st = sel_tag_find(ust, SEL_UI_STAT_SETTINGS, 0);
         printf("text_settings_sets=%u settings_opens=%u settings_row=%u crossfeed=%s stereo_width=%s\n", (unsigned)(st & 0xFFu),
                (unsigned)(st >> 8 & 0xFFu), (unsigned)(st >> 16 & 0xFFu), ph != NULL ? ph->config_get(ph, "dsp.crossfeed", "") : "",
