@@ -8,4 +8,7 @@
 extern const uint8_t sid_openrom_kernal[8192];
 extern const uint8_t sid_openrom_basic[8192];
 extern const uint8_t sid_openrom_chargen[4096];
+/* Polly Tracker player, RSID header + 962 bytes (I710ar, third_party/polly_player). */
+#define SID_POLLY_PLAYER_SIZE 1086u
+extern const uint8_t sid_polly_player[SID_POLLY_PLAYER_SIZE];
 #endif

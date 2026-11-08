@@ -29,6 +29,7 @@ struct sid_shim {
 extern "C" {
 
 const uint8_t* sid_shim_builtin_kernal(void) { return sid_openrom_kernal; }
+const uint8_t* sid_shim_polly_player(void) { return sid_polly_player; }
 const uint8_t* sid_shim_builtin_basic(void) { return sid_openrom_basic; }
 const uint8_t* sid_shim_builtin_chargen(void) { return sid_openrom_chargen; }
 

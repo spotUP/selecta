@@ -32,6 +32,12 @@ foreach(rom kernal:kernal_generic basic:basic_generic chargen:chargen_openroms)
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," rom_hex "${rom_hex}")
   string(APPEND SEL_OPENROMS_BODY "const uint8_t sid_openrom_${rom_name}[] = {${rom_hex}};\n")
 endforeach()
+# Polly Tracker player (I710ar): the RSID header and 962 player bytes the sid plugin puts in front of a Polly module.
+set(SEL_POLLY_PLAYER "${PROJECT_SOURCE_DIR}/third_party/polly_player/polly_player.bin")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SEL_POLLY_PLAYER}")
+file(READ "${SEL_POLLY_PLAYER}" polly_hex HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," polly_hex "${polly_hex}")
+string(APPEND SEL_OPENROMS_BODY "const uint8_t sid_polly_player[SID_POLLY_PLAYER_SIZE] = {${polly_hex}};\n")
 file(WRITE "${SEL_OPENROMS_CPP}.tmp" "${SEL_OPENROMS_BODY}")
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SEL_OPENROMS_CPP}.tmp" "${SEL_OPENROMS_CPP}")
 

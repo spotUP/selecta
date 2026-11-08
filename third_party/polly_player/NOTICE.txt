@@ -1,0 +1,12 @@
+polly_player.bin (I710ar): the Polly Tracker C64 player, 1086 bytes = a 124-byte RSID v2 header followed by the 962 bytes at $0801
+(load address $0801 plus the 6502 player code), the first 0x7C + 962 bytes of HVSC/DEMOS/UNKNOWN/Polly_Rock.sid
+(md5 of the whole HVSC file bfe033969b4a5d1374cfe788904f10af, title "Polly Rock", 2005).
+
+Origin: Polly Tracker by Aleksi Eeben (2005). Its module-to-SID tool makes a tune of this player followed by the module as saved; the players in the
+four HVSC tunes made so differ only in byte 43 (the high byte of where the module ends), which the Selecta sid plugin sets per song. The same
+approach is bbmp's (github.com/creep-ltx/bbmp, src/bbmp/backends/polly.py, GPL-3.0-or-later), which downloads this file from HVSC at run time.
+
+Licence: none stated by the author. Johan decided 2026-11-08 to vendor the player bytes in the repository (scene files free to use, project policy);
+the 962 bytes are 6502 machine code, not C++ or Python source, and are not linked into any binary as code: they are data that the sid plugin
+(GPL-2) copies in front of a Polly module and hands to libsidplayfp. The header's name/author/released texts are overwritten per song.
+Remove on request of the author.
