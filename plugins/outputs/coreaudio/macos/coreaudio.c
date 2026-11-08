@@ -20,8 +20,10 @@
 
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -54,13 +56,24 @@ struct ca_out {
     uint32_t default_changed;         /* atomic: the system default output moved since the last bind */
     uint32_t binds;                   /* how many times the unit was bound to a device (the first open counts) */
     uint32_t latency_ms;              /* real latency of the bound device */
-    /* AirPlay route mode: the pump pulls on its own thread and queues sample buffers ahead of the synchronizer clock. */
+    /* AirPlay route mode (I1143): a worker thread owns every renderer call except create, because setRate:time: and
+     * setRate:0 wait on the AirPlay device's IO cycle (AudioQueuePause) and the UI thread never waits on the device.
+     * The UI thread writes `av` and `av_doomed` under av_lock; the worker reads them under it and makes the calls
+     * outside it. With a test device layer (g_be set) the pump drives the renderer inline, as before, so the host test
+     * stays deterministic. */
     void* av;           /* the renderer while the AirPlay route entry is picked, else NULL */
-    int av_anchored;    /* the synchronizer clock runs */
-    int64_t av_pts;     /* frames queued so far: the presentation time of the next buffer */
+    void* av_doomed;    /* a renderer the UI thread left (another device picked); the worker destroys it */
+    int av_anchored;    /* the synchronizer clock runs (worker-owned while the worker runs) */
+    int64_t av_pts;     /* frames queued so far: the presentation time of the next buffer (worker-owned likewise) */
     int16_t* av_buf;    /* CA_AV_CHUNK stereo frames, allocated at open */
     uint32_t av_buffers; /* atomic: sample buffers queued (the --stats sentinel out_av_buffers) */
-    uint32_t av_flushes; /* OUT_FLUSH calls that cleared the renderer queue (out_av_flushes) */
+    uint32_t av_flushes; /* atomic: OUT_FLUSH requests applied to the renderer queue (out_av_flushes) */
+    uint32_t av_flush_req; /* atomic: OUT_FLUSH requests from the UI thread; the worker applies each */
+    pthread_mutex_t av_lock;
+    pthread_cond_t av_wake;
+    pthread_t av_thread;
+    int av_thread_on;   /* the worker runs (UI-thread view) */
+    int av_quit;        /* under av_lock: the worker exits */
 };
 
 /* Queue ahead of the synchronizer clock: enough to ride out the pump's scheduling, small enough that a seek is heard soon. */
@@ -72,6 +85,91 @@ static const ca_av_backend* g_av; /* a test fake; NULL = AVFoundation */
 
 static const ca_av_backend* av_be(void) {
     return g_av != NULL ? g_av : &ca_av_real;
+}
+
+/* ---- I1143 test knob: a slow AirPlay route ----
+ * SELECTA_CA_AV_FAKE_BLOCK_MS=<ms> swaps the AVFoundation renderer for one that plays nothing, whose clock runs on wall
+ * time while started, and whose start (setRate:time:) and flush (setRate:0) sleep <ms>. That models the live AirPlay
+ * route, where AudioQueuePause inside setRate waits on the device's IO cycle (sample in the I1143 report). Only the
+ * coreaudio-av-nowait test sets it; one renderer exists at a time, so the state is static. */
+static struct {
+    uint32_t rate;
+    uint32_t block_ms;
+    int running;
+    int64_t anchor_pts;
+    uint64_t anchor_ns;
+} g_slow;
+
+static uint64_t ca_now_ns(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec;
+}
+
+static void ca_slow_block(void) {
+    struct timespec t;
+    t.tv_sec = (time_t)(g_slow.block_ms / 1000u);
+    t.tv_nsec = (long)(g_slow.block_ms % 1000u) * 1000000L;
+    nanosleep(&t, NULL);
+}
+
+static void* ca_slow_create(uint32_t rate) {
+    g_slow.rate = rate;
+    g_slow.running = 0;
+    return &g_slow;
+}
+
+static void ca_slow_destroy(void* av) {
+    (void)av;
+    ca_slow_block();
+    g_slow.running = 0;
+}
+
+static int ca_slow_ready(void* av) {
+    (void)av;
+    return 1;
+}
+
+static int ca_slow_enqueue(void* av, const int16_t* pcm, uint32_t frames, int64_t pts) {
+    (void)av;
+    (void)pcm;
+    (void)frames;
+    (void)pts;
+    return 1;
+}
+
+static int64_t ca_slow_played(void* av) {
+    (void)av;
+    if (!g_slow.running) {
+        return g_slow.anchor_pts;
+    }
+    return g_slow.anchor_pts + (int64_t)((ca_now_ns() - g_slow.anchor_ns) * g_slow.rate / 1000000000ull);
+}
+
+static void ca_slow_start(void* av, int64_t pts) {
+    (void)av;
+    ca_slow_block();
+    g_slow.anchor_pts = pts;
+    g_slow.anchor_ns = ca_now_ns();
+    g_slow.running = 1;
+}
+
+static void ca_slow_flush(void* av) {
+    g_slow.anchor_pts = ca_slow_played(av);
+    ca_slow_block();
+    g_slow.running = 0;
+}
+
+static const ca_av_backend g_av_slow = {ca_slow_create, ca_slow_destroy, ca_slow_ready, ca_slow_enqueue,
+                                        ca_slow_played, ca_slow_start, ca_slow_flush};
+
+/* Installs the slow fake when the knob is set (real device layer only; the host test brings its own fakes). */
+static void ca_slow_knob(void) {
+    const char* v = getenv("SELECTA_CA_AV_FAKE_BLOCK_MS");
+    if (g_be == NULL && v != NULL && v[0] != '\0') {
+        g_slow.block_ms = (uint32_t)strtoul(v, NULL, 10);
+        g_av = &g_av_slow;
+    }
 }
 
 static OSStatus ca_render(void* ref, AudioUnitRenderActionFlags* flags, const AudioTimeStamp* ts,
@@ -314,17 +412,38 @@ static int ca_is_route(const char* uid) {
     return strcmp(uid, SEL_OUT_DEVICE_AIRPLAY_ROUTE) == 0;
 }
 
+/* Drops the renderer. While the worker runs it destroys the renderer (destroy calls setRate:0, which waits on the
+ * device); otherwise no thread uses it and the caller destroys it here. */
 static void ca_av_drop(ca_out* o) {
+    void* old = NULL;
     if (o->av != NULL) {
-        av_be()->destroy(o->av);
-        o->av = NULL;
+        if (o->av_thread_on) {
+            pthread_mutex_lock(&o->av_lock);
+            /* The worker may still be inside a call on the last doomed renderer: only it may destroy that one. A second
+             * pick inside one worker turn is the only way here, so this wait is rare. */
+            while (o->av_doomed != NULL) {
+                pthread_cond_wait(&o->av_wake, &o->av_lock);
+            }
+            o->av_doomed = o->av;
+            o->av = NULL;
+            pthread_cond_broadcast(&o->av_wake);
+            pthread_mutex_unlock(&o->av_lock);
+        } else {
+            old = o->av;
+            o->av = NULL;
+            o->av_anchored = 0;
+            o->av_pts = 0;
+        }
     }
-    o->av_anchored = 0;
-    o->av_pts = 0;
+    if (old != NULL) {
+        av_be()->destroy(old);
+    }
 }
 
 /* Binds the unit to `uid`. A running unit is stopped and uninitialised first (CurrentDevice cannot change under it).
- * The AirPlay route entry stops the unit and creates the renderer; any other uid drops the renderer. */
+ * The AirPlay route entry stops the unit and creates the renderer; any other uid drops the renderer. Create stays on
+ * the calling thread (it allocates the renderer and does not wait on the device), so a failed create still fails the
+ * bind. */
 static int ca_bind(ca_out* o, const char* uid) {
     int was_started = o->started;
     if (was_started) {
@@ -333,9 +452,19 @@ static int ca_bind(ca_out* o, const char* uid) {
     }
     if (ca_is_route(uid)) {
         if (o->av == NULL) {
-            o->av = av_be()->create(o->rate);
-            if (o->av == NULL) {
+            void* av = av_be()->create(o->rate);
+            if (av == NULL) {
                 return 0;
+            }
+            if (o->av_thread_on) {
+                pthread_mutex_lock(&o->av_lock);
+                o->av = av;
+                pthread_cond_broadcast(&o->av_wake);
+                pthread_mutex_unlock(&o->av_lock);
+            } else {
+                o->av = av;
+                o->av_anchored = 0;
+                o->av_pts = 0;
             }
         }
         snprintf(o->uid, sizeof o->uid, "%s", uid);
@@ -356,9 +485,29 @@ static int ca_bind(ca_out* o, const char* uid) {
     return 1;
 }
 
+/* Stops the worker (OUT_CLOSE only). The join waits for the worker's call in flight, at most one renderer call. */
+static void ca_av_stop_worker(ca_out* o) {
+    if (!o->av_thread_on) {
+        return;
+    }
+    pthread_mutex_lock(&o->av_lock);
+    o->av_quit = 1;
+    pthread_cond_broadcast(&o->av_wake);
+    pthread_mutex_unlock(&o->av_lock);
+    pthread_join(o->av_thread, NULL);
+    o->av_thread_on = 0;
+}
+
 static void ca_free(ca_out* o) {
     const sel_host* host = o->host;
+    ca_av_stop_worker(o);
+    if (o->av_doomed != NULL) {
+        av_be()->destroy(o->av_doomed);
+        o->av_doomed = NULL;
+    }
     ca_av_drop(o);
+    pthread_cond_destroy(&o->av_wake);
+    pthread_mutex_destroy(&o->av_lock);
     host->mem_free(host, o->av_buf);
     host->mem_free(host, o);
 }
@@ -377,6 +526,7 @@ static void* ca_open(const sel_host* host, uint32_t rate, uint32_t channels) {
     if (channels != 2 || rate == 0 || (g_be == NULL && !ca_has_output_device())) {
         return NULL;
     }
+    ca_slow_knob();
     o = (ca_out*)host->mem_alloc(host, sizeof *o, SEL_MEM_FAST);
     if (o == NULL) {
         return NULL;
@@ -384,8 +534,12 @@ static void* ca_open(const sel_host* host, uint32_t rate, uint32_t channels) {
     memset(o, 0, sizeof *o);
     o->host = host;
     o->rate = rate;
+    pthread_mutex_init(&o->av_lock, NULL);
+    pthread_cond_init(&o->av_wake, NULL);
     o->av_buf = (int16_t*)host->mem_alloc(host, (size_t)CA_AV_CHUNK * 2u * sizeof(int16_t), SEL_MEM_FAST);
     if (o->av_buf == NULL) {
+        pthread_cond_destroy(&o->av_wake);
+        pthread_mutex_destroy(&o->av_lock);
         host->mem_free(host, o);
         return NULL;
     }
@@ -449,6 +603,7 @@ static void* ca_open(const sel_host* host, uint32_t rate, uint32_t channels) {
 static void ca_close(void* state) {
     ca_out* o = (ca_out*)state;
     if (o) {
+        ca_av_stop_worker(o); /* before the unit and the pull source go away */
         be()->watch_default(o, 0);
         if (o->started) {
             be()->stop(o);
@@ -482,56 +637,157 @@ static void ca_retarget(ca_out* o) {
  * clock, so the front end paces itself on the route's clock as it does on the HAL device clock. The clock starts at the
  * first queued buffer and is re-anchored when it ran past everything queued (an underrun, or a pause that stopped the
  * pump), so the next buffer is heard instead of dropped as late. Volume is the engine's software gain on the pulled PCM. */
-static uint32_t ca_av_pump(ca_out* o, uint32_t frames) {
+/* One step of the AirPlay route feed: pull up to `n` frames and queue them, unless the renderer already holds
+ * CA_AV_AHEAD_MS or is not ready. 1 = queued, 0 = nothing to do now, -1 = enqueue failed, 2 = a flush was requested
+ * while pulling (`flush_seen` != the request count), so the chunk belongs to the old position and is dropped. */
+static int ca_av_step(ca_out* o, void* rend, uint32_t n, const uint32_t* flush_seen) {
     const ca_av_backend* av = av_be();
     int64_t ahead = (int64_t)o->rate * CA_AV_AHEAD_MS / 1000;
+    int64_t played = av->played(rend);
+    int64_t pts = o->av_pts;
+    uint32_t got;
+    if ((o->av_anchored && played < pts && pts - played >= ahead) || !av->ready(rend)) {
+        return 0;
+    }
+    got = o->pull(o->pull_ctx, o->av_buf, n);
+    if (got < n) {
+        memset(o->av_buf + (size_t)got * 2u, 0, (size_t)(n - got) * 2u * sizeof(int16_t));
+    }
+    if (flush_seen != NULL && __atomic_load_n(&o->av_flush_req, __ATOMIC_ACQUIRE) != *flush_seen) {
+        return 2;
+    }
+    if (!av->enqueue(rend, o->av_buf, n, pts)) {
+        return -1;
+    }
+    o->av_pts = pts + n;
+    if (!o->av_anchored || played >= pts) {
+        av->start(rend, pts);
+        o->av_anchored = 1;
+    }
+    __atomic_fetch_add(&o->frames, n, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&o->callbacks, 1u, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&o->av_buffers, 1u, __ATOMIC_RELAXED);
+    return 1;
+}
+
+/* Inline feed (test device layer only): the pump queues `frames` itself, as ca_pump did before the worker. */
+static uint32_t ca_av_pump_inline(ca_out* o, uint32_t frames) {
     uint32_t done = 0;
     uint32_t idle_ms = 0;
     while (done < frames && idle_ms < 2000u) {
-        int64_t played = av->played(o->av);
-        int64_t pts = o->av_pts;
         uint32_t n = frames - done;
-        uint32_t got;
-        if ((o->av_anchored && played < pts && pts - played >= ahead) || !av->ready(o->av)) {
+        int r;
+        if (n > CA_AV_CHUNK) {
+            n = CA_AV_CHUNK;
+        }
+        r = ca_av_step(o, o->av, n, NULL);
+        if (r < 0) {
+            break;
+        }
+        if (r == 0) {
             be()->idle(o);
             idle_ms++;
             continue;
         }
-        if (n > CA_AV_CHUNK) {
-            n = CA_AV_CHUNK;
-        }
-        got = o->pull(o->pull_ctx, o->av_buf, n);
-        if (got < n) {
-            memset(o->av_buf + (size_t)got * 2u, 0, (size_t)(n - got) * 2u * sizeof(int16_t));
-        }
-        if (!av->enqueue(o->av, o->av_buf, n, pts)) {
-            break;
-        }
-        o->av_pts = pts + n;
-        if (!o->av_anchored || played >= pts) {
-            av->start(o->av, pts);
-            o->av_anchored = 1;
-        }
         done += n;
         idle_ms = 0;
-        __atomic_fetch_add(&o->frames, n, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&o->callbacks, 1u, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&o->av_buffers, 1u, __ATOMIC_RELAXED);
     }
     return done;
 }
 
+/* The worker: adopts the renderer the UI thread bound, destroys the ones it left, applies flush requests and keeps the
+ * renderer CA_AV_AHEAD_MS ahead of the synchronizer clock. Every call that waits on the device runs here. */
+static void* ca_av_worker(void* arg) {
+    ca_out* o = (ca_out*)arg;
+    const ca_av_backend* av = av_be();
+    void* cur = NULL;
+    uint32_t flush_seen = __atomic_load_n(&o->av_flush_req, __ATOMIC_ACQUIRE);
+    pthread_mutex_lock(&o->av_lock);
+    for (;;) {
+        void* rend;
+        uint32_t req;
+        int r;
+        if (o->av_doomed != NULL) {
+            void* d = o->av_doomed;
+            pthread_mutex_unlock(&o->av_lock);
+            av->destroy(d);
+            pthread_mutex_lock(&o->av_lock);
+            o->av_doomed = NULL;
+            pthread_cond_broadcast(&o->av_wake);
+            continue;
+        }
+        if (o->av_quit) {
+            break;
+        }
+        if (o->av == NULL) {
+            pthread_cond_wait(&o->av_wake, &o->av_lock);
+            continue;
+        }
+        rend = o->av;
+        pthread_mutex_unlock(&o->av_lock);
+        if (rend != cur) { /* a fresh renderer: its clock starts at media time 0 */
+            cur = rend;
+            o->av_pts = 0;
+            o->av_anchored = 0;
+        }
+        req = __atomic_load_n(&o->av_flush_req, __ATOMIC_ACQUIRE);
+        if (req != flush_seen) {
+            flush_seen = req;
+            av->flush(rend);
+            o->av_anchored = 0;
+            __atomic_fetch_add(&o->av_flushes, 1u, __ATOMIC_RELAXED);
+        }
+        r = ca_av_step(o, rend, CA_AV_CHUNK, &flush_seen);
+        if (r == 0 || r < 0) {
+            be()->idle(o);
+        }
+        pthread_mutex_lock(&o->av_lock);
+    }
+    pthread_mutex_unlock(&o->av_lock);
+    return NULL;
+}
+
 /* OUT_FLUSH: a seek or a user song change. On the AirPlay route path the renderer holds up to CA_AV_AHEAD_MS of the old
- * position; drop it and stop the clock, so the next pump re-anchors the clock at the next buffer and the new position is
- * heard at once. The HAL path queues nothing ahead of its render callback. Runs on the pump thread, like ca_av_pump. */
+ * position; drop it and stop the clock, so the next buffer re-anchors the clock and the new position is heard at once.
+ * The flush calls setRate:0, which waits on the device, so the UI thread only posts the request and the worker applies
+ * it (I1143). The HAL path queues nothing ahead of its render callback. */
 static void ca_flush(void* state) {
     ca_out* o = (ca_out*)state;
     if (o->av == NULL) {
         return;
     }
+    if (o->av_thread_on) {
+        __atomic_fetch_add(&o->av_flush_req, 1u, __ATOMIC_RELEASE);
+        return;
+    }
+    if (g_be == NULL) { /* the worker has not started yet: nothing is queued or running */
+        return;
+    }
     av_be()->flush(o->av);
     o->av_anchored = 0;
-    o->av_flushes++;
+    __atomic_fetch_add(&o->av_flushes, 1u, __ATOMIC_RELAXED);
+}
+
+/* AirPlay route pump on the UI thread: wait until the worker queued `frames` more, so the front end paces itself on the
+ * route's clock as on the HAL device clock, but never longer than two turns' worth of wall time, so a renderer call
+ * that waits on the device (a re-anchor after a flush, a slow route) never holds the UI. */
+static uint32_t ca_av_pump(ca_out* o, uint32_t frames) {
+    const sel_host* h = o->host;
+    uint32_t start = __atomic_load_n(&o->frames, __ATOMIC_RELAXED);
+    uint32_t cap_ms = (uint32_t)((uint64_t)frames * 2000u / o->rate) + 1u;
+    uint32_t t0 = h->clock_ms(h);
+    uint32_t done = 0;
+    if (!o->av_thread_on) {
+        if (pthread_create(&o->av_thread, NULL, ca_av_worker, o) != 0) {
+            return 0;
+        }
+        o->av_thread_on = 1;
+    }
+    while (done < frames && h->clock_ms(h) - t0 < cap_ms) {
+        be()->idle(o);
+        done = __atomic_load_n(&o->frames, __ATOMIC_RELAXED) - start;
+    }
+    return done < frames ? done : frames;
 }
 
 static uint32_t ca_pump(void* state, uint32_t frames) {
@@ -544,7 +800,7 @@ static uint32_t ca_pump(void* state, uint32_t frames) {
     }
     ca_retarget(o);
     if (o->av != NULL) {
-        return ca_av_pump(o, frames);
+        return g_be != NULL ? ca_av_pump_inline(o, frames) : ca_av_pump(o, frames);
     }
     start = __atomic_load_n(&o->frames, __ATOMIC_RELAXED);
     if (!o->started) {
@@ -577,7 +833,7 @@ static const sel_tag* ca_stats(void* state) {
     o->stats[2].tag = SEL_OUT_STAT_AV_BUFFERS;
     o->stats[2].value = __atomic_load_n(&o->av_buffers, __ATOMIC_RELAXED);
     o->stats[3].tag = SEL_OUT_STAT_AV_FLUSHES;
-    o->stats[3].value = o->av_flushes;
+    o->stats[3].value = __atomic_load_n(&o->av_flushes, __ATOMIC_RELAXED);
     o->stats[4].tag = SEL_TAG_END;
     o->stats[4].value = 0;
     return o->stats;

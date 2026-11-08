@@ -219,6 +219,13 @@ if(APPLE)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/coreaudio_airplay_route"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/coreaudio_airplay_route.cmake")
   set_tests_properties(coreaudio-airplay-route PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
+  # I1143 reachability: a Next click on the AirPlay route path, with a renderer whose setRate blocks 500 ms, keeps the UI
+  # thread's longest gap under 200 ms. Volume 0 and a renderer that plays nothing.
+  add_test(NAME coreaudio-av-nowait
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_TESTMOD}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/coreaudio_av_nowait"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/coreaudio_av_nowait.cmake")
+  set_tests_properties(coreaudio-av-nowait PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/isolate_config.cmake")
