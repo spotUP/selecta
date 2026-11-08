@@ -2989,6 +2989,22 @@ if(NOT SEL_AMIGA)
   set_tests_properties(text-ui-shared-actions PROPERTIES LABELS m3)
 endif()
 
+# I1185: the text UI layouts (Ctrl-1..4) and visualizers (Ctrl-5..8), including the SID registers panel on a fed tune.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-layout-viz
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DSID_MODULES=${PROJECT_BINARY_DIR}/tests/fixtures/plugin_sidfeed/mod"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_d.keys"
+      "-DKEYS_E=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_e.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_layout_viz"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz.cmake")
+  set_tests_properties(text-ui-layout-viz PROPERTIES LABELS m3)
+endif()
+
 # M3 Phase 5 (I205, I206): T98 text-ui-library-screen. The shell drives L, /, a query and Enter over
 # a catalogue, then opens a --db filled by LIBRARY_SCAN.
 if(NOT SEL_AMIGA)

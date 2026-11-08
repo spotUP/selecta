@@ -224,11 +224,11 @@ void txt_bindings_default(txt_bindings* b) {
         }
     }
     /* I1184: the shared action table (actions.c) is the source of every other key, the one the desktop UI binds
-     * through too. A key the text table named above keeps its own meaning; PREF_SET rows are the desktop
-     * layouts and visualizers, which the text UI answers with its own panels. */
+     * through too. A key the text table named above keeps its own meaning; The ui.desktop.mode / viz rows (I1185) are
+     * the layouts and visualizers, which the text UI answers with its own panels (tui_pref_local). */
     for (i = 0; i < n; i++) {
         const sel_uim_action* a = sel_uim_action_at((uint32_t)i);
-        if (a->key[0] != '\0' && strncmp(a->line, "PREF_SET", 8) != 0 && txt_key_parse(a->key, &code, &mods) &&
+        if (a->key[0] != '\0' && (strncmp(a->line, "PREF_SET", 8) != 0 || strncmp(a->line, "PREF_SET ui.desktop.", 20) == 0) && txt_key_parse(a->key, &code, &mods) &&
             find(b, TXT_CTX_ANY, code, mods) < 0) {
             (void)set(b, TXT_CTX_ANY, code, mods, a->line);
         }

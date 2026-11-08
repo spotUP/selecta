@@ -417,6 +417,10 @@ SEL_TAG(UI, STAT_SEARCH_SKIPS,        0x50E8, INT)
 /* I1184: the text UI's keys that fired a line of the shared action table (src/uimodel/actions.c), and those lines in order, '|' separated. */
 SEL_TAG(UI, STAT_TABLE_ACTIONS,       0x50F5, INT)
 SEL_TAG(UI, STAT_TABLE_ACTION_LOG,    0x50F6, STR)
+/* I1185: the text UI's layout (SEL_UIM_LAYOUT_*, low 8 bits) with the count of layout / visualizer keys it took (above), and
+ * the SID register panels drawn from a register feed. */
+SEL_TAG(UI, STAT_LAYOUT,              0x50F7, INT)
+SEL_TAG(UI, STAT_SID_FRAMES,          0x50F8, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
