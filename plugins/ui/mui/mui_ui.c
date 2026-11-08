@@ -237,6 +237,7 @@ typedef struct mui_state {
     uint32_t sm_playlist;           /* MUI-P4-6: the playlist last opened or seen, the target of Add to Playlist */
     uint32_t sm_on_queue;           /* the Song menu item 4 title follows the cursor row (Remove from Queue) */
     Object* crumb;                  /* MUI-P3-3: the drilldown breadcrumb line above the list */
+    mui_flag crumb_show, nav_back_dis, nav_fwd_dis; /* I966: last ShowMe / Disabled written, so mui_refresh sets only on a change */
     char crumb_buf[128];
     Object* crumb_row;              /* MUI-P4-2: the Library breadcrumb buttons (browse path pieces), shown in the browse source */
     Object* crumb_btn[MUI_CRUMB_MAX];
@@ -2168,8 +2169,13 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         }
     }
     if (s->nav_back != NULL) {
-        set(s->nav_back, MUIA_Disabled, mui_route_can(&s->route, -1) ? FALSE : TRUE);
-        set(s->nav_fwd, MUIA_Disabled, mui_route_can(&s->route, 1) ? FALSE : TRUE);
+        int back_off = mui_route_can(&s->route, -1) ? FALSE : TRUE, fwd_off = mui_route_can(&s->route, 1) ? FALSE : TRUE;
+        if (mui_flag_commit(&s->nav_back_dis, back_off)) { /* I966: only on a change */
+            set(s->nav_back, MUIA_Disabled, back_off);
+        }
+        if (mui_flag_commit(&s->nav_fwd_dis, fwd_off)) {
+            set(s->nav_fwd, MUIA_Disabled, fwd_off);
+        }
     }
     if (col && pg->serial != s->col_serial) {
         s->col_serial = pg->serial;
@@ -2274,7 +2280,9 @@ static void mui_refresh(mui_state* s) {
                 snprintf(s->crumb_buf, sizeof s->crumb_buf, "%s", crumb);
                 mui_aatext_set(s->crumb, s->crumb_buf);
             }
-            set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
+            if (mui_flag_commit(&s->crumb_show, drill)) { /* I966: only on a change */
+                set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
+            }
         }
         {
             /* MUI-P4-2: the browse path as clickable pieces; MUI-P4-15: the empty-state line of a view without rows. */
