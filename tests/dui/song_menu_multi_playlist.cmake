@@ -99,6 +99,28 @@ endif()
 playlist_songs(resA "${dbA}" alpha)
 expect_eq("A playlist content, in list order" "${resA}" "3:a.mod;b.mod;c.mod")
 
+# F (I1147 bug 2026-11-08, "the add to playlist sub-sub-menu doesnt capture focus so the selected songs change behind it"):
+#   an open menu level is modal. With the Add to Playlist step open, pointer moves, the wheel, Up/Down keys and a drag over the panel
+#   must not reach the queue list behind it (the drag reordered the selected rows through the open menu): the selection stays rows 0-2 and the pick still adds exactly those three songs.
+math(EXPR drag_y "${np_y} + 72")
+set(dbF "${WORK}/f.db")
+mp_run(seedF "${dbF}" home "wait 2\n" "PLAYLIST_CREATE alpha")
+mp_run(F "${dbF}" queue "${select3}move ${ix} ${np_y}\nmove ${ix} ${first_y}\nwheel 0 -3\nwheel 0 3\nkey down\nkey down\nkey up\nkey end\ndrag ${ix} ${np_y} ${ix} ${drag_y}\nmove ${ix} ${first_y}\nclick ${ix} ${first_y}\nwait 2\n" ${q_execs})
+if(NOT "${F}" MATCHES "song_menu_multi n=([0-9]+) adds=([0-9]+) list=([a-z]+) version=([0-9]+) ranges=([^ \n]+)")
+  message(FATAL_ERROR "F: no song_menu_multi line in:\n${F}")
+endif()
+expect_eq("F selection size" "${CMAKE_MATCH_1}" 3)
+expect_eq("F ranges" "${CMAKE_MATCH_5}" "0-2")
+if(NOT "${F}" MATCHES "queue draws [0-9]+ rows 4 cmds ([0-9]+) ")
+  message(FATAL_ERROR "F: no queue line in:\n${F}")
+endif()
+expect_eq("F queue commands issued by the drag behind the menu" "${CMAKE_MATCH_1}" 0)
+if(NOT "${F}" MATCHES "Added 3 songs to alpha")
+  message(FATAL_ERROR "F: no toast 'Added 3 songs to alpha' in:\n${F}")
+endif()
+playlist_songs(resF "${dbF}" alpha)
+expect_eq("F playlist content, in list order" "${resF}" "3:a.mod;b.mod;c.mod")
+
 # B: no saved playlist: New Playlist... creates one holding the selection.
 set(dbB "${WORK}/b.db")
 mp_run(B "${dbB}" queue "${select3}click ${ix} ${np_y}\nwait 2\n" ${q_execs})

@@ -13750,6 +13750,13 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == TXT_KEY_F1 + 9u && (ev->mods & TXT_MOD_SHIFT) != 0u && song_menu_key(d)) {
         return 1;
     }
+    if (d->sm_open) { /* I1147: an open menu level owns the keyboard: Escape closes it, every other key stops here and never reaches the list behind */
+        if (ev->code == 27u && ev->mods == 0u) {
+            d->sm_open = 0;
+            draw_home(d);
+        }
+        return 1;
+    }
     if (d->page == SEL_UIM_PG_SETTINGS && d->set_focus >= 0 && settings_key(d, ev)) { /* I799a */
         return 1;
     }
@@ -14192,6 +14199,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     if (song_menu_pointer(d, ev)) {
         return 1;
     }
+    if (d->sm_open && ev->kind == SEL_GUI_IN_DRAG) { /* I1147: an open menu level (every sm_step, the Add to Playlist submenu included) is modal: a drag does not reach the rows behind it */
+        return 1;
+    }
     if (select_pointer(d, ev)) {
         return 1;
     }
@@ -14487,6 +14497,9 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
  * the list; pinch in the tile grid moves the tile size one token step (clamped); swipe is Back and Forward. Returns 1
  * when the picture changed. */
 static int desk_gesture(desk* d, const sel_gui_input* ev) {
+    if (d->sm_open && !(d->home && d->open_tile == 0)) { /* I1147: an open menu is modal: wheel, pinch and swipe do not scroll or move the lists behind it (Home keeps closing it on scroll) */
+        return 0;
+    }
     if (ev->kind == SEL_GUI_IN_WHEEL) {
         if (side_lib_max_q16(d) > 0 && in_rect(side_lib_view_rect(d), d->ptr_x, d->ptr_y)) { /* I608: a sidebar list longer than its view scrolls under the pointer */
             int32_t max_q16 = side_lib_max_q16(d);
