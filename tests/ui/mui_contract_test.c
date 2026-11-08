@@ -3275,6 +3275,37 @@ static void test_route_reach(void) {
               !mui_route_can(&r, -1), "Back returned to Home and re-sent its source line");
 }
 
+/* I966 reachability: mui_refresh runs on every NewInput and used to set() the breadcrumb ShowMe and the Back/Forward Disabled every time
+ * (MUI notify + relayout per click at 640x256). The wiring is grepped (reverting mui_ui.c turns this red); the guard is driven through a
+ * click sequence with the writes/skips sentinels: a steady state writes once and skips every later refresh. */
+static void test_flag_guard(void) {
+    mui_flag crumb, back, fwd;
+    uint32_t w0, s0, i;
+    char* src = ui_source();
+    memset(&crumb, 0, sizeof crumb);
+    memset(&back, 0, sizeof back);
+    memset(&fwd, 0, sizeof fwd);
+    CHECK(src != NULL, "mui_ui.c source readable");
+    CHECK(strstr(src, "mui_flag_commit(&s->crumb_show, drill)") != NULL && strstr(src, "mui_flag_commit(&s->nav_back_dis, back_off)") != NULL &&
+              strstr(src, "mui_flag_commit(&s->nav_fwd_dis, fwd_off)") != NULL,
+          "mui_refresh guards the breadcrumb ShowMe and the Back/Forward Disabled");
+    {
+        const char* ca = strstr(src, "set(s->crumb, MUIA_ShowMe");
+        CHECK(ca != NULL && ca - src > 120 && strstr(ca - 120, "mui_flag_commit(&s->crumb_show") != NULL && strstr(ca + 10, "set(s->crumb, MUIA_ShowMe") == NULL,
+              "the one breadcrumb ShowMe set sits behind the guard");
+    }
+    w0 = mui_flag_writes();
+    s0 = mui_flag_skips();
+    for (i = 0; i < 50u; i++) { /* 50 refreshes in the same state: Back off, Forward off, breadcrumb hidden */
+        if (mui_flag_commit(&crumb, 0)) { /* the caller sets only when this returns 1 */ }
+        if (mui_flag_commit(&back, 1)) { }
+        if (mui_flag_commit(&fwd, 1)) { }
+    }
+    CHECK(mui_flag_writes() - w0 == 3u && mui_flag_skips() - s0 == 147u, "steady state: %u writes (want 3), %u skips (want 147)",
+          (unsigned)(mui_flag_writes() - w0), (unsigned)(mui_flag_skips() - s0));
+    CHECK(mui_flag_commit(&back, 0) == 1 && mui_flag_commit(&back, 0) == 0 && mui_flag_commit(&back, 1) == 1, "a changed value writes once, a repeat skips");
+}
+
 /* I795 reachability (drift doc P1, P4, P5): the one test for Home shelves and quick tiles, Browse tiles and Search facet chips. The wiring of
  * mui_ui.c is grepped (removing it turns this red); the page models are driven on a synthetic engine view, and the shelf, tile and facet
  * clicks run through the route handler with the call counter and sentinel. */
@@ -3522,6 +3553,8 @@ int main(int argc, char** argv) {
         test_topbar();
     } else if (strcmp(argv[1], "route") == 0) {
         test_route();
+    } else if (strcmp(argv[1], "flag-guard") == 0) {
+        test_flag_guard();
     } else if (strcmp(argv[1], "route-reach") == 0) {
         test_route_reach();
     } else if (strcmp(argv[1], "tiles-reach") == 0) {

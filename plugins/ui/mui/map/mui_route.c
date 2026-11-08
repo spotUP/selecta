@@ -128,3 +128,26 @@ void mui_route_title(const mui_route* r, char* out, size_t cap) {
         snprintf(out, cap, "%s", e->name[0] != '\0' ? e->name : e->key);
     }
 }
+
+/* I966: see mui_route.h. */
+static uint32_t g_flag_writes, g_flag_skips;
+
+int mui_flag_commit(mui_flag* f, int value) {
+    uint8_t v = value != 0 ? 1u : 0u;
+    if (f->known != 0u && f->value == v) {
+        g_flag_skips++;
+        return 0;
+    }
+    f->known = 1u;
+    f->value = v;
+    g_flag_writes++;
+    return 1;
+}
+
+uint32_t mui_flag_writes(void) {
+    return g_flag_writes;
+}
+
+uint32_t mui_flag_skips(void) {
+    return g_flag_skips;
+}
