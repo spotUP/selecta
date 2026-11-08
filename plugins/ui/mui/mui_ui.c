@@ -2432,6 +2432,8 @@ static void mui_refresh(mui_state* s) {
         int32_t active = -1;
         uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active);
         uint32_t packed = mui_style_kind(v->style) != MUI_STYLE_LIST;
+        /* The pending click holds a window position (mui_control_fire maps a packed row back), so it resolves before packing. */
+        active = mui_list_pending_resolve(&s->list_pending, active);
         if (packed) { /* I1174: Grid, Cover Flow, Compact: pack the window into List rows; a click maps back through mui_style_row_index */
             static mui_list_entry raw[MUI_ROWS_MAX];
             uint32_t chars = s->lay.width / 8u;
@@ -2450,7 +2452,6 @@ static void mui_refresh(mui_state* s) {
         }
         uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id;
         const char* c;
-        active = mui_list_pending_resolve(&s->list_pending, active);
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
             mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt, g_pixel_aspect_q8);
@@ -3320,12 +3321,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (view == NULL || v < 0 || (id == CTL_LIST_SEL && v == s->list_active_set)) {
             return;
         }
+        s->list_active_set = v; /* the List's own row number, as mui_refresh stores it, so a repeat select of the same row is dropped */
         if (s->style_kind != MUI_STYLE_LIST) { /* I1174: a packed row stands for several window rows */
-            s->list_active_set = v;
             v = mui_style_row_index(view->style, s->style_cols, (uint32_t)v, s->style_cursor);
             s->style_cursor = v;
         }
-        s->list_active_set = v;
         if (id == CTL_LIST_DBL && view->style == SEL_VIEW_STYLE_TREE && (uint32_t)v < view->row_n && view->rows[v].kind == SEL_ROW_NODE) {
             /* MUI-P3-2: a node row of the tree style toggles; the engine line is VIEW_EXPAND or VIEW_COLLAPSE <node id>. */
             mui_list_pending_clear(&s->list_pending);
