@@ -427,6 +427,8 @@ SEL_TAG(UI, STAT_STYLE,               0x50F9, INT)
 /* I1187: the text UI Library mode and queue scope keys. Bits 0-3 the engine scope index, 4-7 the Library mode in force (15 none),
  * 8-15 mode keys taken, 16-23 scope keys taken. */
 SEL_TAG(UI, STAT_LIBMODE,             0x50FA, INT)
+/* I1188: the text UI Settings screen. Bits 0-7 PREF_SET lines its keys sent, 8-15 times it was opened, 16-23 the focused row. */
+SEL_TAG(UI, STAT_SETTINGS,            0x50FB, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

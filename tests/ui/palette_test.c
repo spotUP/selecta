@@ -41,10 +41,10 @@ int main(void) {
 
     /* every verb exactly once, grouped in area order */
     txt_palette_open(&g_p, &g_b);
-    CHECK(g_p.count == SEL_CMD_COUNT);
+    CHECK(g_p.count == SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT); /* I1188: the verbs plus the local screens */
     memset(seen, 0, sizeof seen);
     for (i = 0; i < g_p.count; i++) {
-        CHECK(g_p.items[i].id < SEL_CMD_COUNT);
+        CHECK(g_p.items[i].id < SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT);
         if (g_p.items[i].id < SEL_CMD_COUNT) {
             seen[g_p.items[i].id]++;
         }
@@ -71,8 +71,10 @@ int main(void) {
     /* the current binding is shown */
     it = find("NEXT");
     CHECK(it != NULL && strcmp(it->key, "n") == 0);
-    it = find("QUEUE_SHUFFLE");
-    CHECK(it != NULL && it->key[0] == '\0');
+    it = find("COMMANDS");
+    CHECK(it != NULL && it->key[0] == 0);
+    it = find("settings"); /* I1188: a local entry shows its @settings key */
+    CHECK(it != NULL && it->id == SEL_CMD_COUNT && strcmp(it->key, "S") == 0);
 
     /* query qsh: QUEUE_SHUFFLE first */
     txt_palette_set_query(&g_p, "qsh");

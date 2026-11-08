@@ -10070,42 +10070,6 @@ static void draw_search(desk* d) {
  * window sends (sel_uim_pref_line), so the engine writes prefs.conf. ---- */
 enum { SET_ROW_H = 52, SET_CTL_W = 240, SET_HEAD_H = 56, SET_CREDIT_H = 88 };
 
-/* The nth choice of a cycle row's comma list, copied to out; returns the list length. */
-static uint32_t set_choice(const char* choices, uint32_t n, char* out, size_t cap) {
-    uint32_t i = 0, count = 1;
-    const char* p = choices;
-    out[0] = '\0';
-    for (; *p != '\0'; p++) {
-        count += *p == ',';
-    }
-    p = choices;
-    while (i < n && strchr(p, ',') != NULL) {
-        p = strchr(p, ',') + 1;
-        i++;
-    }
-    if (i == n) {
-        const char* e = strchr(p, ',');
-        size_t len = e != NULL ? (size_t)(e - p) : strlen(p);
-        len = len < cap - 1u ? len : cap - 1u;
-        memcpy(out, p, len);
-        out[len] = '\0';
-    }
-    return count;
-}
-
-/* The index of the choice equal to cur, 0 when none is. */
-static uint32_t set_choice_index(const char* choices, const char* cur) {
-    char c[48];
-    uint32_t n = set_choice(choices, 0u, c, sizeof c), i;
-    for (i = 0; i < n; i++) {
-        set_choice(choices, i, c, sizeof c);
-        if (strcmp(c, cur) == 0) {
-            return i;
-        }
-    }
-    return 0u;
-}
-
 /* A string pref that holds a credential is shown as dots, never as its text. */
 static int set_secret(const char* key) {
     return strstr(key, "secret") != NULL || strstr(key, "token") != NULL || strstr(key, "password") != NULL || strstr(key, "client_id") != NULL;
@@ -10163,7 +10127,7 @@ static void draw_settings(desk* d) {
         draw_text(d, rect_of(row.x, y, row.w - cw - lpx(d, 16), rh), r->label, 0, 14, text);
         if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
             char v[48];
-            set_choice(r->choices, set_choice_index(r->choices, cur), v, sizeof v);
+            sel_uim_pref_choice(r->choices, sel_uim_pref_choice_index(r->choices, cur), v, sizeof v);
             draw_button(d, c, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]), v, 13, text);
         } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
             int on = cur[0] == '1';
@@ -10310,8 +10274,8 @@ static int settings_click(desk* d, int32_t x, int32_t y) {
             return slot >= 0 ? settings_rom_pick(d, (uint32_t)slot) : 1;
         }
         if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
-            uint32_t count = set_choice(r->choices, 0u, v, sizeof v);
-            set_choice(r->choices, (set_choice_index(r->choices, desk_pref(d, r->key, "")) + 1u) % count, v, sizeof v);
+            uint32_t count = sel_uim_pref_choice(r->choices, 0u, v, sizeof v);
+            sel_uim_pref_choice(r->choices, (sel_uim_pref_choice_index(r->choices, desk_pref(d, r->key, "")) + 1u) % count, v, sizeof v);
             set_send(d, r, v);
         } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
             set_send(d, r, desk_pref(d, r->key, "")[0] == '1' ? "0" : "1");

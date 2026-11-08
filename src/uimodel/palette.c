@@ -3,6 +3,7 @@
 
 #include <selecta/uimodel/keys.h>
 
+#include <stdio.h>
 #include <string.h>
 
 static const struct {
@@ -74,24 +75,36 @@ static int32_t score(const char* name, const char* query) {
 static void fill_key(txt_palette* p, txt_palette_item* it) {
     it->key[0] = '\0';
     if (p->binds != NULL) {
-        (void)txt_bindings_key_for(p->binds, it->name, it->key, sizeof it->key);
+        char action[32];
+        if (it->id >= SEL_CMD_COUNT) { /* a local entry is bound to "@<name>" */
+            snprintf(action, sizeof action, "@%s", it->name);
+            (void)txt_bindings_key_for(p->binds, action, it->key, sizeof it->key);
+        } else {
+            (void)txt_bindings_key_for(p->binds, it->name, it->key, sizeof it->key);
+        }
     }
 }
+
+static const struct {
+    const char* name;
+    const char* area;
+} k_local[TXT_PAL_LOCAL_COUNT] = {{"settings", "view"}};
 
 void txt_palette_set_query(txt_palette* p, const char* query) {
     uint32_t id, n = 0, i, j;
     strncpy(p->query, query, TXT_PAL_QUERY - 1u);
     p->query[TXT_PAL_QUERY - 1u] = '\0';
     p->len = (uint32_t)strlen(p->query);
-    for (id = 0; id < SEL_CMD_COUNT; id++) {
+    for (id = 0; id < SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT; id++) {
         txt_palette_item it;
-        int32_t sc = p->len == 0 ? 0 : score(sel_cmd_name(id), p->query);
+        const char* name = id < SEL_CMD_COUNT ? sel_cmd_name(id) : k_local[id - SEL_CMD_COUNT].name;
+        int32_t sc = p->len == 0 ? 0 : score(name, p->query);
         if (sc < 0) {
             continue;
         }
         it.id = id;
-        it.name = sel_cmd_name(id);
-        it.area = sel_cmd_area(id);
+        it.name = name;
+        it.area = id < SEL_CMD_COUNT ? sel_cmd_area(id) : k_local[id - SEL_CMD_COUNT].area;
         it.score = sc;
         fill_key(p, &it);
         /* insertion sort: stable, so ties keep commands.def order */
