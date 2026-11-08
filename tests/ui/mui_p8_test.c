@@ -382,6 +382,33 @@ static void test_sources(void) {
     CHECK(strcmp(mui_source_status(1, 0, 0), "Syncing") == 0 && strcmp(mui_source_status(0, 1, 5), "Sync failed") == 0 &&
               strcmp(mui_source_status(0, 0, 5), "Synced") == 0 && strcmp(mui_source_status(0, 0, 0), "Not synced") == 0,
           "status text");
+    {   /* I1197: the shared SOURCES row parse and status text every UI uses */
+        static const sel_tag t[] = {{SEL_SRC_KEY, (uintptr_t) "hvsc"}, {SEL_SRC_KIND, (uintptr_t) "remote"}, {SEL_SRC_NAME, (uintptr_t) "HVSC"}, {SEL_SRC_PATH, (uintptr_t) "https://h"},
+                                    {SEL_SRC_SYNCABLE, 1}, {SEL_SRC_SYNCED, 1000}, {SEL_SRC_COUNT, 7}, {SEL_SRC_DUE, 1}, {SEL_TAG_END, 0}};
+        static const sel_tag lt[] = {{SEL_SRC_KEY, (uintptr_t) "local"}, {SEL_SRC_KIND, (uintptr_t) "local"}, {SEL_TAG_END, 0}};
+        sel_uim_src_row r, l;
+        char txt[96];
+        sel_uim_src_parse(t, &r);
+        CHECK(strcmp(r.key, "hvsc") == 0 && strcmp(r.name, "HVSC") == 0 && r.enabled == 1 && r.syncable == 1 && r.due == 1 && r.count == 7u && r.synced == 1000 &&
+                  sel_uim_src_syncable(&r) == 1,
+              "parse row");
+        sel_uim_src_status(&r, 0, 0, 1000 + 3 * 86400, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, last synced 3 days ago") == 0, "synced text '%s'", txt);
+        sel_uim_src_status(&r, 1, 0, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, Syncing") == 0, "pending text '%s'", txt);
+        sel_uim_src_status(&r, 0, 1, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, sync failed") == 0, "failed text '%s'", txt);
+        r.enabled = 0;
+        sel_uim_src_status(&r, 0, 0, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, switched off") == 0, "off text '%s'", txt);
+        r.enabled = 1;
+        r.syncable = 0;
+        sel_uim_src_status(&r, 0, 0, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, search only") == 0 && sel_uim_src_syncable(&r) == 0, "search-only text '%s'", txt);
+        sel_uim_src_parse(lt, &l);
+        sel_uim_src_status(&l, 0, 0, 0, txt, sizeof txt);
+        CHECK(l.enabled == 1 && strcmp(txt, "Local, switched on") == 0, "local text '%s'", txt);
+    }
     memset(&e, 0, sizeof e);
     mui_offer_not_now(1234, fake_send, &e);
     CHECK(strcmp(e.lines[0], "PREF_SET library.sync_notice_at 1234") == 0, "Not now line: %s", e.lines[0]);
@@ -672,9 +699,9 @@ static void test_library_pages(void) {
     ev = src_event(rem);
     CHECK(mui_srcs_event(&m, &ev) == 1 && m.n == 2u, "remote row not taken: %u rows", (unsigned)m.n);
     mui_srcs_row(&m, 1, row, sizeof row);
-    CHECK(strstr(row, "Modland") != NULL && strstr(row, "On") != NULL && strstr(row, "Not synced") != NULL, "remote row text '%s'", row);
+    CHECK(strstr(row, "Modland") != NULL && strstr(row, "Remote, never synced") != NULL, "remote row text '%s'", row);
     mui_srcs_row(&m, 0, row, sizeof row);
-    CHECK(strstr(row, "Library") != NULL && strstr(row, "Local") != NULL, "local row text '%s'", row);
+    CHECK(strstr(row, "Library") != NULL && strstr(row, "Local, switched on") != NULL, "local row text '%s'", row);
     memset(&e, 0, sizeof e);
     CHECK(mui_srcs_sync(&m, 0, fake_send, &e) == 0u && e.n == 0u, "local row synced");
     CHECK(mui_srcs_sync(&m, 1, fake_send, &e) == 2u && strcmp(e.lines[0], "LIBRARY_SYNC modland \"https://m\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "Sync lines '%s'", e.lines[0]);
@@ -683,7 +710,7 @@ static void test_library_pages(void) {
     ev = src_event(done);
     CHECK(mui_srcs_event(&m, &ev) == 0 && m.pending == 0u, "completion left the row pending");
     mui_srcs_row(&m, 1, row, sizeof row);
-    CHECK(strstr(row, "Not synced") != NULL, "settled row text '%s'", row);
+    CHECK(strstr(row, "Remote, never synced") != NULL, "settled row text '%s'", row);
     memset(&ev, 0, sizeof ev);
     ev.kind = SEL_MSG_EVT;
     ev.id = SEL_EVT_ERROR;
@@ -698,7 +725,7 @@ static void test_library_pages(void) {
     mui_srcs_sync(&m, 1, fake_send, &e);
     mui_srcs_event(&m, &ev);
     mui_srcs_row(&m, 1, row, sizeof row);
-    CHECK(m.pending == 0u && strstr(row, "Sync failed") != NULL, "failed row text '%s'", row);
+    CHECK(m.pending == 0u && strstr(row, "Remote, sync failed") != NULL, "failed row text '%s'", row);
     memset(&e, 0, sizeof e);
     CHECK(mui_srcs_toggle(&m, 1, fake_send, &e) == 2u && strcmp(e.lines[0], "PREF_SET library.sources_off \"modland\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "toggle lines '%s'", e.lines[0]);
     CHECK(mui_srcs_toggle(&m, 9, fake_send, &e) == 0u, "toggle of a missing row sent");
