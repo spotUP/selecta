@@ -225,7 +225,8 @@ typedef struct desk {
     uint8_t* icon_buf[DESK_ICON_SIZES]; /* resampled masks (I460) for sizes that are not baked; NULL when baked */
     uint32_t icon_resampled; /* sizes of the current icon atlas that were resampled */
     txt_bindings binds;      /* the keys of the action table (DUI-P3-3) */
-    uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows, view_cursor_repaints;
+    uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows, view_cursor_repaints, search_skips;
+    int64_t search_want, search_want_from; /* I1151: last VIEW_CURSOR the search list sent and the cursor it was sent from (0,0 at start: from equals the cursor) */
     uint32_t view_cur_seen, view_win_seen; /* I1151: the engine view's cursor and window start the last turn saw */
     int view_pos_set, view_kb_seen; /* kb_list as drawn: the first Down shows the highlight although the cursor stays on row 0 */
     uint32_t fired_seen[4];  /* one bit per action row that fired */
@@ -886,6 +887,17 @@ static int32_t px_to_logical_ceil(const desk* d, int32_t px) {
 /* I468: the layout height in square pixels: the canvas rows times the pixel aspect (ydiv 2 on the AGA 640x256 screen). */
 static int32_t cvh(const desk* d) {
     return d->canvas->h * (d->canvas->ydiv > 1 ? d->canvas->ydiv : 1);
+}
+
+/* The focus stop of the layout region `name` (DUI-P3-3: the regions in layout order are the stops), or -1. */
+static int32_t region_stop(const desk* d, const char* name) {
+    uint32_t i;
+    for (i = 0; i < d->layout.count; i++) {
+        if (strcmp(d->layout.regions[i].name, name) == 0) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
 }
 
 static sel_gui_rect region_rect(const desk* d, const char* name) {
@@ -13813,6 +13825,51 @@ static int view_first_down(desk* d, const sel_gui_input* ev) {
     return 1;
 }
 
+/* I1151: Up/Down on the Search page's list (the grouped rows draw_search draws) step over the rows it does not draw as a
+ * row: the group headings and the rows of a group the facet chip hides. The cursor used to land on them, so a key press
+ * moved the highlight to a row with no fill and nothing changed on screen (the first Down went to the heading at row 0).
+ * Sends the absolute VIEW_CURSOR of the next drawn row; the window holds the rows from 0, so the group of each row is
+ * known from the headings above it. Returns 1 when it sent a move. */
+static int search_list_step(desk* d, const sel_view_state* v, int first, int dir) {
+    int64_t from = first ? -1 : (int64_t)v->cursor, to = -1;
+    uint32_t k, group = 0;
+    int show = 0;
+    char line[32];
+    if (v->window_start != 0u) {
+        return 0;
+    }
+    if (!first && d->search_want >= 0 && (int64_t)v->cursor == d->search_want_from) {
+        from = d->search_want; /* the engine has not applied the last move yet: step on from where it goes, not back to it */
+    }
+    for (k = 0; k < v->row_n; k++) {
+        const sel_view_row* r = &v->rows[k];
+        if (r->kind == SEL_ROW_HEADING) {
+            group = sel_uim_search_group(r->text != NULL ? r->text : "");
+            show = search_group_shown(d, group);
+            continue;
+        }
+        if (!show) {
+            continue;
+        }
+        if (dir > 0 && (int64_t)k > from) {
+            to = k;
+            break;
+        }
+        if (dir < 0 && (int64_t)k < from) {
+            to = k; /* the last drawn row above the cursor */
+        }
+    }
+    if (to < 0) {
+        return 0;
+    }
+    snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)to);
+    d->search_want = to;
+    d->search_want_from = (int64_t)v->cursor;
+    desk_send(d, line);
+    d->arrows++;
+    return 1;
+}
+
 static int desk_key(desk* d, const sel_gui_input* ev) {
     const char* act;
     d->keys_in++;
@@ -13875,10 +13932,17 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         draw_home(d);
         return 1;
     }
+    if (ev->code == 9u && (ev->mods & ~TXT_MOD_SHIFT) == 0u) {
+        /* I1151: Tab and Shift+Tab move the focus ring from every stop, the search field too; the field branch below took
+         * every key, so Tab stuck in the field */
+        desk_focus_move(d, (ev->mods & TXT_MOD_SHIFT) != 0u ? -1 : 1);
+        return desk_present(d);
+    }
     if (d->focus == (int32_t)d->layout.count && ev->code == TXT_KEY_DOWN && ev->mods == 0u) {
         /* I1009: Enter no longer drops the field's focus, so Down is the way into the results: it hands the keyboard to the
-         * list and falls through to the list key handling below for this same press (Enter on a row then opens it) */
-        d->focus = 0;
+         * list and falls through to the list key handling below for this same press (Enter on a row then opens it).
+         * I1151: the focus goes to the main region the results are in, not to stop 0 (the sidebar) */
+        d->focus = region_stop(d, "main");
     }
     if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
         /* I1036: an edit key (Backspace is bound to @back) stays with the field */
@@ -13890,7 +13954,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         }
         if (ev->code == 27u) {
             d->search_pending = 0; /* Escape leaves without a search */
-            d->focus = 0;
+            d->focus = -1; /* I1151: no stop keeps the focus, as a click elsewhere in main (stop 0 was the sidebar) */
         } else if (ev->code == 13u && (strncmp(d->query, "http://", 7u) == 0 || strncmp(d->query, "https://", 8u) == 0)) {
             /* I725a: a typed or pasted stream URL (a stream, or a .pls / .m3u list of streams) is saved to the
              * "Streams" playlist and played; the ICY title reaches the now-playing bar through the engine. */
@@ -13914,10 +13978,6 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         }
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-        return desk_present(d);
-    }
-    if (ev->code == 9u && (ev->mods & ~TXT_MOD_SHIFT) == 0u) {
-        desk_focus_move(d, (ev->mods & TXT_MOD_SHIFT) != 0u ? -1 : 1);
         return desk_present(d);
     }
     if (ev->code == '/' && ev->mods == 0u) {
@@ -13957,6 +14017,17 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         sel_engine_state(d->engine)->view->source == SEL_VIEW_SEARCH && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u)) {
         const sel_view_state* sv = sel_engine_state(d->engine)->view;
         const sel_view_row* sr = sv->cursor >= sv->window_start && sv->cursor - sv->window_start < sv->row_n ? &sv->rows[sv->cursor - sv->window_start] : NULL;
+        if ((ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN) && !d->browse_filter && sv->style != (uint32_t)SEL_VIEW_STYLE_GRID &&
+            sv->style != (uint32_t)SEL_VIEW_STYLE_COVERFLOW && !desk_scope_online(d)) { /* the grouped list (I1151) */
+            int first = !d->kb_list;
+            if (!first || ev->code == TXT_KEY_DOWN) {
+                d->kb_list = 1;
+                if (search_list_step(d, sv, first, ev->code == TXT_KEY_DOWN ? 1 : -1)) {
+                    d->search_skips++;
+                }
+                return 0; /* no drawn row past the cursor: the highlight stays */
+            }
+        }
         if (view_first_down(d, ev)) {
             return 0;
         }
@@ -17107,6 +17178,8 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->headline_hits[1];
         d->stats[n].tag = SEL_UI_STAT_VIEW_CURSOR_REPAINTS;
         d->stats[n++].value = d->view_cursor_repaints;
+        d->stats[n].tag = SEL_UI_STAT_SEARCH_SKIPS;
+        d->stats[n++].value = d->search_skips;
         d->stats[n].tag = SEL_UI_STAT_CTL_LINES;
         d->stats[n++].value = d->ctl_lines;
         d->stats[n].tag = SEL_UI_STAT_CTL_STATES;

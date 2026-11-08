@@ -6,6 +6,11 @@
 # 1. the Down run draws at least 3 `frame end=` frames after the first key (one per key; the no-key run draws none);
 # 2. view_cursor_repaints >= 3 in the Down run and 0 in the no-key run (the sentinel: the new repaint cause ran);
 # 3. the Tab run draws at least 3 frames after the first key, and focus_moves is 3.
+# Search page (Johan: "Down doesnt work at all" in the search results, Tab "gets stuck in the search input"):
+# 4. typed query, Down, Down, Up: the first Down from the field puts the focus on the main region (focus=2, not the
+#    sidebar's 1) and skips the group heading at row 0 to row 1, the next Down goes to row 2, Up back to row 1 (view_cursor=1);
+#    search_skips counts the moves the heading-skip path sent, one per key (the sentinel, 3);
+# 5. typed query, Tab: Tab leaves the field (focus_moves=1).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -27,11 +32,15 @@ set(ENV{SELECTA_SDL_TEST_LIVE} 1)
 set(ENV{SELECTA_SOCKET} "${WORK}/dui-list-key-frames.sock")
 
 function(live tag timed)
+  set(view home)
+  if(ARGC GREATER 2)
+    set(view ${ARGV2})
+  endif()
   file(REMOVE_RECURSE "${WORK}/cfg")
   file(MAKE_DIRECTORY "${WORK}/cfg")
   file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
   set(ENV{SELECTA_SDL_TEST_TIMED} "${timed}")
-  execute_process(COMMAND "${SELECTA}" --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view home --canvas 1280x800 --clock fixed --stats
+  execute_process(COMMAND "${SELECTA}" --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view ${view} --canvas 1280x800 --clock fixed --stats
     OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "${tag}: selecta exited ${rc}\nstdout:\n${o}\nstderr:\n${e}")
@@ -57,15 +66,17 @@ function(live tag timed)
   endif()
   set(${tag}_frames ${nfr} PARENT_SCOPE)
   set(${tag}_repaints ${CMAKE_MATCH_1} PARENT_SCOPE)
-  if("${o}" MATCHES "focus_moves=([0-9]+)")
-    set(${tag}_moves ${CMAKE_MATCH_1} PARENT_SCOPE)
-  endif()
+  foreach(k focus_moves view_cursor focus search_skips)
+    if("${o}" MATCHES " ${k}=([0-9]+)")
+      set(${tag}_${k} ${CMAKE_MATCH_1} PARENT_SCOPE)
+    endif()
+  endforeach()
 endfunction()
 
 live(none "q@5000")
 live(down "k40000051@2000 k40000051@2600 k40000051@3200 q@5000")
 live(tab "k9@2000 k9@2600 k9@3200 q@5000")
-message(STATUS "frames none=${none_frames} down=${down_frames} tab=${tab_frames}; repaints none=${none_repaints} down=${down_repaints}; tab moves=${tab_moves}")
+message(STATUS "frames none=${none_frames} down=${down_frames} tab=${tab_frames}; repaints none=${none_repaints} down=${down_repaints}; tab moves=${tab_focus_moves}")
 set(down_extra ${down_frames})
 set(tab_extra ${tab_frames})
 if(NOT none_frames EQUAL 0 OR NOT none_repaints EQUAL 0)
@@ -77,6 +88,19 @@ endif()
 if(down_extra LESS 3)
   message(FATAL_ERROR "3 Down keys drew only ${down_extra} frames after the first key: the highlight does not move on screen")
 endif()
-if(NOT tab_moves EQUAL 3 OR tab_extra LESS 3)
-  message(FATAL_ERROR "3 Tab keys must move the focus 3 times (${tab_moves}) and draw at least 3 frames after the first key (${tab_frames})")
+if(NOT tab_focus_moves EQUAL 3 OR tab_extra LESS 3)
+  message(FATAL_ERROR "3 Tab keys must move the focus 3 times (${tab_focus_moves}) and draw at least 3 frames after the first key (${tab_frames})")
+endif()
+
+live(sdown "ta@2000 k40000051@2600 k40000051@3200 k40000052@3800 q@5500" search)
+live(stab "ta@2000 k9@2600 q@4500" search)
+message(STATUS "search: focus=${sdown_focus} view_cursor=${sdown_view_cursor} search_skips=${sdown_search_skips}; tab focus_moves=${stab_focus_moves}")
+if(NOT sdown_focus EQUAL 2)
+  message(FATAL_ERROR "Down from the search field must focus the main region (focus=2), focus=${sdown_focus}")
+endif()
+if(NOT sdown_view_cursor EQUAL 1 OR NOT sdown_search_skips EQUAL 3)
+  message(FATAL_ERROR "Down, Down, Up from the search field must move row 1 (past the heading), row 2, row 1: view_cursor=${sdown_view_cursor} search_skips=${sdown_search_skips} (want 1 and 3)")
+endif()
+if(NOT stab_focus_moves EQUAL 1)
+  message(FATAL_ERROR "Tab in the search field must move the focus (focus_moves=${stab_focus_moves})")
 endif()
