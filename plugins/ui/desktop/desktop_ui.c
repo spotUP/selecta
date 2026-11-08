@@ -225,7 +225,9 @@ typedef struct desk {
     uint8_t* icon_buf[DESK_ICON_SIZES]; /* resampled masks (I460) for sizes that are not baked; NULL when baked */
     uint32_t icon_resampled; /* sizes of the current icon atlas that were resampled */
     txt_bindings binds;      /* the keys of the action table (DUI-P3-3) */
-    uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows;
+    uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows, view_cursor_repaints;
+    uint32_t view_cur_seen, view_win_seen; /* I1151: the engine view's cursor and window start the last turn saw */
+    int view_pos_set, view_kb_seen; /* kb_list as drawn: the first Down shows the highlight although the cursor stays on row 0 */
     uint32_t fired_seen[4];  /* one bit per action row that fired */
     int32_t focus;           /* focus stop: layout regions in order, then the search field; -1 = none */
     char query[64];          /* the type-to-search text */
@@ -16724,6 +16726,18 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             d->home_sig = sig;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         }
+        /* I1151: Up/Down move the engine view's cursor (or its window) after the engine answers; the signature above does not
+         * see that, so no frame was drawn and the highlight stayed on the old row. */
+        if (!d->view_pos_set || hv->cursor != d->view_cur_seen || hv->window_start != d->view_win_seen || d->kb_list != d->view_kb_seen) {
+            if (d->view_pos_set) {
+                d->view_cursor_repaints++;
+                d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            }
+            d->view_cur_seen = hv->cursor;
+            d->view_win_seen = hv->window_start;
+            d->view_kb_seen = d->kb_list;
+            d->view_pos_set = 1;
+        }
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->ticks > 0u && d->uim.dirty == 0u) { /* --ticks N: the mem backend has no clock, so it replays N seconds */
@@ -17091,6 +17105,8 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->headline_hits[0];
         d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_24;
         d->stats[n++].value = d->headline_hits[1];
+        d->stats[n].tag = SEL_UI_STAT_VIEW_CURSOR_REPAINTS;
+        d->stats[n++].value = d->view_cursor_repaints;
         d->stats[n].tag = SEL_UI_STAT_CTL_LINES;
         d->stats[n++].value = d->ctl_lines;
         d->stats[n].tag = SEL_UI_STAT_CTL_STATES;
