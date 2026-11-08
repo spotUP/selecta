@@ -4,6 +4,7 @@
 #include <selecta/uimodel/keys.h>
 
 #include <selecta/protocol.h>
+#include <selecta/uimodel.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -215,11 +216,21 @@ static void unset(txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
 
 void txt_bindings_default(txt_bindings* b) {
     size_t i;
-    uint32_t ctx, code, mods;
+    uint32_t ctx, code, mods, n = sel_uim_action_count();
     memset(b, 0, sizeof *b);
     for (i = 0; i < sizeof k_defaults / sizeof k_defaults[0]; i++) {
         if (txt_key_parse_ctx(k_defaults[i].key, &ctx, &code, &mods)) {
             (void)set(b, ctx, code, mods, k_defaults[i].action);
+        }
+    }
+    /* I1184: the shared action table (actions.c) is the source of every other key, the one the desktop UI binds
+     * through too. A key the text table named above keeps its own meaning; PREF_SET rows are the desktop
+     * layouts and visualizers, which the text UI answers with its own panels. */
+    for (i = 0; i < n; i++) {
+        const sel_uim_action* a = sel_uim_action_at((uint32_t)i);
+        if (a->key[0] != '\0' && strncmp(a->line, "PREF_SET", 8) != 0 && txt_key_parse(a->key, &code, &mods) &&
+            find(b, TXT_CTX_ANY, code, mods) < 0) {
+            (void)set(b, TXT_CTX_ANY, code, mods, a->line);
         }
     }
 }
