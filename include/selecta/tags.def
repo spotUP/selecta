@@ -392,6 +392,8 @@ SEL_TAG(UI, CONTROL,                  0x50E3, PTR)
 SEL_TAG(UI, STAT_CTL_LINES,           0x50E4, INT)
 SEL_TAG(UI, STAT_CTL_STATES,          0x50E5, INT)
 SEL_TAG(UI, STAT_CTL_FRAMES,          0x50E6, INT)
+/* I1151: repaints requested because the engine view's cursor or window moved (a list key answered by the engine). */
+SEL_TAG(UI, STAT_VIEW_CURSOR_REPAINTS, 0x50E7, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
