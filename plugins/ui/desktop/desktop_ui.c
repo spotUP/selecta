@@ -4540,13 +4540,7 @@ enum { QUEUE_BTN_Y = 64, QUEUE_BTN_H = 32, QUEUE_BTN_W = 128, QUEUE_BTN_GAP = 8,
        QUEUE_NEXT_W = 104, QUEUE_DEL_W = 40, QUEUE_BUTTONS = 4 };
 
 static uint32_t queue_scope_index(const sel_state* st) {
-    uint32_t k;
-    for (k = 0; k < 3u; k++) {
-        if (strcmp(st->options[SEL_OPT_SCOPE], sel_uim_scope_name((uint32_t)k)) == 0) {
-            return k;
-        }
-    }
-    return 0u;
+    return sel_uim_scope_index(st->options[SEL_OPT_SCOPE]);
 }
 
 static sel_gui_rect queue_btn_rect(desk* d, sel_gui_rect mn, uint32_t k) {

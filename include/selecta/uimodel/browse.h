@@ -23,6 +23,8 @@ uint32_t sel_uim_libmode_lines(uint32_t mode, uint32_t window_rows, char out[SEL
 /* Scope 0 library, 1 album, 2 playlist: the engine word, and the menu label ("Scope: Library"). NULL past the count. */
 const char* sel_uim_scope_name(uint32_t i);
 const char* sel_uim_scope_label(uint32_t i);
+/* The index of the engine scope word (the SEL_OPT_SCOPE option value); 0 (library) for an unknown word. */
+uint32_t sel_uim_scope_index(const char* name);
 /* "SCOPE <name>" into out; returns the length, 0 for an index past the count. */
 uint32_t sel_uim_scope_line(uint32_t i, char* out, uint32_t cap);
 

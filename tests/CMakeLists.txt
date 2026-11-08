@@ -4230,3 +4230,20 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles.cmake")
   set_tests_properties(text-ui-styles PROPERTIES LABELS m3)
 endif()
+
+# I1187: the text UI Library mode key (c: Composers, Tree, Columns, Files, History) and queue scope key (x: Library, Album, Playlist).
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-libmode
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_d.keys"
+      "-DKEYS_E=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_e.keys"
+      "-DKEYS_F=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_f.keys"
+      "-DKEYS_G=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_g.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_libmode"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode.cmake")
+  set_tests_properties(text-ui-libmode PROPERTIES LABELS m3)
+endif()

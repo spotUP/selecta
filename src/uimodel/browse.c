@@ -44,6 +44,16 @@ uint32_t sel_uim_libmode_lines(uint32_t mode, uint32_t window_rows, char out[SEL
 const char* sel_uim_scope_name(uint32_t i) { return i < SEL_UIM_QUEUE_SCOPES ? k_scope_name[i] : NULL; }
 const char* sel_uim_scope_label(uint32_t i) { return i < SEL_UIM_QUEUE_SCOPES ? k_scope_label[i] : NULL; }
 
+uint32_t sel_uim_scope_index(const char* name) {
+    uint32_t k;
+    for (k = 0; name != NULL && k < SEL_UIM_QUEUE_SCOPES; k++) {
+        if (strcmp(name, k_scope_name[k]) == 0) {
+            return k;
+        }
+    }
+    return 0u;
+}
+
 uint32_t sel_uim_scope_line(uint32_t i, char* out, uint32_t cap) {
     int n;
     if (i >= SEL_UIM_QUEUE_SCOPES || out == NULL || cap == 0u) {
