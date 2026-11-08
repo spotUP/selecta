@@ -5,6 +5,7 @@
  * Song header defaults apply: PAL clock, MOS 6581, speed multiplier 1, hard restart 0x0f00 (GoatTracker's own defaults); the song file carries none of them.
  * The loader trusts its input (unchecked counts), so the structure of every song is validated here first. */
 
+#include <cstdlib>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -220,16 +221,41 @@ static uint64_t position_hash(void) {
     return h;
 }
 
-/* Runs the play routine until the song position repeats; calls sink once per frame (after the registers are set). */
+/* Scan cap in seconds. SELECTA_GT_MAX_SECONDS lowers it for the hostile-input smoke test only. */
+static unsigned max_seconds(void) {
+    const char* e = getenv("SELECTA_GT_MAX_SECONDS");
+    if (e && *e) {
+        long v = strtol(e, nullptr, 10);
+        if (v > 0 && v < (long)MAX_SECONDS) return (unsigned)v;
+    }
+    return MAX_SECONDS;
+}
+
+/* Runs the play routine until the song has played one full loop; calls sink once per frame (after the registers are set).
+ * GoatTracker loops every channel's order list independently, so channels with different loop lengths never share a
+ * joint position and the combined hash alone cannot end such a song. The song therefore ends at the first joint
+ * position repeat, or once every channel has wrapped its order list twice (each channel then played its loop body
+ * in full). */
 template <class F> static uint32_t run_locked(F sink) {
     std::unordered_set<uint64_t> seen;
     uint32_t frames = 0;
-    while (frames < MAX_SECONDS * FRAME_HZ) {
+    const uint32_t cap = max_seconds() * FRAME_HZ;
+    int wraps[MAX_CHN] = {0};
+    int last[MAX_CHN];
+    for (int c = 0; c < MAX_CHN; c++) last[c] = chn[c].songptr;
+    while (frames < cap) {
         if (!seen.insert(position_hash()).second) break;
         playroutine();
         if (songinit == PLAY_STOPPED) break;
         sink();
         frames++;
+        bool all = true;
+        for (int c = 0; c < MAX_CHN; c++) {
+            if ((int)chn[c].songptr < last[c]) wraps[c]++;
+            last[c] = chn[c].songptr;
+            if (wraps[c] < 2) all = false;
+        }
+        if (all) break;
     }
     return frames;
 }
