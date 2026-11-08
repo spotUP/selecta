@@ -4205,3 +4205,17 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   set_tests_properties(nez-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nez_decode_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 endif()
+
+# I1186: the text UI library styles (Alt-6..Alt-0, Alt-c): Grid cells, Cover Flow centre row, Compact lines.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-styles
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_d.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_styles"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles.cmake")
+  set_tests_properties(text-ui-styles PROPERTIES LABELS m3)
+endif()
