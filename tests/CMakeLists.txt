@@ -2282,6 +2282,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710as: bbmp's Ad Lib helper formats (.fmf .ftf .sig .lem .mus .cal .vib) play through the render entry point (bbmp_adlib module, GPL-3.0). Negatives always run;
+  # the songs come from tests/m3/fixtures/bbmp_adlib.manifest (fetched by checksum), exit 77 = skip (no fixture listed).
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adlib-decode)
+    add_test(NAME adlib-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/adlib_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adlib-decode)
+    set_tests_properties(adlib-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adlib_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ad: SoundSmith (Apple IIGS) songs play through the render entry point (bbmp_iigs module, GPL-3.0). Songs and wave
   # banks are fetched by checksum, exit 77 = skip. A song without its bank and a non-SoundSmith file must not be claimed.
   if(SELECTA_GPL_PLUGINS)

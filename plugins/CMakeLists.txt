@@ -180,6 +180,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/adplug)
 endif()
 
+# bbmp Ad Lib helper formats (I710as): Pixel Painters, SIG2, Lemmings, First Samurai, Shadowlands, Vibrants; bbmp csrc/adlib (GPL 3 or later) on AdPlug's OPL, so after
+# replayers/adplug. Host only (C++17 engines, no Amiga module path; exemption in row I710as).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_adlib)
+endif()
+
 # Tracker formats libopenmpt and UADE do not play, via libxmp (I697): MIT module, loadable module only, host only.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/xmp)
