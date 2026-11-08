@@ -3,6 +3,7 @@
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/uimodel/panels.h>
@@ -221,6 +222,51 @@ static void test_amiga_settings(void) {
     mui_amiga_priority_set(99, fake_send, &e);
     mui_amiga_priority_set(-99, fake_send, &e);
     CHECK(e.n == 2u && strcmp(e.lines[0], "PREF_SET amiga.task_priority 5") == 0 && strcmp(e.lines[1], "PREF_SET amiga.task_priority -5") == 0, "clamp: '%s' '%s'", e.lines[0], e.lines[1]);
+}
+
+/* I1171 / I1165: the window key table (mui-p8-doors). Every multi-char action key and the page keys come from the shared tables;
+ * mui_key_find is what the Selecta_Keys handler calls per key press. */
+static void test_window_keys(void) {
+    mui_key_bind binds[96];
+    uint32_t n = mui_keys_build(binds, 96u), i, j, action = 0, door = 0, pane = 0, expect = 0, hits0 = mui_key_hits(), fired = 0;
+    for (i = 0; i < n; i++) {
+        expect += binds[i].shortcut == 0;
+    }
+    for (i = 0; i < mui_key_row_count(); i++) {
+        const mui_key_row* r = mui_key_row_at(i);
+        action += r->kind == MUI_KEYROW_ACTION;
+        door += r->kind == MUI_KEYROW_DOOR;
+        pane += r->kind == MUI_KEYROW_PANE;
+        if (r->kind == MUI_KEYROW_ACTION) {
+            for (j = 0; j < n; j++) {
+                if (!binds[j].shortcut && strcmp(binds[j].id, r->id) == 0) {
+                    CHECK(binds[j].code == r->code && binds[j].mods == r->mods, "row %s differs from mui_keys_build", r->id);
+                }
+            }
+        }
+        if (mui_key_find(r->code, r->mods, 0) == (int32_t)i) {
+            fired++;
+        } else {
+            CHECK(mui_key_find(r->code, r->mods, 0) >= 0, "key of %s finds no row", r->id);
+        }
+    }
+    CHECK(action == expect, "%u action rows, mui_keys_build has %u handler keys", (unsigned)action, (unsigned)expect);
+    CHECK(action == 28u, "%u action rows, want 28", (unsigned)action);
+    CHECK(door == 4u && pane == 2u, "%u door rows, %u pane rows, want 4 and 2", (unsigned)door, (unsigned)pane);
+    CHECK(mui_key_hits() - hits0 >= action + door + pane, "hit sentinel %u", (unsigned)(mui_key_hits() - hits0));
+    CHECK(fired > 0u, "no row found by its own key");
+    /* A page key is text inside a text field; an action chord still fires. */
+    for (i = 0; i < mui_key_row_count(); i++) {
+        const mui_key_row* r = mui_key_row_at(i);
+        if (r->kind != MUI_KEYROW_ACTION && r->code < 256u && r->mods == 0u) {
+            CHECK(mui_key_find(r->code, r->mods, 1) < 0, "page key %s fires in a text field", r->id);
+        }
+    }
+    {
+        uint32_t base = mui_focus_routes();
+        CHECK(mui_focus_route(TXT_KEY_DOWN, 0u, 1) == MUI_FOCUS_RESULTS && mui_focus_routes() == base + 1u, "Down in Search does not route");
+        CHECK(mui_focus_route(TXT_KEY_DOWN, 0u, 0) == MUI_FOCUS_NONE && mui_focus_routes() == base + 1u, "Down outside Search routes");
+    }
 }
 
 /* mui-p8-doors (MUI-P8-13) */
@@ -517,6 +563,7 @@ int main(int argc, char** argv) {
         test_amiga_settings();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
+        test_window_keys();
     } else if (strcmp(argv[1], "statistics") == 0) {
         test_statistics();
     } else if (strcmp(argv[1], "pref-keys") == 0) {
