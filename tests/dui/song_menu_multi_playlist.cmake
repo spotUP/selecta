@@ -6,6 +6,11 @@
 #      song_menu_multi n=3 adds=1 list=queue ranges=0-2 and the toast "Added 3 songs to alpha"; a second run opens the playlist page
 #      and finds exactly a.mod, b.mod, c.mod in list order (d.mod, the unselected fourth row, is not added).
 #   B: the same with New Playlist... (item 0) and no saved playlist: a playlist named New Playlist holds the same three songs.
+#   D, E (I632e bug 2026-11-08, "error stale SONGS_PLAYLIST_ADD"): the same on the two page kinds that are engine collection pages, an
+#      album page of the Library (kind collection) and a playlist page. The menu named the list "view" / "playlist:<id>" with a
+#      version the engine does not check, so the engine refused the add: no playlist was created. Rows 0-2 of the page are selected
+#      (Shift click), the menu opened on row 1, New Playlist...: the dump shows list=collection and a playlist named New Playlist
+#      holds exactly the three shown songs in shown order.
 #   C: a single unselected row, Add to Playlist, New Playlist...: the playlist holds that one song (the single-song path).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -115,4 +120,101 @@ if(NOT "${C}" MATCHES "Added to New Playlist")
 endif()
 playlist_songs(resC "${dbC}" "New Playlist")
 expect_eq("C new playlist content" "${resC}" "1:b.mod")
+
+
+# D and E: collection-backed pages (album kind page, playlist page) of the fixture library.
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-song-menu-multi-playlist needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(baseDb "${WORK}/base.db")
+dui_run(init --ui desktop --backend mem --view home --canvas 1280x1600 --clock fixed --stats --db "${baseDb}")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${baseDb}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+string(CONCAT seed
+  "UPDATE songs SET key = 'local:' || path WHERE key LIKE 'fixture:%'; "
+  "INSERT INTO songs(key, source, path, name, artist, album, format, year, added) VALUES"
+  "('local:fixture/7.mod','local','fixture/7.mod','Seven','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1),"
+  "('local:fixture/8.mod','local','fixture/8.mod','Eight','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1),"
+  "('local:fixture/9.mod','local','fixture/9.mod','Nine','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1);"
+  "INSERT INTO playlists(id, name) VALUES(1, 'alpha'); "
+  "INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1,0,'local:fixture/7.mod'),(1,1,'local:fixture/8.mod'),(1,2,'local:fixture/9.mod'),(1,3,'local:fixture/1.mod'),(1,4,'local:fixture/2.mod')")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${baseDb}" "${seed}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the pages failed: ${err}")
+endif()
+
+set(common --ui desktop --backend mem --view home --clock fixed --stats --canvas 1280x1600)
+file(WRITE "${WORK}/idle2.txt" "wait 100\n")
+# fresh_db(<name>): a pristine copy of the seeded library (every open touches Recents and reorders the sidebar).
+function(fresh_db out name)
+  file(COPY_FILE "${baseDb}" "${WORK}/${name}.db" ONLY_IF_DIFFERENT)
+  file(REMOVE "${WORK}/${name}.db-wal" "${WORK}/${name}.db-shm")
+  set(${out} "${WORK}/${name}.db" PARENT_SCOPE)
+endfunction()
+# side_xy(<out> <db> <kind regex> <name>): the centre of the sidebar row called <name>, read from an idle run on <db>.
+function(side_xy out db kind name)
+  dui_run(sx ${common} --db "${db}" --input "${WORK}/idle2.txt")
+  if(NOT "${sx}" MATCHES "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=${kind} ${name}\n")
+    message(FATAL_ERROR "no sidebar row '${name}' in:\n${sx}")
+  endif()
+  math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+  math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  set(${out} "${cx} ${cy}" PARENT_SCOPE)
+endfunction()
+# page_songs(<out list> <dump>): the file names of the plsong rows in page order.
+function(page_songs out dump)
+  string(REGEX MATCHALL "plsong [0-9]+ [0-9]+ [0-9]+ [0-9]+ [0-9]+ file=[^ \n]*" rows "${dump}")
+  set(files)
+  foreach(r ${rows})
+    string(REGEX REPLACE ".*file=" "" f "${r}")
+    list(APPEND files "${f}")
+  endforeach()
+  set(${out} "${files}" PARENT_SCOPE)
+endfunction()
+
+# page_case(<tag> <sidebar kind regex> <sidebar name>): select rows 0-2 of the page, New Playlist... from the menu on row 1.
+function(page_case tag kind name)
+  fresh_db(geo_db geo_${tag})
+  side_xy(sxy "${geo_db}" "${kind}" "${name}")
+  file(WRITE "${WORK}/${tag}_geo.txt" "click ${sxy}\nwait 100\n")
+  dui_run(geo ${common} --db "${geo_db}" --input "${WORK}/${tag}_geo.txt")
+  foreach(k 0 1 2)
+    if(NOT "${geo}" MATCHES "plsong ${k} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) file=")
+      message(FATAL_ERROR "${tag}: no plsong row ${k} in:\n${geo}")
+    endif()
+    math(EXPR px${k} "${CMAKE_MATCH_1} + 20")
+    math(EXPR py${k} "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  endforeach()
+  page_songs(shown "${geo}")
+  list(SUBLIST shown 0 3 want)
+  math(EXPR mx "${px1} + 10")
+  math(EXPR madd "${py1} + 3 * 24 + 12")
+  math(EXPR mnew "${py1} + 12")
+  fresh_db(act_db act_${tag})
+  file(WRITE "${WORK}/${tag}_act.txt"
+    "click ${sxy}\nwait 100\nclick ${px0} ${py0}\nclick ${px2} ${py2} 1 shift\nmove ${px1} ${py1}\nrclick ${px1} ${py1}\nwait 1\nclick ${mx} ${madd}\nwait 1\nclick ${mx} ${mnew}\nwait 2\n")
+  dui_run(act ${common} --db "${act_db}" --input "${WORK}/${tag}_act.txt")
+  if(NOT "${act}" MATCHES "song_menu_multi n=([0-9]+) adds=([0-9]+) list=([a-z:0-9]+) version=([0-9]+) ranges=([^ \n]+)")
+    message(FATAL_ERROR "${tag}: no song_menu_multi line in:\n${act}")
+  endif()
+  expect_eq("${tag} selection size" "${CMAKE_MATCH_1}" 3)
+  expect_eq("${tag} SONGS_PLAYLIST_ADD sent once" "${CMAKE_MATCH_2}" 1)
+  expect_eq("${tag} list" "${CMAKE_MATCH_3}" "collection")
+  expect_eq("${tag} ranges" "${CMAKE_MATCH_5}" "0-2")
+  if("${act}" MATCHES "stale")
+    message(FATAL_ERROR "${tag}: the engine refused the add as stale:\n${act}")
+  endif()
+  side_xy(nxy "${act_db}" "[0-9]+" "New Playlist")
+  file(WRITE "${WORK}/${tag}_chk.txt" "click ${nxy}\nwait 100\n")
+  dui_run(chk ${common} --db "${act_db}" --input "${WORK}/${tag}_chk.txt")
+  page_songs(got "${chk}")
+  expect_eq("${tag} new playlist content, in shown order" "${got}" "${want}")
+endfunction()
+
+page_case(album 4 "Lotus Turbo Challenge")
+page_case(playlist "[0-9]+" "alpha")
 message(STATUS "song_menu_multi_playlist_ok")

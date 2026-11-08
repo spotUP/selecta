@@ -135,6 +135,12 @@ int main(void) {
         }
         CHECK(sel_uim_context_line(99, 0, 1, 0, NULL, line, sizeof line) == 0u);
         CHECK(sel_uim_context_line(SEL_UIM_LIST_QUEUE, 0, 1, 0, NULL, line, 8) == 0u); /* does not fit */
+        /* I632e: the engine list name every verb shares (PLAY_CONTEXT and SONGS_* take it from here) */
+        CHECK(sel_uim_list_name(SEL_UIM_LIST_COLLECTION, 0, line, sizeof line) == 10u && strcmp(line, "collection") == 0);
+        CHECK(sel_uim_list_name(SEL_UIM_LIST_HITS, 0, line, sizeof line) == 4u && strcmp(line, "hits") == 0);
+        CHECK(sel_uim_list_name(SEL_UIM_LIST_PLAYLIST, 12, line, sizeof line) == 11u && strcmp(line, "playlist:12") == 0);
+        CHECK(sel_uim_list_name(99, 0, line, sizeof line) == 0u && line[0] == '\0');
+        CHECK(sel_uim_list_name(SEL_UIM_LIST_COLLECTION, 0, line, 5) == 0u); /* does not fit */
     }
 
     if (g_fail == 0) printf("uim_select_ok\n");

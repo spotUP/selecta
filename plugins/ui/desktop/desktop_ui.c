@@ -2940,12 +2940,8 @@ static void song_menu_selection(desk* d, const song_ref* ref) {
     if (sel_uim_selset_format(&d->sel, d->sm_multi_ranges, sizeof d->sm_multi_ranges) == 0u) {
         return;
     }
-    if (ref->list_kind == (uint32_t)SEL_UIM_LIST_QUEUE) {
-        snprintf(d->sm_multi_list, sizeof d->sm_multi_list, "queue");
-    } else if (ref->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST) {
-        snprintf(d->sm_multi_list, sizeof d->sm_multi_list, "playlist:%u", (unsigned)ref->list_id);
-    } else {
-        snprintf(d->sm_multi_list, sizeof d->sm_multi_list, "view");
+    if (sel_uim_list_name(ref->list_kind, ref->list_id, d->sm_multi_list, sizeof d->sm_multi_list) == 0u) {
+        return;
     }
     d->sm_multi_ver = ref->list_version;
     d->sm_multi_n = sel_uim_selset_count(&d->sel);
@@ -6111,8 +6107,8 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         if (e != NULL && d->col_kind == 0u) {
             e->ref.pl_id = d->pls_id;
             e->ref.pl_index = i;
-            song_row_set_list(d, e, SEL_UIM_LIST_PLAYLIST, d->pls_id, d->pls_ver, i);
-        } else if (e != NULL) { /* I994e: kind pages are engine collection pages: the row joins that list by its shown position */
+        }
+        if (e != NULL) { /* I632e: a playlist page is an engine collection page too (COLLECTION_OPEN): its rows join that list, version col_read_serial, by shown position, which is also what Shift click and the engine count */
             song_row_set_list(d, e, SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, pos);
         }
         if (e != NULL) {
@@ -14637,9 +14633,6 @@ static const char* desk_ctx_name(const desk* d, uint32_t kind) {
 static int desk_play_ref(desk* d, const song_ref* r) {
     if (r->list_kind == 0u) {
         return desk_play_path(d, r->path);
-    }
-    if (r->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST) {
-        return desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, r->ctx_pos, d->pls_name);
     }
     return desk_play_context(d, r->list_kind, r->list_id, r->list_version, r->list_index, desk_ctx_name(d, r->list_kind));
 }
