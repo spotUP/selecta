@@ -415,8 +415,8 @@ SEL_TAG(UI, STAT_VIEW_CURSOR_REPAINTS, 0x50E7, INT)
 /* I1151: Up/Down on the Search page list moved the cursor to the next drawn row, over group headings and hidden groups. */
 SEL_TAG(UI, STAT_SEARCH_SKIPS,        0x50E8, INT)
 /* I1184: the text UI's keys that fired a line of the shared action table (src/uimodel/actions.c), and those lines in order, '|' separated. */
-SEL_TAG(UI, STAT_TABLE_ACTIONS,       0x50F2, INT)
-SEL_TAG(UI, STAT_TABLE_ACTION_LOG,    0x50F3, STR)
+SEL_TAG(UI, STAT_TABLE_ACTIONS,       0x50F5, INT)
+SEL_TAG(UI, STAT_TABLE_ACTION_LOG,    0x50F6, STR)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
