@@ -436,6 +436,9 @@ typedef struct desk {
     uint32_t sort_dir;       /* 0 queue order, 1 ascending, 2 descending */
     int sm_open;             /* the shared song menu is open (I305) */
     int sm_lit;              /* I874: the menu item drawn highlighted by the last paint, -1 for none (dump line smenu_lit) */
+    int sm_key;              /* I1150: the menu item the arrow keys lit, -1 for none; valid only while sm_key_menu == menus and sm_key_step == sm_step */
+    uint32_t sm_key_menu;
+    int sm_key_step;
     int stats_open;          /* the Library Statistics panel (More) is expanded over the grid (I455) */
     uint32_t stats_panel_draws, stats_panel_rows; /* panels painted, and the statistics rows in the last one */
     int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library, 3 = Quit Selecta */
@@ -3096,6 +3099,11 @@ static void np_title_reg(desk* d) {
     }
 }
 
+/* I1150: the arrow-key highlight belongs to one open menu level; a new menu (menus moves) or a new step drops it. */
+static int song_menu_key_valid(const desk* d) {
+    return d->sm_open && d->sm_key >= 0 && d->sm_key_menu == d->menus && d->sm_key_step == d->sm_step;
+}
+
 static void song_menu_draw(desk* d) {
     int32_t k, n;
     const sel_gui_atlas* semi = desk_font(d, 1, 13);
@@ -3116,7 +3124,7 @@ static void song_menu_draw(desk* d) {
         sel_gui_round_rect(d->canvas, panel, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
         for (k = 0; k < n; k++) {
             sel_gui_rect m = song_menu_item_rect(d, k);
-            int lit = hover_weight(d, m) > 0;
+            int lit = song_menu_key_valid(d) ? k == d->sm_key : hover_weight(d, m) > 0; /* I1150: the key highlight wins until the pointer moves */
             const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k)
                               : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "New Playlist...";
             hover_reg(d, m);
@@ -3748,6 +3756,69 @@ static int song_menu_key(desk* d) {
     song_menu_open(d, d->sm_rows[pick].r.x + lpx(d, 16), d->sm_rows[pick].r.y + d->sm_rows[pick].r.h, &d->sm_rows[pick].ref);
     draw_home(d);
     return 1;
+}
+
+/* I1150: the items a key can light: the sort menu (step 4) skips its headers, separator and the icon strip; every other step
+ * lights every item. */
+static int song_menu_key_item(const desk* d, int32_t k) {
+    return d->sm_step != 4 || (k >= 1 && k <= 4);
+}
+
+static void song_menu_key_set(desk* d, int32_t k) {
+    d->sm_key = k;
+    d->sm_key_menu = d->menus;
+    d->sm_key_step = d->sm_step;
+}
+
+/* I1150: an open menu level owns the keyboard (I1147) and is driven by it: Up/Down/Home/End move the highlight (wrapping),
+ * Enter, Space or Right on Add to Playlist pick the lit item through the same path as a click on it, Left on the playlist step goes
+ * back to the song items, Escape closes. Every other key stops here. */
+static void song_menu_keynav(desk* d, const sel_gui_input* ev) {
+    int32_t n = song_menu_n(d), k, cur = song_menu_key_valid(d) ? d->sm_key : -1, i;
+    uint32_t code = ev->code;
+    if (ev->mods != 0u) {
+        return;
+    }
+    if (code == 27u) {
+        d->sm_open = 0;
+        draw_home(d);
+        return;
+    }
+    if (code == TXT_KEY_UP || code == TXT_KEY_DOWN || code == TXT_KEY_HOME || code == TXT_KEY_END) {
+        int32_t step = code == TXT_KEY_UP || code == TXT_KEY_END ? -1 : 1;
+        k = code == TXT_KEY_HOME ? -1 : code == TXT_KEY_END ? n : cur < 0 ? (step > 0 ? -1 : n) : cur;
+        for (i = 0; i < n; i++) {
+            k += step;
+            if (code == TXT_KEY_UP || code == TXT_KEY_DOWN) {
+                k = (k + n) % n;
+            }
+            if (k >= 0 && k < n && song_menu_key_item(d, k)) {
+                song_menu_key_set(d, k);
+                break;
+            }
+        }
+        draw_home(d);
+        return;
+    }
+    if (code == TXT_KEY_LEFT && d->sm_step == 1) {
+        d->sm_step = 0;
+        song_menu_key_set(d, 3); /* back on Add to Playlist, the item that opened the step */
+        draw_home(d);
+        return;
+    }
+    if (cur >= 0 && (code == 13u || code == ' ' || (code == TXT_KEY_RIGHT && d->sm_step == 0 && cur == 3))) {
+        sel_gui_input click;
+        sel_gui_rect m = song_menu_item_rect(d, cur);
+        int32_t step0 = d->sm_step;
+        memset(&click, 0, sizeof click);
+        click.kind = SEL_GUI_IN_CLICK;
+        click.x = m.x + m.w / 2;
+        click.y = m.y + m.h / 2;
+        song_menu_pointer(d, &click);
+        if (d->sm_open && d->sm_step != step0) {
+            song_menu_key_set(d, 0); /* the new step opens with its first item lit */
+        }
+    }
 }
 
 /* I478: the quick-pick grid: a card of the shelf tiles' surface and radius, small square art on the left, the name beside it. */
@@ -13762,11 +13833,8 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == TXT_KEY_F1 + 9u && (ev->mods & TXT_MOD_SHIFT) != 0u && song_menu_key(d)) {
         return 1;
     }
-    if (d->sm_open) { /* I1147: an open menu level owns the keyboard: Escape closes it, every other key stops here and never reaches the list behind */
-        if (ev->code == 27u && ev->mods == 0u) {
-            d->sm_open = 0;
-            draw_home(d);
-        }
+    if (d->sm_open) { /* I1147: an open menu level owns the keyboard and never passes a key to the list behind; I1150: it is driven by them */
+        song_menu_keynav(d, ev);
         return 1;
     }
     if (d->page == SEL_UIM_PG_SETTINGS && d->set_focus >= 0 && settings_key(d, ev)) { /* I799a */
@@ -14996,6 +15064,9 @@ static int desk_route_input(desk* d, const sel_gui_input* ev_in) {
             return desk_event_frame(d, desk_pls_import(d, ev->path));
         }
         return desk_event_frame(d, desk_drop_path(d, ev->path, ev->x != 0));
+    }
+    if (ev->kind == SEL_GUI_IN_MOVE && d->sm_key >= 0) { /* I1150: the pointer takes the menu highlight back from the arrow keys */
+        d->sm_key = -1;
     }
     if (ev->kind == SEL_GUI_IN_CLICK || ev->kind == SEL_GUI_IN_MOVE || ev->kind == SEL_GUI_IN_DRAG) {
         int changed = desk_pointer(d, ev);

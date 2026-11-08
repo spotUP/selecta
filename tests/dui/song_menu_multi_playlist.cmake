@@ -132,6 +132,19 @@ if(NOT "${G}" MATCHES "smenu_rowmore ([0-9]+)")
 endif()
 expect_eq("G rows behind the open menu showing their \"...\" button" "${CMAKE_MATCH_1}" 0)
 
+# H (I1150, Johan 2026-11-08 after the I1147 Mac pass: "keyboard navigation dont work"): the open menu is driven by keys alone.
+#   Right-click opens the song menu on a 3-song selection; Down x4 lights Add to Playlist, Right opens that step with its first
+#   item (New Playlist...) lit, Down lights alpha, Enter adds the selection. Red before I1150: the open menu swallowed every key but Escape.
+set(dbH "${WORK}/h.db")
+mp_run(seedH "${dbH}" home "wait 2\n" "PLAYLIST_CREATE alpha")
+set(openH "wait 2\nclick ${rx0} ${ry0}\nclick ${rx2} ${ry2} 1 shift\nmove ${rx1} ${ry1}\nrclick ${rx1} ${ry1}\nwait 1\n")
+mp_run(H "${dbH}" queue "${openH}key down\nkey down\nkey down\nkey down\nkey right\nwait 1\nkey down\nkey enter\nwait 2\n" ${q_execs})
+if(NOT "${H}" MATCHES "Added 3 songs to alpha")
+  message(FATAL_ERROR "H: no toast 'Added 3 songs to alpha' after the keyboard path in:\n${H}")
+endif()
+playlist_songs(resH "${dbH}" alpha)
+expect_eq("H playlist content after the keyboard path" "${resH}" "3:a.mod;b.mod;c.mod")
+
 # B: no saved playlist: New Playlist... creates one holding the selection.
 set(dbB "${WORK}/b.db")
 mp_run(B "${dbB}" queue "${select3}click ${ix} ${np_y}\nwait 2\n" ${q_execs})
