@@ -309,7 +309,8 @@ static const struct {
     const char* title;
 } k_panes[MUI_PANE_COUNT] = {{SEL_UIM_PG_HOME, NULL, "List"},
                              {SEL_UIM_PG_VIZ, "@viz", "Visualizer Page"},
-                             {SEL_UIM_PG_TRACKER, "@pattern", "Pattern Page"}};
+                             {SEL_UIM_PG_TRACKER, "@pattern", "Pattern Page"},
+                             {SEL_UIM_PG_NOWPLAYING, NULL, "Now Playing Page"}}; /* I960: no key (the Mac has none; `n` is next) */
 
 uint32_t mui_pane_of_page(uint32_t page) {
     uint32_t p;
@@ -328,7 +329,7 @@ uint32_t mui_pane_page(uint32_t pane) {
 uint32_t mui_pane_of_action(const char* act) {
     uint32_t p;
     for (p = 1; act != NULL && p < MUI_PANE_COUNT; p++) {
-        if (strcmp(k_panes[p].action, act) == 0) {
+        if (k_panes[p].action != NULL && strcmp(k_panes[p].action, act) == 0) {
             return p;
         }
     }
@@ -342,7 +343,7 @@ const char* mui_pane_title(uint32_t pane) {
 char mui_pane_shortcut(uint32_t pane) {
     txt_bindings def;
     char key[24];
-    if (pane == MUI_PANE_LIST || pane >= MUI_PANE_COUNT) {
+    if (pane == MUI_PANE_LIST || pane >= MUI_PANE_COUNT || k_panes[pane].action == NULL) {
         return '\0';
     }
     txt_bindings_default(&def);
@@ -370,6 +371,28 @@ uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods) {
         return MUI_PANE_COUNT;
     }
     return mui_pane_open(mp, k_panes[pane].page);
+}
+
+uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab) {
+    const sel_uim_door* d = sel_uim_door_at(door);
+    uint32_t pg;
+    if (tab != NULL) {
+        *tab = 0u;
+    }
+    if (!compact || d == NULL || d->line != NULL) {
+        return MUI_PANE_COUNT;
+    }
+    pg = sel_uim_page_by_name(d->page);
+    if (pg == (uint32_t)SEL_UIM_PG_NOWPLAYING) {
+        return MUI_PANE_NOWPLAYING;
+    }
+    if (pg == (uint32_t)SEL_UIM_PG_SONGINFO) {
+        if (tab != NULL) {
+            *tab = 1u;
+        }
+        return MUI_PANE_NOWPLAYING;
+    }
+    return MUI_PANE_COUNT;
 }
 
 /* I670: see mui_map.h. */

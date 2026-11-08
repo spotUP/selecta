@@ -1180,6 +1180,30 @@ static void test_panes(void) {
     CHECK(mui_pane_key(&mp, (uint32_t)'j', 0u) == MUI_PANE_COUNT && mp.pane == MUI_PANE_VIZ, "an unrelated key moved the pane");
     CHECK(mui_pane_key(&mp, (uint32_t)'v', TXT_MOD_CTRL) == MUI_PANE_COUNT, "Ctrl+V opened a page");
     CHECK(mui_pane_of_action("@viz") == MUI_PANE_VIZ && mui_pane_of_action("@pattern") == MUI_PANE_TRACKER && mui_pane_of_action("@home") == MUI_PANE_COUNT && mui_pane_of_action(NULL) == MUI_PANE_COUNT, "action to pane map");
+    /* I960: the Now Playing pane has no key and a menu title; one compact door press opens it once, Song Information opens its Info tab */
+    {
+        uint32_t tab = 9u, d, np_door = 99u, info_door = 99u, with_line = 0u;
+        CHECK(mui_pane_of_page(SEL_UIM_PG_NOWPLAYING) == MUI_PANE_NOWPLAYING && mui_pane_page(MUI_PANE_NOWPLAYING) == (uint32_t)SEL_UIM_PG_NOWPLAYING, "now playing pane/page map");
+        CHECK(mui_pane_shortcut(MUI_PANE_NOWPLAYING) == '\0' && mui_pane_title(MUI_PANE_NOWPLAYING) != NULL, "now playing pane has a key or no title");
+        CHECK(mui_pane_key(&mp, (uint32_t)'n', 0u) == MUI_PANE_COUNT, "key n opened a pane");
+        for (d = 0; d < mui_door_count(); d++) {
+            uint32_t pg = sel_uim_page_by_name(sel_uim_door_at(d)->page);
+            np_door = pg == (uint32_t)SEL_UIM_PG_NOWPLAYING ? d : np_door;
+            info_door = pg == (uint32_t)SEL_UIM_PG_SONGINFO ? d : info_door;
+            if (mui_door_line(d) != NULL) {
+                with_line++;
+                CHECK(mui_door_pane(d, 1u, &tab) == MUI_PANE_COUNT, "door %u with an engine line opens a pane", (unsigned)d);
+            }
+        }
+        CHECK(np_door < 99u && info_door < 99u && with_line > 0u, "doors for Now Playing / Song Information not found");
+        memset(&mp, 0, sizeof mp);
+        CHECK(mui_door_pane(np_door, 0u, &tab) == MUI_PANE_COUNT && mp.opens[MUI_PANE_NOWPLAYING] == 0u, "full class door opened the pane");
+        CHECK(mui_door_pane(np_door, 1u, &tab) == MUI_PANE_NOWPLAYING && tab == 0u, "compact Now Playing door: pane/tab");
+        CHECK(mui_pane_open(&mp, mui_pane_page(mui_door_pane(np_door, 1u, NULL))) == MUI_PANE_NOWPLAYING && mp.opens[MUI_PANE_NOWPLAYING] == 1u, "one door press did not count one opening");
+        CHECK(mui_door_pane(info_door, 1u, &tab) == MUI_PANE_NOWPLAYING && tab == 1u, "Song Information door gives tab 1");
+        CHECK(mui_door_pane(info_door, 0u, &tab) == MUI_PANE_COUNT && mui_door_pane(99u, 1u, NULL) == MUI_PANE_COUNT, "full class / past the table");
+        CHECK(mui_pane_of_action("@nowplaying") == MUI_PANE_COUNT, "action map reached the NULL-action pane");
+    }
     /* the menu shortcuts of the other items leave 'v' and 't' to the panes */
     n = mui_menu_build_for(items, 512, mui_style_mask(0));
     for (i = 0; i < n && i < 512u; i++) {
@@ -1191,6 +1215,50 @@ static void test_panes(void) {
         mui_layout_map(&lm, width, 720, SEL_UIM_TIER_DEFAULT);
         CHECK(lm.show[MUI_SLOT_MAIN] != 0u, "main slot hidden at width %u", (unsigned)width);
         CHECK(width >= 1100u || lm.show[MUI_SLOT_DETAIL] == 0u, "detail slot shown at width %u", (unsigned)width);
+    }
+}
+
+/* I960b: the Now Playing page plan on the compact tier. Tall pixels (512): art 64x32, the page adds at most MUI_NP_PAGE_BUDGET_H rows to
+ * the main slot minimum. Square pixels (256, a user-chosen laced screen): art 64x64 and the plan still fits a 256-row screen's main
+ * height. The plan moves the output: a wider main column or a taller pixel changes the art. */
+static void test_np_page_plan(void) {
+    mui_aa_metrics_t m;
+    mui_np_page_plan_t tall, sq, narrow;
+    uint32_t before = mui_np_page_plans();
+    mui_aa_metrics_aspect(0, 512, &m);
+    mui_np_page_plan(&m, 436u, &tall);
+    CHECK(tall.art_w == 64u && tall.art_h == 32u, "tall art %ux%u, not 64x32", (unsigned)tall.art_w, (unsigned)tall.art_h);
+    CHECK(tall.min_h <= (uint32_t)MUI_NP_PAGE_BUDGET_H, "compact page needs %u rows, budget %u", (unsigned)tall.min_h, (unsigned)MUI_NP_PAGE_BUDGET_H);
+    CHECK(tall.next_rows == 3u && tall.text_rows == 4u && tall.min_h == tall.heading_h + tall.top_h + tall.tabs_h + tall.page_h, "plan parts do not add up");
+    mui_aa_metrics_aspect(0, 256, &m);
+    mui_np_page_plan(&m, 436u, &sq);
+    CHECK(sq.min_h <= (uint32_t)MUI_NP_PAGE_BUDGET_H && sq.art_h >= 32u && sq.art_w <= 64u, "square plan art %ux%u min_h %u over budget %u", (unsigned)sq.art_w, (unsigned)sq.art_h, (unsigned)sq.min_h, (unsigned)MUI_NP_PAGE_BUDGET_H);
+    mui_np_page_plan(&m, 90u, &narrow);
+    CHECK(narrow.art_w == 30u && narrow.art_h == 30u, "narrow column art %ux%u", (unsigned)narrow.art_w, (unsigned)narrow.art_h);
+    CHECK(mui_np_page_plans() == before + 3u, "plan sentinel did not count");
+    {
+        /* I960c: mui_ui.c is Amiga-only, so the wiring is checked by source: one detail-group call, its group passed to the page group. */
+        static char src[400000];
+        size_t n;
+        const char* p;
+        int calls = 0;
+        FILE* f = fopen(MUI_UI_SOURCE, "rb");
+        CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+        if (f == NULL) {
+            return;
+        }
+        n = fread(src, 1, sizeof src - 1, f);
+        fclose(f);
+        src[n] = 0;
+        for (p = src; (p = strstr(p, "mui_detail_group(s, ")) != NULL; p++) {
+            calls++;
+        }
+        CHECK(calls == 1, "mui_detail_group(s, called %d times, want once", calls);
+        CHECK(strstr(src, "mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab)") != NULL, "the door handler asks mui_door_pane");
+        CHECK(strstr(src, "s->p4[P4_NPPAGE]++") != NULL && strstr(src, "set(s->np_tabs, UPA_Tabs_Active") != NULL, "the Now Playing sentinel counts and the tab is set");
+        CHECK(strstr(src, "p == MUI_PANE_NOWPLAYING && !mui_screen_compact()") != NULL, "the View item is compact only");
+        CHECK(strstr(src, "mui_main_pages(s, np_page)") != NULL, "the window build passes the Now Playing group to the page group");
+        CHECK(strstr(src, "static Object* mui_main_pages(mui_state* s, Object* np_page)") != NULL, "mui_main_pages takes the Now Playing group");
     }
 }
 
@@ -3468,6 +3536,7 @@ int main(int argc, char** argv) {
         test_home();
     } else if (strcmp(argv[1], "panes") == 0) {
         test_panes();
+        test_np_page_plan();
     } else if (strcmp(argv[1], "library") == 0) {
         test_library();
     } else if (strcmp(argv[1], "toast") == 0) {

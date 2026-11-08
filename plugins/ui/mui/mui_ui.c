@@ -111,10 +111,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage"};
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -208,6 +208,7 @@ typedef struct mui_state {
     Object* np_artist;
     Object* np_album;
     Object* np_note;                /* I1127c: "Sample bank not found" under the album line */
+    Object* np_tabs;                /* I960d: the Now Playing page's tab strip (Lyrics, Info, Tracks) */
     Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
     Object* cyc_viz;
     mui_mainpane pane;              /* I735: the main-slot pane shown (list, Visualizer page, Pattern page) and its opening counters */
@@ -346,6 +347,7 @@ static Object* mui_song_context_menu(void) {
     return strip;
 }
 
+static int mui_screen_compact(void); /* I949c, defined with the screen helpers; the View menu needs it (I960d) */
 static Object* menu_child(Object* parent, ULONG cls_is_menu, const char* title, Object** cache_key, const char** names, Object** objs,
                           uint32_t* count, const char* want) {
     uint32_t i;
@@ -428,6 +430,9 @@ static Object* mui_menu_strip(void) {
         uint32_t p;
         for (p = MUI_PANE_LIST + 1u; view != NULL && p < MUI_PANE_COUNT; p++) {
             Object* pi;
+            if (p == MUI_PANE_NOWPLAYING && !mui_screen_compact()) {
+                continue; /* I960d: the Now Playing page exists in the compact class only; the full class has the detail column */
+            }
             pane_sc[p][0] = mui_pane_shortcut(p);
             pane_sc[p][1] = '\0';
             pi = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_l1_keep(mui_pane_title(p)), MUIA_Menuitem_Shortcut,
@@ -1739,9 +1744,14 @@ static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label la
     return mui_aatext(buf, mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0);
 }
 
-static Object* mui_detail_group(mui_state* s) {
+/* compact (I960c, design I949 section 6): the same text, Like, tabs and pages, built as the Now Playing main page: a heading, then the
+ * art beside the four text rows and the heart, no visualizer strip (the Visualizer page owns the plugin). Full: the detail column. */
+static Object* mui_detail_group(mui_state* s, int compact) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     Object* art = mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, g_pixel_aspect_q8));
+    Object* top = compact ? MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, TAG_DONE) : NULL;
+    Object* txt = compact ? MUI_NewObject((char*)MUIC_Group, TAG_DONE) : NULL;
+    Object* like = NULL;
     Object* lyr_view;
     Object* info_g;
     Object* trk_g;
@@ -1769,22 +1779,38 @@ static Object* mui_detail_group(mui_state* s) {
     info_g = mui_string_aalist(s->info_ptr, 0, 6, &s->info_list);
     trk_g = mui_string_aalist(s->trk_ptr, 0, 8, &s->trk_list);
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    /* I1125 (design I973 6a Q6): the Like heart sits on the Now Playing panel like the Mac np_like, not in the player bar. */
+    like = mui_make_button_icon("Like", "Like", CTL_P4_BASE + (LONG)P4_LIKE);
     if (art != NULL) {
         DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child */
-        DoMethod(g, OM_ADDMEMBER, art);
     }
-    DoMethod(g, OM_ADDMEMBER, s->np_title);
-    DoMethod(g, OM_ADDMEMBER, s->np_artist);
-    DoMethod(g, OM_ADDMEMBER, s->np_album);
-    DoMethod(g, OM_ADDMEMBER, s->np_note);
-    {
-        /* I1125 (design I973 6a Q6): the Like heart sits on the Now Playing panel like the Mac np_like, not in the player bar. */
-        Object* like = mui_make_button_icon("Like", "Like", CTL_P4_BASE + (LONG)P4_LIKE);
+    if (compact && top != NULL && txt != NULL) {
+        DoMethod(g, OM_ADDMEMBER, mui_aatext("Now Playing", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_LEFT, 0));
+        if (art != NULL) {
+            DoMethod(top, OM_ADDMEMBER, art);
+        }
+        DoMethod(txt, OM_ADDMEMBER, s->np_title);
+        DoMethod(txt, OM_ADDMEMBER, s->np_artist);
+        DoMethod(txt, OM_ADDMEMBER, s->np_album);
+        DoMethod(txt, OM_ADDMEMBER, s->np_note);
+        DoMethod(top, OM_ADDMEMBER, txt);
+        if (like != NULL) {
+            DoMethod(top, OM_ADDMEMBER, like);
+        }
+        DoMethod(g, OM_ADDMEMBER, top);
+    } else {
+        if (art != NULL) {
+            DoMethod(g, OM_ADDMEMBER, art);
+        }
+        DoMethod(g, OM_ADDMEMBER, s->np_title);
+        DoMethod(g, OM_ADDMEMBER, s->np_artist);
+        DoMethod(g, OM_ADDMEMBER, s->np_album);
+        DoMethod(g, OM_ADDMEMBER, s->np_note);
         if (like != NULL) {
             DoMethod(g, OM_ADDMEMBER, like);
         }
     }
-    if (s->vizset.n > 0u) {
+    if (!compact && s->vizset.n > 0u) {
         s->cyc_viz = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
         s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg, g_pixel_aspect_q8);
         if (s->cyc_viz != NULL && s->viz_area != NULL) {
@@ -1805,6 +1831,7 @@ static Object* mui_detail_group(mui_state* s) {
         ts.captions = tab_names;
         ts.active = 0;
         tabs = mui_aatabs_new(&ts);
+        s->np_tabs = tabs;
         if (pages != NULL && page_lyr != NULL && page_info != NULL && page_trk != NULL && tabs != NULL) {
             if (lyr_view != NULL) {
                 DoMethod(page_lyr, OM_ADDMEMBER, lyr_view);
@@ -1862,7 +1889,7 @@ static void mui_viz_chooser_update(mui_state* s) {
  * page, MUI_PANE_TRACKER the Pattern page. The Visualizer page reuses Selecta_VizArea (its own instance over the same vizset, so the
  * detail strip and the page both draw the one plugin) with the plugin picker; the Pattern page is an AAList over the rows
  * mui_detail_refresh fills for the detail tab. Both pages sit in the main slot, which mui_layout_map shows at every width. */
-static Object* mui_main_pages(mui_state* s) {
+static Object* mui_main_pages(mui_state* s, Object* np_page) {
     Object* list_g = mui_main_group(s);
     Object* pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, (ULONG)TRUE, TAG_DONE);
     Object* viz_g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
@@ -1899,6 +1926,8 @@ static Object* mui_main_pages(mui_state* s) {
     DoMethod(pages, OM_ADDMEMBER, list_g);
     DoMethod(pages, OM_ADDMEMBER, viz_g);
     DoMethod(pages, OM_ADDMEMBER, trk_g);
+    /* I960a/c: page MUI_PANE_NOWPLAYING is the compact Now Playing group; the full class keeps an empty page so the page index exists. */
+    DoMethod(pages, OM_ADDMEMBER, np_page != NULL ? np_page : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     s->main_pages = pages;
     return pages;
 }
@@ -1906,6 +1935,9 @@ static Object* mui_main_pages(mui_state* s) {
 /* The page entry: shows the pane of `page` (mui_pane_open counts it), whatever opened it (the Mac UI's key, the View menu item). */
 static void mui_pane_show(mui_state* s, uint32_t page) {
     uint32_t pane = mui_pane_open(&s->pane, page);
+    if (pane == MUI_PANE_NOWPLAYING) {
+        s->p4[P4_NPPAGE]++; /* I960d sentinel: the Now Playing page was shown */
+    }
     if (s->main_pages != NULL) {
         set(s->main_pages, MUIA_Group_ActivePage, (ULONG)pane);
     }
@@ -2258,7 +2290,7 @@ static void mui_refresh(mui_state* s) {
     }
     mui_route_sync(s, st);
     s->uim.dirty |= sel_uim_update(&s->uim, st);
-    if (s->viz_area != NULL) { /* I684: one visualizer step per wait turn, on the newest engine frame */
+    if (s->viz_area != NULL || (s->viz_page_area != NULL && s->pane.pane == MUI_PANE_VIZ)) { /* I684: one visualizer step per wait turn, on the newest engine frame; I960c: the compact class has no strip area */
         sel_uim_budget vb;
         if (sel_uim_budget_for(&vb, "rgba32")) {
             /* I918: only the area on screen steps, the page area while the Visualizer page is shown, else the strip. Both stepped on
@@ -2268,7 +2300,7 @@ static void mui_refresh(mui_state* s) {
                 mui_viz_chooser_update(s);
             }
             if (mui_vizarea_step(shown, st->viz, &vb, mui_now_ms()) != 0) {
-                s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area) + (s->viz_page_area != NULL ? mui_vizarea_frames(s->viz_page_area) : 0u);
+                s->p4[P4_VIZFRAMES] = (s->viz_area != NULL ? mui_vizarea_frames(s->viz_area) : 0u) + (s->viz_page_area != NULL ? mui_vizarea_frames(s->viz_page_area) : 0u);
             }
         }
     }
@@ -2807,13 +2839,18 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         }
         break;
     case P4_VIZPICK:
-        GetAttr(UPA_Cycle_Active, s->cyc_viz, &act);
+        act = s->vizset.sel;
+        if (s->cyc_viz != NULL) {
+            GetAttr(UPA_Cycle_Active, s->cyc_viz, &act);
+        }
         if (s->cyc_viz_page != NULL && (uint32_t)act == s->vizset.sel) { /* I735: the page picker fired when the strip one did not move */
             GetAttr(UPA_Cycle_Active, s->cyc_viz_page, &act);
         }
         if ((uint32_t)act < s->vizset.n) {
             s->vizset.sel = (uint32_t)act;
-            set(s->cyc_viz, UPA_Cycle_Active, act); /* every picker shows the plugin the engine runs */
+            if (s->cyc_viz != NULL) {
+                set(s->cyc_viz, UPA_Cycle_Active, act); /* every picker shows the plugin the engine runs */
+            }
             if (s->cyc_viz_page != NULL) {
                 set(s->cyc_viz_page, UPA_Cycle_Active, act);
             }
@@ -3103,7 +3140,14 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the history entry is the door's lines (I794) */
-        if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
+        uint32_t np_tab = 0u;
+        uint32_t np_pane = mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab);
+        if (np_pane == MUI_PANE_NOWPLAYING) { /* I960d: the compact class opens its Now Playing page for the Now Playing and Song Information doors */
+            mui_pane_show(s, mui_pane_page(np_pane));
+            if (s->np_tabs != NULL) {
+                set(s->np_tabs, UPA_Tabs_Active, (ULONG)np_tab);
+            }
+        } else if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
             mui_pane_show(s, SEL_UIM_PG_HOME); /* the engine moves the list's source: the list pane shows it */
             mui_route_door(&s->route, (uint32_t)(id - CTL_DOOR_BASE), dl, mui_route_send, s);
         }
@@ -3248,6 +3292,9 @@ static void* mui_open(const sel_ui_open_args* a) {
     ULONG open = 0;
     uint32_t step;
     Object* strip;
+    Object* np_detail;
+    Object* np_page;
+    int np_compact;
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
     mui_route_init(&s->route);
@@ -3287,6 +3334,10 @@ static void* mui_open(const sel_ui_open_args* a) {
     /* MUI-P4-17: MUIA_Application_Base is the settings identity only. The shell opened the one ARexx port SELECTA before this
      * UI (arexx_open, apps/selecta/main.c), so MUI takes SELECTA.1 for its own built-in commands and no MUIA_Application_Commands
      * table is given: PLAY and every other command reach the engine through the shell's port, one command set (plan section 5). */
+    /* I960c: the detail group is built once; the compact class puts it in the main page group as the Now Playing page, the full class in the detail slot. */
+    np_compact = mui_screen_compact();
+    np_detail = mui_detail_group(s, np_compact);
+    np_page = np_compact ? np_detail : NULL;
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
         SubWindow, s->win = WindowObject, TH_SCR MUIA_Window_Title, wattr.titled ? (ULONG) "Selecta" : (ULONG)NULL, MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'), MUIA_Window_AppWindow, TRUE,
@@ -3304,9 +3355,9 @@ static void* mui_open(const sel_ui_open_args* a) {
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(s, g_screen_rtg),
                     Child, s->balance[0] = UP_NewBalance(NULL),
-                    Child, s->slot[MUI_SLOT_MAIN] = mui_main_pages(s),
+                    Child, s->slot[MUI_SLOT_MAIN] = mui_main_pages(s, np_page),
                     Child, s->balance[1] = UP_NewBalance(NULL),
-                    Child, s->slot[MUI_SLOT_DETAIL] = mui_detail_group(s),
+                    Child, s->slot[MUI_SLOT_DETAIL] = np_compact ? (Object*)MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE) : np_detail,
                 End,
                 Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
             End, End, End;
