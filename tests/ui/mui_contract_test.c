@@ -1236,6 +1236,27 @@ static void test_np_page_plan(void) {
     mui_np_page_plan(&m, 90u, &narrow);
     CHECK(narrow.art_w == 30u && narrow.art_h == 30u, "narrow column art %ux%u", (unsigned)narrow.art_w, (unsigned)narrow.art_h);
     CHECK(mui_np_page_plans() == before + 3u, "plan sentinel did not count");
+    {
+        /* I960c: mui_ui.c is Amiga-only, so the wiring is checked by source: one detail-group call, its group passed to the page group. */
+        static char src[400000];
+        size_t n;
+        const char* p;
+        int calls = 0;
+        FILE* f = fopen(MUI_UI_SOURCE, "rb");
+        CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+        if (f == NULL) {
+            return;
+        }
+        n = fread(src, 1, sizeof src - 1, f);
+        fclose(f);
+        src[n] = 0;
+        for (p = src; (p = strstr(p, "mui_detail_group(s, ")) != NULL; p++) {
+            calls++;
+        }
+        CHECK(calls == 1, "mui_detail_group(s, called %d times, want once", calls);
+        CHECK(strstr(src, "mui_main_pages(s, np_page)") != NULL, "the window build passes the Now Playing group to the page group");
+        CHECK(strstr(src, "static Object* mui_main_pages(mui_state* s, Object* np_page)") != NULL, "mui_main_pages takes the Now Playing group");
+    }
 }
 
 /* MUI-P4-0: seven doors from the shared table, each with its label; the five main-view pages carry a line the engine accepts. */
