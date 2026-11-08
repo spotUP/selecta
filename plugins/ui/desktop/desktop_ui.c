@@ -522,6 +522,7 @@ typedef struct desk {
     int32_t shelf_back_y_q16;                              /* I617: the Home scroll kept while the Shelf page is open */
     uint32_t show_all_draws, show_all_clicks, shelf_page_draws, shelf_page_opens, shelf_page_tiles; /* I617: Show all links drawn, clicked, and Shelf page frames drawn */
     sel_gui_rect show_all_rect[8];                 /* I617: the Show all link of each shelf as last drawn, w 0 when not drawn */
+    uint32_t bar_np_clicks; /* I960d: clicks on the player bar's cover or title that opened the Now Playing page */
     uint32_t detail_hidden, np_toggle_clicks, np_add_clicks; /* I619: the Now Playing column is hidden; clicks on its top bar toggle and on the add button */
     sel_gui_rect np_add;                                      /* I619: the round add-to-library button beside the track title */
     char np_ctx_shown[96];                                     /* I619: the heading the last Now Playing draw showed */
@@ -1325,6 +1326,7 @@ static sel_gui_rect nav_arrow_rect(const desk* d, sel_gui_rect mn, int32_t k);
 static int nav_arrows_shown(const desk* d, sel_gui_rect mn);
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i);
 static void draw_player_left(desk* d);
+static int player_left_rects(const desk* d, sel_gui_rect* ar, sel_gui_rect* box, sel_gui_rect* all);
 
 /* The footer bars (I312). The seek row spans tw pixels from x0, centred over the transport buttons, with the times at
  * both ends; the volume bar sits at the right end under the status text, its speaker icon to its left. Drawing and
@@ -8237,9 +8239,14 @@ static const char* library_dump_build(desk* d) {
         }
         {
             sel_gui_rect ta = d->np_add, tt = np_toggle_rect(d), md = region_rect(d, "main");
-            o = dump_put(d, o, "np_panel context=[%s] add %d %d %d %d add_clicks=%u toggle %d %d %d %d toggle_clicks=%u hidden=%u detail_w=%d main_w=%d\n",
+            o = dump_put(d, o, "np_panel context=[%s] add %d %d %d %d add_clicks=%u toggle %d %d %d %d toggle_clicks=%u hidden=%u detail_w=%d main_w=%d bar_np_clicks=%u\n",
                          d->np_ctx_shown, (int)ta.x, (int)ta.y, (int)ta.w, (int)ta.h, (unsigned)d->np_add_clicks, (int)tt.x, (int)tt.y,
-                         (int)tt.w, (int)tt.h, (unsigned)d->np_toggle_clicks, (unsigned)d->detail_hidden, (int)region_rect(d, "detail").w, (int)md.w);
+                         (int)tt.w, (int)tt.h, (unsigned)d->np_toggle_clicks, (unsigned)d->detail_hidden, (int)region_rect(d, "detail").w, (int)md.w, (unsigned)d->bar_np_clicks);
+        }
+        {
+            sel_gui_rect ba = {0, 0, 0, 0}, bb = {0, 0, 0, 0}, bc = {0, 0, 0, 0};
+            player_left_rects(d, &ba, &bb, &bc);
+            o = dump_put(d, o, "bar_np art %d %d %d %d clicks=%u page=%s\n", (int)ba.x, (int)ba.y, (int)ba.w, (int)ba.h, (unsigned)d->bar_np_clicks, d->np_page ? "nowplaying" : "other");
         }
         o = dump_put(d, o, "showall draws=%u clicks=%u page_draws=%u opens=%u open=%u tiles=%u at %d %d %d %d\n", (unsigned)d->show_all_draws,
                      (unsigned)d->show_all_clicks, (unsigned)d->shelf_page_draws, (unsigned)d->shelf_page_opens, (unsigned)d->shelf_open,
@@ -10988,7 +10995,12 @@ static int desk_route_door(desk* d, desk_page pg) {
 static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect pa, pbx, pall;
     uint32_t i;
+    if (player_left_rects(d, &pa, &pbx, &pall) && (in_rect(pa, x, y) || in_rect(pbx, x, y))) { /* I960d: the bar's cover or title opens Now Playing */
+        d->bar_np_clicks++;
+        return desk_route_door(d, SEL_UIM_PG_NOWPLAYING);
+    }
     if (d->page == SEL_UIM_PG_BROWSE && in_rect(mn, x, y)) {
         return browse_click(d, x, y);
     }
@@ -12265,18 +12277,27 @@ static void draw_sidebar(desk* d) {
 
 /* The player bar's left block (mockup footer): artwork of the playing song with its title and artist beside it. Hidden
  * when the bar is too narrow to share the row with the transport. */
-static void draw_player_left(desk* d) {
-    const sel_uim_frame* f = &d->uim.frame;
+/* The left block of the player bar: cover and title box (one geometry for the draw and the click, I960d). 0 when the bar is too
+ * small to show it. */
+static int player_left_rects(const desk* d, sel_gui_rect* ar, sel_gui_rect* box, sel_gui_rect* all) {
     sel_gui_rect pl = region_rect(d, "player");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t as = lpx(d, 56), gap = lpx(d, 12);
-    sel_gui_rect ar, box, all;
     if (pl.w < lpx(d, 900) || pl.h < as) {
+        return 0;
+    }
+    *ar = rect_of(pl.x + sp, pl.y + (pl.h - as) / 2, as, as);
+    *box = rect_of(ar->x + as + gap, ar->y, lpx(d, 300) - as - gap - sp, as);
+    *all = rect_of(pl.x, pl.y, lpx(d, 300) + sp, pl.h);
+    return 1;
+}
+
+static void draw_player_left(desk* d) {
+    const sel_uim_frame* f = &d->uim.frame;
+    sel_gui_rect ar, box, all;
+    if (!player_left_rects(d, &ar, &box, &all)) {
         return;
     }
-    ar = rect_of(pl.x + sp, pl.y + (pl.h - as) / 2, as, as);
-    box = rect_of(ar.x + as + gap, ar.y, lpx(d, 300) - as - gap - sp, as);
-    all = rect_of(pl.x, pl.y, lpx(d, 300) + sp, pl.h);
     sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     if (cover_draw(d, ar, sel_engine_state(d->engine)->song.path, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]))) { /* I692 */
         d->cover_bar++;
