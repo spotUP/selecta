@@ -175,18 +175,47 @@ uint32_t mui_player_min_width(const mui_player_band_t* pb) {
 /* I798 (T2, R3): the same map with the Now Playing column dropped when `detail_hidden`, through the layout the Mac computes
  * for its Hide Now Playing Panel (I619), so the main region takes the width on both. */
 void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden) {
-    mui_layout_map_wide(m, width, height, tier, detail_hidden, 0u);
+    mui_layout_map_wide(m, width, height, tier, detail_hidden, 0u, SEL_UIM_LAYOUT_FULL);
 }
 
-void mui_layout_map_wide(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t side_wide) {
+static uint32_t g_mode_applies;
+uint32_t mui_mode_applies(void) { return g_mode_applies; }
+
+int mui_mode_from_pref(const char* key, const char* value, uint32_t* mode) {
+    static const char* const names[4] = {"full", "window", "mini", "visual"};
+    uint32_t i;
+    if (key == NULL || value == NULL || strcmp(key, "ui.desktop.mode") != 0) {
+        return 0;
+    }
+    for (i = 0; i < 4u; i++) {
+        if (strcmp(value, names[i]) == 0) {
+            *mode = i; /* the SEL_UIM_LAYOUT_* value of the same name (uimodel.h) */
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* I1173: the four shared layout actions (Full, Window, Mini, Visual; PREF_SET ui.desktop.mode) over the regions of the breakpoint.
+ * Full keeps them. Window drops the Now Playing column (the desktop's small window). Mini keeps the player only. Visual keeps the
+ * main region (the caller shows the Visualizer pane in it) and the player, so the visualizer fills the window. */
+void mui_layout_map_mode(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t mode) {
+    mui_layout_map_wide(m, width, height, tier, detail_hidden, 0u, mode);
+}
+
+/* I1166b + I1173: the one map builder. Expand Library (`side_wide`) and the layout mode are independent; relayout, the Now Playing
+ * toggle and the Expand Library toggle pass both on, so neither resets the other. */
+void mui_layout_map_wide(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t side_wide,
+                         uint32_t mode) {
     sel_uim_layout l;
     uint32_t i, s;
     memset(m, 0, sizeof *m);
     /* I615d (design 8.1): the tier follows the screen as in the rich UI. A native planar screen is the bitmap tier (I674: a 640
      * wide window keeps a rail, no mini-layout suggestion, no top bar); an RTG screen is the default tier with the top bar. */
-    sel_uim_layout_compute_tier_expand(&l, width, height, tier, detail_hidden, side_wide);
+    sel_uim_layout_compute_tier_expand(&l, width, height, tier, detail_hidden != 0u || mode == SEL_UIM_LAYOUT_WINDOW, side_wide);
     m->side_wide = side_wide != 0u;
     m->detail_hidden = detail_hidden != 0u;
+    m->mode = (uint8_t)mode;
     m->width = width;
     m->height = height;
     m->breakpoint = l.breakpoint;
@@ -205,6 +234,21 @@ void mui_layout_map_wide(mui_layout_map_t* m, uint32_t width, uint32_t height, u
             }
         }
     }
+    if (mode == SEL_UIM_LAYOUT_MINI || mode == SEL_UIM_LAYOUT_VISUAL) {
+        m->show[MUI_SLOT_TOPBAR] = 0;
+        m->show[MUI_SLOT_SUGGESTION] = 0;
+        m->show[MUI_SLOT_SIDEBAR] = 0;
+        m->show[MUI_SLOT_DETAIL] = 0;
+        m->show[MUI_SLOT_MAIN] = mode == SEL_UIM_LAYOUT_VISUAL;
+        m->show[MUI_SLOT_PLAYER] = 1;
+        m->weight_w[MUI_SLOT_MAIN] = width;
+        if (m->weight_h[MUI_SLOT_PLAYER] == 0u) {
+            m->weight_h[MUI_SLOT_PLAYER] = 1;
+        }
+    }
+    if (mode != SEL_UIM_LAYOUT_FULL) {
+        g_mode_applies++;
+    }
     /* Balance objects sit between two shown panels of the body row. */
     m->balance_sidebar_main = m->show[MUI_SLOT_SIDEBAR] && m->show[MUI_SLOT_MAIN];
     m->balance_main_detail = m->show[MUI_SLOT_MAIN] && m->show[MUI_SLOT_DETAIL];
@@ -219,7 +263,7 @@ uint32_t mui_np_toggle_shown(const mui_layout_map_t* m) {
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips) {
     mui_layout_map_t next;
     uint32_t s, n = 0;
-    mui_layout_map_wide(&next, width, height, tier, m->detail_hidden, m->side_wide);
+    mui_layout_map_wide(&next, width, height, tier, m->detail_hidden, m->side_wide, m->mode);
     if (next.breakpoint == m->breakpoint) {
         /* Same breakpoint: only the weights follow the new size, no object appears or disappears. */
         *m = next;

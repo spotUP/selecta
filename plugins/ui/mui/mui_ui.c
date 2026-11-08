@@ -229,6 +229,7 @@ typedef struct mui_state {
     char np_lyric_buf[1024];
     char np_up_buf[3][96];
     Object* info_list;              /* MUI-P4-9 song info rows */
+    volatile uint32_t mode_pending; /* I1173: 1 + the SEL_UIM_LAYOUT_* a ui.desktop.mode change asked for; the event runs on the engine's pump, the window is touched by mui_refresh */
     uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
     int side_rail;                  /* I949c: the sidebar is the compact door rail, side_dyn stays NULL */
     Object* side_expand_btn;        /* I1166b: the Expand / Collapse Library button, its chevron turns with the layout */
@@ -2322,6 +2323,39 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
 static void mui_palette_sync(mui_state* s);
 static void mui_apply_layout(mui_state* s);
 
+/* I1173: Full, Window, Mini, Visual (the actions layout_*; PREF_SET ui.desktop.mode). The map under the mode decides which regions show
+ * (map/mui_layout.c); Visual shows the Visualizer pane in the main region and leaving it returns to the list. */
+static void mui_mode_apply(mui_state* s, uint32_t mode) {
+    uint32_t before = s->lay.mode;
+    if (mode == before) {
+        return;
+    }
+    s->uim.layout = mode;
+    if (s->lay.width == 0u) {
+        s->lay.mode = (uint8_t)mode; /* not sized yet: the first resize check builds the map under this mode */
+    } else {
+        mui_layout_map_wide(&s->lay, s->lay.width, s->lay.height, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP,
+                            s->lay.detail_hidden, s->lay.side_wide, mode);
+        mui_apply_layout(s);
+    }
+    if (mode == SEL_UIM_LAYOUT_VISUAL) {
+        mui_pane_show(s, mui_pane_page(MUI_PANE_VIZ));
+    } else if (before == SEL_UIM_LAYOUT_VISUAL) {
+        mui_pane_show(s, mui_pane_page(MUI_PANE_LIST));
+    }
+}
+
+/* UI_ON_EVENT: a layout change arrives as SEL_EVT_PREFS_CHANGED (key, value), like the desktop's desk_on_event. Only the request is
+ * recorded here; mui_refresh applies it on the window's own turn. */
+static void mui_on_event(void* state, const sel_message* evt) {
+    mui_state* s = (mui_state*)state;
+    uint32_t mode;
+    if (s != NULL && evt != NULL && evt->id == SEL_EVT_PREFS_CHANGED && evt->argc > 1u && evt->args[0].type == SEL_ARG_STR &&
+        evt->args[1].type == SEL_ARG_STR && mui_mode_from_pref(evt->args[0].v.s, evt->args[1].v.s, &mode)) {
+        s->mode_pending = mode + 1u;
+    }
+}
+
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
     const sel_uim_frame* f;
@@ -2329,6 +2363,11 @@ static void mui_refresh(mui_state* s) {
     const sel_view_state* v;
     if (st == NULL) {
         return;
+    }
+    if (s->mode_pending != 0u) {
+        uint32_t want = s->mode_pending - 1u;
+        s->mode_pending = 0u;
+        mui_mode_apply(s, want);
     }
     if (mui_toast_tick(&s->toast, mui_now_ms())) { /* MUI-P4-11: the toast went away after 3 s (6 s for an error) */
         snprintf(s->status_buf, sizeof s->status_buf, "Ready");
@@ -3320,7 +3359,7 @@ static uint32_t mui_layout_for_screen(mui_state* s, uint32_t step) {
     }
     s->open_layout_w = st.layout_w;
     mui_layout_map_wide(&s->lay, st.layout_w, st.layout_h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP,
-                        s->lay.detail_hidden, s->lay.side_wide);
+                        s->lay.detail_hidden, s->lay.side_wide, s->lay.mode);
     mui_apply_layout(s);
     return 1;
 }
@@ -3673,6 +3712,12 @@ static void mui_report(mui_fail why, const char* detail) {
     }
 }
 #else
+/* Host build: no window, so a layout change has nothing to apply (I1173). */
+static void mui_on_event(void* state, const sel_message* evt) {
+    (void)state;
+    (void)evt;
+}
+
 static void mui_report(mui_fail why, const char* detail) {
     fprintf(stderr, "%s %s\n", mui_fail_text(why), detail);
 }
@@ -3758,7 +3803,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
      * or auto-picked (MUI-P1-6, Johan 2026-10-27). */
     put_tag(&g_hooks[6], SEL_UI_PRESENT, (uintptr_t)(mui_present() != 0));
     put_tag(&g_hooks[7], SEL_UI_THEME, SEL_TAG_FN(mui_theme_hook));
-    put_tag(&g_hooks[8], SEL_TAG_END, 0);
+    put_tag(&g_hooks[8], SEL_UI_ON_EVENT, SEL_TAG_FN(mui_on_event));
+    put_tag(&g_hooks[9], SEL_TAG_END, 0);
 
     put_tag(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);
     put_tag(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "mui");
