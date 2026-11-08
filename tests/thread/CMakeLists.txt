@@ -41,6 +41,14 @@ if(UNIX)
   set_tests_properties(library-second-instance PROPERTIES TIMEOUT 60)
 endif()
 
+# I1162c: a database newer than the build is refused with a stated reason, not only "cannot open the library database".
+if(UNIX)
+  add_test(NAME library-newer-schema
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/library_newer_schema"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/library_newer_schema.cmake")
+  set_tests_properties(library-newer-schema PROPERTIES TIMEOUT 60)
+endif()
+
 # I1162b: a second Selecta beside one that owns the control socket runs its own UI with no socket and leaves the first one's socket alone.
 if(UNIX)
   add_test(NAME second-instance-socket
