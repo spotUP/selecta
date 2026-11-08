@@ -6,7 +6,7 @@
 #   <url> <sha256> <local name> <minimum seconds>
 # fetched by checksum into the git-ignored cache, never committed (tests/m3/fixtures/bbmp_adlib.SOURCE). Per song it asserts the plugin ran, the WAV is not
 # silent (ADLIB_ENERGY_MIN raises the floor for red proofs) and the frames match the song length (ADLIB_MIN_SECONDS replaces the floor, for red proofs).
-# The manifest has no line yet: no real song of these formats was found on a public mirror (see the SOURCE file). Exit 77 = skipped (no fixture).
+# The manifest lists one Modland song per claimed extension (see the SOURCE file); the minimum seconds are measured renders. Exit 77 = skipped (download failed).
 # usage: adlib_decode.sh <selecta-cli>
 set -u
 cli=$1
