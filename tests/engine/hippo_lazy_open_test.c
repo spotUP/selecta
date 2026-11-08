@@ -156,9 +156,9 @@ int main(int argc, char** argv) {
     CHECK(log_count(logp, ".prg") == prg0 + 1u);
     CHECK(pump_reads(e, base, 1) >= 1u); /* I1058e: the take posted a folders reload */
     if (g_snap) {
-        sel_engine_stats st;
-        sel_engine_stats_get(e, &st);
-        CHECK(st.playlist_reloads == 1u); /* I1082e sentinel: the reload was posted by the pump, not by the taking thread */
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        CHECK(es.playlist_reloads == 1u); /* I1082e sentinel: the reload was posted by the pump, not by the taking thread */
     }
 
     /* 3. Already filled: no new request, no reload. */
