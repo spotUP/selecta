@@ -1254,6 +1254,9 @@ static void test_np_page_plan(void) {
             calls++;
         }
         CHECK(calls == 1, "mui_detail_group(s, called %d times, want once", calls);
+        CHECK(strstr(src, "mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab)") != NULL, "the door handler asks mui_door_pane");
+        CHECK(strstr(src, "s->p4[P4_NPPAGE]++") != NULL && strstr(src, "set(s->np_tabs, UPA_Tabs_Active") != NULL, "the Now Playing sentinel counts and the tab is set");
+        CHECK(strstr(src, "p == MUI_PANE_NOWPLAYING && !mui_screen_compact()") != NULL, "the View item is compact only");
         CHECK(strstr(src, "mui_main_pages(s, np_page)") != NULL, "the window build passes the Now Playing group to the page group");
         CHECK(strstr(src, "static Object* mui_main_pages(mui_state* s, Object* np_page)") != NULL, "mui_main_pages takes the Now Playing group");
     }

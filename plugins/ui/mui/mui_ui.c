@@ -111,10 +111,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage"};
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -208,6 +208,7 @@ typedef struct mui_state {
     Object* np_artist;
     Object* np_album;
     Object* np_note;                /* I1127c: "Sample bank not found" under the album line */
+    Object* np_tabs;                /* I960d: the Now Playing page's tab strip (Lyrics, Info, Tracks) */
     Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
     Object* cyc_viz;
     mui_mainpane pane;              /* I735: the main-slot pane shown (list, Visualizer page, Pattern page) and its opening counters */
@@ -346,6 +347,7 @@ static Object* mui_song_context_menu(void) {
     return strip;
 }
 
+static int mui_screen_compact(void); /* I949c, defined with the screen helpers; the View menu needs it (I960d) */
 static Object* menu_child(Object* parent, ULONG cls_is_menu, const char* title, Object** cache_key, const char** names, Object** objs,
                           uint32_t* count, const char* want) {
     uint32_t i;
@@ -428,6 +430,9 @@ static Object* mui_menu_strip(void) {
         uint32_t p;
         for (p = MUI_PANE_LIST + 1u; view != NULL && p < MUI_PANE_COUNT; p++) {
             Object* pi;
+            if (p == MUI_PANE_NOWPLAYING && !mui_screen_compact()) {
+                continue; /* I960d: the Now Playing page exists in the compact class only; the full class has the detail column */
+            }
             pane_sc[p][0] = mui_pane_shortcut(p);
             pane_sc[p][1] = '\0';
             pi = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_l1_keep(mui_pane_title(p)), MUIA_Menuitem_Shortcut,
@@ -1826,6 +1831,7 @@ static Object* mui_detail_group(mui_state* s, int compact) {
         ts.captions = tab_names;
         ts.active = 0;
         tabs = mui_aatabs_new(&ts);
+        s->np_tabs = tabs;
         if (pages != NULL && page_lyr != NULL && page_info != NULL && page_trk != NULL && tabs != NULL) {
             if (lyr_view != NULL) {
                 DoMethod(page_lyr, OM_ADDMEMBER, lyr_view);
@@ -1929,6 +1935,9 @@ static Object* mui_main_pages(mui_state* s, Object* np_page) {
 /* The page entry: shows the pane of `page` (mui_pane_open counts it), whatever opened it (the Mac UI's key, the View menu item). */
 static void mui_pane_show(mui_state* s, uint32_t page) {
     uint32_t pane = mui_pane_open(&s->pane, page);
+    if (pane == MUI_PANE_NOWPLAYING) {
+        s->p4[P4_NPPAGE]++; /* I960d sentinel: the Now Playing page was shown */
+    }
     if (s->main_pages != NULL) {
         set(s->main_pages, MUIA_Group_ActivePage, (ULONG)pane);
     }
@@ -3131,7 +3140,14 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the history entry is the door's lines (I794) */
-        if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
+        uint32_t np_tab = 0u;
+        uint32_t np_pane = mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab);
+        if (np_pane == MUI_PANE_NOWPLAYING) { /* I960d: the compact class opens its Now Playing page for the Now Playing and Song Information doors */
+            mui_pane_show(s, mui_pane_page(np_pane));
+            if (s->np_tabs != NULL) {
+                set(s->np_tabs, UPA_Tabs_Active, (ULONG)np_tab);
+            }
+        } else if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
             mui_pane_show(s, SEL_UIM_PG_HOME); /* the engine moves the list's source: the list pane shows it */
             mui_route_door(&s->route, (uint32_t)(id - CTL_DOOR_BASE), dl, mui_route_send, s);
         }
