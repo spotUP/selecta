@@ -672,15 +672,9 @@ uint32_t mui_source_fires(void); /* call-count sentinel */
 
 /* I1175: the Sources page. One mui_srcs holds the engine's SOURCES rows (LIBRARY_RESULT tags with SRC_KEY, as the desktop's d->src) and
  * the pending and failed sync masks. mui_srcs_toggle and mui_srcs_sync fire the shared lines through mui_source_toggle and
- * mui_source_sync; mui_srcs_row is the page's row text (name, switch state, kind, shared sync status). */
-typedef struct mui_src {
-    char key[32], kind[16], name[64], path[256];
-    int enabled, syncable;
-    uint32_t count;
-    int64_t synced;
-} mui_src;
+ * mui_source_sync; mui_srcs_row is the page's row text (name and the shared sel_uim_src_status text). */
 typedef struct mui_srcs {
-    mui_src it[SEL_SOURCE_MAX];
+    sel_uim_src_row it[SEL_SOURCE_MAX];
     uint32_t n, pending, failed, gen; /* gen counts changes, so the window refills only when it moved */
     int wait;                         /* a SOURCES ask is out: the next answer starts the list again */
 } mui_srcs;

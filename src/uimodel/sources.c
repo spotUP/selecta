@@ -34,6 +34,48 @@ const char* sel_uim_sync_status(int pending, int failed, int64_t synced) {
     return pending ? "Syncing" : failed ? "Sync failed" : synced > 0 ? "Synced" : "Not synced";
 }
 
+void sel_uim_src_parse(const sel_tag* t, sel_uim_src_row* r) {
+    memset(r, 0, sizeof *r);
+    snprintf(r->key, sizeof r->key, "%s", (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)""));
+    snprintf(r->kind, sizeof r->kind, "%s", (const char*)sel_tag_find(t, SEL_SRC_KIND, (uintptr_t)""));
+    snprintf(r->name, sizeof r->name, "%s", (const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""));
+    snprintf(r->path, sizeof r->path, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
+    r->enabled = sel_tag_find(t, SEL_SRC_ENABLED, 1) != 0;
+    r->searchable = sel_tag_find(t, SEL_SRC_SEARCHABLE, 0) != 0;
+    r->syncable = sel_tag_find(t, SEL_SRC_SYNCABLE, 0) != 0;
+    r->due = sel_tag_find(t, SEL_SRC_DUE, 0) != 0;
+    r->count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
+    r->synced = (int64_t)sel_tag_find(t, SEL_SRC_SYNCED, 0);
+    r->snooze = (int64_t)sel_tag_find(t, SEL_SRC_SNOOZED, 0);
+}
+
+int sel_uim_src_remote(const sel_uim_src_row* r) { return strcmp(r->kind, "remote") == 0; }
+
+int sel_uim_src_syncable(const sel_uim_src_row* r) { return sel_uim_src_remote(r) && r->syncable; }
+
+uint32_t sel_uim_sync_age(int64_t synced, int64_t now, char* out, size_t cap) {
+    int n = synced > 0 ? snprintf(out, cap, "last synced %lld days ago", (long long)((now - synced) / 86400)) : snprintf(out, cap, "never synced");
+    return n < 0 ? 0u : (uint32_t)n;
+}
+
+uint32_t sel_uim_src_status(const sel_uim_src_row* r, int pending, int failed, int64_t now, char* out, size_t cap) {
+    char age[48];
+    int n;
+    if (!r->enabled) {
+        n = snprintf(out, cap, "%s, switched off", sel_uim_src_remote(r) ? "Remote" : "Local");
+    } else if (!sel_uim_src_remote(r)) {
+        n = snprintf(out, cap, "Local, switched on");
+    } else if (!r->syncable) {
+        n = snprintf(out, cap, "Remote, search only");
+    } else if (pending || failed) {
+        n = snprintf(out, cap, "Remote, %s", pending ? "Syncing" : "sync failed");
+    } else {
+        sel_uim_sync_age(r->synced, now, age, sizeof age);
+        n = snprintf(out, cap, "Remote, %s", age);
+    }
+    return n < 0 ? 0u : (uint32_t)n;
+}
+
 static const char* const k_search_sources[SEL_UIM_SEARCH_SOURCES] = {"Library", "Web", "Demozoo"};
 
 const char* sel_uim_search_source_name(uint32_t i) { return i < SEL_UIM_SEARCH_SOURCES ? k_search_sources[i] : NULL; }

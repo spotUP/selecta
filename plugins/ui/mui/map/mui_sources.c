@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <selecta/tags.h>
 
@@ -46,7 +47,6 @@ int mui_srcs_event(mui_srcs* m, const sel_message* evt) {
         if (sel_tag_find(t, SEL_SRC_KEY, 0) != 0) {
             const char* key = (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)"");
             uint32_t n;
-            mui_src* r;
             if (m->wait) {
                 m->wait = 0;
                 m->n = 0u;
@@ -58,15 +58,7 @@ int mui_srcs_event(mui_srcs* m, const sel_message* evt) {
             if (n == m->n) {
                 m->n++;
             }
-            r = &m->it[n];
-            snprintf(r->key, sizeof r->key, "%s", key);
-            snprintf(r->kind, sizeof r->kind, "%s", (const char*)sel_tag_find(t, SEL_SRC_KIND, (uintptr_t)""));
-            snprintf(r->name, sizeof r->name, "%s", (const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""));
-            snprintf(r->path, sizeof r->path, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
-            r->enabled = sel_tag_find(t, SEL_SRC_ENABLED, 1) != 0;
-            r->syncable = sel_tag_find(t, SEL_SRC_SYNCABLE, 0) != 0;
-            r->count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
-            r->synced = (int64_t)sel_tag_find(t, SEL_SRC_SYNCED, 0);
+            sel_uim_src_parse(t, &m->it[n]);
             m->gen++;
             return 1;
         }
@@ -86,24 +78,14 @@ int mui_srcs_event(mui_srcs* m, const sel_message* evt) {
     return 0;
 }
 
-static int remote(const mui_src* r) { return strcmp(r->kind, "remote") == 0; }
-
 uint32_t mui_srcs_row(const mui_srcs* m, uint32_t i, char* out, size_t cap) {
-    const mui_src* r;
-    const char* state;
+    char state[96];
     if (i >= m->n) {
         out[0] = '\0';
         return 0;
     }
-    r = &m->it[i];
-    if (!remote(r)) {
-        state = "Local";
-    } else if (!r->syncable) {
-        state = "Remote, search only";
-    } else {
-        state = sel_uim_sync_status((m->pending & (1u << i)) != 0u, (m->failed & (1u << i)) != 0u, r->synced);
-    }
-    return (uint32_t)snprintf(out, cap, "%-24.24s %-4s  %s", r->name, r->enabled ? "On" : "Off", state);
+    sel_uim_src_status(&m->it[i], (m->pending & (1u << i)) != 0u, (m->failed & (1u << i)) != 0u, (int64_t)time(NULL), state, sizeof state);
+    return (uint32_t)snprintf(out, cap, "%-24.24s  %s", m->it[i].name, state);
 }
 
 static void fill(const mui_srcs* m, sel_uim_source* s) {
@@ -127,7 +109,7 @@ uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx) {
 
 uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx) {
     sel_uim_source s[SEL_SOURCE_MAX];
-    if (i >= m->n || !remote(&m->it[i]) || !m->it[i].syncable || !m->it[i].enabled) {
+    if (i >= m->n || !sel_uim_src_syncable(&m->it[i]) || !m->it[i].enabled) {
         return 0;
     }
     fill(m, s);

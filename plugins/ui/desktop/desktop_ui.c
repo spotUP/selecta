@@ -610,7 +610,7 @@ typedef struct desk {
     uint32_t flow_rec_n;
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slices B, C; I678i retired files, history, sources) */
-    struct { char key[24], kind[12], name[40], path[96]; int enabled, searchable, syncable; uint32_t count; int64_t synced; int64_t snooze; int due; } src[SEL_SOURCE_MAX]; /* the SOURCES rows of the Sources tab (I265) */
+    sel_uim_src_row src[SEL_SOURCE_MAX]; /* the SOURCES rows of the Sources tab (I265) */
     uint32_t src_n;          /* rows held in src */
     uint32_t nag_off;        /* bit k set: the sync offer (I527) has dialog row k unchecked; all start checked */
     uint32_t sync_pending;   /* bit i set: a LIBRARY_SYNC for source row i is queued or running; cleared by its outcome (I582) */
@@ -3404,10 +3404,10 @@ static void nagdlg_draw(desk* d, sel_gui_rect p) {
         }
         if (d->sync_pending & (1u << idx)) {
             snprintf(line, sizeof line, "%s, Syncing", d->src[idx].name);
-        } else if (d->src[idx].synced > 0) {
-            snprintf(line, sizeof line, "%s, last synced %lld days ago", d->src[idx].name, (long long)((time(NULL) - d->src[idx].synced) / 86400));
         } else {
-            snprintf(line, sizeof line, "%s, never synced", d->src[idx].name);
+            char age[48];
+            sel_uim_sync_age(d->src[idx].synced, (int64_t)time(NULL), age, sizeof age);
+            snprintf(line, sizeof line, "%s, %s", d->src[idx].name, age);
         }
         draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.x + row.w - (bx.x + bx.w + pad), row.h), line, 0, 14, on ? tx : mu);
     }
@@ -5927,7 +5927,6 @@ static void col_round_art(desk* d, sel_gui_rect r) {
 /* I678g: the source status block of a source page: the sync state and the same switch and Sync button as the Library Sources tab
  * (src_toggle_send, src_sync_send). col_src_index is the registered source the page shows, d->src_n when the engine does not know it. */
 static int src_toggle_send(desk* d, uint32_t flip);
-static int src_remote(const desk* d, uint32_t i);
 static int src_syncable(const desk* d, uint32_t i);
 
 typedef struct src_radio_entry {
@@ -5985,16 +5984,8 @@ static sel_gui_rect col_src_radio_rect(desk* d, sel_gui_rect mn) {
 static void col_src_status(const desk* d, uint32_t i, char* out, size_t cap) {
     if (i >= d->src_n) {
         snprintf(out, cap, "Not a registered source");
-    } else if (!d->src[i].enabled) {
-        snprintf(out, cap, "%s, switched off", src_remote(d, i) ? "Remote" : "Local");
-    } else if (!src_remote(d, i)) {
-        snprintf(out, cap, "Local, switched on");
-    } else if (!src_syncable(d, i)) {
-        snprintf(out, cap, "Remote, search only");
-    } else if (d->src[i].synced > 0) {
-        snprintf(out, cap, "Remote, last synced %lld days ago", (long long)((time(NULL) - d->src[i].synced) / 86400));
     } else {
-        snprintf(out, cap, "Remote, never synced");
+        sel_uim_src_status(&d->src[i], (d->sync_pending & (1u << i)) != 0u, (d->sync_failed & (1u << i)) != 0u, (int64_t)time(NULL), out, cap);
     }
 }
 
@@ -8939,13 +8930,9 @@ static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r) {
     return rect_of(src_toggle_rect(d, r).x - lpx(d, 16 + SRC_SYNC_W), r.y + (r.h - lpx(d, 32)) / 2, lpx(d, SRC_SYNC_W), lpx(d, 32));
 }
 
-static int src_remote(const desk* d, uint32_t i) {
-    return strcmp(d->src[i].kind, "remote") == 0;
-}
-
 /* A remote source the engine can sync (I814): a search-only source has no Sync button and no sync status. */
 static int src_syncable(const desk* d, uint32_t i) {
-    return src_remote(d, i) && d->src[i].syncable;
+    return sel_uim_src_syncable(&d->src[i]);
 }
 
 /* Sends the switch-off list with source `flip` toggled and the `force_off` sources off (Never, I602), then asks SOURCES for the stored state. */
@@ -16677,17 +16664,7 @@ static void desk_on_event(void* state, const sel_message* evt) {
             if (n == d->src_n) d->src_n++;
             unsigned char before[sizeof d->src[0]]; /* the row held from the last SOURCES answer: an identical answer paints nothing new */
             memcpy(before, &d->src[n], sizeof before);
-            snprintf(d->src[n].key, sizeof d->src[n].key, "%s", (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)""));
-            snprintf(d->src[n].kind, sizeof d->src[n].kind, "%s", (const char*)sel_tag_find(t, SEL_SRC_KIND, (uintptr_t)""));
-            snprintf(d->src[n].name, sizeof d->src[n].name, "%s", (const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""));
-            snprintf(d->src[n].path, sizeof d->src[n].path, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
-            d->src[n].enabled = sel_tag_find(t, SEL_SRC_ENABLED, 1) != 0;
-            d->src[n].searchable = sel_tag_find(t, SEL_SRC_SEARCHABLE, 0) != 0;
-            d->src[n].syncable = sel_tag_find(t, SEL_SRC_SYNCABLE, 0) != 0;
-            d->src[n].count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
-            d->src[n].synced = (int64_t)sel_tag_find(t, SEL_SRC_SYNCED, 0);
-            d->src[n].due = sel_tag_find(t, SEL_SRC_DUE, 0) != 0;
-            d->src[n].snooze = (int64_t)sel_tag_find(t, SEL_SRC_SNOOZED, 0);
+            sel_uim_src_parse(t, &d->src[n]);
             changed = memcmp(before, &d->src[n], sizeof before) != 0;
         }
         d->src_gen += changed ? 1u : 0u;
