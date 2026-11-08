@@ -640,11 +640,78 @@ static void test_pref_keys(void) {
     CHECK(sel_uim_sync_notnow_line(1, o, sizeof o) != 0u && pref_known(o), "not now: '%s'", o);
 }
 
+/* mui-p8-library-pages (I1175): Files, History, Sources modes and the Sources page rows, switch and Sync, fed with real engine events */
+static sel_message src_event(const sel_tag* t) {
+    sel_message m;
+    memset(&m, 0, sizeof m);
+    m.kind = SEL_MSG_EVT;
+    m.id = SEL_EVT_LIBRARY_RESULT;
+    m.argc = 1;
+    m.args[0].type = SEL_ARG_TAGS;
+    m.args[0].v.t = t;
+    return m;
+}
+
+static void test_library_pages(void) {
+    static const sel_tag loc[] = {{SEL_SRC_KEY, (uintptr_t) "local"}, {SEL_SRC_KIND, (uintptr_t) "local"}, {SEL_SRC_NAME, (uintptr_t) "Library"}, {SEL_SRC_PATH, (uintptr_t) "/music"}, {SEL_SRC_ENABLED, 1}, {SEL_TAG_END, 0}};
+    static const sel_tag rem[] = {{SEL_SRC_KEY, (uintptr_t) "modland"}, {SEL_SRC_KIND, (uintptr_t) "remote"}, {SEL_SRC_NAME, (uintptr_t) "Modland"}, {SEL_SRC_PATH, (uintptr_t) "https://m"},
+                                  {SEL_SRC_ENABLED, 1}, {SEL_SRC_SYNCABLE, 1}, {SEL_TAG_END, 0}};
+    static const sel_tag done[] = {{SEL_SRC_PATH, (uintptr_t) "https://m"}, {SEL_TAG_END, 0}};
+    static mui_srcs m;
+    sel_message ev;
+    fake_engine e;
+    char row[128], joined[256];
+    uint32_t vbase = mui_view_fires(), sbase = mui_source_fires();
+    memset(&m, 0, sizeof m);
+    CHECK(mui_libmode_joined(3, 12, joined, sizeof joined) == 3u && strcmp(joined, "VIEW_STYLE regular;VIEW_SOURCE browse;VIEW_WINDOW 12") == 0, "Files modes: '%s'", joined);
+    CHECK(mui_libmode_joined(4, 12, joined, sizeof joined) == 3u && strcmp(joined, "VIEW_STYLE regular;VIEW_SOURCE home;VIEW_WINDOW 12") == 0, "History modes: '%s'", joined);
+    CHECK(mui_libmode_joined(5, 12, joined, sizeof joined) >= 1u && strncmp(joined, "SOURCES", 7) == 0, "Sources mode: '%s'", joined);
+    mui_srcs_asked(&m);
+    ev = src_event(loc);
+    CHECK(mui_srcs_event(&m, &ev) == 1, "local row not taken");
+    ev = src_event(rem);
+    CHECK(mui_srcs_event(&m, &ev) == 1 && m.n == 2u, "remote row not taken: %u rows", (unsigned)m.n);
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(strstr(row, "Modland") != NULL && strstr(row, "On") != NULL && strstr(row, "Not synced") != NULL, "remote row text '%s'", row);
+    mui_srcs_row(&m, 0, row, sizeof row);
+    CHECK(strstr(row, "Library") != NULL && strstr(row, "Local") != NULL, "local row text '%s'", row);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_srcs_sync(&m, 0, fake_send, &e) == 0u && e.n == 0u, "local row synced");
+    CHECK(mui_srcs_sync(&m, 1, fake_send, &e) == 2u && strcmp(e.lines[0], "LIBRARY_SYNC modland \"https://m\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "Sync lines '%s'", e.lines[0]);
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(strstr(row, "Syncing") != NULL, "pending row text '%s'", row);
+    ev = src_event(done);
+    CHECK(mui_srcs_event(&m, &ev) == 0 && m.pending == 0u, "completion left the row pending");
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(strstr(row, "Not synced") != NULL, "settled row text '%s'", row);
+    memset(&ev, 0, sizeof ev);
+    ev.kind = SEL_MSG_EVT;
+    ev.id = SEL_EVT_ERROR;
+    ev.argc = 2;
+    ev.args[0].type = SEL_ARG_STR;
+    ev.args[0].v.s = "sync_failed";
+    ev.args[1].type = SEL_ARG_STR;
+    ev.args[1].v.s = "https://m";
+    mui_srcs_event(&m, &ev);
+    CHECK(m.failed == 0u, "an error with nothing pending marked failed");
+    memset(&e, 0, sizeof e);
+    mui_srcs_sync(&m, 1, fake_send, &e);
+    mui_srcs_event(&m, &ev);
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(m.pending == 0u && strstr(row, "Sync failed") != NULL, "failed row text '%s'", row);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_srcs_toggle(&m, 1, fake_send, &e) == 2u && strcmp(e.lines[0], "PREF_SET library.sources_off \"modland\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "toggle lines '%s'", e.lines[0]);
+    CHECK(mui_srcs_toggle(&m, 9, fake_send, &e) == 0u, "toggle of a missing row sent");
+    CHECK(mui_view_fires() - vbase == 3u && mui_source_fires() - sbase == 3u, "sentinels view %u source %u", (unsigned)(mui_view_fires() - vbase), (unsigned)(mui_source_fires() - sbase));
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
     }
-    if (strcmp(argv[1], "panels") == 0) {
+    if (strcmp(argv[1], "library-pages") == 0) {
+        test_library_pages();
+    } else if (strcmp(argv[1], "panels") == 0) {
         test_panels();
     } else if (strcmp(argv[1], "sources") == 0) {
         test_sources();

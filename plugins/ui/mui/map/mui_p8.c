@@ -185,6 +185,23 @@ uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, vo
     return sent;
 }
 
+/* I1175: the Library mode as one route entry key: the mode's lines joined with ';' (the format tile's pattern), so the page history
+ * replays them. Same shared lines as mui_libmode_fire. */
+uint32_t mui_libmode_joined(uint32_t i, uint32_t window_rows, char* out, size_t cap) {
+    char lines[SEL_UIM_LIB_LINES][SEL_UIM_LIB_LINE_MAX];
+    uint32_t k, n = sel_uim_libmode_lines(i, window_rows, lines);
+    size_t used = 0;
+    g_view_fires++;
+    out[0] = '\0';
+    for (k = 0; k < n; k++) {
+        used += (size_t)snprintf(out + used, cap - used, "%s%s", k > 0u ? ";" : "", lines[k]);
+        if (used >= cap) {
+            return k;
+        }
+    }
+    return n;
+}
+
 const char* mui_scope_label(uint32_t i) { return sel_uim_scope_name(i); }
 
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx) {
