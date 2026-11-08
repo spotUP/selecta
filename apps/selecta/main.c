@@ -1092,6 +1092,9 @@ int main(int argc, char** argv)
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_BINDINGS, 0), (unsigned)sel_engine_state(e)->queue_count,
            (unsigned)est.undo_depth, (unsigned)est.redo_depth, sel_view_style_label(sel_engine_state(e)->view->style));
 
+    printf("options random=%s repeat=%s queue_count=%u\n", sel_engine_state(e)->options[SEL_OPT_RANDOM], sel_engine_state(e)->options[SEL_OPT_REPEAT],
+           (unsigned)sel_engine_state(e)->queue_count); /* I1184: what the option keys left */
+    printf("text_table_actions=%u log=%s\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_TABLE_ACTIONS, 0), (const char*)sel_tag_find(ust, SEL_UI_STAT_TABLE_ACTION_LOG, (uintptr_t)""));
     printf("seek_path=%u volume=%d view_cursor=%u\n", (unsigned)est.seek_path, (int)sel_engine_state(e)->volume,
            (unsigned)sel_engine_state(e)->view->cursor);
     printf("view_window=%u\n", (unsigned)sel_engine_state(e)->view->window_rows);

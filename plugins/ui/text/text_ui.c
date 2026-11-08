@@ -73,7 +73,7 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[18];
+    sel_tag stats[20];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -82,6 +82,8 @@ typedef struct tui {
     uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
     uint32_t lib_opens, lib_searches;      /* T98 sentinels */
     uint32_t folder_opens;                 /* T83 sentinel: openings of the playlist folder tree */
+    uint32_t table_actions;                /* I1184 sentinel: keys that fired a line of the shared action table */
+    char table_log[192];                   /* I1184: those lines in order, '|' separated (the tail is kept) */
     int lib_screen;                        /* the query view is the Library screen */
     int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
@@ -435,6 +437,23 @@ static uint32_t tui_bind_ctx(const tui* u) {
     return (u->pattern || u->viz) ? TXT_CTX_PLAYER : TXT_CTX_LIST;
 }
 
+/* I1184 sentinel: a bound line that is a row of the shared action table (src/uimodel/actions.c) counts and is logged. */
+static void tui_table_note(tui* u, const char* line) {
+    uint32_t i, n = sel_uim_action_count();
+    for (i = 0; i < n; i++) {
+        if (strcmp(sel_uim_action_at(i)->line, line) == 0) {
+            size_t len = strlen(u->table_log);
+            u->table_actions++;
+            if (len + strlen(line) + 2u >= sizeof u->table_log) {
+                u->table_log[0] = '\0';
+                len = 0;
+            }
+            snprintf(u->table_log + len, sizeof u->table_log - len, "%s%s", len > 0 ? "|" : "", line);
+            return;
+        }
+    }
+}
+
 static void tui_key(tui* u, const txt_key* k) {
     const char* action;
     if (k->code == TXT_KEY_RESIZE) { /* the console says the window changed: ask its size (row I218c) */
@@ -477,6 +496,7 @@ static void tui_key(tui* u, const txt_key* k) {
     if (action[0] == '@') {
         (void)tui_local(u, action + 1, k);
     } else {
+        tui_table_note(u, action);
         tui_send(u, action);
     }
 }
@@ -532,7 +552,7 @@ static uint32_t tui_turn_ms(tui* u, uint32_t timeout_ms) {
 
 /* One step of the keys file: a key (returns 1), a wait (0) or the end (-1). */
 static int tui_file_step(tui* u, uint32_t timeout_ms) {
-    char line[64];
+    char line[64], alt[16];
     txt_key k;
     const char* bytes = NULL;
     size_t i;
@@ -553,6 +573,22 @@ static int tui_file_step(tui* u, uint32_t timeout_ms) {
         if (strcmp(line, k_tokens[i].name) == 0) {
             bytes = k_tokens[i].bytes;
         }
+    }
+    if (bytes == NULL && strncmp(line, "Alt-", 4) == 0) { /* I1184: ESC then the key's bytes */
+        const char* rest = line + 4;
+        for (i = 0; i < sizeof k_tokens / sizeof k_tokens[0]; i++) {
+            if (strcmp(rest, k_tokens[i].name) == 0) {
+                rest = k_tokens[i].bytes;
+                break;
+            }
+        }
+        alt[0] = '\x1b';
+        snprintf(alt + 1, sizeof alt - 1u, "%s", rest);
+        bytes = alt;
+    } else if (bytes == NULL && strncmp(line, "Ctrl-", 5) == 0 && line[5] != '\0' && line[6] == '\0') {
+        alt[0] = (char)(line[5] & 0x1F); /* Ctrl-b, Ctrl-d */
+        alt[1] = '\0';
+        bytes = alt;
     }
     if (bytes == NULL) {
         bytes = line; /* a single printable character */
@@ -611,9 +647,11 @@ static void tui_header(tui* u, const sel_state* s) {
     txt_grid_text(&u->grid, 1, 0, buf, u->grid.cols - 1u, hs);
     sel_uim_clock(pos, sizeof pos, s->song.position_ms, s->song.path != NULL);
     sel_uim_clock(dur, sizeof dur, s->song.duration_ms, s->song.duration_ms != 0);
-    snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d", format[0] ? format : "-",
+    snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d%s%s%s", format[0] ? format : "-",
              (unsigned)(s->song.path != NULL ? s->song.subsong + 1u : 0u), (unsigned)s->song.subsong_count, pos, dur,
-             (int)s->volume);
+             (int)s->volume, strcmp(s->options[SEL_OPT_RANDOM], "on") == 0 ? "  Shuffle" : "", /* I1184: shown only when on */
+             strcmp(s->options[SEL_OPT_REPEAT], "off") != 0 ? "  Repeat " : "",
+             strcmp(s->options[SEL_OPT_REPEAT], "off") != 0 ? s->options[SEL_OPT_REPEAT] : "");
     sel_uim_stage_status(buf, sizeof buf, s);
     txt_grid_text(&u->grid, 1, 1, buf, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
 }
@@ -1366,8 +1404,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[15].value = u->meta_panel_rows;
     u->stats[16].tag = SEL_UI_STAT_SPLASH_FRAMES;
     u->stats[16].value = u->splash_frames;
-    u->stats[17].tag = SEL_TAG_END;
-    u->stats[17].value = 0;
+    u->stats[17].tag = SEL_UI_STAT_TABLE_ACTIONS;
+    u->stats[17].value = u->table_actions;
+    u->stats[18].tag = SEL_UI_STAT_TABLE_ACTION_LOG;
+    u->stats[18].value = (uintptr_t)u->table_log;
+    u->stats[19].tag = SEL_TAG_END;
+    u->stats[19].value = 0;
     return u->stats;
 }
 

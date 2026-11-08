@@ -2973,6 +2973,20 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/first_check.cmake")
 endif()
 
+# I1184: text-ui-shared-actions. The text UI binds the shared action table's keys (shuffle, repeat, album, queue,
+# like, Statistics hide, Switch to Desktop); sentinel text_table_actions counts the table lines the keys fired.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-shared-actions
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions_c.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_shared_actions"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions.cmake")
+  set_tests_properties(text-ui-shared-actions PROPERTIES LABELS m3)
+endif()
+
 # M3 Phase 5 (I205, I206): T98 text-ui-library-screen. The shell drives L, /, a query and Enter over
 # a catalogue, then opens a --db filled by LIBRARY_SCAN.
 if(NOT SEL_AMIGA)
