@@ -1,0 +1,8 @@
+Ad Lib test songs for tests/m3/adlib_decode.sh (bbmp_adlib module, I710as). Never committed: each song is listed in
+tests/m3/fixtures/bbmp_adlib.manifest as "<url> <sha256> <local name> <minimum seconds>" and fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. Record here, per song: source URL, author, sha256.
+
+Status 2026-11-08: no song listed. Formats looked for: Pixel Painters .fmf/.ftf, SIG2 .sig, Lemmings .lem, First Samurai .mus,
+Shadowlands .cal, Vibrants .vib. Modland has no folder for them and no scene mirror with a per-song file was found. No fixture was
+invented. Until a real song is listed the test runs its negatives and skips (exit 77).
+Engine licence: GPL-3.0-or-later (bbmp csrc/adlib, third_party/bbmp_adlib).
