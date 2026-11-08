@@ -50,3 +50,18 @@ uint32_t sel_uim_page_of_route(uint32_t rp) {
     }
     return (uint32_t)SEL_UIM_PG_HOME;
 }
+
+static const struct {
+    const char* action;
+    uint32_t page;
+} k_page_keys[SEL_UIM_PAGE_KEY_COUNT] = {{"@home", SEL_UIM_PG_HOME},     {"@library", SEL_UIM_PG_FOLDERS}, {"@folders", SEL_UIM_PG_PLAYLISTS},
+                                         {"@info", SEL_UIM_PG_SONGINFO}, {"@viz", SEL_UIM_PG_VIZ},         {"@pattern", SEL_UIM_PG_TRACKER}};
+
+int sel_uim_page_key_at(uint32_t i, const char** action, uint32_t* page) {
+    if (i >= SEL_UIM_PAGE_KEY_COUNT) {
+        return 0;
+    }
+    *action = k_page_keys[i].action;
+    *page = k_page_keys[i].page;
+    return 1;
+}

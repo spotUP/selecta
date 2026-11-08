@@ -7,6 +7,7 @@
 #define KeymapBase sel_input_KeymapBase
 #define AslBase sel_input_AslBase
 
+#include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/keys.h>
 
 #include <devices/inputevent.h>
@@ -63,46 +64,8 @@ static int queue_raw(desk_amiga_input* b, const sel_gui_raw* raw) {
     return 1;
 }
 
-static uint32_t mods_of(UWORD q) {
-    uint32_t m = 0;
-    if (q & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) {
-        m |= TXT_MOD_SHIFT;
-    }
-    if (q & IEQUALIFIER_CONTROL) {
-        m |= TXT_MOD_CTRL;
-    }
-    if (q & (IEQUALIFIER_LALT | IEQUALIFIER_RALT)) {
-        m |= TXT_MOD_ALT;
-    }
-    return m;
-}
-
-/* The key code of a raw key that has no character: arrows, function keys and the edit block. 0 when it has one. */
-static uint32_t special_code(UWORD raw) {
-    switch (raw) {
-    case 0x4C: return TXT_KEY_UP;
-    case 0x4D: return TXT_KEY_DOWN;
-    case 0x4E: return TXT_KEY_RIGHT;
-    case 0x4F: return TXT_KEY_LEFT;
-    case 0x46: return TXT_KEY_DELETE;
-    case 0x47: return TXT_KEY_INSERT;
-    case 0x48: return TXT_KEY_PAGE_UP;
-    case 0x49: return TXT_KEY_PAGE_DOWN;
-    case 0x70: return TXT_KEY_HOME;
-    case 0x71: return TXT_KEY_END;
-    case 0x4B: return TXT_KEY_F1 + 10;
-    case 0x6F: return TXT_KEY_F1 + 11;
-    case 0x44: case 0x43: return 13;
-    case 0x45: return 27;
-    case 0x42: return 9;
-    case 0x41: return 127;
-    default: break;
-    }
-    if (raw >= 0x50 && raw <= 0x59) {
-        return TXT_KEY_F1 + (uint32_t)(raw - 0x50);
-    }
-    return 0;
-}
+#define mods_of(q) txt_mods_from_amiga_qual((unsigned)(q))
+#define special_code(raw) txt_key_from_amiga_raw((unsigned)(raw))
 
 static int queue_key(desk_amiga_input* b, UWORD code, UWORD qual, APTR addr) {
     sel_gui_raw raw;

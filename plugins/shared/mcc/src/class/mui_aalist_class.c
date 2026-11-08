@@ -251,6 +251,9 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
             if (r >= 0) {
                 int dbl = r == d->last_row && DoubleClick(d->last_s, d->last_m, im->Seconds, im->Micros);
                 aalist_set_active(obj, d, r);
+                if (aa_live(obj)) { /* I1165: a click makes the list the active object, the keys then act on it alone */
+                    set(_win(obj), MUIA_Window_ActiveObject, (ULONG)obj);
+                }
                 if (dbl || !d->double_pick) {
                     d->picked = r;
                     set(obj, UPA_List_Picked, (ULONG)r);
@@ -277,7 +280,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
         }
         return 0;
     }
-    if (d->no_select || (!in && (Object*)act != obj)) {
+    if (d->no_select || (Object*)act != obj) { /* I1165: Up/Down act on the active object only, not on the one under the pointer */
         return 0;
     }
     switch (im->Code) {

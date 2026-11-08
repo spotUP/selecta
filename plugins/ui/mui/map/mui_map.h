@@ -215,6 +215,27 @@ typedef struct mui_key_bind {
     uint32_t shortcut; /* 1: Right Amiga menu shortcut, 0: event handler */
 } mui_key_bind;
 uint32_t mui_keys_build(mui_key_bind* out, uint32_t cap); /* returns the row count even above cap */
+/* I1171: the window key table. Rows: the multi-char action keys (Space, Enter, Home, End, M-*, C-*; shortcut == 0 in
+ * mui_keys_build) and the page keys (@home @library @folders @info open a sidebar door, @viz @pattern a main pane), all read
+ * from the shared tables (sel_uim_action_at, sel_uim_page_key_at + the text UI default bindings). One-char action keys stay
+ * Menuitem shortcuts. */
+enum { MUI_KEYROW_ACTION = 0, MUI_KEYROW_DOOR, MUI_KEYROW_PANE };
+typedef struct mui_key_row {
+    uint32_t kind;
+    const char* id;  /* ACTION: the action id; DOOR / PANE: the page action name (@home...) */
+    uint32_t code, mods;
+    uint32_t arg;    /* DOOR: the sidebar door index; PANE: the mui_pane */
+} mui_key_row;
+uint32_t mui_key_row_count(void);
+const mui_key_row* mui_key_row_at(uint32_t i);
+/* The row a key press (code + mods of uimodel/keys.h) fires, -1 for none. text_active: 1 while a text field has the focus (plain
+ * keys are then text, never page keys). Counts every hit (mui_key_hits), the sentinel of the reachability test. */
+int32_t mui_key_find(uint32_t code, uint32_t mods, int text_active);
+uint32_t mui_key_hits(void);
+/* I1165: Down from the search String moves into the results list (desktop desk_focus_route keeps the focus on one stop). */
+enum { MUI_FOCUS_NONE = 0, MUI_FOCUS_RESULTS };
+uint32_t mui_focus_route(uint32_t code, uint32_t mods, int search_active);
+uint32_t mui_focus_routes(void);
 typedef struct mui_mode_key {
     char key;
     const char* mode;

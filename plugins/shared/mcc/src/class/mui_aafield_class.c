@@ -219,7 +219,7 @@ static ULONG aafield_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     if (FindTagItem(MUIA_Group_Child, tags) == NULL) {
         mui_aa_field_metrics(0, 256, &m);
         mui_theme_bg_spec(mui_theme_tokens()[MUI_AA_FIELD_FACE], g_bg_spec, sizeof g_bg_spec);
-        str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_String_MaxLen,
+        str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_CycleChain, (ULONG)TRUE, MUIA_String_MaxLen,
                             GetTagData(MUIA_String_MaxLen, 80, tags), MUIA_String_Contents, (ULONG) "", TAG_DONE);
         if (str == NULL) {
             return 0;
@@ -310,7 +310,7 @@ Object* UP_NewField(const struct TagItem* tags) {
     mui_aa_field_metrics(0, 256, &m); /* the paddings are the same on every tier */
     mui_theme_bg_spec(tokens[MUI_AA_FIELD_FACE], g_bg_spec, sizeof g_bg_spec);
     str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec,
-                        MUIA_String_MaxLen, GetTagData(MUIA_String_MaxLen, 80, (struct TagItem*)tags), MUIA_String_Contents, (ULONG) "", TAG_DONE);
+                        MUIA_CycleChain, (ULONG)TRUE, MUIA_String_MaxLen, GetTagData(MUIA_String_MaxLen, 80, (struct TagItem*)tags), MUIA_String_Contents, (ULONG) "", TAG_DONE);
     if (str == NULL) {
         return NULL;
     }
