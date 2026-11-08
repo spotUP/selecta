@@ -1,0 +1,8 @@
+Polly Tracker test songs for tests/m3/polly_decode.sh (sid module, Polly path, I710ar). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Pollytracker/Heatbeat/backwoods.mod  47f93d33a982de0549b7330fffb7d5774003a47316e45762542ab8e9b2b7b06c
+https://modland.com/pub/modules/Pollytracker/Reed/dirty%2764.mod  fb975adafeb3f4c36e09d655b8b8717dc24859924f5c5b31fdcc37aca1d13252
+https://modland.com/pub/modules/Pollytracker/_unknown/classic.mod  52c793ebbfb3bdc21aae4776bedeb6f0e7461d9b4871fac70ce5ba6961dfa2df
+https://modland.com/pub/modules/Pollytracker/_unknown/jump.mod  8aa9bca519e77e5c5f96710fbc2fb414e98a87db0f4fbcbba94fed3fc8f3d0c5
+https://modland.com/pub/modules/Pollytracker/_unknown/polly%20rock.mod  67dd1d8153436950d890f5b546d5c1a8fd5aa0c0a23c39b98a7682ad4659436c
+Player: third_party/polly_player (first 1086 bytes of HVSC/DEMOS/UNKNOWN/Polly_Rock.sid, vendored per Johan 2026-11-08).

@@ -34,6 +34,8 @@ uint32_t sid_shim_render(sid_shim* s, int16_t* out, uint32_t frames);
 uint32_t sid_shim_cfg_applied(const sid_shim* s);
 /* The embedded OpenROMs images (LGPL-3+); sizes 8192, 8192, 4096. */
 const uint8_t* sid_shim_builtin_kernal(void);
+/* The Polly Tracker player (RSID header + 962 bytes), SID_POLLY_PLAYER_SIZE long (I710ar). */
+const uint8_t* sid_shim_polly_player(void);
 const uint8_t* sid_shim_builtin_basic(void);
 const uint8_t* sid_shim_builtin_chargen(void);
 /* SID chips in the tune (1 to 3). */

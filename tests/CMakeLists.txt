@@ -2260,6 +2260,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710ar: Polly Tracker songs (.mod) play through the render entry point (sid module, vendored C64 player in front of the song). Songs are fetched by
+  # checksum, exit 77 = skip. A zero file, an Amiga M.K. shaped file and an oversize file must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/polly-decode)
+    add_test(NAME polly-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/polly_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/polly-decode)
+    set_tests_properties(polly-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "polly_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ak: FAC SoundTracker (MSX .mus) songs play through the render entry point (bbmp_fac module, GPL-3.0). Songs and
   # drum kits are fetched by checksum, exit 77 = skip. A non-FAC .mus must not be claimed.
   if(SELECTA_GPL_PLUGINS)
