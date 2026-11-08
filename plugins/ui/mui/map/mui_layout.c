@@ -119,6 +119,34 @@ void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8, ui
     }
 }
 
+static uint32_t g_np_plans;
+uint32_t mui_np_page_plans(void) { return g_np_plans; }
+
+void mui_np_page_plan(const mui_aa_metrics_t* m, uint32_t main_w, mui_np_page_plan_t* out) {
+    uint32_t next_head, lyr, info;
+    memset(out, 0, sizeof *out);
+    g_np_plans++;
+    out->art_w = main_w / 3u < (uint32_t)MUI_DETAIL_ART_PX ? main_w / 3u : (uint32_t)MUI_DETAIL_ART_PX;
+    out->art_h = mui_art_height(out->art_w, m->aspect_q8);
+    out->text_rows = 4u;
+    out->lyric_rows = 3u;
+    out->next_rows = 3u;
+    out->info_rows = 6u;
+    out->text_h = (uint32_t)m->font_px;
+    out->list_h = (uint32_t)m->height;
+    out->heading_h = out->text_h + 2u;
+    out->top_h = out->text_rows * out->text_h + 2u;
+    if (out->art_h > out->top_h) {
+        out->top_h = out->art_h;
+    }
+    out->tabs_h = (uint32_t)m->height;
+    next_head = out->text_h;
+    lyr = out->lyric_rows * out->list_h + next_head + out->next_rows * out->text_h;
+    info = out->info_rows * out->list_h;
+    out->page_h = lyr > info ? lyr : info;
+    out->min_h = out->heading_h + out->top_h + out->tabs_h + out->page_h;
+}
+
 uint32_t mui_player_centre_y(const mui_player_band_t* pb, uint32_t child_h) {
     return (pb->height - child_h) / 2u + child_h / 2u;
 }

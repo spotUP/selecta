@@ -1218,6 +1218,26 @@ static void test_panes(void) {
     }
 }
 
+/* I960b: the Now Playing page plan on the compact tier. Tall pixels (512): art 64x32, the page adds at most MUI_NP_PAGE_BUDGET_H rows to
+ * the main slot minimum. Square pixels (256, a user-chosen laced screen): art 64x64 and the plan still fits a 256-row screen's main
+ * height. The plan moves the output: a wider main column or a taller pixel changes the art. */
+static void test_np_page_plan(void) {
+    mui_aa_metrics_t m;
+    mui_np_page_plan_t tall, sq, narrow;
+    uint32_t before = mui_np_page_plans();
+    mui_aa_metrics_aspect(0, 512, &m);
+    mui_np_page_plan(&m, 436u, &tall);
+    CHECK(tall.art_w == 64u && tall.art_h == 32u, "tall art %ux%u, not 64x32", (unsigned)tall.art_w, (unsigned)tall.art_h);
+    CHECK(tall.min_h <= (uint32_t)MUI_NP_PAGE_BUDGET_H, "compact page needs %u rows, budget %u", (unsigned)tall.min_h, (unsigned)MUI_NP_PAGE_BUDGET_H);
+    CHECK(tall.next_rows == 3u && tall.text_rows == 4u && tall.min_h == tall.heading_h + tall.top_h + tall.tabs_h + tall.page_h, "plan parts do not add up");
+    mui_aa_metrics_aspect(0, 256, &m);
+    mui_np_page_plan(&m, 436u, &sq);
+    CHECK(sq.art_w == 64u && sq.art_h == 64u && sq.min_h <= 220u, "square plan art %ux%u min_h %u", (unsigned)sq.art_w, (unsigned)sq.art_h, (unsigned)sq.min_h);
+    mui_np_page_plan(&m, 90u, &narrow);
+    CHECK(narrow.art_w == 30u && narrow.art_h == 30u, "narrow column art %ux%u", (unsigned)narrow.art_w, (unsigned)narrow.art_h);
+    CHECK(mui_np_page_plans() == before + 3u, "plan sentinel did not count");
+}
+
 /* MUI-P4-0: seven doors from the shared table, each with its label; the five main-view pages carry a line the engine accepts. */
 static void test_doors(void) {
     uint32_t i, lines = 0;
@@ -3492,6 +3512,7 @@ int main(int argc, char** argv) {
         test_home();
     } else if (strcmp(argv[1], "panes") == 0) {
         test_panes();
+        test_np_page_plan();
     } else if (strcmp(argv[1], "library") == 0) {
         test_library();
     } else if (strcmp(argv[1], "toast") == 0) {

@@ -118,6 +118,23 @@ uint32_t mui_player_min_width(const mui_player_band_t* pb);
 /* Sentinel: bars built (mui_player_band calls) since start. */
 uint32_t mui_player_bar_builds(void);
 
+/* I960: plan of the Now Playing page in the main slot of the compact class (design 6.4, 6.6). Every size is in ROWS except art_w. The
+ * builder reads the art size, the row counts and the heights from it. `min_h` (heading + top row + tabs + the tallest tab page) is
+ * the height the 4th main page adds to the main slot minimum, so it must stay at or under MUI_NP_PAGE_BUDGET_H at 640x256. */
+#define MUI_NP_PAGE_BUDGET_H 170
+typedef struct mui_np_page_plan_t {
+    uint32_t art_w, art_h;          /* art frame: art_h square on screen (mui_art_height) */
+    uint32_t text_rows;             /* title, artist, album, missing-bank note: 4 */
+    uint32_t lyric_rows, next_rows; /* Lyrics tab: lyrics list rows and Next in Queue entries (Johan: 3) */
+    uint32_t info_rows;             /* Info tab list rows */
+    uint32_t text_h, list_h;        /* one AAText row, one AAList row */
+    uint32_t heading_h, top_h, tabs_h, page_h; /* the four stacked parts; page_h = tallest tab page */
+    uint32_t min_h;
+} mui_np_page_plan_t;
+/* m: metrics of the screen (mui_aa_metrics_aspect); main_w: main column width in px (the art never takes more than a third of it). */
+void mui_np_page_plan(const mui_aa_metrics_t* m, uint32_t main_w, mui_np_page_plan_t* out);
+uint32_t mui_np_page_plans(void); /* sentinel: plans computed since start */
+
 /* I949e2: height of an art frame width px wide so it is square on screen: width x 256 / aspect (mui_aa_rows). The player art is
  * MUI_PLAYER_ART_PX wide, the detail art MUI_DETAIL_ART_PX. 256 (square pixels) gives the width. */
 #define MUI_DETAIL_ART_PX 64
