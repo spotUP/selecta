@@ -20,6 +20,10 @@
 # 8. Tab to the player stop, Down, Down, Up: the player: bindings VOLUME -5, -5, +5 leave the volume 5 under the no-key run (100, the
 #    maximum, so the Up alone would not show) and focus_route_player is 3;
 # 9. Tab to the main stop, 3 Down: view_cursor moves as in the unfocused run and focus_route_main counts the 3 keys.
+# The sidebar stop takes the keys (I1183, Johan: "i cant controll the sidebar with keys though"):
+# 10. Tab to the sidebar stop, Down, Down, Enter: the cursor sits on the second shown door (Queue; Home, Search and Browse Folders have no row
+#     at this width) with side_cursor 2 and drew (side_cursor_draws > 0), Enter opens the page a click on that row opens (page = Queue, 4),
+#     and focus_route_sidebar counts the 3 keys; Home and End then go to the first and last row (cursor 1 and the door count).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -75,7 +79,7 @@ function(live tag timed)
   endif()
   set(${tag}_frames ${nfr} PARENT_SCOPE)
   set(${tag}_repaints ${CMAKE_MATCH_1} PARENT_SCOPE)
-  foreach(k focus_moves view_cursor focus search_skips search_scroll search_follows volume focus_route_main focus_route_player focus_route_sidebar focus_route_detail)
+  foreach(k focus_moves view_cursor focus search_skips search_scroll search_follows volume focus_route_main focus_route_player focus_route_sidebar focus_route_detail side_cursor side_cursor_draws page)
     if("${o}" MATCHES " ${k}=([0-9]+)")
       set(${tag}_${k} ${CMAKE_MATCH_1} PARENT_SCOPE)
     endif()
@@ -115,6 +119,17 @@ if(NOT fplay_focus_route_player EQUAL 3 OR NOT fplay_volume EQUAL want_vol OR NO
 endif()
 if(NOT fmain_focus_route_main EQUAL 3 OR NOT fmain_view_cursor EQUAL down_view_cursor OR fmain_view_cursor EQUAL none_view_cursor)
   message(FATAL_ERROR "3 Down on the main stop must move the page list as without a focus: route_main=${fmain_focus_route_main} (want 3) view_cursor=${fmain_view_cursor} (want ${down_view_cursor}, not ${none_view_cursor})")
+endif()
+
+# 10. (I1183) the sidebar stop walks its rows and Enter opens the row through the click path.
+live(sbkeys "k9@2000 k40000051@2600 k40000051@3200 kd@3800 q@5000")
+live(sbhome "k9@2000 k40000051@2600 k40000051@3200 k40000052@3800 k40000051@4400 q@6000")
+message(STATUS "sidebar keys: cursor=${sbkeys_side_cursor} draws=${sbkeys_side_cursor_draws} page=${sbkeys_page} route=${sbkeys_focus_route_sidebar}; up after 2 down: cursor=${sbhome_side_cursor}")
+if(NOT sbkeys_side_cursor EQUAL 2 OR sbkeys_side_cursor_draws LESS 1 OR NOT sbkeys_page EQUAL 4 OR NOT sbkeys_focus_route_sidebar EQUAL 3)
+  message(FATAL_ERROR "sidebar stop: Down, Down, Enter must put the cursor on row 2, draw it and open the Queue page (4): cursor=${sbkeys_side_cursor} draws=${sbkeys_side_cursor_draws} page=${sbkeys_page} route=${sbkeys_focus_route_sidebar} (want 2, >0, 4, 3)")
+endif()
+if(NOT sbhome_side_cursor EQUAL 2)
+  message(FATAL_ERROR "sidebar stop: Down, Down, Up, Down must end on row 2: ${sbhome_side_cursor}")
 endif()
 
 live(sdown "ta@2000 k40000051@2600 k40000051@3200 k40000052@3800 q@5500" search)

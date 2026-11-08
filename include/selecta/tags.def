@@ -390,6 +390,10 @@ SEL_TAG(UI, STAT_FOCUS_ROUTE_MAIN,    0x50EE, INT)
 SEL_TAG(UI, STAT_FOCUS_ROUTE_PLAYER,  0x50EF, INT)
 SEL_TAG(UI, STAT_FOCUS_ROUTE_SIDEBAR, 0x50F0, INT)
 SEL_TAG(UI, STAT_FOCUS_ROUTE_DETAIL,  0x50F1, INT)
+/* I1183: the sidebar stop's keyboard cursor (position + 1, 0 = none), frames that drew it, and the page open (the sentinels of the sidebar key test). */
+SEL_TAG(UI, STAT_SIDE_CURSOR,       0x50F2, INT)
+SEL_TAG(UI, STAT_SIDE_CURSOR_DRAWS, 0x50F3, INT)
+SEL_TAG(UI, STAT_PAGE,              0x50F4, INT)
 /* Amiga MUI UI (plan 2026-10-25-amiga-mui.md MUI-P1-5): windows opened; only the mui plugin lists it. */
 SEL_TAG(UI, STAT_OPEN_MUI,        0x50DB, INT)
 /* I526: text lookups served by the bitmap fonts mini4, mini6, mini8 and by the Inter headline sizes 18 and 24. */
