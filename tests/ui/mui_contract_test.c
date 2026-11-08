@@ -1180,6 +1180,30 @@ static void test_panes(void) {
     CHECK(mui_pane_key(&mp, (uint32_t)'j', 0u) == MUI_PANE_COUNT && mp.pane == MUI_PANE_VIZ, "an unrelated key moved the pane");
     CHECK(mui_pane_key(&mp, (uint32_t)'v', TXT_MOD_CTRL) == MUI_PANE_COUNT, "Ctrl+V opened a page");
     CHECK(mui_pane_of_action("@viz") == MUI_PANE_VIZ && mui_pane_of_action("@pattern") == MUI_PANE_TRACKER && mui_pane_of_action("@home") == MUI_PANE_COUNT && mui_pane_of_action(NULL) == MUI_PANE_COUNT, "action to pane map");
+    /* I960: the Now Playing pane has no key and a menu title; one compact door press opens it once, Song Information opens its Info tab */
+    {
+        uint32_t tab = 9u, d, np_door = 99u, info_door = 99u, with_line = 0u;
+        CHECK(mui_pane_of_page(SEL_UIM_PG_NOWPLAYING) == MUI_PANE_NOWPLAYING && mui_pane_page(MUI_PANE_NOWPLAYING) == (uint32_t)SEL_UIM_PG_NOWPLAYING, "now playing pane/page map");
+        CHECK(mui_pane_shortcut(MUI_PANE_NOWPLAYING) == '\0' && mui_pane_title(MUI_PANE_NOWPLAYING) != NULL, "now playing pane has a key or no title");
+        CHECK(mui_pane_key(&mp, (uint32_t)'n', 0u) == MUI_PANE_COUNT, "key n opened a pane");
+        for (d = 0; d < mui_door_count(); d++) {
+            uint32_t pg = sel_uim_page_by_name(sel_uim_door_at(d)->page);
+            np_door = pg == (uint32_t)SEL_UIM_PG_NOWPLAYING ? d : np_door;
+            info_door = pg == (uint32_t)SEL_UIM_PG_SONGINFO ? d : info_door;
+            if (mui_door_line(d) != NULL) {
+                with_line++;
+                CHECK(mui_door_pane(d, 1u, &tab) == MUI_PANE_COUNT, "door %u with an engine line opens a pane", (unsigned)d);
+            }
+        }
+        CHECK(np_door < 99u && info_door < 99u && with_line > 0u, "doors for Now Playing / Song Information not found");
+        memset(&mp, 0, sizeof mp);
+        CHECK(mui_door_pane(np_door, 0u, &tab) == MUI_PANE_COUNT && mp.opens[MUI_PANE_NOWPLAYING] == 0u, "full class door opened the pane");
+        CHECK(mui_door_pane(np_door, 1u, &tab) == MUI_PANE_NOWPLAYING && tab == 0u, "compact Now Playing door: pane/tab");
+        CHECK(mui_pane_open(&mp, mui_pane_page(mui_door_pane(np_door, 1u, NULL))) == MUI_PANE_NOWPLAYING && mp.opens[MUI_PANE_NOWPLAYING] == 1u, "one door press did not count one opening");
+        CHECK(mui_door_pane(info_door, 1u, &tab) == MUI_PANE_NOWPLAYING && tab == 1u, "Song Information door gives tab 1");
+        CHECK(mui_door_pane(info_door, 0u, &tab) == MUI_PANE_COUNT && mui_door_pane(99u, 1u, NULL) == MUI_PANE_COUNT, "full class / past the table");
+        CHECK(mui_pane_of_action("@nowplaying") == MUI_PANE_COUNT, "action map reached the NULL-action pane");
+    }
     /* the menu shortcuts of the other items leave 'v' and 't' to the panes */
     n = mui_menu_build_for(items, 512, mui_style_mask(0));
     for (i = 0; i < n && i < 512u; i++) {

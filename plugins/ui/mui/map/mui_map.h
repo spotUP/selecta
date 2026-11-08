@@ -342,7 +342,7 @@ const mui_page_slot_t* mui_page_slot(uint32_t page);
 /* I735: the panes of the MUI main slot. MUI_PANE_LIST is the song list every engine-line page (Home, Search, Library, ...) shows; the
  * Visualizer and Pattern pages are own panes, reached from the Mac UI's keys (txt_bindings default: v -> @viz, t -> @pattern; the
  * View menu items carry the same shortcuts) and shown in the main slot at every width. `opens` counts the openings per pane. */
-enum { MUI_PANE_LIST = 0, MUI_PANE_VIZ, MUI_PANE_TRACKER, MUI_PANE_COUNT };
+enum { MUI_PANE_LIST = 0, MUI_PANE_VIZ, MUI_PANE_TRACKER, MUI_PANE_NOWPLAYING, MUI_PANE_COUNT };
 typedef struct mui_mainpane {
     uint32_t pane;
     uint32_t opens[MUI_PANE_COUNT];
@@ -357,6 +357,10 @@ char mui_pane_shortcut(uint32_t pane);          /* the Mac UI's key for the page
 uint32_t mui_pane_open(mui_mainpane* mp, uint32_t page);
 /* A key press (txt_key code and mods) as the Mac UI's default table reads it: opens the page it names. MUI_PANE_COUNT when the key opens none. */
 uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods);
+/* I960: the compact class (640x256) hides the detail column, so a door whose page has no engine line (Now Playing, Song Information) opens
+ * MUI_PANE_NOWPLAYING in the main slot; `*tab` (when not NULL) gets the detail tab to show: 0 Lyrics, 1 Info. MUI_PANE_COUNT in the full
+ * class and for every door with an engine line (those go through the engine). */
+uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab);
 
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the
