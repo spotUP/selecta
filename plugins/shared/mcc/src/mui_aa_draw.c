@@ -40,7 +40,7 @@ struct TTE_Pixmap {
 };
 static struct Library* TTEngineBase;
 /* I685w: the RTG fill library of the truecolour path, opened once per process in aa_setup, closed in aa_free. */
-static struct Library* DiskfontBase;
+struct Library* DiskfontBase; /* up_aa_DiskfontBase: proto/diskfont.h declares it extern */
 static struct Library* g_p96;
 static struct Library* g_cgx;
 static int g_rtg_tried;

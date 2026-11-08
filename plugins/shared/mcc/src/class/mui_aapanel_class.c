@@ -76,7 +76,6 @@ static ULONG aapanel_layout(struct Hook* hook, Object* obj, struct MUI_LayoutMsg
 
 static ULONG aapanel_setup(struct IClass* cl, Object* obj, Msg msg) {
     aapanel_data* d = INST_DATA(cl, obj);
-    int px, py;
     if (!DoSuperMethodA(cl, obj, msg)) {
         return FALSE;
     }
@@ -144,8 +143,6 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         if (d->aa.tc) { /* I685w: MUI's background spec snaps to a pen; paint the face in exact RGB around the children, whatever MUI filled */
             int holes[MUI_AA_PAINT_MAX_HOLES * 4], n = 0;
             Object* grp = d->inner != NULL ? d->inner : obj;
-            struct List* kids = NULL;
-            Object *state, *child;
             n = aapanel_holes(grp, holes, 0, 0);
             {   /* I685w: the window margin around the root object is filled by MUI with the snapped spec too; the root repaints the ring in exact RGB */
                 ULONG root = 0, wptr = 0;
