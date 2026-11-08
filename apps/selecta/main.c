@@ -858,15 +858,14 @@ int main(int argc, char** argv)
         sel_ctl_path(ctl_path, sizeof ctl_path);
         ctl_fd = sel_ctl_listen(ctl_path);
         if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {
-            STARTUP_FAIL("already running (%s)", ctl_path);
-            for (u = 0; u < g_ui_count; u++) {
-                g_uis[u].close(g_uis[u].state);
+            /* I1162b: a second instance (the text UI beside the desktop app) runs a full UI on the same library with no
+             * control socket. ctl_fd must stay negative so the serve and close paths skip it: sel_ctl_close would unlink
+             * the first instance's socket file. */
+            ctl_fd = -1;
+            fprintf(stderr, "selecta: another instance owns %s; this one runs without remote control\n", ctl_path);
+            if (g_trace) {
+                fprintf(stderr, "second_instance_no_socket=1\n");
             }
-            if (so.out != NULL) {
-                so.close(so.out);
-            }
-            sel_engine_destroy(e);
-            return 1;
         }
     }
 #endif

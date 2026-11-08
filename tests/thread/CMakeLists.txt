@@ -41,4 +41,12 @@ if(UNIX)
   set_tests_properties(library-second-instance PROPERTIES TIMEOUT 60)
 endif()
 
+# I1162b: a second Selecta beside one that owns the control socket runs its own UI with no socket and leaves the first one's socket alone.
+if(UNIX)
+  add_test(NAME second-instance-socket
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/second_instance_socket"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/second_instance_socket.cmake")
+  set_tests_properties(second-instance-socket PROPERTIES TIMEOUT 60)
+endif()
+
 sel_isolate_config() # I989b
