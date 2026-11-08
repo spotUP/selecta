@@ -23,6 +23,7 @@ add_library(selecta_core ${SEL_CORE_KIND}
   host/log.c
   engine/spsc.c
   engine/evtring.c
+  engine/snapshot.c
   engine/engine.c
   engine/libsort.c
   engine/claims.c

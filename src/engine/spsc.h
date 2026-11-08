@@ -5,6 +5,7 @@
 
 #include <selecta/host.h>
 #include <selecta/protocol.h>
+#include <selecta/tags.h>
 
 typedef struct sel_spsc {
     sel_message* slots;
@@ -30,5 +31,8 @@ void sel_spsc_release(sel_spsc* q); /* returns every popped slot to the producer
 uint32_t sel_spsc_count(const sel_spsc* q);
 /* Head/tail publications so far (each one ran inside sel_pal_publish_begin/end). */
 uint32_t sel_spsc_publishes(void);
+/* Copies a tag list (MORE and SKIP followed) into buf at *used (cap bytes) as a flat END-terminated array with string-typed
+ * values copied too, and stores the list in dst->v.t. 0 when it does not fit. Shared with the published snapshot (I1082d). */
+int sel_spsc_copy_tags(sel_arg* dst, const sel_tag* src, char* buf, uint32_t cap, uint32_t* used);
 
 #endif

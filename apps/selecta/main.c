@@ -717,6 +717,9 @@ int main(int argc, char** argv)
         STARTUP_FAIL("engine allocation failed");
         return 1;
     }
+    if (getenv("SELECTA_PUBLISH_MEASURE") != NULL) {
+        (void)sel_engine_publish_enable(e, 2u); /* I1082d: copy the state every pump without serving it, so --stats shows pub_bytes_max and pub_us_max */
+    }
     rate = sel_registry_output_rate(oh, machine_tags);
     sel_engine_set_mix(e, rate, SHELL_RESAMPLER);
     sel_engine_set_output(e, oh);
@@ -997,6 +1000,11 @@ int main(int argc, char** argv)
     printf("radio_appends=%u\n", (unsigned)est.radio_appends); /* I906g: songs the posted radio draw appended */
     printf("shell_wait_ms_min=%u shell_wait_ms_max=%u\n", (unsigned)(wait_ms_min == 0xFFFFFFFFu ? 0u : wait_ms_min), (unsigned)wait_ms_max); /* what the shell asked the UI to wait (I684c) */
     printf("ui_gap_ms_max=%u engine_thread=%d engine_pumps=%u evt_ring_events=%u\n", (unsigned)gap_ms_max, engine_thread, (unsigned)g_engine_pumps, (unsigned)g_evt_ring_events); /* I1082a, I1082c */
+    {
+        uint32_t pub_n, pub_bytes, pub_us;
+        sel_engine_publish_stats(e, &pub_n, &pub_bytes, &pub_us);
+        printf("publishes=%u pub_bytes_max=%u pub_us_max=%u\n", (unsigned)pub_n, (unsigned)pub_bytes, (unsigned)pub_us); /* I1082d */
+    }
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
     printf("hw_handovers=%u hw_starts=%u replayer=%s\n", (unsigned)est.hw_handovers, (unsigned)est.hw_starts,
