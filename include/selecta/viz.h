@@ -34,6 +34,7 @@ typedef struct sel_viz_frame {
     uint32_t rate;           /* output rate the block was mixed at */
     uint32_t voice_count;    /* voices of the VOICE-kind replayer; 0 for RENDER kind */
     uint32_t spectrum_valid; /* pump side: bands computed */
+    uint32_t falloff_runs;   /* pump side: times the peak falloff ran on this tap (I292b sentinel) */
     int16_t peak[SEL_VIZ_MAX_VOICES]; /* Q15, post-volume, pre-pan, this block */
     int16_t vu[SEL_VIZ_MAX_VOICES];   /* Q15, instant attack, release level -= level >> 3 per block */
     uint32_t pitch_q8[SEL_VIZ_MAX_VOICES];   /* Hz in 24.8, 0 when the voice is idle */
@@ -55,6 +56,8 @@ typedef struct sel_viz_tap {
     uint32_t read_idx;        /* pump private */
     volatile uint32_t middle; /* shared: buffer index, plus 4 when it holds an unread frame */
     uint32_t seq;
+    int16_t smooth[SEL_VIZ_BANDS]; /* pump private: the bands after the falloff (I292b) */
+    uint32_t smooth_seq, falloff_runs;
     uint32_t block_left;      /* frames until the current block closes; 0: start a new one */
     uint32_t pcm_head;        /* next write index of the ring, in frames */
     int16_t pcm[SEL_VIZ_PCM_FRAMES * 2u];
@@ -104,12 +107,18 @@ const sel_viz_frame* sel_viz_current(const sel_viz_tap* t);
  * frame from its PCM ring. `with_spectrum` 0 leaves the bands at zero. */
 void sel_viz_analyse(sel_viz_tap* t, int with_spectrum);
 
+/* Peak falloff (I292b). Q15 per second a band falls: a full scale bar empties in about 1.3 s. */
+#define SEL_VIZ_FALL_PER_SECOND 25000u
+/* level[i] rises to raw[i] at once, else falls by SEL_VIZ_FALL_PER_SECOND * dt_ms / 1000 (never below raw[i] or 0). */
+int sel_viz_falloff(int16_t level[], const int16_t raw[], uint32_t n, uint32_t dt_ms); /* returns 1: the step ran */
+
 /* Pure functions (unit tests, pump thread). */
 /* Phase correlation of interleaved stereo, Q15: sum(LR) / sqrt(sum(LL) * sum(RR)).
  * 0 for silence. */
 int32_t sel_viz_correlation(const int16_t* stereo, uint32_t frames);
-/* 256-point integer FFT of the mono sum (L + R) / 2 of the last 256 frames of
- * `stereo` (Hann window, Q15), reduced to 16 log-spaced bands, Q15. */
+/* 256-point integer FFT of the mono sum (L + R) / 2 over consecutive 256 frame windows of `stereo`, ending at the
+ * newest frame (Hann window, Q15); the bin magnitudes are averaged over the windows (I292b), then reduced to 16
+ * log-spaced bands, Q15. Cost: frames / 256 FFTs per call (4 for the 1024 frame ring). */
 void sel_viz_spectrum(const int16_t* stereo, uint32_t frames, uint32_t rate, int16_t band[SEL_VIZ_BANDS]);
 
 /* ---- Render target of the viz plugins (design doc section 8; plan DUI-P4-11, moved from M4-P3-3) ----

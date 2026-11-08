@@ -589,7 +589,7 @@ typedef struct desk {
     uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
-    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 15];
+    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 16];
     int sleeping;           /* a `sleep` script line is waiting for its wall-clock deadline */
     uint32_t sleep_until;   /* host clock_ms at which it ends */
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
@@ -652,6 +652,7 @@ typedef struct desk {
     uint32_t viz_seq;            /* sequence number of the newest frame drawn */
     uint32_t viz_frames;         /* frames drawn to screen, one per new engine frame (sentinel) */
     uint32_t viz_tip_up;         /* I292a: visualizer frames drawn while a tooltip was up (sentinel) */
+    uint32_t viz_falloff_runs;   /* I292b: spectrum falloff steps seen on the shown viz frame (sentinel) */
     uint32_t viz_tip_drawn;      /* I292a: of those, the frames that drew the tooltip again over the repainted area */
     uint32_t viz_prims;          /* primitives the last render reported */
     uint32_t viz_panes;          /* panes the last Visualizer page drew */
@@ -7207,6 +7208,7 @@ static int viz_tick(desk* d) {
     desk_frame_begin(d);
     d->viz_frames++;
     d->viz_seq = st->viz->seq;
+    d->viz_falloff_runs = st->viz->falloff_runs;
     d->viz_song_ms = st->song.position_ms != 0u ? st->song.position_ms : st->viz->seq * 20u;
     if (where == VIZ_VISUAL) {
         draw_visual(d);
@@ -17203,6 +17205,8 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->viz_tip_up;
         d->stats[n].tag = SEL_UI_STAT_VIZ_TIP_DRAWN;
         d->stats[n++].value = d->viz_tip_drawn;
+        d->stats[n].tag = SEL_UI_STAT_VIZ_FALLOFF_RUNS;
+        d->stats[n++].value = d->viz_falloff_runs;
         d->stats[n].tag = SEL_TAG_END;
     }
 

@@ -379,6 +379,8 @@ SEL_TAG(UI, STAT_TOOLTIP_TARGETS, 0x50DA, INT)
 /* I292a: visualizer frames drawn while a tooltip was up, and how many of them drew the tooltip again. */
 SEL_TAG(UI, STAT_VIZ_TIP_UP,        0x50E9, INT)
 SEL_TAG(UI, STAT_VIZ_TIP_DRAWN,     0x50EA, INT)
+/* I292b: spectrum falloff steps the engine ran (sentinel read from the shown viz frame). */
+SEL_TAG(UI, STAT_VIZ_FALLOFF_RUNS,  0x50EB, INT)
 /* Amiga MUI UI (plan 2026-10-25-amiga-mui.md MUI-P1-5): windows opened; only the mui plugin lists it. */
 SEL_TAG(UI, STAT_OPEN_MUI,        0x50DB, INT)
 /* I526: text lookups served by the bitmap fonts mini4, mini6, mini8 and by the Inter headline sizes 18 and 24. */
