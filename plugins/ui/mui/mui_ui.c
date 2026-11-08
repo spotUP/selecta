@@ -1529,6 +1529,13 @@ static const char* mui_col_row(void* ctx, long row) {
 
 static int mui_route_send(void* ctx, const char* line) { return mui_engine_line((mui_state*)ctx, line); }
 
+/* I1172: a playlist row opens its collection page like the desktop sidebar row (SIDEBAR_ROW, key = the playlist id). */
+static int mui_playlist_page(mui_state* s, const sel_view_row* row, const char* name) {
+    char key[16];
+    snprintf(key, sizeof key, "%u", (unsigned)row->id);
+    return mui_route_click(&s->route, SEL_ROUTE_SIDEBAR_ROW, (uint32_t)SEL_LIB_ITEM_PLAYLIST, row->id, key, name, "", mui_route_send, s);
+}
+
 static Object* mui_col_page_group(mui_state* s) {
     mui_aalist_spec sp;
     Object* lg;
@@ -2914,7 +2921,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         if (row != NULL && row->kind == (uint32_t)SEL_ROW_PLAYLIST) {
             mui_str_utf8(s->str_cmd, text, sizeof text);
             s->sm_playlist = row->id;
-            if (mui_playlist_line(which == P4_POPEN ? "open" : which == P4_PRENAME ? "rename" : "delete", row->id, text, line, sizeof line)
+            if (which == P4_POPEN && mui_playlist_page(s, row, row->text != NULL ? row->text : text)) {
+                mui_p4_note(s, which, "COLLECTION_OPEN");
+            } else if (mui_playlist_line(which == P4_POPEN ? "open" : which == P4_PRENAME ? "rename" : "delete", row->id, text, line, sizeof line)
                 && mui_engine_line(s, line)) {
                 mui_p4_note(s, which, line);
             }
@@ -3225,6 +3234,10 @@ static void mui_control_fire(mui_state* s, LONG id) {
             return;
         }
         if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n && mui_home_row_fire(s, view, (uint32_t)v)) {
+            return;
+        }
+        if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n && view->rows[v].kind == (uint32_t)SEL_ROW_PLAYLIST && view->rows[v].text != NULL &&
+            mui_playlist_page(s, &view->rows[v], view->rows[v].text)) { /* I1172: the playlist's page, not the in-list open */
             return;
         }
         if (id == CTL_LIST_SEL) {

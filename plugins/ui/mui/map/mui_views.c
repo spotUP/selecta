@@ -286,9 +286,9 @@ static const mui_page_slot_t g_page_slots[SEL_UIM_PG_COUNT] = {
     [SEL_UIM_PG_SONGINFO] = {MUI_PAGE_GROUP, NULL},
     [SEL_UIM_PG_VIZ] = {MUI_PAGE_MAIN_VIEW, NULL},     /* I735: the main-area Visualizer pane (mui_pane_open), reached by the @viz key and the View menu */
     [SEL_UIM_PG_TRACKER] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I735: the main-area Pattern pane, @pattern */
-    [SEL_UIM_PG_SHELF] = {MUI_PAGE_EXEMPT, "Show all on a Home shelf has no MUI handler yet (drift doc section 5)"},
+    [SEL_UIM_PG_SHELF] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I1172: Show all keeps the Home source; mui_home_fill shows the one chosen shelf in full (mui_route_on_shelf) */
     [SEL_UIM_PG_BROWSE] = {MUI_PAGE_MAIN_VIEW, NULL}, /* the top bar Browse button sends mui_topbar_browse_lines */
-    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_EXEMPT, "an album, artist or playlist page has no MUI handler yet; the main list shows the playlist source (drift doc section 5)"},
+    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I1172: album, artist, composer and playlist pages: COLLECTION_OPEN + the collection page group (mui_route_sync) */
     [SEL_UIM_PG_SETTINGS] = {MUI_PAGE_EXEMPT, "MUI opens Settings as its own window (mui_settings_open, MUI-P4-10) on the shared pref rows, not as a main-area page (I799a added the page)"}};
 
 const mui_page_slot_t* mui_page_slot(uint32_t page) {

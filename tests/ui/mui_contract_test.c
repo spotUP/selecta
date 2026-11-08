@@ -3294,6 +3294,26 @@ static void test_route(void) {
               !mui_route_on_collection(&r), "a door page sends its lines one by one");
     l.n = 0;
     CHECK(mui_route_walk(&r, -1, route_rec, &l) && mui_route_on_collection(&r), "Back from a door page returns to the page before it");
+    /* I1172: a playlist row opens its collection page (key = the playlist id), Back restores it without Recents; Shelf and Collection have MUI slots */
+    {
+        static char src[400000];
+        FILE* f = fopen(MUI_UI_SOURCE, "rb");
+        size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+        uint32_t before = r.entered;
+        if (f != NULL) {
+            fclose(f);
+        }
+        src[n] = 0;
+        l.n = 0;
+        CHECK(mui_route_click(&r, SEL_ROUTE_SIDEBAR_ROW, (uint32_t)SEL_LIB_ITEM_PLAYLIST, 7u, "7", "Mine", "", route_rec, &l) && mui_route_on_collection(&r) && l.n == 1u &&
+                  strcmp(l.line[0], "COLLECTION_OPEN 3 \"7\"") == 0 && r.entered == before + 1u, "a playlist opens its collection page: %s", l.n > 0u ? l.line[0] : "(none)");
+        l.n = 0;
+        CHECK(mui_route_click(&r, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Nexus", "Nexus", "", route_rec, &l) && mui_route_walk(&r, -1, route_rec, &l) && l.n == 2u &&
+                  strcmp(l.line[1], "COLLECTION_OPEN 3 \"7\" 1") == 0, "Back to the playlist page restores it: %s", l.n > 1u ? l.line[1] : "(none)");
+        CHECK(mui_page_slot(SEL_UIM_PG_SHELF)->kind == MUI_PAGE_MAIN_VIEW && mui_page_slot(SEL_UIM_PG_COLLECTION)->kind == MUI_PAGE_MAIN_VIEW, "Shelf and Collection are main views, not exemptions");
+        CHECK(strstr(src, "mui_playlist_page(s, &view->rows[v]") != NULL && strstr(src, "which == P4_POPEN && mui_playlist_page(s, row") != NULL,
+              "the playlist row double click and Open reach the route");
+    }
     mui_route_init(&r);
     CHECK(!mui_route_walk(&r, -1, route_rec, &l) && r.entered == 0u, "Back with no history does nothing");
 }
