@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <unistd.h>
 
 static int failures;
@@ -21,6 +22,55 @@ static int failures;
     } while (0)
 
 static sel_prefs g_a, g_b;
+
+/* I1162d: a reader polling prefs.conf while a writer saves in a loop never sees a truncated or empty
+ * file: every read holds one line per declared key. */
+static const char* g_dir;
+static volatile int g_stop;
+
+static void* writer_main(void* arg) {
+    static sel_prefs w;
+    (void)arg;
+    sel_prefs_init(&w);
+    while (!g_stop) {
+        (void)sel_prefs_save(&w, g_dir);
+    }
+    return NULL;
+}
+
+static void concurrent_save_test(const char* dir) {
+    char path[160], line[SEL_PREF_VALUE_MAX + 64];
+    pthread_t th;
+    int r, bad = 0, reads = 0;
+    sel_prefs seed;
+    g_dir = dir;
+    sel_prefs_init(&seed);
+    CHECK(sel_prefs_save(&seed, dir) == 1, "seed save failed");
+    snprintf(path, sizeof path, "%s/prefs.conf", dir);
+    g_stop = 0;
+    pthread_create(&th, NULL, writer_main, NULL);
+    for (r = 0; r < 20000; r++) {
+        FILE* f = fopen(path, "r");
+        int lines = 0;
+        if (f == NULL) {
+            bad++;
+            continue;
+        }
+        while (fgets(line, sizeof line, f) != NULL) {
+            lines++;
+        }
+        fclose(f);
+        reads++;
+        if (lines != SEL_PREF_COUNT) {
+            bad++;
+        }
+    }
+    g_stop = 1;
+    pthread_join(th, NULL);
+    CHECK(bad == 0, "%d of %d reads saw a missing or incomplete prefs.conf (want %d lines)", bad, reads, SEL_PREF_COUNT);
+    snprintf(path, sizeof path, "%s/prefs.conf.tmp", dir);
+    CHECK(access(path, F_OK) != 0, "temp file left behind after save");
+}
 
 int main(void) {
     char dir[] = "/tmp/sel-prefs-max-XXXXXX";
@@ -58,6 +108,7 @@ int main(void) {
     fill[SEL_PREF_VALUE_MAX] = '\0';
     CHECK(sel_prefs_set(&g_a, "library.sync_snoozed", fill) == SEL_PREFS_SET_BAD, "length MAX accepted");
 
+    concurrent_save_test(dir);
     snprintf(path, sizeof path, "%s/prefs.conf", dir);
     unlink(path);
     rmdir(dir);
