@@ -489,6 +489,20 @@ static int migrate_fresh(sqlite3* db, const sel_host* host) {
     return 1;
 }
 
+/* I1162c: a database a newer Selecta already migrated is refused, and the caller can only say "cannot open the library database".
+ * Say why, on the channel migrate_failed uses: a stale executable beside a newer app reads exactly like a lock failure otherwise. */
+static void schema_refused(const sel_host* host, int version) {
+    char msg[160];
+
+    snprintf(msg, sizeof msg, "library schema v%d is newer than this build supports (v%d): this Selecta is out of date, rebuild or update it",
+             version, MIGRATION_COUNT);
+    if (host != NULL && host->log != NULL) {
+        host->log(host, SEL_LOG_ERROR, msg);
+    } else {
+        fprintf(stderr, "[ERROR] %s\n", msg);
+    }
+}
+
 static int migrate_steps(sqlite3* db, const sel_host* host) {
     int v;
     char pragma[40];
@@ -498,6 +512,7 @@ static int migrate_steps(sqlite3* db, const sel_host* host) {
     v = sel_schema_version(db);
     sel_library_trace(host, "user_version read done", v);
     if (v < 0 || v > MIGRATION_COUNT) { /* newer DB than this build: refuse, never downgrade */
+        schema_refused(host, v);
         return 0;
     }
     sel_library_trace(host, "migrate begin from_version", v);
