@@ -67,11 +67,11 @@ static unsigned names_for(sel_cache* c, const char* path, const char** in, unsig
         g_names[i] = in[i];
     }
     g_nnames = nin;
-    return sel_content_companion_names(c, path, head, sizeof head, out, SEL_CACHE_COMPANIONS_MAX);
+    return sel_content_companion_names(c, path, head, sizeof head, out, SEL_CACHE_CONTENT_MAX);
 }
 
 static void sanitiser(sel_cache* c) {
-    char out[SEL_CACHE_COMPANIONS_MAX][SEL_CACHE_PATH_MAX];
+    char out[SEL_CACHE_CONTENT_MAX][SEL_CACHE_PATH_MAX];
     char long63[64], long64[65];
     const char* rejects[] = {"../x", "/etc/x", "a\\b", "c:x", "..", "a..b", ".hidden", "x.part", "X.PART", "song.fk",
                              "SONG.FK", "caf\xc3\xa9.fmb", "\x83\x65.fmb", " lead.pmb", "trail.pmb ", ""};
@@ -110,8 +110,18 @@ static void sanitiser(sel_cache* c) {
     {
         const char* in[12] = {"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12"};
 
-        CHECK(names_for(c, "song.fk", in, 12, out) == SEL_CACHE_COMPANIONS_MAX); /* cap at 8, no directory */
+        CHECK(names_for(c, "song.fk", in, 12, out) == 12); /* I1237: up to SEL_CACHE_CONTENT_MAX names, no directory */
         CHECK(strcmp(out[0], "a1") == 0);
+    }
+    {
+        const char* in[1] = {"Instruments/x.instr"};
+        const char* bad[4] = {"Instruments/sub/x.instr", "/x.instr", "Instruments//x", "Instruments/.x"};
+        unsigned bi;
+
+        CHECK(names_for(c, "A/song.fk", in, 1, out) == 1 && strcmp(out[0], "A/Instruments/x.instr") == 0); /* I1237 */
+        for (bi = 0; bi < 4; bi++) {
+            CHECK(names_for(c, "A/song.fk", bad + bi, 1, out) == 0);
+        }
     }
     {
         /* claim probe: a name no hook claims calls the hook only as a probe, with no bytes */

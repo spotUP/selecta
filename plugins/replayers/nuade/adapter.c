@@ -545,9 +545,60 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
+/* RP_CONTENT_COMPANIONS (I1237): an IFF SMUS score names its instruments (INS1 chunks) but holds none of them. The sonix
+ * player reads <name>.instr, and the <name>.ss sample behind it, from an Instruments directory beside the song
+ * (Modland keeps them there); a remote song cached alone has neither, so every voice stays silent. Names every
+ * instrument twice, all .instr first: a Synthesis instrument has no .ss, a SampledSound one keeps its sample under the
+ * same stem. Local open reads the directory itself. */
+static int ext_is_smus(const char* name) {
+    size_t n = strlen(name);
+    return n > 5u && name[n - 5u] == '.' && (name[n - 4u] | 0x20) == 's' && (name[n - 3u] | 0x20) == 'm' &&
+           (name[n - 2u] | 0x20) == 'u' && (name[n - 1u] | 0x20) == 's';
+}
+
+static unsigned rp_content_companions(const char* name, const uint8_t* data, size_t size, char out[][SEL_RP_COMPANION_NAME_MAX],
+                                      unsigned max, const sel_host* host) {
+    static const char dir[] = "Instruments/";
+    unsigned k = 0, pass;
+    size_t pos;
+    (void)host;
+    if (!ext_is_smus(name)) {
+        return 0;
+    }
+    if (data == NULL) {
+        return 1;
+    }
+    for (pass = 0; pass < 2u; pass++) {
+        for (pos = 12u; pos + 8u <= size && k < max;) {
+            size_t len = ((size_t)data[pos + 4u] << 24) | ((size_t)data[pos + 5u] << 16) | ((size_t)data[pos + 6u] << 8) | data[pos + 7u];
+            size_t adv = 8u + len + (len & 1u);
+            if (memcmp(data + pos, "INS1", 4u) == 0 && len > 4u && pos + 8u + len <= size) {
+                const uint8_t* nm = data + pos + 12u;
+                size_t nl = 0, dl = sizeof dir - 1u;
+                const char* ext = pass == 0u ? ".instr" : ".ss";
+                size_t el = strlen(ext);
+                while (nl < len - 4u && nm[nl] != 0u) {
+                    nl++;
+                }
+                if (nl != 0u && dl + nl + el < SEL_RP_COMPANION_NAME_MAX) {
+                    memcpy(out[k], dir, dl);
+                    memcpy(out[k] + dl, nm, nl);
+                    memcpy(out[k] + dl + nl, ext, el + 1u);
+                    k++;
+                }
+            }
+            if (adv < 8u || adv > size - pos) {
+                break;
+            }
+            pos += adv;
+        }
+    }
+    return k;
+}
+
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[22];
+static sel_tag g_hooks[23];
 /* SEL_RP_COMPANIONS (I166): TFMX keeps its samples in a second file. */
 static const char g_companions[] = "mdat.*>smpl.*;*.tfx>*.sam";
 static sel_tag g_config[2]; /* SEL_RP_CONFIG list: one entry per option, value = the host config key */
@@ -644,7 +695,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[18], SEL_RP_CONFIG, (uintptr_t)g_config);
     set(&g_hooks[19], SEL_RP_COMPANIONS, (uintptr_t)g_companions);
     set(&g_hooks[20], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
-    set(&g_hooks[21], SEL_TAG_END, 0);
+    set(&g_hooks[21], SEL_RP_CONTENT_COMPANIONS, SEL_TAG_FN(rp_content_companions));
+    set(&g_hooks[22], SEL_TAG_END, 0);
     set(&g_config[0], SEL_TAG_USER, (uintptr_t)k_cfg_gain);
     set(&g_config[1], SEL_TAG_END, 0);
 

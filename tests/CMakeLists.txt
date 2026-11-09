@@ -2589,6 +2589,11 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I1237: a remote IFF SMUS song plays with its instruments (nuade CONTENT_COMPANIONS hook), through the script entry point and a
+  # local HTTP mirror. Song and instruments fetched by checksum (tests/m3/fixtures/smus_ace2.SOURCE), exit 77 = skip.
+  add_test(NAME smus-instruments COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/smus_instruments.sh $<TARGET_FILE:selecta-cli> ${CMAKE_BINARY_DIR}/modules)
+  set_tests_properties(smus-instruments PROPERTIES LABELS m3 TIMEOUT 180 PASS_REGULAR_EXPRESSION "smus_instruments_ok" SKIP_RETURN_CODE 77)
+
   # I710a: AXS (.axs) songs play through the render entry point (bbmp_axs module, GPL). Songs fetched by checksum
   # (tests/m3/fixtures/bbmp_axs.SOURCE), exit 77 = skip. A file that is not a song of the format must not be claimed.
   if(SELECTA_GPL_PLUGINS)

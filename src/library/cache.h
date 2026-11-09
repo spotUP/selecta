@@ -26,6 +26,7 @@
 #define SEL_CACHE_PATH_MAX 1100
 #define SEL_CACHE_SETS 4
 #define SEL_CACHE_COMPANIONS_MAX 8
+#define SEL_CACHE_CONTENT_MAX 64 /* names one CONTENT_COMPANIONS hook may return: an SMUS song names up to 63 instruments, two files each (I1237) */
 #define SEL_CACHE_CONTENT_HEAD 65536u /* bytes of a song a CONTENT_COMPANIONS hook sees (I1127b) */
 
 typedef enum sel_cache_result {
@@ -104,7 +105,9 @@ unsigned sel_companion_paths(const char* rules, const char* path, char out[][SEL
 /* The SEL_RP_COMPANIONS rules of every registered replayer, joined with ';'. */
 void sel_companion_rules(uint32_t (*registry_count)(void), const sel_tag* (*registry_get)(uint32_t), char* out,
                          size_t cap);
-/* Names a CONTENT_COMPANIONS hook finds in the song's first bytes, sanitised (rejects `/ \\ :`, `..`, a leading dot,
+/* Names a CONTENT_COMPANIONS hook finds in the song's first bytes, sanitised (rejects `\\ :`, `..`, a leading dot,
+ * more than one `/` (one leading directory component is allowed, I1237: "Instruments/x.instr"), at most
+ * SEL_CACHE_CONTENT_MAX names,
  * `.part`, bytes outside 0x20..0x7E, 64+ characters, the song's own name), joined with the song's directory and
  * deduplicated case-insensitively. data == NULL: the claim probe, returns 1 when any hook claims the base name of
  * `path`, else 0. Counts stats.content_rejected. Reentrant per cache handle. */
