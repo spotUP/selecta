@@ -757,6 +757,8 @@ struct sel_engine {
     uint32_t* coll_ord;                       /* I994d1: the page order block (shown position -> stored row), heap; the page's `order` points here */
     uint32_t collection_orders;               /* I994d1 sentinel: page orders built */
     uint32_t collection_views;                /* I994d2 sentinel: COLLECTION_VIEW commands applied */
+    uint32_t rdc_sort, rdc_desc;              /* I1082f: the view the running build uses, staged from coll_sort/coll_desc/coll_filter when the job is posted (the engine thread edits those while the read runs) */
+    char rdc_filter[64];
     int rdc_reorder, rdc_next_reorder;        /* I994d2: the read re-orders the published page under the new view (no rebuild) */
     uint32_t coll_sort, coll_desc;            /* I994d1: the engine-global collection view the next build uses (SEL_COLL_SORT_*, 0/1) */
     char coll_filter[64];
@@ -7593,9 +7595,9 @@ static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* 
         rec[i].duration_ms = strtoll(m, NULL, 10);
         m += strlen(m) + 1u;
     }
-    pg->sort = e->coll_sort;
-    pg->descending = e->coll_desc;
-    snprintf(pg->filter, sizeof pg->filter, "%s", e->coll_filter);
+    pg->sort = e->rdc_sort;
+    pg->descending = e->rdc_desc;
+    snprintf(pg->filter, sizeof pg->filter, "%s", e->rdc_filter);
     pg->shown = sel_coll_order_build(rec, pg->songs, pg->sort, pg->descending, pg->filter, ord);
     SEL_COUNT_ADD(&e->collection_orders, 1u);
     e->host->mem_free(e->host, rec);
@@ -7752,6 +7754,9 @@ static void coll_post(sel_engine* e) {
         e->rdc_page = e->rdc_next_page;
         e->rdc_reorder = e->rdc_next_reorder && !e->rdc_next_page;
         e->rdc_follow = e->rdc_next_follow;
+        e->rdc_sort = e->coll_sort;
+        e->rdc_desc = e->coll_desc;
+        snprintf(e->rdc_filter, sizeof e->rdc_filter, "%s", e->coll_filter);
         e->rdc_next_follow = 0;
         e->rdc_next_page = 0;
         e->rdc_next_reorder = 0;
@@ -11744,7 +11749,7 @@ static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
     out->lib_touch_calls = e->lib_touch_calls;
     out->collection_opens = e->collection_opens;
     out->collection_queries = e->collection_queries;
-    out->collection_orders = e->collection_orders;
+    out->collection_orders = SEL_COUNT_GET(&e->collection_orders); /* I1082f: bumped by the library read thread */
     out->collection_views = e->collection_views;
     out->drill_rows = e->drill_rows;
     out->evt_dropped = e->evt_dropped;

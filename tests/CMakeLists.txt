@@ -3995,6 +3995,13 @@ if(NOT SEL_AMIGA)
   add_executable(collection_view_test engine/collection_view_test.c)
   target_include_directories(collection_view_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(collection_view_test PRIVATE selecta_library selecta_registry selecta_core)
+  # I1082f: published snapshot; a UI thread walks queue/view/collection while the engine thread edits them 10000 times. TSan
+  # (-DSELECTA_TSAN=ON, build/tsan) must stay silent; SELECTA_TEST_NOPUB=1 reads live state and TSan reports.
+  add_executable(pub_snapshot_test engine/pub_snapshot_test.c)
+  target_include_directories(pub_snapshot_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(pub_snapshot_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-pub-snapshot COMMAND pub_snapshot_test)
+  set_tests_properties(engine-pub-snapshot PROPERTIES TIMEOUT 300 PASS_REGULAR_EXPRESSION "pub_snapshot_ok")
   add_test(NAME engine-collection-view COMMAND collection_view_test)
   set_tests_properties(engine-collection-view PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "collection_view_ok")
   add_test(NAME engine-play-context-lists COMMAND play_context_lists_test)

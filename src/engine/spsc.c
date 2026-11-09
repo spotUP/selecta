@@ -11,7 +11,7 @@
 static uint32_t g_publishes;
 
 uint32_t sel_spsc_publishes(void) {
-    return g_publishes;
+    return SEL_COUNT_GET(&g_publishes);
 }
 
 static uint32_t round_pow2(uint32_t n) {
@@ -128,7 +128,7 @@ int sel_spsc_push(sel_spsc* q, const sel_message* m) {
     }
     sel_pal_publish_begin(); /* only the index store is guarded; the slot copy above is not */
     SEL_ATOMIC_STORE_REL(&q->tail, tail + 1u);
-    g_publishes++;
+    (void)SEL_COUNT_ADD(&g_publishes, 1u);
     sel_pal_publish_end();
     return 1;
 }
@@ -147,7 +147,7 @@ int sel_spsc_pop(sel_spsc* q, sel_message* out) {
     sel_pal_publish_begin();
     q->read = read + 1u;
     SEL_ATOMIC_STORE_REL(&q->head, read + 1u);
-    g_publishes++;
+    (void)SEL_COUNT_ADD(&g_publishes, 1u);
     sel_pal_publish_end();
     return 1;
 }
@@ -156,7 +156,7 @@ void sel_spsc_release(sel_spsc* q) {
     if (q->arena_bytes != 0 && q->head != q->read) {
         sel_pal_publish_begin();
         SEL_ATOMIC_STORE_REL(&q->head, q->read);
-        g_publishes++;
+        (void)SEL_COUNT_ADD(&g_publishes, 1u);
         sel_pal_publish_end();
     }
 }
