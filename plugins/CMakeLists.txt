@@ -353,8 +353,8 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
 endif()
 
 # bbmp_ptk (I710q): NoiseTrekker / ProTrekkr songs (.ntk, .ptk), the BSD 2-clause ProTrekkr replay routine (not bbmp's GPL wrapper) plus our own
-# shim. No GPL dependency, so no GPL gate. Host only; Amiga exemption in row I710q.
-if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+# shim. No GPL dependency, so no GPL gate. Host module and static Amiga plugin (I710qa).
+if(SEL_AMIGA OR (NOT EMSCRIPTEN AND NOT WIN32))
   add_subdirectory(replayers/bbmp_ptk)
 endif()
 
