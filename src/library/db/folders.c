@@ -254,7 +254,7 @@ static int library_clear(sqlite3* db, int64_t* rows) {
     if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM composers;DELETE FROM composer_spellings;DELETE FROM song_composers;"
                      "DELETE FROM files;DELETE FROM songs;UPDATE composer_unknown SET n = 0;"
                      "DELETE FROM playlist_entries;DELETE FROM playlists;DELETE FROM folders;DELETE FROM ratings;DELETE FROM notes;"
-                     "DELETE FROM liked;DELETE FROM kept;DELETE FROM cues;DELETE FROM flags;DELETE FROM stickers;DELETE FROM history;COMMIT;",
+                     "DELETE FROM liked;DELETE FROM kept;DELETE FROM cues;DELETE FROM flags;DELETE FROM stickers;DELETE FROM history;DELETE FROM search_cache;COMMIT;",
                      NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
         return SQLITE_ERROR;
@@ -338,6 +338,7 @@ static int song_briefs(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     sqlite3_stmt* st;
     const char* k;
     uint32_t used = 0;
+    sel_library_test_slow("SELECTA_LIB_BRIEFS_SLOW_MS"); /* I1198 test knob: the page's titles read on a busy worker, so library changes land while it is in flight */
     *rows = 0;
     if (op->value == NULL || op->out == NULL || op->out_cap < 2u) return SQLITE_MISUSE;
     op->out[0] = '\0';
@@ -479,8 +480,11 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
     case SEL_USER_PLAYLIST_DEL: return playlist_del(db, op, rows);
     case SEL_USER_SONG_REMOVE: return song_remove(db, op, rows);
     case SEL_USER_LIBRARY_COUNT:
-        sel_library_test_slow("SELECTA_LIB_COUNT_SLOW_MS"); /* I936 test knob: a slow catalogue count, as on a large cold db */
-        *rows = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
+        sel_library_test_slow("SELECTA_LIB_COUNT_SLOW_MS"); /* I936 test knob: a slow catalogue count on a busy worker */
+        /* I1196: the sum of the v8 per-source counts the songs triggers maintain (schema.c SCHEMA_V8), one page of a 14-row table. COUNT(*)
+         * FROM songs walked the whole key index: 1.6-4.5 s on a cold 645 000-song db, on the single worker, so every interactive read
+         * queued behind it and engine destroy waited for it. Same number the Sources page shows per source. */
+        *rows = scalar(db, "SELECT coalesce(sum(n), 0) FROM main.source_songs", 0, 0);
         return *rows >= 0 ? SQLITE_OK : SQLITE_ERROR;
     case SEL_USER_LIBRARY_CLEAR: return library_clear(db, rows);
     case SEL_USER_SONG_TITLE:

@@ -11,7 +11,7 @@
 /* Creates the class (once) and one viz area drawing the plugin `set` selects; NULL when MUI refuses the class. `tokens` are
  * the 0xRRGGBB theme tokens (SEL_GUI_TOKEN_*) the palette is built from, the same mapping the desktop strip uses. The set
  * must outlive the object. */
-Object* mui_vizarea_new(mui_vizset* set, const uint32_t* tokens, int screen_is_rtg);
+Object* mui_vizarea_new(mui_vizset* set, const uint32_t* tokens, int screen_is_rtg, int aspect_q8);
 /* I918: lets the area grow to fill its group (the Visualizer page); call before the object is added to a group. */
 void mui_vizarea_set_tall(Object* obj);
 /* Runs one step on the newest engine frame (valid until the next pump): when the gate lets it, renders and redraws.

@@ -31,3 +31,15 @@ if(APPLE)
 endif()
 
 sel_isolate_config() # I989b
+
+# I1169: the real selecta text UI on a pseudo terminal; stderr written while the UI owns the screen scrolled the I355
+# start screen art under the player UI. Kept here (not in tests/CMakeLists.txt) as a fixture-driven shell test.
+if(NOT SEL_AMIGA)
+  add_executable(text_ui_stderr_tty_test ../ui/text_ui_stderr_tty_test.c)
+  if(NOT APPLE)
+    target_link_libraries(text_ui_stderr_tty_test PRIVATE util)
+  endif()
+  add_test(NAME text-ui-stderr-tty
+    COMMAND text_ui_stderr_tty_test $<TARGET_FILE:selecta> "${CMAKE_CURRENT_BINARY_DIR}/stderr_tty")
+  set_tests_properties(text-ui-stderr-tty PROPERTIES TIMEOUT 60)
+endif()

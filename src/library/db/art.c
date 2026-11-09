@@ -144,6 +144,32 @@ static int art_artist(sqlite3* db, const sel_art_op* op) {
     return ok;
 }
 
+/* I1003a: the next album the cover scraper looks up. Needs a name and an artist (a search by name alone matches the wrong
+ * record), no cover, and no scrape_miss row newer than op->len. data = "name\0artist\0". Reply: the albums id, 0 = none. */
+static int art_next_missing(sqlite3* db, const sel_art_op* op) {
+    sqlite3_stmt* st = NULL;
+    int id = 0;
+
+    if (op->data == NULL || op->cap < 4u) return 0;
+    if (sqlite3_prepare_v2(db,
+            "SELECT a.id, a.name, a.artist FROM albums a WHERE a.id > ?1 AND a.name <> '' AND a.artist IS NOT NULL AND a.artist <> '' "
+            "AND NOT EXISTS (SELECT 1 FROM artwork w WHERE w.album_id = a.id AND w.kind = 'cover') "
+            "AND NOT EXISTS (SELECT 1 FROM artwork m WHERE m.album_id = a.id AND m.kind = 'scrape_miss' AND CAST(m.data AS INTEGER) > ?2) "
+            "ORDER BY a.id LIMIT 1", -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_int64(st, 1, op->album);
+    sqlite3_bind_int64(st, 2, (int64_t)op->len);
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        int n = snprintf((char*)op->data, op->cap, "%s%c%s", (const char*)sqlite3_column_text(st, 1), '\0', (const char*)sqlite3_column_text(st, 2));
+
+        if (n > 0 && (uint32_t)n + 2u < op->cap) {
+            op->data[n + 1] = '\0';
+            id = sqlite3_column_int(st, 0);
+        }
+    }
+    sqlite3_finalize(st);
+    return id;
+}
+
 void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* reply) {
     int v = 0;
 
@@ -156,6 +182,8 @@ void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* rep
         v = art_get(lib->db, op);
     } else if (op->op == SEL_ART_PUT && op->kind != NULL && op->data != NULL) {
         v = art_put(lib->db, op);
+    } else if (op->op == SEL_ART_NEXT_MISSING) {
+        v = art_next_missing(lib->db, op);
     } else if (op->op == SEL_ART_STORE && op->kind != NULL && op->data != NULL) {
         v = art_store(lib->db, op);
     }

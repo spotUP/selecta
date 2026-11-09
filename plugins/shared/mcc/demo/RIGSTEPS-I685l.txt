@@ -1,0 +1,35 @@
+RIGSTEPS I685l: UP-MCC.lha installed by Install-UP-MCC, rig 2 (run by the integrator, not by row I685l)
+
+Build product: build/amiga/plugins/shared/mcc/dist/UP-MCC.lha  (target up_mcc_dist; the staged drawer UP-MCC/ is beside it)
+Names: Installer script Install-UP-MCC, classes MUI:Libs/mui/UP-*.mcc, library LIBS:up-mcc.library, demo UP-Demo.
+
+1. Start rig 2 with --ram 256 and --purpose "<session>: UP-MCC package install check". Keep audio off. MUI 3.8 must be installed
+   on the rig. Start from a state where MUI:Libs/mui has no UP-*.mcc and LIBS: has no up-mcc.library (a fresh rig, or delete them).
+2. Copy UP-MCC.lha to the rig (to RAM:).
+3. In a Shell:  CD RAM:  then  lha x UP-MCC.lha
+   PASS: a drawer RAM:UP-MCC appears holding Libs, Fonts, Themes, Include, Docs, Demo, Install-UP-MCC and README.
+   FAIL: lha reports an error or the drawer misses one of those entries.
+4. Start Install-UP-MCC with the Installer program in novice mode (double click the script icon, or Installer RAM:UP-MCC/Install-UP-MCC
+   with the novice setting). Accept the defaults; answer Yes to the demonstration question and keep Work:UP-MCC for it.
+   PASS: the installer finishes with the message "UP-MCC 1.0 is installed" and no error requester.
+   FAIL: any abort or error requester. If LIBS:ttengine.library is missing, the single warning about ttengine is expected and is not a failure.
+5. Check the target files in a Shell:
+     List MUI:Libs/mui/UP-#?.mc#?     (PASS: 11 .mcc files plus UP-MCC.mcp, 12 files)
+     List LIBS:up-mcc.library         (PASS: the file exists)
+     List FONTS:Inter-Regular.ttf     (PASS: the file exists)
+     List ENVARC:UP-MCC               (PASS: Dark.theme, Light.theme, theme)
+     List ENV:UP-MCC                  (PASS: Dark.theme, Light.theme, theme)
+   FAIL: any of these is missing or has a size of 0.
+6. Version LIBS:up-mcc.library
+   PASS: prints "up-mcc.library 1.x" (version 1).
+   FAIL: "Can't open" or any other version than 1.
+7. Run  Work:UP-MCC/UP-Demo  (or the drawer you chose).
+   PASS: the output holds exactly 11 lines "[OK] <class> from MUI:Libs/mui" (Button, Text, Panel, Tabs, Balance, Slider, Progress,
+   Cycle, Field, Scroller, List), no "[ERROR]" line, exit code 0 (check with: Why).
+   FAIL: any "[ERROR]" line, fewer than 11 "[OK]" lines, exit code 20, a crash or a Guru.
+8. Stop the rig after the last command (rig.py stop) and delete its build directory.
+9. I685o: copy Themes/Light.theme to ENV:UP-MCC/theme, run UP-Demo.
+   PASS: list rows, selection, buttons, status bar and the window area inside the frame are light-coloured (the UP-Demo root is
+   an UP-Panel, so the window area follows the theme). On a palette-limited screen Light F4F4F6 may show as the nearest pen.
+   The screen title bar and window border keep the screen colours; they are MUI/Intuition, not UP tokens.
+   FAIL: any dark list row, selection, button fill, status colour, scrollbar or dark window area inside the frame.

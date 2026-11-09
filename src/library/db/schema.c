@@ -1,12 +1,14 @@
 /* Schema v1 and user_version migrations (plan Phase 1, I146; design doc 9.2).
  * Each migration is one script that takes the DB from version N-1 to N; the
  * runner applies the missing ones inside one transaction each and sets
- * PRAGMA user_version. Add a version by appending to g_migrations. */
+ * PRAGMA user_version. Add a version by appending to g_migrations AND mirroring the change in SCHEMA_FINAL: a fresh database
+ * (user_version 0) is created from SCHEMA_FINAL alone (I625a8c), and the ctest library-schema-final fails when the two differ. */
 #include "schema.h"
 #include "db_internal.h"
 
 #include <sqlite3.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
 static const char SCHEMA_V1[] =
@@ -15,7 +17,8 @@ static const char SCHEMA_V1[] =
     " name TEXT, hidden INTEGER NOT NULL DEFAULT 0, md5 TEXT, size INTEGER, PRIMARY KEY(source, path)) WITHOUT ROWID;"
     "CREATE TABLE songs(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, source TEXT NOT NULL, path TEXT NOT NULL,"
     " name TEXT, artist TEXT, album TEXT, format TEXT, year INTEGER, genre TEXT, duration_ms INTEGER,"
-    " loudness_gain INTEGER, md5 TEXT, size INTEGER, added INTEGER NOT NULL DEFAULT 0);"
+    " loudness_gain INTEGER, md5 TEXT, size INTEGER, added INTEGER NOT NULL DEFAULT 0,"
+    " dup_of TEXT, dup_members INTEGER NOT NULL DEFAULT 1);" /* I625a8b: the v18 columns, created here so a fresh db needs no ALTER */
     "CREATE TABLE albums(id INTEGER PRIMARY KEY, name TEXT NOT NULL, artist TEXT, year INTEGER, source TEXT);"
     "CREATE TABLE artwork(album_id INTEGER NOT NULL, kind TEXT NOT NULL, data BLOB, PRIMARY KEY(album_id, kind));"
     "CREATE TABLE history(id INTEGER PRIMARY KEY, key TEXT NOT NULL, played_at INTEGER NOT NULL,"
@@ -282,15 +285,28 @@ static const char SCHEMA_V17[] =
 /* I1094a: maintained duplicate groups. dup_of: NULL on a unique song and on the best copy, else the best copy's key; dup_members: group size.
  * dup_pick holds the user's "Use This Copy" per md5. migrate_steps ends v18 with sel_dup_rebuild (bounded slices, I1094b) so an existing
  * library comes up resolved on every heap tier. */
-static const char SCHEMA_V18[] =
+static const char SCHEMA_V18_COLUMNS[] =
     "ALTER TABLE songs ADD COLUMN dup_of TEXT;"
-    "ALTER TABLE songs ADD COLUMN dup_members INTEGER NOT NULL DEFAULT 1;"
+    "ALTER TABLE songs ADD COLUMN dup_members INTEGER NOT NULL DEFAULT 1;";
+static const char SCHEMA_V18[] =
     "CREATE INDEX IF NOT EXISTS songs_dup_of ON songs(dup_of) WHERE dup_of IS NOT NULL;"
     "CREATE TABLE IF NOT EXISTS dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;";
 
+/* I1231b: the live search result cache, one row per (source, normalised query); `at` is the unix time of the answer, `used` a
+ * use counter (least recently used goes first past the cap). A source's rows drop with its last source_songs row, like source_state. */
+static const char SCHEMA_V19[] =
+    "CREATE TABLE IF NOT EXISTS search_cache(source TEXT NOT NULL, query TEXT NOT NULL, at INTEGER NOT NULL, used INTEGER NOT NULL,"
+    " hits BLOB NOT NULL, PRIMARY KEY(source, query)) WITHOUT ROWID;"
+    "CREATE INDEX IF NOT EXISTS search_cache_used ON search_cache(used);"
+    "CREATE TRIGGER IF NOT EXISTS source_songs_search_cache_ad AFTER DELETE ON source_songs BEGIN "
+    "DELETE FROM search_cache WHERE source = old.source;"
+    "END;";
+
+/* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
+                                           SCHEMA_V19};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -318,21 +334,214 @@ static void migrate_failed(sqlite3* db, const sel_host* host, int version, const
     }
 }
 
-static int migrate_steps(sqlite3* db, const sel_host* host) {
-    int v = sel_schema_version(db);
+static int g_trace;
+static uint32_t g_trace_t0;
+
+void sel_library_trace_enable(int on) {
+    g_trace = on;
+}
+
+void sel_library_trace(const sel_host* host, const char* what, int n) {
+    if (g_trace && host != NULL && host->clock_ms != NULL) {
+        uint32_t now = host->clock_ms(host);
+        fprintf(stderr, "trace lib dt_ms=%u %s %d\n", (unsigned)(g_trace_t0 == 0 ? 0 : now - g_trace_t0), what, n);
+        fflush(stderr);
+        g_trace_t0 = now;
+    }
+}
+
+/* I625a8b: every ALTER TABLE ADD COLUMN reloads the whole schema: 721 ms each at v18 on a 68020 (rig trace), 1.4 s for the two dup columns,
+ * against 10 ms for the rebuild itself. SCHEMA_V1 now creates the columns with songs, so only a database made before that (user_version
+ * 17 without them) runs the ALTERs. */
+static int has_dup_columns(sqlite3* db) {
+    sqlite3_stmt* st = NULL;
+    int n = 0;
+
+    if (sqlite3_prepare_v2(db, "SELECT count(*) FROM pragma_table_info('songs') WHERE name IN ('dup_of', 'dup_members')", -1, &st, NULL) ==
+            SQLITE_OK &&
+        sqlite3_step(st) == SQLITE_ROW) {
+        n = sqlite3_column_int(st, 0);
+    }
+    sqlite3_finalize(st);
+    return n == 2;
+}
+
+/* One migration's statements (v18 also recomputes the duplicate groups); the caller owns the transaction. */
+static int migration_apply(sqlite3* db, int index) {
+    if (index + 1 == 18 && !has_dup_columns(db) && sqlite3_exec(db, SCHEMA_V18_COLUMNS, NULL, NULL, NULL) != SQLITE_OK) return 0;
+    return sqlite3_exec(db, g_migrations[index], NULL, NULL, NULL) == SQLITE_OK && (index + 1 != 18 || sel_dup_rebuild(db) == SQLITE_OK);
+}
+
+/* I625a8: a database with user_version 0 has nothing to protect, so all migrations run in ONE transaction and one COMMIT
+ * (one journal create, sync and delete). The per-version commits of an upgrade cost 18 journal cycles on the 68020 IDE disk. */
+static int migrate_chain_fresh(sqlite3* db, const sel_host* host) {
     char pragma[40];
     int i;
 
-    if (v < 0 || v > MIGRATION_COUNT) { /* newer DB than this build: refuse, never downgrade */
+    if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
+        migrate_failed(db, host, 1, "BEGIN");
         return 0;
     }
-    for (i = v; i < MIGRATION_COUNT; i++) {
+    for (i = 0; i < MIGRATION_COUNT; i++) {
+        if (!migration_apply(db, i)) {
+            migrate_failed(db, host, i + 1, "statements");
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+            return 0;
+        }
+        sel_library_trace(host, "migration applied v", i + 1);
+    }
+    sqlite3_snprintf((int)sizeof pragma, pragma, "PRAGMA user_version=%d", MIGRATION_COUNT);
+    if (sqlite3_exec(db, pragma, NULL, NULL, NULL) != SQLITE_OK || sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        migrate_failed(db, host, MIGRATION_COUNT, "COMMIT");
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        return 0;
+    }
+    sel_library_trace(host, "fresh migration committed", MIGRATION_COUNT);
+    return 1;
+}
+
+/* I625a8c: the complete schema as the 18 migrations leave it, for a database with user_version 0. Every ALTER TABLE ADD COLUMN reloads
+ * the whole schema (721 ms each on the 68020) and v1, v7, v12 rebuild tables, so a fresh library.db is created from this one script
+ * instead: 65 statements, no ALTER. The fts5 shadow tables (song_fts_*) are created by CREATE VIRTUAL TABLE itself and are not listed.
+ * DRIFT GUARD: a migration appended to g_migrations MUST be mirrored here; the ctest library-schema-final compares the result of this
+ * script with the chain (sqlite_master, columns, indexes, seeded rows) and fails on any difference. Derived from the chain with
+ * `schema_final_test --dump`, formatting untouched. Kept as an array of statements: one string literal over 4095 characters is not C99. */
+static const char* const SCHEMA_FINAL[] = {
+    "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID;",
+    "CREATE TABLE files(source TEXT NOT NULL, path TEXT NOT NULL, format TEXT, artist TEXT, album TEXT, name TEXT, hidden INTEGER NOT NULL DEFAULT 0, md5 TEXT, size INTEGER, PRIMARY KEY(source, path)) WITHOUT ROWID;",
+    "CREATE TABLE songs(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, source TEXT NOT NULL, path TEXT NOT NULL, name TEXT, artist TEXT, album TEXT, format TEXT, year INTEGER, genre TEXT, duration_ms INTEGER, loudness_gain INTEGER, md5 TEXT, size INTEGER, added INTEGER NOT NULL DEFAULT 0, dup_of TEXT, dup_members INTEGER NOT NULL DEFAULT 1, loudness_prov INTEGER NOT NULL DEFAULT 0);",
+    "CREATE TABLE albums(id INTEGER PRIMARY KEY, name TEXT NOT NULL, artist TEXT, year INTEGER, source TEXT);",
+    "CREATE TABLE artwork(album_id INTEGER NOT NULL, kind TEXT NOT NULL, data BLOB, PRIMARY KEY(album_id, kind));",
+    "CREATE TABLE history(id INTEGER PRIMARY KEY, key TEXT NOT NULL, played_at INTEGER NOT NULL, duration_ms INTEGER, skipped INTEGER NOT NULL DEFAULT 0, format TEXT);",
+    "CREATE INDEX history_key ON history(key);",
+    "CREATE TABLE liked(key TEXT PRIMARY KEY, at INTEGER NOT NULL) WITHOUT ROWID;",
+    "CREATE TABLE kept(key TEXT PRIMARY KEY, at INTEGER NOT NULL) WITHOUT ROWID;",
+    "CREATE TABLE ratings(key TEXT PRIMARY KEY, rating INTEGER NOT NULL, synced INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;",
+    "CREATE TABLE cues(key TEXT NOT NULL, idx INTEGER NOT NULL, pos_ms INTEGER NOT NULL, label TEXT, PRIMARY KEY(key, idx)) WITHOUT ROWID;",
+    "CREATE TABLE notes(key TEXT PRIMARY KEY, note TEXT NOT NULL) WITHOUT ROWID;",
+    "CREATE TABLE flags(key TEXT PRIMARY KEY, wrong INTEGER NOT NULL DEFAULT 0, skip INTEGER NOT NULL DEFAULT 0, note TEXT) WITHOUT ROWID;",
+    "CREATE TABLE stickers(key TEXT NOT NULL, name TEXT NOT NULL, value TEXT, PRIMARY KEY(key, name)) WITHOUT ROWID;",
+    "CREATE TABLE genre_cache(key TEXT PRIMARY KEY, genre TEXT, fetched INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;",
+    "CREATE TABLE pending_push(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, key TEXT, payload TEXT, created INTEGER NOT NULL DEFAULT 0);",
+    "CREATE TABLE folders(id INTEGER PRIMARY KEY, name TEXT NOT NULL, parent_id INTEGER REFERENCES folders(id));",
+    "CREATE TABLE playlists(id INTEGER PRIMARY KEY, name TEXT NOT NULL, folder_id INTEGER REFERENCES folders(id));",
+    "CREATE TABLE playlist_entries(playlist_id INTEGER NOT NULL, pos INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY(playlist_id, pos)) WITHOUT ROWID;",
+    "CREATE TABLE views(name TEXT PRIMARY KEY, query TEXT NOT NULL) WITHOUT ROWID;",
+    "CREATE VIRTUAL TABLE song_fts USING fts5(name, artist, format, path, content='songs', content_rowid='id', prefix='2 3');",
+    "CREATE TRIGGER songs_ai AFTER INSERT ON songs BEGIN INSERT INTO song_fts(rowid, name, artist, format, path) VALUES(new.id, new.name, new.artist, new.format, new.path);END;",
+    "CREATE TRIGGER songs_ad AFTER DELETE ON songs BEGIN INSERT INTO song_fts(song_fts, rowid, name, artist, format, path) VALUES('delete', old.id, old.name, old.artist, old.format, old.path);END;",
+    "CREATE TRIGGER songs_au AFTER UPDATE ON songs BEGIN INSERT INTO song_fts(song_fts, rowid, name, artist, format, path) VALUES('delete', old.id, old.name, old.artist, old.format, old.path); INSERT INTO song_fts(rowid, name, artist, format, path) VALUES(new.id, new.name, new.artist, new.format, new.path);END;",
+    "CREATE TABLE songdb_cache(key TEXT PRIMARY KEY, authors TEXT, fetched INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;",
+    "CREATE TABLE song_composers(song_key TEXT NOT NULL, canon TEXT NOT NULL, display TEXT NOT NULL, tag INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(song_key, canon)) WITHOUT ROWID;",
+    "CREATE INDEX song_composers_canon ON song_composers(canon);",
+    "CREATE VIEW stats_plays AS SELECT h.key AS key, strftime('%Y', h.played_at, 'unixepoch') AS period, COALESCE(h.duration_ms, 0) AS duration_ms, COALESCE(NULLIF(s.format, ''), 'Unknown') AS format, COALESCE(NULLIF(s.artist, ''), 'Unknown') AS artist FROM history h LEFT JOIN songs s ON s.key = h.key WHERE h.skipped = 0;",
+    "CREATE VIEW stats_totals AS SELECT (SELECT COUNT(*) FROM songs) AS songs, (SELECT COUNT(*) FROM stats_plays) AS plays, (SELECT COALESCE(SUM(duration_ms), 0) FROM stats_plays) AS play_ms;",
+    "CREATE VIEW stats_periods AS SELECT period, COUNT(*) AS plays, SUM(duration_ms) AS play_ms FROM stats_plays GROUP BY period;",
+    "CREATE VIEW stats_format_counts AS SELECT period, format AS name, COUNT(*) AS plays FROM stats_plays GROUP BY period, format;",
+    "CREATE VIEW stats_artist_counts AS SELECT period, artist AS name, COUNT(*) AS plays FROM stats_plays GROUP BY period, artist;",
+    "CREATE VIEW stats_top_formats AS SELECT a.period AS period, a.name AS name, a.plays AS plays, (SELECT COUNT(*) FROM stats_format_counts b WHERE b.period = a.period  AND (b.plays > a.plays OR (b.plays = a.plays AND b.name < a.name))) + 1 AS rank FROM stats_format_counts a;",
+    "CREATE VIEW stats_top_artists AS SELECT a.period AS period, a.name AS name, a.plays AS plays, (SELECT COUNT(*) FROM stats_artist_counts b WHERE b.period = a.period  AND (b.plays > a.plays OR (b.plays = a.plays AND b.name < a.name))) + 1 AS rank FROM stats_artist_counts a;",
+    "CREATE TABLE composers(canon TEXT PRIMARY KEY, display TEXT NOT NULL, songs INTEGER NOT NULL) WITHOUT ROWID;",
+    "CREATE INDEX composers_by_name ON composers(display, canon, songs);",
+    "CREATE TABLE composer_spellings(canon TEXT NOT NULL, display TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(canon, display)) WITHOUT ROWID;",
+    "CREATE TABLE composer_unknown(n INTEGER NOT NULL);",
+    "CREATE TRIGGER song_composers_ai AFTER INSERT ON song_composers BEGIN INSERT INTO composer_spellings(canon, display, n) VALUES(new.canon, new.display, 1) ON CONFLICT(canon, display) DO UPDATE SET n = n + 1;INSERT INTO composers(canon, display, songs) VALUES(new.canon, new.display, 1) ON CONFLICT(canon) DO UPDATE SET songs = songs + 1, display = MIN(display, excluded.display);UPDATE composer_unknown SET n = n - 1 WHERE EXISTS (SELECT 1 FROM songs WHERE key = new.song_key) AND (SELECT COUNT(*) FROM song_composers WHERE song_key = new.song_key) = 1;END;",
+    "CREATE TRIGGER song_composers_ad AFTER DELETE ON song_composers BEGIN UPDATE composer_spellings SET n = n - 1 WHERE canon = old.canon AND display = old.display;DELETE FROM composer_spellings WHERE canon = old.canon AND display = old.display AND n <= 0;UPDATE composers SET songs = songs - 1, display = COALESCE((SELECT MIN(display) FROM composer_spellings WHERE canon = old.canon), display) WHERE canon = old.canon;DELETE FROM composers WHERE canon = old.canon AND songs <= 0;UPDATE composer_unknown SET n = n + 1 WHERE EXISTS (SELECT 1 FROM songs WHERE key = old.song_key) AND NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.song_key);END;",
+    "CREATE TRIGGER song_composers_au AFTER UPDATE OF canon, display ON song_composers BEGIN UPDATE composer_spellings SET n = n - 1 WHERE canon = old.canon AND display = old.display;DELETE FROM composer_spellings WHERE canon = old.canon AND display = old.display AND n <= 0;UPDATE composers SET songs = songs - 1, display = COALESCE((SELECT MIN(display) FROM composer_spellings WHERE canon = old.canon), display) WHERE canon = old.canon;DELETE FROM composers WHERE canon = old.canon AND songs <= 0;INSERT INTO composer_spellings(canon, display, n) VALUES(new.canon, new.display, 1) ON CONFLICT(canon, display) DO UPDATE SET n = n + 1;INSERT INTO composers(canon, display, songs) VALUES(new.canon, new.display, 1) ON CONFLICT(canon) DO UPDATE SET songs = songs + 1, display = MIN(display, excluded.display);END;",
+    "CREATE TRIGGER songs_composers_ai AFTER INSERT ON songs BEGIN UPDATE composer_unknown SET n = n + 1 WHERE NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = new.key);END;",
+    "CREATE TRIGGER songs_composers_ad AFTER DELETE ON songs BEGIN UPDATE composer_unknown SET n = n - 1 WHERE NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.key);END;",
+    "CREATE TRIGGER songs_composers_au AFTER UPDATE OF key ON songs WHEN new.key <> old.key BEGIN UPDATE composer_unknown SET n = n - (NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.key)) + (NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = new.key));END;",
+    "CREATE TABLE source_songs(source TEXT PRIMARY KEY, n INTEGER NOT NULL) WITHOUT ROWID;",
+    "CREATE TRIGGER songs_source_ai AFTER INSERT ON songs BEGIN INSERT INTO source_songs(source, n) VALUES(new.source, 1) ON CONFLICT(source) DO UPDATE SET n = n + 1;END;",
+    "CREATE TRIGGER songs_source_ad AFTER DELETE ON songs BEGIN UPDATE source_songs SET n = n - 1 WHERE source = old.source;DELETE FROM source_songs WHERE source = old.source AND n <= 0;END;",
+    "CREATE TRIGGER songs_source_au AFTER UPDATE OF source ON songs WHEN new.source <> old.source BEGIN UPDATE source_songs SET n = n - 1 WHERE source = old.source;DELETE FROM source_songs WHERE source = old.source AND n <= 0;INSERT INTO source_songs(source, n) VALUES(new.source, 1) ON CONFLICT(source) DO UPDATE SET n = n + 1;END;",
+    "CREATE TABLE opened(kind INTEGER NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(kind, id)) WITHOUT ROWID;",
+    "CREATE TRIGGER songs_album_ai AFTER INSERT ON songs BEGIN INSERT INTO albums(name, artist, source) SELECT new.album, NULLIF(new.artist,''), new.source WHERE new.album IS NOT NULL AND new.album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = new.album AND a.artist IS NULLIF(new.artist,'') AND (a.source IS NULL OR a.source = new.source));END;",
+    "CREATE TRIGGER songs_album_au AFTER UPDATE OF album, artist ON songs BEGIN INSERT INTO albums(name, artist, source) SELECT new.album, NULLIF(new.artist,''), new.source WHERE new.album IS NOT NULL AND new.album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = new.album AND a.artist IS NULLIF(new.artist,'') AND (a.source IS NULL OR a.source = new.source));END;",
+    "CREATE TRIGGER songs_album_ad AFTER DELETE ON songs BEGIN DELETE FROM artwork WHERE old.album IS NOT NULL AND album_id IN (SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'') AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')));DELETE FROM albums WHERE old.album IS NOT NULL AND id IN (SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'') AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')));END;",
+    "CREATE INDEX songs_album ON songs(album, artist, added);",
+    "CREATE INDEX songs_artist_added ON songs(artist, added);",
+    "CREATE INDEX songs_source_format ON songs(source, format, artist, size);",
+    "CREATE INDEX songs_source_artist ON songs(source, artist, format, size);",
+    "CREATE TABLE source_new(source TEXT NOT NULL, day INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(source, day)) WITHOUT ROWID;",
+    "CREATE TABLE item_formats(kind INTEGER NOT NULL, key TEXT NOT NULL, stamp INTEGER NOT NULL, fmt TEXT NOT NULL, PRIMARY KEY(kind, key)) WITHOUT ROWID;",
+    "CREATE INDEX songs_md5 ON songs(md5) WHERE md5 <> '';",
+    "CREATE INDEX songs_source_path ON songs(source, path);",
+    "CREATE TABLE source_state(source TEXT NOT NULL, key TEXT NOT NULL, value BLOB NOT NULL, PRIMARY KEY(source, key)) WITHOUT ROWID;",
+    "CREATE TRIGGER source_songs_state_ad AFTER DELETE ON source_songs BEGIN DELETE FROM source_state WHERE source = old.source;END;",
+    "CREATE INDEX songs_dup_of ON songs(dup_of) WHERE dup_of IS NOT NULL;",
+    "CREATE TABLE dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;",
+    "CREATE TABLE search_cache(source TEXT NOT NULL, query TEXT NOT NULL, at INTEGER NOT NULL, used INTEGER NOT NULL, hits BLOB NOT NULL, PRIMARY KEY(source, query)) WITHOUT ROWID;",
+    "CREATE INDEX search_cache_used ON search_cache(used);",
+    "CREATE TRIGGER source_songs_search_cache_ad AFTER DELETE ON source_songs BEGIN DELETE FROM search_cache WHERE source = old.source;END;",
+    /* seed: the v7 step counts songs without a composer, which is 0 on a fresh database */
+    "INSERT INTO composer_unknown(n) VALUES(0)",
+};
+static int migrate_fresh(sqlite3* db, const sel_host* host) {
+    char pragma[40];
+    int i;
+
+    if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
+        migrate_failed(db, host, 1, "BEGIN");
+        return 0;
+    }
+    sqlite3_snprintf((int)sizeof pragma, pragma, "PRAGMA user_version=%d", MIGRATION_COUNT);
+    for (i = 0; i < (int)(sizeof SCHEMA_FINAL / sizeof SCHEMA_FINAL[0]); i++) {
+        if (sqlite3_exec(db, SCHEMA_FINAL[i], NULL, NULL, NULL) != SQLITE_OK) {
+            migrate_failed(db, host, MIGRATION_COUNT, "SCHEMA_FINAL");
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+            return 0;
+        }
+    }
+    sel_library_trace(host, "final schema created v", MIGRATION_COUNT);
+    if (sqlite3_exec(db, pragma, NULL, NULL, NULL) != SQLITE_OK || sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        migrate_failed(db, host, MIGRATION_COUNT, "COMMIT");
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        return 0;
+    }
+    sel_library_trace(host, "fresh migration committed", MIGRATION_COUNT);
+    return 1;
+}
+
+/* I1162c: a database a newer Selecta already migrated is refused, and the caller can only say "cannot open the library database".
+ * Say why, on the channel migrate_failed uses: a stale executable beside a newer app reads exactly like a lock failure otherwise. */
+static void schema_refused(const sel_host* host, int version) {
+    char msg[160];
+
+    snprintf(msg, sizeof msg, "library schema v%d is newer than this build supports (v%d): this Selecta is out of date, rebuild or update it",
+             version, MIGRATION_COUNT);
+    if (host != NULL && host->log != NULL) {
+        host->log(host, SEL_LOG_ERROR, msg);
+    } else {
+        fprintf(stderr, "[ERROR] %s\n", msg);
+    }
+}
+
+static int migrate_steps(sqlite3* db, const sel_host* host) {
+    int v;
+    char pragma[40];
+    int i;
+
+    sel_library_trace(host, "user_version read begin", 0);
+    v = sel_schema_version(db);
+    sel_library_trace(host, "user_version read done", v);
+    if (v < 0) { /* user_version unreadable: sel_schema_version already failed, nothing to migrate from */
+        return 0;
+    }
+    if (v > MIGRATION_COUNT) { /* newer DB than this build: refuse, never downgrade, and say why */
+        schema_refused(host, v);
+        return 0;
+    }
+    sel_library_trace(host, "migrate begin from_version", v);
+    if (v == 0) {
+        return migrate_fresh(db, host);
+    }
+    for (i = v; i < MIGRATION_COUNT; i++) { /* an upgrade keeps one transaction per version: a half-applied step rolls back alone */
         if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
             migrate_failed(db, host, i + 1, "BEGIN");
             return 0;
         }
-        if (sqlite3_exec(db, g_migrations[i], NULL, NULL, NULL) != SQLITE_OK ||
-            (i + 1 == 18 && sel_dup_rebuild(db) != SQLITE_OK)) {
+        if (!migration_apply(db, i)) {
             migrate_failed(db, host, i + 1, "statements");
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
@@ -344,6 +553,7 @@ static int migrate_steps(sqlite3* db, const sel_host* host) {
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
         }
+        sel_library_trace(host, "migration committed v", i + 1);
     }
     return 1;
 }
@@ -355,7 +565,19 @@ int sel_schema_migrate(sqlite3* db, const sel_host* host) {
     int ok;
 
     sqlite3_exec(db, "PRAGMA temp_store=FILE", NULL, NULL, NULL);
+    sel_library_trace(host, "PRAGMA temp_store=FILE done", 0);
     ok = migrate_steps(db, host);
+    sqlite3_exec(db, "PRAGMA temp_store=DEFAULT", NULL, NULL, NULL);
+    return ok;
+}
+
+/* The migration chain alone, even on a user_version 0 database: the invariant test (library-schema-final) builds the reference schema
+ * with it and compares it with what sel_schema_migrate makes. Not used by the product. */
+int sel_schema_migrate_chain(sqlite3* db, const sel_host* host) {
+    int ok;
+
+    sqlite3_exec(db, "PRAGMA temp_store=FILE", NULL, NULL, NULL);
+    ok = sel_schema_version(db) == 0 ? migrate_chain_fresh(db, host) : migrate_steps(db, host);
     sqlite3_exec(db, "PRAGMA temp_store=DEFAULT", NULL, NULL, NULL);
     return ok;
 }

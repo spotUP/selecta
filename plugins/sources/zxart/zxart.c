@@ -4,6 +4,7 @@
  * come from the site's list, not from the path, so parse gives bbmp's fallback ("Spectrum", "- unknown"). */
 #include "zxart_net.h"
 
+#include <selecta/catalogue.h>
 #include <selecta/plugin.h>
 #include <selecta/source.h>
 #include "source/descriptor.h"
@@ -121,16 +122,21 @@ static int zxart_sync_host(const sel_host* host, const char* arg, int64_t now, s
 
 #define SITE_BASE "https://zxart.ee"
 
-/* SOURCE_SEARCH (I1024f): the site's title filter; the rows are the sync's, so a hit and a synced row share a key. */
+/* SOURCE_SEARCH (I1024f): the synced rows first (I1231: one local FTS query, no network); the site's title filter only while
+ * the catalogue is not synced. The rows are the sync's, so a hit and a synced row share a key. */
 static int zxart_search(const sel_host* host, const char* query, sel_search_sink* out) {
     const char* env = getenv("SELECTA_ZXART_SITE"); /* tests point it at the fixture */
+    int rc = sel_catalogue_search(host, "zxart", query, out);
 
+    if (rc != SEL_CATALOGUE_NOT_SYNCED) {
+        return rc;
+    }
     return sel_zxart_net_search(host, env != NULL && env[0] != '\0' ? env : SITE_BASE, query, out);
 }
 
 static const sel_source g_zxart = {
     "zxart", "ZX-Art", "https://zxart.ee/", "ZX Spectrum music: AY trackers, beeper and digital, from zxart.ee.",
-    g_tags, NULL, parse, NULL, url_of, path_in, NULL, NULL, zxart_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
+    g_tags, NULL, parse, NULL, url_of, path_in, NULL, NULL, zxart_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_CATALOGUE_SEARCH, NULL, NULL,
     zxart_search, NULL, /* search (I1024f); search_ready NULL: no key needed (I1037) */
 };
 

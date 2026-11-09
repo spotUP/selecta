@@ -34,7 +34,9 @@ enum {
     SEL_LIB_REQ_META = 11,      /* payload: sel_meta_op*; reads or writes one row of the meta table (I161a) */
     SEL_LIB_REQ_GENRE = 12,     /* payload: sel_genre_op*; genre_cache and songs.genre (I181) */
     SEL_LIB_REQ_ART = 13,       /* payload: sel_art_op*; albums and artwork rows (DUI-P2-4) */
-    SEL_LIB_REQ_SRCSTATE = 14   /* payload: sel_srcstate_op*; a source's sync state blob (I894a6) */
+    SEL_LIB_REQ_SRCSTATE = 14,  /* payload: sel_srcstate_op*; a source's sync state blob (I894a6) */
+    SEL_LIB_REQ_SEARCH_SOURCES = 15, /* I1231: one FTS query over several sources' rows, grouped by source (sel_lib_job) */
+    SEL_LIB_REQ_SEARCH_CACHE = 16    /* payload: sel_searchcache_op*; the live search result cache (I1231b) */
 };
 
 /* One genre_cache operation (SEL_LIB_REQ_GENRE). The reply is INT [0] 1 = done and found/stored, 0 = not found
@@ -64,14 +66,15 @@ enum {
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
  * SEL_ART_STORE (I437, embedded cover found by the scan) finds or creates the albums row (`album`, `artist`, source local) and stores the
  * raw image bytes as its `kind` artwork row, replying 1 when stored. */
-enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */ };
+enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */,
+       SEL_ART_NEXT_MISSING /* I1003a: the first albums row after `album` with a name, an artist, no 'cover' artwork and no scrape_miss row newer than `len` (epoch seconds); data = "name\0artist\0"; reply = its id, 0 = none */ };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
     const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */
     int64_t album;     /* GET, PUT: albums.id */
     const char* kind;  /* GET, PUT: artwork.kind */
     uint8_t* data;     /* GET: out buffer; PUT: bytes to store */
-    uint32_t len;      /* PUT: byte count */
+    uint32_t len;      /* PUT: byte count; NEXT_MISSING: oldest scrape_miss (epoch seconds) that still blocks a retry */
     uint32_t cap;      /* GET: buffer size */
     const char* name;  /* STORE: album name */
     const char* artist;/* STORE: album artist, NULL = none */
@@ -205,16 +208,40 @@ typedef struct sel_srcstate_op {
     int set;
 } sel_srcstate_op;
 
+/* I1231b: live search result cache (table search_cache). One row per (source, normalised query) holding the hits as a blob.
+ * Defaults: an entry older than SEL_SEARCH_CACHE_TTL_S (7 days) is never served; at most SEL_SEARCH_CACHE_CAP (500) rows are kept,
+ * the least recently used go first on every PUT. A source's rows drop with its last source_songs row (source reset, trigger),
+ * on LIBRARY_CLEAR, and when the source is switched off (DROP with the sources_off csv). */
+#define SEL_SEARCH_CACHE_TTL_S (7 * 24 * 3600)
+#define SEL_SEARCH_CACHE_CAP 500u
+enum { SEL_SEARCH_CACHE_GET = 0, SEL_SEARCH_CACHE_PUT = 1, SEL_SEARCH_CACHE_DROP = 2 };
+/* GET copies up to `cap` bytes of a fresh entry into `data`, sets `len` and reply INT [0] = 1. PUT stores data/len and trims to
+ * `cap_rows` (0 = SEL_SEARCH_CACHE_CAP). DROP deletes every row of the sources in csv `source` (NULL = every row). `now` is unix
+ * seconds (0 = the clock). The query is normalised here (sel_library_search_cache_norm). Reply INT [1] = SQLite code. */
+typedef struct sel_searchcache_op {
+    int op;
+    const char* source;
+    const char* query;
+    int64_t now;
+    void* data;
+    uint32_t len;
+    uint32_t cap;
+    uint32_t cap_rows;
+} sel_searchcache_op;
+
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
  * sel_library_run and blocks until the worker answers, so the pointers stay valid. No allocation:
  * `out` is a caller buffer of NUL-terminated keys. */
+/* I1231: the most sources one SEL_LIB_REQ_SEARCH_SOURCES request searches. */
+#define SEL_LIB_GROUP_SOURCES_MAX 24u
+
 typedef struct sel_lib_job {
     const char* text;  /* SEARCH: query text; SAVE_VIEW: view name; IMPORT: catalogue TSV */
     const char* text2; /* SAVE_VIEW: the query text */
     long long now;     /* SEARCH: seconds since the epoch for relative times */
     char* out;         /* SEARCH: keys, each NUL terminated */
     uint32_t out_cap;
-    char* meta;         /* SEARCH, optional: per key in `out`, four NUL terminated fields: title, artist, format, duration "m:ss" ("" unknown) */
+    char* meta;         /* SEARCH, optional: per key in `out`, six NUL terminated fields: title, artist, format, duration "m:ss" ("" unknown), album, copies (group size when above 1, else "") */
     uint32_t meta_cap;
     uint32_t meta_used; /* out: bytes of `meta` written (whole rows) */
     uint32_t count;     /* out: keys stored (SEARCH), rows imported (IMPORT) */
@@ -303,7 +330,10 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 18
+#define SEL_LIB_SCHEMA_VERSION 19
+/* I625a8e: file name of the prebuilt empty database (tools/library_template_bake.c). sel_library_open copies it, from the directory
+ * of the database path, when that database does not exist, instead of running the 65 DDL statements of SCHEMA_FINAL. */
+#define SEL_LIBTEMPLATE_NAME "library-template.db"
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 640 KiB (512 KiB + 32 KiB I687c + 32 KiB I790 + 64 KiB I848a), <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:
@@ -454,6 +484,11 @@ uint32_t sel_library_deferred(void);
 /* I829 sentinel: mark the calling thread as the UI/command thread (returns the previous setting); sel_library_watched_waits counts
  * every library request such a thread sent and waited on. The pump thread must keep it at 0. */
 int sel_library_watch(int on);
+
+/* I625a8: one stderr line per library-open step when on (set by the shell with --log or --stats); costs ~8 ms a line on a 68020. */
+void sel_library_trace_enable(int on);
+void sel_library_trace(const sel_host* host, const char* what, int n);
+
 uint32_t sel_library_watched_waits(void);
 /* I946: host clock ms the watched threads spent blocked in library requests (call lock queue plus reply). Unlike a turn's wall time it does not
  * grow when the machine is loaded and the UI thread is merely descheduled, so a test gates on it to prove no slowed read ran on the UI thread. */
@@ -551,6 +586,28 @@ uint32_t sel_library_pin_dropped(sel_library* lib);
  * builds without threads: each call hashes at most one file and returns 1 when it did, 0 when nothing is left; the
  * caller invokes it only while it is idle. With threads _poll does nothing and returns 0. */
 void sel_library_hash_kick(sel_library* lib);
+
+/* I1003a: online cover lookup for albums that have no cover (design 2026-11-09-artwork-scraper-design.md). _kick queues one
+ * pass over every album without a 'cover' artwork row and without a recent 'scrape_miss' row: MusicBrainz release search,
+ * Cover Art Archive front image, then the iTunes Search API. A hit is stored as the album's 'cover' row (the row the tiles
+ * and Now Playing already draw); a definite miss as a 'scrape_miss' row holding the epoch seconds, retried after
+ * SEL_ART_SCRAPE_RETRY_DAYS. Threads: the library job thread, one album per turn, never the UI thread. Without threads
+ * _poll does one album per call (1 = did one, 0 = nothing left); with threads _poll returns 0. Off when
+ * _set_enabled(0) or SELECTA_ART_SCRAPE=off; base URLs SELECTA_ART_MB_URL, SELECTA_ART_CAA_URL, SELECTA_ART_ITUNES_URL.
+ * _wait returns once the pass is done (the CLI and tests). A network failure ends the pass without recording a miss. */
+#define SEL_ART_SCRAPE_RETRY_DAYS 30
+typedef struct sel_scrape_stats {
+    uint32_t albums;    /* albums looked up */
+    uint32_t scraped;   /* covers stored (artwork_scraped) */
+    uint32_t misses;    /* definite misses recorded */
+    uint32_t errors;    /* passes ended by a network failure */
+    uint32_t requests;  /* HTTP requests sent (the sentinel) */
+} sel_scrape_stats;
+void sel_library_scrape_set_enabled(sel_library* lib, int on);
+void sel_library_scrape_kick(sel_library* lib);
+int sel_library_scrape_poll(sel_library* lib);
+void sel_library_scrape_wait(sel_library* lib);
+void sel_library_scrape_stats(sel_library* lib, sel_scrape_stats* out);
 /* I336: runs one long caller task (the engine's folder scan) on the library job thread; builds without threads run it
  * inline inside _start. _start: 1 = accepted, 0 = a task is running or its end is uncollected. _take: 1 once per
  * finished task. _cancelled: the task polls it between items. _cancel: stops a running task and waits for it. */
@@ -657,6 +714,14 @@ typedef void (*sel_format_list_fn)(void* ctx, const char* format, uint32_t songs
 int sel_library_format_list(sel_library* lib, sel_format_list_fn fn, void* ctx);
 /* Songs rows of source id `source` (the SOURCES command, DUI-P4-3); -1 on a library error. */
 int sel_library_source_songs(sel_library* lib, const char* source);
+/* I1231 test sentinels: SEL_LIB_REQ_SEARCH and SEL_LIB_REQ_SEARCH_SOURCES requests the worker ran. */
+void sel_library_search_counts(const sel_library* lib, uint32_t* searches, uint32_t* grouped);
+/* I1231b: the search cache key of a query: ASCII lower case, trimmed, runs of white space as one space. */
+void sel_library_search_cache_norm(const char* query, char* out, size_t cap);
+/* I1231b: client side of SEL_LIB_REQ_SEARCH_CACHE. get: 1 and *len when a fresh entry was copied; put/drop: 1 on success. */
+int sel_library_search_cache_get(sel_library* lib, const char* source, const char* query, int64_t now, void* buf, uint32_t cap, uint32_t* len);
+int sel_library_search_cache_put(sel_library* lib, const char* source, const char* query, int64_t now, const void* data, uint32_t len);
+int sel_library_search_cache_drop(sel_library* lib, const char* sources_csv);
 /* I961c: last sync of source `source` (unix time, 0 never; the meta row "sync.<id>"). Both this and the song count read the writer-kept mirror
  * (srcmirror.c): a plain copy, never a worker request. */
 int64_t sel_library_source_synced(sel_library* lib, const char* source);

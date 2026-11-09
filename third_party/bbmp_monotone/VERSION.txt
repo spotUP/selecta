@@ -1,0 +1,6 @@
+bbmp_monotone (I710ao): monotone.cpp and common.h from github.com/creep-ltx/bbmp csrc/pcmusic, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged
+(GPL-3.0-or-later, SPDX line in both files, COPYING). MONOTONE songs (.mon, Jim Leonard's PC speaker tracker): bbmp's C++ port of the tracker's own player
+(MT_PLAY.PAS) and PC speaker output (MT_OUTP.PAS) from github.com/MobyGamer/MONOTONE (The Unlicense, public domain). The original is public domain, but the port
+file carries bbmp's GPL-3.0-or-later header, so the plugin is built as GPL (SELECTA_GPL_PLUGINS). bbmp docs/replayers.md: helper `bbmp-pcmusic`, terms GPL 3 or later.
+monotone.cpp is the engine half of the helper; the helper's I/O functions (readFile, header, fail, emit, fromCp437, field in bbmp's pcmusic/bbmp-pcmusic.cpp) are
+restated in plugins/replayers/bbmp_monotone/shim.cpp over memory, so the vendored files stay unchanged.

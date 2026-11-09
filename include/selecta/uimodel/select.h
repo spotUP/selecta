@@ -8,7 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { SEL_UIM_LIST_VIEW = 1, SEL_UIM_LIST_QUEUE = 2, SEL_UIM_LIST_PLAYLIST = 3 };
+enum {
+    SEL_UIM_LIST_VIEW = 1,
+    SEL_UIM_LIST_QUEUE = 2,
+    SEL_UIM_LIST_PLAYLIST = 3,
+    SEL_UIM_LIST_COLLECTION = 4, /* the open collection page; version = the page serial the UI rendered */
+    SEL_UIM_LIST_HITS = 5        /* the online hit list; version = state.search_serial */
+};
 
 typedef struct sel_uim_list_id {
     uint32_t kind;    /* SEL_UIM_LIST_* */
@@ -50,5 +56,15 @@ uint32_t sel_uim_selset_run_count(const sel_uim_selset* s);
 size_t sel_uim_selset_format(const sel_uim_selset* s, char* out, size_t cap);
 /* Replaces the selection with the runs in `text` (ascending, disjoint); 0 on a syntax error or no memory, set unchanged. */
 int sel_uim_selset_parse(sel_uim_selset* s, const char* text);
+
+/* The engine's name for a list kind ("queue", "view", "playlist:<id>", "collection", "hits"): the one mapping PLAY_CONTEXT and
+ * the SONGS_* verbs share. Returns the length, 0 (out emptied) for an unknown kind or when it does not fit. */
+size_t sel_uim_list_name(uint32_t list_kind, uint32_t list_id, char* out, size_t cap);
+
+/* I994e: the PLAY_CONTEXT command line for a row of a tagged list (design 2026-11-02-I994 section 6):
+ * `PLAY_CONTEXT <list> <version> <index>[ "<name>"]`. `name` (NULL or empty: omitted) is quoted with \\ and \" escapes.
+ * Returns the length, or 0 for an unknown kind or when it does not fit in cap (out then holds ""). */
+size_t sel_uim_context_line(uint32_t list_kind, uint32_t list_id, uint32_t version, uint32_t index, const char* name, char* out,
+                            size_t cap);
 
 #endif

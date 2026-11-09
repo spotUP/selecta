@@ -12,13 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if !defined(__amigaos__) && !defined(AMIGA)
-#include <unistd.h>
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
-#endif
-
 #if defined(__amigaos__) || defined(AMIGA)
 int sel_amiga_name_exists(const char* name); /* src/core/amiga/dos_quiet.c */
 #endif
@@ -67,23 +60,9 @@ int sel_app_plugin_dir(char* out, size_t cap) {
     char exe[1024];
     char* slash;
     int n;
-#ifdef __APPLE__
-    uint32_t sz = (uint32_t)sizeof exe;
-    if (_NSGetExecutablePath(exe, &sz) != 0) {
+    if (!sel_app_exe_dir(exe, sizeof exe)) {
         return 0;
     }
-#else
-    ssize_t r = readlink("/proc/self/exe", exe, sizeof exe - 1u);
-    if (r <= 0) {
-        return 0;
-    }
-    exe[r] = '\0';
-#endif
-    slash = strrchr(exe, '/');
-    if (slash == NULL) {
-        return 0;
-    }
-    *slash = '\0'; /* exe now holds the executable's directory */
     slash = strrchr(exe, '/');
     if (slash != NULL && strcmp(slash, "/MacOS") == 0) {
         *slash = '\0'; /* .../Contents */

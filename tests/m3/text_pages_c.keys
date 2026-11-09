@@ -1,0 +1,18 @@
+# I1189: H, Down x4 to a song tile, e = artist page (Collection), Enter on its Albums line = album page, Escape = back to the artist page.
+wait 400
+H
+wait 500
+Down
+wait 100
+Down
+wait 100
+Down
+wait 100
+Down
+wait 100
+e
+wait 400
+Enter
+wait 400
+Escape
+wait 400

@@ -1,0 +1,273 @@
+#version 450
+// Krakatoa Smoke kernels (I1052, design sections 1.4 and 2). One source, compiled once per pass with -DKRK_PASS_<NAME>:
+// ADVECT, CURL, FORCE, DIV, JACOBI, GRAD, MARCH. Bindings are unique across sets so the MSL output (spirv-cross
+// --msl-decoration-binding) matches SDL_GPU's Metal order: [[buffer(0)]] uniforms, then the read-only storage buffers,
+// then the read-write storage buffers. The uniform block mirrors krk_uniforms in sdl/krk_smoke_gpu.c.
+
+#ifdef KRK_PASS_MARCH
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+#else
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+#endif
+
+layout(std140, set = 2, binding = 0) uniform KrkU {
+    ivec4 dim;    // grid X, Y, Z; w: Jacobi iteration index
+    vec4 tm;      // dt, time, 1/Y, unused
+    vec4 bp;      // brush position (grid units), radius
+    vec4 bv;      // brush velocity (cells/s), active
+    vec4 rates;   // density rate uDRate, temperature rate uTRate x beat heat, uDMax, uKin
+    vec4 forces;  // confinement uEps, buoyancy uBuoy, turbulence uTurb, radial push uPush
+    vec4 decay;   // density, temperature, velocity, freshness multipliers for this step
+    vec4 lightp;  // light position (grid units), intensity (light x 1.6)
+    vec4 rend;    // V_EXT, uExtL, uEmis, uBloomInt
+    vec4 view;    // output width, height, V_CAM, frame counter
+    vec4 hot[4];  // palette fire ramp
+    vec4 cool;    // palette shadow tint
+    vec4 keyc;    // palette key light colour
+    vec4 bg[2];   // background gradient, bottom then top
+    vec4 smoke;   // palette smoke albedo
+} u;
+
+int krk_idx(ivec3 c) {
+    c = clamp(c, ivec3(0), u.dim.xyz - 1);
+    return c.x + u.dim.x * (c.y + u.dim.y * c.z);
+}
+
+bool krk_out(ivec3 c) {
+    return any(greaterThanEqual(c, u.dim.xyz));
+}
+
+// Trilinear read of a vec4 buffer at grid position P (cell centres at integer coordinates).
+#define KRK_TRILERP(BUF, P, RES)                                                                                       \
+    {                                                                                                                  \
+        vec3 q_ = clamp(P, vec3(0.0), vec3(u.dim.xyz) - 1.001);                                                        \
+        ivec3 i_ = ivec3(floor(q_));                                                                                   \
+        vec3 f_ = q_ - vec3(i_);                                                                                       \
+        RES = mix(mix(mix(BUF[krk_idx(i_)], BUF[krk_idx(i_ + ivec3(1, 0, 0))], f_.x),                                 \
+                      mix(BUF[krk_idx(i_ + ivec3(0, 1, 0))], BUF[krk_idx(i_ + ivec3(1, 1, 0))], f_.x), f_.y),         \
+                  mix(mix(BUF[krk_idx(i_ + ivec3(0, 0, 1))], BUF[krk_idx(i_ + ivec3(1, 0, 1))], f_.x),                \
+                      mix(BUF[krk_idx(i_ + ivec3(0, 1, 1))], BUF[krk_idx(i_ + ivec3(1, 1, 1))], f_.x), f_.y),         \
+                  f_.z);                                                                                               \
+    }
+
+#define KRK_X ivec3(1, 0, 0)
+#define KRK_Y ivec3(0, 1, 0)
+#define KRK_Z ivec3(0, 0, 1)
+
+#if defined(KRK_PASS_ADVECT)
+// Pass 1: RK2 semi-Lagrangian advection of velocity and scalars (x density, y temperature, z freshness), the step's
+// decays and the brush emitter (uDRate, uTRate x beat heat, uDMax, uKin, uPush).
+layout(std430, set = 0, binding = 1) readonly buffer VelIn { vec4 vin[]; };
+layout(std430, set = 0, binding = 2) readonly buffer ScaIn { vec4 sin_[]; };
+layout(std430, set = 1, binding = 3) buffer VelOut { vec4 vout[]; };
+layout(std430, set = 1, binding = 4) buffer ScaOut { vec4 sout[]; };
+
+void main() {
+    ivec3 c = ivec3(gl_GlobalInvocationID);
+    if (krk_out(c)) {
+        return;
+    }
+    int i = krk_idx(c);
+    float dt = u.tm.x;
+    vec3 p = vec3(c);
+    vec4 vm;
+    KRK_TRILERP(vin, p - 0.5 * dt * vin[i].xyz, vm);
+    vec3 back = p - dt * vm.xyz;
+    vec4 v;
+    vec4 s;
+    KRK_TRILERP(vin, back, v);
+    KRK_TRILERP(sin_, back, s);
+    v.xyz *= u.decay.z;
+    s.x *= u.decay.x;
+    s.y *= u.decay.y;
+    s.z *= u.decay.w;
+    if (u.bv.w > 0.5) {
+        vec3 d = p - u.bp.xyz;
+        float r = max(u.bp.w, 0.5);
+        float w = exp(-dot(d, d) / (r * r));
+        s.x = min(s.x + u.rates.x * w * dt, u.rates.z);
+        s.y = min(s.y + u.rates.y * w * dt, 4.0);
+        s.z = max(s.z, w);
+        v.xyz = mix(v.xyz, u.bv.xyz, clamp(w * u.rates.w, 0.0, 1.0));
+        v.xyz += (d / max(length(d), 1e-3)) * u.forces.w * w * dt;
+    }
+    if (any(equal(c, ivec3(0))) || any(equal(c, u.dim.xyz - 1))) {
+        v.xyz = vec3(0.0);
+    }
+    vout[i] = v;
+    sout[i] = s;
+}
+
+#elif defined(KRK_PASS_CURL)
+// Pass 2: vorticity (xyz) and its magnitude (w).
+layout(std430, set = 0, binding = 1) readonly buffer Vel { vec4 vel[]; };
+layout(std430, set = 1, binding = 2) buffer Curl { vec4 curl[]; };
+
+void main() {
+    ivec3 c = ivec3(gl_GlobalInvocationID);
+    if (krk_out(c)) {
+        return;
+    }
+    vec3 l = vel[krk_idx(c - KRK_X)].xyz, r = vel[krk_idx(c + KRK_X)].xyz;
+    vec3 b = vel[krk_idx(c - KRK_Y)].xyz, t = vel[krk_idx(c + KRK_Y)].xyz;
+    vec3 n = vel[krk_idx(c - KRK_Z)].xyz, f = vel[krk_idx(c + KRK_Z)].xyz;
+    vec3 w = 0.5 * vec3((t.z - b.z) - (f.y - n.y), (f.x - n.x) - (r.z - l.z), (r.y - l.y) - (t.x - b.x));
+    curl[krk_idx(c)] = vec4(w, length(w));
+}
+
+#elif defined(KRK_PASS_FORCE)
+// Pass 3: vorticity confinement (uEps), buoyancy (uBuoy; fresh smoke carries 0.45 of it) and ABC turbulence (uTurb).
+layout(std430, set = 0, binding = 1) readonly buffer Curl { vec4 curl[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Sca { vec4 sca[]; };
+layout(std430, set = 1, binding = 3) buffer Vel { vec4 vel[]; };
+
+void main() {
+    ivec3 c = ivec3(gl_GlobalInvocationID);
+    if (krk_out(c)) {
+        return;
+    }
+    int i = krk_idx(c);
+    float dt = u.tm.x;
+    float invY = u.tm.z;
+    vec3 eta = 0.5 * vec3(curl[krk_idx(c + KRK_X)].w - curl[krk_idx(c - KRK_X)].w,
+                          curl[krk_idx(c + KRK_Y)].w - curl[krk_idx(c - KRK_Y)].w,
+                          curl[krk_idx(c + KRK_Z)].w - curl[krk_idx(c - KRK_Z)].w);
+    vec3 nrm = eta / (length(eta) + 1e-5);
+    vec3 f = u.forces.x * cross(nrm, curl[i].xyz);
+    vec4 s = sca[i];
+    f.y += u.forces.y * s.y * (0.55 + 0.45 * s.z) - 0.05 * u.forces.y * s.x;
+    vec3 q = vec3(c) * invY * 6.2831853 + u.tm.y * 0.35;
+    vec3 abc = vec3(sin(q.z) + cos(q.y), sin(q.x) + cos(q.z), sin(q.y) + cos(q.x));
+    f += u.forces.z * abc * clamp(s.x, 0.0, 1.0);
+    vec4 v = vel[i];
+    v.xyz += dt * f;
+    float cap = 1.5 * float(u.dim.y);
+    float sp = length(v.xyz);
+    if (sp > cap) {
+        v.xyz *= cap / sp;
+    }
+    vel[i] = v;
+}
+
+#elif defined(KRK_PASS_DIV)
+// Pass 4: velocity divergence.
+layout(std430, set = 0, binding = 1) readonly buffer Vel { vec4 vel[]; };
+layout(std430, set = 1, binding = 2) buffer Div { float dv[]; };
+
+void main() {
+    ivec3 c = ivec3(gl_GlobalInvocationID);
+    if (krk_out(c)) {
+        return;
+    }
+    dv[krk_idx(c)] = 0.5 * ((vel[krk_idx(c + KRK_X)].x - vel[krk_idx(c - KRK_X)].x) +
+                            (vel[krk_idx(c + KRK_Y)].y - vel[krk_idx(c - KRK_Y)].y) +
+                            (vel[krk_idx(c + KRK_Z)].z - vel[krk_idx(c - KRK_Z)].z));
+}
+
+#elif defined(KRK_PASS_JACOBI)
+// Pass 5: one Jacobi pressure iteration; iteration 0 warm-starts from the last frame's pressure x 0.85.
+layout(std430, set = 0, binding = 1) readonly buffer Div { float dv[]; };
+layout(std430, set = 0, binding = 2) readonly buffer PIn { float pin[]; };
+layout(std430, set = 1, binding = 3) buffer POut { float pout[]; };
+
+void main() {
+    ivec3 c = ivec3(gl_GlobalInvocationID);
+    if (krk_out(c)) {
+        return;
+    }
+    float k = u.dim.w == 0 ? 0.85 : 1.0;
+    float sum = pin[krk_idx(c + KRK_X)] + pin[krk_idx(c - KRK_X)] + pin[krk_idx(c + KRK_Y)] + pin[krk_idx(c - KRK_Y)] +
+                pin[krk_idx(c + KRK_Z)] + pin[krk_idx(c - KRK_Z)];
+    pout[krk_idx(c)] = (k * sum - dv[krk_idx(c)]) / 6.0;
+}
+
+#elif defined(KRK_PASS_GRAD)
+// Pass 6: subtract the pressure gradient.
+layout(std430, set = 0, binding = 1) readonly buffer P { float pr[]; };
+layout(std430, set = 1, binding = 2) buffer Vel { vec4 vel[]; };
+
+void main() {
+    ivec3 c = ivec3(gl_GlobalInvocationID);
+    if (krk_out(c)) {
+        return;
+    }
+    vec3 g = 0.5 * vec3(pr[krk_idx(c + KRK_X)] - pr[krk_idx(c - KRK_X)], pr[krk_idx(c + KRK_Y)] - pr[krk_idx(c - KRK_Y)],
+                        pr[krk_idx(c + KRK_Z)] - pr[krk_idx(c - KRK_Z)]);
+    int i = krk_idx(c);
+    vec4 v = vel[i];
+    v.xyz -= g;
+    vel[i] = v;
+}
+
+#elif defined(KRK_PASS_MARCH)
+// Pass 7: ray march (Beer-Lambert V_EXT, one cell per step, at most 400 steps), emission from temperature (uEmis),
+// shadow sweep toward the light (uExtL), palette, bloom (threshold 0.75, knee 0.6, uBloomInt), vignette 0.38 and
+// dither /96. Writes 0xAARRGGBB per output pixel.
+layout(std430, set = 0, binding = 1) readonly buffer Sca { vec4 sca[]; };
+layout(std430, set = 1, binding = 2) buffer Out { uint px[]; };
+
+vec3 fire(float t) {
+    t = clamp(t, 0.0, 3.0);
+    if (t < 0.5) {
+        return mix(vec3(0.0), u.hot[0].rgb, t / 0.5);
+    }
+    if (t < 1.0) {
+        return mix(u.hot[0].rgb, u.hot[1].rgb, (t - 0.5) / 0.5);
+    }
+    if (t < 2.0) {
+        return mix(u.hot[1].rgb, u.hot[2].rgb, t - 1.0);
+    }
+    return mix(u.hot[2].rgb, u.hot[3].rgb, t - 2.0);
+}
+
+void main() {
+    ivec2 g = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 ov = ivec2(u.view.xy);
+    if (g.x >= ov.x || g.y >= ov.y) {
+        return;
+    }
+    vec3 dim = vec3(u.dim.xyz);
+    float invY = u.tm.z;
+    vec2 uv = (vec2(g) + 0.5) / u.view.xy;
+    vec3 front = vec3(uv.x * dim.x, (1.0 - uv.y) * dim.y, 0.0);
+    vec3 cam = vec3(0.5 * dim.x, 0.5 * dim.y, -u.view.z * dim.y);
+    vec3 dir = normalize(front - cam);
+    vec3 acc = vec3(0.0);
+    float T = 1.0;
+    for (int k = 0; k < 400; k++) {
+        vec3 p = front + dir * float(k);
+        if (p.z >= dim.z || p.x < 0.0 || p.x >= dim.x || p.y < 0.0 || p.y >= dim.y) {
+            break;
+        }
+        vec4 s;
+        KRK_TRILERP(sca, p, s);
+        if (s.x > 1e-3) {
+            vec3 ld = normalize(u.lightp.xyz - p);
+            float od = 0.0;
+            for (int j = 1; j <= 6; j++) {
+                od += sca[krk_idx(ivec3(p + ld * float(j) * 2.0))].x * 2.0;
+            }
+            float tl = exp(-u.rend.y * od * invY);
+            float a = 1.0 - exp(-u.rend.x * s.x * invY);
+            vec3 lit = u.smoke.rgb * mix(u.cool.rgb, u.keyc.rgb, tl) * u.lightp.w;
+            vec3 em = u.rend.z * fire(s.y) * clamp(s.y, 0.0, 1.0);
+            acc += T * a * (lit + em);
+            T *= 1.0 - a;
+            if (T < 0.01) {
+                break;
+            }
+        }
+    }
+    vec3 col = acc + T * mix(u.bg[0].rgb, u.bg[1].rgb, 1.0 - uv.y);
+    float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    float x = clamp(lum - 0.75 + 0.6, 0.0, 1.2);
+    float soft = x * x / 2.4;
+    col += col * (max(soft, lum - 0.75) / max(lum, 1e-4)) * u.rend.w;
+    col = vec3(1.0) - exp(-col);
+    col *= 1.0 - 0.38 * smoothstep(0.45, 1.25, length((uv - 0.5) * 2.0));
+    float h = fract(sin(dot(vec2(g) + u.view.w, vec2(12.9898, 78.233))) * 43758.5453);
+    col = clamp(col + (h - 0.5) / 96.0, 0.0, 1.0);
+    uvec3 c8 = uvec3(col * 255.0 + 0.5);
+    px[g.x + g.y * ov.x] = 0xFF000000u | (c8.r << 16) | (c8.g << 8) | c8.b;
+}
+#endif

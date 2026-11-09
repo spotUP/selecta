@@ -4,7 +4,7 @@
 # F >= 79380 (2 s x 44100 x 0.9). The CLI exits 77 when the machine has no
 # default output device; the test then prints the skip marker that
 # SKIP_REGULAR_EXPRESSION matches. Inputs: -DCLI, -DMOD.
-execute_process(COMMAND "${CLI}" play "${MOD}" --output coreaudio --seconds 2
+execute_process(COMMAND "${CLI}" play "${MOD}" --output coreaudio --seconds 2 --volume 0
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(rc EQUAL 77)
   message(STATUS "coreaudio-play: no output device available")

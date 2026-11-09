@@ -1,0 +1,232 @@
+/* Selecta_AAText (I667d, design section 3.7). MUI 3.8: MUI_CreateCustomClass on Area, same dispatcher pattern as
+ * mui_aabtn_class.c. Draw: the super class fills the parent background, then the contents through aa_text in the tone colour
+ * (mui_aa_tone_token, held by aa_hold on palette screens, exact RGB on truecolour), aligned (mui_aa_align_x) and cut with "..." (mui_aa_text_fit) when the box
+ * is narrower than the text. The title tone opens the font at base + 4 px (mui_aa_tone_font_px). Width and height come from the
+ * same font as the draw, so the line never clips. No MUIC_Text, no pen escapes. */
+#include "mui_aatext_class.h"
+#include "mui_aa_class.h"
+
+#include <stdint.h>
+#include <string.h>
+
+#include <clib/alib_protos.h>
+#include <clib/muimaster_protos.h>
+#include <intuition/intuition.h>
+#include <proto/exec.h>
+#include "mui_gfxbase.h"
+#include <proto/intuition.h>
+#include <proto/muimaster.h>
+#include <proto/utility.h>
+
+#include "mui_aa_draw.h"
+
+extern struct Library* MUIMasterBase;
+
+#define AAT_CAP 160
+
+typedef struct aatext_data {
+    char text[AAT_CAP], widest[AAT_CAP];
+    int tone, align, ellipsis, fixed, shown, minw, minh, defw;
+    aa_ctx aa;
+    Object* self;
+} aatext_data;
+
+static struct MUI_CustomClass* g_class;
+static uint32_t g_made;
+
+/* Width callback of mui_aa_text_fit: the ink width of the first len bytes in the object's font. */
+static int aatext_width(void* ctx, const char* s, int len) {
+    aatext_data* d = (aatext_data*)ctx;
+    char buf[AAT_CAP];
+    if (len >= AAT_CAP) {
+        len = AAT_CAP - 1;
+    }
+    memcpy(buf, s, (size_t)len);
+    buf[len] = '\0';
+    return aa_text_width(&d->aa, d->self, buf);
+}
+
+static ULONG aatext_setup(struct IClass* cl, Object* obj, Msg msg) {
+    aatext_data* d = INST_DATA(cl, obj);
+    int dots;
+    if (!DoSuperMethodA(cl, obj, msg)) {
+        return FALSE;
+    }
+    d->self = obj;
+    aa_setup(obj, &d->aa, NULL, 0);
+    if (!d->aa.tc) {
+        d->aa.bg_rgb = d->aa.tok[SEL_GUI_TOKEN_PANEL]; /* on truecolour aa_setup took the role colour of the UP-Panel above (design 5.2) */
+    }
+    aa_set_font_px(&d->aa, mui_aa_tone_font_px(d->tone, d->aa.font_px));
+    /* I685w run 6: without ttengine (rig 2) aa_set_font_px cannot scale; the tone goes to a bitmap disk font sized off the MUI font */
+    aa_plain_font(&d->aa, obj, mui_aa_tone_font_px(d->tone, (int)_font(obj)->tf_YSize), d->tone == MUI_AA_TONE_TITLE || d->tone == MUI_AA_TONE_HEADING);
+    aa_hold(&d->aa, d->aa.tok[mui_aa_tone_token(d->tone)]);
+    aa_hold(&d->aa, d->aa.bg_rgb);
+    dots = aa_text_width(&d->aa, obj, "...");
+    d->defw = aa_text_width(&d->aa, obj, d->widest);
+    d->minw = d->ellipsis ? (dots < d->defw ? dots : d->defw) : d->defw;
+    d->minh = aa_text_height(&d->aa, obj);
+    d->shown = 1;
+    return TRUE;
+}
+
+static ULONG aatext_cleanup(struct IClass* cl, Object* obj, Msg msg) {
+    aatext_data* d = INST_DATA(cl, obj);
+    d->shown = 0;
+    aa_cleanup(&d->aa);
+    return DoSuperMethodA(cl, obj, msg);
+}
+
+static ULONG aatext_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
+    aatext_data* d = INST_DATA(cl, obj);
+    DoSuperMethodA(cl, obj, (Msg)msg);
+    msg->MinMaxInfo->MinWidth += d->minw;
+    msg->MinMaxInfo->DefWidth += d->defw;
+    {
+        int mw = mui_aa_text_maxw(d->fixed, d->defw);
+        msg->MinMaxInfo->MaxWidth = mw == MUI_AA_TEXT_UNBOUNDED ? MUI_MAXMAX : msg->MinMaxInfo->MaxWidth + mw;
+    }
+    msg->MinMaxInfo->MinHeight += d->minh;
+    msg->MinMaxInfo->DefHeight += d->minh;
+    msg->MinMaxInfo->MaxHeight += d->minh;
+    return 0;
+}
+
+static ULONG aatext_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
+    aatext_data* d = INST_DATA(cl, obj);
+    char fit[AAT_CAP];
+    const char* shown = d->text;
+    int w, h, tw, th;
+    uint32_t bg = d->aa.bg_rgb;
+    DoSuperMethodA(cl, obj, (Msg)msg);
+    if ((msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) && d->aa.tc) {
+        /* I685w: cover MUI's grey fill with the panel token. I685x: the super fills the whole box, inner spacing included, so erase the whole box, not only the inner one. */
+        aa_erase(&d->aa, obj, _left(obj), _top(obj), _width(obj), _height(obj));
+    }
+    if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) || d->text[0] == '\0') {
+        return 0;
+    }
+    w = _mwidth(obj);
+    h = _mheight(obj);
+    tw = aa_text_width(&d->aa, obj, d->text);
+    if (d->ellipsis && tw > w) {
+        mui_aa_text_fit(d->text, w, aatext_width, d, fit, (int)sizeof fit);
+        shown = fit;
+        tw = aa_text_width(&d->aa, obj, fit);
+    }
+    th = aa_text_height(&d->aa, obj);
+    aa_text(&d->aa, obj, _rp(obj), _mleft(obj) + mui_aa_align_x(d->align, w, tw), _mtop(obj) + (h - th) / 2, shown, d->aa.tok[mui_aa_tone_token(d->tone)], bg);
+    return 0;
+}
+
+/* UPA_Text_Contents: copy and redraw only when the text differs from what is shown. */
+static void aatext_store(Object* obj, aatext_data* d, const char* text) {
+    if (strlen(text) < sizeof d->text && strcmp(d->text, text) == 0) {
+        return;
+    }
+    strncpy(d->text, text, sizeof d->text - 1);
+    d->text[sizeof d->text - 1] = '\0';
+    if (d->shown) {
+        MUI_Redraw(obj, MADF_DRAWOBJECT);
+    }
+}
+
+static ULONG aatext_set(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aatext_data* d = INST_DATA(cl, obj);
+    struct TagItem* tag = FindTagItem(UPA_Text_Contents, msg->ops_AttrList);
+    if (tag != NULL && tag->ti_Data != 0) {
+        aatext_store(obj, d, (const char*)tag->ti_Data);
+    }
+    return DoSuperMethodA(cl, obj, (Msg)msg);
+}
+
+/* UPA_Text_Contents readable: the shown text (a pointer into the object). The rig's wasabid uitree reads it to list the status texts (I716b). */
+static ULONG aatext_get(struct IClass* cl, Object* obj, struct opGet* msg) {
+    aatext_data* d = INST_DATA(cl, obj);
+    if (msg->opg_AttrID == UPA_Text_Contents) {
+        *msg->opg_Storage = (ULONG)(uintptr_t)d->text;
+        return TRUE;
+    }
+    return DoSuperMethodA(cl, obj, (Msg)msg);
+}
+
+static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
+
+/* OM_NEW: the one place UPA_Text_* are parsed, so UP_NewText and a by-name MUI_NewObject("UP-Text.mcc") build the same object. */
+static ULONG aatext_new(struct IClass* cl, Object* obj, struct opSet* msg) {
+    aatext_data* d;
+    struct TagItem* tags = msg->ops_AttrList;
+    const char* contents;
+    const char* widest;
+    obj = (Object*)DoSuperMethodA(cl, obj, (Msg)msg);
+    if (obj == NULL) {
+        return 0;
+    }
+    d = INST_DATA(cl, obj);
+    contents = (const char*)GetTagData(UPA_Text_Contents, (ULONG)(uintptr_t)"", tags);
+    widest = (const char*)GetTagData(UPA_Text_Widest, (ULONG)(uintptr_t)contents, tags);
+    strncpy(d->text, contents, sizeof d->text - 1);
+    strncpy(d->widest, widest, sizeof d->widest - 1);
+    d->tone = (int)GetTagData(UPA_Text_Tone, UPV_Text_Tone_Normal, tags);
+    d->align = (int)GetTagData(UPA_Text_Align, UPV_Text_Align_Left, tags);
+    d->ellipsis = (int)GetTagData(UPA_Text_Ellipsis, FALSE, tags);
+    d->fixed = (int)GetTagData(UPA_Text_Fixed, FALSE, tags);
+    return (ULONG)obj;
+}
+
+extern ULONG aatext_dispatch(void);
+const struct aa_class_desc aatext_class_desc = {MUIC_Area, sizeof(aatext_data), aatext_dispatch, &g_class};
+__asm__(".text\n.even\n.globl _aatext_dispatch\n_aatext_dispatch:\n"
+        "\tmove.l a1,-(sp)\n\tmove.l a2,-(sp)\n\tmove.l a0,-(sp)\n"
+        "\tjbsr _aatext_dispatch_c\n\tlea 12(sp),sp\n\trts\n");
+
+static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
+    switch (msg->MethodID) {
+    case OM_NEW:
+        return aatext_new(cl, obj, (struct opSet*)msg);
+    case MUIM_Setup:
+        return aatext_setup(cl, obj, msg);
+    case MUIM_Cleanup:
+        return aatext_cleanup(cl, obj, msg);
+    case MUIM_AskMinMax:
+        return aatext_askminmax(cl, obj, (struct MUIP_AskMinMax*)msg);
+    case MUIM_Draw:
+        return aatext_draw(cl, obj, (struct MUIP_Draw*)msg);
+    case OM_SET:
+        return aatext_set(cl, obj, (struct opSet*)msg);
+    case OM_GET:
+        return aatext_get(cl, obj, (struct opGet*)msg);
+    }
+    return DoSuperMethodA(cl, obj, msg);
+}
+
+/* The tag list is the whole interface: UPA_Text_* are read here, every MUIA_* tag (Frame, Background, ShowMe) goes to the Area. */
+Object* UP_NewText(const struct TagItem* tags) {
+    Object* o;
+    if (g_class == NULL) {
+        g_class = AA_CLASS_CREATE(&aatext_class_desc);
+    }
+    if (g_class == NULL) {
+        return NULL;
+    }
+    o = NewObjectA(g_class->mcc_Class, NULL, (struct TagItem*)tags);
+    if (o != NULL) {
+        g_made++;
+    }
+    return o;
+}
+
+uint32_t mui_aatext_made(void) {
+    return g_made;
+}
+
+void mui_aatext_set(Object* obj, const char* contents) {
+    SetAttrs(obj, UPA_Text_Contents, (ULONG)contents, TAG_DONE);
+}
+
+void mui_aatext_class_free(void) {
+    if (g_class != NULL) {
+        MUI_DeleteCustomClass(g_class);
+        g_class = NULL;
+    }
+}

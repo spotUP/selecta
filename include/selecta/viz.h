@@ -34,6 +34,7 @@ typedef struct sel_viz_frame {
     uint32_t rate;           /* output rate the block was mixed at */
     uint32_t voice_count;    /* voices of the VOICE-kind replayer; 0 for RENDER kind */
     uint32_t spectrum_valid; /* pump side: bands computed */
+    uint32_t falloff_runs;   /* pump side: times the peak falloff ran on this tap (I292b sentinel) */
     int16_t peak[SEL_VIZ_MAX_VOICES]; /* Q15, post-volume, pre-pan, this block */
     int16_t vu[SEL_VIZ_MAX_VOICES];   /* Q15, instant attack, release level -= level >> 3 per block */
     uint32_t pitch_q8[SEL_VIZ_MAX_VOICES];   /* Hz in 24.8, 0 when the voice is idle */
@@ -55,6 +56,8 @@ typedef struct sel_viz_tap {
     uint32_t read_idx;        /* pump private */
     volatile uint32_t middle; /* shared: buffer index, plus 4 when it holds an unread frame */
     uint32_t seq;
+    int16_t smooth[SEL_VIZ_BANDS]; /* pump private: the bands after the falloff (I292b) */
+    uint32_t smooth_seq, falloff_runs;
     uint32_t block_left;      /* frames until the current block closes; 0: start a new one */
     uint32_t pcm_head;        /* next write index of the ring, in frames */
     int16_t pcm[SEL_VIZ_PCM_FRAMES * 2u];
@@ -104,12 +107,18 @@ const sel_viz_frame* sel_viz_current(const sel_viz_tap* t);
  * frame from its PCM ring. `with_spectrum` 0 leaves the bands at zero. */
 void sel_viz_analyse(sel_viz_tap* t, int with_spectrum);
 
+/* Peak falloff (I292b). Q15 per second a band falls: a full scale bar empties in about 1.3 s. */
+#define SEL_VIZ_FALL_PER_SECOND 25000u
+/* level[i] rises to raw[i] at once, else falls by SEL_VIZ_FALL_PER_SECOND * dt_ms / 1000 (never below raw[i] or 0). */
+int sel_viz_falloff(int16_t level[], const int16_t raw[], uint32_t n, uint32_t dt_ms); /* returns 1: the step ran */
+
 /* Pure functions (unit tests, pump thread). */
 /* Phase correlation of interleaved stereo, Q15: sum(LR) / sqrt(sum(LL) * sum(RR)).
  * 0 for silence. */
 int32_t sel_viz_correlation(const int16_t* stereo, uint32_t frames);
-/* 256-point integer FFT of the mono sum (L + R) / 2 of the last 256 frames of
- * `stereo` (Hann window, Q15), reduced to 16 log-spaced bands, Q15. */
+/* 256-point integer FFT of the mono sum (L + R) / 2 over consecutive 256 frame windows of `stereo`, ending at the
+ * newest frame (Hann window, Q15); the bin magnitudes are averaged over the windows (I292b), then reduced to 16
+ * log-spaced bands, Q15. Cost: frames / 256 FFTs per call (4 for the 1024 frame ring). */
 void sel_viz_spectrum(const int16_t* stereo, uint32_t frames, uint32_t rate, int16_t band[SEL_VIZ_BANDS]);
 
 /* ---- Render target of the viz plugins (design doc section 8; plan DUI-P4-11, moved from M4-P3-3) ----
@@ -122,6 +131,30 @@ typedef enum sel_pixfmt {
     SEL_PIX_RGBA32 = 1  /* one uint32_t per pixel, 0xAARRGGBB */
 } sel_pixfmt;
 
+/* I1230: the host's own drawing service, so a viz plugin draws text in the app's font and shapes in the app's design
+ * (theme radius, extra theme roles) instead of its private pixel glyphs. Optional: a host that leaves sel_surface.pen
+ * NULL (the Amiga MUI UI, the plugin unit tests) gets the plugin's own drawing. Every call draws into the surface the
+ * plugin was handed, at surface coordinates, clipped to it. Pixel values are in the surface's format, like
+ * sel_viz_colors. */
+typedef struct sel_viz_pen {
+    void* ctx;
+    int32_t line_h; /* height of one label line in surface pixels */
+    int32_t radius; /* corner radius of cards (theme radius); controls and bars use radius / 2 */
+    uint32_t card;      /* card background on the plugin background (raised surface) */
+    uint32_t track;     /* empty bar track and unlit control inside a card */
+    uint32_t text;      /* headings */
+    uint32_t muted;     /* labels */
+    uint32_t on_accent; /* text on a primary (accent) fill */
+    /* Pixel width of `s` in the label font (strong: the heading weight). */
+    int32_t (*text_width)(void* ctx, const char* s, int strong);
+    /* One line with its top left at (x, y), ellipsized to max_w. Returns the glyphs drawn. */
+    uint32_t (*draw_text)(void* ctx, int32_t x, int32_t y, int32_t max_w, const char* s, uint32_t px, int strong);
+    /* Filled rectangle with rounded corners (radius 0: square). */
+    void (*round_rect)(void* ctx, int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint32_t px);
+    /* a towards b by q8 / 256 (afterglow shades). */
+    uint32_t (*mix)(void* ctx, uint32_t a, uint32_t b, uint32_t q8);
+} sel_viz_pen;
+
 typedef struct sel_surface {
     uint32_t w, h;
     uint32_t pitch; /* bytes per row */
@@ -129,6 +162,7 @@ typedef struct sel_surface {
     void* pixels;
     const uint32_t* palette; /* INDEX8: 0xAARRGGBB per index, NULL for RGBA32 */
     uint32_t pix_aspect_q8;  /* pixel height over width x 256 of the display (512 on 640x256 PAL); 0 or 256 square. Text and round shapes divide their vertical size by it */
+    const sel_viz_pen* pen;  /* I1230: the host's drawing service, NULL = none (the plugin draws on its own) */
 } sel_surface;
 
 /* Pixel values for the plugin, already in the surface's format (palette index or 0xAARRGGBB). */
@@ -143,6 +177,9 @@ typedef struct sel_viz_colors {
 /* VIZ_FRAME hook: draws `f` over the whole surface. Returns the number of primitives drawn (0: nothing, e.g. no frame
  * yet). Integer only; runs on the UI thread. */
 typedef uint32_t (*sel_viz_render_fn)(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c);
+/* Optional VIZ_STATS hook: writes one NUL-terminated line of plugin counters (at most cap bytes, NUL included) for the
+ * host's --stats dump and returns its length. */
+typedef uint32_t (*sel_viz_stats_fn)(char* out, uint32_t cap);
 
 SEL_EXTERN_C_END
 

@@ -583,13 +583,15 @@ static int library_scan(int argc, char** argv) {
     sel_local_scan_config scfg;
     sel_local_scan_stats rs;
     uint32_t watch_ms = 0, watch_events = 0;
-    int use_poll = 0, dump = 0;
+    int use_poll = 0, dump = 0, scrape = 0;
     int i;
 
     memset(&rs, 0, sizeof rs);
     for (i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
             db_path = argv[++i];
+        } else if (strcmp(argv[i], "--scrape") == 0) {
+            scrape = 1; /* I1003a: look up the covers of the scanned albums online and print the scraper stats */
         } else if (strcmp(argv[i], "--machine") == 0 && i + 1 < argc) {
             machine = sel_machine_fake(argv[++i]);
             if (machine == NULL) {
@@ -609,7 +611,7 @@ static int library_scan(int argc, char** argv) {
         }
     }
     if (dir == NULL) {
-        fputs("usage: selecta-cli library scan [--db <path>] [--machine <name>] [--dump] <dir>\n", stderr);
+        fputs("usage: selecta-cli library scan [--db <path>] [--machine <name>] [--dump] [--scrape] <dir>\n", stderr);
         return 2;
     }
     if (db_path == NULL) {
@@ -637,6 +639,13 @@ static int library_scan(int argc, char** argv) {
         sel_library_close(lib);
         return 1;
     }
+    /* The scan kicks the cover scraper; only `--scrape` lets it reach the network, so no other scan run (tests) sends a request. */
+    sel_library_scrape_set_enabled(lib, scrape);
+#ifndef __amigaos__
+    if (!scrape) {
+        setenv("SELECTA_ART_SCRAPE", "off", 1);
+    }
+#endif
     snprintf(line, sizeof line, "LIBRARY_SCAN %s", dir);
     sel_engine_send_line(e, line, pool, sizeof pool);
     sel_engine_pump(e, on_event, &sink);
@@ -650,6 +659,15 @@ static int library_scan(int argc, char** argv) {
         scfg.registry_get = sel_registry_get;
         scfg.now = (int64_t)time(NULL);
         library_watch_rescan(&scfg, dir, watch_ms, use_poll, &rs, &watch_events);
+    }
+    if (scrape) {
+        sel_scrape_stats ss;
+
+        sel_library_scrape_kick(lib);
+        sel_library_scrape_wait(lib);
+        sel_library_scrape_stats(lib, &ss);
+        printf("artwork_scraped=%u scrape_albums=%u scrape_misses=%u scrape_errors=%u scrape_requests=%u\n", (unsigned)ss.scraped,
+               (unsigned)ss.albums, (unsigned)ss.misses, (unsigned)ss.errors, (unsigned)ss.requests);
     }
     memset(&st, 0, sizeof st);
     if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {

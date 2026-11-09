@@ -60,11 +60,14 @@ struct sel_library {
     uint32_t account;
     sqlite3* db;
     int has_index;     /* a read-only index is attached as schema idx (index.c) */
+    int idx_dup;       /* the attached index has dup_of / dup_members (exported at schema v18 or later; I1094c) */
     char src_off[160]; /* comma separated ids of the switched-off sources (library.sources_off, I265); read by search and radio */
     int hide_dups;     /* library.hide_duplicates (I1094c): searches and collection lists skip songs.dup_of IS NOT NULL; default on */
     sel_spsc requests; /* caller -> worker */
     sel_spsc results;  /* worker -> caller */
     uint32_t served;   /* requests handled; written by the worker only */
+    uint32_t search_runs;         /* I1231: SEL_LIB_REQ_SEARCH requests run (sel_library_search) */
+    uint32_t search_sources_runs; /* I1231: grouped catalogue searches run (sel_library_search_sources), the test sentinel */
     uint32_t heap_allocs;
     uint32_t heap_bytes;
     char fts_long[SEL_QUERY_TEXT_MAX + 8]; /* long FTS words of the running search, space separated */
@@ -92,14 +95,21 @@ struct sel_library {
     unsigned hash_pending;   /* cooperative build: the idle md5 pass has songs left; threads: a kick restarts the
                               * pass from id 0 (under job_lock) */
     uint32_t hash_files, hash_chunks, hash_tick_max; /* sel_hash_stats (I184b) */
+    int64_t scrape_after;    /* last albums.id the cover scraper looked at (art_scrape.c, I1003a); threads: under job_lock */
+    unsigned scrape_pending; /* a pass has albums left; threads: a kick restarts it from id 0 (under job_lock) */
+    int scrape_off;          /* set_enabled(0): kick does nothing */
+    unsigned long scrape_mb_ms; /* sel_net_now_ms of the last MusicBrainz request, for the 1 request per second limit */
+    sel_scrape_stats scrape_stats; /* under job_lock when threads exist */
     void (*task_fn)(void* ctx); /* I336: the queued caller task (job.c) */
     void* task_ctx;
     volatile unsigned task_cancel; /* also the net cancel generation while the task runs (I832), so a cancel ends its network wait */
     volatile unsigned write_gen;   /* I1077b: committed write transactions (commit hook, writer thread) */
+    unsigned busy_waits;           /* I1162: busy-handler waits for another process's lock on the database file */
     volatile unsigned pin_gen;     /* I1077b: of those, commits made by pin batches */
     volatile unsigned in_pin;      /* I1077b: the writer is inside a pin batch */
     volatile unsigned touch_gen;   /* I1130a: of those, commits made by Recents touches (SEL_USER_LIBRARY_TOUCH: the opened table only) */
     volatile unsigned in_touch;    /* I1130a: the writer is inside a Recents touch */
+    volatile unsigned in_cache;    /* I1231b: the writer is inside a search cache op; its commits are not library changes */
     volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
     volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
     volatile unsigned rating_pending_n; /* I958: pending 'rating' pushes; the writer of pending_push keeps it, a UI read never asks the worker */
@@ -121,6 +131,7 @@ struct sel_library {
     unsigned job_vote, job_vote_busy; /* one queued vote request, and one running */
     unsigned job_lyric, job_lyric_busy; /* one queued lyrics request, and one running */
     unsigned job_sysf, job_sysf_busy;   /* I710ga3: queued system-file downloads, and one running (fetch.c) */
+    unsigned job_scrape, job_scrape_busy; /* I1003a: cover scraper pass, one coalesced pending job and one running (art_scrape.c) */
     unsigned job_hash, job_hash_busy;   /* local md5 pass: one coalesced pending job, and one running (duplicates.c, I184a) */
     pthread_t job_thread;    /* the one background job thread, created on the first job (job.c, I173d) */
     pthread_mutex_t job_lock; /* guards the job queue (pf_spec, sm_spec, job_rating) and the flags below */
@@ -154,6 +165,7 @@ struct sel_library {
 void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* reply);
 void sel_user_rating_pending_refresh(sel_library* lib); /* I958: recounts lib->rating_pending_n */
 void sel_library_search(sel_library* lib, sel_lib_job* job);
+void sel_library_search_sources(sel_library* lib, sel_lib_job* job);
 void sel_library_save_view(sel_library* lib, sel_lib_job* job);
 void sel_library_import(sel_library* lib, sel_lib_job* job);
 int sel_library_register_regexp(sqlite3* db);
@@ -214,6 +226,7 @@ void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message
 void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply);
 void sel_library_meta(sel_library* lib, const sel_meta_op* op, sel_message* reply);
 void sel_library_srcstate(sel_library* lib, const sel_srcstate_op* op, sel_message* reply);
+void sel_library_search_cache(sel_library* lib, const sel_searchcache_op* op, sel_message* reply);
 void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply);
 
 /* art.c: SEL_LIB_REQ_ART. */
@@ -273,6 +286,7 @@ void sel_worker_stop(sel_library* lib);
 int sel_job_start(sel_library* lib);
 void sel_lyrics_job_run(sel_library* lib);       /* lyrics_fetch.c: runs the queued lyrics request (job_lock NOT held) */
 void sel_vote_job_run(sel_library* lib);        /* vote_push.c: runs the queued vote request (job_lock NOT held) */
+void sel_scrape_job_run(sel_library* lib);      /* art_scrape.c: looks up the next album without a cover, requeues the pass while albums are left (job_lock held on entry and exit) */
 void sel_hash_job_run(sel_library* lib);        /* duplicates.c: hashes the next unhashed local song and requeues the pass while songs are left (job_lock held on entry and exit; dropped around the file) */
 void sel_job_wake(sel_library* lib);  /* job_lock held: a job was queued */
 void sel_job_wait(sel_library* lib);  /* returns once the queue is empty and nothing runs */

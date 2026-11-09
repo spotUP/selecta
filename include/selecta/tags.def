@@ -81,7 +81,7 @@ SEL_TAG(RP, HW_LENGTH,         0x1021, PTR)
 
 /* VIZ_VOICES (I434g): optional, HW kind. Fills up to three voices of the scope feed (sel_rp_viz_voices_fn). */
 SEL_TAG(RP, VIZ_VOICES,        0x1022, PTR)
-/* VIZ_SID (I434j): optional, HW kind. SID register mirror for the register scope (sel_rp_viz_sid_fn). */
+/* VIZ_SID (I434j): optional, HW or RENDER kind (I1226). SID register mirror for the register scope (sel_rp_viz_sid_fn). */
 SEL_TAG(RP, VIZ_SID,           0x1023, PTR)
 /* CFG_APPLIED (MPS-1): optional. Returns how many starts of the open song applied the replayer's configuration
  * (sel_rp_cfg_applied_fn); a test sentinel published as sel_engine_stats.rp_cfg_applied. */
@@ -157,6 +157,7 @@ SEL_TAG(VIZ, NAME,             0x4000, STR)
 SEL_TAG(VIZ, OPEN,             0x4001, PTR)
 SEL_TAG(VIZ, FRAME,            0x4002, PTR)
 SEL_TAG(VIZ, CLOSE,            0x4003, PTR)
+SEL_TAG(VIZ, STATS,            0x4004, PTR) /* optional sel_viz_stats_fn: one line of counters for --stats */
 
 SEL_TAG(UI, NAME,              0x5000, STR)
 SEL_TAG(UI, OPEN,              0x5001, PTR)
@@ -376,6 +377,24 @@ SEL_TAG(UI, STAT_ATLAS_BAKED_HITS,  0x50D8, INT)
 SEL_TAG(UI, STAT_SHELF_ALBUM_ART_DRAWS, 0x50D9, INT)
 /* I244: tooltip-bound controls on screen: the transport buttons shown plus the visualizer switch segments and the heart. */
 SEL_TAG(UI, STAT_TOOLTIP_TARGETS, 0x50DA, INT)
+/* I292a: visualizer frames drawn while a tooltip was up, and how many of them drew the tooltip again. */
+SEL_TAG(UI, STAT_VIZ_TIP_UP,        0x50E9, INT)
+SEL_TAG(UI, STAT_VIZ_TIP_DRAWN,     0x50EA, INT)
+/* I292b: spectrum falloff steps the engine ran (sentinel read from the shown viz frame). */
+SEL_TAG(UI, STAT_VIZ_FALLOFF_RUNS,  0x50EB, INT)
+/* I1161: Search page list scroll offset (logical px) and the times the list scrolled to follow the keyboard cursor. */
+SEL_TAG(UI, STAT_SEARCH_SCROLL,     0x50EC, INT)
+SEL_TAG(UI, STAT_SEARCH_FOLLOWS,    0x50ED, INT)
+/* I1164: arrow keys and Enter routed by the focused stop: main region or no stop (the page list), player (the player: key bindings),
+ * sidebar and detail (no page list move). One counter per route, the sentinels of the focus-follows-input test. */
+SEL_TAG(UI, STAT_FOCUS_ROUTE_MAIN,    0x50EE, INT)
+SEL_TAG(UI, STAT_FOCUS_ROUTE_PLAYER,  0x50EF, INT)
+SEL_TAG(UI, STAT_FOCUS_ROUTE_SIDEBAR, 0x50F0, INT)
+SEL_TAG(UI, STAT_FOCUS_ROUTE_DETAIL,  0x50F1, INT)
+/* I1183: the sidebar stop's keyboard cursor (position + 1, 0 = none), frames that drew it, and the page open (the sentinels of the sidebar key test). */
+SEL_TAG(UI, STAT_SIDE_CURSOR,       0x50F2, INT)
+SEL_TAG(UI, STAT_SIDE_CURSOR_DRAWS, 0x50F3, INT)
+SEL_TAG(UI, STAT_PAGE,              0x50F4, INT)
 /* Amiga MUI UI (plan 2026-10-25-amiga-mui.md MUI-P1-5): windows opened; only the mui plugin lists it. */
 SEL_TAG(UI, STAT_OPEN_MUI,        0x50DB, INT)
 /* I526: text lookups served by the bitmap fonts mini4, mini6, mini8 and by the Inter headline sizes 18 and 24. */
@@ -392,6 +411,35 @@ SEL_TAG(UI, CONTROL,                  0x50E3, PTR)
 SEL_TAG(UI, STAT_CTL_LINES,           0x50E4, INT)
 SEL_TAG(UI, STAT_CTL_STATES,          0x50E5, INT)
 SEL_TAG(UI, STAT_CTL_FRAMES,          0x50E6, INT)
+/* I1151: repaints requested because the engine view's cursor or window moved (a list key answered by the engine). */
+SEL_TAG(UI, STAT_VIEW_CURSOR_REPAINTS, 0x50E7, INT)
+/* I1151: Up/Down on the Search page list moved the cursor to the next drawn row, over group headings and hidden groups. */
+SEL_TAG(UI, STAT_SEARCH_SKIPS,        0x50E8, INT)
+/* I1184: the text UI's keys that fired a line of the shared action table (src/uimodel/actions.c), and those lines in order, '|' separated. */
+SEL_TAG(UI, STAT_TABLE_ACTIONS,       0x50F5, INT)
+SEL_TAG(UI, STAT_TABLE_ACTION_LOG,    0x50F6, STR)
+/* I1185: the text UI's layout (SEL_UIM_LAYOUT_*, low 8 bits) with the count of layout / visualizer keys it took (above), and
+ * the SID register panels drawn from a register feed. */
+SEL_TAG(UI, STAT_LAYOUT,              0x50F7, INT)
+SEL_TAG(UI, STAT_SID_FRAMES,          0x50F8, INT)
+/* I1186: the library style the text pane drew last (sel_view_style, low 8 bits) with the count of pane draws in the Grid,
+ * Cover Flow and Compact styles above it. */
+SEL_TAG(UI, STAT_STYLE,               0x50F9, INT)
+/* I1187: the text UI Library mode and queue scope keys. Bits 0-3 the engine scope index, 4-7 the Library mode in force (15 none),
+ * 8-15 mode keys taken, 16-23 scope keys taken. */
+SEL_TAG(UI, STAT_LIBMODE,             0x50FA, INT)
+/* I1188: the text UI Settings screen. Bits 0-7 PREF_SET lines its keys sent, 8-15 times it was opened, 16-23 the focused row. */
+SEL_TAG(UI, STAT_SETTINGS,            0x50FB, INT)
+/* I1189: the text UI Shelf and Collection pages. Bits 0-7 Shelf pages opened, 8-15 Collection pages opened, 16-23 rows the page drew in
+ * its latest frame, 24-27 page on screen now (0 none, 1 Shelf, 2 Collection). */
+SEL_TAG(UI, STAT_PAGES,               0x50FD, INT)
+/* I1190: the text UI song and playlist menu. Bits 0-7 times it opened, 8-15 items picked, 16-23 prompts (name, confirm) answered. */
+SEL_TAG(UI, STAT_MENU,                0x50FE, INT)
+/* I1190: the engine lines the menu sent, in order, '|' separated (the tail is kept). */
+SEL_TAG(UI, STAT_MENU_LOG,            0x50FF, STR)
+/* I1191 text UI sentinels: Song Information actions sent from the page (Mark Wrong, Skip Song, Save Note) and Now Playing page draws. */
+SEL_TAG(UI, STAT_SONGINFO_ACTIONS,    0x50FC, INT)
+SEL_TAG(UI, STAT_NOWPLAY_DRAWS,       0x5100, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

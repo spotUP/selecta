@@ -1,0 +1,10 @@
+I1137 rig check (Amiga, rig 2, started with rig.py --ram 256 and a purpose text such as "I1137: fresh install template copy").
+Build first: cmake --build build/amiga --target selecta_dist (stages build/amiga/dist/Selecta).
+
+1. Copy the staged drawer build/amiga/dist/Selecta (or the unpacked Selecta.lha from CI) onto the rig and run Install-Selecta through the
+   Installer into a FRESH drawer, for example Work:Fresh. Check the drawer holds Selecta, library-template.db (208896 bytes), rexx/.
+2. Check there is no library.db yet: List Work:Fresh/Selecta/library.db must say object not found.
+3. Run: Work:Fresh/Selecta/Selecta --ui mui --log RAM:start.log   then quit the program.
+4. PASS: RAM:start.log contains "template copied 208896" and does NOT contain "final schema created"; Work:Fresh/Selecta/library.db now exists.
+   FAIL: "final schema created" in the log (3336 ms DDL path), or no library.db.
+5. Stop the rig after the last command (rig.py stop) and delete its build/rigN directory.

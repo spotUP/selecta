@@ -197,9 +197,8 @@ dui_run(w2 ${common_mixed} --input "${WORK}/wide2.txt")
 if(NOT "${w2}" MATCHES "sidechip 0 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
   message(FATAL_ERROR "no sidechip 0 rect in:\n${w2}")
 endif()
-# The six chips overflow the sidebar even when expanded, so chip 0 is the single control and the right chevron (one gap,
-# half a chevron square past its right edge) steps from All to Playlists.
-math(EXPR pl_cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} + 4 + ${CMAKE_MATCH_4} / 2")
+# I1221: every chip is in view; a click on the centre of chip 0 (Playlists) selects it.
+math(EXPR pl_cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR pl_cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 file(WRITE "${WORK}/chip1.txt" "click ${wide_cx} ${wide_cy}\nwait 300\nclick ${pl_cx} ${pl_cy}\nwait 100\n")
 dui_run(p1 ${common_mixed} --input "${WORK}/chip1.txt")

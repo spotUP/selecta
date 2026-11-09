@@ -16,6 +16,13 @@ size_t sel_latin1_to_utf8(char* dst, size_t n, const char* src, size_t len);
  * caller fails the call instead. */
 int sel_utf8_to_latin1(char* dst, size_t n, const char* src);
 
+/* NUL terminated UTF-8 `src` to Latin-1 for DRAWING (I1139), where sel_utf8_to_latin1 refuses: never fails, always NUL
+ * terminated, cut at the last whole character that fits. A code point above U+00FF becomes its nearest Latin-1 look:
+ * U+2022 bullet to 0xB7 (middle dot), U+2018/U+2019 to ', U+201C/U+201D to ", U+2013/U+2014 to -, U+2026 to three dots;
+ * anything else, and each byte of malformed UTF-8, to '?'. Returns the bytes written, without the NUL. n == 0 writes
+ * nothing. */
+size_t sel_utf8_to_latin1_draw(char* dst, size_t n, const char* src);
+
 /* 1 when NUL terminated `s` is well-formed UTF-8: no stray continuation bytes, no truncated sequence, no overlong
  * form, no surrogate, nothing above U+10FFFF. */
 int sel_utf8_valid(const char* s);

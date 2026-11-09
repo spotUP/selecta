@@ -66,18 +66,16 @@ function(side_row out dump name)
   set(${out} "${cx} ${cy}" PARENT_SCOPE)
 endfunction()
 
-# The 1000 seeded artists flood Your Library, so the Sources chip (five steps of the right chevron) narrows the list to the source rows.
+# The 1000 seeded artists flood Your Library, so the Sources chip narrows the list to the source rows. I1221: the desktop tier shows
+# every chip (no chevrons), so the test clicks chip index 4 (the fifth chip, Sources) directly.
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
 dui_run(idle ${common} --input "${WORK}/idle.txt")
-if(NOT "${idle}" MATCHES "sidechev L [0-9]+ [0-9]+ [0-9]+ [0-9]+ R ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
-  message(FATAL_ERROR "no sidechev in:\n${idle}")
+if(NOT "${idle}" MATCHES "sidechip 4 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no sidechip 4 in:\n${idle}")
 endif()
 math(EXPR rx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR ry "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
-set(chip "")
-foreach(k RANGE 1 5)
-  string(APPEND chip "click ${rx} ${ry}\nwait 300\n")
-endforeach()
+set(chip "click ${rx} ${ry}\nwait 300\n")
 file(WRITE "${WORK}/chip.txt" "${chip}")
 fresh()
 dui_run(chipped ${common} --input "${WORK}/chip.txt")

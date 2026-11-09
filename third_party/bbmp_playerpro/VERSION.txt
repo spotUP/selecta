@@ -1,0 +1,14 @@
+bbmp_playerpro (I710aq): PlayerPRO MAD songs (.mad: MADK, MAD-F, MAD-G, MADH, MADI).
+playerpro_mac.c, engine.h: github.com/creep-ltx/bbmp csrc/pc, commit 19d87098b3716156d80224d22dc49ca22884d1b7, unchanged.
+playerpro_engine.c: the same commit with ONE Selecta patch (marked "selecta"): MInitImportPlug strncpy'd the plug-in's name into PlugInfo.MenuName, a char array
+  only in PlayerPROCore's ELF (Linux) PlugInfo; on macOS it is a CFStringRef and the copy wrote through a null pointer (crash on the first open). On macOS it is set to NULL.
+  License GPL-3.0-or-later (SPDX line in each file, COPYING). bbmp docs/replayers.md lists the engine as "PlayerPRO's own driver, public domain".
+core/: PlayerPROCore (MADDriver.source and Import-Export MADfg, MADH, MADI) by Antoine Rosset, maintained by C.W. Betts,
+  github.com/MaddTheSane/PlayerPRO commit 0a07010443053f54636adcd2d0460d1196a6fd88. LICENSE.txt: "released to the Public Domain by the original author,
+  Antoine ROSSET". Only the files bbmp's tools/build-pc.sh compiles (and their headers) are vendored; no sound output, no plug-in loader (playerpro_engine.c has that).
+  The same two patches bbmp's build-pc.sh makes:
+    core/MainDriver.c: a duplicate declaration of shortPtr removed (a variable declared twice in a part only little-endian machines compile).
+    core/Import-Export/MADfg.c: finetune table index masked with 15 (a song on Modland has 32 there; the rate changed from run to run); marked "modland".
+inc/PlayerPROCore: symlink to core/, as bbmp build-pc.sh makes, so <PlayerPROCore/RDriver.h> resolves.
+The engine reads the song by path; the Selecta adapter writes the song to a temporary file for the open and deletes it at once.
+Global state: the engine keeps one song in static variables, so only one PlayerPRO song can be open at a time.

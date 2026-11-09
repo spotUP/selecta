@@ -27,7 +27,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/srcmirror.c db/items.c db/similar.c db/duplicates.c db/testgen.c db/test_slow.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
+target_sources(selecta_library PRIVATE db/amiga_vfs.c db/appdir.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/search_cache.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/srcmirror.c db/items.c db/similar.c db/duplicates.c db/art_scrape.c db/testgen.c db/test_slow.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 # The test knobs and stream_open.c call usleep and popen, net/backoff.c calls nanosleep with struct timespec, and net/devilbox.c calls fchmod; -std=c99 hides all of them on glibc (I990b, I787 items.c, I1130b, CI run 42250330619 backoff.c, CI run 42254434695 devilbox.c); _DEFAULT_SOURCE restores them, ignored on macOS.
 set_source_files_properties(db/test_slow.c db/items.c stream_open.c net/backoff.c net/devilbox.c PROPERTIES COMPILE_DEFINITIONS _DEFAULT_SOURCE)
@@ -123,4 +123,30 @@ if(NOT SEL_AMIGA)
   else()
     message(STATUS "Song length database skipped: pass -DSELECTA_SONGLENGTHS_TSV=<songlengths.tsv> to bake songlengths.bin")
   endif()
+endif()
+
+# Prebuilt empty library database (I625a8e): a cold first start ran the 65 DDL statements of SCHEMA_FINAL, 3336 ms on a 68020
+# (I625a8d). tools/library_template_bake.c runs the same sel_schema_migrate at build time and writes <build>/library-template.db;
+# sel_library_open copies it next to the new library.db (SEL_LIBTEMPLATE_NAME, db.h) and falls back to the DDL when it is
+# missing. Install it in the same directory as library.db (the config dir), like songlengths.bin. A SQLite file is platform
+# independent. The Amiga cross build cannot run a tool it builds, so it takes the host-built one:
+# -DSELECTA_TEMPLATEBAKE_EXE=<path to the host library_template_bake>; without it no file is made and the DDL path stays.
+if(NOT SEL_AMIGA)
+  add_executable(library_template_bake ${PROJECT_SOURCE_DIR}/tools/library_template_bake.c)
+  target_link_libraries(library_template_bake PRIVATE selecta_library selecta_core)
+  set(LIBTEMPLATE_CMD library_template_bake)
+  set(LIBTEMPLATE_DEP library_template_bake)
+elseif(SELECTA_TEMPLATEBAKE_EXE)
+  set(LIBTEMPLATE_CMD "${SELECTA_TEMPLATEBAKE_EXE}")
+  set(LIBTEMPLATE_DEP "${SELECTA_TEMPLATEBAKE_EXE}")
+endif()
+if(LIBTEMPLATE_CMD)
+  add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/library-template.db
+    COMMAND ${LIBTEMPLATE_CMD} ${CMAKE_BINARY_DIR}/library-template.db
+    DEPENDS ${LIBTEMPLATE_DEP} ${CMAKE_CURRENT_SOURCE_DIR}/db/schema.c ${CMAKE_CURRENT_SOURCE_DIR}/db/schema.h
+    COMMENT "Baking the library template database")
+  add_custom_target(library_template ALL DEPENDS ${CMAKE_BINARY_DIR}/library-template.db)
+else()
+  message(STATUS "Library template database skipped: pass -DSELECTA_TEMPLATEBAKE_EXE=<host library_template_bake> on the Amiga build")
 endif()

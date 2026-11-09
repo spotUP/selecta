@@ -1,0 +1,17 @@
+{
+ "/search?term=Scrape%20Artist%20Scrape%20Miss&entity=album&limit=1": {
+  "body": "{\"resultCount\":0,\"results\":[]}",
+  "headers": {
+   "Content-Type": "application/json"
+  }
+ },
+ "/search?term=Scrape%20Artist%20Scrape%20Itunes&entity=album&limit=1": {
+  "body": "{\"resultCount\": 1, \"results\": [{\"collectionName\": \"Scrape Itunes\", \"artworkUrl100\": \"http://itunes.test/img/100x100bb.png\"}]}",
+  "headers": {
+   "Content-Type": "application/json"
+  }
+ },
+ "/img/600x600bb.png": {
+  "file": "../coverartarchive.test/front.png"
+ }
+}

@@ -130,6 +130,13 @@ static int ground(txt_keys* k, uint8_t b, txt_key* out) {
         emit(k, out, b == 8 ? 127u : b, 0);
         return 1;
     }
+    if (b >= 0x1C && b <= 0x1F) {
+        /* I1205: xterm and Terminal.app send Ctrl-4..Ctrl-7 as the C0 bytes FS GS RS US (0x1C..0x1F), the digit's
+         * control code, not a letter's. Ctrl-8 is 0x7F, Backspace, and cannot be told apart: the text UI binds the
+         * SID registers panel to Ctrl-V as well (keybind.c). */
+        emit(k, out, (uint32_t)b - 0x1Cu + '4', TXT_MOD_CTRL);
+        return 1;
+    }
     if (b < 0x20) { /* Ctrl+A is 1 */
         emit(k, out, (uint32_t)b + 'a' - 1u, TXT_MOD_CTRL);
         return 1;
@@ -249,6 +256,14 @@ int txt_keys_feed(txt_keys* k, uint8_t b, txt_key* out) {
                     emit(k, out, code, mods);
                     return 1;
                 }
+            } else if (b == 'u' && k->nparams >= 1 && k->params[0] >= 0x21u && k->params[0] < 0x7Fu) {
+                /* I1185: CSI code ; mods u (kitty / fixterms), the only way a terminal sends Ctrl-1..Ctrl-8 */
+                emit(k, out, k->params[0], k->nparams > 1 ? xterm_mods(k->params[1]) : 0u);
+                return 1;
+            } else if (b == '~' && k->nparams >= 3 && k->params[0] == 27u && k->params[2] >= 0x21u &&
+                       k->params[2] < 0x7Fu) { /* xterm modifyOtherKeys: CSI 27 ; mods ; code ~ */
+                emit(k, out, k->params[2], xterm_mods(k->params[1]));
+                return 1;
             } else {
                 code = (b == '~') ? tilde_key(k->params[0]) : final_key(b);
                 if (code) {

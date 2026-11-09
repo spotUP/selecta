@@ -24,7 +24,10 @@ function(need what text pattern)
   endif()
 endfunction()
 
-execute_process(COMMAND "${CLI}" library sync --db "${db}" --now 1792756800 zxart http://zxart.ee
+# I1231: the sync goes to its own db, so the live search below still runs (a synced zxart searches its rows, see the end)
+set(synced "${WORK}/zx-search-synced.db")
+file(REMOVE "${synced}")
+execute_process(COMMAND "${CLI}" library sync --db "${synced}" --now 1792756800 zxart http://zxart.ee
   OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "I1024f: the sync that leaves the people pages failed rc=${rc}\n${o}${e}")
@@ -61,5 +64,15 @@ file(WRITE "${WORK}/zx-dead.sel" "SOURCE_SEARCH zxart beyond\n@search_wait\n")
 execute_process(COMMAND "${CLI}" script "${WORK}/zx-dead.sel" --db "${db}"
   OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
 need("unreachable site" "${o}${e}" "search_failed")
+
+# I1231: in the synced db the search reads the synced rows (one local FTS query) and asks no site, so the closed port still answers
+execute_process(COMMAND "${CLI}" script "${WORK}/zx-search.sel" --db "${synced}"
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
+set(raw "${o}${e}")
+if(raw MATCHES "search_failed")
+  message(FATAL_ERROR "I1231: the synced zxart search went to the (closed) site\n${raw}")
+endif()
+need("synced row from the local catalogue" "${raw}" "zxart:19636/MmcM_-_Beyond_Time_\\(2013\\)[^\n]*MmcM")
+need("no hook search: the local catalogue answered" "${raw}" "SOURCESEARCH runs=0")
 
 message(STATUS "zxart_search_ok")

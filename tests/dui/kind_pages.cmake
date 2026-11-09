@@ -150,8 +150,8 @@ expect_eq("an album has no Albums shelf" "${alb_albums}" "0")
 kp_field(alb_year "${alb}" year)
 expect_eq("album year in the header" "${alb_year}" "1992")
 kp_rect(alb_shuffle "${alb}" shuffle)
-# Play starts the first song and queues the rest: all 7 songs are reached, so the queue holds 6 (not a capped slice).
-math(EXPR want_queued "${want_alb} - 1")
+# Play (I994e: PLAY_CONTEXT from row 0) queues the album from the clicked row on, the playing song included: all 7 songs.
+set(want_queued "${want_alb}")
 if(NOT "${alb}" MATCHES "plpage [^\n]* play=(-?[0-9]+),(-?[0-9]+),([0-9]+),([0-9]+)")
   message(FATAL_ERROR "no Play rectangle on the album page:\n${alb}")
 endif()

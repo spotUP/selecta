@@ -1,0 +1,25 @@
+; Install-Selecta: Installer script of the Selecta Amiga archive. It copies files only.
+; The drawer is copied whole: the program, library-template.db and the ARexx scripts. library-template.db MUST stay beside the program:
+; the first start copies it to PROGDIR:library.db instead of building the schema statement by statement (3336 ms on a 68020).
+
+(set @default-dest "Work:")
+
+(welcome "This installs Selecta, the music player. The Selecta drawer is copied to the place you choose.")
+
+(set #dest
+  (askdir
+    (prompt "Where is the Selecta drawer created?")
+    (help "The drawer Selecta is created inside this directory. It holds the program, library-template.db (the empty library, copied to library.db at the first start) and the ARexx scripts.")
+    (default @default-dest)
+    (disk)
+  )
+)
+
+(set #drawer (tackon #dest "Selecta"))
+(makedir #drawer (infos))
+(copyfiles (source "Selecta") (dest #drawer))
+(copyfiles (source "library-template.db") (dest #drawer))
+(makedir (tackon #drawer "rexx"))
+(copyfiles (source "rexx") (dest (tackon #drawer "rexx")) (all))
+
+(exit "Selecta is installed. Start it from the Selecta drawer; the first start creates library.db from library-template.db.")

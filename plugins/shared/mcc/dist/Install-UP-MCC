@@ -1,0 +1,133 @@
+; Install-UP-MCC: Installer script of the UP-MCC package 1.0 (MIT licence, see Docs/LICENSE).
+; Run it from the Installer program (novice, intermediate or expert mode). It copies files only; it never writes to MUI preferences.
+
+(set @default-dest "MUI:")
+(set #version "1.0")
+
+; Source drawer: the drawer holding this script (the package root), whatever the current directory is. @icon is the script's own path
+; whether Installer is started from its icon or from a shell, so no source path below depends on the current directory.
+(set #src (pathonly @icon))
+
+(welcome "This installs UP-MCC " #version ": eleven UP- user interface classes for MUI 3.8, the UP-MCC preferences class, the support library up-mcc.library, the Inter font, theme files, programmer headers, documentation and a demonstration program.")
+
+(complete 0)
+
+; Requirements. MUI itself is mandatory, ttengine is optional (anti-aliased text; without it the classes draw plain text).
+(if (= 0 (exists "MUI:Libs/mui" (noreq)))
+  (abort "MUI 3.8 is not installed (the drawer MUI:Libs/mui was not found). Install MUI first, then run this installer again.")
+)
+
+(if (= 0 (exists "LIBS:ttengine.library" (noreq)))
+  (message "ttengine.library was not found in LIBS:. It is optional: UP-MCC then draws plain text without anti-aliasing. For anti-aliased text install ttengine from Aminet, category text/font (the exact archive path is unverified). UP-MCC does not ship ttengine.")
+)
+
+(complete 10)
+
+(set #classdest
+  (askdir
+    (prompt "Where are the MUI classes installed?")
+    (help "The eleven UP-*.mcc classes and UP-MCC.mcp are copied into this drawer. The default MUI:Libs/mui is where MUI looks for external classes by name.")
+    (default "MUI:Libs/mui")
+    (newpath)
+  )
+)
+
+(copyfiles
+  (prompt "Copying the UP- classes and the preferences class")
+  (help "Libs/mui/UP-*.mcc are the eleven classes (Button, Text, Panel, Tabs, Balance, Slider, Progress, Cycle, Field, Scroller, List). UP-MCC.mcp is the preferences class.")
+  (source (tackon #src "Libs/mui"))
+  (dest #classdest)
+  (pattern "UP-#?.mc#?")
+  (confirm)
+)
+
+(complete 40)
+
+(copylib
+  (prompt "Copying up-mcc.library")
+  (help "The support library holds the shared theme store, the baked Lucide icons and the font list. Every UP- class opens it, so it must be in LIBS:.")
+  (source (tackon #src "Libs/up-mcc.library"))
+  (dest "LIBS:")
+  (confirm)
+)
+
+(complete 50)
+
+(copyfiles
+  (prompt "Copying the Inter font file")
+  (help "Inter-Regular.ttf (SIL Open Font License 1.1, see Docs/LICENSE.Inter) is used for anti-aliased text when ttengine.library is installed.")
+  (source (tackon #src "Fonts/Inter-Regular.ttf"))
+  (dest "FONTS:")
+  (confirm)
+)
+
+(complete 60)
+
+; Themes: the permanent copy in ENVARC:UP-MCC/ and the live copy in ENV:UP-MCC/ (the classes read ENV:UP-MCC/theme).
+(makedir "ENVARC:UP-MCC")
+(makedir "ENV:UP-MCC")
+
+(copyfiles
+  (prompt "Copying the theme files to ENVARC:UP-MCC")
+  (help "Dark.theme and Light.theme. To use one, copy it to ENVARC:UP-MCC/theme (and ENV:UP-MCC/theme), or choose it in the UP-MCC preferences.")
+  (source (tackon #src "Themes"))
+  (dest "ENVARC:UP-MCC")
+  (pattern "#?.theme")
+)
+
+(copyfiles
+  (prompt "Copying the theme files to ENV:UP-MCC")
+  (source (tackon #src "Themes"))
+  (dest "ENV:UP-MCC")
+  (pattern "#?.theme")
+)
+
+(complete 70)
+
+(if (= 0 (exists "ENVARC:UP-MCC/theme" (noreq)))
+  (
+    (copyfiles (source (tackon #src "Themes/Dark.theme")) (dest "ENVARC:UP-MCC") (newname "theme"))
+    (copyfiles (source (tackon #src "Themes/Dark.theme")) (dest "ENV:UP-MCC") (newname "theme"))
+  )
+)
+
+(complete 80)
+
+(copyfiles
+  (prompt "Copying the programmer headers")
+  (help "Include/ holds mcc/up.h, mcc/up_lib.h and the proto, inline, clib and pragmas headers of up-mcc.library. Use MUI_NewObject with the class name and the UPA_ tags of mcc/up.h.")
+  (source (tackon #src "Include"))
+  (dest (askdir (prompt "Where do the programmer headers go?") (help "Usually your compiler include drawer.") (default "Work:Include") (newpath)))
+  (all)
+  (optional "force" "askuser")
+  (confirm)
+)
+
+(copyfiles
+  (prompt "Copying the documentation")
+  (source (tackon #src "Docs"))
+  (dest (askdir (prompt "Where do the documentation files go?") (help "The .doc files are in AutoDoc layout.") (default "Work:Docs") (newpath)))
+  (all)
+  (confirm)
+)
+
+(complete 90)
+
+(if (askbool
+      (prompt "Install the demonstration program UP-Demo and its source?")
+      (help "UP-Demo opens every UP- class by name and prints one line per class. Skip it if you only need the classes.")
+      (default 0)
+    )
+  (
+    (copyfiles
+      (prompt "Copying the demonstration program")
+      (source (tackon #src "Demo"))
+      (dest (askdir (prompt "Where does the demonstration go?") (help "Any drawer.") (default "Work:UP-MCC") (newpath)))
+      (all)
+    )
+  )
+)
+
+(complete 100)
+
+(exit "UP-MCC " #version " is installed. Check it with: Version LIBS:up-mcc.library. Restart programs that use MUI so they find the new classes.")

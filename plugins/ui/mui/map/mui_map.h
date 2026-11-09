@@ -7,6 +7,8 @@
 #include <stdint.h>
 
 #include <selecta/engine.h>
+#include <selecta/protocol.h>
+#include <selecta/source.h>
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/keybind.h>
@@ -14,6 +16,7 @@
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
+#include "mui_aa.h" /* mui_aabtn_minmax lives in the class package map */
 
 /* The view styles the MUI UI offers. An RTG screen offers every style (6). A planar screen shows artwork and grid tiles
  * as cached 1-bit dithered images (MUI-P5-7, I509), so all but cover flow (5); the classic three alone no longer fit. */
@@ -74,6 +77,8 @@ typedef struct mui_layout_map_t {
     uint32_t weight_h[MUI_SLOT_COUNT];
     uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
     uint8_t compact;       /* I949c: the compact class (mui_layout_compact): the sidebar is the labelled door rail */
+    uint8_t side_wide;     /* I1166b: Expand Library is on (desktop side_wide): the sidebar takes the widened width of the layout */
+    uint8_t mode;          /* I1173: SEL_UIM_LAYOUT_* the shared layout actions chose (ui.desktop.mode) */
     uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
 } mui_layout_map_t;
 /* I949c: the compact class of a 640x256-class screen: the bitmap tier at the icon-sidebar breakpoint (width 600-699) and at most
@@ -117,14 +122,23 @@ uint32_t mui_player_min_width(const mui_player_band_t* pb);
 /* Sentinel: bars built (mui_player_band calls) since start. */
 uint32_t mui_player_bar_builds(void);
 
-/* I973b: an icon button's size request, pure. fixed_w / fixed_h in px (0 = none). The deltas are added to the Area's own insets.
- * A fixed side has min = def = max, so no weight can stretch the square; a labelled button keeps the unbounded width. */
-typedef struct mui_btn_box {
-    uint32_t min_w, def_w, min_h, def_h;
-    uint32_t w_fixed; /* 1: MaxWidth = MinWidth, else unbounded */
-    uint32_t h_fixed; /* always 1 today: a button never grows taller than its contents */
-} mui_btn_box_t;
-void mui_aabtn_minmax(uint32_t content_w, uint32_t content_h, uint32_t fixed_w, uint32_t fixed_h, uint32_t toggle, mui_btn_box_t* out);
+/* I960: plan of the Now Playing page in the main slot of the compact class (design 6.4, 6.6). Every size is in ROWS except art_w. The
+ * builder reads the art size, the row counts and the heights from it. `min_h` (heading + top row + tabs + the tallest tab page) is
+ * the height the 4th main page adds to the main slot minimum, so it must stay at or under MUI_NP_PAGE_BUDGET_H at 640x256. */
+#define MUI_NP_PAGE_BUDGET_H 170
+typedef struct mui_np_page_plan_t {
+    uint32_t art_w, art_h;          /* art frame: art_h square on screen (mui_art_height) */
+    uint32_t text_rows;             /* title, artist, album, missing-bank note: 4 */
+    uint32_t lyric_rows, next_rows; /* Lyrics tab: lyrics list rows and Next in Queue entries (Johan: 3) */
+    uint32_t info_rows;             /* Info tab list rows */
+    uint32_t text_h, list_h;        /* one AAText row, one AAList row */
+    uint32_t heading_h, top_h, tabs_h, page_h; /* the four stacked parts; page_h = tallest tab page */
+    uint32_t min_h;
+} mui_np_page_plan_t;
+/* m: metrics of the screen (mui_aa_metrics_aspect); main_w: main column width in px (the art never takes more than a third of it). */
+void mui_np_page_plan(const mui_aa_metrics_t* m, uint32_t main_w, mui_np_page_plan_t* out);
+uint32_t mui_np_page_plans(void); /* sentinel: plans computed since start */
+
 /* I949e2: height of an art frame width px wide so it is square on screen: width x 256 / aspect (mui_aa_rows). The player art is
  * MUI_PLAYER_ART_PX wide, the detail art MUI_DETAIL_ART_PX. 256 (square pixels) gives the width. */
 #define MUI_DETAIL_ART_PX 64
@@ -143,8 +157,21 @@ uint32_t mui_layout_rows(uint32_t screen_h, int laced);
 void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier);
 /* I798 (T2, R3): as mui_layout_map with the Now Playing column hidden when `detail_hidden`; relayout keeps the flag. */
 void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
+/* I1173: the map under a layout mode (SEL_UIM_LAYOUT_*); relayout keeps the mode. mui_mode_from_pref reads the SEL_EVT_PREFS_CHANGED
+ * pair (key, value): 1 and the mode when it is ui.desktop.mode with a valid value. mui_mode_applies() counts the maps built under a
+ * non-Full mode (call-count sentinel). */
+void mui_layout_map_mode(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t mode);
+int mui_mode_from_pref(const char* key, const char* value, uint32_t* mode);
+uint32_t mui_mode_applies(void);
 /* I798: 1 when the Hide / Show Now Playing button exists (three column breakpoint, top bar shown), as the Mac np_toggle_rect. */
 uint32_t mui_np_toggle_shown(const mui_layout_map_t* m);
+/* I1166b: as mui_layout_map_panel with Expand Library `side_wide` (layout.c expanded_side) under layout `mode` (I1173); relayout, the
+ * Now Playing toggle and the Expand Library toggle keep both. */
+void mui_layout_map_wide(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t side_wide,
+                         uint32_t mode);
+/* I1166b: flip Expand / Collapse Library; returns the new side_wide. mui_side_toggles() counts the flips (sentinel). */
+uint32_t mui_side_wide_toggle(mui_layout_map_t* m);
+uint32_t mui_side_toggles(void);
 /* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
  * the slots whose visibility changed), 0 when only weights move. */
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips);
@@ -205,6 +232,27 @@ typedef struct mui_key_bind {
     uint32_t shortcut; /* 1: Right Amiga menu shortcut, 0: event handler */
 } mui_key_bind;
 uint32_t mui_keys_build(mui_key_bind* out, uint32_t cap); /* returns the row count even above cap */
+/* I1171: the window key table. Rows: the multi-char action keys (Space, Enter, Home, End, M-*, C-*; shortcut == 0 in
+ * mui_keys_build) and the page keys (@home @library @folders @info open a sidebar door, @viz @pattern a main pane), all read
+ * from the shared tables (sel_uim_action_at, sel_uim_page_key_at + the text UI default bindings). One-char action keys stay
+ * Menuitem shortcuts. */
+enum { MUI_KEYROW_ACTION = 0, MUI_KEYROW_DOOR, MUI_KEYROW_PANE };
+typedef struct mui_key_row {
+    uint32_t kind;
+    const char* id;  /* ACTION: the action id; DOOR / PANE: the page action name (@home...) */
+    uint32_t code, mods;
+    uint32_t arg;    /* DOOR: the sidebar door index; PANE: the mui_pane */
+} mui_key_row;
+uint32_t mui_key_row_count(void);
+const mui_key_row* mui_key_row_at(uint32_t i);
+/* The row a key press (code + mods of uimodel/keys.h) fires, -1 for none. text_active: 1 while a text field has the focus (plain
+ * keys are then text, never page keys). Counts every hit (mui_key_hits), the sentinel of the reachability test. */
+int32_t mui_key_find(uint32_t code, uint32_t mods, int text_active);
+uint32_t mui_key_hits(void);
+/* I1165: Down from the search String moves into the results list (desktop desk_focus_route keeps the focus on one stop). */
+enum { MUI_FOCUS_NONE = 0, MUI_FOCUS_RESULTS };
+uint32_t mui_focus_route(uint32_t code, uint32_t mods, int search_active);
+uint32_t mui_focus_routes(void);
 typedef struct mui_mode_key {
     char key;
     const char* mode;
@@ -235,6 +283,23 @@ typedef struct mui_list_entry {
 /* Fill out[] from the visible window only (at most window_rows and cap entries); *active is the List cursor
  * position inside the window, -1 when the cursor row is outside it. Returns the entries filled. */
 uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active);
+/* I1174: library styles on the List. mui_style_kind maps a sel_view_style to how MUI shows it. mui_style_pack turns the window's
+ * entries into the packed List rows (Grid: `cols` cells of `cell_chars` per row, cursor cell in [ ]; Cover Flow: one row, cursor cell
+ * between its neighbours; Compact: one dense label per row) and returns the row count, 0 for a plain list style. The cell width is
+ * the desktop's tile step (sel_uim_tile_step / 8 chars); mui_style_grid_cols fits cells into list_chars. mui_style_row_index maps a
+ * clicked packed row back to the window position, mui_style_packed_cursor the window cursor to its packed row. mui_tile_step_move
+ * clamps a step change (desktop pinch). mui_style_packs() counts packs (call-count sentinel). */
+enum { MUI_STYLE_LIST = 0, MUI_STYLE_GRID, MUI_STYLE_COVERFLOW, MUI_STYLE_COMPACT };
+uint32_t mui_style_kind(uint32_t style);
+uint32_t mui_style_cell_chars(uint32_t step);
+uint32_t mui_style_grid_cols(uint32_t list_chars, uint32_t step);
+uint32_t mui_tile_step_move(uint32_t step, int dir);
+struct mui_list_entry;
+uint32_t mui_style_pack(uint32_t style, uint32_t cols, uint32_t cell_chars, const struct mui_list_entry* in, uint32_t n, int32_t cursor,
+                        struct mui_list_entry* out, uint32_t cap);
+int32_t mui_style_row_index(uint32_t style, uint32_t cols, uint32_t packed_row, int32_t cursor);
+int32_t mui_style_packed_cursor(uint32_t style, uint32_t cols, int32_t cursor);
+uint32_t mui_style_packs(void);
 /* MUI-P3-1: the user's row click is sent to the engine as VIEW_CURSOR, but sel_engine_state() is only a snapshot the pump
  * updates later. Until it shows the new cursor, a list rebuild must keep the clicked row selected, not the snapshot's old
  * cursor row (else a double-click right after reads the old row back and activates it). */
@@ -264,7 +329,7 @@ enum { MUI_COL_TITLE = 0, MUI_COL_ARTIST, MUI_COL_ALBUM, MUI_COL_LENGTH, MUI_COL
 /* Visible columns in display order for a SEL_UIM_BP_*; hidden by width: format first, then album, then length. */
 uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]);
 /* MUIA_List_Format string for those columns: "BAR," per column but the last. */
-void mui_columns_format(uint32_t breakpoint, char* out, size_t cap);
+void mui_columns_format(uint32_t breakpoint, char* out, size_t cap, int aspect_q8);
 /* I667i2: the weight of each shown column (0 = fixed to its sample width), the table the format string uses; returns the column count. */
 /* I667i2: the lyrics as rows of an AAList: number of newline separated lines (a trailing newline adds none, empty text has 0) and line row
  * copied into out (cut to cap - 1; empty past the last line). */
@@ -349,7 +414,7 @@ const mui_page_slot_t* mui_page_slot(uint32_t page);
 /* I735: the panes of the MUI main slot. MUI_PANE_LIST is the song list every engine-line page (Home, Search, Library, ...) shows; the
  * Visualizer and Pattern pages are own panes, reached from the Mac UI's keys (txt_bindings default: v -> @viz, t -> @pattern; the
  * View menu items carry the same shortcuts) and shown in the main slot at every width. `opens` counts the openings per pane. */
-enum { MUI_PANE_LIST = 0, MUI_PANE_VIZ, MUI_PANE_TRACKER, MUI_PANE_COUNT };
+enum { MUI_PANE_LIST = 0, MUI_PANE_VIZ, MUI_PANE_TRACKER, MUI_PANE_NOWPLAYING, MUI_PANE_COUNT };
 typedef struct mui_mainpane {
     uint32_t pane;
     uint32_t opens[MUI_PANE_COUNT];
@@ -364,6 +429,10 @@ char mui_pane_shortcut(uint32_t pane);          /* the Mac UI's key for the page
 uint32_t mui_pane_open(mui_mainpane* mp, uint32_t page);
 /* A key press (txt_key code and mods) as the Mac UI's default table reads it: opens the page it names. MUI_PANE_COUNT when the key opens none. */
 uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods);
+/* I960: the compact class (640x256) hides the detail column, so a door whose page has no engine line (Now Playing, Song Information) opens
+ * MUI_PANE_NOWPLAYING in the main slot; `*tab` (when not NULL) gets the detail tab to show: 0 Lyrics, 1 Info. MUI_PANE_COUNT in the full
+ * class and for every door with an engine line (those go through the engine). */
+uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab);
 
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the
@@ -408,6 +477,9 @@ uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, ch
  * LIBRARY_REMOVE. Returns the line length, 0 when the item has no line. */
 uint32_t mui_song_menu_line(uint32_t item, const char* path, uint32_t qid, uint32_t playlist_id, int on_queue, char* out, size_t cap);
 const char* mui_song_menu_follow(uint32_t item);
+/* I1179: a view row kind (sel_row_kind) to the context-menu kind (SEL_UIM_CTXK_*): files are songs, queue entries queue, playlists
+ * playlist; every other row, folders included (the MUI has no folder delete), none. */
+uint32_t mui_ctx_kind(uint32_t row_kind);
 /* MUI-P4-7 likes and ratings: the Cycle entry index 0..5 (0 is None) to its line, and the heart. */
 void mui_rating_line(uint32_t cycle_index, char* out, size_t cap);
 const char* mui_like_line(void);
@@ -442,16 +514,16 @@ uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
 /* One horizontal MUI row is never narrower than its widest labels summed. Thirteen controls (eleven buttons and two cycles) in one
  * row made the window wider than the 800 pixel screen and MUI refused to open it (MUIA_Window_Open stayed 0) once Settings
  * joined them (MUI-P4-10): the first MUI_TOOL_ROW2 buttons stay in row 2, the rest and the cycles go to row 3. */
-#define MUI_TOOL_BTNS 12u
-#define MUI_TOOL_ROW2 7u
+#define MUI_TOOL_BTNS 13u
+#define MUI_TOOL_ROW2 8u /* 8, not 7: New Folder (I1177) pushed row 3 to 78 label characters, over the 72 limit; New Playlist moves up. */
 extern const char* const mui_tool_labels[MUI_TOOL_BTNS];
 /* Label characters in tool row 2 (row 0) or row 3 (row 1). */
 uint32_t mui_tool_row_chars(uint32_t row);
 /* Minimum pixel widths of the button rows as mui_ui.c builds them (mui_icons.h width model): tool row 0 or 1, the transport row
  * (worst-case labels over play, repeat and random states; row 0 = the first MUI_TRANSPORT_ROW1 buttons plus the volume slider, row 1 = the state buttons Repeat and Random), the extras row. */
-uint32_t mui_tool_row_width(uint32_t row);
-uint32_t mui_transport_row_width(uint32_t row);
-uint32_t mui_extra_row_width(void);
+uint32_t mui_tool_row_width(uint32_t row, int aspect_q8);
+uint32_t mui_transport_row_width(uint32_t row, int aspect_q8);
+uint32_t mui_extra_row_width(int aspect_q8);
 
 /* I671/I949b: screen plan and open ladder (map/mui_screen.c). MUI 3.8 refuses a window whose minimum size does not fit the
  * screen (MUIA_Window_Open reads back 0); MUI itself is the measurement, so no height model lives here. The plan keeps the
@@ -459,7 +531,7 @@ uint32_t mui_extra_row_width(void);
 #define MUI_MODE_LACE 0x00000004u
 #define MUI_INVALID_MODE 0xFFFFFFFFu
 /* Height of one icon button: icon, vertical padding, frame. */
-uint32_t mui_button_height(void);
+uint32_t mui_button_height(int aspect_q8);
 typedef struct mui_screen_plan_t {
     uint32_t mode;          /* SA_DisplayID for the own screen */
     uint32_t width, height; /* expected screen size */
@@ -540,6 +612,7 @@ uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx
 enum { MUI_LIBMODE_COUNT = 6, MUI_SCOPE_COUNT = 3 };
 const char* mui_libmode_label(uint32_t i);
 uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, void* ctx);
+uint32_t mui_libmode_joined(uint32_t i, uint32_t window_rows, char* out, size_t cap); /* I1175: the mode's lines joined with ';' (one route entry), returns the line count */
 const char* mui_scope_label(uint32_t i);
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_view_fires(void);
@@ -578,6 +651,19 @@ uint32_t mui_page_switches(void);
 uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap);
 uint32_t mui_stats_builds(void); /* call-count sentinel */
 
+/* MUI-P8-6 (I1181): the Statistics window's state. The menu actions stats_show / stats_hide open and close it (mui_stats_menu; the
+ * engine line STATS_SHOW / STATS_HIDE is the action table's, sent by the caller), More / Less flips the row count. Show opens on
+ * Less like the desktop. Rows come from the shared model (sel_uim_stats_row), `more` picks sel_uim_stats_shown. */
+typedef struct mui_stats_panel {
+    int open;
+    int more;
+} mui_stats_panel;
+int mui_stats_menu(mui_stats_panel* p, const char* action_id); /* 1 when the action was stats_show / stats_hide */
+void mui_stats_more(mui_stats_panel* p);                       /* the More / Less button */
+const char* mui_stats_more_label(const mui_stats_panel* p);    /* "More" while collapsed, "Less" while expanded */
+/* Row i of the open panel; 0 when closed, stats is NULL or i is past the shown rows. */
+uint32_t mui_stats_panel_row(const mui_stats_panel* p, const char* stats, uint32_t i, const char** label, const char** value);
+
 
 /* MUI-P8-7: the Activity, Downloads and Extra Files panes. Ids 0..2 index sel_uim_panel_*; the menu ids (MUIA_UserData of the menu
  * items) are MUI_ID_PANEL_BASE + pane, above every control id P8-5..P8-14 uses. The Activity key is Ctrl+A and toggles that pane. */
@@ -599,6 +685,36 @@ uint32_t mui_offer_sync(const sel_uim_source* s, uint32_t n, uint32_t ticked, mu
 const char* mui_search_source_label(uint32_t i);
 uint32_t mui_search_source_set(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_source_fires(void); /* call-count sentinel */
+
+/* I1175: the Sources page. One mui_srcs holds the engine's SOURCES rows (LIBRARY_RESULT tags with SRC_KEY, as the desktop's d->src) and
+ * the pending and failed sync masks. mui_srcs_toggle and mui_srcs_sync fire the shared lines through mui_source_toggle and
+ * mui_source_sync; mui_srcs_row is the page's row text (name and the shared sel_uim_src_status text). */
+typedef struct mui_srcs {
+    sel_uim_src_row it[SEL_SOURCE_MAX];
+    uint32_t n, pending, failed, gen; /* gen counts changes, so the window refills only when it moved */
+    int wait;                         /* a SOURCES ask is out: the next answer starts the list again */
+} mui_srcs;
+void mui_srcs_asked(mui_srcs* m);
+int mui_srcs_event(mui_srcs* m, const sel_message* evt); /* 1 when the event was a SOURCES row */
+uint32_t mui_srcs_row(const mui_srcs* m, uint32_t i, char* out, size_t cap);
+uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx); /* lines sent, 0 for a row that is not there */
+uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);   /* 0 unless the row is a switched-on syncable remote */
+
+/* I1182: the first-start sync offer window, the desktop's nag dialog (nagdlg_*) on the shared sel_uim_offer model. It opens once per
+ * launch when the SOURCES rows hold a due source; one check per due source, all ticked; Sync sends what the desktop's Sync now sends
+ * (LIBRARY_SYNC per ticked row, then the snooze line and SOURCES when a row is unticked); Not now sends the notice time and SOURCES.
+ * Either button closes it for good. opens, syncs and later are the call-count sentinels. */
+typedef struct mui_offer_panel {
+    sel_uim_offer o;
+    int open;
+    uint32_t opens, syncs, later;
+} mui_offer_panel;
+int mui_offer_panel_follow(mui_offer_panel* p, int blocked, const mui_srcs* m); /* 1 when the offer opened on this call */
+uint32_t mui_offer_panel_title(const mui_offer_panel* p, char* out, size_t cap);
+uint32_t mui_offer_panel_row(const mui_offer_panel* p, const mui_srcs* m, uint32_t k, char* out, size_t cap);
+void mui_offer_panel_tick(mui_offer_panel* p, uint32_t k); /* flip the check of row k */
+uint32_t mui_offer_panel_sync(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx); /* lines sent */
+uint32_t mui_offer_panel_not_now(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx);
 
 /* MUI-P8-9: info line pieces. */
 int32_t mui_info_mode_key(char key);
@@ -666,6 +782,7 @@ typedef struct mui_sidebar_in {
     uint32_t chip;   /* 0 All, 1..SEL_UIM_SIDE_CHIPS a kind chip */
     uint32_t by_you_only; /* the By You sub-chip of Playlists */
     uint32_t wide;   /* Expand is on */
+    int64_t now;     /* I1166b: epoch seconds for the Date Added / Played columns of the wide table (0: shown as "-") */
     int bitmap;      /* the bitmap tier */
     int rail;        /* I949c: the compact class rail: doors only (see mui_layout_compact) */
     int chips_single; /* I669: the chips do not fit the sidebar, S5 is the one label with the chevrons (mui_sidebar_chips_single) */
@@ -675,6 +792,7 @@ typedef struct mui_sidebar_in {
 } mui_sidebar_in;
 typedef struct mui_sidebar_row {
     char mark[4], title[96], subtitle[96], type[16];
+    char added[24], played[24]; /* I1166b: the wide table columns, sel_uim_relative_time (desktop draw_side_lib) */
     uint32_t kind, id;
 } mui_sidebar_row;
 typedef struct mui_sidebar_model {
@@ -692,6 +810,7 @@ typedef struct mui_sidebar_model {
     mui_sidebar_row row[MUI_SIDEBAR_ROWS];
     uint32_t row_n, cols;
     int wide;
+    char head[4][16];                         /* I1166b: the wide table header: Title, Type, Date Added, Played (sel_uim_side_col_name) */
     char empty[32];                           /* "" when no empty state shows */
     int rail;                                 /* I949c: doors only; brand, header, chips, rows, empty state and card are all empty */
     int card;
@@ -699,7 +818,7 @@ typedef struct mui_sidebar_model {
 } mui_sidebar_model;
 void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* out);
 /* I669: 1 when the kind chips do not fit a sidebar `sidebar_px` wide (or on the bitmap tier); the decision is sel_uim_lfilter_chips_single. */
-int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px);
+int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px, int aspect_q8);
 uint32_t mui_sidebar_builds(void);
 /* I949c: sentinel, the builds that took the rail path (no Your Library block). */
 uint32_t mui_sidebar_rail_builds(void);

@@ -34,7 +34,6 @@ typedef struct builtin {
 
 static const builtin BUILTIN[] = {
     {"modland", "http://ftp.amigascne.org/mirrors/ftp.modland.com/,ftp://ftp.modland.com/"},
-    {"hvsc", "https://hvsc.de/download/"},
     {"asma", "https://asma.atari.org/asma/"},
     {"sndh", "https://sndh.atari.org/sndh/sndh_lf/"},
     {"keygenmusic", "https://keygenmusic.tk/kgm/"},
@@ -92,6 +91,19 @@ unsigned sel_mirrors_init(sel_mirror_set* s, const char* source, int amiga_route
     size_t i, n;
     memset(s, 0, sizeof *s);
     snprintf(s->source, sizeof s->source, "%s", source);
+    {
+        /* I1218: a hosted source (hvsc, SEL_SRC_HOSTED_BY = modland) has no tree of its own: its files are the host's, so
+         * the host's mirrors, env list and DEViLBOX route serve them, under the host path (see sel_mirrors_fetch_opts). */
+        const sel_source* own = sel_source_find(source);
+        const char* host_id = own != NULL && own->url != NULL ? (const char*)sel_tag_find(own->tags, SEL_SRC_HOSTED_BY, 0) : NULL;
+        const sel_source* host = host_id != NULL ? sel_source_find(host_id) : NULL;
+
+        if (host != NULL && host->path_in != NULL) {
+            s->via = own;
+            s->host = host;
+            source = host_id;
+        }
+    }
     v = getenv("SELECTA_MIRROR");
     if (v != NULL && v[0] != '\0' && add_base(s, v, strlen(v))) {
         s->home = 1;
@@ -258,11 +270,22 @@ static int try_one(const char* url, attempt* a, const sel_mirror_opts* o) {
 int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror_opts* o, sel_mirror_sink sink,
                            sel_mirror_restart restart, sel_mirror_verify verify, void* ctx, sel_mirror_res* res) {
     char enc[SEL_MIRROR_PATH_MAX];
+    char hosted[SEL_MIRROR_PATH_MAX];
     unsigned k;
     memset(res, 0, sizeof *res);
     res->served = -1;
     while (*path == '/') {
         path++;
+    }
+    if (s->via != NULL) {
+        /* I1218: the hosted source's song path becomes the host's root-relative path (hvsc MUSICIANS/H/x.sid ->
+         * pub/modules/HVSC/MUSICIANS/H/x.sid) before it is appended to a host mirror base. */
+        char hurl[SEL_MIRROR_URL_MAX + SEL_MIRROR_PATH_MAX];
+
+        if (!s->via->url(path, hurl, sizeof hurl) || !s->host->path_in(hurl, hosted, sizeof hosted)) {
+            return 0;
+        }
+        path = hosted;
     }
     if (s->count == 0 || !encode_path(path, enc, sizeof enc)) {
         return 0;

@@ -5,8 +5,12 @@
 #include "db_internal.h"
 #include "schema.h"
 
+#include <selecta/engine.h>
 #include <selecta/machine.h>
 
+#include "../../core/count.h"
+
+#include <stdio.h>
 #include <string.h>
 
 static void* g_heap;
@@ -157,20 +161,129 @@ static int set_cache_size(sqlite3* db) {
     return sqlite3_exec(db, sql, NULL, NULL, NULL) == SQLITE_OK;
 }
 
+/* I1162: another process (a second Selecta: the text UI beside the desktop app) may hold a lock on the same database file.
+ * Without a busy handler SQLite answers SQLITE_BUSY at once, so the open's first write failed and startup said "cannot open the
+ * library database", and either instance's later writes could fail the same way. Wait in 20 ms steps for up to 5 s instead.
+ * The Amiga build uses the unix-none VFS (no file locking), so it never waits. */
+#define SEL_LIBRARY_BUSY_STEP_MS 20
+#define SEL_LIBRARY_BUSY_MAX_MS 5000
+
+static int busy_wait(void* ctx, int count) {
+    sel_library* lib = (sel_library*)ctx;
+
+    if (count * SEL_LIBRARY_BUSY_STEP_MS >= SEL_LIBRARY_BUSY_MAX_MS) {
+        sel_library_trace(lib->host, "library busy, gave up after waits", count);
+        return 0;
+    }
+    if (count == 0) {
+        sel_library_trace(lib->host, "library busy, waiting for another process's lock", 0);
+    }
+    lib->busy_waits++;
+    sqlite3_sleep(SEL_LIBRARY_BUSY_STEP_MS);
+    return 1;
+}
+
 /* I1077b: one count per committed write transaction, on the writer's connection. Returning 0 lets the commit go on. */
 static int write_gen_hook(void* ctx) {
     sel_library* lib = (sel_library*)ctx;
 
-    lib->write_gen++;
-    if (lib->in_pin) lib->pin_gen++;
-    if (lib->in_touch) lib->touch_gen++;
+    /* I1082f: the engine thread polls these while the writer thread commits, so every access is atomic. I1231b: a search cache
+     * write is no model change; counting it would re-run the shown Search (search_refresh), whose answer is stored again, forever. */
+    if (SEL_ATOMIC_LOAD_ACQ(&lib->in_cache)) return 0;
+    SEL_ATOMIC_INC_REL(&lib->write_gen);
+    if (SEL_ATOMIC_LOAD_ACQ(&lib->in_pin)) SEL_ATOMIC_INC_REL(&lib->pin_gen);
+    if (SEL_ATOMIC_LOAD_ACQ(&lib->in_touch)) SEL_ATOMIC_INC_REL(&lib->touch_gen);
     return 0;
+}
+
+/* I1137: the directory of the running executable's resources: Contents/Resources in a macOS bundle, else the executable's own
+ * directory. 0 when unknown (always on the Amiga, where the template lies beside PROGDIR:library.db). Shares sel_app_exe_dir
+ * (appdir.c) with sel_app_plugin_dir (src/core/config_dir.c). */
+int sel_app_data_dir(char* out, size_t cap) {
+    char exe[512];
+    char* slash;
+    int n;
+    if (!sel_app_exe_dir(exe, sizeof exe)) {
+        return 0;
+    }
+    slash = strrchr(exe, '/');
+    if (slash != NULL && strcmp(slash, "/MacOS") == 0) {
+        *slash = '\0';
+        n = snprintf(out, cap, "%s/Resources", exe);
+    } else {
+        n = snprintf(out, cap, "%s", exe);
+    }
+    return n > 0 && (size_t)n < cap;
+}
+
+/* I625a8e: a missing database is made by copying the prebuilt template SEL_LIBTEMPLATE_NAME from the directory of `path` (the file the
+ * build bakes with the same sel_schema_migrate), not by running the 65 DDL statements of SCHEMA_FINAL, which cost 3336 ms on a 68020.
+ * The copy goes to <path>.part and is renamed, so an interrupted copy never leaves a half database. 0 = no template or copy failed;
+ * the caller then creates the schema with the DDL as before. */
+static int copy_template(const sel_host* host, const char* path) {
+    char tpl[512], part[512], app[512];
+    char buf[4096];
+    size_t dirlen = 0, i, n;
+    long total = 0;
+    FILE *in, *out;
+    int ok = 1;
+
+    if (path[0] == '\0' || strcmp(path, ":memory:") == 0 || strncmp(path, "file:", 5) == 0) {
+        return 0;
+    }
+    for (i = 0; path[i] != '\0'; i++) {
+        if (path[i] == '/' || path[i] == ':') dirlen = i + 1;
+    }
+    if (dirlen + sizeof SEL_LIBTEMPLATE_NAME > sizeof tpl || strlen(path) + 6 > sizeof part) {
+        return 0;
+    }
+    if ((out = fopen(path, "rb")) != NULL) { /* the database exists: nothing to copy */
+        fclose(out);
+        return 0;
+    }
+    memcpy(tpl, path, dirlen);
+    strcpy(tpl + dirlen, SEL_LIBTEMPLATE_NAME);
+    sprintf(part, "%s.part", path);
+    in = fopen(tpl, "rb");
+    /* I1137: the config directory is the user's, an installer cannot write there; the template ships with the app (Contents/Resources
+     * in a bundle, else the executable's directory) and is read from there when none lies beside the database. */
+    if (in == NULL && sel_app_data_dir(app, sizeof app) && strlen(app) + 1u + sizeof SEL_LIBTEMPLATE_NAME <= sizeof app) {
+        strcat(app, "/" SEL_LIBTEMPLATE_NAME);
+        in = fopen(app, "rb");
+    }
+    if (in == NULL) {
+        return 0;
+    }
+    if ((out = fopen(part, "wb")) == NULL) {
+        fclose(in);
+        return 0;
+    }
+    while ((n = fread(buf, 1, sizeof buf, in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            ok = 0;
+            break;
+        }
+        total += (long)n;
+    }
+    ok = ok && !ferror(in) && total > 0;
+    fclose(in);
+    if (fclose(out) != 0) ok = 0;
+    if (ok) {
+        ok = rename(part, path) == 0;
+    }
+    if (!ok) {
+        remove(part);
+        return 0;
+    }
+    sel_library_trace(host, "template copied", (int)total);
+    return 1;
 }
 
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path) {
     sel_library* lib = host->mem_alloc(host, sizeof *lib, SEL_MEM_FAST);
     char sql[80];
 
+    sel_library_trace(host, "sel_library_open entered", 0);
     if (lib == NULL) {
         return NULL;
     }
@@ -185,20 +298,45 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     }
     lib->heap_bytes = g_heap_bytes;
     lib->heap_allocs = g_heap_allocs;
+    sel_library_trace(host, "sqlite heap acquired bytes", (int)g_heap_bytes);
+    sel_library_trace(host, "open begin", 0);
+    copy_template(host, path);
     if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL) !=
-            SQLITE_OK ||
-        !set_cache_size(lib->db) || !sel_schema_migrate(lib->db, host) || !sel_library_register_regexp(lib->db)) {
+            SQLITE_OK) {
         goto fail;
     }
+    sel_library_trace(host, "sqlite3_open_v2 done", 0);
+    sqlite3_busy_handler(lib->db, busy_wait, lib);
+    /* I625a8f: one trace line per statement between open_v2 and "migrate begin", so the log says which one pays for the first
+     * sqlite_master parse. */
+    sel_library_trace(host, "first statement begin PRAGMA cache_size", 0);
+    if (!set_cache_size(lib->db)) {
+        goto fail;
+    }
+    sel_library_trace(host, "PRAGMA cache_size done", 0);
+    if (!sel_schema_migrate(lib->db, host) || !sel_library_register_regexp(lib->db)) {
+        goto fail;
+    }
+    sel_library_trace(host, "migrate and regexp done", 0);
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);
     sel_user_rating_pending_refresh(lib);
+    sel_library_trace(host, "pending ratings refresh done", 0);
     sel_library_source_mirror_open(lib);
+    sel_library_trace(host, "source mirror open done", 0);
     sqlite3_commit_hook(lib->db, write_gen_hook, lib);
-    if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK || !sel_worker_start(lib)) {
+    if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK) {
         goto fail;
     }
+    sel_library_trace(host, "account row written", 0);
+    if (!sel_worker_start(lib)) {
+        goto fail;
+    }
+    sel_library_trace(host, "worker started", 0);
     return lib;
 fail:
+    if (lib->db != NULL) {
+        sel_library_trace(host, sqlite3_errmsg(lib->db), sqlite3_errcode(lib->db));
+    }
     sqlite3_close(lib->db);
     if (lib->cache != NULL) {
         host->mem_free(host, lib->cache);
@@ -297,10 +435,13 @@ static void handle_request(sel_library* lib, const sel_message* req, sel_message
     lib->served++;
     if (req->id == SEL_LIB_REQ_STATS) {
         handle_stats(lib, reply);
-    } else if (req->id == SEL_LIB_REQ_SEARCH || req->id == SEL_LIB_REQ_SAVE_VIEW || req->id == SEL_LIB_REQ_IMPORT) {
+    } else if (req->id == SEL_LIB_REQ_SEARCH || req->id == SEL_LIB_REQ_SEARCH_SOURCES || req->id == SEL_LIB_REQ_SAVE_VIEW ||
+               req->id == SEL_LIB_REQ_IMPORT) {
         if (lib->job != NULL) {
             if (req->id == SEL_LIB_REQ_SEARCH) {
                 sel_library_search(lib, lib->job);
+            } else if (req->id == SEL_LIB_REQ_SEARCH_SOURCES) {
+                sel_library_search_sources(lib, lib->job);
             } else if (req->id == SEL_LIB_REQ_SAVE_VIEW) {
                 sel_library_save_view(lib, lib->job);
             } else {
@@ -326,6 +467,10 @@ static void handle_request(sel_library* lib, const sel_message* req, sel_message
         sel_library_annotate(lib, (const sel_annotate_batch*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_SRCSTATE && req->argc == 1) {
         sel_library_srcstate(lib, (const sel_srcstate_op*)req->args[0].v.s, reply);
+    } else if (req->id == SEL_LIB_REQ_SEARCH_CACHE && req->argc == 1) {
+        SEL_ATOMIC_STORE_REL(&lib->in_cache, 1u);
+        sel_library_search_cache(lib, (const sel_searchcache_op*)req->args[0].v.s, reply);
+        SEL_ATOMIC_STORE_REL(&lib->in_cache, 0u);
     } else if (req->id == SEL_LIB_REQ_USER && req->argc == 1) {
         const sel_user_op* uop = (const sel_user_op*)req->args[0].v.s;
 

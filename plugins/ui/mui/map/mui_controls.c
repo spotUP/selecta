@@ -164,8 +164,8 @@ uint32_t mui_keys_build(mui_key_bind* out, uint32_t cap) {
 }
 
 static const mui_mode_key k_mode_keys[] = {
-    {'1', "full", "PREF_SET ui.mui.mode full"},     {'2', "window", "PREF_SET ui.mui.mode window"},
-    {'3', "lowered", "PREF_SET ui.mui.mode lowered"}, {'4', "mini", "PREF_SET ui.mui.mode mini"},
+    {'1', "full", "PREF_SET ui.desktop.mode full"}, {'2', "window", "PREF_SET ui.desktop.mode window"},
+    {'3', "lowered", "PREF_SET ui.mui.mode lowered"}, {'4', "mini", "PREF_SET ui.desktop.mode mini"},
     {'5', "micro", "PREF_SET ui.mui.mode micro"},   {'I', "icon", "PREF_SET ui.mui.mode icon"},
 };
 

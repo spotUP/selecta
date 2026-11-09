@@ -17,6 +17,8 @@
 
 #include <stddef.h>
 
+struct sel_source;
+
 #define SEL_MIRROR_MAX 8
 #define SEL_MIRROR_URL_MAX 256
 #define SEL_MIRROR_PATH_MAX 512
@@ -30,6 +32,11 @@ typedef struct sel_mirror_set {
     /* I1057: set for a source with no env list and no built-in mirror whose descriptor has a `url` hook (zxart): the
      * set then holds that one entry and its fetch URL is url(path), not base + path. NULL for every other set. */
     int (*url)(const char* path, char* out, size_t n);
+    /* I1218: a source hosted by another (hvsc, SEL_SRC_HOSTED_BY = modland) fetches from the host's mirrors under the host's
+     * path: `via` is the hosted source's descriptor (its url hook gives the host URL of a path) and `host` the host's
+     * (its path_in turns that URL into the root-relative host path). NULL for every source with its own tree. */
+    const struct sel_source* via;
+    const struct sel_source* host;
     unsigned count;
 } sel_mirror_set;
 

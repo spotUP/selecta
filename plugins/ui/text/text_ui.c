@@ -16,15 +16,21 @@
 #include <string.h>
 
 #include "grid.h"
+#include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
+#include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/route.h>
+#include <selecta/uimodel/viewcmds.h>
+#include <selecta/library_item.h>
 #include "spawn.h"
 #include "splash.h"
 #include "term.h"
 #include <selecta/uimodel/theme.h>
+#include <selecta/uimodel/viewcmds.h>
 
 #define TUI_POOL_BYTES 1024u
 #define TUI_DEFAULT_COLS 80u
@@ -35,6 +41,14 @@
 #define TUI_MARKS 16u
 #define TUI_MARK_BYTES 256u
 #define TUI_VOLUME_STEP 5
+#define TUI_NOTE_BYTES 128u
+
+enum { TUI_INFO_NONE = 0, TUI_INFO_NOWPLAYING = 1, TUI_INFO_SONGINFO = 2 };
+
+#define TUI_MENU_MAX 10u
+
+/* Menu items (I1190): the song menu in sel_uim_song_menu_label order, the playlist menu, and the playlist picker. */
+enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK };
 
 typedef struct tui {
     sel_engine* engine;
@@ -45,7 +59,7 @@ typedef struct tui {
     txt_bindings binds;
     txt_cmdline cmd;
     int cmd_mode; /* the command line has the keys */
-    int overlay;  /* 0 none, 1 command palette, 2 help (read only) */
+    int overlay;  /* 0 none, 1 command palette, 2 help (read only), 3 Settings (I1188) */
     txt_palette pal;
     char marks[TUI_MARKS][TUI_MARK_BYTES]; /* selected browse files for `!` */
     uint32_t mark_n;
@@ -62,18 +76,24 @@ typedef struct tui {
     const char* frame_dump_path; /* --frame-dump: raw frame bytes appended (row I218d2) */
     int dirty;
     int info;
+    int page;           /* 0 none, 1 Now Playing, 2 Song Information (I1191) */
+    char si_note[TUI_NOTE_BYTES]; /* the Song Information note field */
+    uint32_t si_actions, np_draws; /* I1191 sentinels */
     int splash_wanted;  /* no --exec was given: the start screen may show (row I355) */
     int splash_off;     /* a key or a song ended the start screen for good */
     int splash_shown;   /* the frame being drawn is the start screen */
     uint32_t splash_frames; /* flushes that carried the start screen: STAT_SPLASH_FRAMES */
     uint32_t meta_panel_rows; /* catalogue rows the info panel drew in the latest frame (I185 sentinel) */
-    int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase (V cycles) */
+    int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase, 6 SID registers (V cycles) */
+    uint32_t layout; /* I1185: SEL_UIM_LAYOUT_* (pref ui.desktop.mode): full, window (list only), mini (header only), visual (panel only) */
+    uint32_t style_drawn, style_draws; /* I1186 sentinels: style of the last pane draw; draws in Grid, Cover Flow, Compact */
+    uint32_t layout_sets, sid_frames; /* I1185 sentinels: layout / visualizer pref keys taken; SID register panels drawn with a feed */
     int pattern; /* pattern panel shown (P toggles); excludes the viz panel */
     uint32_t voice; /* 1-based voice the digit keys touched last; S solos it */
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[18];
+    sel_tag stats[30];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -82,7 +102,25 @@ typedef struct tui {
     uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
     uint32_t lib_opens, lib_searches;      /* T98 sentinels */
     uint32_t folder_opens;                 /* T83 sentinel: openings of the playlist folder tree */
+    uint32_t table_actions;                /* I1184 sentinel: keys that fired a line of the shared action table */
+    char table_log[192];                   /* I1184: those lines in order, '|' separated (the tail is kept) */
     int lib_screen;                        /* the query view is the Library screen */
+    uint32_t lib_mode;                     /* I1187: the Library mode (sel_uim_libmode_name) the last mode key or Library opening set */
+    int lib_mode_on;                       /* I1187: lib_mode is in force (cleared when Browse, Folders or Home take the pane) */
+    uint32_t mode_keys, scope_keys;        /* I1187 sentinels: library mode keys and queue scope keys taken */
+    uint32_t set_focus, set_opens, set_sets; /* I1188: the Settings row under the cursor; openings; PREF_SET lines its keys sent */
+    int set_edit;                          /* I1188: a string row is being typed into set_buf */
+    char set_buf[96];
+    sel_route_hist rh;                     /* I1189: the page history (route.h) */
+    int pg;                                /* I1189: page on screen, 0 none, 1 Shelf, 2 Collection */
+    uint32_t pg_shelf, pg_cur, pg_serial, pg_kind, pg_opens_shelf, pg_opens_coll, pg_rows;
+    char pg_key[128], pg_title[96];
+    /* I1190: the song and playlist menu (overlay 4), its name prompt (cmd_mode 3) and confirm prompt (cmd_mode 4) */
+    uint32_t mn_n, mn_cur, mn_opens, mn_picks, mn_answers, mn_pending;
+    uint32_t mn_act[TUI_MENU_MAX], mn_pl[TUI_MENU_MAX]; /* item action; MN_PLPICK: playlist id (0 makes a new one) */
+    char mn_lab[TUI_MENU_MAX][64];
+    uint32_t mn_id, mn_folder, mn_parent, mn_qid; /* playlist or folder under the cursor; folder to create in; queue entry id */
+    char mn_title[96], mn_key[256], mn_log[192];
     int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
 
@@ -161,11 +199,12 @@ static int tui_queue_view(const sel_view_state* v) {
     return v != NULL && v->source != SEL_VIEW_BROWSE; /* the queue and the library query share the styles */
 }
 
-/* v: regular -> tree -> drilldown -> regular. */
+/* y: regular -> tree -> drilldown -> grid -> cover flow -> compact -> regular. */
 static void tui_next_style(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
-    static const char* const next[] = {"VIEW_STYLE tree", "VIEW_STYLE drilldown", "VIEW_STYLE regular"};
-    if (tui_queue_view(v) && v->style <= SEL_VIEW_STYLE_DRILLDOWN) {
+    static const char* const next[SEL_VIEW_STYLE_COUNT] = {"VIEW_STYLE tree",      "VIEW_STYLE drilldown", "VIEW_STYLE grid",
+                                                            "VIEW_STYLE coverflow", "VIEW_STYLE compact",   "VIEW_STYLE regular"};
+    if (tui_queue_view(v) && v->style < SEL_VIEW_STYLE_COUNT) {
         tui_send(u, next[v->style]);
     }
 }
@@ -278,6 +317,10 @@ static void tui_library_search(tui* u, const char* query) {
     }
     u->lib_screen = 1;
     u->lib_searches++;
+    if (!u->lib_mode_on) { /* the Library opens as Tree, grouped by format */
+        u->lib_mode = 1u;
+        u->lib_mode_on = 1;
+    }
     u->lib_empty_query = query[0] == '\0';
 }
 
@@ -285,16 +328,642 @@ static void tui_library_open(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
     if (!u->lib_screen || v == NULL || v->source != SEL_VIEW_QUERY) {
         u->lib_screen = 0;
+        u->lib_mode_on = 0;
         tui_library_search(u, "");
     }
 }
 
+/* I1187: the Library modes the text UI cycles through (sel_uim_libmode_lines, the lines the desktop sends too): Composers, Tree,
+ * Columns, Files, History. Sources is exempt: the desktop retired it (I678i, nothing sets it) and it lists no view rows. */
+static void tui_next_lib_mode(tui* u) {
+    char lines[SEL_UIM_LIB_LINES][SEL_UIM_LIB_LINE_MAX];
+    uint32_t i, n, mode = u->lib_mode_on ? (u->lib_mode + 1u) % SEL_UIM_LIB_SOURCES : 1u;
+    n = sel_uim_libmode_lines(mode, tui_main_rows(u), lines);
+    for (i = 0; i < n; i++) {
+        tui_send(u, lines[i]);
+    }
+    if (mode == 1u || mode == 2u) { /* the query modes are the Library screen */
+        u->lib_opens += u->lib_screen ? 0u : 1u;
+        u->lib_screen = 1;
+        u->lib_searches++;
+        u->lib_empty_query = 1;
+    } else {
+        u->lib_screen = 0;
+    }
+    u->lib_mode = mode;
+    u->lib_mode_on = 1;
+    u->mode_keys++;
+}
+
+/* I1187: the queue scope Library, Album, Playlist (SCOPE <name>, as the desktop Scope button sends). */
+static void tui_next_scope(tui* u, const sel_state* s) {
+    char line[32];
+    (void)sel_uim_scope_line((sel_uim_scope_index(s->options[SEL_OPT_SCOPE]) + 1u) % SEL_UIM_QUEUE_SCOPES, line, sizeof line);
+    tui_send(u, line);
+    u->scope_keys++;
+}
+
+/* ---- I1188: the Settings screen. The rows are the shared table (sel_uim_pref_row_at, the filter the desktop Settings page and
+ * the MUI window use, hidden for the other machine); a value is read with the engine pref the way desk_pref does, a change
+ * is the PREF_SET line sel_uim_pref_line builds. Exempt: the UI Zoom of the desktop (a pixel scale, a character grid has
+ * none) and the C64 ROM file chooser (a file dialog; the screen shows which ROM is in force, Reset to Bundled is the Delete key). ---- */
+
+static const char* tui_pref(const tui* u, const char* key) {
+    const sel_host* h = sel_engine_plugin_host(u->engine);
+    const char* v = h != NULL && h->config_get != NULL ? h->config_get(h, key, "") : "";
+    return v != NULL ? v : "";
+}
+
+static void tui_pref_send(tui* u, const sel_uim_pref_row* r, const char* val) {
+    char line[300];
+    sel_uim_pref_line(r->key, val, line, sizeof line);
+    tui_send(u, line);
+    u->set_sets++;
+}
+
+/* Left (dir -1) and Right, Enter, Space (dir +1) on the row under the cursor. */
+static void tui_settings_step(tui* u, const sel_uim_pref_row* r, int dir) {
+    const char* cur = tui_pref(u, r->key);
+    char val[48];
+    if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+        uint32_t n = sel_uim_pref_choice(r->choices, 0u, val, sizeof val);
+        uint32_t at = sel_uim_pref_choice_index(r->choices, cur);
+        at = dir > 0 ? (at + 1u) % n : (at + n - 1u) % n;
+        sel_uim_pref_choice(r->choices, at, val, sizeof val);
+        tui_pref_send(u, r, val);
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+        tui_pref_send(u, r, cur[0] == '1' ? "0" : "1");
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+        long lo = 0, hi = 100, v = cur[0] != '\0' ? strtol(cur, NULL, 10) : 0;
+        sscanf(r->choices, "%ld,%ld", &lo, &hi);
+        v = v < lo ? lo : (v > hi ? hi : v);
+        v += dir * 5;
+        v = v < lo ? lo : (v > hi ? hi : v);
+        snprintf(val, sizeof val, "%ld", v);
+        tui_pref_send(u, r, val);
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_STRING && dir > 0) {
+        snprintf(u->set_buf, sizeof u->set_buf, "%s", cur);
+        u->set_edit = 1;
+    }
+}
+
+static void tui_settings_open(tui* u) {
+    u->overlay = 3;
+    u->set_edit = 0;
+    u->set_opens++;
+    if (u->set_focus >= sel_uim_pref_row_count()) {
+        u->set_focus = 0;
+    }
+}
+
+static void tui_settings_key(tui* u, const txt_key* k) {
+    uint32_t n = sel_uim_pref_row_count();
+    const sel_uim_pref_row* r = sel_uim_pref_row_at(u->set_focus);
+    size_t len = strlen(u->set_buf);
+    if (u->set_edit) {
+        if (k->code == 13u && r != NULL) {
+            tui_pref_send(u, r, u->set_buf);
+            u->set_edit = 0;
+        } else if (k->code == 27u) {
+            u->set_edit = 0;
+        } else if (k->code == 127u && len > 0) {
+            u->set_buf[len - 1u] = '\0';
+        } else if (k->mods == 0 && k->code >= 0x20u && k->code < 0x7Fu && len + 1u < sizeof u->set_buf) {
+            u->set_buf[len] = (char)k->code;
+            u->set_buf[len + 1u] = '\0';
+        }
+        return;
+    }
+    if (k->code == 27u || k->code == 'q' || k->code == 'S') {
+        u->overlay = 0;
+    } else if ((k->code == TXT_KEY_UP || k->code == 'k') && u->set_focus > 0) {
+        u->set_focus--;
+    } else if ((k->code == TXT_KEY_DOWN || k->code == 'j') && u->set_focus + 1u < n) {
+        u->set_focus++;
+    } else if (k->code == TXT_KEY_HOME) {
+        u->set_focus = 0;
+    } else if (k->code == TXT_KEY_END && n > 0) {
+        u->set_focus = n - 1u;
+    } else if (r != NULL && (k->code == TXT_KEY_LEFT || k->code == 'h')) {
+        tui_settings_step(u, r, -1);
+    } else if (r != NULL && (k->code == TXT_KEY_RIGHT || k->code == 'l' || k->code == 13u || k->code == ' ')) {
+        tui_settings_step(u, r, 1);
+    } else if (r != NULL && r->ui == (uint32_t)SEL_UIM_PREF_ROM && k->code == TXT_KEY_DELETE) {
+        int slot = sel_uim_rom_slot(r->choices);
+        if (slot >= 0) {
+            (void)sel_uim_rom_reset(tui_pref(u, "config.dir"), (uint32_t)slot);
+        }
+    }
+}
+
 /* UI-local actions (`@name` in the binding table). Returns 0 for an unknown name. */
+static txt_style tui_style(const tui* u, txt_role r);
+
+/* ---- Shelf and Collection pages (I1189) ----
+ * The same pages the desktop opens (uimodel/pages.h, route.h): the Show all page of a Home shelf and the album, artist, composer
+ * and playlist pages. The route table says which click opens which page and the history walks Back; the Home shelf split
+ * (sel_uim_home_shelves) and the tile route (sel_uim_tile_route) are the shared ones. The engine builds a Collection page:
+ * COLLECTION_OPEN fills state.collection, which the page lists. */
+
+enum { TUI_PAGE_NONE = 0, TUI_PAGE_SHELF = 1, TUI_PAGE_COLLECTION = 2, TUI_SHELF_MAX = 8 };
+
+static const char* const k_coll_shelf[SEL_COLLECTION_SHELVES] = {"Albums", "Appears On", "More by", "Spellings"};
+
+/* Builds `COLLECTION_OPEN <kind> "<key>"[ 1]` ; " 1" rebuilds without touching Recents (Back and Forward). */
+static void tui_collection_open(tui* u, uint32_t kind, const char* key, int restore) {
+    char line[320];
+    size_t o = (size_t)snprintf(line, sizeof line, "COLLECTION_OPEN %u \"", (unsigned)kind);
+    const sel_collection_page* pg = sel_engine_state(u->engine)->collection;
+    for (const char* c = key; *c != '\0' && o + 8u < sizeof line; c++) {
+        if (*c == '"' || *c == '\\') {
+            line[o++] = '\\';
+        }
+        line[o++] = *c;
+    }
+    line[o++] = '"';
+    line[o] = '\0';
+    if (restore) {
+        snprintf(line + o, sizeof line - o, " 1");
+    }
+    u->pg_serial = pg != NULL ? pg->serial : 0u;
+    tui_send(u, line);
+}
+
+/* Shows the page entry `e`: the history decided it, this fills it. */
+static void tui_page_enter(tui* u, const sel_route_entry* e, int restore) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    u->pg_cur = 0;
+    if (e->page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
+        u->pg = TUI_PAGE_SHELF;
+        u->pg_shelf = e->id > 0u ? e->id - 1u : 0u;
+        u->pg_opens_shelf++;
+        if (v == NULL || v->source != SEL_VIEW_HOME) {
+            tui_send(u, "VIEW_SOURCE home");
+        }
+    } else if (e->page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
+        u->pg = TUI_PAGE_COLLECTION;
+        u->pg_kind = e->kind;
+        snprintf(u->pg_key, sizeof u->pg_key, "%s", e->key);
+        snprintf(u->pg_title, sizeof u->pg_title, "%s", e->name);
+        u->pg_opens_coll++;
+        tui_collection_open(u, e->kind, e->key, restore);
+    } else {
+        u->pg = TUI_PAGE_NONE;
+    }
+}
+
+/* One click: the route table resolves it, the history takes the entry, the page opens. Returns 1 when a page opened. */
+static int tui_route(tui* u, sel_route_target target, uint32_t kind, uint32_t id, const char* key, const char* name, const char* sub) {
+    sel_route_entry e;
+    if (u->rh.n == 0u) { /* the page the screen is on when the first click comes */
+        sel_route_entry home;
+        memset(&home, 0, sizeof home);
+        home.page = (uint32_t)SEL_ROUTE_PAGE_HOME;
+        sel_route_hist_seed(&u->rh, &home);
+    }
+    if (!sel_route_go(&u->rh, target, kind, id, key, name, sub, &e)) {
+        return 0;
+    }
+    sel_route_hist_scroll(&u->rh, (int32_t)u->pg_cur);
+    sel_route_hist_push(&u->rh, &e);
+    tui_page_enter(u, &e, 0);
+    return 1;
+}
+
+/* Back: the page before in the history; the Home entry shows the plain view again. Returns 1 when a page was left. */
+static int tui_page_back(tui* u) {
+    const sel_route_entry* w;
+    sel_route_entry e;
+    if (u->pg == TUI_PAGE_NONE) {
+        return 0;
+    }
+    if (!sel_route_hist_can(&u->rh, -1)) {
+        u->pg = TUI_PAGE_NONE;
+        return 1;
+    }
+    w = sel_route_hist_walk(&u->rh, -1);
+    e = *w;
+    tui_page_enter(u, &e, 1);
+    u->pg_cur = (uint32_t)(e.scroll > 0 ? e.scroll : 0);
+    return 1;
+}
+
+/* The Home shelf `u->pg_shelf` of the view; 0 when the shelf is gone. */
+static int tui_page_shelf(const tui* u, const sel_view_state* v, sel_uim_shelf* out) {
+    sel_uim_shelf sh[TUI_SHELF_MAX];
+    uint32_t n = sel_uim_home_shelves(v, sh, TUI_SHELF_MAX);
+    if (u->pg_shelf >= n) {
+        return 0;
+    }
+    *out = sh[u->pg_shelf];
+    return 1;
+}
+
+/* Line `i` of a Collection page (the shelf rows in shelf order, then the songs); 0 past the end. `tile` is set when Enter on the line
+ * opens another page, `song` points at the song key when it is a song line. */
+static int tui_coll_line(const sel_collection_page* pg, uint32_t i, char* buf, size_t cap, sel_uim_tile* tile, const char** song) {
+    uint32_t s, k;
+    const char* r;
+    *song = NULL;
+    memset(tile, 0, sizeof *tile);
+    for (s = 0; s < SEL_COLLECTION_SHELVES; s++) {
+        if (i < pg->shelf_n[s]) {
+            const sel_engine_collection_row* row = &pg->shelf[s][i];
+            if (s == 3u) { /* Spellings: a composer spelling, not a page */
+                snprintf(buf, cap, "%s: %s  %u songs", k_coll_shelf[s], row->name, (unsigned)row->songs);
+            } else {
+                snprintf(buf, cap, "%s: %s  %s %u  %u songs", k_coll_shelf[s], row->name, row->artist, (unsigned)row->year, (unsigned)row->songs);
+                tile->kind = (uint32_t)SEL_LIB_ITEM_ALBUM;
+                tile->id = row->id;
+                snprintf(tile->key, sizeof tile->key, "%u", (unsigned)row->id);
+                snprintf(tile->name, sizeof tile->name, "%s", row->name);
+                snprintf(tile->sub, sizeof tile->sub, "%s", row->artist);
+            }
+            return 1;
+        }
+        i -= pg->shelf_n[s];
+    }
+    r = pg->rows;
+    for (k = 0; r != NULL && k < pg->songs && *r != '\0'; k++) {
+        const char* plays = r + strlen(r) + 1u;
+        if (k == i) {
+            const char* base = strrchr(r, '/');
+            snprintf(buf, cap, "%s  %s plays", base != NULL ? base + 1 : r, plays);
+            *song = r;
+            return 1;
+        }
+        r = plays + strlen(plays) + 1u;
+    }
+    return 0;
+}
+
+static uint32_t tui_page_count(const tui* u, const sel_state* s) {
+    uint32_t n = 0, i;
+    if (u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        return s->view != NULL && tui_page_shelf(u, s->view, &sh) ? sh.rows : 0u;
+    }
+    if (s->collection != NULL) {
+        for (i = 0; i < SEL_COLLECTION_SHELVES; i++) {
+            n += s->collection->shelf_n[i];
+        }
+        n += s->collection->songs;
+    }
+    return n;
+}
+
+/* Enter on the page line under the cursor. */
+static void tui_page_activate(tui* u) {
+    const sel_state* s = sel_engine_state(u->engine);
+    sel_uim_tile tile;
+    char buf[320];
+    const char* song;
+    if (u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        if (s->view == NULL || !tui_page_shelf(u, s->view, &sh) || u->pg_cur >= sh.rows) {
+            return;
+        }
+        if (sel_uim_tile_route(&s->view->rows[sh.first + u->pg_cur], &tile)) {
+            (void)tui_route(u, SEL_ROUTE_HOME_TILE, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+        } else { /* a song tile plays */
+            snprintf(buf, sizeof buf, "VIEW_CURSOR %u", (unsigned)(s->view->window_start + sh.first + u->pg_cur));
+            tui_send(u, buf);
+            tui_send(u, "VIEW_ACTIVATE");
+        }
+    } else if (s->collection != NULL && tui_coll_line(s->collection, u->pg_cur, buf, sizeof buf, &tile, &song)) {
+        if (song != NULL) {
+            snprintf(buf, sizeof buf, "QUEUE_ADD %s", song);
+            tui_send(u, buf);
+        } else if (tile.kind != 0u) {
+            (void)tui_route(u, SEL_ROUTE_ALBUM_CARD, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+        }
+    }
+}
+
+/* Keys of an open page. Returns 1 when the page took the key. */
+static int tui_page_key(tui* u, const txt_key* k) {
+    uint32_t n = tui_page_count(u, sel_engine_state(u->engine));
+    if (k->mods != 0) {
+        return 0;
+    }
+    if (k->code == TXT_KEY_UP || k->code == 'k') {
+        u->pg_cur -= u->pg_cur > 0u;
+    } else if (k->code == TXT_KEY_DOWN || k->code == 'j') {
+        u->pg_cur += u->pg_cur + 1u < n;
+    } else if (k->code == 13u) {
+        tui_page_activate(u);
+    } else if (k->code == 27u || k->code == 127u) {
+        (void)tui_page_back(u);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+/* e and r: the artist or album under the cursor (or the playing song's artist) opens its Collection page. */
+static void tui_open_field(tui* u, int album) {
+    const sel_state* s = sel_engine_state(u->engine);
+    const sel_view_state* v = s->view;
+    const sel_view_row* r = NULL;
+    const char* author = (const char*)sel_tag_find(s->song.meta, SEL_META_AUTHOR, 0);
+    if (v != NULL && u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        if (tui_page_shelf(u, v, &sh) && u->pg_cur < sh.rows) {
+            r = &v->rows[sh.first + u->pg_cur];
+        }
+    } else if (v != NULL && u->pg == TUI_PAGE_NONE && v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n) {
+        r = &v->rows[v->cursor - v->window_start];
+    }
+    if (album) {
+        if (r != NULL && r->art_id != 0u) {
+            char key[16];
+            snprintf(key, sizeof key, "%u", (unsigned)r->art_id);
+            (void)tui_route(u, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, r->art_id, key, r->key != NULL ? r->key : r->text,
+                            r->artist != NULL ? r->artist : "");
+        } else {
+            snprintf(u->cmd.status, sizeof u->cmd.status, "No album under the cursor");
+        }
+        return;
+    }
+    if (r != NULL && r->artist != NULL && r->artist[0] != '\0') {
+        author = r->artist;
+    }
+    if (author != NULL && author[0] != '\0' && (uintptr_t)author != (uintptr_t)-1) {
+        (void)tui_route(u, SEL_ROUTE_TRACK_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, author, author, "");
+    } else {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "No artist under the cursor");
+    }
+}
+
+/* Enter on a Home tile that opens a page (composer, album, item card) opens it; 0 for a song tile. */
+static int tui_home_tile_enter(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    sel_uim_tile tile;
+    if (v == NULL || v->source != SEL_VIEW_HOME || v->cursor < v->window_start || v->cursor - v->window_start >= v->row_n) {
+        return 0;
+    }
+    if (!sel_uim_tile_route(&v->rows[v->cursor - v->window_start], &tile)) {
+        return 0;
+    }
+    return tui_route(u, SEL_ROUTE_HOME_TILE, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+}
+
+/* Enter with the engine cursor on the heading of a Home shelf opens its Show all page (the desktop's shelf_header_enter). */
+static int tui_shelf_header_enter(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    sel_uim_shelf sh[TUI_SHELF_MAX];
+    uint32_t s, n, at;
+    if (v == NULL || v->source != SEL_VIEW_HOME || v->cursor < v->window_start) {
+        return 0;
+    }
+    at = v->cursor - v->window_start;
+    n = sel_uim_home_shelves(v, sh, TUI_SHELF_MAX);
+    for (s = 0; s < n; s++) {
+        if (sh[s].head == at && sh[s].tiles > 0u) {
+            return tui_route(u, SEL_ROUTE_SHOW_ALL, 0u, s + 1u, "", "", "");
+        }
+    }
+    return 0;
+}
+
+static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
+    char buf[320];
+    uint32_t i, n, drawn = 0, rows = tui_main_rows(u);
+    txt_style label = tui_style(u, TXT_ROLE_LABEL);
+    sel_uim_tile tile;
+    const char* song;
+    if (u->pg == TUI_PAGE_SHELF) {
+        sel_uim_shelf sh;
+        if (s->view == NULL || !tui_page_shelf(u, s->view, &sh)) {
+            txt_grid_text(&u->grid, 1, 2, "Shelf", width - 1u, label);
+            return;
+        }
+        snprintf(buf, sizeof buf, "%s  Show all  %u rows", s->view->rows[sh.head].text, (unsigned)sh.rows);
+        txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+        for (i = 0; i < sh.rows && i < rows; i++) {
+            const sel_view_row* r = &s->view->rows[sh.first + i];
+            txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
+            snprintf(buf, sizeof buf, " %s%s%s", r->text, r->artist != NULL && r->artist[0] ? "  - " : "", r->artist != NULL ? r->artist : "");
+            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+            drawn++;
+        }
+    } else {
+        const sel_collection_page* pg = s->collection;
+        int ready = pg != NULL && pg->serial != u->pg_serial && pg->kind == u->pg_kind;
+        snprintf(buf, sizeof buf, "%s  %s", sel_route_kind_name(u->pg_kind), ready ? pg->title : u->pg_title);
+        if (ready && pg->sub[0] != '\0') {
+            size_t at = strlen(buf);
+            snprintf(buf + at, sizeof buf - at, "  - %s", pg->sub);
+        }
+        txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+        n = ready ? tui_page_count(u, s) : 0u;
+        for (i = 0; i < n && i < rows; i++) {
+            txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
+            if (!tui_coll_line(pg, i, buf + 1, sizeof buf - 1u, &tile, &song)) {
+                break;
+            }
+            buf[0] = ' ';
+            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+            drawn++;
+        }
+        if (!ready) {
+            txt_grid_text(&u->grid, 1, 3, "Loading", width - 1u, tui_style(u, TXT_ROLE_DIM));
+        }
+    }
+    u->pg_rows = drawn;
+}
+
+/* ---- the song and playlist menu (I1190) ---- */
+
+static void tui_menu_add(tui* u, uint32_t act, const char* label, uint32_t pl) {
+    if (u->mn_n < TUI_MENU_MAX) {
+        u->mn_act[u->mn_n] = act;
+        u->mn_pl[u->mn_n] = pl;
+        snprintf(u->mn_lab[u->mn_n], sizeof u->mn_lab[0], "%s", label);
+        u->mn_n++;
+    }
+}
+
+/* Sends a line the menu chose and keeps it in the sentinel log. */
+static void tui_menu_send(tui* u, const char* line) {
+    size_t len = strlen(u->mn_log);
+    if (len + strlen(line) + 2u >= sizeof u->mn_log) {
+        u->mn_log[0] = '\0';
+        len = 0;
+    }
+    snprintf(u->mn_log + len, sizeof u->mn_log - len, "%s%s", len > 0 ? "|" : "", line);
+    tui_send(u, line);
+}
+
+/* Opens the menu for the row under the cursor: a song (queue, library, browse file) or, in the playlist tree, a playlist or
+ * folder plus New Folder and New Playlist. Labels come from the shared uimodel tables the desktop menus use. */
+static void tui_menu_open(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    const sel_view_row* row = NULL;
+    const char* key;
+    uint32_t k;
+    if (v == NULL) {
+        return;
+    }
+    if (v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n) {
+        row = &v->rows[v->cursor - v->window_start];
+    }
+    u->mn_n = 0;
+    u->mn_cur = 0;
+    u->mn_id = u->mn_folder = u->mn_parent = u->mn_qid = 0;
+    u->mn_key[0] = '\0';
+    if (v->source == SEL_VIEW_FOLDERS) {
+        snprintf(u->mn_title, sizeof u->mn_title, "%s", row != NULL && (row->kind == (uint32_t)SEL_ROW_PLAYLIST || row->kind == (uint32_t)SEL_ROW_FOLDER) ? row->text : "Playlists");
+        if (row != NULL && (row->kind == (uint32_t)SEL_ROW_PLAYLIST || row->kind == (uint32_t)SEL_ROW_FOLDER)) {
+            u->mn_id = row->id;
+            u->mn_folder = row->kind == (uint32_t)SEL_ROW_FOLDER;
+            u->mn_parent = u->mn_folder ? row->id : 0u;
+            for (k = 0; k < 2u; k++) {
+                uint32_t act = sel_uim_plmenu_action(u->mn_folder, k);
+                if (act != (uint32_t)SEL_UIM_PLACT_NONE) {
+                    tui_menu_add(u, act == (uint32_t)SEL_UIM_PLACT_RENAME ? MN_RENAME : MN_DELETE, sel_uim_plmenu_label(act), 0);
+                }
+            }
+        }
+        tui_menu_add(u, MN_NEWFOLDER, sel_uim_plbtn_label(0), 0);
+        tui_menu_add(u, MN_NEWPL, sel_uim_plbtn_label(1), 0);
+    } else if (row != NULL && row->kind != (uint32_t)SEL_ROW_NODE && row->kind != (uint32_t)SEL_ROW_DIR &&
+               (key = sel_engine_view_cursor_key(u->engine)) != NULL) {
+        int on_queue = v->source == SEL_VIEW_QUEUE;
+        snprintf(u->mn_key, sizeof u->mn_key, "%s", key);
+        snprintf(u->mn_title, sizeof u->mn_title, "%s", row->text != NULL ? row->text : key);
+        u->mn_qid = v->cursor_id;
+        for (k = 0; k < (uint32_t)SEL_UIM_SONG_MENU_ITEMS; k++) {
+            tui_menu_add(u, k, sel_uim_song_menu_label(k, on_queue), 0);
+        }
+        u->mn_pending = (uint32_t)on_queue;
+    } else {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "No song or playlist under the cursor");
+        return;
+    }
+    u->mn_opens++;
+    u->overlay = 4;
+}
+
+/* The playlists a song can join: New Playlist, then the saved ones (the desktop Add to Playlist submenu, read synchronously). */
+static void tui_menu_playlists(tui* u) {
+    sel_engine_library_item items[TUI_MENU_MAX - 1u];
+    uint32_t n = sel_engine_library_items(u->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0, items, TUI_MENU_MAX - 1u, NULL), i;
+    u->mn_n = 0;
+    u->mn_cur = 0;
+    tui_menu_add(u, MN_PLPICK, sel_uim_plbtn_label(1), 0);
+    for (i = 0; i < n; i++) {
+        tui_menu_add(u, MN_PLPICK, items[i].name, items[i].id);
+    }
+}
+
+/* A prompt answered: the name for Rename, New Folder, New Playlist. */
+static void tui_menu_name(tui* u, const char* name) {
+    char line[256];
+    u->mn_answers++;
+    if (u->mn_pending == (uint32_t)MN_RENAME) {
+        if (sel_uim_plrename_line(u->mn_id, name, line, sizeof line) > 0u) {
+            tui_menu_send(u, line);
+        }
+    } else if (sel_uim_plbtn_line(u->mn_pending == (uint32_t)MN_NEWFOLDER ? 0u : 1u, name, u->mn_parent, line, sizeof line) > 0u) {
+        tui_menu_send(u, line);
+    }
+    tui_send(u, "VIEW_SOURCE folders");
+}
+
+/* A confirm answered: y runs the delete / library removal, anything else cancels. */
+static void tui_menu_confirm(tui* u, uint32_t code) {
+    char line[320];
+    u->mn_answers++;
+    if (code != (uint32_t)'y' && code != (uint32_t)'Y') {
+        return;
+    }
+    if (u->mn_pending == (uint32_t)MN_DELETE) {
+        sel_uim_pldel_line(u->mn_folder, u->mn_id, line, sizeof line);
+        tui_menu_send(u, line);
+        tui_send(u, "VIEW_SOURCE folders");
+    } else {
+        snprintf(line, sizeof line, "LIBRARY_REMOVE \"%s\"", u->mn_key);
+        tui_menu_send(u, line);
+    }
+}
+
+static void tui_menu_pick(tui* u) {
+    uint32_t act = u->mn_act[u->mn_cur];
+    char line[320];
+    u->mn_picks++;
+    if (act == (uint32_t)MN_PLPICK) {
+        snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)u->mn_pl[u->mn_cur], u->mn_key);
+        tui_menu_send(u, line);
+        u->overlay = 0;
+        return;
+    }
+    u->overlay = 0;
+    if (act == (uint32_t)MN_PLAY) {
+        tui_menu_send(u, "VIEW_ACTIVATE");
+    } else if (act == (uint32_t)MN_NEXT || act == (uint32_t)MN_QUEUE) {
+        snprintf(line, sizeof line, "%s \"%s\"", act == (uint32_t)MN_NEXT ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", u->mn_key);
+        tui_menu_send(u, line);
+    } else if (act == (uint32_t)MN_ADDPL) {
+        tui_menu_playlists(u);
+        u->overlay = 4;
+    } else if (act == (uint32_t)MN_REMOVE && u->mn_pending == 1u) { /* on the queue: the entry leaves the queue */
+        snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)u->mn_qid);
+        tui_menu_send(u, line);
+    } else if (act == (uint32_t)MN_REMOVE || act == (uint32_t)MN_DELETE) {
+        u->mn_pending = act;
+        u->cmd_mode = 4;
+        if (act == (uint32_t)MN_REMOVE) {
+            sel_uim_remove_text(u->mn_title, u->mn_lab[0], sizeof u->mn_lab[0]);
+        } else {
+            sel_uim_pldel_text(u->mn_folder, u->mn_title, u->mn_lab[0], sizeof u->mn_lab[0]);
+        }
+    } else { /* Rename, New Folder, New Playlist: ask for the name */
+        u->mn_pending = act;
+        txt_cmdline_open(&u->cmd);
+        u->cmd_mode = 3;
+    }
+}
+
+static void tui_menu_key(tui* u, const txt_key* k) {
+    if (k->code == 27u || k->code == 127u) {
+        u->overlay = 0;
+    } else if (k->code == 13u) {
+        tui_menu_pick(u);
+    } else if (k->code == TXT_KEY_UP || k->code == (uint32_t)'k') {
+        u->mn_cur = u->mn_cur > 0u ? u->mn_cur - 1u : u->mn_n - 1u;
+    } else if (k->code == TXT_KEY_DOWN || k->code == (uint32_t)'j') {
+        u->mn_cur = u->mn_cur + 1u < u->mn_n ? u->mn_cur + 1u : 0u;
+    }
+}
+
+static void tui_menu_draw(tui* u) {
+    uint32_t w = u->grid.cols > 44u ? 44u : u->grid.cols, x0 = (u->grid.cols - w) / 2u, i;
+    txt_style n = tui_style(u, TXT_ROLE_NORMAL), d = tui_style(u, TXT_ROLE_DIM), sel = tui_style(u, TXT_ROLE_CURSOR);
+    for (i = 0; i < u->mn_n + 2u && 1u + i < u->grid.rows; i++) {
+        txt_grid_fill(&u->grid, x0, 1u + i, w, 1, ' ', n);
+    }
+    txt_grid_text(&u->grid, x0 + 1u, 1, u->mn_title, w - 2u, d);
+    for (i = 0; i < u->mn_n; i++) {
+        txt_style st = i == u->mn_cur ? sel : n;
+        txt_grid_fill(&u->grid, x0, 2u + i, w, 1, ' ', st);
+        txt_grid_text(&u->grid, x0 + 2u, 2u + i, u->mn_lab[i], w - 3u, st);
+    }
+}
+
 static int tui_local(tui* u, const char* name, const txt_key* k) {
     const sel_state* s = sel_engine_state(u->engine);
     char line[48];
     (void)k;
-    if (strcmp(name, "page_up") == 0 || strcmp(name, "page_down") == 0) {
+    if (u->pg != TUI_PAGE_NONE && strstr("home library folders switch_view search settings", name) != NULL) {
+        u->pg = TUI_PAGE_NONE; /* another screen takes the pane: the page history ends */
+        sel_route_hist_init(&u->rh);
+    }
+    if (strcmp(name, "artist_page") == 0 || strcmp(name, "album_page") == 0) {
+        tui_open_field(u, name[1] == 'l');
+    } else if (strcmp(name, "page_up") == 0 || strcmp(name, "page_down") == 0) {
         snprintf(line, sizeof line, "%c%u", name[5] == 'u' ? '-' : '+', (unsigned)tui_main_rows(u));
         tui_cursor(u, line);
     } else if (strcmp(name, "next_style") == 0) {
@@ -302,7 +971,7 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     } else if (strcmp(name, "next_group") == 0) {
         tui_next_group(u);
     } else if (strcmp(name, "back") == 0) { /* the parent directory is always the first browse row */
-        if (tui_drill_back(u, s->view)) {
+        if (tui_page_back(u) || tui_drill_back(u, s->view)) {
             return 1;
         }
         if (s->view != NULL && s->view->source == SEL_VIEW_BROWSE) {
@@ -314,23 +983,33 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         uint32_t src = s->view != NULL ? s->view->source : SEL_VIEW_QUEUE;
         if (src == SEL_VIEW_BROWSE) {
             u->lib_screen = 0;
+            u->lib_mode_on = 0;
             tui_send(u, "VIEW_SHOW queue");
         } else if (src == SEL_VIEW_QUEUE) {
             tui_library_open(u);
         } else {
             u->lib_screen = 0;
+            u->lib_mode_on = 0;
             tui_send(u, "VIEW_SHOW browse");
         }
+    } else if (strcmp(name, "lib_mode") == 0) {
+        tui_next_lib_mode(u);
+    } else if (strcmp(name, "settings") == 0) {
+        tui_settings_open(u);
+    } else if (strcmp(name, "queue_scope") == 0) {
+        tui_next_scope(u, s);
     } else if (strcmp(name, "library") == 0) {
         tui_library_open(u);
     } else if (strcmp(name, "folders") == 0) {
         /* The playlist folder tree (design doc 9c): the engine's folders view source. */
         u->lib_screen = 0;
+        u->lib_mode_on = 0;
         u->folder_opens++;
         tui_send(u, "VIEW_SOURCE folders");
     } else if (strcmp(name, "home") == 0) {
         /* Recently played, jump back in, new this week (I191): the engine's home view source. */
         u->lib_screen = 0;
+        u->lib_mode_on = 0;
         tui_send(u, "VIEW_SOURCE home");
     } else if (strcmp(name, "stats") == 0) {
         /* The statistics screen (F24, I192): the engine reads the stats SQL views; b again closes it. */
@@ -350,8 +1029,30 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         tui_remove_cursor_entry(u);
     } else if (strcmp(name, "info") == 0) {
         u->info = !u->info;
+    } else if (strcmp(name, "nowplaying") == 0 || strcmp(name, "songinfo") == 0) {
+        int want = name[0] == 'n' ? TUI_INFO_NOWPLAYING : TUI_INFO_SONGINFO;
+        u->page = u->page == want ? TUI_INFO_NONE : want;
+        u->pattern = 0;
+        u->viz = 0;
+    } else if (strcmp(name, "page_close") == 0) {
+        u->page = TUI_INFO_NONE;
+    } else if (strcmp(name, "si_wrong") == 0 || strcmp(name, "si_skip") == 0 || strcmp(name, "si_save") == 0) {
+        /* Mark Wrong, Skip Song, Save Note: the same lines the desktop and MUI buttons send (sel_uim_flag_line). */
+        if (u->page == TUI_INFO_SONGINFO) {
+            char fl[TUI_NOTE_BYTES + 32u];
+            uint32_t b = name[3] == 'w' ? 0u : name[3] == 's' && name[4] == 'k' ? 1u : 2u;
+            if (sel_uim_flag_line(b, u->si_note, fl, sizeof fl) > 0u) {
+                u->si_actions++;
+                tui_send(u, fl);
+            }
+        }
+    } else if (strcmp(name, "si_edit") == 0) {
+        if (u->page == TUI_INFO_SONGINFO) {
+            txt_cmdline_open(&u->cmd);
+            u->cmd_mode = 5;
+        }
     } else if (strcmp(name, "viz") == 0) {
-        u->viz = (u->viz + 1) % 6;
+        u->viz = (u->viz + 1) % 7;
         u->pattern = 0;
     } else if (strcmp(name, "pattern") == 0) {
         u->pattern = !u->pattern;
@@ -376,6 +1077,8 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         txt_palette_open(&u->pal, &u->binds);
         u->palette_opens++;
         u->overlay = name[0] == 'p' ? 1 : 2;
+    } else if (strcmp(name, "menu") == 0) {
+        tui_menu_open(u);
     } else if (strcmp(name, "mark") == 0) {
         tui_mark(u);
     } else if (strcmp(name, "quit") == 0) {
@@ -387,8 +1090,35 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
 }
 
 static void tui_cmd_key(tui* u, const txt_key* k) {
-    txt_cmd_result r = txt_cmdline_key(&u->cmd, k->code, k->mods);
+    txt_cmd_result r;
+    if (u->cmd_mode == 4) { /* the confirm prompt takes one key */
+        u->cmd_mode = 0;
+        tui_menu_confirm(u, k->code);
+        return;
+    }
+    r = txt_cmdline_key(&u->cmd, k->code, k->mods);
     if (r == TXT_CMD_EDITING) {
+        return;
+    }
+    if (u->cmd_mode == 5) { /* the note field: Enter keeps the text (quotes dropped, the verb quotes the note), Escape leaves it */
+        u->cmd_mode = 0;
+        if (r == TXT_CMD_SUBMIT) {
+            const char* t = txt_cmdline_text(&u->cmd);
+            uint32_t n = 0;
+            for (; *t != '\0' && n + 1u < TUI_NOTE_BYTES; t++) {
+                if (*t != '"' && (unsigned char)*t >= 32u) {
+                    u->si_note[n++] = *t;
+                }
+            }
+            u->si_note[n] = '\0';
+        }
+        return;
+    }
+    if (u->cmd_mode == 3) { /* the name prompt: Escape cancels */
+        u->cmd_mode = 0;
+        if (r == TXT_CMD_SUBMIT) {
+            tui_menu_name(u, txt_cmdline_text(&u->cmd));
+        }
         return;
     }
     if (u->cmd_mode == 2) { /* the search prompt: an empty line lists all songs */
@@ -410,8 +1140,30 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
     }
 }
 
+static void tui_pref_local(tui* u, const char* line);
+static void tui_table_note(tui* u, const char* line);
+
+/* A line of the shared action table: noted for the exit report, the layout/visualizer keys act on the text panels, then sent.
+ * Bound keys and the palette action rows (I1211) both come here. */
+static void tui_run_table_action(tui* u, const char* action) {
+    tui_table_note(u, action);
+    if (strncmp(action, "PREF_SET ui.desktop.", 20) == 0) {
+        tui_pref_local(u, action);
+    }
+    tui_send(u, action);
+}
+
 static void tui_overlay_key(tui* u, const txt_key* k) {
-    txt_pal_result r = txt_palette_key(&u->pal, k->code, k->mods);
+    txt_pal_result r;
+    if (u->overlay == 3) {
+        tui_settings_key(u, k);
+        return;
+    }
+    if (u->overlay == 4) {
+        tui_menu_key(u, k);
+        return;
+    }
+    r = txt_palette_key(&u->pal, k->code, k->mods);
     if (r == TXT_PAL_EDITING) {
         return;
     }
@@ -419,7 +1171,13 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
         /* the palette runs the bare verb; commands with arguments are typed on the command line */
         const char* verb = txt_palette_picked(&u->pal);
         u->overlay = 0;
-        if (verb != NULL) {
+        if (verb != NULL && u->pal.items[u->pal.cursor].id >= SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT) {
+            tui_run_table_action(u, txt_palette_picked_line(&u->pal)); /* I1211: an action row runs its line like its key */
+        } else if (verb != NULL && u->pal.items[u->pal.cursor].id >= SEL_CMD_COUNT) { /* a local entry: its action word */
+            if (strcmp(verb, "settings") == 0) {
+                tui_settings_open(u);
+            }
+        } else if (verb != NULL) {
             tui_send(u, verb);
         }
         return;
@@ -432,7 +1190,59 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
 
 /* The binding context: the pattern and viz panels replace the list pane. */
 static uint32_t tui_bind_ctx(const tui* u) {
-    return (u->pattern || u->viz) ? TXT_CTX_PLAYER : TXT_CTX_LIST;
+    if (u->page != TUI_INFO_NONE) {
+        return TXT_CTX_PAGE;
+    }
+    return (u->pattern || u->viz || u->layout == SEL_UIM_LAYOUT_MINI || u->layout == SEL_UIM_LAYOUT_VISUAL) ? TXT_CTX_PLAYER
+                                                                                                          : TXT_CTX_LIST;
+}
+
+/* I1185: the shared table's layout and visualizer keys (PREF_SET ui.desktop.mode / ui.desktop.viz) answered with the
+ * text panels: Full is the list with the info pane, Window the list alone, Mini the header alone, Visual the
+ * visualizer panel alone; the viz ids pick the panel the `v` key cycles through. */
+static void tui_pref_local(tui* u, const char* line) {
+    static const struct {
+        const char* id;
+        int viz;
+    } viz_ids[] = {{"viz_levels", 1}, {"viz_scope", 2}, {"viz_spectrum", 3}, {"viz_sidregs", 6}};
+    static const char* const modes[] = {"full", "window", "mini", "visual"};
+    const char* v = line + strlen("PREF_SET ui.desktop.");
+    size_t i;
+    if (strncmp(v, "mode ", 5) == 0) {
+        for (i = 0; i < 4u; i++) {
+            if (strcmp(v + 5, modes[i]) == 0) {
+                u->layout = (uint32_t)i;
+                u->pattern = 0;
+                u->viz = i == SEL_UIM_LAYOUT_VISUAL ? (u->viz != 0 ? u->viz : 2) : 0;
+                u->layout_sets++;
+            }
+        }
+    } else if (strncmp(v, "viz ", 4) == 0) {
+        for (i = 0; i < sizeof viz_ids / sizeof viz_ids[0]; i++) {
+            if (strcmp(v + 4, viz_ids[i].id) == 0) {
+                u->viz = viz_ids[i].viz;
+                u->pattern = 0;
+                u->layout_sets++;
+            }
+        }
+    }
+}
+
+/* I1184 sentinel: a bound line that is a row of the shared action table (src/uimodel/actions.c) counts and is logged. */
+static void tui_table_note(tui* u, const char* line) {
+    uint32_t i, n = sel_uim_action_count();
+    for (i = 0; i < n; i++) {
+        if (strcmp(sel_uim_action_at(i)->line, line) == 0) {
+            size_t len = strlen(u->table_log);
+            u->table_actions++;
+            if (len + strlen(line) + 2u >= sizeof u->table_log) {
+                u->table_log[0] = '\0';
+                len = 0;
+            }
+            snprintf(u->table_log + len, sizeof u->table_log - len, "%s%s", len > 0 ? "|" : "", line);
+            return;
+        }
+    }
 }
 
 static void tui_key(tui* u, const txt_key* k) {
@@ -468,6 +1278,16 @@ static void tui_key(tui* u, const txt_key* k) {
         tui_send(u, "STATS_HIDE");
         return;
     }
+    if (u->pg != TUI_PAGE_NONE && tui_page_key(u, k)) {
+        u->key_count++;
+        u->dirty = 1;
+        return;
+    }
+    if (u->pg == TUI_PAGE_NONE && k->code == 13u && k->mods == 0 && (tui_shelf_header_enter(u) || tui_home_tile_enter(u))) {
+        u->key_count++;
+        u->dirty = 1;
+        return;
+    }
     action = txt_bindings_lookup(&u->binds, tui_bind_ctx(u), k->code, k->mods);
     if (action == NULL) {
         return; /* not a key the UI knows */
@@ -477,7 +1297,7 @@ static void tui_key(tui* u, const txt_key* k) {
     if (action[0] == '@') {
         (void)tui_local(u, action + 1, k);
     } else {
-        tui_send(u, action);
+        tui_run_table_action(u, action);
     }
 }
 
@@ -532,7 +1352,7 @@ static uint32_t tui_turn_ms(tui* u, uint32_t timeout_ms) {
 
 /* One step of the keys file: a key (returns 1), a wait (0) or the end (-1). */
 static int tui_file_step(tui* u, uint32_t timeout_ms) {
-    char line[64];
+    char line[64], alt[16];
     txt_key k;
     const char* bytes = NULL;
     size_t i;
@@ -553,6 +1373,26 @@ static int tui_file_step(tui* u, uint32_t timeout_ms) {
         if (strcmp(line, k_tokens[i].name) == 0) {
             bytes = k_tokens[i].bytes;
         }
+    }
+    if (bytes == NULL && strncmp(line, "Alt-", 4) == 0) { /* I1184: ESC then the key's bytes */
+        const char* rest = line + 4;
+        for (i = 0; i < sizeof k_tokens / sizeof k_tokens[0]; i++) {
+            if (strcmp(rest, k_tokens[i].name) == 0) {
+                rest = k_tokens[i].bytes;
+                break;
+            }
+        }
+        alt[0] = '\x1b';
+        snprintf(alt + 1, sizeof alt - 1u, "%s", rest);
+        bytes = alt;
+    } else if (bytes == NULL && strncmp(line, "Ctrl-", 5) == 0 && line[5] != '\0' && line[6] == '\0') {
+        if (line[5] >= '0' && line[5] <= '9') { /* I1185: a Ctrl digit has no control byte; CSI code ; 5 u */
+            snprintf(alt, sizeof alt, "\x1b[%d;5u", (int)line[5]);
+        } else {
+            alt[0] = (char)(line[5] & 0x1F); /* Ctrl-b, Ctrl-d */
+            alt[1] = '\0';
+        }
+        bytes = alt;
     }
     if (bytes == NULL) {
         bytes = line; /* a single printable character */
@@ -611,13 +1451,73 @@ static void tui_header(tui* u, const sel_state* s) {
     txt_grid_text(&u->grid, 1, 0, buf, u->grid.cols - 1u, hs);
     sel_uim_clock(pos, sizeof pos, s->song.position_ms, s->song.path != NULL);
     sel_uim_clock(dur, sizeof dur, s->song.duration_ms, s->song.duration_ms != 0);
-    snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d", format[0] ? format : "-",
+    snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d%s%s%s", format[0] ? format : "-",
              (unsigned)(s->song.path != NULL ? s->song.subsong + 1u : 0u), (unsigned)s->song.subsong_count, pos, dur,
-             (int)s->volume);
+             (int)s->volume, strcmp(s->options[SEL_OPT_RANDOM], "on") == 0 ? "  Shuffle" : "", /* I1184: shown only when on */
+             strcmp(s->options[SEL_OPT_REPEAT], "off") != 0 ? "  Repeat " : "",
+             strcmp(s->options[SEL_OPT_REPEAT], "off") != 0 ? s->options[SEL_OPT_REPEAT] : "");
     sel_uim_stage_status(buf, sizeof buf, s);
     txt_grid_text(&u->grid, 1, 1, buf, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
 }
 
+
+#define TUI_GRID_CELL 24u
+
+/* I1186: the Grid, Cover Flow and Compact library styles as text. The engine lists the flat rows of the regular style for
+ * them (view.c mode_of); the text UI lays them out. Grid: cells in columns. Cover Flow: the cursor row in the middle with
+ * its neighbours around it (artwork has no text form, so the cover itself is exempt). Compact: one dense line per song. */
+static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
+    const sel_view_state* v = s->view;
+    uint32_t rows = tui_main_rows(u), i, cur = v->cursor >= v->window_start ? v->cursor - v->window_start : 0;
+    char buf[300];
+    if (v->style == SEL_VIEW_STYLE_GRID) {
+        uint32_t cols = (width - 1u) / TUI_GRID_CELL;
+        cols = cols == 0 ? 1u : cols;
+        for (i = 0; i < v->row_n && i / cols < rows; i++) {
+            const sel_view_row* r = &v->rows[i];
+            int at = v->window_start + i == v->cursor;
+            int playing = r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
+            txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : playing ? TXT_ROLE_PLAYING : TXT_ROLE_FILE);
+            uint32_t x = 1u + (i % cols) * TUI_GRID_CELL, y = 3u + i / cols;
+            snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
+            txt_grid_fill(&u->grid, x, y, TUI_GRID_CELL - 1u, 1, ' ', st);
+            txt_grid_text(&u->grid, x, y, buf, TUI_GRID_CELL - 2u, st);
+        }
+    } else if (v->style == SEL_VIEW_STYLE_COVERFLOW) {
+        uint32_t mid = rows / 2u, d;
+        for (d = 0; d < rows; d++) {
+            int64_t idx = (int64_t)cur + (int64_t)d - (int64_t)mid;
+            const sel_view_row* r;
+            uint32_t dist = d > mid ? d - mid : mid - d;
+            txt_style st;
+            if (idx < 0 || idx >= (int64_t)v->row_n) {
+                continue;
+            }
+            r = &v->rows[idx];
+            st = tui_style(u, dist == 0 ? TXT_ROLE_CURSOR : dist == 1 ? TXT_ROLE_FILE : TXT_ROLE_DIM);
+            if (dist == 0) {
+                snprintf(buf, sizeof buf, "<  %s%s%s  >", r->text, r->artist != NULL && r->artist[0] ? "  -  " : "",
+                         r->artist != NULL ? r->artist : "");
+            } else {
+                snprintf(buf, sizeof buf, "%*s%s", (int)(2u * dist > 8u ? 8u : 2u * dist), "", r->text);
+            }
+            txt_grid_fill(&u->grid, 0, 3u + d, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + d, buf, width - 1u, st);
+        }
+    } else {
+        for (i = 0; i < v->row_n && i < rows; i++) {
+            const sel_view_row* r = &v->rows[i];
+            int at = v->window_start + i == v->cursor;
+            int playing = r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
+            txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : playing ? TXT_ROLE_PLAYING : TXT_ROLE_FILE);
+            snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
+            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
+            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+        }
+    }
+    u->style_drawn = v->style;
+    u->style_draws++;
+}
 
 static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     const sel_view_state* v = s->view;
@@ -637,6 +1537,14 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     } else {
         sel_uim_queue_title(buf, sizeof buf, v, u->lib_screen);
     }
+    if (u->lib_mode_on) { /* I1187: the desktop's mode tab and Scope button, as words on the pane title */
+        size_t at = strlen(buf);
+        snprintf(buf + at, sizeof buf - at, "  Mode %s", sel_uim_libmode_name(u->lib_mode));
+    }
+    if (v->source == SEL_VIEW_QUERY || v->source == SEL_VIEW_QUEUE) {
+        size_t at = strlen(buf);
+        snprintf(buf + at, sizeof buf - at, "  %s", sel_uim_scope_label(sel_uim_scope_index(s->options[SEL_OPT_SCOPE])));
+    }
     txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
     if (v->source == SEL_VIEW_HOME && v->row_count == 0) {
         txt_grid_text(&u->grid, 1, 3, "Nothing played yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
@@ -650,6 +1558,11 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
                                          : "No songs match the search",
                       width - 1u, tui_style(u, TXT_ROLE_DIM));
     }
+    if (tui_queue_view(v) && v->style >= SEL_VIEW_STYLE_GRID && v->style < SEL_VIEW_STYLE_COUNT) {
+        tui_styled_rows(u, s, width);
+        return;
+    }
+    u->style_drawn = v->style;
     for (i = 0; i < v->row_n && i < tui_main_rows(u); i++) {
         const sel_view_row* r = &v->rows[i];
         uint32_t y = 3u + i;
@@ -679,11 +1592,11 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
 
 
 /* Every META tag the replayer reported, in tags.def order. */
-static void tui_info(tui* u, const sel_state* s, uint32_t x) {
+static void tui_info(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
     const uintptr_t absent = (uintptr_t)-1;
-    uint32_t tag, y = 3;
+    uint32_t tag, y = top + 1u;
     uint32_t w = u->grid.cols - x - 1u;
-    txt_grid_text(&u->grid, x, 2, "Information", w, tui_style(u, TXT_ROLE_LABEL));
+    txt_grid_text(&u->grid, x, top, "Information", w, tui_style(u, TXT_ROLE_LABEL));
     for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL && y < u->grid.rows - 1u; tag++) {
         uintptr_t v = sel_tag_find(s->song.meta, tag, absent);
         sel_tag_type type = SEL_TT_INT;
@@ -730,6 +1643,52 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x) {
     }
 }
 
+/* Now Playing page (desktop PG_NOWPLAYING): the open song's title, artist and format, then the next songs of the queue. */
+static void tui_nowplaying_page(tui* u, const sel_state* s) {
+    char buf[300], format[SEL_FORMAT_LABEL_MAX];
+    const char* title = (const char*)sel_tag_find(s->song.meta, SEL_META_TITLE, 0);
+    const char* author = (const char*)sel_tag_find(s->song.meta, SEL_META_AUTHOR, 0);
+    uint32_t k, first, y = 7;
+    txt_style lab = tui_style(u, TXT_ROLE_LABEL);
+    u->np_draws++;
+    txt_grid_text(&u->grid, 1, 2, "Now Playing", u->grid.cols - 2u, lab);
+    if (s->song.path == NULL) {
+        txt_grid_text(&u->grid, 1, 4, sel_uim_state_text(SEL_UIM_SV_NOWPLAYING, SEL_UIM_ST_EMPTY), u->grid.cols - 2u,
+                      tui_style(u, TXT_ROLE_DIM));
+    } else {
+        sel_format_label((const char*)sel_tag_find(s->song.meta, SEL_META_FORMAT, 0), format, sizeof format);
+        txt_grid_text(&u->grid, 1, 4, title != NULL && title[0] ? title : "-", u->grid.cols - 2u, tui_style(u, TXT_ROLE_VALUE));
+        txt_grid_text(&u->grid, 1, 5, author != NULL ? author : "", u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
+        txt_grid_text(&u->grid, 1, 6, format, u->grid.cols - 2u, tui_style(u, TXT_ROLE_DIM));
+    }
+    y++;
+    txt_grid_text(&u->grid, 1, y++, "Next in Queue", u->grid.cols - 2u, lab);
+    for (k = 0; k < s->queue_count && s->queue[k].id != s->queue_playing; k++) {
+    }
+    for (first = ++k; k < s->queue_count && k - first < 8u && y + 1u < u->grid.rows; k++, y++) {
+        const char* path = s->queue_text + s->queue[k].path_offset;
+        const char* slash = strrchr(path, '/');
+        snprintf(buf, sizeof buf, "%s", slash != NULL ? slash + 1 : path);
+        txt_grid_text(&u->grid, 1, y, buf, u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
+    }
+}
+
+/* Song Information page (desktop draw_songinfo): the three buttons, the note field, then every tag of the open song. */
+static void tui_songinfo_page(tui* u, const sel_state* s) {
+    char buf[300];
+    uint32_t b, x = 1;
+    static const char* const keys[3] = {"w", "x", "Enter"};
+    txt_grid_text(&u->grid, 1, 2, "Song Information", u->grid.cols - 2u, tui_style(u, TXT_ROLE_LABEL));
+    for (b = 0; b < 3u; b++) {
+        snprintf(buf, sizeof buf, "%s %s", keys[b], sel_uim_flag_label(b));
+        txt_grid_text(&u->grid, x, 3, buf, u->grid.cols - x - 1u, tui_style(u, TXT_ROLE_VALUE));
+        x += (uint32_t)strlen(buf) + 3u;
+    }
+    snprintf(buf, sizeof buf, "e Note: %s", u->si_note[0] != '\0' ? u->si_note : "");
+    txt_grid_text(&u->grid, 1, 4, buf, u->grid.cols - 2u, tui_style(u, u->si_note[0] != '\0' ? TXT_ROLE_NORMAL : TXT_ROLE_DIM));
+    tui_info(u, s, 1u, 6u);
+}
+
 /* Palette and help overlay: query line, then verbs grouped by area (query empty)
  * or ranked (query typed), the bound key at the right edge. */
 static void tui_overlay(tui* u) {
@@ -771,9 +1730,60 @@ static void tui_overlay(tui* u) {
     }
 }
 
+/* I1188: the Settings screen, one row per shared table row: the label, then the value. */
+static void tui_settings(tui* u) {
+    uint32_t n = sel_uim_pref_row_count(), cols = u->grid.cols, rows = u->grid.rows > 4u ? u->grid.rows - 4u : 1u;
+    uint32_t i, first = 0, y = 2, lw = 26;
+    txt_style nrm = tui_style(u, TXT_ROLE_NORMAL), dim = tui_style(u, TXT_ROLE_DIM), cur = tui_style(u, TXT_ROLE_CURSOR);
+    char line[160];
+    for (i = 1; i <= rows + 1u; i++) {
+        txt_grid_fill(&u->grid, 0, i, cols, 1, ' ', nrm);
+    }
+    txt_grid_text(&u->grid, 2, 1, "Settings", cols - 4u, nrm);
+    if (u->set_focus >= rows) {
+        first = u->set_focus + 1u - rows;
+    }
+    for (i = first; i < n && y < rows + 1u; i++, y++) {
+        const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
+        const char* v = tui_pref(u, r->key);
+        txt_style st = i == u->set_focus ? cur : nrm;
+        char shown[64];
+        if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+            sel_uim_pref_choice(r->choices, sel_uim_pref_choice_index(r->choices, v), shown, sizeof shown);
+            snprintf(line, sizeof line, "< %s >", shown);
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+            snprintf(line, sizeof line, "[%c] %s", v[0] == '1' ? 'x' : ' ', v[0] == '1' ? "On" : "Off");
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+            long lo = 0, hi = 100, x = v[0] != '\0' ? strtol(v, NULL, 10) : lo;
+            uint32_t fill, k;
+            char bar[21];
+            sscanf(r->choices, "%ld,%ld", &lo, &hi);
+            x = x < lo ? lo : (x > hi ? hi : x);
+            fill = hi > lo ? (uint32_t)((x - lo) * 20 / (hi - lo)) : 0u;
+            for (k = 0; k < 20u; k++) {
+                bar[k] = k < fill ? '#' : '-';
+            }
+            bar[20] = '\0';
+            snprintf(line, sizeof line, "%3ld [%s]", x, bar);
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_ROM) {
+            int slot = sel_uim_rom_slot(r->choices);
+            snprintf(line, sizeof line, "%s",
+                     sel_uim_rom_source_text(slot >= 0 && sel_uim_rom_is_user(tui_pref(u, "config.dir"), (uint32_t)slot)));
+        } else if (u->set_edit && i == u->set_focus) {
+            snprintf(line, sizeof line, "%s_", u->set_buf);
+        } else {
+            snprintf(line, sizeof line, "%s", v[0] != '\0' ? v : "(default)");
+        }
+        txt_grid_fill(&u->grid, 0, y, cols, 1, ' ', st);
+        txt_grid_text(&u->grid, 2, y, r->label, lw, st);
+        txt_grid_text(&u->grid, 2u + lw + 2u, y, line, cols > lw + 6u ? cols - lw - 6u : 1u, st);
+    }
+    txt_grid_text(&u->grid, 2, rows + 1u, "Up Down move   Left Right change   Enter edit text   Esc close", cols - 4u, dim);
+}
+
 /* ---- viz and pattern panels (M1.3 I101) ---- */
 
-static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum", "Note dots", "Phase"};
+static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum", "Note dots", "Phase", "SID registers"};
 
 
 /* Phase panel: the last post-mix frames as an L (x) against R (y) plot in 2x4 braille cells, plus
@@ -814,6 +1824,45 @@ static void tui_phase_panel(tui* u, const sel_state* s, uint32_t width) {
 }
 
 
+/* SID registers panel (I1185, desktop viz_sidregs, plugins/viz/sidregs/sidregs.c): per chip and voice the frequency,
+ * pulse width, the gate and waveform flags, the envelope level and the filter route; per chip the filter cutoff,
+ * resonance, mode flags and volume. The registers come from the engine's HW feed (f->sid), decoded as sidregs.c does. */
+static void tui_sid_panel(tui* u, const sel_state* s, uint32_t width) {
+    const sel_viz_frame* f = s->viz;
+    txt_style label = tui_style(u, TXT_ROLE_LABEL);
+    txt_style norm = tui_style(u, TXT_ROLE_NORMAL);
+    txt_style dim = tui_style(u, TXT_ROLE_DIM);
+    uint32_t chips = f->sid_chips > SEL_VIZ_SID_CHIPS ? SEL_VIZ_SID_CHIPS : f->sid_chips;
+    uint32_t rows = tui_main_rows(u), k, v, y = 3;
+    char buf[96];
+    if (chips == 0u) {
+        txt_grid_text(&u->grid, 1, 3, "No SID register feed for this song", width - 1u, dim);
+        return;
+    }
+    u->sid_frames++;
+    for (k = 0; k < chips && y + 5u <= rows + 2u; k++) {
+        const sel_viz_sid_chip* c = &f->sid[k];
+        uint32_t cutoff = ((uint32_t)c->reg[0x16] << 3) | ((uint32_t)c->reg[0x15] & 7u);
+        snprintf(buf, sizeof buf, "Chip %u", (unsigned)(k + 1u));
+        txt_grid_text(&u->grid, 1, y++, buf, width - 1u, label);
+        for (v = 0; v < 3u; v++) {
+            const uint8_t* r = &c->reg[7u * v];
+            uint32_t ctl = r[4];
+            snprintf(buf, sizeof buf, "Voice%u Fr %04X Pw %03X %s%s%s%s%s%s%s%s Env %2u%s", (unsigned)(v + 1u),
+                     (unsigned)((uint32_t)r[0] | ((uint32_t)r[1] << 8)),
+                     (unsigned)(((uint32_t)r[2] | ((uint32_t)r[3] << 8)) & 0xFFFu), (ctl & 1u) ? "Gate " : "",
+                     (ctl & 16u) ? "Tri " : "", (ctl & 32u) ? "Saw " : "", (ctl & 64u) ? "Pul " : "",
+                     (ctl & 128u) ? "Noi " : "", (ctl & 2u) ? "Sync " : "", (ctl & 4u) ? "Ring " : "",
+                     (ctl & 8u) ? "Test " : "", (unsigned)c->env[v], ((c->reg[0x17] >> v) & 1u) ? " Flt" : "");
+            txt_grid_text(&u->grid, 1, y++, buf, width - 1u, norm);
+        }
+        snprintf(buf, sizeof buf, "Filter %04u Reso %2u %s%s%s Volume %2u", (unsigned)cutoff,
+                 (unsigned)(c->reg[0x17] >> 4), (c->reg[0x18] & 16u) ? "LP " : "", (c->reg[0x18] & 32u) ? "BP " : "",
+                 (c->reg[0x18] & 64u) ? "HP" : "", (unsigned)(c->reg[0x18] & 15u));
+        txt_grid_text(&u->grid, 1, y++, buf, width - 1u, dim);
+    }
+}
+
 static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
     const sel_viz_frame* f = s->viz;
     txt_style label = tui_style(u, TXT_ROLE_LABEL);
@@ -845,6 +1894,10 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
     }
     if (u->viz == 5) {
         tui_phase_panel(u, s, width);
+        return;
+    }
+    if (u->viz == 6) {
+        tui_sid_panel(u, s, width);
         return;
     }
     if (f->voice_count == 0) {
@@ -986,7 +2039,9 @@ static void tui_splash_draw(tui* u) {
 
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
-    uint32_t width = u->info && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS : u->grid.cols;
+    uint32_t width = u->info && u->layout == SEL_UIM_LAYOUT_FULL && u->grid.cols > TUI_INFO_COLS + 20u
+                         ? u->grid.cols - TUI_INFO_COLS
+                         : u->grid.cols;
     uint32_t y;
     if (s->song.path != NULL) {
         u->splash_off = 1;
@@ -1001,27 +2056,47 @@ static void tui_draw(tui* u) {
     tui_header(u, s);
     if (s->stats != NULL) {
         tui_stats_pane(u, s, width);
+    } else if (u->layout == SEL_UIM_LAYOUT_MINI) {
+        ; /* the header alone */
+    } else if (u->page == TUI_INFO_NOWPLAYING) {
+        tui_nowplaying_page(u, s);
+    } else if (u->page == TUI_INFO_SONGINFO) {
+        tui_songinfo_page(u, s);
     } else if (u->pattern) {
         tui_pattern_panel(u, s, width);
     } else if (u->viz) {
         tui_viz_panel(u, s, width);
+    } else if (u->pg != TUI_PAGE_NONE) {
+        tui_page_draw(u, s, width);
     } else {
         tui_pane(u, s, width);
     }
-    if (width < u->grid.cols) {
+    if (width < u->grid.cols && u->page == TUI_INFO_NONE) {
         for (y = 2; y + 1u < u->grid.rows; y++) {
             txt_grid_put(&u->grid, width, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
         }
-        tui_info(u, s, width + 2u);
+        tui_info(u, s, width + 2u, 2u);
     }
-    if (u->overlay) {
+    if (u->overlay == 3) {
+        tui_settings(u);
+    } else if (u->overlay == 4) {
+        tui_menu_draw(u);
+    } else if (u->overlay) {
         tui_overlay(u);
     }
     txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_DIM));
     if (u->cmd_mode || u->cmd.status[0] != '\0') {
         char line[TXT_CMD_LINE + TXT_CMD_STATUS + 8];
         if (u->cmd_mode) {
-            snprintf(line, sizeof line, "%c%s%s%s", u->cmd_mode == 2 ? '/' : ':', txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+            if (u->cmd_mode == 4) {
+                snprintf(line, sizeof line, "%s  y Yes  any other key No", u->mn_lab[0]);
+            } else if (u->cmd_mode == 5) {
+                snprintf(line, sizeof line, "Note: %s%s%s", txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+            } else if (u->cmd_mode == 3) {
+                snprintf(line, sizeof line, "%s name: %s", u->mn_pending == (uint32_t)MN_RENAME ? "Rename" : u->mn_pending == (uint32_t)MN_NEWFOLDER ? "New Folder" : "New Playlist", txt_cmdline_text(&u->cmd));
+            } else {
+                snprintf(line, sizeof line, "%c%s%s%s", u->cmd_mode == 2 ? '/' : ':', txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+            }
         } else {
             snprintf(line, sizeof line, "%s", u->cmd.status);
         }
@@ -1030,7 +2105,7 @@ static void tui_draw(tui* u) {
         return;
     }
     if (s->view != NULL && s->view->source == SEL_VIEW_FOLDERS) {
-        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, "Enter Play playlist  Up Down Move  Tab Browse  l Library  q Quit",
+        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, "Enter Play playlist  w Menu  Up Down Move  Tab Browse  l Library  q Quit",
                       u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
         return;
     }
@@ -1366,8 +2441,33 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[15].value = u->meta_panel_rows;
     u->stats[16].tag = SEL_UI_STAT_SPLASH_FRAMES;
     u->stats[16].value = u->splash_frames;
-    u->stats[17].tag = SEL_TAG_END;
-    u->stats[17].value = 0;
+    u->stats[17].tag = SEL_UI_STAT_TABLE_ACTIONS;
+    u->stats[17].value = u->table_actions;
+    u->stats[18].tag = SEL_UI_STAT_TABLE_ACTION_LOG;
+    u->stats[18].value = (uintptr_t)u->table_log;
+    u->stats[19].tag = SEL_UI_STAT_LAYOUT;
+    u->stats[19].value = u->layout_sets << 8 | u->layout;
+    u->stats[20].tag = SEL_UI_STAT_SID_FRAMES;
+    u->stats[20].value = u->sid_frames;
+    u->stats[21].tag = SEL_UI_STAT_STYLE;
+    u->stats[21].value = u->style_draws << 8 | u->style_drawn;
+    u->stats[22].tag = SEL_UI_STAT_LIBMODE;
+    u->stats[22].value = u->scope_keys << 16 | u->mode_keys << 8 | (u->lib_mode_on ? u->lib_mode : 15u) << 4 |
+                         sel_uim_scope_index(sel_engine_state(u->engine)->options[SEL_OPT_SCOPE]);
+    u->stats[23].tag = SEL_UI_STAT_SETTINGS;
+    u->stats[23].value = u->set_focus << 16 | u->set_opens << 8 | u->set_sets;
+    u->stats[24].tag = SEL_UI_STAT_PAGES;
+    u->stats[24].value = (u->pg_opens_shelf & 0xFFu) | (u->pg_opens_coll & 0xFFu) << 8 | (u->pg_rows & 0xFFu) << 16 | ((uint32_t)u->pg & 0xFu) << 24;
+    u->stats[25].tag = SEL_UI_STAT_MENU;
+    u->stats[25].value = (u->mn_opens & 0xFFu) | (u->mn_picks & 0xFFu) << 8 | (u->mn_answers & 0xFFu) << 16;
+    u->stats[26].tag = SEL_UI_STAT_MENU_LOG;
+    u->stats[26].value = (uintptr_t)u->mn_log;
+    u->stats[27].tag = SEL_UI_STAT_SONGINFO_ACTIONS;
+    u->stats[27].value = u->si_actions;
+    u->stats[28].tag = SEL_UI_STAT_NOWPLAY_DRAWS;
+    u->stats[28].value = u->np_draws;
+    u->stats[29].tag = SEL_TAG_END;
+    u->stats[29].value = 0;
     return u->stats;
 }
 
@@ -1391,7 +2491,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[3], SEL_UI_WAIT, SEL_TAG_FN(tui_wait));
     set(&g_hooks[4], SEL_UI_CLOSE, SEL_TAG_FN(tui_close));
     set(&g_hooks[5], SEL_UI_STATS, SEL_TAG_FN(tui_stats));
-    set(&g_hooks[6], SEL_UI_VIEW_STYLES, SEL_VIEW_STYLES_CLASSIC);
+    set(&g_hooks[6], SEL_UI_VIEW_STYLES, SEL_VIEW_STYLES_ALL);
     set(&g_hooks[7], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);

@@ -8,8 +8,8 @@
 #  4. (I1019h) the Search page has no radio entry; the Modules.pl source page has it and a click counts radio_plays=1;
 #  5. (I816) the fixture delays the first byte of the chip search by 4 s, past the client's 3 s default: rows=3 only
 #     arrives because the plugin asks for the longer first-byte wait;
-#  5b. (I406b) playing a hit pins it: pins=1 pin_rows=1 (the sentinel that the library pin ran, 0 after a search alone),
-#     and after a restart without a search the SOURCES row modulespl counts 1 song (the saved row);
+#  5b. (I406b, I994e) playing a hit pins it and every hit PLAY_CONTEXT queues behind it: pins=3 pin_rows=3 for the 3 rows (the sentinel that the library pin ran, 0 after a search alone),
+#     and after a restart without a search the SOURCES row modulespl counts 3 songs (the saved rows);
 #  6. (I814) the modulespl SOURCES row is due=0 syncable=0.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -118,12 +118,12 @@ list(GET on 5 plays)
 if(NOT plays EQUAL 1)
   message(FATAL_ERROR "a click on the online row must play it once (plays=${plays}):\n${played}")
 endif()
-# I406b: a search alone pins nothing; the played hit is pinned once and written to the library.
+# I406b: a search alone pins nothing; the played hit and the context hits queued behind it (I994e PLAY_CONTEXT, as queue_insert pins) are pinned and written to the library.
 if(NOT "${found}" MATCHES "online_pin pins=0 pin_rows=0\n")
   message(FATAL_ERROR "I406b: a search alone must pin nothing:\n${found}")
 endif()
-if(NOT "${played}" MATCHES "online_pin pins=1 pin_rows=1\n")
-  message(FATAL_ERROR "I406b: playing an online hit must pin it once (pins=1 pin_rows=1):\n${played}")
+if(NOT "${played}" MATCHES "online_pin pins=3 pin_rows=3\n")
+  message(FATAL_ERROR "I406b: playing an online hit must pin it and the two hits queued behind it (pins=3 pin_rows=3):\n${played}")
 endif()
 if(NOT "${played}" MATCHES "song=([^\n]*)\n" OR NOT CMAKE_MATCH_1 MATCHES "${row_key}")
   message(FATAL_ERROR "the engine must open ${row_key}, got '${CMAKE_MATCH_1}':\n${played}")
@@ -137,9 +137,9 @@ if(NOT scope STREQUAL "-")
   message(FATAL_ERROR "I1019f: the scope must not be remembered, got '${scope}' after a restart:\n${again}")
 endif()
 
-# I406b: the pinned row survived the restart: the modulespl source holds 1 song, and this run searched nothing.
-if(NOT "${again}" MATCHES "source [0-9]+ modulespl\\|[^|]*\\|[^|]*\\|[0-9]+\\|1\n")
-  message(FATAL_ERROR "I406b: after a restart the modulespl source must count the 1 pinned song:\n${again}")
+# I406b: the pinned row survived the restart: the modulespl source holds the 3 pinned songs (I994e), and this run searched nothing.
+if(NOT "${again}" MATCHES "source [0-9]+ modulespl\\|[^|]*\\|[^|]*\\|[0-9]+\\|3\n")
+  message(FATAL_ERROR "I406b: after a restart the modulespl source must count the 3 pinned songs:\n${again}")
 endif()
 if(NOT "${again}" MATCHES "online scope=- searches=0 ")
   message(FATAL_ERROR "I406b: the restart run must not search:\n${again}")

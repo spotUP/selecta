@@ -4,12 +4,20 @@
 #include <selecta/registry.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/viewcmds.h>
 
+#include <dirent.h>
+#include <mcc/up.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
 
 #include "mui_aa.h"
+#include "mui_iconmap.h"
+#include "mui_aatagmap.h"
+#include "mui_text.h"
 #include "mui_icons.h"
 #include "mui_route.h"
 #include <selecta/library_item.h>
@@ -23,8 +31,13 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/pages.h>
+
+/* I685c: the shipped MUI classes live in plugins/shared/mcc; MCC_DIR is the one define every source path starts from. */
+#define MCC_SRC MCC_DIR "/src"
+#define MCC_CLASS MCC_DIR "/src/class"
 #include <selecta/uimodel/route.h>
 #include <selecta/uimodel/theme.h>
+#include <selecta/uimodel/viewcmds.h>
 
 extern const sel_tag* sel_plugin_entry_mui_test(uint32_t host_api);
 
@@ -206,13 +219,13 @@ static void test_theme_file(const char* dir) {
     mui_theme_tokens_set(th.token);
     CHECK(mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT] == 0x112233u, "token store carries the file accent, got %06x", (unsigned)mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT]);
     {
-        static const char* const files[] = {"mui_aa_draw.c", "mui_aabalance_class.c", "mui_aabtn_class.c", "mui_aapanel_class.c", "mui_aatext_class.c", "mui_aafield_class.c"};
+        static const char* const files[] = {MCC_SRC "/mui_aa_draw.c", MCC_CLASS "/mui_aabalance_class.c", MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aapanel_class.c", MCC_CLASS "/mui_aatext_class.c", MCC_CLASS "/mui_aafield_class.c"};
         static char src[400000];
         size_t k, n;
         for (k = 0; k < sizeof files / sizeof files[0]; k++) {
             char path[600];
             FILE* sf;
-            snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[k]);
+            snprintf(path, sizeof path, "%s", files[k]);
             sf = fopen(path, "rb");
             if (sf == NULL) {
                 continue;
@@ -991,7 +1004,7 @@ static void test_columns(void) {
     uint32_t bp;
     for (bp = 0; bp < 4; bp++) {
         CHECK(mui_columns_for(bp, c) == want[bp] && c[0] == MUI_COL_TITLE, "breakpoint %u has %u columns", bp, mui_columns_for(bp, c));
-        mui_columns_format(bp, f, sizeof f);
+        mui_columns_format(bp, f, sizeof f, 256);
         {
             uint32_t bars = 0, k;
             for (k = 0; f[k] != '\0'; k++) {
@@ -1078,18 +1091,18 @@ static void test_list_dbl_row(void) {
               strstr(src, "s->p4[P4_DBLRACE]++") != NULL,
           "the knob is read once at open and the sentinel dbl_race_injected is counted");
     dbl = strstr(src, "if (id == CTL_LIST_DBL) {");
-    CHECK(dbl != NULL && strstr(dbl, "GetAttr(AAL_Picked, s->list") != NULL && strstr(dbl, "mui_list_dbl_row(") != NULL &&
+    CHECK(dbl != NULL && strstr(dbl, "GetAttr(UPA_List_Picked, s->list") != NULL && strstr(dbl, "mui_list_dbl_row(") != NULL &&
               strstr(dbl, "mui_list_dbl_row(") < strstr(dbl, "VIEW_ACTIVATE"),
-          "the DBL branch of mui_ui.c reads AAL_Picked and decides through mui_list_dbl_row before VIEW_ACTIVATE");
+          "the DBL branch of mui_ui.c reads UPA_List_Picked and decides through mui_list_dbl_row before VIEW_ACTIVATE");
     n = 0;
-    f = fopen(MUI_DIR "/mui_aalist_class.c", "rb");
+    f = fopen(MCC_CLASS "/mui_aalist_class.c", "rb");
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
     if (f != NULL) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(strstr(src, "d->picked = r;") != NULL && strstr(src, "case AAL_Picked: *msg->opg_Storage = (ULONG)d->picked") != NULL,
-          "the AAList class stores the picked row and answers AAL_Picked");
+    CHECK(strstr(src, "d->picked = r;") != NULL && strstr(src, "case UPA_List_Picked: *msg->opg_Storage = (ULONG)d->picked") != NULL,
+          "the AAList class stores the picked row and answers UPA_List_Picked");
 }
 
 static void test_list_backends(void) {
@@ -1169,6 +1182,30 @@ static void test_panes(void) {
     CHECK(mui_pane_key(&mp, (uint32_t)'j', 0u) == MUI_PANE_COUNT && mp.pane == MUI_PANE_VIZ, "an unrelated key moved the pane");
     CHECK(mui_pane_key(&mp, (uint32_t)'v', TXT_MOD_CTRL) == MUI_PANE_COUNT, "Ctrl+V opened a page");
     CHECK(mui_pane_of_action("@viz") == MUI_PANE_VIZ && mui_pane_of_action("@pattern") == MUI_PANE_TRACKER && mui_pane_of_action("@home") == MUI_PANE_COUNT && mui_pane_of_action(NULL) == MUI_PANE_COUNT, "action to pane map");
+    /* I960: the Now Playing pane has no key and a menu title; one compact door press opens it once, Song Information opens its Info tab */
+    {
+        uint32_t tab = 9u, d, np_door = 99u, info_door = 99u, with_line = 0u;
+        CHECK(mui_pane_of_page(SEL_UIM_PG_NOWPLAYING) == MUI_PANE_NOWPLAYING && mui_pane_page(MUI_PANE_NOWPLAYING) == (uint32_t)SEL_UIM_PG_NOWPLAYING, "now playing pane/page map");
+        CHECK(mui_pane_shortcut(MUI_PANE_NOWPLAYING) == '\0' && mui_pane_title(MUI_PANE_NOWPLAYING) != NULL, "now playing pane has a key or no title");
+        CHECK(mui_pane_key(&mp, (uint32_t)'n', 0u) == MUI_PANE_COUNT, "key n opened a pane");
+        for (d = 0; d < mui_door_count(); d++) {
+            uint32_t pg = sel_uim_page_by_name(sel_uim_door_at(d)->page);
+            np_door = pg == (uint32_t)SEL_UIM_PG_NOWPLAYING ? d : np_door;
+            info_door = pg == (uint32_t)SEL_UIM_PG_SONGINFO ? d : info_door;
+            if (mui_door_line(d) != NULL) {
+                with_line++;
+                CHECK(mui_door_pane(d, 1u, &tab) == MUI_PANE_COUNT, "door %u with an engine line opens a pane", (unsigned)d);
+            }
+        }
+        CHECK(np_door < 99u && info_door < 99u && with_line > 0u, "doors for Now Playing / Song Information not found");
+        memset(&mp, 0, sizeof mp);
+        CHECK(mui_door_pane(np_door, 0u, &tab) == MUI_PANE_COUNT && mp.opens[MUI_PANE_NOWPLAYING] == 0u, "full class door opened the pane");
+        CHECK(mui_door_pane(np_door, 1u, &tab) == MUI_PANE_NOWPLAYING && tab == 0u, "compact Now Playing door: pane/tab");
+        CHECK(mui_pane_open(&mp, mui_pane_page(mui_door_pane(np_door, 1u, NULL))) == MUI_PANE_NOWPLAYING && mp.opens[MUI_PANE_NOWPLAYING] == 1u, "one door press did not count one opening");
+        CHECK(mui_door_pane(info_door, 1u, &tab) == MUI_PANE_NOWPLAYING && tab == 1u, "Song Information door gives tab 1");
+        CHECK(mui_door_pane(info_door, 0u, &tab) == MUI_PANE_COUNT && mui_door_pane(99u, 1u, NULL) == MUI_PANE_COUNT, "full class / past the table");
+        CHECK(mui_pane_of_action("@nowplaying") == MUI_PANE_COUNT, "action map reached the NULL-action pane");
+    }
     /* the menu shortcuts of the other items leave 'v' and 't' to the panes */
     n = mui_menu_build_for(items, 512, mui_style_mask(0));
     for (i = 0; i < n && i < 512u; i++) {
@@ -1180,6 +1217,50 @@ static void test_panes(void) {
         mui_layout_map(&lm, width, 720, SEL_UIM_TIER_DEFAULT);
         CHECK(lm.show[MUI_SLOT_MAIN] != 0u, "main slot hidden at width %u", (unsigned)width);
         CHECK(width >= 1100u || lm.show[MUI_SLOT_DETAIL] == 0u, "detail slot shown at width %u", (unsigned)width);
+    }
+}
+
+/* I960b: the Now Playing page plan on the compact tier. Tall pixels (512): art 64x32, the page adds at most MUI_NP_PAGE_BUDGET_H rows to
+ * the main slot minimum. Square pixels (256, a user-chosen laced screen): art 64x64 and the plan still fits a 256-row screen's main
+ * height. The plan moves the output: a wider main column or a taller pixel changes the art. */
+static void test_np_page_plan(void) {
+    mui_aa_metrics_t m;
+    mui_np_page_plan_t tall, sq, narrow;
+    uint32_t before = mui_np_page_plans();
+    mui_aa_metrics_aspect(0, 512, &m);
+    mui_np_page_plan(&m, 436u, &tall);
+    CHECK(tall.art_w == 64u && tall.art_h == 32u, "tall art %ux%u, not 64x32", (unsigned)tall.art_w, (unsigned)tall.art_h);
+    CHECK(tall.min_h <= (uint32_t)MUI_NP_PAGE_BUDGET_H, "compact page needs %u rows, budget %u", (unsigned)tall.min_h, (unsigned)MUI_NP_PAGE_BUDGET_H);
+    CHECK(tall.next_rows == 3u && tall.text_rows == 4u && tall.min_h == tall.heading_h + tall.top_h + tall.tabs_h + tall.page_h, "plan parts do not add up");
+    mui_aa_metrics_aspect(0, 256, &m);
+    mui_np_page_plan(&m, 436u, &sq);
+    CHECK(sq.min_h <= (uint32_t)MUI_NP_PAGE_BUDGET_H && sq.art_h >= 32u && sq.art_w <= 64u, "square plan art %ux%u min_h %u over budget %u", (unsigned)sq.art_w, (unsigned)sq.art_h, (unsigned)sq.min_h, (unsigned)MUI_NP_PAGE_BUDGET_H);
+    mui_np_page_plan(&m, 90u, &narrow);
+    CHECK(narrow.art_w == 30u && narrow.art_h == 30u, "narrow column art %ux%u", (unsigned)narrow.art_w, (unsigned)narrow.art_h);
+    CHECK(mui_np_page_plans() == before + 3u, "plan sentinel did not count");
+    {
+        /* I960c: mui_ui.c is Amiga-only, so the wiring is checked by source: one detail-group call, its group passed to the page group. */
+        static char src[400000];
+        size_t n;
+        const char* p;
+        int calls = 0;
+        FILE* f = fopen(MUI_UI_SOURCE, "rb");
+        CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+        if (f == NULL) {
+            return;
+        }
+        n = fread(src, 1, sizeof src - 1, f);
+        fclose(f);
+        src[n] = 0;
+        for (p = src; (p = strstr(p, "mui_detail_group(s, ")) != NULL; p++) {
+            calls++;
+        }
+        CHECK(calls == 1, "mui_detail_group(s, called %d times, want once", calls);
+        CHECK(strstr(src, "mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab)") != NULL, "the door handler asks mui_door_pane");
+        CHECK(strstr(src, "s->p4[P4_NPPAGE]++") != NULL && strstr(src, "set(s->np_tabs, UPA_Tabs_Active") != NULL, "the Now Playing sentinel counts and the tab is set");
+        CHECK(strstr(src, "p == MUI_PANE_NOWPLAYING && !mui_screen_compact()") != NULL, "the View item is compact only");
+        CHECK(strstr(src, "mui_main_pages(s, np_page)") != NULL, "the window build passes the Now Playing group to the page group");
+        CHECK(strstr(src, "static Object* mui_main_pages(mui_state* s, Object* np_page)") != NULL, "mui_main_pages takes the Now Playing group");
     }
 }
 
@@ -1211,10 +1292,75 @@ static void test_doors(void) {
     CHECK(lines == 7u, "seven doors on the bitmap tier");
 }
 
+/* I1139 sidebar bullet drawn as Latin-1 middle dot: the sidebar subtitle "Playlist \xe2\x80\xa2 12 songs" is UTF-8 in the uimodel and MUI
+ * on OS3 draws Latin-1, so it showed "Playlist â¢ 12 songs". Selecta converts on its side of the handoff (map/mui_text.c): the text spec
+ * and the list hooks. The UP- classes take Latin-1 untouched, so a third party's "Bj\xf6rk" must still arrive as 0xF6. */
+static const char* bullet_row_fn(void* ctx, long row) {
+    (void)ctx;
+    (void)row;
+    return "Playlist \xe2\x80\xa2 12 songs";
+}
+typedef UP_Data (*bullet_hook_sub)(struct Hook*, void*, UP_ListCell*);
+static const char* tag_text(const struct TagItem* t, int n) {
+    int i;
+    for (i = 0; i < n; i++) {
+        if (t[i].ti_Tag == UPA_Text_Contents) {
+            return (const char*)(uintptr_t)t[i].ti_Data;
+        }
+    }
+    return NULL;
+}
+static void test_sidebar_bullet_latin1(void) {
+    sel_engine_library_item it[1];
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    mui_aatext_spec sp, lsp;
+    struct TagItem t[MUI_AATAGMAP_MAX];
+    char a[MUI_L1_TEXT], b[MUI_L1_TEXT], line[200];
+    mui_aalist_spec ls;
+    mui_aalist_hooks hk;
+    UP_ListCell cell;
+    const char* got;
+    int n;
+    memset(it, 0, sizeof it);
+    memset(&in, 0, sizeof in);
+    it[0].kind = SEL_LIB_ITEM_LIKED; it[0].pinned = 1; snprintf(it[0].name, sizeof it[0].name, "Liked Songs"); it[0].songs = 12;
+    in.items = it; in.item_n = 1; in.filter = "";
+    mui_sidebar_build(&in, &m);
+    snprintf(line, sizeof line, "%s  %s  %s", m.row[0].mark, m.row[0].title, m.row[0].subtitle);
+    CHECK(strstr(line, "\xe2\x80\xa2") != NULL, "the uimodel row is UTF-8: '%s'", line); /* premise */
+    /* the spec route mui_side_text takes (mui_aawrap.c mui_aatext_new) */
+    memset(&sp, 0, sizeof sp);
+    sp.contents = line;
+    mui_aatext_spec_l1(&sp, &lsp, a, b);
+    n = mui_aatext_tags(&lsp, t, MUI_AATAGMAP_MAX);
+    got = tag_text(t, n);
+    CHECK(got != NULL && strstr(got, "\xe2") == NULL && strstr(got, "Playlist \xb7 12 songs") != NULL, "text tag holds '%s'", got != NULL ? got : "(none)");
+    /* the list hook route */
+    memset(&ls, 0, sizeof ls);
+    ls.row = bullet_row_fn;
+    n = mui_aalist_tags(&ls, &hk, t, MUI_AATAGMAP_MAX);
+    memset(&cell, 0, sizeof cell);
+    cell.row = 0;
+    got = (const char*)(uintptr_t)((bullet_hook_sub)(uintptr_t)hk.row.hook.h_SubEntry)(&hk.row.hook, NULL, &cell);
+    CHECK(n > 0 && got != NULL && strcmp(got, "Playlist \xb7 12 songs") == 0, "list hook returns '%s'", got != NULL ? got : "(none)");
+    /* the UP- class side takes Latin-1 untouched: the tag map never converts */
+    memset(&sp, 0, sizeof sp);
+    sp.contents = "Bj\xf6rk";
+    n = mui_aatext_tags(&sp, t, MUI_AATAGMAP_MAX);
+    got = tag_text(t, n);
+    CHECK(got != NULL && strcmp(got, "Bj\xf6rk") == 0, "UP- text input stays Latin-1");
+    mui_aatext_spec_l1(&sp, &lsp, a, b); /* already Latin-1 would be mangled by a UTF-8 reader; ASCII lead bytes only here */
+    /* a Latin-1 string that is not valid UTF-8 never reaches mui_l1: Selecta hands UTF-8 only; the converter keeps the letter anyway */
+    CHECK(mui_l1(a, sizeof a, "Bj\xc3\xb6rk") == a && strcmp(a, "Bj\xf6rk") == 0, "UTF-8 o-umlaut becomes 0xF6: '%s'", a);
+    CHECK(mui_l1(a, sizeof a, "plain") != a, "ASCII is passed through untouched");
+}
+
 /* I793 (drift doc S3 to S9): the MUI Your Library sidebar has the Mac sidebar's parts: header, chips, item rows, empty state and
  * create card, with Browse Folders hidden through the uimodel. The sentinel mui_sidebar_builds() proves the model ran, and the
  * mui_ui.c sidebar group is checked to build from it. */
 static char* ui_source(void);
+static const char* fn_body(const char* src, const char* head, char* out, size_t cap);
 static void test_sidebar(void) {
     sel_engine_library_item it[3];
     mui_sidebar_in in;
@@ -1401,6 +1547,42 @@ static void test_song_menu(void) {
     }
 }
 
+/* I1179 (I799 C1, C2): the Listview context menu follows the cursor row. Read from the structures that produce it: the shared mask,
+ * the row-kind map, the plmenu actions, and the source that builds and syncs the strip. */
+static void test_ctxmenu(void) {
+    const char* src = ui_source();
+    char o[64];
+    uint32_t pop = 0, m, k;
+    CHECK(mui_ctx_kind(SEL_ROW_FILE) == SEL_UIM_CTXK_SONG && mui_ctx_kind(SEL_ROW_QUEUE) == SEL_UIM_CTXK_QUEUE &&
+              mui_ctx_kind(SEL_ROW_PLAYLIST) == SEL_UIM_CTXK_PLAYLIST && mui_ctx_kind(SEL_ROW_FOLDER) == SEL_UIM_CTXK_NONE &&
+              mui_ctx_kind(SEL_ROW_HEADING) == SEL_UIM_CTXK_NONE,
+          "row kind map");
+    /* a song or queue row offers the five song items, a playlist row Rename and Delete only, a heading nothing */
+    CHECK(sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_QUEUE)) == 0x1Fu && sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_FILE)) == 0x1Fu, "song mask");
+    CHECK(sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_PLAYLIST)) == (SEL_UIM_CTX_RENAME | SEL_UIM_CTX_DELETE), "playlist mask");
+    CHECK(sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_HEADING)) == 0u, "heading mask");
+    /* the song menu size is the popcount of the song bits of the mask (plus Remove from Playlist on a playlist page's song) */
+    m = sel_uim_ctx_mask(SEL_UIM_CTXK_PLSONG);
+    for (k = 0; k < 6u; k++) {
+        pop += (m >> k) & 1u;
+    }
+    CHECK(pop == sel_uim_song_menu_n(1) && sel_uim_song_menu_n(0) == 5u, "menu size %u", (unsigned)pop);
+    /* item 4 swaps on the queue; Remove from Playlist has its shared label and line */
+    CHECK(strcmp(sel_uim_song_menu_label(4, 1), "Remove from Queue") == 0 && strcmp(sel_uim_song_menu_label(4, 0), "Remove from Library") == 0,
+          "item 4 swap");
+    CHECK(strcmp(sel_uim_plremove_label(), "Remove from Playlist") == 0 && sel_uim_plremove_line(7, 2, o, sizeof o) > 0 &&
+              strstr(o, "PLAYLIST_REMOVE_SONG") == o && sel_uim_plremove_line(0, 2, o, sizeof o) == 0,
+          "playlist remove line '%s'", o);
+    /* the playlist items are the desktop's plmenu actions */
+    CHECK(sel_uim_plmenu_action(0, 0) == SEL_UIM_PLACT_RENAME && sel_uim_plmenu_action(0, 1) == SEL_UIM_PLACT_DELETE, "plmenu actions");
+    /* wiring: the strip carries the two playlist items on the P4 handlers, and the list refresh syncs it from the shared mask */
+    CHECK(src != NULL && strstr(src, "sel_uim_plmenu_label(act)") != NULL && strstr(src, "act == SEL_UIM_PLACT_RENAME ? P4_PRENAME : P4_PDELETE") != NULL,
+          "strip has Rename and Delete");
+    CHECK(src != NULL && strstr(src, "sel_uim_ctx_mask(kind)") != NULL && strstr(src, "mui_ctx_sync(v);") != NULL &&
+              strstr(src, "sel_uim_song_menu_label(4u, kind == SEL_UIM_CTXK_QUEUE)") != NULL,
+          "strip synced from the cursor row");
+}
+
 static void test_like_rating(void) {
     char o[32];
     uint32_t i;
@@ -1433,6 +1615,8 @@ static void test_songinfo(void) {
 }
 
 static void test_settings(void) {
+    char body[6000];
+    const char* src = ui_source();
     uint32_t i, n = sel_uim_pref_row_count_for(SEL_UIM_MACH_AMIGA); /* MPS-1c: host ROM rows are no prefs.def keys */
     char o[96];
     CHECK(n >= 6u, "rows %u", (unsigned)n);
@@ -1456,8 +1640,154 @@ static void test_settings(void) {
             CHECK(strcmp(o, "PREF_SET ui.desktop.overscan \"1\"") == 0, "overscan toggle line '%s'", o);
         }
     }
+    /* I1180 parity with the desktop Settings page (same shared rows). Exempt: ui.desktop.zoom is the desktop UI's pixel scale
+     * (it has no row on the desktop page either); MUI has no pixel zoom. Page versus window: the MUI keeps the window (P4-10). */
+    CHECK(src != NULL && fn_body(src, "static Object* mui_pref_gadget(", body, sizeof body) != NULL, "mui_pref_gadget body");
+    CHECK(strstr(body, "sel_uim_pref_choice_index(r->choices, cur)") != NULL && strstr(body, "strcmp(s->set_entry") == NULL,
+          "cycle rows find the active choice through the shared helper");
+    CHECK(strstr(body, "v > hi ? hi : v") != NULL, "slider value is clamped like the desktop page");
+    CHECK(src != NULL && fn_body(src, "static Object* mui_settings_with_about(", body, sizeof body) != NULL &&
+              strstr(body, "sel_uim_about_heading()") != NULL && strstr(body, "about.credit[i].licence") != NULL,
+          "the About heading and credits are built under the rows");
+    CHECK(src != NULL && fn_body(src, "static void mui_settings_open(", body, sizeof body) != NULL && strstr(body, "mui_settings_with_about(grid)") != NULL &&
+              strstr(body, "sel_uim_pref_row_at(i)") != NULL,
+          "the Settings window walks the shared rows and adds the About part");
     sel_uim_pref_line("mix.loudness", "off", o, sizeof o);
     CHECK(strcmp(o, "PREF_SET mix.loudness \"off\"") == 0, "line '%s'", o);
+}
+
+/* mui-statistics (I1181): the menu actions stats_show / stats_hide open and close the Library Statistics panel, More / Less flips the
+ * row count, and every row is the shared model's label and value from a fixture library (the stats the engine publishes). */
+static void test_statistics_panel(void) {
+    static const char fix[] = "Songs\0" "120\0" "Albums\0" "12\0" "Artists\0" "7\0" "Formats\0" "5\0" "Plays\0" "99\0" "Hours\0" "8\0\0";
+    static const char* const lab[6] = {"Songs", "Albums", "Artists", "Formats", "Plays", "Hours"};
+    static const char* const val[6] = {"120", "12", "7", "5", "99", "8"};
+    mui_stats_panel p = {0, 0};
+    const char *l, *v;
+    uint32_t i, base = mui_stats_builds();
+    CHECK(strcmp(mui_menu_line("stats_show"), "STATS_SHOW") == 0 && strcmp(mui_menu_line("stats_hide"), "STATS_HIDE") == 0, "menu lines");
+    CHECK(mui_stats_menu(&p, "stats_show") == 1 && mui_stats_menu(&p, "style_grid") == 0 && mui_stats_menu(&p, NULL) == 0, "only the two actions are handled");
+    CHECK(p.open && !p.more && strcmp(mui_stats_more_label(&p), "More") == 0, "Show opens collapsed, button says More");
+    for (i = 0; i < SEL_UIM_STATS_LESS; i++) {
+        CHECK(mui_stats_panel_row(&p, fix, i, &l, &v) == 1u && strcmp(l, lab[i]) == 0 && strcmp(v, val[i]) == 0, "less row %u", (unsigned)i);
+    }
+    CHECK(mui_stats_panel_row(&p, fix, SEL_UIM_STATS_LESS, &l, &v) == 0u, "Less stops at %u rows", (unsigned)SEL_UIM_STATS_LESS);
+    mui_stats_more(&p);
+    CHECK(strcmp(mui_stats_more_label(&p), "Less") == 0, "button says Less");
+    for (i = 0; i < 6u; i++) {
+        CHECK(mui_stats_panel_row(&p, fix, i, &l, &v) == 1u && strcmp(l, lab[i]) == 0 && strcmp(v, val[i]) == 0, "more row %u", (unsigned)i);
+    }
+    CHECK(mui_stats_panel_row(&p, fix, 6, &l, &v) == 0u, "More stops at the model's 6 rows");
+    mui_stats_more(&p);
+    CHECK(mui_stats_panel_row(&p, fix, SEL_UIM_STATS_LESS, &l, &v) == 0u, "Less again");
+    CHECK(mui_stats_panel_row(&p, NULL, 0, &l, &v) == 0u, "no stats yet: no rows");
+    CHECK(mui_stats_menu(&p, "stats_hide") == 1 && !p.open && mui_stats_panel_row(&p, fix, 0, &l, &v) == 0u, "Hide closes: no rows");
+    mui_stats_more(&p);
+    CHECK(!p.more, "More does nothing while closed");
+    CHECK(mui_stats_builds() - base == 15u, "sentinel %u, want 15", (unsigned)(mui_stats_builds() - base));
+}
+
+/* mui-sync-offer (I1182): first start, the engine marks two of three sources due. The offer shows once with one check per due source,
+ * Sync sends the lines the desktop sends (LIBRARY_SYNC per ticked row, the snooze pref for an unticked one), Not now sends the shared
+ * notice line and the offer stays dismissed. Wired: mui_ui.c builds the window from these calls. */
+typedef struct offer_sink {
+    char line[12][240];
+    int n;
+} offer_sink;
+
+static int offer_send(void* ctx, const char* line) {
+    offer_sink* e = (offer_sink*)ctx;
+    if (e->n < 12) {
+        snprintf(e->line[e->n], sizeof e->line[0], "%s", line);
+    }
+    e->n++;
+    return 1;
+}
+
+static void offer_feed(mui_srcs* m, const char* key, const char* name, const char* path, int due) {
+    sel_tag t[8];
+    sel_message ev;
+    uint32_t i = 0;
+    memset(&ev, 0, sizeof ev);
+    t[i].tag = SEL_SRC_KEY, t[i++].value = (uintptr_t)key;
+    t[i].tag = SEL_SRC_KIND, t[i++].value = (uintptr_t) "remote";
+    t[i].tag = SEL_SRC_NAME, t[i++].value = (uintptr_t)name;
+    t[i].tag = SEL_SRC_PATH, t[i++].value = (uintptr_t)path;
+    t[i].tag = SEL_SRC_ENABLED, t[i++].value = 1;
+    t[i].tag = SEL_SRC_SYNCABLE, t[i++].value = 1;
+    t[i].tag = SEL_SRC_DUE, t[i++].value = (uintptr_t)due;
+    t[i].tag = SEL_TAG_END, t[i].value = 0;
+    ev.kind = SEL_MSG_EVT;
+    ev.id = SEL_EVT_LIBRARY_RESULT;
+    ev.argc = 1;
+    ev.args[0].type = SEL_ARG_TAGS;
+    ev.args[0].v.t = t;
+    CHECK(mui_srcs_event(m, &ev) == 1, "row %s not taken", key);
+}
+
+static void test_sync_offer(void) {
+    static mui_srcs m;
+    static mui_offer_panel p;
+    static char src[1 << 20];
+    offer_sink e;
+    char title[96], row[160], want[240];
+    const int64_t now = 1700000000;
+    FILE* f;
+    size_t n;
+    memset(&m, 0, sizeof m);
+    memset(&p, 0, sizeof p);
+    mui_srcs_asked(&m);
+    CHECK(!mui_offer_panel_follow(&p, 0, &m), "offer opened before any SOURCES row (the answer is still pending)");
+    offer_feed(&m, "modland", "Modland", "https://m", 1);
+    offer_feed(&m, "amp", "Amiga Music Preservation", "https://a", 0);
+    offer_feed(&m, "demozoo", "Demozoo", "https://d", 1);
+    CHECK(mui_offer_panel_follow(&p, 1, &m) == 0 && !p.open, "a blocking dialog did not hold the offer back");
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 1 && p.open && p.opens == 1u, "first start: the offer did not open");
+    CHECK(p.o.n == 2u, "one check per due source: %u", (unsigned)p.o.n);
+    mui_offer_panel_title(&p, title, sizeof title);
+    CHECK(strcmp(title, "2 sources not synced for a while") == 0, "title '%s'", title);
+    mui_offer_panel_row(&p, &m, 0, row, sizeof row);
+    CHECK(strstr(row, "Modland") != NULL && strstr(row, "never synced") != NULL, "row 0 '%s'", row);
+    mui_offer_panel_row(&p, &m, 1, row, sizeof row);
+    CHECK(strstr(row, "Demozoo") != NULL, "row 1 '%s'", row);
+    CHECK(sel_uim_offer_ticked(&p.o, 0) && sel_uim_offer_ticked(&p.o, 1), "every check starts ticked");
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 0, "the offer opened twice in one launch");
+    /* Sync with Demozoo unticked */
+    mui_offer_panel_tick(&p, 1);
+    CHECK(!sel_uim_offer_ticked(&p.o, 1), "tick did not flip");
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_panel_sync(&p, &m, now, offer_send, &e) == 3u && e.n == 3, "Sync sent %d lines", e.n);
+    sel_uim_sync_line("modland", "https://m", want, sizeof want);
+    CHECK(e.n > 0 && strcmp(e.line[0], want) == 0, "sync line '%s'", e.line[0]);
+      sel_uim_offer_snooze_line(m.it, m.n, 1u << 2, now, want, sizeof want);
+    CHECK(e.n > 1 && strcmp(e.line[1], want) == 0 && strstr(want, "demozoo:") != NULL, "snooze line '%s' want '%s'", e.line[1], want);
+    CHECK(e.n > 2 && strcmp(e.line[2], "SOURCES") == 0, "refresh after snooze");
+    CHECK(!p.open && p.syncs == 1u, "Sync closed the offer, one source synced: %u", (unsigned)p.syncs);
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 0, "the offer came back after Sync");
+    /* Not now on a fresh launch */
+    memset(&p, 0, sizeof p);
+    mui_srcs_asked(&m);
+    offer_feed(&m, "modland", "Modland", "https://m", 1);
+    offer_feed(&m, "amp", "Amiga Music Preservation", "https://a", 0);
+    offer_feed(&m, "demozoo", "Demozoo", "https://d", 1);
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 1, "second launch: offer did not open");
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_panel_not_now(&p, &m, now, offer_send, &e) == 2u && e.n == 2 && strcmp(e.line[1], "SOURCES") == 0, "Not now sent %d lines", e.n);
+    sel_uim_sync_notnow_line(now, want, sizeof want);
+    CHECK(strcmp(e.line[0], want) == 0, "not now line '%s'", e.line[0]);
+    CHECK(!p.open && p.later == 1u, "Not now did not dismiss");
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 0 && mui_offer_panel_sync(&p, &m, now, offer_send, &e) == 0u, "dismissed offer came back or still syncs");
+    f = fopen(MUI_UI_SOURCE, "rb");
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    src[n] = '\0';
+    fclose(f);
+    CHECK(strstr(src, "mui_offer_panel_follow(&s->offer") != NULL && strstr(src, "mui_offer_panel_sync(&s->offer") != NULL &&
+              strstr(src, "mui_offer_panel_not_now(&s->offer") != NULL && strstr(src, "mui_offer_panel_tick(&s->offer") != NULL,
+          "mui_ui.c does not drive the offer panel");
 }
 
 /* mui-drop (MUI-P5-6): the line a dropped file or drawer sends, the clipboard text and its IFF FTXT image. */
@@ -1630,7 +1960,7 @@ static void test_screen_plan(void) {
         fclose(f);
     }
     hdr_src[n] = 0;
-    CHECK(mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
+    CHECK(mui_button_height(256) == (uint32_t)mui_model_icon_px(256) + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height(256));
     /* The plan keeps the Workbench mode: never an automatic lace step, whatever the height. */
     CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, &p) == 0 && p.mode == 0x29000u && p.width == 640u && p.height == 256u && p.depth == 4u,
           "AGA 640x256 plan: mode %08x %ux%u depth %u", (unsigned)p.mode, (unsigned)p.width, (unsigned)p.height, (unsigned)p.depth);
@@ -1688,6 +2018,54 @@ static void test_screen_plan(void) {
     CHECK(strstr(src, "foreign = mui_screen_is_rtg(") != NULL && strstr(src, "BMF_STANDARD") != NULL,
           "mui_screen_open does not decide RTG through mui_screen_is_rtg with the Workbench bitmap");
     CHECK(strstr(src, "_minheight(s->root)") != NULL, "mui_open does not report the measured window minimum");
+}
+
+/* I949f reachability (design 5. Rows): the open path of a 640x256 screen applies the compact class and opens. mui_open is Amiga-only, so
+ * the proof drives the same chain it runs: mui_open_ladder step 0 -> mui_layout_map_panel with the step's layout size (what
+ * mui_layout_for_screen does) -> the rail sidebar and the compact player band that the build functions take from that class. The
+ * sentinels (ladder calls, rail builds, compact band builds) prove each stage ran; the source checks prove mui_open reaches them. The
+ * measured root minimum (<= 600x220) is a rig number: the log line "ladder step 0 window minimum". */
+static void test_open_compact_reach(void) {
+    mui_open_step_t st;
+    mui_layout_map_t m, mini;
+    mui_player_band_t pb;
+    mui_sidebar_in in;
+    mui_sidebar_model rail;
+    uint32_t l0 = mui_open_ladder_calls(), r0 = mui_sidebar_rail_builds(), c0 = mui_player_band_compact_builds();
+    char* src = ui_source();
+    const char* lfs = src != NULL ? strstr(src, "static uint32_t mui_layout_for_screen(") : NULL;
+    const char* lfe = lfs != NULL ? strstr(lfs, "\n}\n") : NULL;
+    const char* lcall = lfs != NULL ? strstr(lfs, "mui_layout_map_wide(&s->lay, st.layout_w, st.layout_h") : NULL;
+    const char* op = src != NULL ? strstr(src, "static void* mui_open(const sel_ui_open_args* a) {") : NULL;
+    const char* loop = op != NULL ? strstr(op, "for (step = 0; mui_layout_for_screen(s, step); step++) {") : NULL;
+    CHECK(mui_open_ladder(0, 640u, 256u, 0, &st) == 1 && st.step == 0u && st.layout_w == 640u && st.layout_h == 256u, "step 0 layout %ux%u",
+          (unsigned)st.layout_w, (unsigned)st.layout_h);
+    mui_layout_map_panel(&m, st.layout_w, st.layout_h, SEL_UIM_TIER_BITMAP, 0u);
+    CHECK(m.compact == 1 && m.show[MUI_SLOT_SIDEBAR] && m.weight_w[MUI_SLOT_SIDEBAR] >= 160u && m.height <= (uint32_t)MUI_COMPACT_MAX_ROWS,
+          "640x256 step 0 is the compact class: compact %d sidebar %u rows %u", (int)m.compact, (unsigned)m.weight_w[MUI_SLOT_SIDEBAR], (unsigned)m.height);
+    memset(&in, 0, sizeof in);
+    in.filter = "";
+    in.bitmap = 1;
+    in.rail = (int)m.compact;
+    mui_sidebar_build(&in, &rail);
+    mui_player_band(&pb, m.compact, mui_pixel_aspect_q8(22, 44), m.width, 0u);
+    CHECK(rail.rail == 1 && rail.row_n == 0u, "the compact class builds the door rail, rows %u", (unsigned)rail.row_n);
+    CHECK(pb.compact == 1 && pb.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "compact player band %u rows", (unsigned)pb.height);
+    CHECK(mui_open_ladder_calls() == l0 + 1u && mui_sidebar_rail_builds() == r0 + 1u && mui_player_band_compact_builds() == c0 + 1u,
+          "sentinels: ladder %u rail %u band %u", (unsigned)(mui_open_ladder_calls() - l0), (unsigned)(mui_sidebar_rail_builds() - r0),
+          (unsigned)(mui_player_band_compact_builds() - c0));
+    /* A refusal of step 0 steps down to the mini layout (width 599), which is NOT the compact class: the compact class is the first try. */
+    CHECK(mui_open_ladder(1, 640u, 256u, 0, &st) == 1, "step 1 exists");
+    mui_layout_map_panel(&mini, st.layout_w, st.layout_h, SEL_UIM_TIER_BITMAP, 0u);
+    CHECK(mini.compact == 0 && mini.width == MUI_COMPACT_W, "refused compact class falls to the mini layout: compact %d width %u", (int)mini.compact,
+          (unsigned)mini.width);
+    /* Wiring: mui_open loops the ladder, each step lays out through mui_layout_for_screen with the step's size, and the build functions
+     * read the compact class from the screen. */
+    CHECK(loop != NULL && lfs != NULL && lfe != NULL && lcall != NULL && lcall < lfe && strstr(lfs, "mui_apply_layout(s);") != NULL,
+          "mui_open does not reach the layout through the ladder step");
+    CHECK(strstr(src, "s->side_rail = mui_screen_compact();") != NULL && strstr(src, "mui_player_band(&band, mui_screen_compact() ? 1u : 0u") != NULL,
+          "the rail sidebar and the compact player band are not chosen from the screen's compact class");
+    CHECK(strstr(src, "ladder step %lu window minimum") != NULL, "the root minimum is not logged for the rig check");
 }
 
 /* I675 (D-M4-3): on the own SELECTA screen the main window is a borderless backdrop window without drag bar, depth, size or
@@ -1783,7 +2161,7 @@ static int tip_file(const char* name, char* buf, size_t cap) {
     char path[600];
     FILE* f;
     size_t n;
-    snprintf(path, sizeof path, "%s/%s", MUI_DIR, name);
+    snprintf(path, sizeof path, "%s", name);
     f = fopen(path, "rb");
     if (f == NULL) {
         buf[0] = 0;
@@ -1801,8 +2179,8 @@ static void test_tooltip_flat(void) {
     mui_aa_tip_t p, s;
     int x = 0, y = 0, act, st, side;
     static char src[400000];
-    static const char* const classes[] = {"mui_aabtn_class.c", "mui_aaslider_class.c", "mui_aafield_class.c"};
-    static const char* const need[] = {"aatip_super_set(", "aatip_event(", "AATIP_M_FIRE", "aatip_drop("};
+    static const char* const classes[] = {MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aaslider_class.c", MCC_CLASS "/mui_aafield_class.c"};
+    static const char* const need[] = {"aatip_super_set(", "aatip_event(", "UPM_Shared_Fire", "aatip_drop("};
     static const char* const tip_need[] = {"mui_aa_tip_plan(", "mui_aa_tip_place(", "mui_aa_tip_step(", "aa_round_fill(", "aa_text(", "WA_Borderless", "WA_Activate, FALSE", "MUIIHNF_TIMER"};
     static const char* const tip_ban[] = {"MUIM_CreateBubble", "MUIA_Frame", "aa_round_frame("};
     const char *fn, *end;
@@ -1842,7 +2220,7 @@ static void test_tooltip_flat(void) {
     st = mui_aa_tip_step(st, MUI_AA_TIP_EV_LEAVE, &act);
     CHECK(st == MUI_AA_TIP_IDLE, "leave does not reset");
 
-    CHECK(tip_file("mui_aatip.c", src, sizeof src), "mui_aatip.c is missing");
+    CHECK(tip_file(MCC_SRC "/mui_aatip.c", src, sizeof src), "mui_aatip.c is missing");
     for (k = 0; k < sizeof tip_need / sizeof tip_need[0]; k++) {
         CHECK(strstr(src, tip_need[k]) != NULL, "mui_aatip.c lacks %s", tip_need[k]);
     }
@@ -1855,12 +2233,12 @@ static void test_tooltip_flat(void) {
             CHECK(strstr(src, need[k]) != NULL, "%s does not call %s", classes[j], need[k]);
         }
     }
-    CHECK(tip_file("mui_aa_draw.c", src, sizeof src), "mui_aa_draw.c is missing");
+    CHECK(tip_file(MCC_SRC "/mui_aa_draw.c", src, sizeof src), "mui_aa_draw.c is missing");
     fn = strstr(src, "uint32_t aa_retheme_all(void) {");
     end = fn != NULL ? strstr(fn, "\n}\n") : NULL;
     CHECK(end != NULL && strstr(fn, "aatip_drop(NULL)") != NULL && strstr(fn, "aatip_drop(NULL)") < end, "aa_retheme_all does not drop an open tip");
-    CHECK(tip_file("mui_aabtn_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") != NULL, "AABtn must still take MUIA_ShortHelp");
-    CHECK(tip_file("mui_aalist_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") == NULL, "AAList passes MUIA_ShortHelp to MUI's own bubble");
+    CHECK(tip_file(MCC_CLASS "/mui_aabtn_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") != NULL, "AABtn must still take MUIA_ShortHelp");
+    CHECK(tip_file(MCC_CLASS "/mui_aalist_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") == NULL, "AAList passes MUIA_ShortHelp to MUI's own bubble");
 }
 
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
@@ -1877,12 +2255,12 @@ static void test_icon_button_rows(void) {
     }
     src[n] = 0;
     for (r = 0; r < 2u; r++) {
-        CHECK(mui_tool_row_width(r) <= MUI_MIN_SCREEN_W, "tool row %u needs %u px (screen %d)", (unsigned)r, (unsigned)mui_tool_row_width(r), MUI_MIN_SCREEN_W);
+        CHECK(mui_tool_row_width(r, 256) <= MUI_MIN_SCREEN_W, "tool row %u needs %u px (screen %d)", (unsigned)r, (unsigned)mui_tool_row_width(r, 256), MUI_MIN_SCREEN_W);
     }
     for (r = 0; r < 2u; r++) {
-        CHECK(mui_transport_row_width(r) <= MUI_MIN_SCREEN_W, "transport row %u needs %u px", (unsigned)r, (unsigned)mui_transport_row_width(r));
+        CHECK(mui_transport_row_width(r, 256) <= MUI_MIN_SCREEN_W, "transport row %u needs %u px", (unsigned)r, (unsigned)mui_transport_row_width(r, 256));
     }
-    CHECK(mui_extra_row_width() <= MUI_MIN_SCREEN_W, "extras row needs %u px", (unsigned)mui_extra_row_width());
+    CHECK(mui_extra_row_width(256) <= MUI_MIN_SCREEN_W, "extras row needs %u px", (unsigned)mui_extra_row_width(256));
     /* I656b: icon-only buttons must stretch (spacers around the fixed image) or the root group's max width caps the window. */
     CHECK(mui_button_spacers(1, 1) == 2u && mui_button_spacers(0, 1) == 0u && mui_button_spacers(1, 0) == 0u, "icon-only button has no stretch spacers");
     /* I667b: the AAButton class stretches itself (MaxWidth MUI_MAXMAX) so the spacer children are gone. */
@@ -1923,9 +2301,11 @@ static void test_aabtn_wired(const char* src) {
         CHECK(fn_body(src, wrappers[k], body, sizeof body) != NULL && strstr(body, "mui_make_button_") != NULL, "wrapper %s skips mui_make_button_i", wrappers[k]);
     }
     CHECK(strstr(src, "MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP") == NULL, "mui_ui.c still builds a stock group button");
-    CHECK(strstr(src, "mui_aabtn_new(") != NULL && strstr(src, "mui_aabtn_set_caption(s->btn[i], label)") != NULL, "transport labels do not reach the class");
+    CHECK(strstr(src, "mui_aabtn_new(") != NULL && strstr(src, "mui_caption_set(s->btn[i], label)") != NULL &&
+              fn_body(src, "static void mui_caption_set(", body, sizeof body) != NULL && strstr(body, "mui_aabtn_set_caption(") != NULL,
+          "transport labels do not reach the class"); /* I1139 2872c942: the call goes through mui_caption_set (Latin-1 wrap), which ends in mui_aabtn_set_caption */
     total = MUI_BTN_COUNT + MUI_EXTRA_COUNT + SEL_UIM_DOOR_COUNT + MUI_TOOL_BTNS + crumbs;
-    CHECK(crumbs == 6u && total == 37u, "button families add up to %u (crumbs %u), design lists 37", total, crumbs);
+    CHECK(crumbs == 6u && total == 38u, "button families add up to %u (crumbs %u), design lists 38 (37 + New Folder, I1177)", total, crumbs);
 }
 
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
@@ -1936,7 +2316,7 @@ static void test_icon_square(void) {
     mui_btn_box_t bn, fx, tg;
     static char src[400000], ui[1200000];
     size_t n;
-    FILE* f = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+    FILE* f = fopen(MCC_CLASS "/mui_aabtn_class.c", "rb");
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
     if (f != NULL) {
         fclose(f);
@@ -1954,7 +2334,7 @@ static void test_icon_square(void) {
     CHECK(bn.min_w == 20 && bn.w_fixed == 0 && bn.min_h == 12 && bn.h_fixed == 1, "a button with no fixed side keeps the unbounded width");
     CHECK(fx.min_w == 24 && fx.def_w == 24 && fx.w_fixed == 1 && fx.min_h == 12 && fx.def_h == 12 && fx.h_fixed == 1, "a fixed side: min = def = max (%u %u %u)", (unsigned)fx.min_w, (unsigned)fx.def_w, (unsigned)fx.w_fixed);
     CHECK(tg.w_fixed == 1, "a toggle box stays fixed");
-    CHECK(strstr(src, "mui_aabtn_minmax((uint32_t)d->minw") != NULL && strstr(src, "d->fixed_w = sp->fixed_w;") != NULL, "askminmax calls the helper and the spec carries the fixed sides");
+    CHECK(strstr(src, "mui_aabtn_minmax((uint32_t)d->minw") != NULL && strstr(src, "d->fixed_w = (int)GetTagData(UPA_Button_FixedWidth") != NULL, "askminmax calls the helper and the spec carries the fixed sides");
     CHECK(strstr(ui, "static Object* mui_make_button_fixed(") != NULL, "the fixed-size button builder exists");
 }
 
@@ -2007,7 +2387,7 @@ static void test_icon_buttons(void) {
     mui_icon_palette(th.token, 1, pal);
     CHECK(pal[0] == (th.token[SEL_GUI_TOKEN_SURFACE_RAISED] >> 16 & 0xFFu) * 0x01010101u && pal[9] == (th.token[SEL_GUI_TOKEN_TEXT] >> 16 & 0xFFu) * 0x01010101u,
           "palette runs from the button face to the text colour");
-    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && mui_model_icon_px() >= 18, "buttons are bigger than the 1 px text-only ones");
+    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && mui_model_icon_px(256) >= 18, "buttons are bigger than the 1 px text-only ones");
     f = fopen(MUI_UI_SOURCE, "rb");
     CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
     if (f == NULL) {
@@ -2141,7 +2521,7 @@ static void test_newplaylist(void) {
     const char* p;
     char tbl[600];
     unsigned n = 0, k;
-    CHECK(MUI_TOOL_BTNS == 12u, "toolbar has %u buttons, want 12", (unsigned)MUI_TOOL_BTNS);
+    CHECK(MUI_TOOL_BTNS == 13u, "toolbar has %u buttons, want 13", (unsigned)MUI_TOOL_BTNS);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
         if (strcmp(mui_tool_labels[i], "New Playlist") == 0) {
             at = i;
@@ -2174,6 +2554,81 @@ static void test_newplaylist(void) {
     g_sent = 0;
     CHECK(mui_viewbtn_fire(1, "", 0, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "PLAYLIST_CREATE \"New Playlist\" 0") == 0, "fire sent '%s'", g_sent_line);
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
+}
+
+/* I1178 mui-siflags: the Song Information page carries Mark Wrong, Skip Song, Save Note, sending what the desktop buttons send
+ * (sel_uim_flag_label / sel_uim_flag_line, the one helper both UIs call). Checked from the structures: the P4 enum + p4_name hold the three
+ * ids, the page group builds one button per sel_uim_flag_label through mui_viewbtn_label, and the P4 cases fire mui_viewbtn_fire(2 + k). */
+static void test_siflags(void) {
+    const char* src = ui_source();
+    uint32_t k, fires = mui_view_fires();
+    char want[SEL_UIM_CMD_MAX];
+    static const char* const lab[3] = {"Mark Wrong", "Skip Song", "Save Note"};
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    CHECK(strstr(src, "P4_SIWRONG, P4_SISKIP, P4_SINOTE, P4_COUNT") != NULL && strstr(src, "\"siwrong\", \"siskip\", \"sinote\"}") != NULL,
+          "the three P4 ids or their sentinel names are missing");
+    CHECK(strstr(src, "mui_viewbtn_label(2u + fk)") != NULL && strstr(src, "CTL_P4_BASE + (LONG)(P4_SIWRONG + fk)") != NULL,
+          "the Song Information page does not build the flag buttons");
+    CHECK(strstr(src, "case P4_SIWRONG:") != NULL && strstr(src, "case P4_SINOTE:") != NULL &&
+              strstr(src, "mui_viewbtn_fire(2u + (which - P4_SIWRONG)") != NULL,
+          "the flag cases do not fire mui_viewbtn_fire(2 + k)");
+    for (k = 0; k < 3u; k++) {
+        g_sent = 0;
+        CHECK(strcmp(mui_viewbtn_label(2u + k), lab[k]) == 0 && strcmp(sel_uim_flag_label(k), lab[k]) == 0, "label %u '%s'", (unsigned)k, mui_viewbtn_label(2u + k));
+        CHECK(mui_viewbtn_fire(2u + k, "bad loop", 0, fake_send, NULL) == 1 && g_sent == 1, "button %u did not send", (unsigned)k);
+        sel_uim_flag_line(k, "bad loop", want, sizeof want);
+        CHECK(strcmp(g_sent_line, want) == 0, "button %u sent '%s' want the desktop line '%s'", (unsigned)k, g_sent_line, want);
+    }
+    CHECK(mui_view_fires() == fires + 3u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 3u));
+}
+
+/* I1177 mui-newfolder: New Folder is the toolbar button after New Playlist. Label, icon, id slot and the fire path are read from the
+ * structures that produce them (mui_tool_labels, g_tool_which, the P4_PFOLDER case); the verb is the desktop's FOLDER_ADD through the
+ * shared sel_uim_plbtn_line, and the target folder is the shared sel_uim_pl_target_folder the desktop's New Folder button also uses. */
+static void test_newfolder(void) {
+    const char* src = ui_source();
+    uint32_t i, at = MUI_TOOL_BTNS, fires = mui_view_fires();
+    const char* w;
+    const char* p;
+    sel_view_row rows[4];
+    memset(rows, 0, sizeof rows);
+    rows[0].kind = (uint32_t)SEL_ROW_FOLDER; rows[0].id = 7u; rows[0].depth = 0u;
+    rows[1].kind = (uint32_t)SEL_ROW_FOLDER; rows[1].id = 9u; rows[1].depth = 1u;
+    rows[2].kind = (uint32_t)SEL_ROW_PLAYLIST; rows[2].id = 11u; rows[2].depth = 2u;
+    rows[3].kind = (uint32_t)SEL_ROW_PLAYLIST; rows[3].id = 12u; rows[3].depth = 0u;
+    for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        if (strcmp(mui_tool_labels[i], "New Folder") == 0) {
+            at = i;
+        }
+    }
+    CHECK(at < MUI_TOOL_BTNS && strcmp(mui_tool_labels[at - 1u], "New Playlist") == 0, "New Folder is not the button after New Playlist");
+    CHECK(mui_icon_body(mui_icon_id("New Folder"), 18) != NULL, "New Folder has no icon");
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    w = strstr(src, "g_tool_which[MUI_TOOL_BTNS] = {");
+    CHECK(w != NULL, "g_tool_which missing");
+    if (w != NULL && at < MUI_TOOL_BTNS) {
+        p = strchr(w, '{') + 1;
+        for (i = 0; i < at && p != NULL; i++) {
+            p = strchr(p, ',');
+            p = p != NULL ? p + 1 : NULL;
+        }
+        CHECK(p != NULL && strncmp(p + strspn(p, " \n"), "P4_PFOLDER", 10) == 0, "id slot %u is not P4_PFOLDER", (unsigned)at);
+    }
+    CHECK(strstr(src, "case P4_PFOLDER:") != NULL && strstr(src, "mui_viewbtn_fire(0,") != NULL, "P4_PFOLDER does not fire mui_viewbtn_fire(0)");
+    CHECK(strstr(src, "\"pfolder\"") != NULL, "p4_name has no pfolder");
+    g_sent = 0;
+    CHECK(mui_viewbtn_fire(0, "", 9u, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "FOLDER_ADD \"New Folder\" 9") == 0, "fire sent '%s'", g_sent_line);
+    CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
+    CHECK(sel_uim_pl_target_folder(rows, 4u, 0) == 7u && sel_uim_pl_target_folder(rows, 4u, 1) == 9u, "a selected folder is not its own target");
+    CHECK(sel_uim_pl_target_folder(rows, 4u, 2) == 9u && sel_uim_pl_target_folder(rows, 4u, 3) == 0u, "a playlist's target is not the folder above it");
+    CHECK(sel_uim_pl_target_folder(rows, 4u, -1) == 0u && sel_uim_pl_target_folder(rows, 4u, 4) == 0u, "no selection is not the root");
+    CHECK(strstr(src, "mui_pl_target_folder(view)") != NULL && strstr(src, "sel_uim_pl_target_folder(view->rows") != NULL, "MUI does not use the shared target folder");
 }
 
 /* I670 mui-libfilter (design 2026-10-29 section 4): the sidebar library filter control. The press goes through mui_libfilter_press,
@@ -2243,7 +2698,7 @@ static void test_libfilter(void) {
                       sel_uim_viz_tabs_fit(vw, 0u, 4, 100) == 0,
                   "I918 viz tabs fit: exact fit tabs, one pixel short chooser, one label, none");
         }
-        CHECK(mui_sidebar_chips_single(0, 100u) == 1 && mui_sidebar_chips_single(0, 2000u) == 0 && mui_sidebar_chips_single(1, 2000u) == 1, "MUI width decision");
+        CHECK(mui_sidebar_chips_single(0, 100u, 256) == 1 && mui_sidebar_chips_single(0, 2000u, 256) == 0 && mui_sidebar_chips_single(1, 2000u, 256) == 1, "MUI width decision");
     }
     CHECK(src != NULL, "read mui_ui.c");
     if (src != NULL) {
@@ -2263,18 +2718,18 @@ static void test_libfilter(void) {
 
 /* Regression (I684a): Selecta_AACycle's OM_SET redrew when _win(obj) != NULL. Before the first MUIM_Setup the render info
  * is NULL, so _win(obj) reads address 0; on rig 2 that held garbage, the redraw ran on an object with no window and the
- * Amiga crashed at start (set AAC_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
+ * Amiga crashed at start (set UPA_Cycle_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
  * which checks the render info first; no class file may test _win(obj) against NULL on its own. */
 static void test_live_guard(void) {
-    static const char* const files[] = {"mui_aacycle_class.c", "mui_aafield_class.c", "mui_aabtn_class.c", "mui_aascroller_class.c",
-                                        "mui_aaslider_class.c", "mui_aalist_class.c", "mui_listview_class.c", "mui_aatext_class.c",
-                                        "mui_aapanel_class.c", "mui_vizarea_class.c", "mui_canvas_class.c"};
+    static const char* const files[] = {MCC_CLASS "/mui_aacycle_class.c", MCC_CLASS "/mui_aafield_class.c", MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aascroller_class.c",
+                                        MCC_CLASS "/mui_aaslider_class.c", MCC_CLASS "/mui_aalist_class.c", MUI_DIR "/mui_listview_class.c", MCC_CLASS "/mui_aatext_class.c",
+                                        MCC_CLASS "/mui_aapanel_class.c", MUI_DIR "/mui_vizarea_class.c", MUI_DIR "/mui_canvas_class.c"};
     static char src[200000];
     char path[1024];
     size_t i, n;
     FILE* f;
     for (i = 0; i < sizeof files / sizeof files[0]; i++) {
-        snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[i]);
+        snprintf(path, sizeof path, "%s", files[i]);
         f = fopen(path, "rb");
         CHECK(f != NULL, "open %s", path);
         if (f == NULL) {
@@ -2286,7 +2741,7 @@ static void test_live_guard(void) {
         CHECK(strstr(src, "_win(obj) != NULL") == NULL && strstr(src, "_win(obj) == NULL") == NULL,
               "%s tests _win(obj) against NULL without the render info guard (use aa_live)", files[i]);
     }
-    snprintf(path, sizeof path, "%s/mui_aa_draw.c", MUI_DIR);
+    snprintf(path, sizeof path, "%s/mui_aa_draw.c", MCC_SRC);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -2297,7 +2752,167 @@ static void test_live_guard(void) {
     CHECK(strstr(src, "muiRenderInfo(obj) != NULL && _win(obj) != NULL") != NULL, "aa_live does not check the render info before _win");
 }
 
-/* I713: the rig's wasabid lists AAList rows as items by calling AAM_GetRow (the class's documented read-back, mui_aalist_class.h).
+/* I685d: the MUI tag base is written once (mcc/up.h) and every tag of the class package is UP_TAG(class, offset). The classes are
+ * Amiga-only, so the table reads each tag's #define from the source, evaluates it with the real UP_TAG macro and compares it with the
+ * literal it had before the conversion. The two tooltip outliers moved to class 0F; UPM_Field_Redraw moved from 0x53410301 (same number as
+ * UPA_Tabs_Active) to the Field class 07. */
+typedef struct up_tag_row {
+    const char* file;
+    const char* name;
+    unsigned cls, off;
+    unsigned long literal;
+} up_tag_row;
+
+static unsigned long up_class_value(const char* name, int* ok) {
+    static const struct {
+        const char* n;
+        unsigned v;
+    } cls[] = {{"UP_CLS_TEXT", UP_CLS_TEXT},   {"UP_CLS_PROGRESS", UP_CLS_PROGRESS}, {"UP_CLS_CYCLE", UP_CLS_CYCLE},
+               {"UP_CLS_TABS", UP_CLS_TABS},   {"UP_CLS_SCROLLER", UP_CLS_SCROLLER}, {"UP_CLS_LIST", UP_CLS_LIST},
+               {"UP_CLS_BUTTON", UP_CLS_BUTTON}, {"UP_CLS_FIELD", UP_CLS_FIELD},     {"UP_CLS_PANEL", UP_CLS_PANEL},
+               {"UP_CLS_BALANCE", UP_CLS_BALANCE}, {"UP_CLS_SHARED", UP_CLS_SHARED}};
+    size_t i;
+    for (i = 0; i < sizeof cls / sizeof cls[0]; i++) {
+        if (strcmp(cls[i].n, name) == 0) {
+            *ok = 1;
+            return cls[i].v;
+        }
+    }
+    *ok = 0;
+    return 0;
+}
+
+static int up_read_file(const char* path, char* buf, size_t cap) {
+    FILE* f = fopen(path, "rb");
+    size_t n;
+    if (f == NULL) {
+        return 0;
+    }
+    n = fread(buf, 1, cap - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    return 1;
+}
+
+/* Every .c/.h file under dir, recursively: no 0x5341.... or 0x5E1A.... literal (any case) may be written there. *uses counts every
+ * "UP_TAG(" written under dir, so a tag added without a table row fails the count below. */
+static void up_scan_literals(const char* dir, int* files, int* uses) {
+    static char src[400000];
+    DIR* d = opendir(dir);
+    struct dirent* e;
+    if (d == NULL) {
+        CHECK(0, "open %s", dir);
+        return;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char path[1024];
+        size_t l = strlen(e->d_name);
+        struct stat st;
+        if (e->d_name[0] == '.') {
+            continue;
+        }
+        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        if (stat(path, &st) != 0) {
+            continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            up_scan_literals(path, files, uses);
+        } else if (l > 2 && (strcmp(e->d_name + l - 2, ".c") == 0 || strcmp(e->d_name + l - 2, ".h") == 0)) {
+            size_t i;
+            CHECK(up_read_file(path, src, sizeof src), "read %s", path);
+            for (i = 0; src[i] != 0; i++) {
+                if (strncmp(src + i, "UP_TAG(", 7) == 0) {
+                    (*uses)++;
+                }
+                if (src[i] == '0' && (src[i + 1] == 'x' || src[i + 1] == 'X')) {
+                    CHECK(strncasecmp(src + i + 2, "5341", 4) != 0 && strncasecmp(src + i + 2, "5E1A", 4) != 0,
+                          "%s writes a tag base literal near byte %zu; the base lives in mcc/up.h only", path, i);
+                }
+            }
+            (*files)++;
+        }
+    }
+    closedir(d);
+}
+
+static void test_up_tags(void) {
+    static const up_tag_row rows[] = {
+        {"/../include/mcc/up.h", "UPA_Text_Contents", UP_CLS_TEXT, 0x01, 0x80000000UL | 0x53410001UL},
+        {"/../include/mcc/up.h", "UPA_Progress_Value", UP_CLS_PROGRESS, 0x01, 0x80000000UL | 0x53410101UL},
+        {"/../include/mcc/up.h", "UPA_Progress_Max", UP_CLS_PROGRESS, 0x02, 0x80000000UL | 0x53410102UL},
+        {"/../include/mcc/up.h", "UPA_Cycle_Active", UP_CLS_CYCLE, 0x01, 0x80000000UL | 0x53410201UL},
+        {"/../include/mcc/up.h", "UPA_Cycle_Entries", UP_CLS_CYCLE, 0x02, 0x80000000UL | 0x53410202UL},
+        {"/../include/mcc/up.h", "UPA_Tabs_Active", UP_CLS_TABS, 0x01, 0x80000000UL | 0x53410301UL},
+        {"/../include/mcc/up.h", "UPA_Scroller_First", UP_CLS_SCROLLER, 0x01, 0x80000000UL | 0x53410401UL},
+        {"/../include/mcc/up.h", "UPA_Scroller_Visible", UP_CLS_SCROLLER, 0x02, 0x80000000UL | 0x53410402UL},
+        {"/../include/mcc/up.h", "UPA_Scroller_Entries", UP_CLS_SCROLLER, 0x03, 0x80000000UL | 0x53410403UL},
+        {"/../include/mcc/up.h", "UPA_List_Count", UP_CLS_LIST, 0x01, 0x80000000UL | 0x53410501UL},
+        {"/../include/mcc/up.h", "UPA_List_Active", UP_CLS_LIST, 0x02, 0x80000000UL | 0x53410502UL},
+        {"/../include/mcc/up.h", "UPA_List_First", UP_CLS_LIST, 0x03, 0x80000000UL | 0x53410503UL},
+        {"/../include/mcc/up.h", "UPA_List_Picked", UP_CLS_LIST, 0x04, 0x80000000UL | 0x53410504UL},
+        {"/../include/mcc/up.h", "UPA_List_Columns", UP_CLS_LIST, 0x05, 0x80000000UL | 0x53410505UL},
+        {"/../include/mcc/up.h", "UPA_List_Playing", UP_CLS_LIST, 0x06, 0x80000000UL | 0x53410506UL},
+        {"/../include/mcc/up.h", "UPM_List_GetRow", UP_CLS_LIST, 0x10, 0x80000000UL | 0x53410510UL},
+        {"/../include/mcc/up.h", "UPM_Field_Redraw", UP_CLS_FIELD, 0x01, 0x80000000UL | 0x53410701UL},
+        {"/../include/mcc/up.h", "UPM_Shared_Fire", UP_CLS_SHARED, 0x31, 0x80000000UL | 0x53410F31UL},
+        {"/../include/mcc/up.h", "UPA_Shared_Side", UP_CLS_SHARED, 0x32, 0x80000000UL | 0x53410F32UL},
+    };
+    static char src[200000];
+    size_t i, j;
+    int files = 0, uses = 0;
+    for (i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        char path[1024], key[96], clsname[48];
+        const char* p;
+        unsigned off = 0;
+        int ok = 0;
+        unsigned long cls, value;
+        snprintf(path, sizeof path, "%s%s", MCC_SRC, rows[i].file);
+        CHECK(up_read_file(path, src, sizeof src), "read %s", path);
+        snprintf(key, sizeof key, "#define %s UP_TAG(", rows[i].name);
+        p = strstr(src, key);
+        CHECK(p != NULL, "%s is not defined as UP_TAG(class, offset) in %s", rows[i].name, path);
+        if (p == NULL || sscanf(p + strlen(key), "%47[A-Z_], 0x%x)", clsname, &off) != 2) {
+            CHECK(p == NULL, "%s: cannot read the class and offset", rows[i].name);
+            continue;
+        }
+        cls = up_class_value(clsname, &ok);
+        CHECK(ok, "%s uses the unknown class name %s", rows[i].name, clsname);
+        value = UP_TAG(cls, off);
+        CHECK(value == rows[i].literal, "%s is 0x%08lX, expected the literal 0x%08lX", rows[i].name, value, rows[i].literal);
+        CHECK(value == UP_TAG(rows[i].cls, rows[i].off), "%s is not UP_TAG(0x%02X, 0x%02X)", rows[i].name, rows[i].cls, rows[i].off);
+        CHECK(rows[i].literal == UP_TAG(rows[i].cls, rows[i].off), "table row %s: literal and UP_TAG(class, offset) disagree", rows[i].name);
+    }
+    for (i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        for (j = i + 1; j < sizeof rows / sizeof rows[0]; j++) {
+            CHECK(rows[i].literal != rows[j].literal, "%s and %s share the number 0x%08lX", rows[i].name, rows[j].name, rows[i].literal);
+        }
+    }
+    up_scan_literals(MCC_SRC, &files, &uses);
+    CHECK(files >= 20, "the literal scan saw only %d files under %s", files, MCC_SRC);
+    /* I685f: every tag is defined in include/mcc/up.h; nothing under src/ writes UP_TAG( (mui_tagmap_test checks the same per file). */
+    CHECK(uses == 0, "%s writes UP_TAG( %d times; tags are defined in include/mcc/up.h only", MCC_SRC, uses);
+}
+
+/* I685d2: every UPTOK_* name equals its SEL_GUI_TOKEN_* and the names cover the whole token list. The expected table is the
+ * same X-list written out as (UPTOK value, SEL value) pairs, one entry per list row, so the count is the list's. */
+static void test_up_token_names(void) {
+    static const struct {
+        unsigned up, sel;
+    } pairs[] = {
+#define X(id, name, def, lo, hi) {(unsigned)UPTOK_##id, (unsigned)SEL_GUI_TOKEN_##id},
+        SEL_GUI_TOKENS(X)
+#undef X
+    };
+    size_t i, n = sizeof pairs / sizeof pairs[0];
+    CHECK(n == (size_t)SEL_GUI_TOKEN_COUNT, "%d UPTOK names, SEL_GUI_TOKEN_COUNT is %d", (int)n, (int)SEL_GUI_TOKEN_COUNT);
+    CHECK((size_t)UPTOK_END_ == (size_t)SEL_GUI_TOKEN_COUNT, "UPTOK_END_ %d != SEL_GUI_TOKEN_COUNT %d", (int)UPTOK_END_, (int)SEL_GUI_TOKEN_COUNT);
+    for (i = 0; i < n; i++) {
+        CHECK(pairs[i].up == pairs[i].sel && pairs[i].up == (unsigned)i, "UPTOK #%d is %u, SEL_GUI_TOKEN is %u", (int)i, pairs[i].up, pairs[i].sel);
+    }
+    CHECK(UPTOK_FOCUS_RING == SEL_GUI_TOKEN_FOCUS_RING, "UPTOK_FOCUS_RING differs from SEL_GUI_TOKEN_FOCUS_RING");
+}
+
+/* I713: the rig's wasabid lists AAList rows as items by calling UPM_List_GetRow (the class's documented read-back, mui_aalist_class.h).
  * The class is Amiga-only, so the contract is checked in the sources: the header declares the method and its message, the
  * dispatcher answers it, and the handler gives the row text, the selection and the on-screen box wasabid clicks. */
 static void test_aalist_getrow(void) {
@@ -2305,7 +2920,7 @@ static void test_aalist_getrow(void) {
     char path[1024];
     size_t n;
     FILE* f;
-    snprintf(path, sizeof path, "%s/mui_aalist_class.h", MUI_DIR);
+    snprintf(path, sizeof path, "%s/../include/mcc/up.h", MCC_SRC);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -2313,8 +2928,8 @@ static void test_aalist_getrow(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(strstr(src, "#define AAM_GetRow") != NULL && strstr(src, "mui_aalist_getrow;") != NULL, "mui_aalist_class.h declares no AAM_GetRow message");
-    snprintf(path, sizeof path, "%s/mui_aalist_class.c", MUI_DIR);
+    CHECK(strstr(src, "#define UPM_List_GetRow") != NULL && strstr(src, "UP_ListGetRow;") != NULL, "mcc/up.h declares no UPM_List_GetRow message");
+    snprintf(path, sizeof path, "%s/mui_aalist_class.c", MCC_CLASS);
     f = fopen(path, "rb");
     CHECK(f != NULL, "open %s", path);
     n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
@@ -2322,16 +2937,16 @@ static void test_aalist_getrow(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(strstr(src, "case AAM_GetRow:") != NULL, "the AAList dispatcher does not answer AAM_GetRow");
+    CHECK(strstr(src, "case UPM_List_GetRow:") != NULL, "the AAList dispatcher does not answer UPM_List_GetRow");
     CHECK(strstr(src, "g->selected = ") != NULL && strstr(src, "g->y = _mtop(obj) + d->m.pad_y + aalist_title_h(d)") != NULL,
-          "AAM_GetRow does not give the selection and the row box drawn by aalist_draw");
+          "UPM_List_GetRow does not give the selection and the row box drawn by aalist_draw");
 }
 
-/* Regression (I684a, the crash itself): mui_detail_group built the visualizer cycle and then called set(AAC_Active) before
+/* Regression (I684a, the crash itself): mui_detail_group built the visualizer cycle and then called set(UPA_Cycle_Active) before
  * the cycle was in the application tree. The set fired the MUIV_Notify_Application notification with no global info, MUI read
  * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
  * settings cycles had the same shape. The initial entry must go in at OM_NEW (mui_make_cycle's active argument): mui_ui.c may
- * not set AAC_Active at all; only the user's pick changes it. */
+ * not set UPA_Cycle_Active at all; only the user's pick changes it. */
 /* I740: the transport clock/remaining/length texts and the four status-row labels are plain AAText: no MUI frame, no field face or
  * outline (it made them look like text inputs; the Mac footer draws muted text on the window). Source contract; red when a
  * face/framed path comes back into the constructor or the class. */
@@ -2340,7 +2955,7 @@ static void test_status_face(void) {
     char path[512];
     char *src = ui_source(), *cls = NULL, *ctor, *grp, *end;
     FILE* cf;
-    snprintf(path, sizeof path, "%s/mui_aatext_class.c", MUI_DIR);
+    snprintf(path, sizeof path, "%s/mui_aatext_class.c", MCC_CLASS);
     cf = fopen(path, "rb");
     if (cf != NULL) {
         size_t n = fread(cls_buf, 1, sizeof cls_buf - 1, cf);
@@ -2499,7 +3114,7 @@ static void test_cycle_initial(void) {
     fclose(f);
     src[n] = 0;
     /* I735 (4983dade): the P4_VIZPICK handler runs on a user pick, long after OM_NEW, and keeps every picker on the plugin the engine runs.
-     * It is the only place that may set AAC_Active; any other set() is a startup-time set of a cycle. */
+     * It is the only place that may set UPA_Cycle_Active; any other set() is a startup-time set of a cycle. */
     vp = strstr(src, "case P4_VIZPICK:");
     vend = vp != NULL ? strstr(vp, "\n    case P4_") : NULL;
     if (vend == NULL && vp != NULL) {
@@ -2511,7 +3126,7 @@ static void test_cycle_initial(void) {
         size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
         char buf[512];
         snprintf(buf, sizeof buf, "%.*s", (int)(len < sizeof buf - 1 ? len : sizeof buf - 1), line);
-        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "AAC_Active") != NULL && !(vp != NULL && line > vp && line < vend)), "mui_ui.c sets AAC_Active after OM_NEW: %s", buf);
+        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "UPA_Cycle_Active") != NULL && !(vp != NULL && line > vp && line < vend)), "mui_ui.c sets UPA_Cycle_Active after OM_NEW: %s", buf);
         line = end != NULL ? end + 1 : NULL;
     }
     CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");
@@ -2528,9 +3143,9 @@ static void test_screen_rtg_flag(void) {
     }
     src[n] = 0;
     CHECK(strstr(src, "g_screen_rtg = foreign;") != NULL, "the flag is not taken from the foreign-mode test");
-    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg)") != NULL, "VizArea does not get the screen RTG flag");
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg, g_pixel_aspect_q8)") != NULL, "VizArea does not get the screen RTG flag");
     CHECK(strstr(src, "mui_canvas_new(&grid, g_screen_rtg)") != NULL, "canvas does not get the screen RTG flag");
-    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1, g_pixel_aspect_q8)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
           "a hardcoded RTG flag came back");
 }
 
@@ -2601,8 +3216,8 @@ static void test_player_band_sizes(void) {
     CHECK(mui_player_bar_builds() == b0 + 3u, "bar sentinel %u (want %u)", (unsigned)mui_player_bar_builds(), (unsigned)(b0 + 3u));
     mui_aa_metrics_aspect(0, 512, &tm);
     mui_aa_metrics_aspect(15, 256, &rm);
-    mui_aa_slider_metrics(0, &tsl);
-    mui_aa_slider_metrics(15, &rsl);
+    mui_aa_slider_metrics(0, 256, &tsl);
+    mui_aa_slider_metrics(15, 256, &rsl);
     icon_box = (uint32_t)(tm.icon_h + 2 * tm.pad_y);
     CHECK(c.btn_px == (icon_box > (uint32_t)tm.height ? icon_box : (uint32_t)tm.height) && c.btn_px >= 12u, "640x256 btn_px %u", (unsigned)c.btn_px);
     CHECK(c.btn_w == c.btn_px * 2u, "tall pixels: a square on screen is twice as wide in px, got %u x %u", (unsigned)c.btn_w, (unsigned)c.btn_px);
@@ -2649,19 +3264,17 @@ static void test_compact_player(void) {
           "compact band: art %ux%u height %u extras %d", (unsigned)c.art_w, (unsigned)c.art_h, (unsigned)c.height, (int)c.extras);
     CHECK(tall.art_h == 56u, "square pixels give a square art, got %u", (unsigned)tall.art_h);
     {
-        /* I949e2 item 6: transport row plus seek row plus the group gap fit inside the 36 px band less its padding, at the tight metrics. */
+        /* I949e2 item 6, rewritten for I973a b6248622: the bar is ONE row (transport, seek and volume side by side), no longer a transport row plus a
+         * seek row plus a group gap. The tallest child of that one row plus the band padding fits the 36 px cap at the tight metrics. */
         mui_aa_metrics_t tm, sqm;
         mui_aa_slider_t sl;
-        uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
-        int gx, gy, need;
-        tok[SEL_GUI_TOKEN_SPACING] = 8;
+        int need;
         mui_aa_metrics_aspect(0, 512, &tm);
         mui_aa_metrics_aspect(0, 256, &sqm);
-        mui_aa_slider_metrics(0, &sl);
-        mui_aa_panel_pad(tok, 512, &gx, &gy);
-        need = tm.height + sl.height + gy;
-        CHECK(need <= MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
-              "compact band: transport %d + seek %d + gap %d = %d of %d", tm.height, sl.height, gy, need, MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD);
+        mui_aa_slider_metrics(0, 512, &sl);
+        need = (tm.height > sl.height ? tm.height : sl.height) + 2 * MUI_PLAYER_COMPACT_PAD;
+        CHECK(need <= MUI_PLAYER_COMPACT_MAX_H && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
+              "compact band: one row, tallest child (button %d, seek %d) + 2 x pad = %d of %d", tm.height, sl.height, need, MUI_PLAYER_COMPACT_MAX_H);
         CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "square band heights moved (I973: the compact cap applies)");
     }
     {
@@ -2890,6 +3503,33 @@ static void test_overlays(void) {
     CHECK(m.detail_hidden && !m.show[MUI_SLOT_DETAIL] && mui_np_toggle_shown(&m), "a resize keeps the panel hidden and the button shown");
     CHECK(mui_np_toggle(&m) == 0u && m.show[MUI_SLOT_DETAIL], "toggle shows the panel again");
     CHECK(mui_np_toggles() - before_np == 2u, "sentinel: %u flips", (unsigned)(mui_np_toggles() - before_np));
+    /* I1166b: Expand Library through the layout the press handler drives (mui_side_wide_toggle), sentinel mui_side_toggles */
+    {
+        uint32_t before_side = mui_side_toggles(), narrow;
+        mui_sidebar_in sin;
+        mui_sidebar_model sm;
+        sel_engine_library_item sit[1];
+        mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_DEFAULT);
+        narrow = m.weight_w[MUI_SLOT_SIDEBAR];
+        CHECK(mui_side_wide_toggle(&m) == 1u && m.side_wide && m.weight_w[MUI_SLOT_SIDEBAR] > narrow && m.show[MUI_SLOT_DETAIL],
+              "Expand widens the sidebar from %u to %u", (unsigned)narrow, (unsigned)m.weight_w[MUI_SLOT_SIDEBAR]);
+        mui_layout_relayout(&m, 1500u, 800u, SEL_UIM_TIER_DEFAULT, NULL);
+        CHECK(m.side_wide && m.weight_w[MUI_SLOT_SIDEBAR] > narrow, "a resize keeps the sidebar expanded");
+        mui_np_toggle(&m);
+        CHECK(m.side_wide, "the Now Playing toggle keeps the sidebar expanded");
+        CHECK(mui_side_wide_toggle(&m) == 0u && m.weight_w[MUI_SLOT_SIDEBAR] == narrow, "Collapse returns the sidebar width");
+        CHECK(mui_side_toggles() - before_side == 2u, "sentinel: %u side flips", (unsigned)(mui_side_toggles() - before_side));
+        memset(&sin, 0, sizeof sin);
+        memset(sit, 0, sizeof sit);
+        sit[0].kind = SEL_LIB_ITEM_ALBUM; snprintf(sit[0].name, sizeof sit[0].name, "Nexus"); sit[0].added = 1000u; sit[0].last_played = 2000u;
+        sin.items = sit; sin.item_n = 1u; sin.filter = ""; sin.wide = 1u; sin.now = 2000 + 7200;
+        mui_sidebar_build(&sin, &sm);
+        CHECK(sm.wide && sm.cols == 4u && strcmp(sm.head[2], "Date Added") == 0 && strcmp(sm.row[0].type, "Album") == 0 && sm.row[0].played[0] != '\0' &&
+                  strcmp(sm.expand, "Collapse Library") == 0, "wide model: table header, type, dates, Collapse label");
+        sin.wide = 0u;
+        mui_sidebar_build(&sin, &sm);
+        CHECK(!sm.wide && sm.cols == 1u && sm.head[0][0] == '\0' && strcmp(sm.expand, "Expand Library") == 0, "narrow model has no table");
+    }
     mui_layout_map(&m, 1000u, 800u, SEL_UIM_TIER_DEFAULT);
     CHECK(!mui_np_toggle_shown(&m), "two columns have no panel to hide");
     mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_BITMAP);
@@ -2902,9 +3542,11 @@ static void test_overlays(void) {
     CHECK(strstr(src, "mui_tip(kind, index, f, flag,") != NULL && strstr(src, "MUIA_ShortHelp") != NULL && strstr(src, "MUI_TIP_DOOR,") != NULL &&
               strstr(src, "MUI_TIP_TRANSPORT,") != NULL && strstr(src, "MUI_TIP_LIKE,") == NULL && strstr(src, "MUI_TIP_SEEK,") != NULL,
           "tooltips are not set from mui_tip");
-    CHECK(strstr(src, "CTL_NP_TOGGLE") != NULL && strstr(src, "mui_np_toggle(&s->lay)") != NULL && strstr(src, "mui_layout_map_panel(&s->lay") != NULL &&
+    CHECK(strstr(src, "CTL_NP_TOGGLE") != NULL && strstr(src, "mui_np_toggle(&s->lay)") != NULL && strstr(src, "mui_layout_map_wide(&s->lay") != NULL &&
               strstr(src, "mui_np_toggle_shown(&s->lay)") != NULL,
           "the Now Playing toggle is not wired");
+    CHECK(strstr(src, "k == MUI_SIDE_EXPAND") != NULL && strstr(src, "mui_side_wide_toggle(&s->lay)") != NULL && strstr(src, "in.wide = s != NULL && s->lay.side_wide") != NULL,
+          "the Expand Library button is not wired to the layout");
     CHECK(strstr(src, "CTL_PAL_BTN") != NULL && strstr(src, "mui_palette_open(&s->pal)") != NULL && strstr(src, "mui_palette_filter(&s->pal,") != NULL &&
               strstr(src, "mui_palette_pick(&s->pal,") != NULL && strstr(src, "mui_palette_sync(s)") != NULL,
           "the command palette is not wired");
@@ -2943,6 +3585,26 @@ static void test_route(void) {
               !mui_route_on_collection(&r), "a door page sends its lines one by one");
     l.n = 0;
     CHECK(mui_route_walk(&r, -1, route_rec, &l) && mui_route_on_collection(&r), "Back from a door page returns to the page before it");
+    /* I1172: a playlist row opens its collection page (key = the playlist id), Back restores it without Recents; Shelf and Collection have MUI slots */
+    {
+        static char src[400000];
+        FILE* f = fopen(MUI_UI_SOURCE, "rb");
+        size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+        uint32_t before = r.entered;
+        if (f != NULL) {
+            fclose(f);
+        }
+        src[n] = 0;
+        l.n = 0;
+        CHECK(mui_route_click(&r, SEL_ROUTE_SIDEBAR_ROW, (uint32_t)SEL_LIB_ITEM_PLAYLIST, 7u, "7", "Mine", "", route_rec, &l) && mui_route_on_collection(&r) && l.n == 1u &&
+                  strcmp(l.line[0], "COLLECTION_OPEN 3 \"7\"") == 0 && r.entered == before + 1u, "a playlist opens its collection page: %s", l.n > 0u ? l.line[0] : "(none)");
+        l.n = 0;
+        CHECK(mui_route_click(&r, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Nexus", "Nexus", "", route_rec, &l) && mui_route_walk(&r, -1, route_rec, &l) && l.n == 2u &&
+                  strcmp(l.line[1], "COLLECTION_OPEN 3 \"7\" 1") == 0, "Back to the playlist page restores it: %s", l.n > 1u ? l.line[1] : "(none)");
+        CHECK(mui_page_slot(SEL_UIM_PG_SHELF)->kind == MUI_PAGE_MAIN_VIEW && mui_page_slot(SEL_UIM_PG_COLLECTION)->kind == MUI_PAGE_MAIN_VIEW, "Shelf and Collection are main views, not exemptions");
+        CHECK(strstr(src, "mui_playlist_page(s, &view->rows[v]") != NULL && strstr(src, "which == P4_POPEN && mui_playlist_page(s, row") != NULL,
+              "the playlist row double click and Open reach the route");
+    }
     mui_route_init(&r);
     CHECK(!mui_route_walk(&r, -1, route_rec, &l) && r.entered == 0u, "Back with no history does nothing");
 }
@@ -2972,6 +3634,37 @@ static void test_route_reach(void) {
               !mui_route_can(&r, -1), "Back returned to Home and re-sent its source line");
 }
 
+/* I966 reachability: mui_refresh runs on every NewInput and used to set() the breadcrumb ShowMe and the Back/Forward Disabled every time
+ * (MUI notify + relayout per click at 640x256). The wiring is grepped (reverting mui_ui.c turns this red); the guard is driven through a
+ * click sequence with the writes/skips sentinels: a steady state writes once and skips every later refresh. */
+static void test_flag_guard(void) {
+    mui_flag crumb, back, fwd;
+    uint32_t w0, s0, i;
+    char* src = ui_source();
+    memset(&crumb, 0, sizeof crumb);
+    memset(&back, 0, sizeof back);
+    memset(&fwd, 0, sizeof fwd);
+    CHECK(src != NULL, "mui_ui.c source readable");
+    CHECK(strstr(src, "mui_flag_commit(&s->crumb_show, drill)") != NULL && strstr(src, "mui_flag_commit(&s->nav_back_dis, back_off)") != NULL &&
+              strstr(src, "mui_flag_commit(&s->nav_fwd_dis, fwd_off)") != NULL,
+          "mui_refresh guards the breadcrumb ShowMe and the Back/Forward Disabled");
+    {
+        const char* ca = strstr(src, "set(s->crumb, MUIA_ShowMe");
+        CHECK(ca != NULL && ca - src > 120 && strstr(ca - 120, "mui_flag_commit(&s->crumb_show") != NULL && strstr(ca + 10, "set(s->crumb, MUIA_ShowMe") == NULL,
+              "the one breadcrumb ShowMe set sits behind the guard");
+    }
+    w0 = mui_flag_writes();
+    s0 = mui_flag_skips();
+    for (i = 0; i < 50u; i++) { /* 50 refreshes in the same state: Back off, Forward off, breadcrumb hidden */
+        if (mui_flag_commit(&crumb, 0)) { /* the caller sets only when this returns 1 */ }
+        if (mui_flag_commit(&back, 1)) { }
+        if (mui_flag_commit(&fwd, 1)) { }
+    }
+    CHECK(mui_flag_writes() - w0 == 3u && mui_flag_skips() - s0 == 147u, "steady state: %u writes (want 3), %u skips (want 147)",
+          (unsigned)(mui_flag_writes() - w0), (unsigned)(mui_flag_skips() - s0));
+    CHECK(mui_flag_commit(&back, 0) == 1 && mui_flag_commit(&back, 0) == 0 && mui_flag_commit(&back, 1) == 1, "a changed value writes once, a repeat skips");
+}
+
 /* I795 reachability (drift doc P1, P4, P5): the one test for Home shelves and quick tiles, Browse tiles and Search facet chips. The wiring of
  * mui_ui.c is grepped (removing it turns this red); the page models are driven on a synthetic engine view, and the shelf, tile and facet
  * clicks run through the route handler with the call counter and sentinel. */
@@ -2996,7 +3689,7 @@ static void test_tiles_reach(void) {
     CHECK(strstr(src, "mui_home_split(") != NULL && strstr(src, "mui_shelf_find(") != NULL && strstr(src, "mui_home_fill(") != NULL, "Home quick row and shelves are built from the view");
     CHECK(strstr(src, "mui_browse_tiles(") != NULL && strstr(src, "mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE))") != NULL, "Browse tiles are built and fire");
     CHECK(strstr(src, "mui_search_facet_line(") != NULL && strstr(src, "sel_uim_search_facets") != NULL && strstr(src, "CTL_FACET_BASE") != NULL, "Search facet chips are built and fire");
-    CHECK(strstr(src, "mui_search_all_line((const char*)text, line") != NULL, "I1019g: the Return handler sends SOURCE_SEARCH *");
+    CHECK(strstr(src, "mui_search_all_line(text, line") != NULL, "I1019g: the Return handler sends SOURCE_SEARCH *");
     CHECK(strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k]") != NULL &&
               strstr(src, "mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE") != NULL && strstr(src, "mui_home_row_fire(s, view, idx)") != NULL,
           "Show all, composer tiles and quick tiles go through the route handler");
@@ -3056,7 +3749,7 @@ static void test_aa_aspect(void) {
         /* I949e: consumers read the metrics. Tall pixels at the bitmap tier select the tight tier and count vertical sizes in rows. */
         mui_aa_metrics_t sq, tall, m13;
         char cls[65536];
-        FILE* cf = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+        FILE* cf = fopen(MCC_CLASS "/mui_aabtn_class.c", "rb");
         size_t cn = cf != NULL ? fread(cls, 1, sizeof cls - 1, cf) : 0;
         if (cf != NULL) {
             fclose(cf);
@@ -3069,17 +3762,27 @@ static void test_aa_aspect(void) {
         CHECK(tall.pad_x == 4 && tall.pad_y == 2 && tall.icon_gap == 4 && tall.height == 12, "tight tier: pad %d,%d gap %d height %d", tall.pad_x, tall.pad_y, tall.icon_gap, tall.height);
         CHECK(tall.icon_px == 16 && tall.icon_h == 8 && tall.check_px == 12 && tall.check_h == 6 && tall.aspect_q8 == 512, "tall icon %dx%d check %dx%d", tall.icon_px, tall.icon_h, tall.check_px, tall.check_h);
         CHECK(m13.pad_x == 10 && m13.icon_h == 9 && mui_aa_rows(1, 512) == 1 && mui_aa_rows(10, 512) == 5, "larger tiers only scale rows");
-        mui_aa_set_screen_aspect(512);
-        CHECK(mui_aa_screen_aspect() == 512, "screen aspect not stored");
-        mui_aa_set_screen_aspect(256);
-        CHECK(cn > 0 && strstr(cls, "mui_aa_metrics_aspect(d->aa.font_px, mui_aa_screen_aspect(), &d->m)") != NULL && strstr(cls, "d->m.check_h") != NULL && strstr(cls, "d->m.icon_h") != NULL,
+        CHECK(cn > 0 && strstr(cls, "mui_aa_metrics_aspect(d->aa.font_px, d->aa.aspect_q8, &d->m)") != NULL && strstr(cls, "d->m.check_h") != NULL && strstr(cls, "d->m.icon_h") != NULL,
               "AAButton does not size icon and check from the aspect metrics");
-        CHECK(strstr(src, "mui_aa_set_screen_aspect(g_pixel_aspect_q8)") != NULL, "mui_screen_open does not publish the aspect");
+        {
+            /* I685e1: the process-wide screen aspect is gone; each object reads its own DrawInfo (design 4.1). */
+            static char gone[262144];
+            const char* const gf[] = {MCC_SRC "/map/mui_aa.c", MCC_SRC "/map/mui_aa.h", MCC_SRC "/mui_aa_draw.c", MCC_CLASS "/mui_aabtn_class.c", MCC_CLASS "/mui_aapanel_class.c"};
+            size_t gi;
+            for (gi = 0; gi < sizeof gf / sizeof gf[0]; gi++) {
+                CHECK(up_read_file(gf[gi], gone, sizeof gone) && strstr(gone, "g_screen_aspect") == NULL && strstr(gone, "mui_aa_set_screen_aspect") == NULL && strstr(gone, "mui_aa_screen_aspect") == NULL,
+                      "the global screen aspect or its accessors are still in %s", gf[gi]);
+            }
+            CHECK(strstr(src, "g_screen_aspect") == NULL && strstr(src, "mui_aa_set_screen_aspect") == NULL && strstr(src, "mui_aa_screen_aspect") == NULL, "mui_ui.c still names the global screen aspect");
+            up_read_file(MCC_SRC "/mui_aa_draw.c", gone, sizeof gone);
+            CHECK(strstr(gone, "c->aspect_q8 = _dri(obj) != NULL ? mui_pixel_aspect_q8((int)_dri(obj)->dri_Resolution.X, (int)_dri(obj)->dri_Resolution.Y) : 256;") != NULL, "aa_setup does not set the context aspect from the DrawInfo resolution");
+            CHECK(strstr(src, "\"mui aspect dri=%d displayinfo=%d mode=0x%08lx\\n\"") != NULL, "mui_screen_open does not print the aspect debug line");
+        }
     {
         /* I949e2: the tight tier. Items 1 to 5 each have the rule where it lives; the class and group sources prove the consumers call them. */
         uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
         mui_vizarea_h_t vt, vs;
-        int px, py, sx, sy, hi = 0, found8 = 0, bh_before = (int)mui_button_height(), sq_h, tight_h;
+        int px, py, sx, sy, hi = 0, found8 = 0, bh_before = (int)mui_button_height(256), sq_h, tight_h;
         uint32_t i, lk;
         static char va[100000], ui2[1000000];
         FILE* vf = fopen(MUI_DIR "/mui_vizarea_class.c", "rb");
@@ -3087,7 +3790,7 @@ static void test_aa_aspect(void) {
         FILE* uf = fopen(MUI_UI_SOURCE, "rb");
         size_t un = uf != NULL ? fread(ui2, 1, sizeof ui2 - 1, uf) : 0;
         char pan[65536];
-        FILE* pf = fopen(MUI_DIR "/mui_aapanel_class.c", "rb");
+        FILE* pf = fopen(MCC_CLASS "/mui_aapanel_class.c", "rb");
         size_t pn = pf != NULL ? fread(pan, 1, sizeof pan - 1, pf) : 0;
         if (vf != NULL) fclose(vf);
         if (uf != NULL) fclose(uf);
@@ -3110,7 +3813,7 @@ static void test_aa_aspect(void) {
         {
             mui_aa_metrics_t tt;
             static char bcls[100000];
-            FILE* bf = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+            FILE* bf = fopen(MCC_CLASS "/mui_aabtn_class.c", "rb");
             size_t bn = bf != NULL ? fread(bcls, 1, sizeof bcls - 1, bf) : 0;
             if (bf != NULL) fclose(bf);
             bcls[bn] = 0;
@@ -3120,26 +3823,24 @@ static void test_aa_aspect(void) {
         }
         /* item 2: art panels count their height in rows; square stays square. */
         CHECK(mui_art_height(56, 512) == 28u && mui_art_height(64, 512) == 32u && mui_art_height(56, 256) == 56u && mui_art_height(64, 256) == 64u, "art heights %u %u", (unsigned)mui_art_height(56, 512), (unsigned)mui_art_height(64, 512));
-        CHECK(un > 0 && strstr(ui2, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, mui_aa_screen_aspect()))") != NULL,
+        CHECK(un > 0 && strstr(ui2, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, g_pixel_aspect_q8))") != NULL,
               "the detail art does not use mui_art_height");
         /* item 3: the visualizer minimum is rows. */
         mui_vizarea_heights(512, &vt);
         mui_vizarea_heights(256, &vs);
         CHECK(vt.min_h == 16u && vt.def_h == 40u && vt.cap_h == 80u && vs.min_h == 32u && vs.def_h == 80u && vs.cap_h == 160u, "viz heights tight %u/%u/%u square %u/%u/%u", (unsigned)vt.min_h, (unsigned)vt.def_h,
               (unsigned)vt.cap_h, (unsigned)vs.min_h, (unsigned)vs.def_h, (unsigned)vs.cap_h);
-        CHECK(vn > 0 && strstr(va, "mui_vizarea_heights(mui_aa_screen_aspect(), &vh)") != NULL && strstr(va, "MinHeight += vh.min_h") != NULL, "the vizarea does not take its heights from the aspect");
+        CHECK(vn > 0 && strstr(va, "mui_vizarea_heights(d->aspect_q8, &vh)") != NULL && strstr(va, "MinHeight += vh.min_h") != NULL, "the vizarea does not take its heights from the aspect");
         /* item 4: button height and model icon follow the screen aspect; square is the old formula. */
-        sq_h = (int)mui_button_height();
-        mui_aa_set_screen_aspect(512);
-        tight_h = (int)mui_button_height();
-        CHECK(mui_model_icon_px() == 16 && mui_model_icon_h() == 8 && tight_h == mui_model_icon_h() + 2 * mui_aa_rows(MUI_BTN_PAD_Y, 512) + mui_aa_rows(MUI_BTN_FRAME, 512) && tight_h < sq_h, "tight button %d icon %dx%d (square %d)",
-              tight_h, mui_model_icon_px(), mui_model_icon_h(), sq_h);
-        mui_aa_set_screen_aspect(256);
-        CHECK(sq_h == bh_before && mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME && mui_model_icon_h() == mui_model_icon_px(), "square button height moved");
+        sq_h = (int)mui_button_height(256);
+        tight_h = (int)mui_button_height(512);
+        CHECK(mui_model_icon_px(512) == 16 && mui_model_icon_h(512) == 8 && tight_h == mui_model_icon_h(512) + 2 * mui_aa_rows(MUI_BTN_PAD_Y, 512) + mui_aa_rows(MUI_BTN_FRAME, 512) && tight_h < sq_h, "tight button %d icon %dx%d (square %d)",
+              tight_h, mui_model_icon_px(512), mui_model_icon_h(512), sq_h);
+        CHECK(sq_h == bh_before && mui_button_height(256) == (uint32_t)mui_model_icon_px(256) + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME && mui_model_icon_h(256) == mui_model_icon_px(256), "square button height moved");
         /* item 5: group spacing packs on tall pixels, square unchanged. */
         mui_aa_panel_pad(tok, 256, &sx, &sy);
         mui_aa_panel_pad(tok, 512, &px, &py);
-        CHECK(sx == 8 && sy == 8 && px == 4 && py == 4, "panel pad square %d,%d tight %d,%d", sx, sy, px, py);
+        CHECK(sx == 24 && sy == 24 && px == 12 && py == 12, "panel pad square %d,%d tight %d,%d", sx, sy, px, py);
         CHECK(pn > 0 && strstr(pan, "mui_aa_panel_pad(") != NULL && strstr(pan, "MUIA_Group_VertSpacing") != NULL, "the panel class does not take its spacing from the aspect");
     }
     }
@@ -3211,6 +3912,8 @@ int main(int argc, char** argv) {
         test_topbar();
     } else if (strcmp(argv[1], "route") == 0) {
         test_route();
+    } else if (strcmp(argv[1], "flag-guard") == 0) {
+        test_flag_guard();
     } else if (strcmp(argv[1], "route-reach") == 0) {
         test_route_reach();
     } else if (strcmp(argv[1], "tiles-reach") == 0) {
@@ -3219,10 +3922,13 @@ int main(int argc, char** argv) {
         test_doors();
     } else if (strcmp(argv[1], "sidebar") == 0) {
         test_sidebar();
+    } else if (strcmp(argv[1], "sidebar-bullet-latin1") == 0) {
+        test_sidebar_bullet_latin1();
     } else if (strcmp(argv[1], "home") == 0) {
         test_home();
     } else if (strcmp(argv[1], "panes") == 0) {
         test_panes();
+        test_np_page_plan();
     } else if (strcmp(argv[1], "library") == 0) {
         test_library();
     } else if (strcmp(argv[1], "toast") == 0) {
@@ -3235,6 +3941,8 @@ int main(int argc, char** argv) {
         test_queue();
     } else if (strcmp(argv[1], "playlists") == 0) {
         test_playlists();
+    } else if (strcmp(argv[1], "ctxmenu") == 0) {
+        test_ctxmenu();
     } else if (strcmp(argv[1], "song-menu") == 0) {
         test_song_menu();
     } else if (strcmp(argv[1], "like-rating") == 0) {
@@ -3243,6 +3951,10 @@ int main(int argc, char** argv) {
         test_nowplaying();
     } else if (strcmp(argv[1], "songinfo") == 0) {
         test_songinfo();
+    } else if (strcmp(argv[1], "statistics") == 0) {
+        test_statistics_panel();
+    } else if (strcmp(argv[1], "sync-offer") == 0) {
+        test_sync_offer();
     } else if (strcmp(argv[1], "settings") == 0) {
         test_settings();
     } else if (strcmp(argv[1], "dialogs") == 0) {
@@ -3256,8 +3968,11 @@ int main(int argc, char** argv) {
         test_aacheck();
     } else if (strcmp(argv[1], "libfilter") == 0) {
         test_libfilter();
+    } else if (strcmp(argv[1], "siflags") == 0) {
+        test_siflags();
     } else if (strcmp(argv[1], "newplaylist") == 0) {
         test_newplaylist();
+        test_newfolder();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
         test_aabtn_tokens();
     } else if (strcmp(argv[1], "subsong-bar") == 0) {
@@ -3269,6 +3984,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "icon-rows") == 0) {
         test_icon_button_rows();
         test_layout_before_open();
+    } else if (strcmp(argv[1], "open-compact-reach") == 0) {
+        test_open_compact_reach();
     } else if (strcmp(argv[1], "screen-plan") == 0) {
         test_screen_plan();
         test_open_layout_cap();
@@ -3281,6 +3998,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "live-guard") == 0) {
         test_live_guard();
         test_aalist_getrow();
+        test_up_tags();
+        test_up_token_names();
     } else if (strcmp(argv[1], "status-face") == 0) {
         test_status_face();
     } else if (strcmp(argv[1], "player-bar") == 0) {

@@ -143,6 +143,40 @@ const sel_uim_pref_row* sel_uim_pref_row_at(uint32_t i) {
     return sel_uim_pref_row_at_for(sel_uim_machine_here(), i);
 }
 
+uint32_t sel_uim_pref_choice(const char* choices, uint32_t n, char* out, size_t cap) {
+    uint32_t i = 0, count = 1;
+    const char* p = choices;
+    out[0] = '\0';
+    for (; *p != '\0'; p++) {
+        count += *p == ',';
+    }
+    p = choices;
+    while (i < n && strchr(p, ',') != NULL) {
+        p = strchr(p, ',') + 1;
+        i++;
+    }
+    if (i == n) {
+        const char* e = strchr(p, ',');
+        size_t len = e != NULL ? (size_t)(e - p) : strlen(p);
+        len = len < cap - 1u ? len : cap - 1u;
+        memcpy(out, p, len);
+        out[len] = '\0';
+    }
+    return count;
+}
+
+uint32_t sel_uim_pref_choice_index(const char* choices, const char* cur) {
+    char c[48];
+    uint32_t n = sel_uim_pref_choice(choices, 0u, c, sizeof c), i;
+    for (i = 0; i < n; i++) {
+        sel_uim_pref_choice(choices, i, c, sizeof c);
+        if (strcmp(c, cur) == 0) {
+            return i;
+        }
+    }
+    return 0u;
+}
+
 void sel_uim_pref_line(const char* key, const char* value, char* out, size_t cap) {
     snprintf(out, cap, "PREF_SET %s \"%s\"", key, value != NULL ? value : "");
 }

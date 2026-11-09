@@ -3,6 +3,8 @@
 #ifndef SELECTA_TEXT_THEME_H
 #define SELECTA_TEXT_THEME_H
 
+#include <stddef.h>
+
 #include <selecta/uimodel/style.h>
 #include <selecta/uimodel/tokens.h>
 
@@ -38,6 +40,7 @@ typedef struct txt_theme {
     int8_t ref[SEL_GUI_TOKEN_COUNT];     /* base a role follows, or -1 for a literal value */
     int8_t base_ref[SEL_GUI_BASE_COUNT]; /* base a base follows, or -1 */
     uint8_t bad_range;                   /* 1 when bad_token failed because its resolved value is outside the token's range, 0 for a missing or circular reference */
+    char font_file[128];                 /* file key font.file (package font path, empty when the file has none) */
     char bad_token[64];                  /* after a failed parse that named a token: its file key, else "" */
 } txt_theme;
 
@@ -51,6 +54,10 @@ void txt_theme_default(txt_theme* t);
  * applied, or -1 with the 1-based line number in *bad_line on the first bad line
  * (earlier lines stay applied). */
 int txt_theme_parse(txt_theme* t, const char* text, int* bad_line);
+/* I685j: the writer beside the parser. Writes `gui.<name> = 0xRRGGBB` (decimal for the sized tokens) for every token in token order,
+ * plus `font.file = <path>` when set, so txt_theme_parse reads the text back to the same values. Returns the text length (without
+ * the terminating NUL), or -1 when cap is too small (out then holds a truncated, terminated text). */
+int txt_theme_write(const txt_theme* t, char* out, size_t cap);
 const char* txt_role_name(txt_role r);
 
 #ifdef __cplusplus

@@ -104,7 +104,7 @@ expect_eq("engine queue growth after Add to Queue" "${grew}" 1)
 # Item 4 (Add to Playlist) opens the playlist step at the same anchor; its first item is the playlist made before.
 math(EXPR px "${sx} + 10")
 math(EXPR py "${sy} + 3 * 24 + 12")
-math(EXPR fy "${sy} + 12")
+math(EXPR fy "${sy} + 24 + 12") # I632: item 0 is New Playlist..., the first saved playlist is item 1
 sm_run(added "${scan}exec PLAYLIST_CREATE alpha\nwait 1\n${open_composer}move ${sx} ${sy}\nrclick ${sx} ${sy}\nclick ${px} ${py}\nwait 1\nclick ${px} ${fy}\nwait 1\n")
 sm_field(adds "${added}" playlist_adds)
 expect_eq("Add to Playlist adds to the saved playlist from the Library page" "${adds}" 1)

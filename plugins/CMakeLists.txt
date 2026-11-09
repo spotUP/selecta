@@ -46,6 +46,12 @@ foreach(viz scope levels spectrum sidregs)
   sel_add_plugin(viz_${viz} 4 viz/${viz}/${viz}.c)
   target_link_libraries(sel_plugin_viz_${viz} PUBLIC selecta_plugin_shared)
 endforeach()
+# Krakatoa Smoke (I1052): GPU compute through SDL3, so only with the SDL desktop UI; Metal shaders only (APPLE) until
+# the SPIR-V binding layout lands (KRK-P4-5).
+set(SEL_HAVE_KRAKATOA OFF CACHE INTERNAL "viz_krakatoa is built")
+if(APPLE AND SELECTA_UI_DESKTOP)
+  add_subdirectory(viz/krakatoa)
+endif()
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).
 if(APPLE)
   # I1039: coreaudio_av.m is the AVSampleBufferAudioRenderer path that follows the app's AirPlay route pick (ARC).
@@ -180,6 +186,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/adplug)
 endif()
 
+# bbmp Ad Lib helper formats (I710as): Pixel Painters, SIG2, Lemmings, First Samurai, Shadowlands, Vibrants; bbmp csrc/adlib (GPL 3 or later) on AdPlug's OPL, so after
+# replayers/adplug. Host only (C++17 engines, no Amiga module path; exemption in row I710as).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_adlib)
+endif()
+
 # Tracker formats libopenmpt and UADE do not play, via libxmp (I697): MIT module, loadable module only, host only.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/xmp)
@@ -219,6 +231,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_buzz)
 endif()
 
+# bbmp_playerpro (I710aq): PlayerPRO MAD songs (.mad), bbmp csrc/pc/playerpro_engine (GPL 3 or later glue) on PlayerPROCore (public domain), behind the GPL-plugin gate. Host
+# only (exemption in row I710aq).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_playerpro)
+endif()
+
 # bbmp_fac (I710ak): FAC SoundTracker for MSX (.mus), GPL-3.0 bbmp engine on the MIT emu8950 / emu2413 chips, behind the GPL-plugin
 # gate. Host only (C++17 engine, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
@@ -253,6 +271,30 @@ endif()
 # no Amiga module path; exemption in row I710am).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_smx)
+endif()
+
+# goattracker (I710al): GoatTracker 1 and 2 songs (.sng), GoatTracker 2.77 play routine and loader (GPL-2.0) plus reSID (GPL-2.0-or-later) under Selecta's own glue, behind the GPL-plugin
+# gate. Host only (C++ reSID, global engine state, no Amiga module path; exemption in row I710al).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/goattracker)
+endif()
+
+# bbmp_synder (I710an): Synder SNG-Player songs (.sng, C64 tunes as synthesizer settings), bbmp csrc/synder (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine,
+# no Amiga module path; exemption in row I710an).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_synder)
+endif()
+
+# bbmp_monotone (I710ao): MONOTONE songs (.mon, PC speaker tracker), bbmp csrc/pcmusic/monotone.cpp (GPL 3 or later port of a public-domain player), behind the GPL-plugin gate. Host only
+# (C++17 engine, no Amiga module path; exemption in row I710ao).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_monotone)
+endif()
+
+# bbmp_digitrekker (I710ap): DigiTrekker songs (.dtm), bbmp csrc/pcmusic/digitrekker.cpp (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine, no Amiga
+# module path; exemption in row I710ap).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_digitrekker)
 endif()
 
 # bbmp_wwsnd (I710aj): Westwood SND songs (.snd, PC speaker), bbmp csrc/retro/wwsnd_engine (GPL 3 or later), behind the GPL-plugin gate. Host only (C++17 engine,
@@ -392,6 +434,12 @@ endif()
 # CyberTracker 1.01 disk image on a 6502 + reSIDfp, behind the GPL-plugin gate. Host only (C++17 engine, no Amiga module path).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_cybertracker)
+endif()
+
+# bbmp_ned (I1223c): NerdTracker II songs (.ned), bbmp csrc/retro ned engine (GPL 3 or later) over NT2's replay routine, which is two giftware
+# (non-commercial) system files fetched at use, never shipped. Behind the GPL-plugin gate. Host only (C++17 engine, no Amiga build).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_ned)
 endif()
 
 # bbmp_shroom (I710aa): Mario Paint songs (.sho), bbmp csrc/retro shroom engine (GPL 3 or later) over the user's own Mariopants notes.wav (system

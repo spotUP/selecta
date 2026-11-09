@@ -1,0 +1,6 @@
+Synder SNG-Player test songs for tests/m3/synder_decode.sh (bbmp_synder module, I710an). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Synder%20SNG-Player/Brite-Lite/last%20try.sng  f98796b3eca68857791c7069502b20da86e5051a64e3c4bbdab33977e4459e22
+https://modland.com/pub/modules/Synder%20SNG-Player/Daf/digital%20world%202.sng  d643a74aeb0dd388e496edf882c4f003839594c62458b275c569e9d100c750a8
+https://modland.com/pub/modules/Synder%20SNG-Player%20Stereo/Daf/digital%20world%202.sng  d1310f2fd3e9137ce0d979fafa12e5e75e43b5c0c20ba92b3610a4b27acc3c90
+Engine licence: GPL-3.0-or-later (bbmp csrc/synder/bbmp-synder.cpp, third_party/bbmp_synder).

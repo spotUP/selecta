@@ -65,6 +65,8 @@ int sel_library_attach_index(sel_library* lib, const char* path) {
         lib->has_index = 0;
         return 0;
     }
+    /* An index exported before schema v18 has no dup_of / dup_members; its rows then follow the main database's groups by key. */
+    lib->idx_dup = sqlite3_exec(lib->db, "SELECT dup_of, dup_members FROM idx.songs LIMIT 1", NULL, NULL, NULL) == SQLITE_OK;
     return 1;
 }
 

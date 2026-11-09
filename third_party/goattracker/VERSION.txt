@@ -1,0 +1,24 @@
+goattracker (I710al): the play routine, song loader and reSID of GoatTracker 2.77 (Lasse Oorni "Cadaver"), vendored for the goattracker
+replayer plugin (plugins/replayers/goattracker). Selecta writes its own glue (plugins/replayers/goattracker, GPL-2.0-or-later); no bbmp glue is used.
+
+Source: https://sourceforge.net/projects/goattracker2/files/GoatTracker2/2.77/GoatTracker_2.77.zip
+sha256 96c2bd6a6ab3aca2f5bb18b1c764ac6ea69ac245cae14002a72cd87c554561ef (the archive pinned in bbmp tools/build-misc.sh)
+Files taken from src/: gplay.c gplay.h gsong.c gsong.h gtable.c gtable.h ginstr.h gcommon.h gsid.h, and resid/ (the bundled reSID,
+version.cpp removed). COPYING is the GPL version 2 text shipped in the archive.
+
+GoatTracker 1 songs ("GTS!") are converted by gsong.c loadsong() (it reads both formats). GoatTracker 1.53 itself is not vendored:
+https://cadaver.github.io/tools/goattrk.zip sha256 f12df334df5b1749fa0660575d63520a5e064ed254e4390cede6b03f9808ecef, header "GPL version 2 or later".
+
+Licences checked 2026-11-06: GoatTracker 2.77 play files are GPL-2.0 (COPYING v2, no "or later" wording); GoatTracker 1.53 is GPL-2.0-or-later;
+reSID is GPL-2.0-or-later. The combined module is therefore GPL-2.0, and the Selecta glue is GPL-2.0-or-later (compatible). GT1 songs are allowed.
+
+Marked edits (grep "SELECTA EDIT"):
+- gplay.c, gsong.c, gtable.c: include "gt_headless.h" instead of the SDL editor header goattrk2.h.
+- gsong.c loadsong: the song is opened through gt_open_song() (fmemopen over the memory buffer) instead of a file name.
+- gsong.c, GTS2 pattern loop: counts rows (length / 4), the upstream loop ran past the pattern.
+- gtable.c: the table editor (tablecommands, and the view/exec functions from deleteinstrtable on) and optimizetable are not compiled (GT_HEADLESS).
+Not vendored: ginstr.c, the editor, sound output (gsid.cpp, SDL). plugins/replayers/goattracker/gt_engine.cpp supplies clearinstr (verbatim from
+ginstr.c), the editor globals gsong.c touches, and our own reSID driver.
+
+Playback defaults (a .sng file stores no chip model or clock): PAL clock 985248 Hz, 50 Hz frame rate, MOS 6581, interpolated resampling.
+GT1 songs are converted to GT2 data and played by the GT2 routine, so they are not bit-exact with GoatTracker 1.53's own replayer.

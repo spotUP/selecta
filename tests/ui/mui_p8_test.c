@@ -3,6 +3,7 @@
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/uimodel/panels.h>
@@ -198,7 +199,7 @@ static void test_tile_steps(void) {
     CHECK(mui_tile_step(5) == 0, "step past the count");
     CHECK(mui_tile_step(0) < mui_tile_step(4), "steps not increasing");
     /* the written exemption: no MUI source reads ui.desktop.zoom */
-    snprintf(cmd, sizeof cmd, "grep -rl 'desktop\\.zoom' %s/plugins/ui/mui --include=*.c --include=*.h", MUI_SRC_ROOT);
+    snprintf(cmd, sizeof cmd, "grep -rl 'desktop\\.zoom' %s/plugins/ui/mui %s/plugins/shared/mcc --include=*.c --include=*.h", MUI_SRC_ROOT, MUI_SRC_ROOT);
     f = popen(cmd, "r");
     CHECK(f != NULL, "popen");
     if (f != NULL) {
@@ -221,6 +222,53 @@ static void test_amiga_settings(void) {
     mui_amiga_priority_set(99, fake_send, &e);
     mui_amiga_priority_set(-99, fake_send, &e);
     CHECK(e.n == 2u && strcmp(e.lines[0], "PREF_SET amiga.task_priority 5") == 0 && strcmp(e.lines[1], "PREF_SET amiga.task_priority -5") == 0, "clamp: '%s' '%s'", e.lines[0], e.lines[1]);
+}
+
+/* I1171 / I1165: the window key table (mui-p8-doors). Every multi-char action key and the page keys come from the shared tables;
+ * mui_key_find is what the Selecta_Keys handler calls per key press. */
+static void test_window_keys(void) {
+    mui_key_bind binds[96];
+    uint32_t n = mui_keys_build(binds, 96u), i, j, action = 0, door = 0, pane = 0, expect = 0, hits0 = mui_key_hits(), fired = 0;
+    for (i = 0; i < n; i++) {
+        expect += binds[i].shortcut == 0;
+    }
+    for (i = 0; i < mui_key_row_count(); i++) {
+        const mui_key_row* r = mui_key_row_at(i);
+        action += r->kind == MUI_KEYROW_ACTION;
+        door += r->kind == MUI_KEYROW_DOOR;
+        pane += r->kind == MUI_KEYROW_PANE;
+        if (r->kind == MUI_KEYROW_ACTION) {
+            for (j = 0; j < n; j++) {
+                if (!binds[j].shortcut && strcmp(binds[j].id, r->id) == 0) {
+                    CHECK(binds[j].code == r->code && binds[j].mods == r->mods, "row %s differs from mui_keys_build", r->id);
+                }
+            }
+        }
+        if (mui_key_find(r->code, r->mods, 0) == (int32_t)i) {
+            fired++;
+        } else {
+            CHECK(mui_key_find(r->code, r->mods, 0) >= 0, "key of %s finds no row", r->id);
+        }
+    }
+    CHECK(action == expect, "%u action rows, mui_keys_build has %u handler keys", (unsigned)action, (unsigned)expect);
+    /* 28 at I1171; I1184 added M-1..M-5 (repeat off/all/one, shuffle on/off) to the shared action table: 33;
+       I1186 keyed the six VIEW_STYLE rows (M-6..M-0, M-c): 39. */
+    CHECK(action == 39u, "%u action rows, want 39", (unsigned)action);
+    CHECK(door == 4u && pane == 2u, "%u door rows, %u pane rows, want 4 and 2", (unsigned)door, (unsigned)pane);
+    CHECK(mui_key_hits() - hits0 >= action + door + pane, "hit sentinel %u", (unsigned)(mui_key_hits() - hits0));
+    CHECK(fired > 0u, "no row found by its own key");
+    /* A page key is text inside a text field; an action chord still fires. */
+    for (i = 0; i < mui_key_row_count(); i++) {
+        const mui_key_row* r = mui_key_row_at(i);
+        if (r->kind != MUI_KEYROW_ACTION && r->code < 256u && r->mods == 0u) {
+            CHECK(mui_key_find(r->code, r->mods, 1) < 0, "page key %s fires in a text field", r->id);
+        }
+    }
+    {
+        uint32_t base = mui_focus_routes();
+        CHECK(mui_focus_route(TXT_KEY_DOWN, 0u, 1) == MUI_FOCUS_RESULTS && mui_focus_routes() == base + 1u, "Down in Search does not route");
+        CHECK(mui_focus_route(TXT_KEY_DOWN, 0u, 0) == MUI_FOCUS_NONE && mui_focus_routes() == base + 1u, "Down outside Search routes");
+    }
 }
 
 /* mui-p8-doors (MUI-P8-13) */
@@ -334,6 +382,33 @@ static void test_sources(void) {
     CHECK(strcmp(mui_source_status(1, 0, 0), "Syncing") == 0 && strcmp(mui_source_status(0, 1, 5), "Sync failed") == 0 &&
               strcmp(mui_source_status(0, 0, 5), "Synced") == 0 && strcmp(mui_source_status(0, 0, 0), "Not synced") == 0,
           "status text");
+    {   /* I1197: the shared SOURCES row parse and status text every UI uses */
+        static const sel_tag t[] = {{SEL_SRC_KEY, (uintptr_t) "hvsc"}, {SEL_SRC_KIND, (uintptr_t) "remote"}, {SEL_SRC_NAME, (uintptr_t) "HVSC"}, {SEL_SRC_PATH, (uintptr_t) "https://h"},
+                                    {SEL_SRC_SYNCABLE, 1}, {SEL_SRC_SYNCED, 1000}, {SEL_SRC_COUNT, 7}, {SEL_SRC_DUE, 1}, {SEL_TAG_END, 0}};
+        static const sel_tag lt[] = {{SEL_SRC_KEY, (uintptr_t) "local"}, {SEL_SRC_KIND, (uintptr_t) "local"}, {SEL_TAG_END, 0}};
+        sel_uim_src_row r, l;
+        char txt[96];
+        sel_uim_src_parse(t, &r);
+        CHECK(strcmp(r.key, "hvsc") == 0 && strcmp(r.name, "HVSC") == 0 && r.enabled == 1 && r.syncable == 1 && r.due == 1 && r.count == 7u && r.synced == 1000 &&
+                  sel_uim_src_syncable(&r) == 1,
+              "parse row");
+        sel_uim_src_status(&r, 0, 0, 1000 + 3 * 86400, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, last synced 3 days ago") == 0, "synced text '%s'", txt);
+        sel_uim_src_status(&r, 1, 0, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, Syncing") == 0, "pending text '%s'", txt);
+        sel_uim_src_status(&r, 0, 1, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, sync failed") == 0, "failed text '%s'", txt);
+        r.enabled = 0;
+        sel_uim_src_status(&r, 0, 0, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, switched off") == 0, "off text '%s'", txt);
+        r.enabled = 1;
+        r.syncable = 0;
+        sel_uim_src_status(&r, 0, 0, 0, txt, sizeof txt);
+        CHECK(strcmp(txt, "Remote, search only") == 0 && sel_uim_src_syncable(&r) == 0, "search-only text '%s'", txt);
+        sel_uim_src_parse(lt, &l);
+        sel_uim_src_status(&l, 0, 0, 0, txt, sizeof txt);
+        CHECK(l.enabled == 1 && strcmp(txt, "Local, switched on") == 0, "local text '%s'", txt);
+    }
     memset(&e, 0, sizeof e);
     mui_offer_not_now(1234, fake_send, &e);
     CHECK(strcmp(e.lines[0], "PREF_SET library.sync_notice_at 1234") == 0, "Not now line: %s", e.lines[0]);
@@ -473,6 +548,111 @@ static int pref_known(const char* line) {
     return 0;
 }
 
+/* I1173: Full, Window, Mini, Visual. One path: the action (menu item or its Ctrl-1..4 key row) sends PREF_SET ui.desktop.mode <name>;
+ * the engine answers SEL_EVT_PREFS_CHANGED (key, value); mui_on_event hands it to mui_mode_from_pref; the map under that mode is what
+ * mui_apply_layout shows. mui_mode_applies() is the sentinel that the mode code ran. */
+static void test_layout_modes(void) {
+    static const char* const ids[4] = {"layout_full", "layout_window", "layout_mini", "layout_visual"};
+    static const char* const names[4] = {"full", "window", "mini", "visual"};
+    uint32_t i, base = mui_mode_applies(), flips = 0, dummy;
+    mui_layout_map_t m;
+    for (i = 0; i < 4u; i++) {
+        fake_engine e;
+        char key[40], val[16];
+        uint32_t mode = 99, j, found = 0;
+        memset(&e, 0, sizeof e);
+        CHECK(mui_action_fire(ids[i], fake_send, &e) == 1 && e.n == 1u, "%s not sent", ids[i]);
+        CHECK(sscanf(e.lines[0], "PREF_SET %39s %15s", key, val) == 2 && strcmp(val, names[i]) == 0, "%s sent '%s'", ids[i], e.lines[0]);
+        CHECK(mui_mode_from_pref(key, val, &mode) == 1 && mode == i, "%s: mode %u", ids[i], (unsigned)mode);
+        for (j = 0; j < mui_key_row_count(); j++) {
+            found += mui_key_row_at(j)->kind == MUI_KEYROW_ACTION && strcmp(mui_key_row_at(j)->id, ids[i]) == 0;
+        }
+        CHECK(found == 1u, "%s: %u key rows", ids[i], (unsigned)found);
+        mui_layout_map_mode(&m, 1280, 720, SEL_UIM_TIER_DEFAULT, 0, mode);
+        CHECK(m.mode == mode, "map mode");
+        if (mode == SEL_UIM_LAYOUT_FULL) {
+            CHECK(m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER], "Full shows all regions");
+        } else if (mode == SEL_UIM_LAYOUT_WINDOW) {
+            CHECK(m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN] && !m.show[MUI_SLOT_DETAIL] && m.show[MUI_SLOT_PLAYER],
+                  "Window drops Now Playing only");
+        } else if (mode == SEL_UIM_LAYOUT_MINI) {
+            CHECK(!m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_MAIN] && !m.show[MUI_SLOT_DETAIL] && !m.show[MUI_SLOT_TOPBAR] &&
+                      m.show[MUI_SLOT_PLAYER],
+                  "Mini shows the player only");
+        } else {
+            CHECK(!m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN] && !m.show[MUI_SLOT_DETAIL] && m.show[MUI_SLOT_PLAYER],
+                  "Visual shows main and player");
+        }
+        mui_layout_relayout(&m, 1280, 720, SEL_UIM_TIER_DEFAULT, &flips);
+        CHECK(m.mode == mode, "relayout keeps mode %s", names[i]);
+        /* I1166b + I1173 merge: Expand Library and the Now Playing toggle rebuild the map; neither may reset the mode. */
+        mui_side_wide_toggle(&m);
+        CHECK(m.mode == mode && m.side_wide, "Expand Library keeps mode %s", names[i]);
+        mui_np_toggle(&m);
+        CHECK(m.mode == mode && m.side_wide, "Now Playing toggle keeps mode %s and Expand Library", names[i]);
+        mui_layout_relayout(&m, 1024, 600, SEL_UIM_TIER_DEFAULT, &flips);
+        CHECK(m.mode == mode && m.side_wide, "relayout keeps mode %s and Expand Library", names[i]);
+    }
+    CHECK(!mui_mode_from_pref("ui.desktop.viz", "visual", &dummy) && !mui_mode_from_pref("ui.desktop.mode", "lowered", &dummy),
+          "foreign pref or value accepted");
+    CHECK(mui_mode_applies() - base >= 3u, "sentinel: %u maps under a non-Full mode", (unsigned)(mui_mode_applies() - base));
+}
+
+/* I1174: Grid, Cover Flow, Compact. One path: the style action (menu item or key row) sends VIEW_STYLE <name>; the engine view then
+ * carries that style and mui_style_pack turns the window into the List rows mui_refresh shows. The tile step numbers are the desktop's
+ * (sel_uim_tile_step). mui_style_packs() is the sentinel that the packing ran. */
+static void test_library_styles(void) {
+    static const char* const ids[6] = {"style_regular", "style_tree", "style_drilldown", "style_grid", "style_coverflow", "style_compact"};
+    static const char* const names[6] = {"regular", "tree", "drilldown", "grid", "coverflow", "compact"};
+    mui_list_entry in[12], out[12];
+    uint32_t i, base = mui_style_packs(), step, n;
+    memset(in, 0, sizeof in);
+    for (i = 0; i < 12u; i++) {
+        in[i].index = 100u + i;
+        snprintf(in[i].label, sizeof in[i].label, "Song %u", (unsigned)i);
+        snprintf(in[i].text, sizeof in[i].text, "  Song %u (1)", (unsigned)i);
+    }
+    for (i = 0; i < 6u; i++) {
+        fake_engine e;
+        char want[40];
+        memset(&e, 0, sizeof e);
+        CHECK(mui_action_fire(ids[i], fake_send, &e) == 1 && e.n == 1u, "%s not sent", ids[i]);
+        snprintf(want, sizeof want, "VIEW_STYLE %s", names[i]);
+        CHECK(strcmp(e.lines[0], want) == 0, "%s sent '%s'", ids[i], e.lines[0]);
+    }
+    /* the planar tier has no Cover Flow (written exemption: the art strip needs the RTG chunky canvas); Grid and Compact are offered on both */
+    CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_GRID)) && (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COMPACT)) &&
+              !(mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) && (mui_style_mask(1) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)),
+          "tier style masks");
+    CHECK(mui_style_kind(SEL_VIEW_STYLE_REGULAR) == MUI_STYLE_LIST && mui_style_kind(SEL_VIEW_STYLE_TREE) == MUI_STYLE_LIST &&
+              mui_style_kind(SEL_VIEW_STYLE_DRILLDOWN) == MUI_STYLE_LIST && mui_style_kind(SEL_VIEW_STYLE_GRID) == MUI_STYLE_GRID &&
+              mui_style_kind(SEL_VIEW_STYLE_COVERFLOW) == MUI_STYLE_COVERFLOW && mui_style_kind(SEL_VIEW_STYLE_COMPACT) == MUI_STYLE_COMPACT,
+          "style kinds");
+    CHECK(mui_style_pack(SEL_VIEW_STYLE_REGULAR, 3, 12, in, 12, 0, out, 12) == 0u && mui_style_packs() == base, "list style packed");
+    /* tile steps: cell width follows the desktop's step px, columns shrink as the step grows, the step clamps */
+    for (step = 0; step < SEL_UIM_TILE_STEPS; step++) {
+        CHECK(mui_style_cell_chars(step) == (uint32_t)(sel_uim_tile_step(step) / 8), "cell chars step %u", (unsigned)step);
+    }
+    CHECK(mui_style_grid_cols(80, 0) > mui_style_grid_cols(80, SEL_UIM_TILE_STEPS - 1u) && mui_style_grid_cols(4, 4) == 1u, "cols by step");
+    CHECK(mui_tile_step_move(2, 1) == 3u && mui_tile_step_move(2, -1) == 1u && mui_tile_step_move(4, 1) == 4u && mui_tile_step_move(0, -1) == 0u,
+          "step move clamp");
+    /* Grid: 12 cells in rows of 5 -> 3 rows; the cursor cell is marked; a click maps to the first cell, or keeps the cursor in its row */
+    n = mui_style_pack(SEL_VIEW_STYLE_GRID, 5, 12, in, 12, 7, out, 12);
+    CHECK(n == 3u && out[0].index == 100u && out[1].index == 105u && out[2].index == 110u, "grid rows %u", (unsigned)n);
+    CHECK(strstr(out[1].text, "[Song 7") != NULL && strstr(out[0].text, "[") == NULL && strstr(out[0].text, "Song 4") != NULL, "grid text '%s'", out[1].text);
+    CHECK(mui_style_row_index(SEL_VIEW_STYLE_GRID, 5, 2, 7) == 10 && mui_style_row_index(SEL_VIEW_STYLE_GRID, 5, 1, 7) == 7, "grid click map");
+    CHECK(mui_style_packed_cursor(SEL_VIEW_STYLE_GRID, 5, 7) == 1 && mui_style_packed_cursor(SEL_VIEW_STYLE_GRID, 5, -1) == -1, "grid cursor row");
+    /* Cover Flow: one row, the cursor between two neighbours each side */
+    n = mui_style_pack(SEL_VIEW_STYLE_COVERFLOW, 1, 14, in, 12, 5, out, 12);
+    CHECK(n == 1u && out[0].index == 105u && strstr(out[0].text, "[Song 5") != NULL && strstr(out[0].text, "Song 3") != NULL &&
+              strstr(out[0].text, "Song 7") != NULL && strstr(out[0].text, "Song 8") == NULL, "coverflow '%s'", out[0].text);
+    CHECK(mui_style_row_index(SEL_VIEW_STYLE_COVERFLOW, 1, 0, 5) == 5, "coverflow click");
+    /* Compact: one dense label per row, no indent or count */
+    n = mui_style_pack(SEL_VIEW_STYLE_COMPACT, 1, 12, in, 12, 0, out, 12);
+    CHECK(n == 12u && strcmp(out[3].text, "Song 3") == 0, "compact '%s'", out[3].text);
+    CHECK(mui_style_packs() - base == 3u, "sentinel: %u packs, want 3", (unsigned)(mui_style_packs() - base));
+}
+
 static void test_pref_keys(void) {
     char o[SEL_UIM_CMD_MAX];
     uint32_t i;
@@ -487,11 +667,115 @@ static void test_pref_keys(void) {
     CHECK(sel_uim_sync_notnow_line(1, o, sizeof o) != 0u && pref_known(o), "not now: '%s'", o);
 }
 
+/* mui-p8-queue-scope-ui (I1176): the Queue scope Cycle in mui_ui.c is wired to the shared scope action. The Cycle entries are the
+ * desktop labels (sel_uim_scope_label), a pick goes through mui_scope_fire (SCOPE <name> + queue re-read), and the Cycle follows the
+ * engine's SEL_OPT_SCOPE through sel_uim_scope_index. The sentinel counts the real fire path. */
+static int src_count(const char* pattern) {
+    char path[512], cmd[1024], buf[64];
+    FILE* f;
+    int n = -1;
+    snprintf(path, sizeof path, "%s/plugins/ui/mui/mui_ui.c", MUI_SRC_ROOT);
+    snprintf(cmd, sizeof cmd, "grep -c -F '%s' %s", pattern, path);
+    f = popen(cmd, "r");
+    if (f != NULL) {
+        if (fgets(buf, sizeof buf, f) != NULL) {
+            n = atoi(buf);
+        }
+        pclose(f);
+    }
+    return n;
+}
+
+static void test_queue_scope_ui(void) {
+    static const char* const label[MUI_SCOPE_COUNT] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
+    static const char* const word[MUI_SCOPE_COUNT] = {"library", "album", "playlist"};
+    uint32_t i, base = mui_view_fires();
+    for (i = 0; i < MUI_SCOPE_COUNT; i++) {
+        fake_engine e;
+        char line[32];
+        CHECK(sel_uim_scope_label(i) != NULL && strcmp(sel_uim_scope_label(i), label[i]) == 0, "scope %u label", (unsigned)i);
+        snprintf(line, sizeof line, "SCOPE %s", word[i]);
+        memset(&e, 0, sizeof e);
+        CHECK(mui_scope_fire(i, fake_send, &e) == 2u && strcmp(e.lines[0], line) == 0, "scope %u action: '%s'", (unsigned)i, e.lines[0]);
+        CHECK(sel_uim_scope_index(word[i]) == i, "scope %u read back", (unsigned)i);
+    }
+    CHECK(mui_view_fires() - base == MUI_SCOPE_COUNT, "sentinel: %u fires", (unsigned)(mui_view_fires() - base));
+    CHECK(src_count("mui_scope_fire((uint32_t)act, mui_p8_send, s)") == 1, "CTL_SCOPE is not wired to mui_scope_fire in mui_ui.c");
+    CHECK(src_count("sel_uim_scope_index(st->options[SEL_OPT_SCOPE])") == 1, "the scope Cycle does not follow SEL_OPT_SCOPE");
+}
+
+/* mui-p8-library-pages (I1175): Files, History, Sources modes and the Sources page rows, switch and Sync, fed with real engine events */
+static sel_message src_event(const sel_tag* t) {
+    sel_message m;
+    memset(&m, 0, sizeof m);
+    m.kind = SEL_MSG_EVT;
+    m.id = SEL_EVT_LIBRARY_RESULT;
+    m.argc = 1;
+    m.args[0].type = SEL_ARG_TAGS;
+    m.args[0].v.t = t;
+    return m;
+}
+
+static void test_library_pages(void) {
+    static const sel_tag loc[] = {{SEL_SRC_KEY, (uintptr_t) "local"}, {SEL_SRC_KIND, (uintptr_t) "local"}, {SEL_SRC_NAME, (uintptr_t) "Library"}, {SEL_SRC_PATH, (uintptr_t) "/music"}, {SEL_SRC_ENABLED, 1}, {SEL_TAG_END, 0}};
+    static const sel_tag rem[] = {{SEL_SRC_KEY, (uintptr_t) "modland"}, {SEL_SRC_KIND, (uintptr_t) "remote"}, {SEL_SRC_NAME, (uintptr_t) "Modland"}, {SEL_SRC_PATH, (uintptr_t) "https://m"},
+                                  {SEL_SRC_ENABLED, 1}, {SEL_SRC_SYNCABLE, 1}, {SEL_TAG_END, 0}};
+    static const sel_tag done[] = {{SEL_SRC_PATH, (uintptr_t) "https://m"}, {SEL_TAG_END, 0}};
+    static mui_srcs m;
+    sel_message ev;
+    fake_engine e;
+    char row[128], joined[256];
+    uint32_t vbase = mui_view_fires(), sbase = mui_source_fires();
+    memset(&m, 0, sizeof m);
+    CHECK(mui_libmode_joined(3, 12, joined, sizeof joined) == 3u && strcmp(joined, "VIEW_STYLE regular;VIEW_SOURCE browse;VIEW_WINDOW 12") == 0, "Files modes: '%s'", joined);
+    CHECK(mui_libmode_joined(4, 12, joined, sizeof joined) == 3u && strcmp(joined, "VIEW_STYLE regular;VIEW_SOURCE home;VIEW_WINDOW 12") == 0, "History modes: '%s'", joined);
+    CHECK(mui_libmode_joined(5, 12, joined, sizeof joined) >= 1u && strncmp(joined, "SOURCES", 7) == 0, "Sources mode: '%s'", joined);
+    mui_srcs_asked(&m);
+    ev = src_event(loc);
+    CHECK(mui_srcs_event(&m, &ev) == 1, "local row not taken");
+    ev = src_event(rem);
+    CHECK(mui_srcs_event(&m, &ev) == 1 && m.n == 2u, "remote row not taken: %u rows", (unsigned)m.n);
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(strstr(row, "Modland") != NULL && strstr(row, "Remote, never synced") != NULL, "remote row text '%s'", row);
+    mui_srcs_row(&m, 0, row, sizeof row);
+    CHECK(strstr(row, "Library") != NULL && strstr(row, "Local, switched on") != NULL, "local row text '%s'", row);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_srcs_sync(&m, 0, fake_send, &e) == 0u && e.n == 0u, "local row synced");
+    CHECK(mui_srcs_sync(&m, 1, fake_send, &e) == 2u && strcmp(e.lines[0], "LIBRARY_SYNC modland \"https://m\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "Sync lines '%s'", e.lines[0]);
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(strstr(row, "Syncing") != NULL, "pending row text '%s'", row);
+    ev = src_event(done);
+    CHECK(mui_srcs_event(&m, &ev) == 0 && m.pending == 0u, "completion left the row pending");
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(strstr(row, "Remote, never synced") != NULL, "settled row text '%s'", row);
+    memset(&ev, 0, sizeof ev);
+    ev.kind = SEL_MSG_EVT;
+    ev.id = SEL_EVT_ERROR;
+    ev.argc = 2;
+    ev.args[0].type = SEL_ARG_STR;
+    ev.args[0].v.s = "sync_failed";
+    ev.args[1].type = SEL_ARG_STR;
+    ev.args[1].v.s = "https://m";
+    mui_srcs_event(&m, &ev);
+    CHECK(m.failed == 0u, "an error with nothing pending marked failed");
+    memset(&e, 0, sizeof e);
+    mui_srcs_sync(&m, 1, fake_send, &e);
+    mui_srcs_event(&m, &ev);
+    mui_srcs_row(&m, 1, row, sizeof row);
+    CHECK(m.pending == 0u && strstr(row, "Remote, sync failed") != NULL, "failed row text '%s'", row);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_srcs_toggle(&m, 1, fake_send, &e) == 2u && strcmp(e.lines[0], "PREF_SET library.sources_off \"modland\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "toggle lines '%s'", e.lines[0]);
+    CHECK(mui_srcs_toggle(&m, 9, fake_send, &e) == 0u, "toggle of a missing row sent");
+    CHECK(mui_view_fires() - vbase == 3u && mui_source_fires() - sbase == 3u, "sentinels view %u source %u", (unsigned)(mui_view_fires() - vbase), (unsigned)(mui_source_fires() - sbase));
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
     }
-    if (strcmp(argv[1], "panels") == 0) {
+    if (strcmp(argv[1], "library-pages") == 0) {
+        test_library_pages();
+    } else if (strcmp(argv[1], "panels") == 0) {
         test_panels();
     } else if (strcmp(argv[1], "sources") == 0) {
         test_sources();
@@ -507,6 +791,8 @@ int main(int argc, char** argv) {
         test_voices_programs();
     } else if (strcmp(argv[1], "library-modes") == 0) {
         test_library_modes();
+    } else if (strcmp(argv[1], "queue-scope-ui") == 0) {
+        test_queue_scope_ui();
     } else if (strcmp(argv[1], "queue-scope") == 0) {
         test_queue_scope();
     } else if (strcmp(argv[1], "view-buttons") == 0) {
@@ -517,8 +803,13 @@ int main(int argc, char** argv) {
         test_amiga_settings();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
+        test_window_keys();
     } else if (strcmp(argv[1], "statistics") == 0) {
         test_statistics();
+    } else if (strcmp(argv[1], "layout-modes") == 0) {
+        test_layout_modes();
+    } else if (strcmp(argv[1], "library-styles") == 0) {
+        test_library_styles();
     } else if (strcmp(argv[1], "pref-keys") == 0) {
         test_pref_keys();
     } else {

@@ -30,7 +30,7 @@ void mui_viz_palette_from_tokens(mui_viz* v, const uint32_t* tokens);
  * the descriptor has none. */
 int mui_viz_bind(mui_viz* v, const sel_tag* desc);
 /* (Re)creates the INDEX8 surface for w x h; same size keeps the buffer. Returns 0 on empty size or out of memory. */
-int mui_viz_fit(mui_viz* v, uint32_t w, uint32_t h);
+int mui_viz_fit(mui_viz* v, uint32_t w, uint32_t h, int aspect_q8);
 void mui_viz_release(mui_viz* v);
 /* Renders `f` once into the surface; counts the frame when the plugin reports primitives. Returns the primitives. */
 uint32_t mui_viz_render(mui_viz* v, const sel_viz_frame* f);
@@ -76,6 +76,6 @@ int mui_vizset_tick(mui_vizset* s, const sel_viz_frame* f, const sel_uim_budget*
  * `v` (the selected plugin, v->frames counts it) and expanded to `dst` (w * h words). 0 when the tick says wait or the
  * surface does not fit. This is the one entry point the class and the host test both drive. */
 int mui_vizset_step(mui_vizset* s, mui_viz* v, const sel_viz_frame* f, const sel_uim_budget* b, uint32_t now_ms, uint32_t w,
-                    uint32_t h, uint32_t* dst);
+                    uint32_t h, int aspect_q8, uint32_t* dst);
 
 #endif /* MUI_VIZ_H */

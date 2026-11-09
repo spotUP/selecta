@@ -64,3 +64,6 @@ add_library(selecta_shared_cast STATIC cast/cast.c cast/cast_session.c cast/cast
 target_include_directories(selecta_shared_cast PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(selecta_shared_cast PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/src/library")
 target_link_libraries(selecta_shared_cast PUBLIC selecta_shared_source selecta_shared_mdns)
+
+# I685b/I685c: MUI custom class package; sel_mcc_static on every target, the .mcc spike targets inside it on the Amiga only.
+add_subdirectory(mcc)

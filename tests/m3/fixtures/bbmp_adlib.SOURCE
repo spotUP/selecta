@@ -1,0 +1,22 @@
+Ad Lib test songs for tests/m3/adlib_decode.sh (bbmp_adlib module, I710as). Never committed: each song is listed in
+tests/m3/fixtures/bbmp_adlib.manifest as "<url> <sha256> <local name> <minimum seconds>" and fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. Source for all: the Modland scene archive, https://ftp.modland.com/pub/modules/Ad%20Lib/
+(Johan 2026-11-08: unlicensed scene files are free to use as test fixtures; never committed, never bundled). Minimum seconds is
+the measured length of the render, floored.
+
+  .fmf  Pixel Painters FMF      _unknown/laser light - sb play2.fmf               692def5a2597868ef9dc856902753f86e8c6bc81e457de961b300b5d76cd96f4
+  .ftf  Pixel Painters FTF      _unknown/xatax - x theme.ftf                      e848d4cded61c1281fd3dfb0c83a5519a4524944085b0210bfc42262d2f07259
+  .sig  Sound Images Generation 2  Allister Brimble/dizzy fast food.sig           d447389300f97e430325140281ec3898aa6183f83573a125d1e989beebb746fe
+  .lem  Sound Interface System  Frank Klepacki/xmas lemmings - m1.lem             6f26d59c44b5f88673e26ae672664db2cc5acbc8a909aba7d1ad337ba97cb923
+  .mus  MUS (First Samurai)     Nick Jones/first samurai.mus                      18f9bd0b0deebdd41d355e259b44bdab74ee81f0b594415d6bf47402eb3cdfe4
+  .cal  Shadowlands             Matt Furniss/shadowlands (roofworlds).cal         04a0b7f0c87d24dbcc758159e0757107d229e270b48d21a71b890c07437dabf0
+  .vib  Vibrants                JO/copper.vib                                     2063eb35638e1c798eefbd89e0e2843a28edfd0e8aeeded4843a599bba82c688
+
+  .edl  EdLib Packed            Drax/gooath.edl                                    b1ad05963a2dcc5bb1d8537d365bb20924ecc5fc882682a0b2c3675dbd812e29
+  .fmt  FM Tracker (Sagitta)    Morten Stenshorne/lassie come home (alphaville).fmt  ccff8b1bd692a2596e528701747365ba73509e1fe874bae8634f48632525e995
+
+Not in this module and so not in this manifest: Davey Taylor's FM Tracker
+(also .fmt, magic "FMTracker\x01\x01", played by libopenmpt Load_fmt): bbmp_adlib must not claim it, adlib_decode.sh checks that. The bbmp_adlib
+extension list is fmf,ftf,sig,lem,mus,cal,vib,fmt,edl.
+Engine licence: GPL-3.0-or-later (bbmp csrc/adlib, third_party/bbmp_adlib).
+Damaged-.edl negatives are made from gooath.edl at test time (cut at 1200 bytes; bytes 600..1199 zeroed); no second file is fetched.
