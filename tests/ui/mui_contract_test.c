@@ -4,6 +4,7 @@
 #include <selecta/registry.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/viewcmds.h>
 
 #include <dirent.h>
 #include <mcc/up.h>
@@ -2370,6 +2371,35 @@ static void test_newplaylist(void) {
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
 }
 
+/* I1178 mui-siflags: the Song Information page carries Mark Wrong, Skip Song, Save Note, sending what the desktop buttons send
+ * (sel_uim_flag_label / sel_uim_flag_line, the one helper both UIs call). Checked from the structures: the P4 enum + p4_name hold the three
+ * ids, the page group builds one button per sel_uim_flag_label through mui_viewbtn_label, and the P4 cases fire mui_viewbtn_fire(2 + k). */
+static void test_siflags(void) {
+    const char* src = ui_source();
+    uint32_t k, fires = mui_view_fires();
+    char want[SEL_UIM_CMD_MAX];
+    static const char* const lab[3] = {"Mark Wrong", "Skip Song", "Save Note"};
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    CHECK(strstr(src, "P4_SIWRONG, P4_SISKIP, P4_SINOTE, P4_COUNT") != NULL && strstr(src, "\"siwrong\", \"siskip\", \"sinote\"}") != NULL,
+          "the three P4 ids or their sentinel names are missing");
+    CHECK(strstr(src, "mui_viewbtn_label(2u + fk)") != NULL && strstr(src, "CTL_P4_BASE + (LONG)(P4_SIWRONG + fk)") != NULL,
+          "the Song Information page does not build the flag buttons");
+    CHECK(strstr(src, "case P4_SIWRONG:") != NULL && strstr(src, "case P4_SINOTE:") != NULL &&
+              strstr(src, "mui_viewbtn_fire(2u + (which - P4_SIWRONG)") != NULL,
+          "the flag cases do not fire mui_viewbtn_fire(2 + k)");
+    for (k = 0; k < 3u; k++) {
+        g_sent = 0;
+        CHECK(strcmp(mui_viewbtn_label(2u + k), lab[k]) == 0 && strcmp(sel_uim_flag_label(k), lab[k]) == 0, "label %u '%s'", (unsigned)k, mui_viewbtn_label(2u + k));
+        CHECK(mui_viewbtn_fire(2u + k, "bad loop", 0, fake_send, NULL) == 1 && g_sent == 1, "button %u did not send", (unsigned)k);
+        sel_uim_flag_line(k, "bad loop", want, sizeof want);
+        CHECK(strcmp(g_sent_line, want) == 0, "button %u sent '%s' want the desktop line '%s'", (unsigned)k, g_sent_line, want);
+    }
+    CHECK(mui_view_fires() == fires + 3u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 3u));
+}
+
 /* I1177 mui-newfolder: New Folder is the toolbar button after New Playlist. Label, icon, id slot and the fire path are read from the
  * structures that produce them (mui_tool_labels, g_tool_which, the P4_PFOLDER case); the verb is the desktop's FOLDER_ADD through the
  * shared sel_uim_plbtn_line, and the target folder is the shared sel_uim_pl_target_folder the desktop's New Folder button also uses. */
@@ -3747,6 +3777,8 @@ int main(int argc, char** argv) {
         test_aacheck();
     } else if (strcmp(argv[1], "libfilter") == 0) {
         test_libfilter();
+    } else if (strcmp(argv[1], "siflags") == 0) {
+        test_siflags();
     } else if (strcmp(argv[1], "newplaylist") == 0) {
         test_newplaylist();
         test_newfolder();

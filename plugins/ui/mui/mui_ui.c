@@ -114,10 +114,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_PFOLDER, P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_PFOLDER, P4_SIWRONG, P4_SISKIP, P4_SINOTE, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage", "pfolder"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage", "pfolder", "siwrong", "siskip", "sinote"};
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -1995,6 +1995,22 @@ static Object* mui_detail_group(mui_state* s, int compact) {
             } else {
                 DoMethod(page_info, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
             }
+            {
+                /* I1178: the desktop Song Information flag buttons (Mark Wrong, Skip Song, Save Note); label and line from sel_uim_flag_*,
+                 * the note comes from the command field as Rename's name does. */
+                Object* fr = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, TAG_DONE);
+                uint32_t fk;
+                for (fk = 0; fr != NULL && fk < 3u; fk++) {
+                    const char* fl = mui_viewbtn_label(2u + fk);
+                    Object* fb = mui_make_button_i(fl, fl, NULL, NULL, CTL_P4_BASE + (LONG)(P4_SIWRONG + fk), 100, 0, MUI_AA_ROLE_NORMAL);
+                    if (fb != NULL) {
+                        DoMethod(fr, OM_ADDMEMBER, fb);
+                    }
+                }
+                if (fr != NULL) {
+                    DoMethod(page_info, OM_ADDMEMBER, fr);
+                }
+            }
             if (s->trk_group != NULL && trk_g != NULL) {
                 DoMethod(s->trk_group, OM_ADDMEMBER, trk_g);
                 DoMethod(page_trk, OM_ADDMEMBER, s->trk_group);
@@ -3168,6 +3184,15 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         mui_str_utf8(s->str_cmd, text, sizeof text);
         if (mui_viewbtn_fire(0, text, mui_pl_target_folder(view), mui_p8_send, s)) {
             mui_p4_note(s, which, "New Folder");
+        }
+        break;
+    case P4_SIWRONG:
+    case P4_SISKIP:
+    case P4_SINOTE:
+        /* I1178: button 2 + k of the shared view buttons = sel_uim_flag_line(k): FLAG wrong, FLAG skip, NOTE (the desktop si_button_label buttons). */
+        mui_str_utf8(s->str_cmd, text, sizeof text);
+        if (mui_viewbtn_fire(2u + (which - P4_SIWRONG), text, 0, mui_p8_send, s)) {
+            mui_p4_note(s, which, mui_viewbtn_label(2u + (which - P4_SIWRONG)));
         }
         break;
     case P4_SETTINGS:
