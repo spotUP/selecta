@@ -419,6 +419,10 @@ typedef struct desk {
     uint32_t drl_skip;       /* I790: rows skipped before this window (Previous / Next step it by SEL_DRILL_WINDOW) */
     char (*drl_name)[96];    /* I790: group row names, drl_n of them */
     char (*drl_count)[16];   /* I790: group row counts as text ('' unknown) */
+    uint32_t* drl_ord;       /* I1235: drl_name indices the find field leaves visible, in order */
+    uint32_t drl_vn;         /* I1235: how many rows drl_ord holds */
+    char drl_q[64];          /* I1235: the find text the engine filtered the open format list with ("" = none) */
+    uint32_t drl_filters;    /* I1235: sentinel, times drl_filter rebuilt drl_ord */
     char drl_path[160];      /* I790: the page's drill path, kind US a US b, '' at the first level */
     sel_gui_rect drl_crumb[4]; /* I790: click rectangles of the breadcrumb segments */
     uint32_t drl_crumb_n;
@@ -4825,6 +4829,9 @@ enum { COL_MAX_SONGS = 8192, COL_SHELF_MAX = 24 };
 static void pls_free(desk* d) {
     free(d->drl_name);
     free(d->drl_count);
+    free(d->drl_ord);
+    d->drl_ord = NULL;
+    d->drl_vn = 0u;
     d->drl_name = NULL;
     d->drl_count = NULL;
     d->drl_n = 0u;
@@ -4854,6 +4861,9 @@ static const char* pls_key(const desk* d, uint32_t i) {
 }
 
 static void pls_reload_run(desk* d);
+static void drl_filter(desk* d);
+static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q);
+static int drl_is_formats(const desk* d);
 
 /* I782: the page model is read from the library off the draw's critical path: no request waits for the library (a sync or a job holds it
  * for long), a busy library keeps the old model on screen and pls_stale asks again next frame. */
@@ -4973,6 +4983,7 @@ static void pls_reload_run(desk* d) {
                         d->drl_n = i + 1u;
                     }
                 }
+                drl_filter(d);
                 ns = 0u;
             }
             for (r = pg->rows, i = 0; i < ns && *r != '\0'; i++) {
@@ -5118,6 +5129,15 @@ static void col_cover_refresh(desk* d) {
 
 static void col_changed(desk* d) {
     col_rebuild(d);
+    /* drl_page is 0 while a filtered page loads, so the test reads the path and the filter text, which survive the reload */
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && drl_is_formats(d) && strcmp(d->drl_q, d->col_q) != 0 &&
+        (d->drl_q[0] != '\0' || d->drl_n >= (uint32_t)SEL_DRILL_WINDOW || d->drl_skip > 0u)) {
+        int keep = d->col_search; /* the engine re-filters the whole list; typing must keep the keyboard */
+        drl_open_q(d, d->drl_path, 0u, d->col_q);
+        d->col_search = keep;
+        return;
+    }
+    drl_filter(d);
     d->pls_scroll = 0u;
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -5140,6 +5160,7 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
     d->col_sort = 0u; /* I678e: a collection opens in its own order, unfiltered */
     d->col_qlen = 0u;
     d->col_q[0] = '\0';
+    d->drl_q[0] = '\0';
     d->col_search = 0;
     d->col_ready = 0;
     if (id != COL_KIND_ID) { /* I994d4: a playlist is an engine collection page, key = its id (design 11.6); col_kind_open sets its own after this */
@@ -5268,7 +5289,23 @@ static int32_t col_shelf_slot(const desk* d, uint32_t sh) {
 
 /* I790: the drill rows of the open source page: the group rows plus a Previous row after a skip and a Next row when the window is full. */
 static uint32_t drl_rows(const desk* d) {
-    return d->drl_n == 0u ? 0u : d->drl_n + (d->drl_skip > 0u ? 1u : 0u) + (d->drl_n >= (uint32_t)SEL_DRILL_WINDOW ? 1u : 0u);
+    return d->drl_n == 0u ? 0u : d->drl_vn + (d->drl_skip > 0u ? 1u : 0u) + (d->drl_n >= (uint32_t)SEL_DRILL_WINDOW ? 1u : 0u);
+}
+
+/* I1235: the find field narrows a drill group level only when the whole level is on the page (one window, no skip), so a filter never hides
+ * rows that sit in another window. */
+static int drl_is_formats(const desk* d) {
+    return strcmp(d->drl_path, "formats") == 0;
+}
+
+static int drl_filterable(const desk* d) {
+    if (d->col_kind != (uint32_t)SEL_LIB_ITEM_SOURCE) {
+        return 0;
+    }
+    if (drl_is_formats(d)) { /* the engine filters the whole format list, so any window state takes the field; it stays while a filtered page loads */
+        return (d->drl_page == (uint32_t)SEL_DRILL_PAGE_GROUPS && d->drl_n > 0u) || d->drl_q[0] != '\0';
+    }
+    return d->drl_page == (uint32_t)SEL_DRILL_PAGE_GROUPS && d->drl_n > 0u && d->drl_skip == 0u && d->drl_n < (uint32_t)SEL_DRILL_WINDOW;
 }
 
 static uint32_t col_rows(const desk* d) {
@@ -5409,20 +5446,58 @@ static void drl_label(const desk* d, const char* name, char* out, size_t cap) {
     }
 }
 
+/* I1235: rebuild the visible drill rows from the find field text, matched on the label the row shows. */
+static void drl_filter(desk* d) {
+    uint32_t i, n = 0u;
+    int on = drl_filterable(d) && d->col_qlen > 0u;
+    free(d->drl_ord);
+    d->drl_ord = (uint32_t*)malloc((d->drl_n + 1u) * sizeof *d->drl_ord);
+    d->drl_vn = 0u;
+    if (d->drl_ord == NULL) {
+        return;
+    }
+    for (i = 0; i < d->drl_n; i++) {
+        char lab[96];
+        if (on) {
+            drl_label(d, d->drl_name[i], lab, sizeof lab);
+        }
+        if (!on || col_match(lab, d->col_q)) {
+            d->drl_ord[n++] = i;
+        }
+    }
+    d->drl_vn = n;
+    d->drl_filters++;
+}
+
 /* Open one drill level of the open source: the same page, a deeper key; Recents stays untouched. */
 static void drl_open(desk* d, const char* path, uint32_t skip) {
+    drl_open_q(d, path, skip, "");
+}
+
+/* q != "" asks the engine to narrow the format list by the find text before windowing (GS after the skip); the find field keeps its text. */
+static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q) {
     const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
     char key[320], open[420];
     size_t n;
     snprintf(key, sizeof key, "%s%s%s", d->col_key, path[0] != '\0' ? "\x1f" : "", path);
-    if (skip > 0u) {
+    if (skip > 0u || q[0] != '\0') {
         n = strlen(key);
         snprintf(key + n, sizeof key - n, "\x1e%u", (unsigned)skip);
     }
+    if (q[0] != '\0') {
+        n = strlen(key);
+        snprintf(key + n, sizeof key - n, "\x1d%s", q);
+    }
+    snprintf(d->drl_q, sizeof d->drl_q, "%s", q);
     d->col_open_serial = pg != NULL ? pg->serial : 0u;
     d->col_ready = 0;
     d->pls_scroll = 0u;
     d->drl_skip = skip;
+    if (q[0] == '\0') {
+        d->col_q[0] = '\0'; /* I1235: a new drill level starts with an empty find field */
+        d->col_qlen = 0u;
+        d->col_search = 0;
+    }
     desk_quoted_request(open, sizeof open, "COLLECTION_OPEN 7", key);
     n = strlen(open);
     snprintf(open + n, sizeof open - n, " 1");
@@ -6091,9 +6166,11 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     }
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     draw_button(d, pls_more_rect(d, mn), surf, d->col_kind == 0u ? "More" : "Shuffle", 13, text);
-    if (d->pls_n > 0u) { /* I678e: the sort button and the search field */
+    if (d->pls_n > 0u || drl_filterable(d)) { /* I678e: the sort button and the search field (I1235: the field alone on a drill list) */
         sel_gui_rect fr = col_find_rect(d, mn);
-        draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
+        if (d->pls_n > 0u) {
+            draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
+        }
         sel_gui_round_rect(d->canvas, fr, rad, surf);
         draw_text(d, rect_of(fr.x + lpx(d, 12), fr.y, fr.w - lpx(d, 24), fr.h), d->col_qlen > 0u ? d->col_q : "Search in this collection", 0, 13, d->col_qlen > 0u ? text : muted);
         if (d->col_search) {
@@ -6172,10 +6249,11 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             draw_text(d, rect_of(r.x + lpx(d, 12), r.y, r.w - lpx(d, 24), r.h), "Previous", 1, 14, accent);
             continue;
         }
-        if (di >= d->drl_n) {
+        if (di >= d->drl_vn) {
             draw_text(d, rect_of(r.x + lpx(d, 12), r.y, r.w - lpx(d, 24), r.h), "Next", 1, 14, accent);
             continue;
         }
+        di = d->drl_ord[di];
         drl_label(d, d->drl_name[di], lab, sizeof lab);
         if (d->drl_count[di][0] == '\0') {
             cnt[0] = '\0';
@@ -6356,8 +6434,8 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             }
         }
     }
-    if (d->pls_n > 0u) { /* I678e: the sort button cycles Custom Order and Title; the search field takes the keyboard */
-        if (in_rect(col_sort_rect(d, mn), ev->x, ev->y)) {
+    if (d->pls_n > 0u || drl_filterable(d)) { /* I678e: the sort button cycles Custom Order and Title; the search field takes the keyboard */
+        if (d->pls_n > 0u && in_rect(col_sort_rect(d, mn), ev->x, ev->y)) {
             d->col_sort = d->col_sort == 0u ? 1u : 0u;
             d->col_search = 0;
             d->pl_edit = 0;
@@ -6420,10 +6498,10 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
                 continue;
             }
             if (d->drl_skip > 0u && v == 0u) {
-                drl_open(d, d->drl_path, d->drl_skip > (uint32_t)SEL_DRILL_WINDOW ? d->drl_skip - (uint32_t)SEL_DRILL_WINDOW : 0u);
-            } else if (di >= d->drl_n) {
-                drl_open(d, d->drl_path, d->drl_skip + (uint32_t)SEL_DRILL_WINDOW);
-            } else if (drl_child(d, d->drl_name[di], child, sizeof child)) {
+                drl_open_q(d, d->drl_path, d->drl_skip > (uint32_t)SEL_DRILL_WINDOW ? d->drl_skip - (uint32_t)SEL_DRILL_WINDOW : 0u, d->drl_q);
+            } else if (di >= d->drl_vn) {
+                drl_open_q(d, d->drl_path, d->drl_skip + (uint32_t)SEL_DRILL_WINDOW, d->drl_q);
+            } else if (drl_child(d, d->drl_name[d->drl_ord[di]], child, sizeof child)) {
                 drl_open(d, child, 0u);
             }
             return 1;
@@ -7866,14 +7944,14 @@ static const char* library_dump_build(desk* d) {
                     sel_gui_rect dr0 = pls_row_rect(d, pmn, 0u), dr1 = pls_row_rect(d, pmn, 1u);
                     char dl[96];
                     uint32_t dk;
-                    if (d->drl_n > 0u) {
-                        drl_label(d, d->drl_name[0], dl, sizeof dl);
+                    if (d->drl_vn > 0u) {
+                        drl_label(d, d->drl_name[d->drl_ord[0]], dl, sizeof dl);
                     } else {
                         dl[0] = '\0';
                     }
-                    o = dump_put(d, o, "drill page=%u rows=%u skip=%u path=[%s] window=%u built=%u crumbs=%u first=[%s] row0=%d,%d,%d,%d row1=%d,%d,%d,%d",
+                    o = dump_put(d, o, "drill page=%u rows=%u skip=%u path=[%s] window=%u built=%u shown=%u filters=%u crumbs=%u first=[%s] row0=%d,%d,%d,%d row1=%d,%d,%d,%d",
                                  (unsigned)d->drl_page, (unsigned)d->drl_n, (unsigned)d->drl_skip, d->drl_path, (unsigned)SEL_DRILL_WINDOW, (unsigned)cst.drill_rows,
-                                 (unsigned)d->drl_crumb_n, dl, (int)dr0.x, (int)dr0.y, (int)dr0.w, (int)dr0.h, (int)dr1.x, (int)dr1.y, (int)dr1.w, (int)dr1.h);
+                                 (unsigned)d->drl_vn, (unsigned)d->drl_filters, (unsigned)d->drl_crumb_n, dl, (int)dr0.x, (int)dr0.y, (int)dr0.w, (int)dr0.h, (int)dr1.x, (int)dr1.y, (int)dr1.w, (int)dr1.h);
                     for (dk = 0u; dk < d->drl_crumb_n && dk < 4u; dk++) {
                         o = dump_put(d, o, " crumb%u=%d,%d,%d,%d", (unsigned)dk, (int)d->drl_crumb[dk].x, (int)d->drl_crumb[dk].y, (int)d->drl_crumb[dk].w, (int)d->drl_crumb[dk].h);
                     }
