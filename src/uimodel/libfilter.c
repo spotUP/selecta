@@ -54,6 +54,31 @@ int32_t sel_uim_lfilter_chips_total(const int32_t* widths, uint32_t n, int32_t g
     return t;
 }
 
+void sel_uim_chips_place(const int32_t* w, uint32_t n, int32_t gap, int32_t band, uint32_t k, int32_t* x, int32_t* row) {
+    uint32_t i;
+    int32_t cx = 0, r = 0;
+    for (i = 0; i < n && i <= k; i++) {
+        if (cx > 0 && cx + w[i] > band) {
+            cx = 0;
+            r++;
+        }
+        if (i == k) {
+            break;
+        }
+        cx += w[i] + gap;
+    }
+    *x = cx;
+    *row = r;
+}
+
+int32_t sel_uim_chips_flow(const int32_t* w, uint32_t n, int32_t gap, int32_t band, int32_t* x, int32_t* row) {
+    uint32_t k;
+    for (k = 0; k < n; k++) {
+        sel_uim_chips_place(w, n, gap, band, k, &x[k], &row[k]);
+    }
+    return n == 0u ? 0 : row[n - 1u] + 1;
+}
+
 int sel_uim_lfilter_chips_single(int bitmap, int32_t total, int32_t band) { return bitmap || total > band; }
 
 uint32_t sel_uim_lfilter_chips_first_max(const int32_t* widths, uint32_t n, int32_t gap, int32_t band) {

@@ -41,6 +41,13 @@ int sel_uim_viz_tabs_fit(const int32_t* label_w, uint32_t n, int32_t gap, int32_
 int sel_uim_lfilter_left_clears(uint32_t filter);
 const char* sel_uim_lfilter_left_name(uint32_t filter);
 uint32_t sel_uim_lfilter_single_step(uint32_t filter, int dir);
+/* I1222d: the one wrap routine of every chip row (the sidebar chips, I1221, the Search page source chips, I1224, and the text sidebar).
+ * Chips of widths w[0..n) with gap between them flow left to right in a band `band` wide; a chip that does not fit the rest of its row
+ * (and is not first on it) starts the next. Units are the caller's (px, cells). sel_uim_chips_place gives chip k's x offset in the band
+ * and its row (k >= n gives the spot after the last chip); sel_uim_chips_flow writes every chip's x and row and returns the row count
+ * (0 when n is 0). The By You sub-row of Playlists stays a caller concern. */
+void sel_uim_chips_place(const int32_t* w, uint32_t n, int32_t gap, int32_t band, uint32_t k, int32_t* x, int32_t* row);
+int32_t sel_uim_chips_flow(const int32_t* w, uint32_t n, int32_t gap, int32_t band, int32_t* x, int32_t* row);
 /* Passes run through sel_uim_lfilter_pass since start: the call-count sentinel the reachability tests read. */
 uint32_t sel_uim_lfilter_passes(void);
 

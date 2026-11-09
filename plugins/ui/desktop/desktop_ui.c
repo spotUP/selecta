@@ -9519,26 +9519,7 @@ static int online_event(desk* d, const sel_tag* t) {
     return 0;
 }
 
-/* I1224: the one wrap routine of every chip row (the sidebar chips, I1221, and the Search page's source chips): chip k of n, widths w[],
- * `gap` between chips, in a band `bw` wide, sits at x offset *x on row *row; a chip that does not fit the rest of its row starts the next. */
-static void chip_flow_place(const int32_t* w, uint32_t n, int32_t gap, int32_t bw, uint32_t k, int32_t* x, int32_t* row) {
-    uint32_t i;
-    int32_t cx = 0, r = 0;
-    for (i = 0; i < n && i <= k; i++) {
-        if (cx > 0 && cx + w[i] > bw) {
-            cx = 0;
-            r++;
-        }
-        if (i == k) {
-            break;
-        }
-        cx += w[i] + gap;
-    }
-    *x = cx;
-    *row = r;
-}
-
-/* I1224: the source chips wrap onto as many rows as they need (the sidebar chips' flow, I1221: chip_flow_place), so none is clipped or
+/* I1224: the source chips wrap onto as many rows as they need (the sidebar chips' flow, I1221: sel_uim_chips_place), so none is clipped or
  * hidden behind a chevron (supersedes the I1073 scrolling row). Each further row pushes the facet row and the results body down. */
 enum { ONLINE_CHIP_PAD = 14, ONLINE_CHIP_GAP = 8, ONLINE_CHIPS_MAX = 2 + SEL_SOURCE_MAX };
 
@@ -9572,7 +9553,7 @@ static int32_t online_chip_pitch(const desk* d) {
 static int32_t online_chip_rows(desk* d, sel_gui_rect mn) {
     int32_t w[ONLINE_CHIPS_MAX], x, row;
     uint32_t n = online_chip_widths(d, w);
-    chip_flow_place(w, n, lpx(d, ONLINE_CHIP_GAP), online_chip_row(d, mn).w, n - 1u, &x, &row);
+    sel_uim_chips_place(w, n, lpx(d, ONLINE_CHIP_GAP), online_chip_row(d, mn).w, n - 1u, &x, &row);
     return row + 1;
 }
 
@@ -9586,7 +9567,7 @@ static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
     int32_t w[ONLINE_CHIPS_MAX], x, row;
     uint32_t n = online_chip_widths(d, w);
     sel_gui_rect b = online_chip_row(d, mn);
-    chip_flow_place(w, n, lpx(d, ONLINE_CHIP_GAP), b.w, k, &x, &row);
+    sel_uim_chips_place(w, n, lpx(d, ONLINE_CHIP_GAP), b.w, k, &x, &row);
     return rect_of(b.x + x, b.y + row * online_chip_pitch(d), k < n ? w[k] : 0, lpx(d, HOME_CHIP_H));
 }
 
@@ -11444,14 +11425,14 @@ static int32_t side_chip_w(const desk* d, uint32_t k) {
     return (at != NULL ? sel_gui_text_width(at, side_chip_name_at(k), strlen(side_chip_name_at(k))) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
 }
 
-/* I1221: where chip k sits in the wrapped flow of a band `bw` wide: its x offset in the band and its row (the shared chip_flow_place, I1224). */
+/* I1221: where chip k sits in the wrapped flow of a band `bw` wide: its x offset in the band and its row (the shared sel_uim_chips_place, I1224). */
 static void side_chip_place(const desk* d, int32_t bw, uint32_t k, int32_t* x, int32_t* row) {
     int32_t w[SIDE_CHIPS];
     uint32_t i;
     for (i = 0; i < (uint32_t)SIDE_CHIPS; i++) {
         w[i] = side_chip_w(d, i);
     }
-    chip_flow_place(w, (uint32_t)SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP), bw, k, x, row);
+    sel_uim_chips_place(w, (uint32_t)SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP), bw, k, x, row);
 }
 
 static int32_t side_chip_band_w(const desk* d) {

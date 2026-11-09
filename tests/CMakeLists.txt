@@ -1177,6 +1177,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_libfilter_left_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-libfilter-left COMMAND uim_libfilter_left_test)
   set_tests_properties(uim-libfilter-left PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_libfilter_left_ok")
+  # I1222d: the shared chip wrap (sel_uim_chips_flow).
+  add_executable(uim_libfilter_flow_test uimodel/libfilter_flow_test.c)
+  target_link_libraries(uim_libfilter_flow_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-libfilter-flow COMMAND uim_libfilter_flow_test)
+  set_tests_properties(uim-libfilter-flow PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_libfilter_flow_ok")
   # I1222c: the text tier's layout in cells (SEL_UIM_TIER_TEXT, no hints region).
   add_executable(uim_layout_text_test uimodel/layout_text_test.c)
   target_link_libraries(uim_layout_text_test PRIVATE selecta_uimodel selecta_core)
