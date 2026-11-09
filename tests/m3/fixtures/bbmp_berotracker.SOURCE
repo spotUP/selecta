@@ -2,4 +2,21 @@ BeRoTracker songs for tests/m3/berotracker_decode.sh (bbmp_berotracker module, I
 git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive).
 https://modland.com/pub/modules/BeRoTracker/BeRo/aa2s.brt  ae3917b011bafbac1d486bcaa47e76a107a01ed8871a62ef573b640289980da7
 https://modland.com/pub/modules/BeRoTracker/BeRo/b2.brt  c5097a3e2964c2b81f115a23b6a8b6fec9a6bd5107b2df85a650a2bcfc75a4be
+https://modland.com/pub/modules/BeRoTracker/BeRo/bbb.brt  43b750ce76371b16b788ac08d1de8471f4dc9360b93ae68ab1c9665a8bf6dd74
+https://modland.com/pub/modules/BeRoTracker/BeRo/ddds.brt  09e021ab28d959c176c56dfcc58921f49e62c7aabe8f815351ceb1522ed61ea3
+https://modland.com/pub/modules/BeRoTracker/BeRo/dirty%20trip%20%28excompo%20version%29.brt  52c0461bebc6c9cbc75880acc08ad3a45db1dd98c578b1a82aeff56286c83b37
+https://modland.com/pub/modules/BeRoTracker/BeRo/drum%27n%27chip.brt  b55fc562c4eb4c028735bdc3d57e78b1ce33da907b5c5b07b1b2d2a1dfb3fab0
+https://modland.com/pub/modules/BeRoTracker/BeRo/drum%27n%27dream.brt  5382325a43dcac0bc2ceb989577dca9b8467b621c30967b12d2ebd44e50f92a2
+https://modland.com/pub/modules/BeRoTracker/BeRo/drumbass.brt  5c617bbd19da5589372e6d10e433114d52c8c703ef431cdabe41563f04916f10
+https://modland.com/pub/modules/BeRoTracker/BeRo/ee.brt  c2a7fe6f468767dd7d688e3d14e79b552c0f4033e27c2e4452f8e480691173ea
+https://modland.com/pub/modules/BeRoTracker/BeRo/es.brt  6e7d2c27b7ff6f8857fdc6a175127213254ba7963fdc474a25e9bf8125c7da11
+https://modland.com/pub/modules/BeRoTracker/BeRo/fly%20into%20your%20dreams.brt  999824a16d8b4f08639c3b7d05e6c1982e711c7bc33e831a4d2cce6ae17399ae
+https://modland.com/pub/modules/BeRoTracker/BeRo/heyduda.brt  538f19fd9a0a81f3f6a2f0d5cbd7208a61a541fad156dcd0db89c4fa4a919bb2
+https://modland.com/pub/modules/BeRoTracker/BeRo/heyduda2.brt  abd90d16df24ee614b5ef0a4d84d526b66e4e1187e95e896cac773104d975275
+https://modland.com/pub/modules/BeRoTracker/BeRo/heydudaa.brt  23b75096307f319dbb7fba64a4d78a8779a62a4c2b83b999a9978d7c236aadaa
+https://modland.com/pub/modules/BeRoTracker/BeRo/randomizer.brt  1371123ae40c0986cd250c901c8e3c3b103604b5355366ac6df4e7d2afe7d1ad
+https://modland.com/pub/modules/BeRoTracker/BeRo/reloaded%20dreams.brt  9de251bc16832148f4b16bea041fb1a31f78f91c980117c1f52bc8a03774bbd0
+https://modland.com/pub/modules/BeRoTracker/BeRo/ssdx.brt  e4b0c3fa3de2f9dca593cd2d8db8fbb78977aeefaaa7a2062edc8f8501796844
+https://modland.com/pub/modules/BeRoTracker/BeRo/sss.brt  152b9e5a7570cb7986cf85921ac50b4a723fc0d6c8b609a4a96012f3c9c46363
+https://modland.com/pub/modules/BeRoTracker/BeRo/wonderful%20dream%20landscapes.brt  47f537a1ab733af67cdbbca0f9b2bf60407f7ea5d655dcababa8da5f6e5545b9
 Engine licence: GPL-3.0-or-later (bbmp csrc/berotracker, third_party/bbmp_berotracker).
