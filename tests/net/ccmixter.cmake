@@ -5,6 +5,7 @@
 #     the format column and has the upload-page backlink;
 #  2. every request carries the descriptive User-Agent (Selecta-CcMixter/1 ...);
 #  3. OPEN ccmixter:<id>/.. + PLAY asks api/query?ids=<id>, streams the download URL (rewritten to the base) via sel_live;
+#  3b. a 403 on the download (I1072c) reports "ccMixter blocks downloads of this song";
 #  4. nothing is left in the cache dir (audio and JSON are never kept).
 # -DCLI=<selecta-cli> -DWORK=<scratch dir> -DMP3=<tests/m3/stream/sine.mp3> -DICY=<icy_server.py>
 set(PORT "${WORK}/cc-port")
@@ -80,6 +81,18 @@ endif()
 file(READ "${WORK}/cc.raw" hex HEX)
 if(NOT hex MATCHES "[1-9a-f]")
   message(FATAL_ERROR "I725g: the render is silent")
+endif()
+
+# 3b. I1072c: the download host answers 403 (ccMixter blocks every file download): the error names the source, not a bare status.
+file(WRITE "${WORK}/cc403.sel" "OPEN ccmixter:103/artist_three/Other-Licence\n@stream_source\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/cc403.sel" --db "${DB}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 40)
+set(all "${o}${e}")
+file(READ "${PORT}.requests" rq)
+if(NOT rq MATCHES "cc_blocked=1" OR NOT all MATCHES "STREAMSOURCE resolves=[1-9]")
+  message(FATAL_ERROR "I1072c: the blocked download was not requested through the source (sentinel)\n${rq}${all}")
+endif()
+if(NOT all MATCHES "ERROR open_failed .http_status=403 ccMixter blocks downloads of this song")
+  message(FATAL_ERROR "I1072c: want 'ccMixter blocks downloads of this song' with the status, got\n${all}")
 endif()
 
 # 4. No file left in the cache dir.

@@ -512,6 +512,7 @@ struct sel_engine {
     uint32_t error_slot;
     int open_failed; /* 1 right after an OPEN whose song failed: the PLAY that follows it must not start the queue (I695e) */
     int open_bank_missing; /* I1127c: read_song found a companion bank on no mirror (prepare_slot copies it to the slot) */
+    const char* open_source; /* I1072c: display name of the streams source whose song the last read_song resolved, NULL when none */
     int open_status; /* HTTP status of the last failed URL read in read_song, 0 when none (I195g) */
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
@@ -2022,6 +2023,7 @@ static uint8_t* read_whole_file(sel_engine* e, const char* path, size_t* size) {
 static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_live** live, sel_file_stream** fs,
                           char* file_path) {
     e->open_status = 0;
+    e->open_source = NULL;
     e->open_bank_missing = 0;
     file_path[0] = '\0';
     char cached[SEL_BROWSE_PATH_MAX];
@@ -2055,6 +2057,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             return NULL;
         }
         if (sr > 0) {
+            e->open_source = sel_source_stream_name(path);
             path = resolved;
             station = 1;
         }
@@ -2599,7 +2602,12 @@ static void drop_song(sel_engine* e, uint8_t* data, sel_live* live, sel_file_str
 /* open_failed for `detail`; after a failed HTTP read the status leads the detail ("http_status=404 <url>") so the
  * number survives the detail truncation and every consumer of the error event shows it (I195g). */
 static void report_open_failed(sel_engine* e, const char* detail) {
-    if (e->open_status >= 100 && detail != NULL) {
+    if ((e->open_status == 401 || e->open_status == 403) && e->open_source != NULL) {
+        /* I1072c: a source whose host refuses the download (ccMixter answers every file 403) says so, not a bare status. */
+        char buf[SEL_ERROR_DETAIL_MAX];
+        snprintf(buf, sizeof buf, "http_status=%d %s blocks downloads of this song", e->open_status, e->open_source);
+        sel_engine_report_error(e, "open_failed", buf);
+    } else if (e->open_status >= 100 && detail != NULL) {
         char buf[SEL_ERROR_DETAIL_MAX];
         snprintf(buf, sizeof buf, "http_status=%d %s", e->open_status, detail);
         sel_engine_report_error(e, "open_failed", buf);
