@@ -460,3 +460,43 @@ a2t (adplug), bfc (nuade), bp2 (nuade), cin (nuade), coc (xmp), dl_deli (nuade),
 | xsm | adplug | PLAY | ~/Code/DEViLBOX/public/data/songs/Ad Lib/Extra Simple Music/_unknown/easy1.xsm | peak=10230 frames=264600 | 1 |
 | ym | ym | PLAY | ~/Code/DEViLBOX/public/data/songs/ym/17th.ym | peak=30019 frames=264600 | 1 |
 | zm | nuade | NO SAMPLE |  |  | 0 |
+
+## I1242a triage
+
+Method: per failing extension, a known-good sample (Modland copy of library db, DEViLBOX data, openmpt fixtures) rendered 6 s through `selecta-cli render ... --config-dir ~/.config/selecta`, WAV peak checked. Harness gap: the audit ran without `--config-dir`, so replayers declaring system files (bbmp_ned, bbmp_shroom, bbmp_cybertracker, stonetracker) failed open; engine.c sysfiles_ready (~2766).
+
+Counts (28): BUG 3 (adl, bds, gray) + 1 gap (st) + 1 unverified remote-companion issue; BAD SAMPLE / harness 18; NO GOOD SAMPLE 6.
+
+| ext | verdict | sample used | cause |
+|---|---|---|---|
+| adl | BUG | Modland Westwood dune ii - 08/17.adl, eob2 - azure.adl | plugins/replayers/bbmp_wwsnd/adapter.c:37-44 rp_probe returns SEL_PROBE_YES for any file with word 1000 (or 300/500/600) at offset 120, no extension check. Westwood ADL v2/v3 has program offset 1000 there, so wwsnd wins over adplug (extension match) and rp_open fails. Only sel_adplug plus sel_bbmp_wwsnd bisect confirms; adplug alone plays it (peak non-zero). |
+| bds | BUG (cause not found) | terramex.bds, chubbygristle.bds | nuade Ben Daglish player runs (ticks=251 voice_ops=2268) but WAV peak 0. Unverified cause. |
+| gray | BUG (cause not found) | victoryroad.gray, stargoose.gray | nuade fredgray runs, peak 0, mixed_frames below total (133632 of 264600). Unverified cause. |
+| st | BUG (missing replayer) | DEViLBOX okolaNUKE.st (Sawteeth) | no Sawteeth replayer in plugins/ or third_party/nuade/players (grep). |
+| dsr | BAD SAMPLE | Modland Desire powerdrive 1.dsr (peak 17221) | batmanreturns.dsr silent only |
+| kss | BAD SAMPLE | outrun.kss (5959) | gradius 2.kss |
+| mptm | BAD SAMPLE | libopenmpt test.mptm (13328) | |
+| md | BAD SAMPLE | die hard ii.md (16180) | README.MD |
+| ss | BAD SAMPLE | DEViLBOX pauker_rap_2.ss (16256) | audit used a Sonix instrument |
+| dsm | BAD SAMPLE | rollin - reincarnation.dsm (23382) | dsm.pdx |
+| med | BAD SAMPLE | MED.*.mmd2 via openmpt (9585) | j2.med |
+| jpn | BAD SAMPLE | smp.empiresoccer94 + jpn.empiresoccer94 (11077) | needs companion smp.<name> |
+| pap | BAD SAMPLE | smp.set + ivanhoe - level5 (castle).pap (12858) | needs smp.set; pierreadane/pa_module.c:202-240 |
+| mcr | BAD SAMPLE | mcs.aquablast + mcr (11299) | markcooksey_old.c:53 prefix mcs. |
+| pn | BAD SAMPLE | pn.jetsetwilly.info + song (9316) | pokeynoise.c:30-51 needs .info |
+| sdr | BAD SAMPLE | smp.nobuddiesland end 1 + sdr (24257) | synthdream/sdr_module.c:16,240 |
+| sjs | BAD SAMPLE | sjs.beasti + smp.beasti (8229) | scottjohnston/sj_samples.c:29,209 |
+| tpu | BAD SAMPLE | tpu.timelock title + smp (16683) | needs smp.<name> |
+| ned | BAD SAMPLE (harness) | benny hill theme.ned (10940), zanac (8290) with --config-dir | audit lacked --config-dir |
+| tiny | BAD SAMPLE (unverified) | DEViLBOX sonix/tiny/It Came From The Desert/end.tiny: peak 0 | Sonix loads instruments beside the song (sonix_nuade.c:73); instruments absent in the copied folder. Not re-tested with instruments. |
+| ay | BAD SAMPLE (unverified) | none | gme and bbmp_ay both claim ay; audit sample was ay.pt3 (a PT3). No real .ay rendered (zxart not downloaded). |
+| ct | NO GOOD SAMPLE | Modland Cybertracker wolfentanz.ct | system_file_missing bbmp_cybertracker:cybertracker101.d64 not installed in config dir (setup). |
+| sho | NO GOOD SAMPLE | none | system_file_missing bbmp_shroom:mariopants-notes.wav (setup). |
+| spm | NO GOOD SAMPLE | none | system_file_missing stonetracker:StonePlayer_Hard.bin (setup). |
+| sm1, sm2 | NO GOOD SAMPLE | Modland FAC SoundTracker .SM1/.SM2 | those are FAC drum kits (bbmp_fac adapter.c:5), nuade soundmaster claims sm1/sm2 (soundmaster_nuade.c:90) but no Sound Master sample in db. |
+| soc | NO GOOD SAMPLE | Modland jambala end.soc (COSO header) | .soc routes to Wanted Team (hippel_nuade.c:13-31) which refuses COSO; as .hipc it parses but peak 0. No true Wanted Team sample. |
+| mp2 | NO GOOD SAMPLE | none | minimp3 claims mp2 (adapter.c:453); no real MPEG layer 2 file found. |
+
+Counts check: rows above give BUG 4 incl. st, BAD SAMPLE 17 (dsr kss mptm md ss dsm med jpn pap mcr pn sdr sjs tpu ned tiny ay), NO GOOD SAMPLE 8 rows (ct sho spm sm1 sm2 soc mp2 and ct) = 7 extensions listed as 8 names with sm1/sm2; total 4 + 17 + 7 = 28 extensions.
+
+Unverified open issue: plugins/replayers/nuade/adapter.c:603 `g_companions = "mdat.*>smpl.*;*.tfx>*.sam"` and the rp_content_companions hook (548-600, IFF SMUS only) mean a remote Modland key of jpn, tpu, sdr, sjs, mcr, pn or pap would not fetch its smp.*/mcs.*/pn.*.info/smp.set companion. Not tested through a remote key.
