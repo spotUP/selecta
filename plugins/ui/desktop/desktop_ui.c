@@ -539,7 +539,7 @@ typedef struct desk {
     sel_gui_rect side_sub_btn;
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
-    uint32_t side_chip, side_filters, side_chip_scrolls, side_chip_first; /* I1208: side_chip_first leads the scrolling chip row of the expanded sidebar */  /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
+    uint32_t side_chip, side_filters, side_chip_scrolls;  /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
     uint32_t side_sort, side_view; /* I611: the Your Library sort (SEL_UIM_LSORT_*) and view size (SEL_UIM_LVIEW_*) */
     uint32_t side_prefs_read, side_pref_sets; /* I611: the sort/view prefs were read once; PREF_SET lines sent for them */
     uint32_t lib_view_sends; /* I611: COMPOSERS_VIEW lines sent for the Library page rows */
@@ -1315,11 +1315,10 @@ static void side_sort_pick(desk* d, uint32_t sort);
 static void side_view_pick(desk* d, uint32_t view);
 static void side_chip_click(desk* d, int32_t c);
 static int side_chip_single(desk* d);
-static int side_chip_has_x(desk* d);
 static int side_chip_left_clear(desk* d);
 static int side_lib_open_item(const desk* d, uint32_t i);
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k);
-static uint32_t side_chip_lead(desk* d);
+static int side_chip_on(const desk* d, uint32_t k);
 static int32_t side_chips_h(const desk* d);
 static int side_table(const desk* d);
 static int32_t side_table_head_h(const desk* d);
@@ -8249,7 +8248,7 @@ static const char* library_dump_build(desk* d) {
         }
         for (k = 0; k < (uint32_t)SIDE_CHIPS && side_chips_h(d) > 0; k++) {
             sel_gui_rect r = side_chip_rect(d, k);
-            o = dump_put(d, o, "sidechip %u %d %d %d %d\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h);
+            o = dump_put(d, o, "sidechip %u %d %d %d %d sel=%d\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h, side_chip_on(d, k));
         }
         {
             sel_gui_rect lc = side_chip_chevron(d, 0), rc = side_chip_chevron(d, 1);
@@ -11269,8 +11268,62 @@ static const char* side_hdr_label(const desk* d, uint32_t which) {
 /* I670: names, kind masks, the clamp and the filter pass live in src/uimodel/libfilter.c, shared with the MUI control. side_chip is the filter index. */
 #define side_chip_name_at(k) sel_uim_lfilter_label((k) + 1u)
 
+/* I669: pads and gap of the chips. I1221: the chips wrap onto further rows instead of hiding behind a single label, so every chip stays in view. */
+enum { SIDE_CHIP_PAD = 10, SIDE_CHIP_GAP = 6 };
+
+/* The chip's width: its label plus the side pads. The atlas lookup only fills a lazy cache, so a const desk is cast for it. */
+static int32_t side_chip_w(const desk* d, uint32_t k) {
+    const sel_gui_atlas* at = desk_font((desk*)d, 1, 13);
+    return (at != NULL ? sel_gui_text_width(at, side_chip_name_at(k), strlen(side_chip_name_at(k))) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
+}
+
+/* I1221: where chip k sits in the wrapped flow of a band `bw` wide: its x offset in the band and its row. */
+static void side_chip_place(const desk* d, int32_t bw, uint32_t k, int32_t* x, int32_t* row) {
+    uint32_t i;
+    int32_t cx = 0, r = 0;
+    for (i = 0; i <= k; i++) {
+        int32_t w = side_chip_w(d, i);
+        if (cx > 0 && cx + w > bw) { /* does not fit the rest of the row: start the next one */
+            cx = 0;
+            r++;
+        }
+        if (i == k) {
+            break;
+        }
+        cx += w + lpx(d, SIDE_CHIP_GAP);
+    }
+    *x = cx;
+    *row = r;
+}
+
+static int32_t side_chip_band_w(const desk* d) {
+    return side_lib_header_rect(d).w - 2 * lpx(d, 12);
+}
+
+/* The rows the six chips take at the current sidebar width. The bitmap tier keeps its single label (6-row chips would be too small to read side by side, I669): one row. */
+static int32_t side_chip_rows(const desk* d) {
+    int32_t x, row;
+    if (desk_bitmap_text(d)) {
+        return 1;
+    }
+    side_chip_place(d, side_chip_band_w(d), SIDE_CHIPS - 1u, &x, &row);
+    return row + 1;
+}
+
+/* I678d: the second-level By You chip of Playlists takes a row of its own under the chips (desktop tiers; the label tier has no room). */
+static int side_chip_sub_row(const desk* d) {
+    return d->side_chip == 1u && !desk_bitmap_text(d);
+}
+
+static int32_t side_chip_pitch(const desk* d) {
+    return lpx(d, HOME_CHIP_H) + lpx(d, SIDE_CHIP_GAP);
+}
+
 static int32_t side_chips_h(const desk* d) {
-    return region_rect(d, "sidebar").w > lpx(d, 120) ? lpx(d, HOME_CHIP_H + 8) : 0;
+    if (region_rect(d, "sidebar").w <= lpx(d, 120)) {
+        return 0;
+    }
+    return lpx(d, HOME_CHIP_H + 8) + (side_chip_rows(d) - 1 + (side_chip_sub_row(d) ? 1 : 0)) * side_chip_pitch(d);
 }
 
 static sel_gui_rect side_chips_rect(const desk* d) {
@@ -11278,68 +11331,22 @@ static sel_gui_rect side_chips_rect(const desk* d) {
     return rect_of(h.x, h.y + h.h, h.w, side_chips_h(d));
 }
 
-/* I669: pads and gap tight enough that the four chips fit the expanded sidebar (360 wide). */
-enum { SIDE_CHIP_PAD = 10, SIDE_CHIP_GAP = 6 };
-
-/* The chip's width: its label plus the side pads. */
-static int32_t side_chip_w(desk* d, uint32_t k) {
-    const sel_gui_atlas* at = desk_font(d, 1, 13);
-    return (at != NULL ? sel_gui_text_width(at, side_chip_name_at(k), strlen(side_chip_name_at(k))) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
-}
-
-static int32_t side_chip_total(desk* d) {
-    int32_t w[SIDE_CHIPS];
-    uint32_t k;
-    for (k = 0; k < SIDE_CHIPS; k++) {
-        w[k] = side_chip_w(d, k);
-    }
-    return sel_uim_lfilter_chips_total(w, SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP));
-}
-
-
-/* The chip row less the side pad, before any chevron takes its square. */
-static sel_gui_rect side_chip_raw_band(desk* d) {
-    sel_gui_rect r = side_chips_rect(d);
-    int32_t pad = lpx(d, 12);
-    return rect_of(r.x + pad, r.y, r.w - 2 * pad, r.h);
-}
-
-/* I669: the chips become one label with chevrons that step the filter when they do not fit the narrow sidebar, and always on the
- * bitmap tier (its 6-row chips would be too small to read side by side). I1208: the expanded sidebar never does: its overflowing
- * chips scroll sideways instead (side_chip_scrolling), so the choices stay in view. */
-static int side_chip_single(desk* d) {
-    return sel_uim_lfilter_chips_single(desk_bitmap_text(d), d->side_wide ? 0 : side_chip_total(d), side_chip_raw_band(d).w);
-}
-
-/* I1208: the expanded sidebar's chips overflow its band: the row scrolls by whole chips under a chevron at each end (the Search
- * source chip row of I1073). A selected chip alone beside the X never overflows. */
-static int side_chip_scrolling(desk* d) {
-    return !side_chip_single(d) && !side_chip_has_x(d) && sel_uim_lfilter_chips_single(0, side_chip_total(d), side_chip_raw_band(d).w);
-}
-
-/* The scrolling band of the chips: the row less the pad; with a single label or a scrolling row a chevron button at each end takes
- * its square. *overflow says the chevrons are there. */
+/* The band of the chips: the row less the pad; the bitmap tier's single label has a chevron button at each end taking its square (I669). */
 static sel_gui_rect side_chip_band(desk* d, int* overflow) {
-    sel_gui_rect b = side_chip_raw_band(d);
-    int32_t cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
-    *overflow = side_chip_single(d) || side_chip_scrolling(d);
-    if (!*overflow && side_chip_has_x(d)) { /* only the selected chip shows, right of the X */
-        b = rect_of(b.x + cv + gap, b.y, b.w - (cv + gap), b.h);
-    }
+    sel_gui_rect r = side_chips_rect(d);
+    int32_t pad = lpx(d, 12), cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
+    sel_gui_rect b = rect_of(r.x + pad, r.y, r.w - 2 * pad, r.h);
+    *overflow = desk_bitmap_text(d);
     if (*overflow) {
         b = rect_of(b.x + cv + gap, b.y, b.w - 2 * (cv + gap), b.h);
     }
     return b;
 }
 
-/* I678b: with a chip selected the left slot of the row is the round clear (X) button; the bitmap tier keeps its stepping chevron. */
-static int side_chip_has_x(desk* d) {
-    return d->side_chip != 0u && !desk_bitmap_text(d);
-}
-
-/* I831: whether the left button of the row is the x; the shared rule (sel_uim_lfilter_left_clears) also covers the label mode on the bitmap tier. */
+/* I831: whether the left button of the label is the x; the shared rule (sel_uim_lfilter_left_clears) applies to the bitmap tier's label only.
+ * I1221: the chip row has no x; the chip in force clears by a click on it again. */
 static int side_chip_left_clear(desk* d) {
-    return sel_uim_lfilter_left_clears(d->side_chip);
+    return desk_bitmap_text(d) && sel_uim_lfilter_left_clears(d->side_chip);
 }
 
 static sel_gui_rect side_chip_chevron(desk* d, int right) {
@@ -11348,53 +11355,38 @@ static sel_gui_rect side_chip_chevron(desk* d, int right) {
     return rect_of(right ? r.x + r.w - pad - cv : r.x + pad, r.y, cv, cv);
 }
 
-/* I1208: the chip that leads the scrolling row, clamped so the last chip never leaves the right end. */
-static uint32_t side_chip_lead(desk* d) {
-    int32_t w[SIDE_CHIPS];
-    uint32_t k, last;
+/* I669: the bitmap tier shows one control instead of the chip row: a label naming the filter in force that the chevrons step through All and the chips. */
+static int side_chip_single(desk* d) {
     int ov;
-    sel_gui_rect b = side_chip_band(d, &ov);
-    for (k = 0; k < SIDE_CHIPS; k++) {
-        w[k] = side_chip_w(d, k);
-    }
-    last = sel_uim_lfilter_chips_first_max(w, SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP), b.w);
-    return d->side_chip_first < last ? d->side_chip_first : last;
+    side_chip_band(d, &ov);
+    return ov;
 }
 
-/* I1208: chip k as laid out on the scrolled row; it may lie outside the band. */
-static sel_gui_rect side_chip_place(desk* d, uint32_t k) {
-    int ov;
-    uint32_t i, lead = side_chip_lead(d);
-    sel_gui_rect b = side_chip_band(d, &ov);
-    int32_t x = b.x;
-    for (i = lead; i < k; i++) {
-        x += side_chip_w(d, i) + lpx(d, SIDE_CHIP_GAP);
-    }
-    for (i = k; i < lead; i++) {
-        x -= side_chip_w(d, i) + lpx(d, SIDE_CHIP_GAP);
-    }
-    return rect_of(x, b.y, side_chip_w(d, k), lpx(d, HOME_CHIP_H));
-}
-
-/* The chip rectangle k; with a single control chip 0 is that control across the band and the rest are empty. */
+/* The chip rectangle k; with the single label chip 0 is that control across the band and the rest are empty. */
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k) {
     int ov;
-    uint32_t i;
+    int32_t x, row;
     sel_gui_rect b = side_chip_band(d, &ov);
-    int32_t x = b.x;
-    if (side_chip_single(d)) {
+    if (ov) {
         return k == 0u ? rect_of(b.x, b.y, b.w, lpx(d, HOME_CHIP_H)) : rect_of(0, 0, 0, 0);
     }
-    if (d->side_chip != 0u && !side_chip_single(d) && side_chip_has_x(d)) { /* I678b: the other chips hide while one is selected */
-        return k + 1u == d->side_chip ? rect_of(x, b.y, side_chip_w(d, k), lpx(d, HOME_CHIP_H)) : rect_of(0, 0, 0, 0);
+    side_chip_place(d, b.w, k, &x, &row);
+    return rect_of(b.x + x, b.y + row * side_chip_pitch(d), side_chip_w(d, k), lpx(d, HOME_CHIP_H));
+}
+
+/* I1221: whether chip k is the one in force, the only chip that takes the accent (selected) fill; the draw and the dump both ask here. */
+static int side_chip_on(const desk* d, uint32_t k) {
+    return d->side_chip == k + 1u;
+}
+
+/* I678d: the By You chip, on the row under the chips while Playlists is in force; empty otherwise. */
+static sel_gui_rect side_chip_sub_rect(desk* d) {
+    int ov;
+    sel_gui_rect b = side_chip_band(d, &ov);
+    if (!side_chip_sub_row(d) || side_chips_h(d) == 0) {
+        return rect_of(0, 0, 0, 0);
     }
-    if (side_chip_scrolling(d)) { /* I1208: the placed chip cut to the band (the hit rect and the dump) */
-        return sel_gui_rect_intersect(side_chip_place(d, k), b);
-    }
-    for (i = 0; i < k; i++) {
-        x += side_chip_w(d, i) + lpx(d, SIDE_CHIP_GAP);
-    }
-    return rect_of(x, b.y, side_chip_w(d, k), lpx(d, HOME_CHIP_H));
+    return rect_of(b.x, b.y + side_chip_rows(d) * side_chip_pitch(d), lpx(d, 64), lpx(d, HOME_CHIP_H));
 }
 
 /* The control under a point: a chip 0..SIDE_CHIPS-1, SIDE_CHIPS for the left and SIDE_CHIPS + 1 for the right chevron, -1 for none. */
@@ -11410,16 +11402,13 @@ static int32_t side_chip_at(desk* d, int32_t x, int32_t y) {
         return SIDE_CHIPS + 2; /* I678b: the clear button */
     }
     if (ov) {
-        int scrolling = side_chip_scrolling(d); /* I1208: the chevrons of a scrolling row move the row, not the filter */
         if (in_rect(side_chip_chevron(d, 0), x, y)) {
-            return scrolling ? SIDE_CHIPS + 3 : SIDE_CHIPS;
+            return SIDE_CHIPS;
         }
         if (in_rect(side_chip_chevron(d, 1), x, y)) {
-            return scrolling ? SIDE_CHIPS + 4 : SIDE_CHIPS + 1;
+            return SIDE_CHIPS + 1;
         }
-        if (!scrolling) {
-            return -1; /* I669: the label between the chevrons only names the filter */
-        }
+        return -1; /* I669: the label between the chevrons only names the filter */
     }
     if (!in_rect(b, x, y)) {
         return -1;
@@ -11442,26 +11431,6 @@ static void side_chip_click(desk* d, int32_t c) {
         d->side_chip_scrolls++;
     } else if (c == SIDE_CHIPS + 2) { /* I678b: the X clears the chip */
         d->side_chip = 0u;
-    } else if (c == SIDE_CHIPS + 3 || c == SIDE_CHIPS + 4) { /* I1208: a chevron of the scrolling row moves it one chip, the filter stays */
-        uint32_t lead = side_chip_lead(d);
-        int32_t w[SIDE_CHIPS];
-        int ov;
-        uint32_t k, last;
-        sel_gui_rect b = side_chip_band(d, &ov);
-        for (k = 0; k < SIDE_CHIPS; k++) {
-            w[k] = side_chip_w(d, k);
-        }
-        last = sel_uim_lfilter_chips_first_max(w, SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP), b.w);
-        if (c == SIDE_CHIPS + 3 && lead > 0u) {
-            d->side_chip_first = lead - 1u;
-            d->side_chip_scrolls++;
-        } else if (c == SIDE_CHIPS + 4 && lead < last) {
-            d->side_chip_first = lead + 1u;
-            d->side_chip_scrolls++;
-        }
-        d->repaint = 1;
-        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-        return; /* the list is not read again: the filter did not change */
     } else {
         d->side_chip = d->side_chip == (uint32_t)c + 1u ? 0u : (uint32_t)c + 1u;
     }
@@ -12078,23 +12047,15 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         sel_gui_rect band = side_chip_band(d, &ov), cr = side_chips_rect(d);
         sel_gui_clip_push(d->canvas, band);
         if (side_chip_single(d)) {
-            sel_gui_rect sr = side_chip_rect(d, 0);
-            if (d->side_chip == 1u && side_chip_has_x(d)) { /* I678d: room at the right end for the By You chip */
-                sr.w -= lpx(d, 64) + lpx(d, SIDE_CHIP_GAP);
-            }
-            draw_chip(d, sr, d->side_chip == 0u ? "All" : side_chip_name_at(d->side_chip - 1u), d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
+            draw_chip(d, side_chip_rect(d, 0), d->side_chip == 0u ? "All" : side_chip_name_at(d->side_chip - 1u), d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
         } else {
-            for (k = 0; k < SIDE_CHIPS; k++) {
-                if (side_chip_rect(d, k).w > 0) { /* I678b: a selected chip hides the others */
-                    draw_chip(d, side_chip_scrolling(d) ? side_chip_place(d, k) : side_chip_rect(d, k), side_chip_name_at(k), d->side_chip == k + 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
-                }
+            for (k = 0; k < SIDE_CHIPS; k++) { /* I1221: every chip stays in view; only the one in force takes the selected fill */
+                draw_chip(d, side_chip_rect(d, k), side_chip_name_at(k), side_chip_on(d, k), SEL_GUI_TOKEN_SURFACE_RAISED);
             }
         }
         sel_gui_clip_pop(d->canvas);
-        d->side_sub_btn = rect_of(0, 0, 0, 0);
-        if (d->side_chip == 1u && side_chip_has_x(d)) { /* I678d: the second-level chip of Playlists */
-            sel_gui_rect pr = side_chip_rect(d, 0);
-            d->side_sub_btn = rect_of(side_chip_single(d) ? pr.x + pr.w - lpx(d, 64) : pr.x + pr.w + lpx(d, SIDE_CHIP_GAP), pr.y, lpx(d, 64), pr.h);
+        d->side_sub_btn = side_chip_sub_rect(d);
+        if (d->side_sub_btn.w > 0) { /* I678d: the second-level chip of Playlists */
             draw_chip(d, d->side_sub_btn, "By You", d->side_sub == 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
         }
         if (side_chip_left_clear(d)) { /* I678b: the round clear button left of the selected chip; I831: also the label mode */
@@ -12104,14 +12065,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(xr.x + xr.w / 4, xr.y + xr.h / 4, xr.w / 2, xr.h / 2), xr.w / 2,
                               ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
-        if (ov && side_chip_scrolling(d)) { /* I1208: the chevrons move the row; muted at its ends */
-            int32_t cw[SIDE_CHIPS];
-            for (k = 0; k < SIDE_CHIPS; k++) {
-                cw[k] = side_chip_w(d, k);
-            }
-            draw_chevron_button(d, side_chip_chevron(d, 0), 0, side_chip_lead(d) > 0u);
-            draw_chevron_button(d, side_chip_chevron(d, 1), 1, side_chip_lead(d) < sel_uim_lfilter_chips_first_max(cw, SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP), band.w));
-        } else if (ov) {
+        if (ov) {
             for (k = side_chip_left_clear(d) ? 1u : 0u; k < 2u; k++) {
                 draw_chevron_button(d, side_chip_chevron(d, (int)k), (int)k, k == 0u ? d->side_chip > 0u : d->side_chip < (uint32_t)SIDE_CHIPS);
             }

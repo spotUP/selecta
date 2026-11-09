@@ -1,4 +1,4 @@
-# dui-sidebar-chips-wide (I1208): the expanded Your Library sidebar shows the chip row, not the single label of the narrow sidebar.
+# dui-sidebar-chips-wide (I1208, I1221): the expanded Your Library sidebar shows the chip row (wrapped, all six in view), not the single label.
 #   -DSELECTA -DSONGS -DWORK
 # Johan 2026-11-09: "i still only see one fullwidth chip when its expanded". Entry point: a click on the Expand Library toggle and on
 # the chevrons / chips through the real desktop UI. Lives apart from dui-sidebar-library, whose section 8 (I655) fails before it.
@@ -70,36 +70,23 @@ hdr_centre(wide_c "${h0}" wide)
 file(WRITE "${WORK}/wide1.txt" "click ${wide_c}\nwait 100\n")
 dui_run(h2 ${common} --canvas 1280x800 --input "${WORK}/wide1.txt")
 
-# 10b. I1208 (Johan 2026-11-09: "i still only see one fullwidth chip when its expanded"). Invariant: the expanded sidebar always shows
-# the chip row, never the single label of the narrow sidebar. Six chips (Local Files is the longest) do not fit its band, so the row
-# scrolls by whole chips under a chevron at each end: the chevrons move the row (scrolls counts, the filter stays All), the visible
-# chips are real chips (width below the band) and a click on one takes the filter. The single label is the narrow sidebar's and the
-# bitmap tier's (10, 10c).
+# 10b. I1221 supersedes the I1208 chevron scrolling on the desktop tier: the expanded sidebar shows the chip row, never the single label,
+# and the chips that do not fit one row wrap onto the next rows. Invariant: all six chips are drawn (non-empty rect), no chevron
+# scrolls the row (scrolls stays 0), and a click on a chip takes the filter. The single label is the narrow sidebar's and the bitmap
+# tier's (10, 10c).
 sc_parse(k6 "${h2}")
 expect_eq("the expanded sidebar shows the chip row, not the single label" "${k6_single}" "0")
-set(vis 0)
 foreach(i RANGE 0 5)
-  if("${h2}" MATCHES "sidechip ${i} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
-    if(CMAKE_MATCH_3 GREATER 0)
-      math(EXPR vis "${vis} + 1")
-    endif()
+  if(NOT "${h2}" MATCHES "sidechip ${i} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+    message(FATAL_ERROR "no sidechip ${i} in:\n${h2}")
+  endif()
+  if(CMAKE_MATCH_3 EQUAL 0)
+    message(FATAL_ERROR "chip ${i} is not in view on the expanded sidebar:\n${h2}")
   endif()
 endforeach()
-if(vis LESS 2)
-  message(FATAL_ERROR "the expanded sidebar draws ${vis} chips, wanted at least 2 (one full-width chip is the narrow label) in:\n${h2}")
-endif()
-sc_chev(wcr "${h2}" R)
-file(WRITE "${WORK}/wchip_pl.txt" "click ${wide_c}\nwait 100\nclick ${wcr}\nwait 100\n")
-dui_run(k9 ${common} --canvas 1280x800 --input "${WORK}/wchip_pl.txt")
-sc_parse(k9 "${k9}")
-expect_eq("the chevron of the scrolling row leaves the filter at All" "${k9_chip}" "0")
-expect_eq("the chevron of the scrolling row scrolled the row" "${k9_scrolls}" "1")
-if("${k9}" MATCHES "sidechip 0 [0-9]+ [0-9]+ ([0-9]+) " AND NOT CMAKE_MATCH_1 EQUAL 0)
-  message(FATAL_ERROR "the first chip is still in view after the row scrolled in:\n${k9}")
-endif()
-sc_centre(wchip "${k9}" 1)
-file(WRITE "${WORK}/wchip_pick.txt" "click ${wide_c}\nwait 100\nclick ${wcr}\nwait 100\nclick ${wchip}\nwait 100\n")
+sc_centre(wchip "${h2}" 1)
+file(WRITE "${WORK}/wchip_pick.txt" "click ${wide_c}\nwait 100\nclick ${wchip}\nwait 100\n")
 dui_run(k10 ${common} --canvas 1280x800 --input "${WORK}/wchip_pick.txt")
 sc_parse(k10 "${k10}")
-expect_eq("a chip of the scrolled row takes the filter" "${k10_chip}" "2")
-
+expect_eq("a chip of the wrapped row takes the filter" "${k10_chip}" "2")
+expect_eq("no chevron scrolled the row" "${k10_scrolls}" "0")
