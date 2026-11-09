@@ -34,7 +34,8 @@ enum {
     SEL_LIB_REQ_META = 11,      /* payload: sel_meta_op*; reads or writes one row of the meta table (I161a) */
     SEL_LIB_REQ_GENRE = 12,     /* payload: sel_genre_op*; genre_cache and songs.genre (I181) */
     SEL_LIB_REQ_ART = 13,       /* payload: sel_art_op*; albums and artwork rows (DUI-P2-4) */
-    SEL_LIB_REQ_SRCSTATE = 14   /* payload: sel_srcstate_op*; a source's sync state blob (I894a6) */
+    SEL_LIB_REQ_SRCSTATE = 14,  /* payload: sel_srcstate_op*; a source's sync state blob (I894a6) */
+    SEL_LIB_REQ_SEARCH_SOURCES = 15 /* I1231: one FTS query over several sources' rows, grouped by source (sel_lib_job) */
 };
 
 /* One genre_cache operation (SEL_LIB_REQ_GENRE). The reply is INT [0] 1 = done and found/stored, 0 = not found
@@ -209,6 +210,9 @@ typedef struct sel_srcstate_op {
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
  * sel_library_run and blocks until the worker answers, so the pointers stay valid. No allocation:
  * `out` is a caller buffer of NUL-terminated keys. */
+/* I1231: the most sources one SEL_LIB_REQ_SEARCH_SOURCES request searches. */
+#define SEL_LIB_GROUP_SOURCES_MAX 24u
+
 typedef struct sel_lib_job {
     const char* text;  /* SEARCH: query text; SAVE_VIEW: view name; IMPORT: catalogue TSV */
     const char* text2; /* SAVE_VIEW: the query text */
@@ -688,6 +692,8 @@ typedef void (*sel_format_list_fn)(void* ctx, const char* format, uint32_t songs
 int sel_library_format_list(sel_library* lib, sel_format_list_fn fn, void* ctx);
 /* Songs rows of source id `source` (the SOURCES command, DUI-P4-3); -1 on a library error. */
 int sel_library_source_songs(sel_library* lib, const char* source);
+/* I1231 test sentinels: SEL_LIB_REQ_SEARCH and SEL_LIB_REQ_SEARCH_SOURCES requests the worker ran. */
+void sel_library_search_counts(const sel_library* lib, uint32_t* searches, uint32_t* grouped);
 /* I961c: last sync of source `source` (unix time, 0 never; the meta row "sync.<id>"). Both this and the song count read the writer-kept mirror
  * (srcmirror.c): a plain copy, never a worker request. */
 int64_t sel_library_source_synced(sel_library* lib, const char* source);

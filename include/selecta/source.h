@@ -92,6 +92,9 @@ enum {
     SEL_SOURCE_STREAMS = 8u,       /* songs are live streams: never cached, played from play_url (I725c) */
     SEL_SOURCE_ZIPPED = 16u,       /* each song file is a zip around one module; the engine unpacks it after the fetch (I406) */
     SEL_SOURCE_PLAYLISTS_ONLY = 64u, /* I1058: shown as a read-only group of the Playlists tree, never as a row of Sources; the engine syncs it when the Playlists view opens */
+    /* I1231: `search` is the synced-catalogue search (sel_catalogue_search, perhaps with a live fallback): the engine's
+     * fan-out searches every such source in ONE grouped library query (sel_catalogue.search_many). */
+    SEL_SOURCE_CATALOGUE_SEARCH = 128u,
     SEL_SOURCE_SEEKABLE = 32u      /* with STREAMS: the play_url answers HTTP Range, so a seek re-requests from the byte (I725f) */
 };
 

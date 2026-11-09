@@ -643,7 +643,7 @@ static int local_search(const sel_host* host, const char* query, sel_search_sink
 
 static const sel_source g_local = {
     "local", "Local files", "", "Folders on this machine.", g_tags,
-    NULL, NULL, NULL, local_url, local_url, NULL, NULL, NULL, 0, NULL, NULL,
+    NULL, NULL, NULL, local_url, local_url, NULL, NULL, NULL, SEL_SOURCE_CATALOGUE_SEARCH, NULL, NULL,
     local_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };

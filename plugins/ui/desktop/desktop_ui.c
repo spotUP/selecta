@@ -235,6 +235,16 @@ typedef struct desk {
     uint32_t search_since;   /* UI clock of the last typed character (DUI-P4-6) */
     int search_pending;      /* 1 when the query changed since the last search sent: the debounce is running */
     int search_on;           /* 1 when the main region shows the search results */
+    /* I1231: instant feedback. A fired query clears the list on the next frame and shows the searching spinner until the
+     * engine's library read of it lands (search_wait); the spinner stays while any From section still reads Searching. */
+    int search_wait;
+    int spinner_on;              /* the last frame drew the searching spinner; desk_search_spin_follow steps it */
+    uint32_t spinner_phase;      /* its lead dot */
+    uint32_t search_wait_reads;  /* sel_engine_stats.lib_reads_applied when the query went out */
+    uint32_t search_fire_frame;  /* d->frames when the query went out */
+    uint32_t spinner_draws;      /* frames that drew the searching spinner (dump sentinel) */
+    uint32_t spinner_first_frame; /* d->frames of the first spinner frame after the last fire, ~0 none */
+    uint32_t search_cleared;     /* frames that drew the cleared list (no stale rows) while search_wait */
     int queue_page;          /* --view queue: the main region shows the Queue page (DUI-P4-8) */
     int pl_page;             /* --view playlists: the main region shows the Playlists page (DUI-P4-9) */
     char empty_text[64];     /* the one-line empty state the last page frame drew; empty when it drew none */
@@ -7933,8 +7943,13 @@ static const char* library_dump_build(desk* d) {
         uint32_t fi;
         sel_engine_stats_get(d->engine, &fes);
         o = dump_put(d, o, "search_fanout peak=%u wall_ms=%u sources=%u\n", (unsigned)fes.search_peak, (unsigned)fes.search_wall_ms, (unsigned)fes.search_src_n);
+        o = dump_put(d, o, "search_catalogue_groups=%u\n", (unsigned)fes.search_catalogue_groups);
+        o = dump_put(d, o, "search_spinner drawn=%u first_frame_after_fire=%d cleared=%u wait=%d\n", (unsigned)d->spinner_draws,
+                     d->spinner_first_frame == ~0u ? -1 : (int)(d->spinner_first_frame - d->search_fire_frame), (unsigned)d->search_cleared,
+                     d->search_wait);
         for (fi = 0; fi < fes.search_src_n; fi++) {
-            o = dump_put(d, o, "search_src %s ms=%u\n", fes.search_src_id[fi], (unsigned)fes.search_src_ms[fi]);
+            o = dump_put(d, o, "search_src %s ms=%u first_ms=%u done_ms=%u hits=%u\n", fes.search_src_id[fi], (unsigned)fes.search_src_ms[fi],
+                         (unsigned)fes.search_src_at_ms[fi], (unsigned)fes.search_src_at_ms[fi], (unsigned)fes.search_src_hits[fi]);
         }
     }
     {
@@ -9676,6 +9691,14 @@ static void desk_search_fire(desk* d) {
         (void)sel_uim_search_all_line(d->query, line, sizeof line);
         desk_send(d, line);
     }
+    {
+        sel_engine_stats es;
+        sel_engine_stats_get(d->engine, &es);
+        d->search_wait = 1;
+        d->search_wait_reads = es.lib_reads_applied;
+        d->search_fire_frame = d->frames;
+        d->spinner_first_frame = ~0u;
+    }
     desk_send(d, "VIEW_SOURCE search"); /* the engine groups the result by type: Songs, Albums, Artists */
     /* the view style stays as the user picked it (grid, cover flow, list): draw_search renders the results in it (I615b) */
     snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)SEARCH_WINDOW_ROWS);
@@ -9899,6 +9922,35 @@ static int32_t search_max_q16(desk* d) {
     int32_t over = search_content_h(d) + lpx(d, 16) - (mn.y + mn.h - search_body_y(d, mn));
     return over > 0 ? px_to_logical_ceil(d, over) << 16 : 0;
 }
+/* I1231: the searching spinner: eight dots on a ring, the lead dot in the accent, the rest in the muted text colour, turning
+ * with the UI clock. Every frame it draws asks for the next one. */
+static void draw_search_spinner(desk* d, int32_t cx, int32_t cy, int32_t r) {
+    static const int16_t ring[8][2] = {{0, -1000}, {707, -707}, {1000, 0}, {707, 707}, {0, 1000}, {-707, 707}, {-1000, 0}, {-707, -707}};
+    uint32_t lead = (d->now_ms / 100u) % 8u, i;
+    int32_t dot = r / 3 > 2 ? r / 3 : 2;
+
+    for (i = 0; i < 8u; i++) {
+        int32_t x = cx + ring[i][0] * r / 1000, y = cy + ring[i][1] * r / 1000;
+        uint32_t tok = i == lead ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_TEXT_MUTED;
+        sel_gui_round_rect(d->canvas, rect_of(x - dot / 2, y - dot / 2, dot, dot), dot / 2, ARGB(d->theme.token[tok]));
+    }
+    d->spinner_draws++;
+    d->spinner_on = 1;
+    d->spinner_phase = lead;
+    if (d->spinner_first_frame == ~0u) {
+        d->spinner_first_frame = d->frames;
+    }
+}
+
+/* I1231: while the spinner shows, a new lead dot (every 100 ms) repaints the frame, so the spinner turns, and the draw that
+ * finds the query's library read landed replaces it, without waiting for an input event. */
+static int desk_search_spin_follow(desk* d) {
+    if (!d->spinner_on || (d->now_ms / 100u) % 8u == d->spinner_phase) {
+        return 0;
+    }
+    overlay_refresh(d);
+    return 1;
+}
 
 static void draw_search(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -9943,7 +9995,21 @@ static void draw_search(desk* d) {
     memset(&d->search_plain_row, 0, sizeof d->search_plain_row);
     d->search_sync_n = 0;
     d->search_art_n = 0;
-    if (desk_scope_online(d)) { /* I406a: an online source: its hits, not the library's groups */
+    d->spinner_on = 0;
+    if (d->search_wait && !desk_scope_online(d)) { /* I1231: the fired query's library read has landed: its view replaces the empty list */
+        sel_engine_stats es;
+        sel_engine_stats_get(d->engine, &es);
+        if (es.lib_reads_applied != d->search_wait_reads && !sel_engine_reads_pending(d->engine)) {
+            d->search_wait = 0;
+        }
+    }
+    if (d->search_wait && !desk_scope_online(d)) { /* I1231: the previous query's rows go at once; the spinner says the new one is out */
+        int32_t r = lpx(d, 14);
+        draw_search_spinner(d, mn.x + mn.w / 2, y + lpx(d, 48), r);
+        draw_text(d, rect_of(mn.x + mg, y + lpx(d, 72), mn.w - 2 * mg, lpx(d, 28)), "Searching", 0, 14, muted);
+        d->search_cleared++;
+        d->search_drawn = 0;
+    } else if (desk_scope_online(d)) { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
         d->search_drawn = d->on_drawn;
         shown = d->on_drawn;
@@ -16878,6 +16944,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     desk_art_follow(d);
     desk_playlist_job_follow(d);
     desk_sync_follow(d);
+    desk_search_spin_follow(d);
     desk_side_follow(d);
     if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
         d->nag_asked = 1;
@@ -17083,6 +17150,9 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         wait_ms = 1000u - d->now_ms % 1000u;
         if (d->sync_ui.active && d->sync_ui.total == 0u && wait_ms > (uint32_t)SYNC_SWEEP_STEP_MS) { /* I1026: the indeterminate sweep steps while a sync gives no total */
             wait_ms = (uint32_t)SYNC_SWEEP_STEP_MS;
+        }
+        if (d->spinner_on && wait_ms > 100u) { /* I1231: the searching spinner steps every 100 ms */
+            wait_ms = 100u;
         }
         if (sel_gui_timeline_running(&d->tl) > 0u) { /* a tween runs: the next step is due in 16 ms (the frame itself is drawn at the top of the turn) */
             wait_ms = 16u;
