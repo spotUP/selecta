@@ -419,6 +419,7 @@ typedef struct desk {
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
     struct { char id[64]; sel_gui_rect rect; } search_sync[16]; uint32_t search_sync_n, search_sync_clicks; /* I1053b: the Sync buttons of the Not synced sections the last frame drew */
     char search_sec_head[16][72]; uint32_t search_sec_rows[16], search_sec_n; int32_t search_sec_y[16]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
+    struct { char name[96]; sel_gui_rect rect; } search_art[48]; uint32_t search_art_n, search_art_opens; /* I1207: the Artists rows/tiles the last Search frame drew; a click opens that artist's page */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
@@ -7848,6 +7849,10 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "searchrow %u %d %d %d %d key=%s\n", (unsigned)j, (int)d->sm_rows[j].r.x, (int)d->sm_rows[j].r.y, (int)d->sm_rows[j].r.w,
                      (int)d->sm_rows[j].r.h, d->sm_rows[j].ref.path);
     }
+    for (uint32_t j = 0; d->page == SEL_UIM_PG_SEARCH && j < d->search_art_n && o + 300u < sizeof d->library_dump; j++) { /* I1207: the Artists rows a script clicks */
+        o = dump_put(d, o, "searchartist %u %d %d %d %d name=%s opens=%u\n", (unsigned)j, (int)d->search_art[j].rect.x, (int)d->search_art[j].rect.y,
+                     (int)d->search_art[j].rect.w, (int)d->search_art[j].rect.h, d->search_art[j].name, (unsigned)d->search_art_opens);
+    }
     if (d->page == SEL_UIM_PG_SEARCH) { /* I1011: the fill list_row_fill last gave the row under the pointer (the shared list-row hover path) */
         o = dump_put(d, o, "searchhover fill=%08x\n", (unsigned)d->row_hover_fill);
         o = dump_put(d, o, "searchplainrow %d %d %d %d\n", (int)d->search_plain_row.x, (int)d->search_plain_row.y, (int)d->search_plain_row.w, (int)d->search_plain_row.h);
@@ -8544,6 +8549,14 @@ static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_ro
     }
 }
 
+/* I1207: remembers the rectangle an Artists row or tile of the Search page was drawn at, with the artist name it opens. */
+static void search_artist_reg(desk* d, sel_gui_rect r, const char* name) {
+    if (d->search_art_n < sizeof d->search_art / sizeof d->search_art[0] && r.w > 0 && r.h > 0) {
+        snprintf(d->search_art[d->search_art_n].name, sizeof d->search_art[0].name, "%s", name);
+        d->search_art[d->search_art_n++].rect = r;
+    }
+}
+
 /* The tile grid over the rows of v from the absolute y y0 down. The Library draws the engine's view and registers its rows with
  * lib_view_row_reg; the Search page (I615b) draws a filtered copy of its rows and registers the songs with the song menu. */
 static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, int32_t y0, int lib_reg) {
@@ -8581,6 +8594,8 @@ static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
             lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
         } else if (r->key != NULL) {
             song_row_reg(d, t, r->key, 0, 0, 0);
+        } else if (!r->album && r->text != NULL && r->text[0] != '\0') { /* I1207: the Search grid's only key-less, non-album tiles are the Artists */
+            search_artist_reg(d, t, r->text);
         }
         sel_gui_dirty_add(d->canvas, t);
         d->grid_tiles++;
@@ -9897,6 +9912,7 @@ static void draw_search(desk* d) {
     d->search_sec_n = 0;
     memset(&d->search_plain_row, 0, sizeof d->search_plain_row);
     d->search_sync_n = 0;
+    d->search_art_n = 0;
     if (desk_scope_online(d)) { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
         d->search_drawn = d->on_drawn;
@@ -10024,6 +10040,9 @@ static void draw_search(desk* d) {
                 if ((group == 1u || group == 4u) && !r->album && r->key != NULL) {
                     song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),
                                       SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
+                }
+                if (group == 3u && r->key == NULL && t[0] != '\0') { /* I1207: an Artists row opens the artist's page */
+                    search_artist_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), t);
                 }
                 y += lpx(d, SEARCH_ROW_H);
                 drawn_all++;
@@ -10969,6 +10988,16 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
                 if (search_sync_start(d, d->search_sync[i].id)) {
                     return 1;
                 }
+            }
+        }
+    }
+    if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* I1207: a click on an Artists row or tile opens that artist's collection page (with Back history) */
+        for (i = 0; i < d->search_art_n; i++) {
+            if (in_rect(d->search_art[i].rect, x, y)) {
+                char artist[96]; /* copied first: the page change replaces the Search rows */
+                snprintf(artist, sizeof artist, "%s", d->search_art[i].name);
+                d->search_art_opens++;
+                return desk_route(d, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, artist, artist, "");
             }
         }
     }
