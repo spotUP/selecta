@@ -291,6 +291,7 @@ typedef struct desk {
     int col_cover;           /* 1 when col_color came from the first song's cover */
     int col_cover_wait;      /* I906c: the header cover is queued on the art worker; the header refreshes when it lands */
     int col_search;          /* 1 while the collection's search field has the keyboard */
+    uint32_t col_source_searches; /* I1229: clicks on a searchable source page's field that opened the Search page scoped to it */
     char col_q[64];
     size_t col_qlen;
     uint32_t add_id;         /* I652b: the playlist the Library page adds to (0 = the Library page is not in add mode) */
@@ -5299,6 +5300,13 @@ static int col_tools_shown(const desk* d) {
     return d->pls_n > 0u || d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE;
 }
 
+/* I1229: the search scope of the open collection page: the source key when the page is a searchable source (HVSC, Modland,
+ * Modules.pl...), else NULL. A searchable source's catalogue is far larger than the folder rows its page has loaded, so the
+ * page's search field searches the source (the Search page scoped to it), never only the loaded rows. */
+static const char* col_source_scope(const desk* d) {
+    return d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? sel_uim_search_scope_of_source(d->src, d->src_n, d->col_key) : NULL;
+}
+
 static sel_gui_rect col_sort_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect m = pls_more_rect(d, mn);
     return rect_of(m.x + m.w + lpx(d, QUEUE_BTN_GAP), m.y, m.w + lpx(d, 48), m.h);
@@ -6426,6 +6434,15 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             return 1;
         }
         d->col_search = in_rect(col_find_rect(d, mn), ev->x, ev->y);
+        if (d->col_search && col_source_scope(d) != NULL) {
+            /* I1229: on a searchable source page the field is that source's search: the Search page opens scoped to the
+             * source (desk_page_apply derives the scope from this page), the field focused, so a query such as "jammer"
+             * reaches the catalogue search instead of filtering the few folder rows the page has loaded */
+            d->col_search = 0;
+            d->col_source_searches++;
+            desk_route(d, SEL_ROUTE_DOOR_SEARCH, 0u, 0u, "", "", "");
+            return 1;
+        }
         if (d->col_search) {
             d->pl_edit = 0;
             d->repaint = 1;
@@ -7733,6 +7750,7 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "pastes %u\n", (unsigned)d->pastes); /* I999 */
     o = dump_put(d, o, "online_filter filtered=%d queries=%u\n", d->scope_filtered, (unsigned)d->searches); /* I1224 */
+    o = dump_put(d, o, "col_source_search opens=%u\n", (unsigned)d->col_source_searches); /* I1229 */
     o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u saves=%u\n", d->scope[0] != '\0' ? d->scope : "-",
                  (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays, (unsigned)d->on_saves);
     {
@@ -10782,7 +10800,7 @@ static void desk_page_apply(desk* d, desk_page pg) {
     d->focus = -1;
     if (pg == SEL_UIM_PG_SEARCH) {
         if (!d->pg_back && from != SEL_UIM_PG_SEARCH) { /* I1224: the scope follows the page search is opened from: a source page searches that source, any other page All sources (Back and Forward put the kept scope back) */
-            const char* sc = from == SEL_UIM_PG_COLLECTION && d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? sel_uim_search_scope_of_source(d->src, d->src_n, d->col_key) : NULL;
+            const char* sc = from == SEL_UIM_PG_COLLECTION ? col_source_scope(d) : NULL;
             snprintf(d->scope, sizeof d->scope, "%s", sc != NULL ? sc : "");
             d->scope_filtered = 0;
             d->on_state = 0u;
