@@ -1656,6 +1656,37 @@ static void test_settings(void) {
     CHECK(strcmp(o, "PREF_SET mix.loudness \"off\"") == 0, "line '%s'", o);
 }
 
+/* mui-statistics (I1181): the menu actions stats_show / stats_hide open and close the Library Statistics panel, More / Less flips the
+ * row count, and every row is the shared model's label and value from a fixture library (the stats the engine publishes). */
+static void test_statistics_panel(void) {
+    static const char fix[] = "Songs\0" "120\0" "Albums\0" "12\0" "Artists\0" "7\0" "Formats\0" "5\0" "Plays\0" "99\0" "Hours\0" "8\0\0";
+    static const char* const lab[6] = {"Songs", "Albums", "Artists", "Formats", "Plays", "Hours"};
+    static const char* const val[6] = {"120", "12", "7", "5", "99", "8"};
+    mui_stats_panel p = {0, 0};
+    const char *l, *v;
+    uint32_t i, base = mui_stats_builds();
+    CHECK(strcmp(mui_menu_line("stats_show"), "STATS_SHOW") == 0 && strcmp(mui_menu_line("stats_hide"), "STATS_HIDE") == 0, "menu lines");
+    CHECK(mui_stats_menu(&p, "stats_show") == 1 && mui_stats_menu(&p, "style_grid") == 0 && mui_stats_menu(&p, NULL) == 0, "only the two actions are handled");
+    CHECK(p.open && !p.more && strcmp(mui_stats_more_label(&p), "More") == 0, "Show opens collapsed, button says More");
+    for (i = 0; i < SEL_UIM_STATS_LESS; i++) {
+        CHECK(mui_stats_panel_row(&p, fix, i, &l, &v) == 1u && strcmp(l, lab[i]) == 0 && strcmp(v, val[i]) == 0, "less row %u", (unsigned)i);
+    }
+    CHECK(mui_stats_panel_row(&p, fix, SEL_UIM_STATS_LESS, &l, &v) == 0u, "Less stops at %u rows", (unsigned)SEL_UIM_STATS_LESS);
+    mui_stats_more(&p);
+    CHECK(strcmp(mui_stats_more_label(&p), "Less") == 0, "button says Less");
+    for (i = 0; i < 6u; i++) {
+        CHECK(mui_stats_panel_row(&p, fix, i, &l, &v) == 1u && strcmp(l, lab[i]) == 0 && strcmp(v, val[i]) == 0, "more row %u", (unsigned)i);
+    }
+    CHECK(mui_stats_panel_row(&p, fix, 6, &l, &v) == 0u, "More stops at the model's 6 rows");
+    mui_stats_more(&p);
+    CHECK(mui_stats_panel_row(&p, fix, SEL_UIM_STATS_LESS, &l, &v) == 0u, "Less again");
+    CHECK(mui_stats_panel_row(&p, NULL, 0, &l, &v) == 0u, "no stats yet: no rows");
+    CHECK(mui_stats_menu(&p, "stats_hide") == 1 && !p.open && mui_stats_panel_row(&p, fix, 0, &l, &v) == 0u, "Hide closes: no rows");
+    mui_stats_more(&p);
+    CHECK(!p.more, "More does nothing while closed");
+    CHECK(mui_stats_builds() - base == 15u, "sentinel %u, want 15", (unsigned)(mui_stats_builds() - base));
+}
+
 /* mui-drop (MUI-P5-6): the line a dropped file or drawer sends, the clipboard text and its IFF FTXT image. */
 static void test_drop(void) {
     char o[64];
@@ -3817,6 +3848,8 @@ int main(int argc, char** argv) {
         test_nowplaying();
     } else if (strcmp(argv[1], "songinfo") == 0) {
         test_songinfo();
+    } else if (strcmp(argv[1], "statistics") == 0) {
+        test_statistics_panel();
     } else if (strcmp(argv[1], "settings") == 0) {
         test_settings();
     } else if (strcmp(argv[1], "dialogs") == 0) {

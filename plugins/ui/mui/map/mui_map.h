@@ -651,6 +651,19 @@ uint32_t mui_page_switches(void);
 uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap);
 uint32_t mui_stats_builds(void); /* call-count sentinel */
 
+/* MUI-P8-6 (I1181): the Statistics window's state. The menu actions stats_show / stats_hide open and close it (mui_stats_menu; the
+ * engine line STATS_SHOW / STATS_HIDE is the action table's, sent by the caller), More / Less flips the row count. Show opens on
+ * Less like the desktop. Rows come from the shared model (sel_uim_stats_row), `more` picks sel_uim_stats_shown. */
+typedef struct mui_stats_panel {
+    int open;
+    int more;
+} mui_stats_panel;
+int mui_stats_menu(mui_stats_panel* p, const char* action_id); /* 1 when the action was stats_show / stats_hide */
+void mui_stats_more(mui_stats_panel* p);                       /* the More / Less button */
+const char* mui_stats_more_label(const mui_stats_panel* p);    /* "More" while collapsed, "Less" while expanded */
+/* Row i of the open panel; 0 when closed, stats is NULL or i is past the shown rows. */
+uint32_t mui_stats_panel_row(const mui_stats_panel* p, const char* stats, uint32_t i, const char** label, const char** value);
+
 
 /* MUI-P8-7: the Activity, Downloads and Extra Files panes. Ids 0..2 index sel_uim_panel_*; the menu ids (MUIA_UserData of the menu
  * items) are MUI_ID_PANEL_BASE + pane, above every control id P8-5..P8-14 uses. The Activity key is Ctrl+A and toggles that pane. */

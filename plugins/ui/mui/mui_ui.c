@@ -103,6 +103,8 @@ static void mui_libs_close(void) {
 static void mui_report(mui_fail why, const char* detail);
 
 #define MUI_HELP_MAX 160 /* MUI-P4-14: most help rows shown (one per action table row) */
+#define MUI_STATS_MAX 24u /* rows of the Statistics window; the engine's stats buffer holds far fewer */
+#define CTL_STATS_MORE 0x280AL /* I1181: the Statistics window's More / Less button */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
 /* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
@@ -205,6 +207,11 @@ typedef struct mui_state {
     Object* status;                 /* the last line a P4 gadget sent (MUI-P4-11: the one-line toast) */
     mui_toast toast;                /* MUI-P4-11 */
     Object* help_win;               /* MUI-P4-14: created on the first Help click */
+    Object* stats_win;              /* I1181: the Library Statistics window, created on the first stats_show */
+    Object* stats_more;             /* its More / Less button */
+    Object* stats_lbl[MUI_STATS_MAX];
+    Object* stats_val[MUI_STATS_MAX];
+    mui_stats_panel stats_panel;
     char help_buf[MUI_HELP_MAX][96];
     const char* help_ptr[MUI_HELP_MAX + 1];
     char status_buf[160];
@@ -536,11 +543,17 @@ static int mui_engine_line(mui_state* s, const char* line) {
     return ok;
 }
 
+static void mui_stats_window(mui_state* s);
+static void mui_stats_sync(mui_state* s);
+
 /* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
 static void mui_menu_fire(mui_state* s, uint32_t row) {
     const char* line = row < g_menu_n ? mui_menu_line(g_menu[row].id) : NULL;
     if (mui_engine_line(s, line)) {
         s->menu_sends++;
+        if (mui_stats_menu(&s->stats_panel, g_menu[row].id)) {
+            mui_stats_window(s);
+        }
     }
 }
 
@@ -2560,6 +2573,7 @@ static void mui_refresh(mui_state* s) {
         s->mode_pending = 0u;
         mui_mode_apply(s, want);
     }
+    mui_stats_sync(s); /* I1181 */
     if (mui_toast_tick(&s->toast, mui_now_ms())) { /* MUI-P4-11: the toast went away after 3 s (6 s for an error) */
         snprintf(s->status_buf, sizeof s->status_buf, "Ready");
         mui_text_set(s->status, s->status_buf);
@@ -2861,6 +2875,63 @@ static void mui_p4_note(mui_state* s, uint32_t which, const char* line) {
     snprintf(s->status_buf, sizeof s->status_buf, "%s: %s", p4_name[which], line);
     mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
     mui_text_set(s->status, s->status_buf);
+}
+
+/* I1181: the Library Statistics window, label and value per row (the desktop panel's two columns) and a More / Less button. Built on
+ * the first stats_show, then only opened or closed; mui_stats_sync fills the rows from the engine's stats (sel_state.stats). */
+static void mui_stats_sync(mui_state* s) {
+    const sel_state* st = sel_engine_state(s->engine);
+    uint32_t i;
+    ULONG open = 0;
+    if (s->stats_win == NULL) {
+        return;
+    }
+    GetAttr(MUIA_Window_Open, s->stats_win, &open);
+    if (s->stats_panel.open && !open && mui_engine_line(s, mui_menu_line("stats_hide"))) {
+        mui_stats_menu(&s->stats_panel, "stats_hide"); /* closed with its close button: tell the engine, as the desktop does on leaving */
+    }
+    for (i = 0; i < MUI_STATS_MAX; i++) {
+        const char *l = "", *v = "";
+        if (st == NULL || mui_stats_panel_row(&s->stats_panel, st->stats, i, &l, &v) == 0u) {
+            l = v = "";
+        }
+        mui_aatext_set(s->stats_lbl[i], l);
+        mui_aatext_set(s->stats_val[i], v);
+    }
+    mui_aabtn_set_caption(s->stats_more, mui_stats_more_label(&s->stats_panel));
+}
+
+static void mui_stats_window(mui_state* s) {
+    uint32_t i;
+    if (!s->stats_panel.open) {
+        if (s->stats_win != NULL) {
+            set(s->stats_win, MUIA_Window_Open, FALSE);
+        }
+        return;
+    }
+    if (s->stats_win == NULL) {
+        Object *grid = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Columns, 2, TAG_DONE), *root = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        if (grid == NULL || root == NULL) {
+            return;
+        }
+        for (i = 0; i < MUI_STATS_MAX; i++) {
+            s->stats_lbl[i] = mui_aatext_sized("", "Total songs in the library", MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT, 0);
+            s->stats_val[i] = mui_aatext_sized("", "0000000", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0);
+            DoMethod(grid, OM_ADDMEMBER, s->stats_lbl[i]);
+            DoMethod(grid, OM_ADDMEMBER, s->stats_val[i]);
+        }
+        s->stats_more = mui_make_button_i("More", "Less", NULL, NULL, CTL_STATS_MORE, 0, 0, MUI_AA_ROLE_NORMAL);
+        DoMethod(root, OM_ADDMEMBER, grid);
+        DoMethod(root, OM_ADDMEMBER, s->stats_more);
+        s->stats_win = mui_dialog_window("Library Statistics", 0x53544154UL, root);
+        if (s->stats_win == NULL) {
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->stats_win);
+        mui_close_on_request(s->stats_win);
+    }
+    set(s->stats_win, MUIA_Window_Open, TRUE);
+    mui_stats_sync(s);
 }
 
 /* MUI-P4-14: the Help window, one List row per action table row (mui_help_row). Built once, then only opened. */
@@ -3488,6 +3559,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
             mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
         }
+    } else if (id == CTL_STATS_MORE) {
+        mui_stats_more(&s->stats_panel);
     } else if (id == CTL_PAL_BTN) {
         mui_palette_show(s);
     } else if (id == CTL_PAL_LIST) {

@@ -310,6 +310,39 @@ uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap) {
     return len;
 }
 
+int mui_stats_menu(mui_stats_panel* p, const char* action_id) {
+    if (action_id == NULL) {
+        return 0;
+    }
+    if (strcmp(action_id, "stats_show") == 0) {
+        p->open = 1;
+        p->more = 0;
+        return 1;
+    }
+    if (strcmp(action_id, "stats_hide") == 0) {
+        p->open = 0;
+        p->more = 0;
+        return 1;
+    }
+    return 0;
+}
+
+void mui_stats_more(mui_stats_panel* p) {
+    if (p->open) {
+        p->more = !p->more;
+    }
+}
+
+const char* mui_stats_more_label(const mui_stats_panel* p) { return p->more ? "Less" : "More"; }
+
+uint32_t mui_stats_panel_row(const mui_stats_panel* p, const char* stats, uint32_t i, const char** label, const char** value) {
+    g_stats_builds++;
+    if (!p->open || stats == NULL || i >= sel_uim_stats_shown(stats, p->more)) {
+        return 0;
+    }
+    return sel_uim_stats_row(stats, i, label, value);
+}
+
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
 #include <selecta/uimodel/viewcmds.h>
