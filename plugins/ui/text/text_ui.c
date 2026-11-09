@@ -1097,6 +1097,19 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
     }
 }
 
+static void tui_pref_local(tui* u, const char* line);
+static void tui_table_note(tui* u, const char* line);
+
+/* A line of the shared action table: noted for the exit report, the layout/visualizer keys act on the text panels, then sent.
+ * Bound keys and the palette action rows (I1211) both come here. */
+static void tui_run_table_action(tui* u, const char* action) {
+    tui_table_note(u, action);
+    if (strncmp(action, "PREF_SET ui.desktop.", 20) == 0) {
+        tui_pref_local(u, action);
+    }
+    tui_send(u, action);
+}
+
 static void tui_overlay_key(tui* u, const txt_key* k) {
     txt_pal_result r;
     if (u->overlay == 3) {
@@ -1115,7 +1128,9 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
         /* the palette runs the bare verb; commands with arguments are typed on the command line */
         const char* verb = txt_palette_picked(&u->pal);
         u->overlay = 0;
-        if (verb != NULL && u->pal.items[u->pal.cursor].id >= SEL_CMD_COUNT) { /* a local entry: its action word */
+        if (verb != NULL && u->pal.items[u->pal.cursor].id >= SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT) {
+            tui_run_table_action(u, txt_palette_picked_line(&u->pal)); /* I1211: an action row runs its line like its key */
+        } else if (verb != NULL && u->pal.items[u->pal.cursor].id >= SEL_CMD_COUNT) { /* a local entry: its action word */
             if (strcmp(verb, "settings") == 0) {
                 tui_settings_open(u);
             }
@@ -1236,11 +1251,7 @@ static void tui_key(tui* u, const txt_key* k) {
     if (action[0] == '@') {
         (void)tui_local(u, action + 1, k);
     } else {
-        tui_table_note(u, action);
-        if (strncmp(action, "PREF_SET ui.desktop.", 20) == 0) {
-            tui_pref_local(u, action);
-        }
-        tui_send(u, action);
+        tui_run_table_action(u, action);
     }
 }
 

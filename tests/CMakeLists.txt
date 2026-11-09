@@ -3054,6 +3054,8 @@ if(NOT SEL_AMIGA)
       "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_d.keys"
       "-DKEYS_E=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_e.keys"
       "-DKEYS_G=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_g.keys"
+      "-DKEYS_H=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_h.keys"
+      "-DKEYS_I=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_i.keys"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_layout_viz"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz.cmake")
   set_tests_properties(text-ui-layout-viz PROPERTIES LABELS m3)

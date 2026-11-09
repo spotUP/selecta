@@ -1,6 +1,7 @@
 /* Command palette model of the text UI, plan M1.2 phase 5 (row I78). */
 #include <selecta/uimodel/palette.h>
 
+#include <selecta/uimodel.h>
 #include <selecta/uimodel/keys.h>
 
 #include <stdio.h>
@@ -14,6 +15,7 @@ static const struct {
     {"queue", "Queue"},
     {"playlists", "Playlists and library"},
     {"view", "View model and shell"},
+    {"actions", "Actions"},
     {"protocol", "Protocol"},
 };
 
@@ -76,7 +78,9 @@ static void fill_key(txt_palette* p, txt_palette_item* it) {
     it->key[0] = '\0';
     if (p->binds != NULL) {
         char action[32];
-        if (it->id >= SEL_CMD_COUNT) { /* a local entry is bound to "@<name>" */
+        if (it->id >= SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT) { /* I1211: an action row names its key by the exact line */
+            (void)txt_bindings_key_for(p->binds, it->line, it->key, sizeof it->key);
+        } else if (it->id >= SEL_CMD_COUNT) { /* a local entry is bound to "@<name>" */
             snprintf(action, sizeof action, "@%s", it->name);
             (void)txt_bindings_key_for(p->binds, action, it->key, sizeof it->key);
         } else {
@@ -92,19 +96,22 @@ static const struct {
 
 void txt_palette_set_query(txt_palette* p, const char* query) {
     uint32_t id, n = 0, i, j;
+    const uint32_t actions = sel_uim_action_count() < TXT_PAL_ACTION_MAX ? sel_uim_action_count() : TXT_PAL_ACTION_MAX;
     strncpy(p->query, query, TXT_PAL_QUERY - 1u);
     p->query[TXT_PAL_QUERY - 1u] = '\0';
     p->len = (uint32_t)strlen(p->query);
-    for (id = 0; id < SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT; id++) {
+    for (id = 0; id < SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT + actions; id++) {
         txt_palette_item it;
-        const char* name = id < SEL_CMD_COUNT ? sel_cmd_name(id) : k_local[id - SEL_CMD_COUNT].name;
+        const sel_uim_action* act = id >= SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT ? sel_uim_action_at(id - SEL_CMD_COUNT - TXT_PAL_LOCAL_COUNT) : NULL;
+        const char* name = act != NULL ? act->label : id < SEL_CMD_COUNT ? sel_cmd_name(id) : k_local[id - SEL_CMD_COUNT].name;
         int32_t sc = p->len == 0 ? 0 : score(name, p->query);
         if (sc < 0) {
             continue;
         }
         it.id = id;
         it.name = name;
-        it.area = id < SEL_CMD_COUNT ? sel_cmd_area(id) : k_local[id - SEL_CMD_COUNT].area;
+        it.line = act != NULL ? act->line : id < SEL_CMD_COUNT ? name : NULL;
+        it.area = act != NULL ? "actions" : id < SEL_CMD_COUNT ? sel_cmd_area(id) : k_local[id - SEL_CMD_COUNT].area;
         it.score = sc;
         fill_key(p, &it);
         /* insertion sort: stable, so ties keep commands.def order */
@@ -166,6 +173,10 @@ txt_pal_result txt_palette_key(txt_palette* p, uint32_t code, uint32_t mods) {
 
 const char* txt_palette_picked(const txt_palette* p) {
     return p->cursor < p->count ? p->items[p->cursor].name : NULL;
+}
+
+const char* txt_palette_picked_line(const txt_palette* p) {
+    return p->cursor < p->count ? p->items[p->cursor].line : NULL;
 }
 
 int txt_palette_verb_needs_args(const char* verb) {

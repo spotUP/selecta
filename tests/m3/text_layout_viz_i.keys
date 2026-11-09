@@ -1,0 +1,7 @@
+# I1211: the help page (?) with the query SID shows the same action row with its key.
+wait 300
+?
+S
+I
+D
+wait 300

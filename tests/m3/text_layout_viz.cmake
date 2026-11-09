@@ -105,3 +105,17 @@ string(REGEX MATCHALL "[^\n]*PREF_SET[^\n]*" g_rows "${scr_g}")
 foreach(row IN LISTS g_rows)
   reject(g row "C-v")
 endforeach()
+
+# I1211: the palette and the help page carry one row per action of the shared action table (actions.c) with the key the binding
+# table gives that exact line. The query SID lists the viz_sidregs action, whose row shows C-v. (The count of rows against the binding
+# table is checked in palette-unit; this is the same rows through the real text UI.)
+foreach(tag h i)
+  string(TOUPPER "${tag}" utag)
+  run(${tag} selecta-test.mod "${KEYS_${utag}}")
+  string(REGEX MATCHALL "[^\n]*SID PatternScope[^\n]*" rows "${scr_${tag}}")
+  list(LENGTH rows nrows)
+  if(NOT nrows EQUAL 1)
+    message(FATAL_ERROR "${tag}: expected one SID PatternScope row, got ${nrows} in:\n${scr_${tag}}")
+  endif()
+  expect(${tag} rows "C-v")
+endforeach()
