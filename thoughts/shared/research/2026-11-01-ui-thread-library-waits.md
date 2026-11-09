@@ -255,3 +255,24 @@ sel_library_smart 44, run_search 6, sel_library_folder_counts 4, sync_time_set 3
 Reading against section 4: art_load (I906c) is 44 percent of all hits; coll_build_page / composers_fill_list / read_song / view_votes / refresh_snapshot /
 song_config_load are waits the rows I906b-I906i must each close or put on the allow list. Not in section 2's command count: `prepare_slot`
 (loudness), `prefetch_sync`, `sel_engine_song_group` and `sel_engine_song_title` appear only here. This list, not the section 2 call-line scan, is the structural count.
+
+## I906e status (worktree branch worktree-agent-a8fcfd0602f58b717)
+
+Moved to the engine song text cache (sel_engine_song_text, rd_txt posted read; -1 pending, 0 absent, 1 hit):
+- Remove dialog and toast title (dlg_open_remove): MOVED.
+- Queue groups (queue_groups_sync): MOVED (re-runs when the text generation moves).
+- Song info composer (si_composer_load): MOVED (META, retried next frame on a miss).
+
+Exempt, reason written:
+- Sidebar playlists (pls_reload_run): already nowait.
+- Stats in UI (sel_engine_stats_get): nowait / short job_lock.
+- Artwork art_load: belongs to I906c.
+
+Still OPEN (not moved): Clear dialog count (dlg_open_clear, sel_engine_library_playlists), side_create_playlist count, Add-to-playlist submenu (sel_engine_library_items, song menu k==3). Plan: state field for the playlist count (read like I936 rd_total); sel_engine_library_items_post/take sharing the single li slot with side_lib_take.
+Not I906e: the OPEN command runs play-start reads (STICKER_GET, LOUDNESS_GET, GENRE) as 3 watched waits: row I906g. The test therefore does not send OPEN.
+
+### I906e update (branch worktree-agent-a8fcfd0602f58b717, commit d98c7409)
+- Moved: queue groups (one posted read keyed by the queue hash, rd_grp; group kind removed from the 4096 text ring), Clear dialog count and new-playlist count (sel_state.library_playlists from rd_total), Add to Playlist submenu (sel_engine_library_items_post/take on the shared items slot, guarded against the sidebar).
+- Already moved in 41a7511d: Remove dialog title, toast, Song Information composer (text cache title/meta).
+- Exempt: sidebar playlists (nowait), stats, artwork (I906c); play-start reads are I906g.
+- Open: live dui steps for Remove, composer, Clear, new-playlist, submenu with slow knobs, revert numbers, and a queue over 4096 entries; sentinels exist (dialog playlists=, sidehdr plus_clicks, song_menu pl_posts/pl_takes, view_reads group_reads).
