@@ -174,7 +174,7 @@ expect_eq("sidebar menu x" "${CMAKE_MATCH_1}" "${c7x}")
 # 10. I610, I669: the library chips under the header. Invariant: a chip filters the list through the one reload (filters counts the
 # passes). When the chips do not fit the sidebar (the default 220 wide) they become one label naming the filter in force: the chevrons
 # step it through All, Playlists, Albums, Artists, Composers and stop at both ends; the label itself takes no click (one chip in view
-# hides the others, so a toggle on it means nothing). The wide sidebar keeps the chip row with click toggles (10b, after section 9).
+# hides the others, so a toggle on it means nothing). The wide sidebar shows the chip row (dui-sidebar-chips-wide).
 # Entry point: a click through the real desktop UI.
 function(sc_parse tag out)
   if(NOT "${out}" MATCHES "sidechips chip=([0-9]+) filters=([0-9]+) scrolls=([0-9]+) single=([0-9]+)")
@@ -382,15 +382,7 @@ dui_run(hr2 ${common} --canvas 1280x800 --input "${WORK}/wide_rev2.txt")
 hdr_field(wr2_w "${hr2}" wide sidebar_w)
 expect_eq("reversed tween lands on the original width" "${wr2_w}" "${w_base}")
 
-# 10b. I678b on the wide sidebar: six chips (Local Files is the longest label) never fit the widest sidebar either, so it keeps the single
-# label with chevrons; the right chevron still steps to Playlists and the filter pass runs.
-sc_parse(k6 "${h2}")
-expect_eq("the wide sidebar keeps the single label" "${k6_single}" "1")
-sc_chev(wcr "${h2}" R)
-file(WRITE "${WORK}/wchip_pl.txt" "click ${wide_c}\nwait 100\nclick ${wcr}\nwait 100\n")
-dui_run(k9 ${common} --canvas 1280x800 --input "${WORK}/wchip_pl.txt")
-sc_parse(k9 "${k9}")
-expect_eq("Playlists chip in force on the wide sidebar" "${k9_chip}" "1")
+# 10b. The expanded sidebar shows the chip row, not the single label: see dui-sidebar-chips-wide (I1208).
 
 # 10c. I669 on the bitmap tier (the AGA shape, 640x256 tall pixels): the same single label with chevrons, never a cycle button. The
 # label takes no click; the right chevron steps to Playlists, the left one back to All.
