@@ -213,7 +213,8 @@ def serve(c):
         ups = [(101, "Alpha-Mix", "artist_one", "https://creativecommons.org/licenses/by-nc/4.0/", [("cover.png", live), ("alpha.mp3", live)]),
                (102, "Beta-Mix", "artist_two", "http://creativecommons.org/licenses/nc-sampling+/1.0/", [("beta.mp3", live)]),
                (103, "Other-Licence", "artist_three", "http://example.com/license", [("c.mp3", "https://ccmixter.org/blocked.mp3")]),
-               (104, "Wav-Only", "artist_four", "http://creativecommons.org/licenses/by/3.0/", [("d.wav", live)])]
+               (104, "Wav-Only", "artist_four", "http://creativecommons.org/licenses/by/3.0/", [("d.wav", live)]),
+               (105, "Blocked-Mix", "artist_five", "http://creativecommons.org/licenses/by/3.0/", [("e.mp3", "https://ccmixter.org/blocked.mp3")])]
         ua = [l for l in req.split("\r\n") if l.startswith("user-agent:")]
         want = target.split("ids=")[1].split("&")[0] if "ids=" in target else ""
         with open(port_file + ".requests", "a") as rq:

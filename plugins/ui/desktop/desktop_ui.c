@@ -16791,7 +16791,7 @@ static void* desk_open(const sel_ui_open_args* a) {
 static void desk_open_fail_toast(desk* d, const char* code, const char* detail) {
     char msg[sizeof d->open_fail_text];
     const char* colon = strchr(detail, ':');
-    int status = 0;
+    int status = 0, used = 0;
 
     if (strcmp(code, "no_replayer") == 0 && colon != NULL && colon != detail && colon - detail < 16) {
         char fmt[16];
@@ -16804,6 +16804,10 @@ static void desk_open_fail_toast(desk* d, const char* code, const char* detail) 
         snprintf(msg, sizeof msg, "No player for %s yet", fmt);
     } else if (strcmp(code, "no_replayer") == 0) {
         snprintf(msg, sizeof msg, "No player for that file type yet");
+    } else if (sscanf(detail, "http_status=%d %n", &status, &used) >= 1 && used > 0 &&
+               strstr(detail + used, "blocks downloads of this song") != NULL) {
+        /* I1072d: the engine names the source that refuses the download (report_open_failed, I1072c): show its words. */
+        snprintf(msg, sizeof msg, "That song could not be downloaded: %s (HTTP %d)", detail + used, status);
     } else if (sscanf(detail, "http_status=%d", &status) == 1) {
         snprintf(msg, sizeof msg, "That song could not be downloaded (HTTP %d)", status);
     } else {

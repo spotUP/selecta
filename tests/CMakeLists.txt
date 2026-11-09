@@ -3031,7 +3031,8 @@ endif()
 if(NOT SEL_AMIGA AND SELECTA_UI_DESKTOP)
   add_test(NAME open-fail-toast
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/open-fail-toast"
-      "-DNETWORK=${SEL_NET_WORK}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/open_fail_toast.cmake")
+      "-DNETWORK=${SEL_NET_WORK}" "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DICY=${SEL_NET_DIR}/icy_server.py"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/open_fail_toast.cmake")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/open-fail-toast.tmp")
   set_tests_properties(open-fail-toast PROPERTIES LABELS open-fail-toast FIXTURES_REQUIRED net-fixture
     RESOURCE_LOCK net-fixture TIMEOUT 120 ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/open-fail-toast.tmp")
