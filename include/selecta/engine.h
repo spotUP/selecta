@@ -530,6 +530,7 @@ typedef struct sel_engine_stats {
     uint32_t search_src_at_ms[SEL_STATS_SEARCH_SRC]; /* I1231: fan-out start to that section's hits on screen (first hit = done) */
     uint32_t search_src_hits[SEL_STATS_SEARCH_SRC];  /* I1231: hits of that section */
     uint32_t search_catalogue_groups; /* I1231: grouped catalogue searches (one library request for every synced section) */
+    uint32_t search_cache_hits;       /* I1231b: live search sections shown from the result cache before the network answered */
     const char* archive_member;   /* name of the member the last such OPEN played, "" when none */
     uint32_t hash_files;          /* local files the idle md5 pass finished (I184b, sel_hash_stats) */
     uint32_t hash_chunks;         /* file reads of the pass: without threads one chunk per idle tick */

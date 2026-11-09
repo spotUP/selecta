@@ -187,7 +187,9 @@ static int busy_wait(void* ctx, int count) {
 static int write_gen_hook(void* ctx) {
     sel_library* lib = (sel_library*)ctx;
 
-    /* I1082f: the engine thread polls these while the writer thread commits, so every access is atomic. */
+    /* I1082f: the engine thread polls these while the writer thread commits, so every access is atomic. I1231b: a search cache
+     * write is no model change; counting it would re-run the shown Search (search_refresh), whose answer is stored again, forever. */
+    if (SEL_ATOMIC_LOAD_ACQ(&lib->in_cache)) return 0;
     SEL_ATOMIC_INC_REL(&lib->write_gen);
     if (SEL_ATOMIC_LOAD_ACQ(&lib->in_pin)) SEL_ATOMIC_INC_REL(&lib->pin_gen);
     if (SEL_ATOMIC_LOAD_ACQ(&lib->in_touch)) SEL_ATOMIC_INC_REL(&lib->touch_gen);
@@ -465,6 +467,10 @@ static void handle_request(sel_library* lib, const sel_message* req, sel_message
         sel_library_annotate(lib, (const sel_annotate_batch*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_SRCSTATE && req->argc == 1) {
         sel_library_srcstate(lib, (const sel_srcstate_op*)req->args[0].v.s, reply);
+    } else if (req->id == SEL_LIB_REQ_SEARCH_CACHE && req->argc == 1) {
+        SEL_ATOMIC_STORE_REL(&lib->in_cache, 1u);
+        sel_library_search_cache(lib, (const sel_searchcache_op*)req->args[0].v.s, reply);
+        SEL_ATOMIC_STORE_REL(&lib->in_cache, 0u);
     } else if (req->id == SEL_LIB_REQ_USER && req->argc == 1) {
         const sel_user_op* uop = (const sel_user_op*)req->args[0].v.s;
 
