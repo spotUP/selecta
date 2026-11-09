@@ -3019,6 +3019,16 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60)
 endif()
 
+# I1218 hvsc-builtin-mirror: an hvsc song key (hosted by modland) fetches from the built-in Modland mirror list under
+# pub/modules/HVSC/ (the old hvsc.de/download base was 404). No SELECTA_MIRRORS override.
+if(NOT SEL_AMIGA)
+  add_test(NAME hvsc-builtin-mirror
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv" -P "${SEL_NET_DIR}/hvsc_builtin_mirror.cmake")
+  set_tests_properties(hvsc-builtin-mirror PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60)
+endif()
+
 # I94a (row I94 refinement, user decision Q24): the first loop of a non-looping song counts as the song's end,
 # so SONG_ENDED reports `end`; a song that loops by design (selecta-loop.mod, B01 jump) keeps `loop`.
 # Reachability: the script drives the engine dispatch; the nuade adapter turns the wrap to order 0 into ENDED.
@@ -3571,6 +3581,12 @@ if(NOT SEL_AMIGA)
   add_executable(net_table_fanout_test net_table_fanout_test.c)
   target_include_directories(net_table_fanout_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(net_table_fanout_test PRIVATE selecta_library selecta_registry selecta_core)
+  # I1218: a hosted source (hvsc, HOSTED_BY modland) fetches from the host's mirrors under the host path, on the host and the Amiga route.
+  add_executable(hosted_mirror_test net/hosted_mirror_test.c)
+  target_include_directories(hosted_mirror_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(hosted_mirror_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME hosted-mirror COMMAND hosted_mirror_test)
+  set_tests_properties(hosted-mirror PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "hosted_mirror_ok")
   add_test(NAME net-table-fanout COMMAND net_table_fanout_test)
   set_tests_properties(net-table-fanout PROPERTIES LABELS m3 TIMEOUT 20 PASS_REGULAR_EXPRESSION "net_table_fanout_ok")
   # I196d: the recording split walker cuts at MP3 frame and Ogg page starts.
