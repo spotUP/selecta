@@ -112,6 +112,9 @@ static void test_names(void) {
     CHECK(sel_platform_of_ext("mgb") == SEL_PLATFORM_FAMILY_GAME_BOY);
     CHECK(sel_platform_of_ext("gbr") == SEL_PLATFORM_FAMILY_GAME_BOY);
     CHECK(sel_platform_of_name("NerdTracker 2/Some Artist/song.ned") == SEL_PLATFORM_FAMILY_NES);
+    /* Johan 2026-11-09: Sega Master System is its own platform, not Music or Console. */
+    CHECK(sel_platform_of_ext("sgc") == SEL_PLATFORM_FAMILY_SEGA_MASTER_SYSTEM);
+    CHECK(strcmp(sel_platform_label(SEL_PLATFORM_FAMILY_SEGA_MASTER_SYSTEM), "Sega Master System") == 0);
     CHECK(sel_platform_of_name("song.mod") == SEL_PLATFORM_FAMILY_AMIGA);
     CHECK(sel_platform_of_name("mod.song") == SEL_PLATFORM_FAMILY_AMIGA); /* the Amiga prefix form */
     CHECK(sel_platform_of_name("dir/sub/SONG.XM") == SEL_PLATFORM_FAMILY_PC_TRACKER);

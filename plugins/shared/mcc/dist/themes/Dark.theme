@@ -36,5 +36,6 @@ gui.cover.snes = 0x6D28D9
 gui.cover.pc_engine = 0x854D0E
 gui.cover.msx = 0x475569
 gui.cover.mega_drive = 0x1D4ED8
+gui.cover.sega_master_system = 0x0F766E
 gui.cover.console = 0x52525B
 gui.cover.text = 0xFFFFFF

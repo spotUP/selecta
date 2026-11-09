@@ -49,6 +49,7 @@ extern "C" {
     X(COVER_PC_ENGINE, "gui.cover.pc_engine", 0x854D0Eu, 0u, 0xFFFFFFu) \
     X(COVER_MSX, "gui.cover.msx", 0x475569u, 0u, 0xFFFFFFu)          \
     X(COVER_MEGA_DRIVE, "gui.cover.mega_drive", 0x1D4ED8u, 0u, 0xFFFFFFu) \
+    X(COVER_SEGA_MASTER_SYSTEM, "gui.cover.sega_master_system", 0x0F766Eu, 0u, 0xFFFFFFu) \
     X(COVER_CONSOLE, "gui.cover.console", 0x52525Bu, 0u, 0xFFFFFFu) \
     X(COVER_TEXT, "gui.cover.text", 0xFFFFFFu, 0u, 0xFFFFFFu)
 

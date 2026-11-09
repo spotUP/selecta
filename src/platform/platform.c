@@ -44,6 +44,8 @@ static const chip_row k_chips[] = {
     {"hes", F(PC_ENGINE)},
     {"kss", F(MSX)},
     {"gym", F(MEGA_DRIVE)}, {"vgm", F(MEGA_DRIVE)},
+    /* Sega Master System / Game Gear / ColecoVision SGC rips bbmp_nez plays (Johan 2026-11-09: its own platform). */
+    {"sgc", F(SEGA_MASTER_SYSTEM)},
     {"mp3", F(MUSIC)},    {"mp2", F(MUSIC)},    {"ogg", F(MUSIC)},     {"flac", F(MUSIC)},
 };
 #undef F
@@ -68,10 +70,10 @@ static const char* const k_uade_prefix[] = {
 
 static const char* const k_label[SEL_PLATFORM_FAMILY_COUNT] = {"Music",       "Amiga",   "Commodore 64", "Atari", "ZX Spectrum",
                                                           "PC Tracker",  "NES",     "Game Boy",     "SNES",  "PC Engine",
-                                                          "MSX",         "Mega Drive", "Console"};
+                                                          "MSX",         "Mega Drive", "Sega Master System", "Console"};
 static const char* const k_id[SEL_PLATFORM_FAMILY_COUNT] = {"music", "amiga", "commodore_64", "atari", "zx_spectrum",
                                                        "pc_tracker", "nes", "game_boy", "snes", "pc_engine",
-                                                       "msx", "mega_drive", "console"};
+                                                       "msx", "mega_drive", "sega_master_system", "console"};
 
 void sel_platform_lower(char* dst, const char* src, size_t cap) {
     size_t i;

@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 /* Platform families (I691a). Each console that has formats of its own is its own family; SEL_PLATFORM_FAMILY_CONSOLE is
- * for consoles with too few formats to stand alone. The order of 1..12 is the order of the gui.cover.* tokens
+ * for consoles with too few formats to stand alone. The order of 1..13 is the order of the gui.cover.* tokens
  * (SEL_GUI_TOKEN_COVER_AMIGA ... SEL_GUI_TOKEN_COVER_CONSOLE); the music family uses the ACCENT token. */
 enum {
     SEL_PLATFORM_FAMILY_MUSIC = 0,
@@ -26,6 +26,7 @@ enum {
     SEL_PLATFORM_FAMILY_PC_ENGINE,
     SEL_PLATFORM_FAMILY_MSX,
     SEL_PLATFORM_FAMILY_MEGA_DRIVE,
+    SEL_PLATFORM_FAMILY_SEGA_MASTER_SYSTEM,
     SEL_PLATFORM_FAMILY_CONSOLE,
     SEL_PLATFORM_FAMILY_COUNT
 };

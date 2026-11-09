@@ -185,6 +185,12 @@ static void family_mark(sel_gui_canvas* c, uint32_t family, int32_t x0, int32_t 
         disc(c, x0, y0 + s / 4, u, fg);
         disc(c, x0 + s - u, y0 + s / 4, u, fg);
         break;
+    case SEL_PLATFORM_FAMILY_SEGA_MASTER_SYSTEM: /* the pad: a square direction key and two round buttons */
+        u = s / 3;
+        box(c, x0, y0 + u, u, u, fg);
+        disc(c, x0 + s - 2 * u + u / 4, y0 + u, u * 3 / 4, fg);
+        disc(c, x0 + s - u * 3 / 4, y0 + u, u * 3 / 4, fg);
+        break;
     case SEL_PLATFORM_FAMILY_CONSOLE:
         sel_gui_round_frame(c, q, s / 5, s / 8 < 1 ? 1 : s / 8, fg);
         break;
