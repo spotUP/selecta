@@ -282,6 +282,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-search-all PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-all.tmp")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-all.tmp")
+  # I1234: the Playlists view syncs a PLAYLISTS_ONLY source whose group folder is missing, whatever its sync time says.
+  add_test(NAME dui-hippo-lists-resync
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-hippo-lists-resync" "-DNETWORK=${SEL_NET_WORK}" "-DSQLITE3=$<TARGET_FILE:sel_sqlite3_shell>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/hippo_lists_resync.cmake")
+  set_tests_properties(dui-hippo-lists-resync PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-hippo-lists-resync.tmp")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-hippo-lists-resync.tmp")
   # I1038: double-clicking a Radio Browser station in the All-sources results plays it; the pin it causes keeps the results and scroll.
   add_test(NAME dui-search-station-click
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
