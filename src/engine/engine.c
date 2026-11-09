@@ -794,7 +794,7 @@ struct sel_engine {
     sel_art_ent art_cache[SEL_ART_CACHE], art_res[SEL_ART_BATCH];
     uint32_t art_head, art_epoch, art_job_epoch, art_want_n, art_job_n, art_want_len, art_want_more, art_reads;
     uint64_t art_want_key[SEL_ART_BATCH], art_job_key[SEL_ART_BATCH];
-    /* I936: the catalogue song count (COUNT over songs, seconds on a large cold db) is read on rd_total, never on the pump. rdt_at is
+    /* I936: the catalogue song count (the source_songs sum since I1196; was COUNT over songs) is read on rd_total, never on the pump. rdt_at is
      * library_changes + 1 when the read was posted; an answer for an older library state is published and the next pump asks again. */
     sel_lib_read rd_total;
     /* I906f: the write queue. wq_tail is the pump's (queued), wq_run the thread's (executed), wq_head the pump's (done callbacks run). */
