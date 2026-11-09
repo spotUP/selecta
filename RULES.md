@@ -14,6 +14,8 @@ The global rules (`~/.claude/CLAUDE.md`) apply; this file adds the project's. De
 6. **Golden WAVs are the oracle.** Every replayer plugin ships a song and a hash in `tests/golden/`; `selecta-cli render` must reproduce it on desktop and under the 68k build. A playback change updates the hash and says why in the commit.
 7. **Text UI assumes xterm-256color + UTF-8** and nothing Amiga-specific; on the Amiga it runs inside UP-Term (`~/Code/UP-Term/vtcon`). Capabilities it may use: research doc `2026-10-22_upterm-text-ui-capabilities.md`.
 8. **Icons and labels:** text UI uses ASCII and Unicode box/block glyphs only, no emoji; GUI UIs use the project's SVG/bitmap icon set under `art/` (to be created with the first GUI).
+9. **Exemption, cover art in the text UI (I1222f):** the Now Playing panel of the text frame shows no cover image (a cell grid has no pictures; the UP-Term capabilities doc names no image protocol the Amiga side could use). The text panel draws every other line of `sel_uim_np_lines` (context, title, artist, like and rating, catalogue pairs, note, lyrics, Up Next). The desktop and MUI panels keep the cover. Reason: the three-UI parity rule (0b) needs a written exemption for each part a UI cannot draw. Design: `thoughts/shared/research/2026-11-09-text-frame-design.md` section 4.4.
+
 ## Commands
 
 Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/amiga` (`/opt/amiga` holds only binutils; the toolchain file `cmake/amiga-68020.cmake` searches `$AMIGA_GCC_ROOT`, `~/opt/amiga`, `/opt/amiga`), vasm for `.s`. Test rig: UP-Term's FS-UAE rig (`~/Code/UP-Term/vtcon/tools/rig/`).

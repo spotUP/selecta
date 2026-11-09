@@ -1187,6 +1187,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_sidestack_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-sidestack COMMAND uim_sidestack_test)
   set_tests_properties(uim-sidestack PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_sidestack_ok")
+  # I1222f: the Now Playing panel lines (sel_uim_np_lines).
+  add_executable(uim_nppanel_test uimodel/nppanel_test.c)
+  target_link_libraries(uim_nppanel_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-nppanel COMMAND uim_nppanel_test)
+  set_tests_properties(uim-nppanel PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_nppanel_ok")
   # I1222c: the text tier's layout in cells (SEL_UIM_TIER_TEXT, no hints region).
   add_executable(uim_layout_text_test uimodel/layout_text_test.c)
   target_link_libraries(uim_layout_text_test PRIVATE selecta_uimodel selecta_core)

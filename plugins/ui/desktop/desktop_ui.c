@@ -27,6 +27,7 @@
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/cols.h>
 #include <selecta/uimodel/libfilter.h>
+#include <selecta/uimodel/nppanel.h>
 #include <selecta/uimodel/select.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/uimodel/sources.h>
@@ -12425,8 +12426,6 @@ static void draw_player_left(desk* d) {
 /* The Now Playing panel (DUI-P4-1, DUI-P4-7) in the detail region, after Spotify's Now Playing view: a header tinted from the
  * artwork, the artwork, title and artist, the catalogue pairs the engine reports for the song (the text UI's information
  * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
-#define NP_PAIRS_MAX 6u
-#define NP_UPNEXT_MAX 3u
 #define NP_MESSAGE_LINES 6
 static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
     const uint32_t* px = (const uint32_t*)d->canvas->pixels;
@@ -12467,8 +12466,11 @@ static void draw_nowplaying(desk* d) {
     uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     int32_t side = pn.w - 2 * sp, asz, y, rating = 0, liked = 0, ic = lpx(d, 20);
     sel_gui_rect ar, band, hdr;
-    uint32_t k, first;
+    uint32_t k;
     const char* ctx;
+    static sel_uim_np_line L[SEL_UIM_NP_LINES_MAX]; /* I1222f: the panel content, built by src/uimodel/nppanel.c (the text UI draws the same lines) */
+    uint32_t ln;
+    const sel_uim_np_line *tl, *al, *ll, *nl, *ml;
     d->np_title = rect_of(0, 0, 0, 0);
     d->np_add = rect_of(0, 0, 0, 0);
     d->np_like = rect_of(0, 0, 0, 0);
@@ -12478,21 +12480,18 @@ static void draw_nowplaying(desk* d) {
         return;
     }
     draw_panel(d, "detail");
-    /* I619: the context the song plays from heads the panel (Spotify): the playlist, else the release, else the plain heading. */
-    ctx = st->ctx_name; /* I994e: the engine names the context the playing song started from */
-    if (ctx[0] == '\0' && st->panel != NULL) {
-        const char* q = st->panel;
-        while (*q != '\0') {
-            const char* v = q + strlen(q) + 1;
-            if (strcmp(q, "Release") == 0 && v[0] != '\0') {
-                ctx = v;
-            }
-            q = v + strlen(v) + 1;
-        }
-    }
+    ln = sel_uim_np_lines(&d->uim, st, L, SEL_UIM_NP_LINES_MAX);
+    ctx = sel_uim_np_find(L, ln, SEL_UIM_NP_CONTEXT, 0u)->val; /* I619: the playlist, else the release, else "Now Playing" */
+    tl = sel_uim_np_find(L, ln, SEL_UIM_NP_TITLE, 0u);
+    al = sel_uim_np_find(L, ln, SEL_UIM_NP_ARTIST, 0u);
+    ll = sel_uim_np_find(L, ln, SEL_UIM_NP_LIKE, 0u);
+    nl = sel_uim_np_find(L, ln, SEL_UIM_NP_NOTE, 0u);
+    ml = sel_uim_np_find(L, ln, SEL_UIM_NP_MESSAGE, 0u);
+    liked = ll->liked;
+    rating = ll->rating;
     hdr = rect_of(pn.x + sp, dt.y + sp, side, lpx(d, 28));
-    draw_text(d, hdr, ctx[0] != '\0' ? ctx : "Now Playing", 1, 22, text);
-    snprintf(d->np_ctx_shown, sizeof d->np_ctx_shown, "%s", ctx[0] != '\0' ? ctx : "Now Playing");
+    draw_text(d, hdr, ctx, 1, 22, text);
+    snprintf(d->np_ctx_shown, sizeof d->np_ctx_shown, "%s", ctx);
     /* The artwork spans the full content width between the two insets and stays square, so its height follows the panel
      * width (I443); the text lines below share the same insets (I404). */
     asz = pn.w; /* I619: the artwork is full bleed, the whole panel width, and fades into the panel colour at its bottom */
@@ -12537,15 +12536,7 @@ static void draw_nowplaying(desk* d) {
     y = ar.y + ar.h + sp;
     {
         int32_t bd = lpx(d, 32), tw = side - bd - sp; /* I619: the round add button sits beside the big title, the title keeps the rest */
-        uint32_t lk = 0u;
-        if (st->panel != NULL) {
-            const char* q = st->panel;
-            while (*q != '\0') {
-                const char* v = q + strlen(q) + 1;
-                lk |= strcmp(q, "Liked") == 0;
-                q = v + strlen(v) + 1;
-            }
-        }
+        uint32_t lk = (uint32_t)liked;
         d->np_add = rect_of(pn.x + sp + side - bd, y, bd, bd);
         hover_reg(d, d->np_add);
         sel_gui_round_rect(d->canvas, d->np_add, bd / 2, hover_ink_of(d, d->np_add, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), text));
@@ -12553,29 +12544,17 @@ static void draw_nowplaying(desk* d) {
                            ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
         sel_gui_icon_draw(d->canvas, &d->icons, lk ? SEL_GUI_ICON_CHECK : SEL_GUI_ICON_PLUS,
                           rect_of(d->np_add.x + (bd - ic) / 2, d->np_add.y + (bd - ic) / 2, ic, ic), ic, lk ? accent : text);
-        draw_text(d, rect_of(pn.x + sp, y, tw, lpx(d, 28)), f->title, 1, 22, text);
+        draw_text(d, rect_of(pn.x + sp, y, tw, lpx(d, 28)), tl->val, 1, 22, text);
     }
     /* No artist: the artist line takes no height, so the like row follows the title (I446). */
-    if (f->artist[0] != '\0') {
-        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 28), side, lpx(d, 18)), f->artist, 0, 13, muted);
+    if (al != NULL) {
+        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 28), side, lpx(d, 18)), al->val, 0, 13, muted);
     }
-    d->np_title = rect_of(pn.x + sp, y, side - lpx(d, 32) - sp, lpx(d, f->artist[0] != '\0' ? 46 : 28)); /* I619: not under the add button */
+    d->np_title = rect_of(pn.x + sp, y, side - lpx(d, 32) - sp, lpx(d, al != NULL ? 46 : 28)); /* I619: not under the add button */
     np_title_reg(d);
     /* Like and rating: the library's rating row gives the filled marks; a click sends LIKE or RATE n like the text UI. */
     y += d->np_title.h + lpx(d, 4);
     d->np_like = rect_of(pn.x + sp, y, ic, ic);
-    if (st->panel != NULL) {
-        const char* p = st->panel;
-        while (*p != '\0') {
-            const char* v = p + strlen(p) + 1;
-            if (strcmp(p, "Rating") == 0) {
-                rating = atoi(v);
-            } else if (strcmp(p, "Liked") == 0) {
-                liked = 1;
-            }
-            p = v + strlen(v) + 1;
-        }
-    }
     d->np_rating = rating;
     d->np_inset_l = d->np_like.x - pn.x;
     /* I619: the add button, when drawn, is the title row's right-most content; the title stops short of it. */
@@ -12609,41 +12588,37 @@ static void draw_nowplaying(desk* d) {
     d->np_key_end = 0;
     d->np_val_x = 0;
     if (st->panel != NULL) {
-        const char* p = st->panel;
         const sel_gui_atlas* kat = desk_font(d, 0, 11);
         int32_t kw = 0, kmax = side * 2 / 5;
-        uint32_t n = 0;
         /* The label column is as wide as the widest label (capped at two fifths of the panel) and the value starts one
          * spacing token after it, so a label and its value stay together on a wide panel (I447). */
-        for (; *p != '\0' && n < NP_PAIRS_MAX; n++) {
-            int32_t w = kat != NULL ? sel_gui_text_width(kat, p, strlen(p)) : 0;
-            kw = w > kw ? w : kw;
-            p += strlen(p) + 1;
-            p += strlen(p) + 1;
+        for (k = 0; k < ln; k++) {
+            if (L[k].kind == SEL_UIM_NP_PAIR) {
+                int32_t w = kat != NULL ? sel_gui_text_width(kat, L[k].key, strlen(L[k].key)) : 0;
+                kw = w > kw ? w : kw;
+            }
         }
         kw = kw < kmax ? kw : kmax;
         d->np_key_end = pn.x + sp + kw;
         d->np_val_x = d->np_key_end + sp;
-        p = st->panel;
-        while (*p != '\0' && d->np_rows < NP_PAIRS_MAX) {
-            const char* v = p + strlen(p) + 1;
-            draw_text(d, rect_of(pn.x + sp, y, kw, lpx(d, 16)), p, 0, 11, muted);
-            draw_text(d, rect_of(d->np_val_x, y, pn.x + sp + side - d->np_val_x, lpx(d, 16)), v, 0, 12, text);
-            y += lpx(d, 16);
-            d->np_rows++;
-            p = v + strlen(v) + 1;
+        for (k = 0; k < ln; k++) {
+            if (L[k].kind == SEL_UIM_NP_PAIR) {
+                draw_text(d, rect_of(pn.x + sp, y, kw, lpx(d, 16)), L[k].key, 0, 11, muted);
+                draw_text(d, rect_of(d->np_val_x, y, pn.x + sp + side - d->np_val_x, lpx(d, 16)), L[k].val, 0, 12, text);
+                y += lpx(d, 16);
+                d->np_rows++;
+            }
         }
     }
     {
-        const char* note = sel_uim_np_note(&st->song); /* I1127c */
-        if (note != NULL) {
-            draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), note, 0, 12, muted);
+        if (nl != NULL) { /* I1127c */
+            draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), nl->val, 0, 12, muted);
             y += lpx(d, 16);
             d->np_notes++;
-            if (sel_uim_np_note_action(&st->song) != NULL) { /* I710ga6: the Get File... button under the note */
+            if (nl->key[0] != '\0') { /* I710ga6: the Get File... button under the note */
                 d->np_note_btn = rect_of(pn.x + sp, y, lpx(d, 112), lpx(d, 26));
                 hover_reg(d, d->np_note_btn);
-                draw_button(d, d->np_note_btn, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), sel_uim_np_note_action(&st->song), 12, text);
+                draw_button(d, d->np_note_btn, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), nl->key, 12, text);
                 y += lpx(d, 32);
                 d->np_note_buttons++;
             }
@@ -12651,31 +12626,32 @@ static void draw_nowplaying(desk* d) {
     }
     y += sp;
     /* Lyrics: the previous and next lines muted around the current line in the accent colour. */
-    if (st->lyric_lines > 0u) {
-        draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), st->lyric_prev != NULL ? st->lyric_prev : "", 0, 12, muted);
-        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 18), side, lpx(d, 20)), st->lyric_current != NULL ? st->lyric_current : "", 1, 15, accent);
-        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 40), side, lpx(d, 16)), st->lyric_next != NULL ? st->lyric_next : "", 0, 12, muted);
+    ll = sel_uim_np_find(L, ln, SEL_UIM_NP_LYRIC, 0u);
+    if (ll != NULL) { /* previous, current, next in that order */
+        draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), ll[0].val, 0, 12, muted);
+        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 18), side, lpx(d, 20)), ll[1].val, 1, 15, accent);
+        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 40), side, lpx(d, 16)), ll[2].val, 0, 12, muted);
         y += lpx(d, 62);
-    } else if (st->lyric_text != NULL) {
+    } else if (ml != NULL) {
         /* A tracker song message is several lines (a MOD's sample names, '\n' apart): laid out as wrapped lines, at most
          * NP_MESSAGE_LINES, so it never reaches the queue below (I290). */
         const sel_gui_atlas* at = desk_font(d, 0, 12);
         if (at != NULL) {
             sel_gui_rect box = rect_of(pn.x + sp, y, side, NP_MESSAGE_LINES * at->line_height);
             sel_gui_clip_push(d->canvas, box);
-            d->np_msg_lines = (uint32_t)sel_gui_text_wrap(d->canvas, at, box, st->lyric_text, muted, NP_MESSAGE_LINES, &d->text);
+            d->np_msg_lines = (uint32_t)sel_gui_text_wrap(d->canvas, at, box, ml->ref, muted, NP_MESSAGE_LINES, &d->text);
             sel_gui_clip_pop(d->canvas);
             y += (int32_t)d->np_msg_lines * at->line_height + lpx(d, 6);
         }
     }
     /* Up next: the queue entries after the playing one. */
-    for (k = 0; k < st->queue_count && st->queue[k].id != st->queue_playing; k++) {
-    }
-    draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), "Next in Queue", 1, 11, muted);
+    draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), sel_uim_np_find(L, ln, SEL_UIM_NP_UPNEXT_HDR, 0u)->val, 1, 11, muted);
     y += lpx(d, 18);
-    for (first = ++k; k < st->queue_count && k - first < NP_UPNEXT_MAX && y + lpx(d, 16) < dt.y + dt.h; k++) {
-        draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), np_basename(st->queue_text + st->queue[k].path_offset), 0, 12, text);
-        y += lpx(d, 18);
+    for (k = 0; k < ln && y + lpx(d, 16) < dt.y + dt.h; k++) {
+        if (L[k].kind == SEL_UIM_NP_UPNEXT) {
+            draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), L[k].val, 0, 12, text);
+            y += lpx(d, 18);
+        }
     }
     sel_gui_dirty_add(d->canvas, dt);
     d->np_draws++;
