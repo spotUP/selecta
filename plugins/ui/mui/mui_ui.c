@@ -824,12 +824,12 @@ static int mui_theme_live_now(void) {
  * (plugins/shared/mcc) take Latin-1 untouched. These are the set calls and the read-back of a string gadget. */
 static void mui_text_set(Object* obj, const char* utf8) {
     char b[MUI_L1_TEXT];
-    mui_text_set(obj, mui_l1(b, sizeof b, utf8));
+    mui_aatext_set(obj, mui_l1(b, sizeof b, utf8));
 }
 
 static void mui_caption_set(Object* obj, const char* utf8) {
     char b[MUI_L1_TEXT];
-    mui_caption_set(obj, mui_l1(b, sizeof b, utf8));
+    mui_aabtn_set_caption(obj, mui_l1(b, sizeof b, utf8));
 }
 
 /* The string gadget's contents (Latin-1 as typed) as UTF-8 in buf[cap]. */
