@@ -106,6 +106,12 @@ static void test_extensions(void) {
 }
 
 static void test_names(void) {
+    /* I1240: console trackers the bbmp ports play group under their console, so the Modland "NerdTracker 2" folder
+     * (whose platform is its sample song's family) lists under NES. */
+    CHECK(sel_platform_of_ext("ned") == SEL_PLATFORM_FAMILY_NES);
+    CHECK(sel_platform_of_ext("mgb") == SEL_PLATFORM_FAMILY_GAME_BOY);
+    CHECK(sel_platform_of_ext("gbr") == SEL_PLATFORM_FAMILY_GAME_BOY);
+    CHECK(sel_platform_of_name("NerdTracker 2/Some Artist/song.ned") == SEL_PLATFORM_FAMILY_NES);
     CHECK(sel_platform_of_name("song.mod") == SEL_PLATFORM_FAMILY_AMIGA);
     CHECK(sel_platform_of_name("mod.song") == SEL_PLATFORM_FAMILY_AMIGA); /* the Amiga prefix form */
     CHECK(sel_platform_of_name("dir/sub/SONG.XM") == SEL_PLATFORM_FAMILY_PC_TRACKER);

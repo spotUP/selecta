@@ -36,7 +36,10 @@ static const chip_row k_chips[] = {
     {"xm", F(PC_TRACKER)}, {"s3m", F(PC_TRACKER)}, {"it", F(PC_TRACKER)}, {"mtm", F(PC_TRACKER)}, {"669", F(PC_TRACKER)},
     {"far", F(PC_TRACKER)}, {"ult", F(PC_TRACKER)}, {"gtk", F(PC_TRACKER)}, {"rad", F(PC_TRACKER)},
     {"nsf", F(NES)},      {"nsfe", F(NES)},
-    {"gbs", F(GAME_BOY)},
+    /* Console trackers the bbmp ports play (I1223c NerdTracker II, bbmp_mgb Gameboy Tracker, bbmp_nez GBR): without
+     * them a Modland folder like "NerdTracker 2" falls through to Music and is missing under its console (I1240). */
+    {"ned", F(NES)},
+    {"gbs", F(GAME_BOY)}, {"mgb", F(GAME_BOY)}, {"gbr", F(GAME_BOY)},
     {"spc", F(SNES)},
     {"hes", F(PC_ENGINE)},
     {"kss", F(MSX)},
