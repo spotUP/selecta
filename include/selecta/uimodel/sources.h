@@ -73,6 +73,11 @@ void sel_uim_offer_masks(const sel_uim_offer* o, const sel_uim_src_row* r, uint3
  * (entries with days <= 0 are left out). Returns the line length, 0 when it does not fit. */
 uint32_t sel_uim_offer_snooze_line(const sel_uim_src_row* r, uint32_t n, uint32_t unticked, int64_t now, char* out, uint32_t cap);
 
+/* I1224: the search scope (the source key of one searchable, enabled source) of the source page named `page_key` (a source key or its
+ * display name); NULL when no such source can be searched. The Search page opens on this scope from a source page, on All sources
+ * ("" scope) from any other. The one place that decides the scope a page implies. */
+const char* sel_uim_search_scope_of_source(const sel_uim_src_row* r, uint32_t n, const char* page_key);
+
 /* Search source Cycle: Library, Web, Demozoo. Choosing one sends PREF_SET search.source "<name>"; the stored value selects the entry. */
 #define SEL_UIM_SEARCH_SOURCES 3u
 const char* sel_uim_search_source_name(uint32_t i);

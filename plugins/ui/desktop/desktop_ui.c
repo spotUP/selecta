@@ -408,13 +408,13 @@ typedef struct desk {
     uint32_t badge_drawn;    /* I1020: the source badges the last Search frame painted (one per result row); badge_text keeps the first 16 names for the dump */
     char badge_text[16][48];
     uint32_t facet_drawn;    /* I1019f: the facet chips the last Search frame painted (the dump sentinel that the row is drawn under every source pick) */
+    int scope_filtered;      /* I1224: the scope is a source chip clicked over All results already shown: the grouped view stays and only that source's From section is drawn; no new query */
     char scope[24];          /* I1019f: the source chip in force: "" All sources (the fan-out, every launch), SEARCH_SCOPE_LIBRARY the library alone, else the id of one online source (SOURCE_SEARCH). Never persisted */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
     uint32_t art_waits;      /* I906c: headless naps spent waiting for the background cover batches */
     uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
     uint32_t sync_waits;     /* I1077d: headless naps spent waiting for a running LIBRARY_SYNC to end */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
-    uint32_t on_chip_first, on_chip_scrolls; /* I1073: the source chip that leads the scrolled chip row, chevron scrolls that moved it (sentinel) */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
     struct { char id[64]; sel_gui_rect rect; } search_sync[16]; uint32_t search_sync_n, search_sync_clicks; /* I1053b: the Sync buttons of the Not synced sections the last frame drew */
@@ -496,6 +496,7 @@ typedef struct desk {
     int ydiv_opt;            /* --ydiv N: forces the pixel aspect (the mem backend tests the AGA 640x256 layout); 0 = by backend */
     int is_aga;              /* the aga backend: canvases up to 300 rows get ydiv 2 (I468) */
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
+    int pg_back;             /* 1 only while Back or Forward walks (desk_route also sets pg_walk): the kept search scope stays (I1224) */
     uint32_t nav_arrow_clicks; /* history arrow clicks */
     uint32_t vol_clicks, seek_clicks; /* footer bar clicks and drags sent as VOLUME and SEEK (I312) */
     const char* output_id;      /* I1039: the id of the output the shell opened */
@@ -5292,6 +5293,12 @@ static sel_gui_rect pls_more_rect(desk* d, sel_gui_rect mn) {
 }
 
 /* I678e: the action row's sort button and search field, right of More (shown while the collection has songs). */
+/* I1224: the sort button and the search field of a collection page: any page with rows, and a source page always (a remote source
+ * such as HVSC lists nothing before it is browsed or synced, yet carries the same list tools as every other list page). */
+static int col_tools_shown(const desk* d) {
+    return d->pls_n > 0u || d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE;
+}
+
 static sel_gui_rect col_sort_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect m = pls_more_rect(d, mn);
     return rect_of(m.x + m.w + lpx(d, QUEUE_BTN_GAP), m.y, m.w + lpx(d, 48), m.h);
@@ -6142,7 +6149,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     }
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     draw_button(d, pls_more_rect(d, mn), surf, d->col_kind == 0u ? "More" : "Shuffle", 13, text);
-    if (d->pls_n > 0u) { /* I678e: the sort button and the search field */
+    if (col_tools_shown(d)) { /* I678e: the sort button and the search field */
         sel_gui_rect fr = col_find_rect(d, mn);
         draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
         sel_gui_round_rect(d->canvas, fr, rad, surf);
@@ -6410,7 +6417,7 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             }
         }
     }
-    if (d->pls_n > 0u) { /* I678e: the sort button cycles Custom Order and Title; the search field takes the keyboard */
+    if (col_tools_shown(d)) { /* I678e: the sort button cycles Custom Order and Title; the search field takes the keyboard */
         if (in_rect(col_sort_rect(d, mn), ev->x, ev->y)) {
             d->col_sort = d->col_sort == 0u ? 1u : 0u;
             d->col_search = 0;
@@ -7488,8 +7495,7 @@ static uint32_t online_scope_count(const desk* d);
 static int desk_scope_online(const desk* d);
 static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k);
 static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k);
-static sel_gui_rect online_chip_chevron(desk* d, sel_gui_rect mn, int right);
-static int online_chip_overflow(desk* d, sel_gui_rect mn);
+static int32_t online_chip_rows(desk* d, sel_gui_rect mn);
 static const char* online_chip_scope(const desk* d, uint32_t k);
 
 enum { SLC_TITLE, SLC_TYPE, SLC_ADDED, SLC_PLAYED, SLC_N };
@@ -7726,6 +7732,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "pastes %u\n", (unsigned)d->pastes); /* I999 */
+    o = dump_put(d, o, "online_filter filtered=%d queries=%u\n", d->scope_filtered, (unsigned)d->searches); /* I1224 */
     o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u saves=%u\n", d->scope[0] != '\0' ? d->scope : "-",
                  (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays, (unsigned)d->on_saves);
     {
@@ -7742,13 +7749,7 @@ static const char* library_dump_build(desk* d) {
             const char* csc = online_chip_scope(d, oi); /* the source key the chip stands for ("-" for All sources): tests pick a chip by it, never by index */
             o = dump_put(d, o, "online_chip %u %d %d %d %d scope=%s\n", (unsigned)oi, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h, csc[0] != '\0' ? csc : "-");
         }
-        { /* I1073: the chip row's chevrons (0 0 0 0 while the chips fit) and the chevron scrolls that moved it */
-            sel_gui_rect pm = panel_rect(d, "main");
-            int ov = online_chip_overflow(d, pm);
-            sel_gui_rect lc = ov ? online_chip_chevron(d, pm, 0) : rect_of(0, 0, 0, 0), rc = ov ? online_chip_chevron(d, pm, 1) : rect_of(0, 0, 0, 0);
-            o = dump_put(d, o, "online_chips overflow=%d scrolls=%u lead=%u left %d %d %d %d right %d %d %d %d\n", ov, (unsigned)d->on_chip_scrolls,
-                         (unsigned)d->on_chip_first, (int)lc.x, (int)lc.y, (int)lc.w, (int)lc.h, (int)rc.x, (int)rc.y, (int)rc.w, (int)rc.h);
-        }
+        o = dump_put(d, o, "online_chips rows=%d\n", (int)online_chip_rows(d, panel_rect(d, "main"))); /* I1224: the wrapped chip row's rows */
         for (oi = 0; oi < 4u; oi++) { /* I1019f: the facet row (SEARCH_FACETS), always drawn */
             sel_gui_rect fr = search_facet_rect(d, panel_rect(d, "main"), oi);
             o = dump_put(d, o, "search_facet_chip %u %d %d %d %d\n", (unsigned)oi, (int)fr.x, (int)fr.y, (int)fr.w, (int)fr.h);
@@ -7906,6 +7907,7 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
                          (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws,
                          (unsigned)cst.collection_views, (unsigned)cst.collection_orders, (unsigned)d->col_eshown);
+            o = dump_put(d, o, "collection_tools shown=%d\n", col_tools_shown(d)); /* I1224 */
             if (d->col_kind != 0u) { /* I678f: the kind page's shelves, the Popular limit and the geometry a script clicks */
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
                 o = dump_put(d, o, "kindscroll scroll=%u max=%u listtop=%d moredrawn=%d,%d,%d,%d\n", (unsigned)d->pls_scroll, (unsigned)col_scroll_max(d, pmn),
@@ -9318,13 +9320,26 @@ static const char* online_chip_name(const desk* d, uint32_t k) {
 
 /* Whether one online source is picked (a SOURCE_SEARCH scope), not All sources or the Library. */
 static int desk_scope_online(const desk* d) {
-    return d->scope[0] != '\0' && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) != 0;
+    return d->scope[0] != '\0' && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) != 0 && !d->scope_filtered;
 }
 
 /* A click on a source chip picks it; the selected chip, or All sources, returns to All sources (I1019f). Nothing is persisted. */
 static void online_scope_pick(desk* d, uint32_t k) {
     const char* want = online_chip_scope(d, k);
-    snprintf(d->scope, sizeof d->scope, "%s", strcmp(want, d->scope) == 0 ? "" : want);
+    const sel_state* st = sel_engine_state(d->engine);
+    int all_shown = d->search_on && d->qlen > 0u && st != NULL && st->view != NULL && st->view->source == SEL_VIEW_SEARCH
+                    && (d->scope[0] == '\0' || d->scope_filtered); /* the All results are in the engine's view */
+    int to_source = online_scope_row(d, k) >= 0, same = strcmp(want, d->scope) == 0;
+    if (all_shown && (to_source || (k == 0u && d->scope_filtered))) { /* I1224: filter what is shown, do not search again; the selected chip or All sources lifts the filter */
+        snprintf(d->scope, sizeof d->scope, "%s", same ? "" : want);
+        d->scope_filtered = d->scope[0] != '\0';
+        d->search_q16 = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return;
+    }
+    d->scope_filtered = 0;
+    snprintf(d->scope, sizeof d->scope, "%s", same ? "" : want);
     d->on_state = 0u;
     d->on_n = 0u;
     d->search_on = 0;
@@ -9378,9 +9393,27 @@ static int online_event(desk* d, const sel_tag* t) {
     return 0;
 }
 
-/* I1073: the source chip row scrolls sideways by whole chips, the sidebar chip row's band and chevrons (I610/I669): one row under
- * the search field, above the facet row (I1019f); when the chips overflow it a round chevron button at each end takes its square
- * and the chips between are clipped to the band. */
+/* I1224: the one wrap routine of every chip row (the sidebar chips, I1221, and the Search page's source chips): chip k of n, widths w[],
+ * `gap` between chips, in a band `bw` wide, sits at x offset *x on row *row; a chip that does not fit the rest of its row starts the next. */
+static void chip_flow_place(const int32_t* w, uint32_t n, int32_t gap, int32_t bw, uint32_t k, int32_t* x, int32_t* row) {
+    uint32_t i;
+    int32_t cx = 0, r = 0;
+    for (i = 0; i < n && i <= k; i++) {
+        if (cx > 0 && cx + w[i] > bw) {
+            cx = 0;
+            r++;
+        }
+        if (i == k) {
+            break;
+        }
+        cx += w[i] + gap;
+    }
+    *x = cx;
+    *row = r;
+}
+
+/* I1224: the source chips wrap onto as many rows as they need (the sidebar chips' flow, I1221: chip_flow_place), so none is clipped or
+ * hidden behind a chevron (supersedes the I1073 scrolling row). Each further row pushes the facet row and the results body down. */
 enum { ONLINE_CHIP_PAD = 14, ONLINE_CHIP_GAP = 8, ONLINE_CHIPS_MAX = 2 + SEL_SOURCE_MAX };
 
 static int32_t online_chip_w(desk* d, uint32_t k) {
@@ -9399,102 +9432,43 @@ static uint32_t online_chip_widths(desk* d, int32_t* w) {
     return n;
 }
 
-/* The whole row under the search field, margin to margin. */
+/* The first row of chips under the search field, margin to margin; further rows follow at online_chip_pitch. */
 static sel_gui_rect online_chip_row(desk* d, sel_gui_rect mn) {
     int32_t mg = lpx(d, HOME_MARGIN);
     return rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16), mn.w - 2 * mg, lpx(d, HOME_CHIP_H));
 }
 
-/* The scrolling band of the chips: the row, less a chevron square and gap at each end when the chips overflow it. */
-static sel_gui_rect online_chip_band(desk* d, sel_gui_rect mn, int* overflow) {
-    int32_t w[ONLINE_CHIPS_MAX], cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
-    sel_gui_rect r = online_chip_row(d, mn);
+static int32_t online_chip_pitch(const desk* d) {
+    return lpx(d, HOME_CHIP_H + 8);
+}
+
+/* The rows the chips take at this main width. */
+static int32_t online_chip_rows(desk* d, sel_gui_rect mn) {
+    int32_t w[ONLINE_CHIPS_MAX], x, row;
     uint32_t n = online_chip_widths(d, w);
-    *overflow = sel_uim_lfilter_chips_single(0, sel_uim_lfilter_chips_total(w, n, lpx(d, ONLINE_CHIP_GAP)), r.w);
-    return *overflow ? rect_of(r.x + cv + gap, r.y, r.w - 2 * (cv + gap), r.h) : r;
+    chip_flow_place(w, n, lpx(d, ONLINE_CHIP_GAP), online_chip_row(d, mn).w, n - 1u, &x, &row);
+    return row + 1;
 }
 
-static int online_chip_overflow(desk* d, sel_gui_rect mn) {
-    int ov;
-    online_chip_band(d, mn, &ov);
-    return ov;
+/* The height the extra chip rows add under the first one (0 while the chips fit one row): the facet row and the body move down by it. */
+static int32_t online_chip_extra_h(desk* d, sel_gui_rect mn) {
+    return (online_chip_rows(d, mn) - 1) * online_chip_pitch(d);
 }
 
-/* The left (right = 0) or right chevron button at the row's ends. */
-static sel_gui_rect online_chip_chevron(desk* d, sel_gui_rect mn, int right) {
-    sel_gui_rect r = online_chip_row(d, mn);
-    int32_t cv = lpx(d, HOME_CHIP_H);
-    return rect_of(right ? r.x + r.w - cv : r.x, r.y, cv, cv);
-}
-
-/* The chip that leads the band: the scroll position, clamped so the last chip never leaves the right end (a wider window or a
- * shorter source list pulls it back). */
-static uint32_t online_chip_lead(desk* d, sel_gui_rect mn) {
-    int ov;
-    int32_t w[ONLINE_CHIPS_MAX];
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t n = online_chip_widths(d, w), last;
-    if (!ov) {
-        return 0u;
-    }
-    last = sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w);
-    return d->on_chip_first < last ? d->on_chip_first : last;
-}
-
-/* The k-th chip as laid out on the scrolled row (it may lie outside the band). */
-static sel_gui_rect online_chip_place(desk* d, sel_gui_rect mn, uint32_t k) {
-    int ov;
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t i, lead = online_chip_lead(d, mn);
-    int32_t x = b.x, gap = lpx(d, ONLINE_CHIP_GAP);
-    for (i = lead; i < k; i++) {
-        x += online_chip_w(d, i) + gap;
-    }
-    for (i = k; i < lead; i++) {
-        x -= online_chip_w(d, i) + gap;
-    }
-    return rect_of(x, b.y, online_chip_w(d, k), lpx(d, HOME_CHIP_H));
-}
-
-/* The k-th source chip's visible part: the placed chip cut to the band, empty when it is scrolled out (the hit rect and the dump). */
+/* The k-th source chip's rectangle in the wrapped flow. */
 static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
-    int ov;
-    return sel_gui_rect_intersect(online_chip_place(d, mn, k), online_chip_band(d, mn, &ov));
+    int32_t w[ONLINE_CHIPS_MAX], x, row;
+    uint32_t n = online_chip_widths(d, w);
+    sel_gui_rect b = online_chip_row(d, mn);
+    chip_flow_place(w, n, lpx(d, ONLINE_CHIP_GAP), b.w, k, &x, &row);
+    return rect_of(b.x + x, b.y + row * online_chip_pitch(d), k < n ? w[k] : 0, lpx(d, HOME_CHIP_H));
 }
 
-/* A chevron press: one chip back or on, stopping at both ends. Returns 1 when the row moved. */
-static int online_chip_scroll(desk* d, sel_gui_rect mn, int dir) {
-    int ov;
-    int32_t w[ONLINE_CHIPS_MAX];
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t n = online_chip_widths(d, w), lead = online_chip_lead(d, mn), last = sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w);
-    if (!ov || (dir < 0 && lead == 0u) || (dir > 0 && lead >= last)) {
-        return 0;
-    }
-    d->on_chip_first = dir < 0 ? lead - 1u : lead + 1u;
-    d->on_chip_scrolls++;
-    d->repaint = 1;
-    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-    return 1;
-}
-
-/* The source chips, clipped to the band; the selected one is filled like the active facet. With an overflow the chevrons at the
- * ends show in the text colour while they can move the row, muted at its ends. */
+/* The source chips; the selected one is filled like the active facet. */
 static void online_draw_chips(desk* d, sel_gui_rect mn) {
-    int ov;
-    int32_t w[ONLINE_CHIPS_MAX];
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t k, n = online_chip_widths(d, w), lead = online_chip_lead(d, mn);
-    sel_gui_clip_push(d->canvas, b);
-    for (k = 0; k < n; k++) {
-        if (online_chip_rect(d, mn, k).w > 0) {
-            draw_chip(d, online_chip_place(d, mn, k), online_chip_name(d, k), strcmp(online_chip_scope(d, k), d->scope) == 0, SEL_GUI_TOKEN_SURFACE);
-        }
-    }
-    sel_gui_clip_pop(d->canvas);
-    if (ov) {
-        draw_chevron_button(d, online_chip_chevron(d, mn, 0), 0, lead > 0u);
-        draw_chevron_button(d, online_chip_chevron(d, mn, 1), 1, lead < sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w));
+    uint32_t k, n = online_scope_count(d);
+    for (k = 0; k < n && k < (uint32_t)ONLINE_CHIPS_MAX; k++) {
+        draw_chip(d, online_chip_rect(d, mn, k), online_chip_name(d, k), strcmp(online_chip_scope(d, k), d->scope) == 0, SEL_GUI_TOKEN_SURFACE);
     }
 }
 
@@ -9557,16 +9531,6 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
 /* A click in the Search page's main region: a scope chip, a hit (opens and plays it). Returns 1 when used. */
 static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
     uint32_t k, n = online_scope_count(d);
-    if (online_chip_overflow(d, pm)) { /* I1073: a chevron scrolls the chip row (at an end it still takes the click) */
-        if (in_rect(online_chip_chevron(d, pm, 0), x, y)) {
-            online_chip_scroll(d, pm, -1);
-            return 1;
-        }
-        if (in_rect(online_chip_chevron(d, pm, 1), x, y)) {
-            online_chip_scroll(d, pm, 1);
-            return 1;
-        }
-    }
     for (k = 0; k < n; k++) {
         if (in_rect(online_chip_rect(d, pm, k), x, y)) {
             online_scope_pick(d, k);
@@ -9590,6 +9554,7 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
 static void desk_search_fire(desk* d) {
     char line[160];
+    d->scope_filtered = 0; /* I1224: a fresh query replaces the All results a filter was cut from */
     d->search_pending = 0;
     d->search_q16 = 0; /* new results open at the top; a Search page restored by Back or Forward gets its offset once the results are tall enough (I1012) */
     d->search_restore = d->search_restore == 1 ? 2 : 0;
@@ -9640,7 +9605,7 @@ static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k) {
     for (i = 0; i < (int32_t)k && chip != NULL; i++) {
         x += sel_gui_text_width(chip, search_facet_name[i], strlen(search_facet_name[i])) + 2 * lpx(d, 14) + lpx(d, 8);
     }
-    return rect_of(x, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8),
+    return rect_of(x, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8) + online_chip_extra_h(d, mn),
                    (chip != NULL ? sel_gui_text_width(chip, search_facet_name[k], strlen(search_facet_name[k])) : 40) + 2 * lpx(d, 14),
                    lpx(d, HOME_CHIP_H));
 }
@@ -9748,14 +9713,29 @@ static int browse_click(desk* d, int32_t x, int32_t y) {
 /* The Search page's results body: from under the facet chips to the bottom of main. The list and online results scroll
  * inside it by search_q16; the field and the chips above stay put. */
 static int32_t search_body_y(desk* d, sel_gui_rect mn) {
-    return mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8) + lpx(d, HOME_CHIP_H + 16);
+    return mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8) + lpx(d, HOME_CHIP_H + 16) + online_chip_extra_h(d, mn);
 }
 
 /* The height in pixels of the results the list layouts draw: the online hits (radio entry, then 48 px rows) or the engine's
  * groups (a 32 px heading, then 32 px rows, for the shown facet). Grid and Cover Flow follow the cursor instead (0). One walk
  * the draw and the wheel share, so the scroll bound is the drawn height. */
+/* I1224: whether a "From <name> (n)" heading belongs to the source the scope names. */
+static int heading_names_scope_source(const desk* d, const char* heading) {
+    uint32_t i;
+    for (i = 0; i < d->src_n && i < sizeof d->src / sizeof d->src[0]; i++) {
+        if (strcmp(d->src[i].key, d->scope) == 0) {
+            size_t nl = strlen(d->src[i].name);
+            return strncmp(heading, "From ", 5) == 0 && strncmp(heading + 5, d->src[i].name, nl) == 0 && heading[5 + nl] == ' ';
+        }
+    }
+    return 0;
+}
+
 /* Whether the group of a heading (sel_uim_search_group) is drawn under the facet chip: online From sections are song results (I1019e). */
-static int search_group_shown(const desk* d, uint32_t group) {
+static int search_group_shown(const desk* d, uint32_t group, const char* heading) {
+    if (d->scope_filtered) { /* I1224: a source chip clicked over the shown All results keeps only that source's From section (no new query) */
+        return group == 4u && heading_names_scope_source(d, heading);
+    }
     if (group == 4u && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) == 0) { /* the Library chip: no From section */
         return 0;
     }
@@ -9797,7 +9777,7 @@ static int32_t search_rows_h(desk* d, uint32_t upto) {
         if (r->kind == SEL_ROW_HEADING) {
             const char* t = r->text != NULL ? r->text : "";
             group = sel_uim_search_group(t);
-            show = search_group_shown(d, group);
+            show = search_group_shown(d, group, t);
             if (show && heads++ > 0) {
                 h += lpx(d, SEARCH_SECTION_GAP);
             }
@@ -9881,7 +9861,7 @@ static void draw_search(desk* d) {
             if (r->kind == SEL_ROW_HEADING) {
                 const char* t = r->text != NULL ? r->text : "", *par = strchr(t, '(');
                 group = sel_uim_search_group(t);
-                show = search_group_shown(d, group);
+                show = search_group_shown(d, group, t);
                 if (group >= 1u && group <= 3u) {
                     d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
                 }
@@ -9917,13 +9897,13 @@ static void draw_search(desk* d) {
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
             const char* t = r->text != NULL ? r->text : "";
-            if (r->kind != SEL_ROW_HEADING && group == 4u && d->search_sec_n > 0u) {
+            if (r->kind != SEL_ROW_HEADING && group == 4u && show && d->search_sec_n > 0u) {
                 d->search_sec_rows[d->search_sec_n - 1u]++;
             }
             if (r->kind == SEL_ROW_HEADING) {
                 const char* par = strchr(t, '(');
                 group = sel_uim_search_group(t);
-                show = search_group_shown(d, group);
+                show = search_group_shown(d, group, t);
                 if (group >= 1u && group <= 3u) {
                     d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
                 }
@@ -9941,7 +9921,7 @@ static void draw_search(desk* d) {
                 if (show && heads++ > 0u) { /* I1041: a gap above every section heading but the first */
                     y += lpx(d, SEARCH_SECTION_GAP);
                 }
-                if (group == 4u && d->search_sec_n < 16u) { /* the dump's per-section line */
+                if (group == 4u && show && d->search_sec_n < 16u) { /* the dump's per-section line */
                     snprintf(d->search_sec_head[d->search_sec_n], sizeof d->search_sec_head[0], "%s", t);
                     d->search_sec_y[d->search_sec_n] = y;
                     d->search_sec_rows[d->search_sec_n++] = 0;
@@ -10716,6 +10696,7 @@ static void desk_rt_search_restore(desk* d, const sel_route_entry* e) {
     d->qlen = strlen(d->query);
     d->search_facet = e->aux < 4u ? e->aux : 0u;
     snprintf(d->scope, sizeof d->scope, "%s", e->sub);
+    d->scope_filtered = 0;
     d->search_restore_q16 = e->scroll;
     d->search_restore = d->qlen > 0u && e->scroll > 0 ? 1 : 0;
 }
@@ -10800,6 +10781,13 @@ static void desk_page_apply(desk* d, desk_page pg) {
     }
     d->focus = -1;
     if (pg == SEL_UIM_PG_SEARCH) {
+        if (!d->pg_back && from != SEL_UIM_PG_SEARCH) { /* I1224: the scope follows the page search is opened from: a source page searches that source, any other page All sources (Back and Forward put the kept scope back) */
+            const char* sc = from == SEL_UIM_PG_COLLECTION && d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? sel_uim_search_scope_of_source(d->src, d->src_n, d->col_key) : NULL;
+            snprintf(d->scope, sizeof d->scope, "%s", sc != NULL ? sc : "");
+            d->scope_filtered = 0;
+            d->on_state = 0u;
+            d->on_n = 0u;
+        }
         desk_search_focus(d, d->pg_walk || d->search_keep);
     }
     desk_page_load(d, pg);
@@ -10869,6 +10857,7 @@ static int desk_page_walk(desk* d, int dir) {
     w = sel_route_hist_walk(&d->rh, dir);
     e = *w;
     d->pg_walk = 1;
+    d->pg_back = 1;
     if (e.page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
         d->shelf_open = e.id;
     }
@@ -10882,6 +10871,7 @@ static int desk_page_walk(desk* d, int dir) {
     }
     moved = desk_present(d);
     d->pg_walk = 0;
+    d->pg_back = 0;
     return moved;
 }
 
@@ -11277,23 +11267,14 @@ static int32_t side_chip_w(const desk* d, uint32_t k) {
     return (at != NULL ? sel_gui_text_width(at, side_chip_name_at(k), strlen(side_chip_name_at(k))) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
 }
 
-/* I1221: where chip k sits in the wrapped flow of a band `bw` wide: its x offset in the band and its row. */
+/* I1221: where chip k sits in the wrapped flow of a band `bw` wide: its x offset in the band and its row (the shared chip_flow_place, I1224). */
 static void side_chip_place(const desk* d, int32_t bw, uint32_t k, int32_t* x, int32_t* row) {
+    int32_t w[SIDE_CHIPS];
     uint32_t i;
-    int32_t cx = 0, r = 0;
-    for (i = 0; i <= k; i++) {
-        int32_t w = side_chip_w(d, i);
-        if (cx > 0 && cx + w > bw) { /* does not fit the rest of the row: start the next one */
-            cx = 0;
-            r++;
-        }
-        if (i == k) {
-            break;
-        }
-        cx += w + lpx(d, SIDE_CHIP_GAP);
+    for (i = 0; i < (uint32_t)SIDE_CHIPS; i++) {
+        w[i] = side_chip_w(d, i);
     }
-    *x = cx;
-    *row = r;
+    chip_flow_place(w, (uint32_t)SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP), bw, k, x, row);
 }
 
 static int32_t side_chip_band_w(const desk* d) {
@@ -13962,7 +13943,7 @@ static int search_list_step(desk* d, const sel_view_state* v, int first, int dir
         const sel_view_row* r = &v->rows[k];
         if (r->kind == SEL_ROW_HEADING) {
             group = sel_uim_search_group(r->text != NULL ? r->text : "");
-            show = search_group_shown(d, group);
+            show = search_group_shown(d, group, r->text != NULL ? r->text : "");
             continue;
         }
         if (!show) {

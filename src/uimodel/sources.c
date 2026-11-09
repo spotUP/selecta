@@ -183,3 +183,13 @@ uint32_t sel_uim_search_source_find(const char* stored) {
     }
     return 0u;
 }
+
+const char* sel_uim_search_scope_of_source(const sel_uim_src_row* r, uint32_t n, const char* page_key) {
+    uint32_t i;
+    for (i = 0; page_key != NULL && page_key[0] != '\0' && i < n; i++) {
+        if (r[i].searchable && r[i].enabled && (strcmp(r[i].key, page_key) == 0 || strcmp(r[i].name, page_key) == 0)) {
+            return r[i].key;
+        }
+    }
+    return NULL;
+}

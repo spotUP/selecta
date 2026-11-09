@@ -73,6 +73,11 @@ if("${c2}" MATCHES "nav page=search")
   message(FATAL_ERROR "the modulespl row must open a source page, not Search:\n${c2}")
 endif()
 
+# I1224: a source page carries the list tools (search field, sort) whether or not its rows are loaded yet.
+if(NOT "${c2}" MATCHES "collection_tools shown=1")
+  message(FATAL_ERROR "the source page must show the list tools (collection_tools shown=1):\n${c2}")
+endif()
+
 # The Your Library filter field holds the keyboard (magnifier click) when the user then clicks the top bar field.
 if(NOT "${c2}" MATCHES "sidetools_rect mag (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) ")
   message(FATAL_ERROR "no sidebar magnifier rect in:\n${c2}")
@@ -88,8 +93,13 @@ endif()
 if(NOT "${c3}" MATCHES "online scope=([^ ]*) searches=([0-9]+) rows=([0-9]+) ")
   message(FATAL_ERROR "no online line in:\n${c3}")
 endif()
-if(NOT CMAKE_MATCH_1 STREQUAL "-")
-  message(FATAL_ERROR "I1019f: the Search page must open on All sources (scope=-), got ${CMAKE_MATCH_1}:\n${c3}")
+if(NOT CMAKE_MATCH_1 STREQUAL "modulespl")
+  message(FATAL_ERROR "I1224: the Search page opened from a source page must search that source (scope=modulespl), got ${CMAKE_MATCH_1}:\n${c3}")
+endif()
+# Johan's path (I1224): source clicked in the sidebar, then the query typed in the top search field with no chip click: the worker
+# search ran (searches is the sentinel) against that source only (rows=3 are the fixture's Modules.pl hits, scope=modulespl above).
+if(NOT "${c3}" MATCHES "online scope=modulespl searches=([1-9][0-9]*) rows=3 ")
+  message(FATAL_ERROR "I1224: typing in the top field after opening a source must search that source only (scope=modulespl searches>=1 rows=3):\n${c3}")
 endif()
 if(NOT "${c3}" MATCHES "online_chip [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) scope=modulespl\n")
   message(FATAL_ERROR "no Modules.pl chip on the Search page:\n${c3}")
@@ -97,7 +107,7 @@ endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 
-# Pass 4: the Modules.pl chip picked after the typing searches that source.
+# Pass 4 (I1224): the source page already scoped the search to Modules.pl, so its chip is selected; a click on the selected chip returns to All sources.
 ts_run(c4 home "wait 300\n${open}click ${mx0} ${my0}\nwait 50\nmove ${fx0} ${fy0}\nclick ${fx0} ${fy0}\nwait 50\nkey c\nkey h\nkey i\nkey p\nkey enter\nwait 100\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 100\nwait 100\nwait 100\nwait 100\n")
 if(NOT "${c4}" MATCHES "online scope=([^ ]*) searches=([0-9]+) rows=([0-9]+) ")
   message(FATAL_ERROR "no online line in:\n${c4}")
@@ -105,6 +115,6 @@ endif()
 set(scope "${CMAKE_MATCH_1}")
 set(searches "${CMAKE_MATCH_2}")
 set(rows "${CMAKE_MATCH_3}")
-if(NOT scope STREQUAL "modulespl" OR searches LESS 1 OR NOT rows EQUAL 3)
-  message(FATAL_ERROR "typing chip after the field click and picking the chip must search modulespl (scope=${scope} searches=${searches} rows=${rows}, want modulespl >=1 3):\n${c4}")
+if(NOT scope STREQUAL "-" OR searches LESS 1)
+  message(FATAL_ERROR "I1224: the selected Modules.pl chip clicked again must return to All sources (scope=${scope} searches=${searches}, want - >=1):\n${c4}")
 endif()
