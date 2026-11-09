@@ -451,9 +451,12 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
     uint32_t used = 0;
     int rows = page_rows(lib), ok = 1;
     char* wrapped = NULL;
+    char* wrapped_idx = NULL;
 
     memset(arms, 0, sizeof arms);
-    /* I1094c: hide every copy but the best, in SQL before paging so a page stays full. The index arm (idx.songs) has no dup_of. */
+    /* I1094c: hide every copy but the best, in SQL before paging so a page stays full. An index arm (idx.songs) carries the
+     * dup_of its export copied from the main database; an index older than schema v18 has none, so its rows follow the main
+     * database's group by key. */
     if (hide && lib->hide_dups) {
         wrapped = sqlite3_mprintf("SELECT q.key AS key FROM (%s) AS q WHERE NOT EXISTS"
                                   " (SELECT 1 FROM songs d WHERE d.key = q.key AND d.dup_of IS NOT NULL)", arm);
@@ -461,9 +464,21 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
             set_error(job, "out_of_memory");
             return;
         }
+        if (arm_idx != NULL) {
+            wrapped_idx = sqlite3_mprintf(lib->idx_dup ? "SELECT q.key AS key FROM (%s) AS q WHERE NOT EXISTS"
+                                                         " (SELECT 1 FROM idx.songs d WHERE d.key = q.key AND d.dup_of IS NOT NULL)"
+                                                       : "SELECT q.key AS key FROM (%s) AS q WHERE NOT EXISTS"
+                                                         " (SELECT 1 FROM songs d WHERE d.key = q.key AND d.dup_of IS NOT NULL)",
+                                          arm_idx);
+            if (wrapped_idx == NULL) {
+                sqlite3_free(wrapped);
+                set_error(job, "out_of_memory");
+                return;
+            }
+        }
     }
     arms[0].arm = wrapped != NULL ? wrapped : arm;
-    arms[1].arm = arm_idx;
+    arms[1].arm = wrapped_idx != NULL ? wrapped_idx : arm_idx;
     for (i = 0; i < narms && ok; i++) {
         arms[i].after = "";
         arms[i].st = prepare_arm(lib, PAGE, arms[i].arm, match, job);
@@ -514,6 +529,7 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
         sqlite3_finalize(arms[i].st);
     }
     sqlite3_free(wrapped);
+    sqlite3_free(wrapped_idx);
 }
 
 /* Fills job->meta with title, artist, format, duration and album for each key collected into job->out.
@@ -529,15 +545,19 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
     }
     if (sqlite3_prepare_v2(lib->db,
                            lib->has_index
-                               ? "SELECT name, artist, format, duration_ms, album FROM songs WHERE key = ?1"
-                                 " UNION ALL SELECT name, artist, format, duration_ms, album FROM idx.songs WHERE key = ?1"
-                               : "SELECT name, artist, format, duration_ms, album FROM songs WHERE key = ?1",
+                               ? (lib->idx_dup
+                                      ? "SELECT name, artist, format, duration_ms, album, dup_members FROM songs WHERE key = ?1"
+                                        " UNION ALL SELECT name, artist, format, duration_ms, album, dup_members FROM idx.songs WHERE key = ?1"
+                                      : "SELECT name, artist, format, duration_ms, album, dup_members FROM songs WHERE key = ?1"
+                                        " UNION ALL SELECT name, artist, format, duration_ms, album, 0 FROM idx.songs WHERE key = ?1")
+                               : "SELECT name, artist, format, duration_ms, album, dup_members FROM songs WHERE key = ?1",
                            -1, &st, NULL) != SQLITE_OK) {
         st = NULL;
     }
     for (i = 0; i < job->count; i++) {
         const char* f[3] = {"", "", ""}, *album = "";
-        char dur[32] = ""; /* two long long fields: 19 + 1 + 19 digits would not fit 16 */
+        char dur[32] = "", copies[16] = ""; /* copies: the group size when the song has several copies, else empty (I1094c) */
+        /* two long long fields: 19 + 1 + 19 digits would not fit 16 */
         size_t need;
         int k;
         if (st != NULL) {
@@ -554,16 +574,19 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
                     long long s = sqlite3_column_int64(st, 3) / 1000;
                     snprintf(dur, sizeof dur, "%lld:%02lld", s / 60, s % 60);
                 }
+                if (sqlite3_column_int64(st, 5) > 1) {
+                    snprintf(copies, sizeof copies, "%lld", (long long)sqlite3_column_int64(st, 5));
+                }
             }
         }
-        need = strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + strlen(dur) + strlen(album) + 5u;
+        need = strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + strlen(dur) + strlen(album) + strlen(copies) + 6u;
         if (used + need > job->meta_cap) {
-            if (used + 5u > job->meta_cap) {
+            if (used + 6u > job->meta_cap) {
                 break;
             }
             f[0] = f[1] = f[2] = album = "";
-            dur[0] = '\0';
-            need = 5u;
+            dur[0] = copies[0] = '\0';
+            need = 6u;
         }
         for (k = 0; k < 3; k++) {
             size_t n = strlen(f[k]) + 1u;
@@ -574,6 +597,8 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
         used += (uint32_t)strlen(dur) + 1u;
         memcpy(job->meta + used, album, strlen(album) + 1u);
         used += (uint32_t)strlen(album) + 1u;
+        memcpy(job->meta + used, copies, strlen(copies) + 1u);
+        used += (uint32_t)strlen(copies) + 1u;
         key += strlen(key) + 1u;
         job->meta_used = used;
     }

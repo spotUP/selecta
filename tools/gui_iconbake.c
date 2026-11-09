@@ -468,7 +468,7 @@ static const int k_mui_sizes[MUI_NSIZE] = {12, 16, 16, 18, 20, 24};
 /* Height of each body: square, but the second 16 is the 16x8 tight-tier set (I949e2, tall pixels). */
 static const int k_mui_heights[MUI_NSIZE] = {12, 8, 16, 18, 20, 24};
 
-static int write_mui(const char* path, int n, const unsigned char (*mk)[MUI_NSIZE][24 * 24]) {
+static int write_mui(const char* path, int n, const char (*names)[64], const unsigned char (*mk)[MUI_NSIZE][24 * 24]) {
     int i, x, y, p, z;
     FILE* o = fopen(path, "w");
     if (o == NULL) {
@@ -516,6 +516,12 @@ static int write_mui(const char* path, int n, const unsigned char (*mk)[MUI_NSIZ
         fprintf(o, "k_set%dx%d,", k_mui_sizes[z], k_mui_heights[z]);
     }
     fprintf(o, "};\nconst uint32_t mui_icon_body_count = %d;\n", n);
+    /* I685g: the Lucide name of each body (the file name in gui_icons.h), same index as the sets: icons are addressed by name. */
+    fprintf(o, "const char* const mui_icon_names[] = {");
+    for (i = 0; i < n; i++) {
+        fprintf(o, "\"%s\",", names[i]);
+    }
+    fprintf(o, "};\n");
     fclose(o);
     return 0;
 }
@@ -651,7 +657,7 @@ int main(int argc, char** argv) {
     fprintf(o, "};\nconst sel_gui_icons_packed sel_gui_icons_baked = {%d, %d, k_sizes, k_stream, k_offs};\n", n, g_nsize);
     fclose(o);
     if (mui_out != NULL) {
-        return write_mui(mui_out, n, (const unsigned char (*)[MUI_NSIZE][24 * 24])mui_masks);
+        return write_mui(mui_out, n, (const char (*)[64])names, (const unsigned char (*)[MUI_NSIZE][24 * 24])mui_masks);
     }
     return 0;
 }

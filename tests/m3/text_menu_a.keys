@@ -1,0 +1,25 @@
+# I1190 a: f = playlist tree, w = menu, New Playlist, name Mix; w on it, Rename, name Zed.
+wait 400
+f
+wait 300
+w
+wait 200
+Down
+wait 100
+Down
+wait 100
+Down
+wait 100
+Enter
+wait 200
+M
+M
+Enter
+wait 400
+w
+wait 200
+Enter
+wait 200
+Z
+Enter
+wait 400

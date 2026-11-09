@@ -11,7 +11,7 @@
 static uint32_t g_publishes;
 
 uint32_t sel_spsc_publishes(void) {
-    return g_publishes;
+    return SEL_COUNT_GET(&g_publishes);
 }
 
 static uint32_t round_pow2(uint32_t n) {
@@ -65,7 +65,7 @@ uint32_t sel_spsc_count(const sel_spsc* q) {
  * 0 when they do not fit. */
 /* Copies a tag list (MORE and SKIP followed) into buf at *used as a flat END-terminated array, string-typed values
  * included. PTR and INT values stay as they are (a PTR points into engine memory that outlives the event). */
-static int copy_tags(sel_arg* dst, const sel_tag* src, char* buf, uint32_t cap, uint32_t* used) {
+int sel_spsc_copy_tags(sel_arg* dst, const sel_tag* src, char* buf, uint32_t cap, uint32_t* used) {
     uint32_t n = sel_tag_count(src), off = (*used + (uint32_t)sizeof(uintptr_t) - 1u) & ~((uint32_t)sizeof(uintptr_t) - 1u), i = 0, len;
     sel_tag* out;
     const sel_tag* it = src;
@@ -108,7 +108,7 @@ static int copy_strings(sel_message* dst, const sel_message* src, char* buf, uin
             dst->args[i].v.s = buf + used;
             used += n;
         } else if (src->args[i].type == SEL_ARG_TAGS && src->args[i].v.t != NULL &&
-                   !copy_tags(&dst->args[i], src->args[i].v.t, buf, cap, &used)) {
+                   !sel_spsc_copy_tags(&dst->args[i], src->args[i].v.t, buf, cap, &used)) {
             return 0;
         }
     }
@@ -128,7 +128,7 @@ int sel_spsc_push(sel_spsc* q, const sel_message* m) {
     }
     sel_pal_publish_begin(); /* only the index store is guarded; the slot copy above is not */
     SEL_ATOMIC_STORE_REL(&q->tail, tail + 1u);
-    g_publishes++;
+    (void)SEL_COUNT_ADD(&g_publishes, 1u);
     sel_pal_publish_end();
     return 1;
 }
@@ -147,7 +147,7 @@ int sel_spsc_pop(sel_spsc* q, sel_message* out) {
     sel_pal_publish_begin();
     q->read = read + 1u;
     SEL_ATOMIC_STORE_REL(&q->head, read + 1u);
-    g_publishes++;
+    (void)SEL_COUNT_ADD(&g_publishes, 1u);
     sel_pal_publish_end();
     return 1;
 }
@@ -156,7 +156,7 @@ void sel_spsc_release(sel_spsc* q) {
     if (q->arena_bytes != 0 && q->head != q->read) {
         sel_pal_publish_begin();
         SEL_ATOMIC_STORE_REL(&q->head, q->read);
-        g_publishes++;
+        (void)SEL_COUNT_ADD(&g_publishes, 1u);
         sel_pal_publish_end();
     }
 }

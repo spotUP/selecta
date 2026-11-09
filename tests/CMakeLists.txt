@@ -77,6 +77,13 @@ add_test(NAME desktop-bake-check
   COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/desktop-bake-check.tmp"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/desktop_bake_check.cmake")
 
+# I1218b: a desktop dev configure without the GPL/KSS players stops (cmake/player_set_check.cmake), so the dev Selecta.app
+# cannot silently lose the sid/sndh/zxtune/kss replayers again ("No player for HVSC yet").
+add_test(NAME player-set-check
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/player-set-check.tmp"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/player_set_check.cmake")
+set_tests_properties(player-set-check PROPERTIES PASS_REGULAR_EXPRESSION "player-set-check: all cases passed")
+
 # I565: every "ui.*" pref a UI plugin reads is declared in prefs.def (ui.desktop.zoom was not, so prefs.conf could not set it).
 add_test(NAME ui-prefs-declared
   COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/ui_prefs_declared.cmake")
@@ -219,6 +226,13 @@ if(APPLE)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/coreaudio_airplay_route"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/coreaudio_airplay_route.cmake")
   set_tests_properties(coreaudio-airplay-route PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
+  # I1143 reachability: a Next click on the AirPlay route path, with a renderer whose setRate blocks 500 ms, keeps the UI
+  # thread's longest gap under 200 ms. Volume 0 and a renderer that plays nothing.
+  add_test(NAME coreaudio-av-nowait
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_TESTMOD}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/coreaudio_av_nowait"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/coreaudio_av_nowait.cmake")
+  set_tests_properties(coreaudio-av-nowait PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/isolate_config.cmake")
@@ -500,17 +514,26 @@ endif()
 
 # Amiga MUI UI (plan 2026-10-25-amiga-mui.md): MUI-P0-4 sentinel tag, MUI-P1-2 descriptor, MUI-P1-1 build split,
 # MUI-P0-6 SDK probe. Host only; the plugin entry is compiled straight into the test (it is not registered on the host).
+# I685c: the MUI class package source tree; every test that reads a shipped class source starts from this one path.
+set(MCC_DIR "${PROJECT_SOURCE_DIR}/plugins/shared/mcc")
+add_test(NAME mcc-include-check COMMAND "${CMAKE_COMMAND}" "-DMCC_DIR=${MCC_DIR}" "-DUI_DIR=${PROJECT_SOURCE_DIR}/plugins/ui/mui"
+  "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DROOTS=${MCC_CHECK_ROOTS}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake")
+set_tests_properties(mcc-include-check PROPERTIES TIMEOUT 30)
 if(NOT SEL_AMIGA)
   add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
   target_include_directories(mui_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
   target_compile_definitions(mui_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_mui_test SEL_PLUGIN_KIND_BUILD=5)
   target_link_libraries(mui_test PRIVATE selecta_registry mui_map)
+  add_executable(mui_fontprobe_test ui/mui_fontprobe_test.c "${MCC_DIR}/src/map/mui_fontprobe.c")
+  target_include_directories(mui_fontprobe_test PRIVATE "${MCC_DIR}/src")
+  add_test(NAME mui-fontprobe COMMAND mui_fontprobe_test)
+  set_tests_properties(mui-fontprobe PROPERTIES TIMEOUT 30 LABELS mui)
   add_test(NAME mui-descriptor COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
   add_test(NAME mui-stat-tag COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(mui-descriptor mui-stat-tag PROPERTIES TIMEOUT 30 LABELS mui)
   add_executable(mui_contract_test ui/mui_contract_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c" "${PROJECT_SOURCE_DIR}/plugins/scripting/arexx/arexx_core.c")
-  target_include_directories(mui_contract_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map" "${PROJECT_SOURCE_DIR}/plugins/scripting/arexx")
-  target_compile_definitions(mui_contract_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_mui_test SEL_PLUGIN_KIND_BUILD=5 "MUI_UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "MUI_DIR=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui\"")
+  target_include_directories(mui_contract_test PRIVATE "${MCC_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map" "${PROJECT_SOURCE_DIR}/plugins/scripting/arexx")
+  target_compile_definitions(mui_contract_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_mui_test SEL_PLUGIN_KIND_BUILD=5 "MUI_UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "MUI_DIR=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui\"" "MCC_DIR=\"${MCC_DIR}\"")
   target_link_libraries(mui_contract_test PRIVATE selecta_registry mui_map)
   add_test(NAME mui-wait-contract COMMAND mui_contract_test wait)
   add_test(NAME mui-registry COMMAND mui_contract_test registry)
@@ -552,9 +575,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-aabtn-tokens COMMAND mui_contract_test aabtn-tokens)
   add_test(NAME mui-aacheck COMMAND mui_contract_test aacheck)
   add_test(NAME mui-newplaylist COMMAND mui_contract_test newplaylist)
+  add_test(NAME mui-siflags COMMAND mui_contract_test siflags)
   add_test(NAME mui-libfilter COMMAND mui_contract_test libfilter)
   add_test(NAME mui-icon-rows COMMAND mui_contract_test icon-rows)
   add_test(NAME mui-screen-plan COMMAND mui_contract_test screen-plan)
+  add_test(NAME mui-open-compact-reach COMMAND mui_contract_test open-compact-reach) # I949f
   add_test(NAME mui-aa-aspect COMMAND mui_contract_test aa-aspect)
   add_test(NAME mui-screen-rtg-flag COMMAND mui_contract_test screen-rtg-flag)
   add_test(NAME mui-window-borderless COMMAND mui_contract_test window-borderless)
@@ -563,6 +588,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-topbar COMMAND mui_contract_test topbar)
   add_test(NAME mui-route COMMAND mui_contract_test route)
   add_test(NAME mui-route-reach COMMAND mui_contract_test route-reach)
+  add_test(NAME mui-flag-guard COMMAND mui_contract_test flag-guard)
   add_test(NAME mui-tiles-reach COMMAND mui_contract_test tiles-reach)
   add_test(NAME mui-relayout COMMAND mui_contract_test relayout)
   add_test(NAME mui-transport-map COMMAND mui_contract_test transport)
@@ -588,7 +614,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(mui-p8-library-modes PROPERTIES TIMEOUT 30 LABELS mui)
   add_test(NAME mui-p8-queue-scope COMMAND mui_p8_test queue-scope)
   target_compile_definitions(mui_p8_test PRIVATE MUI_SRC_ROOT="${PROJECT_SOURCE_DIR}")
-  foreach(t view-buttons tile-steps amiga-settings doors statistics panels sources infoline tooltips remember pref-keys)
+  foreach(t view-buttons tile-steps amiga-settings doors statistics panels sources infoline tooltips remember pref-keys layout-modes library-styles library-pages queue-scope-ui)
     add_test(NAME mui-p8-${t} COMMAND mui_p8_test ${t})
     set_tests_properties(mui-p8-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
@@ -596,6 +622,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(mui-p8-transport-extras mui-p8-voices-programs PROPERTIES TIMEOUT 30 LABELS mui)
   add_test(NAME mui-doors COMMAND mui_contract_test doors)
   add_test(NAME mui-sidebar COMMAND mui_contract_test sidebar)
+  add_test(NAME mui-sidebar-bullet-latin1 COMMAND mui_contract_test sidebar-bullet-latin1)
   add_test(NAME mui-panes COMMAND mui_contract_test panes)
   add_test(NAME mui-library COMMAND mui_contract_test library)
   add_test(NAME mui-toast COMMAND mui_contract_test toast)
@@ -607,10 +634,15 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-grid COMMAND mui_canvas_test grid)
   add_test(NAME mui-art-path COMMAND mui_canvas_test art-path)
   set_tests_properties(mui-canvas-geom mui-grid mui-art-path PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685w: the truecolour draw path through the map/mui_aa_paint ops seam (design 5.2 item 4).
+  add_executable(mui_truecolour_test ui/mui_truecolour_test.c)
+  target_link_libraries(mui_truecolour_test PRIVATE mui_map selecta_uimodel)
+  add_test(NAME mcc-truecolour-path COMMAND mui_truecolour_test)
+  set_tests_properties(mcc-truecolour-path PROPERTIES TIMEOUT 30 LABELS mui)
   add_executable(mui_aa_test ui/mui_aa_test.c)
   target_include_directories(mui_aa_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
   target_link_libraries(mui_aa_test PRIVATE mui_map selecta_uimodel)
-  target_compile_definitions(mui_aa_test PRIVATE "AABTN_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aabtn_class.c\"" "AADRAW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aa_draw.c\"" "UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "AATEXT_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aatext_class.c\"" "AAPANEL_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aapanel_class.c\"" "AATABS_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aatabs_class.c\"" "AABALANCE_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aabalance_class.c\"" "AASLIDER_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aaslider_class.c\"" "AACYCLE_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aacycle_class.c\"" "AALIST_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aalist_class.c\"" "LISTVIEW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_listview_class.c\"" "AASCROLLER_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aascroller_class.c\"" "AAFIELD_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aafield_class.c\"" "MUI_CMAKE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/CMakeLists.txt\"")
+  target_compile_definitions(mui_aa_test PRIVATE "AABTN_SOURCE=\"${MCC_DIR}/src/class/mui_aabtn_class.c\"" "AADRAW_SOURCE=\"${MCC_DIR}/src/mui_aa_draw.c\"" "UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "AATEXT_SOURCE=\"${MCC_DIR}/src/class/mui_aatext_class.c\"" "AAPANEL_SOURCE=\"${MCC_DIR}/src/class/mui_aapanel_class.c\"" "AATABS_SOURCE=\"${MCC_DIR}/src/class/mui_aatabs_class.c\"" "AABALANCE_SOURCE=\"${MCC_DIR}/src/class/mui_aabalance_class.c\"" "AASLIDER_SOURCE=\"${MCC_DIR}/src/class/mui_aaslider_class.c\"" "AACYCLE_SOURCE=\"${MCC_DIR}/src/class/mui_aacycle_class.c\"" "AALIST_SOURCE=\"${MCC_DIR}/src/class/mui_aalist_class.c\"" "LISTVIEW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_listview_class.c\"" "AASCROLLER_SOURCE=\"${MCC_DIR}/src/class/mui_aascroller_class.c\"" "AAFIELD_SOURCE=\"${MCC_DIR}/src/class/mui_aafield_class.c\"" "MUI_CMAKE=\"${MCC_DIR}/CMakeLists.txt\"")
   foreach(t round ramp state tokens check)
     add_test(NAME mui-aa-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-aa-${t} PROPERTIES TIMEOUT 30 LABELS mui)
@@ -619,6 +651,81 @@ if(NOT SEL_AMIGA)
     add_test(NAME mui-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
+  # I685f: spec structs map to tag lists; no class reads a spec id; UP_TAG( defined only in up.h.
+  add_executable(mui_tagmap_test ui/mui_tagmap_test.c)
+  target_include_directories(mui_tagmap_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map" "${MCC_DIR}/include" "${MCC_DIR}/src/class")
+  target_link_libraries(mui_tagmap_test PRIVATE mui_map selecta_uimodel)
+  target_compile_definitions(mui_tagmap_test PRIVATE "MCC_DIR=\"${MCC_DIR}\"")
+  add_test(NAME mui-tagmap COMMAND mui_tagmap_test tags)
+  add_test(NAME mui-tagmap-source COMMAND mui_tagmap_test source)
+  set_tests_properties(mui-tagmap mui-tagmap-source PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685i: the eleven UP-*.mcc libraries compile the same class sources as sel_mcc_static (host check of the lists both builds use).
+  add_test(NAME mcc-classlibs-source COMMAND "${CMAKE_COMMAND}" "-DLIB_SOURCES=${MCC_CLASS_LIB_SOURCES}" "-DSTATIC_SOURCES=${MCC_STATIC_SOURCES}"
+    -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_classlibs.cmake")
+  set_tests_properties(mcc-classlibs-source PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685e2: the package log gate (aa_log quiet unless UP_MCC_DEBUG / ENV:UP-MCC/Debug is set) and the source check that no other stderr writer remains.
+  add_executable(mcc_log_test ui/mcc_log_test.c)
+  target_link_libraries(mcc_log_test PRIVATE sel_mcc_static)
+  target_compile_definitions(mcc_log_test PRIVATE "MCC_DIR=\"${MCC_DIR}\"")
+  foreach(t gate-off gate-on source)
+    add_test(NAME mcc-log-${t} COMMAND mcc_log_test ${t} "${CMAKE_CURRENT_BINARY_DIR}/mcc_log_${t}.txt")
+    set_tests_properties(mcc-log-${t} PROPERTIES TIMEOUT 30 LABELS mui)
+  endforeach()
+  # I685e2 part 2: the package font search list (setter, theme key font.file, default) and the source check that no Selecta:/RAM: path remains.
+  # I685e4: the package links alone (no mui_map on the link line) and serves the baked icon table.
+  add_executable(mcc_link_test ui/mcc_link_test.c)
+  target_link_libraries(mcc_link_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-link-no-map COMMAND mcc_link_test)
+  set_tests_properties(mcc-link-no-map PROPERTIES TIMEOUT 30 LABELS mui)
+
+  add_executable(mcc_font_list_test ui/mcc_font_list_test.c)
+  target_link_libraries(mcc_font_list_test PRIVATE sel_mcc_static)
+  target_compile_definitions(mcc_font_list_test PRIVATE "MCC_DIR=\"${MCC_DIR}\"")
+  add_test(NAME mcc-font-list-order COMMAND mcc_font_list_test order "${CMAKE_CURRENT_BINARY_DIR}/mcc_font_list_theme.txt")
+  add_test(NAME mcc-font-list-source COMMAND mcc_font_list_test source)
+  set_tests_properties(mcc-font-list-order mcc-font-list-source PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685h: the up-mcc.library API (lib/support_lib.c, compiled into sel_mcc_static and into the Amiga library) through the static build.
+  add_executable(mcc_support_api_test ui/mcc_support_api_test.c)
+  target_link_libraries(mcc_support_api_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-support-api COMMAND mcc_support_api_test)
+  set_tests_properties(mcc-support-api PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685n (section 8.4, gate item 2): two class-library clients (src/map/up_store_client.c) bound to one library see one token array and
+  # one registry. The client file is compiled here without UP_CLASS_LIBRARY: only the instance API, no mui_theme_tokens forwarders.
+  add_executable(mcc_shared_store_test ui/mcc_shared_store_test.c "${MCC_DIR}/src/map/up_store_client.c")
+  target_link_libraries(mcc_shared_store_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-shared-store COMMAND mcc_shared_store_test)
+  set_tests_properties(mcc-shared-store PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685j: the UP-MCC.mcp prefs page, host part: theme writer round trip, gadget/token mapping, shipped theme files, the CMake name.
+  # I685k: UP-Demo is built from the release headers only (no Selecta include path, no sel_mcc_static); the checked lists are the
+  # ones target up_demo is built from (asserted in the Amiga part of the package CMakeLists).
+  add_test(NAME mcc-demo-headers-only COMMAND "${CMAKE_COMMAND}" "-DINCLUDES=${MCC_DEMO_INCLUDES}" "-DLIBS=${MCC_DEMO_LIBS}"
+    "-DSOURCE=${MCC_DIR}/demo/updemo.c" "-DRELEASE_INC=${MCC_RELEASE_INC}" "-DSOURCE_ROOT=${PROJECT_SOURCE_DIR}" "-DBINARY_ROOT=${PROJECT_BINARY_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_demo.cmake")
+  set_tests_properties(mcc-demo-headers-only PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685k: the sentinel attribute UPA_Shared_Origin is 0 in the static build, the library base in a .mcc (gate item 1).
+  add_executable(mcc_origin_test ui/mcc_origin_test.c)
+  target_link_libraries(mcc_origin_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-shared-origin COMMAND mcc_origin_test)
+  set_tests_properties(mcc-shared-origin PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685t: library open applies the ENV theme file with no UP_ThemeReload.
+  add_executable(mcc_lib_init_test ui/mcc_lib_init_test.c)
+  target_link_libraries(mcc_lib_init_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-lib-init-theme COMMAND mcc_lib_init_test "${MCC_DIR}/dist/themes/Light.theme")
+  set_tests_properties(mcc-lib-init-theme PROPERTIES TIMEOUT 30 LABELS mui)
+  add_executable(mcc_prefs_test ui/mcc_prefs_test.c)
+  target_link_libraries(mcc_prefs_test PRIVATE sel_mcc_static)
+  add_test(NAME mcc-prefs-writer COMMAND mcc_prefs_test writer)
+  add_test(NAME mcc-prefs-mapping COMMAND mcc_prefs_test mapping)
+  add_test(NAME mcc-prefs-themes COMMAND mcc_prefs_test themes "${MCC_DIR}/dist/themes")
+  add_test(NAME mcc-theme-complete COMMAND mcc_prefs_test complete "${MCC_DIR}/dist/themes")
+  add_test(NAME mcc-prefs-cmake COMMAND mcc_prefs_test cmake "${MCC_DIR}/CMakeLists.txt" "${MCC_PREFS_NAME}")
+  set_tests_properties(mcc-prefs-writer mcc-prefs-mapping mcc-prefs-themes mcc-theme-complete mcc-prefs-cmake PROPERTIES TIMEOUT 30 LABELS mui)
+  # I685l: every public UPA_/UPM_ name in up.h and UP_ function in up_lib.h has an AutoDoc entry (section 8.5), and the staging of the
+  # distribution tree (section 9) produces every path of the layout (empty stand-ins for the Amiga build products).
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME mcc-autodoc COMMAND "${Python3_EXECUTABLE}" -I "${PROJECT_SOURCE_DIR}/tools/mcc_autodoc.py" check)
+  add_test(NAME mcc-dist-layout COMMAND "${CMAKE_COMMAND}" -DMODE=selftest "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mcc_dist_selftest"
+    "-DROOT=${PROJECT_SOURCE_DIR}" "-DCLASS_NAMES=${MCC_CLASS_NAMES}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_dist.cmake")
+  set_tests_properties(mcc-autodoc mcc-dist-layout PROPERTIES TIMEOUT 30 LABELS mui)
   # I970: the baked 16x8 tall-pixel icon bodies (List, Repeat, Stop) keep their detail; the revert proof is the old baker.
   add_executable(mui_icon_fit_test ui/mui_icon_fit_test.c)
   target_include_directories(mui_icon_fit_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
@@ -643,10 +750,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-queue COMMAND mui_contract_test queue)
   add_test(NAME mui-playlists COMMAND mui_contract_test playlists)
   add_test(NAME mui-song-menu COMMAND mui_contract_test song-menu)
+  add_test(NAME mui-ctxmenu COMMAND mui_contract_test ctxmenu)
   add_test(NAME mui-like-rating COMMAND mui_contract_test like-rating)
   add_test(NAME mui-nowplaying COMMAND mui_contract_test nowplaying)
   add_test(NAME mui-songinfo COMMAND mui_contract_test songinfo)
   add_test(NAME mui-settings COMMAND mui_contract_test settings)
+  add_test(NAME mui-statistics COMMAND mui_contract_test statistics)
+  add_test(NAME mui-sync-offer COMMAND mui_contract_test sync-offer)
   add_test(NAME mui-dialogs COMMAND mui_contract_test dialogs)
   add_test(NAME mui-cmdline COMMAND mui_contract_test cmdline)
   add_test(NAME mui-states COMMAND mui_contract_test states)
@@ -654,7 +764,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-toolrows COMMAND mui_contract_test toolrows)
   add_test(NAME mui-live-guard COMMAND mui_contract_test live-guard)
   add_test(NAME mui-cycle-initial COMMAND mui_contract_test cycle-initial)
-  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-tiles-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-libfilter mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-sidebar mui-panes mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-window-borderless mui-player-bar mui-sidebar-icons mui-compact-rail mui-compact-player mui-player-bar-reach mui-player-band-sizes mui-icon-square mui-subsong-bar mui-viz-chooser mui-overlays mui-dialog-windows mui-tooltip-flat PROPERTIES TIMEOUT 30 LABELS mui)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-flag-guard mui-siflags mui-tiles-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-libfilter mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-sidebar mui-sidebar-bullet-latin1 mui-panes mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-open-compact-reach mui-window-borderless mui-player-bar mui-sidebar-icons mui-compact-rail mui-compact-player mui-player-bar-reach mui-player-band-sizes mui-icon-square mui-subsong-bar mui-viz-chooser mui-overlays mui-dialog-windows mui-tooltip-flat mui-ctxmenu mui-statistics mui-sync-offer PROPERTIES TIMEOUT 30 LABELS mui)
   # I792: the MUI-vs-Mac parity guard runs in the pre-push gate: nice -n 19 ctest --test-dir build/host -L push-gate
   set_tests_properties(mui-weights mui-doors mui-panes PROPERTIES LABELS "mui;push-gate")
   set(_mui_has_ui 0)
@@ -706,6 +816,32 @@ if(NOT SEL_AMIGA)
     COMMAND selecta --stats --ui no-such-ui --output null)
   set_tests_properties(selecta-startup-error-report PROPERTIES
     PASS_REGULAR_EXPRESSION "selecta: ui 'no-such-ui' is not registered.*startup_error_reports=1")
+
+  # I625a: the start-up phase trace. --log writes one "trace t_ms=" line per phase (ms since main entry) plus the system
+  # time at main entry; without --log none appear. Fail-before: the lines did not exist.
+  add_test(NAME selecta-start-phase-trace
+    COMMAND ${CMAKE_COMMAND} -DSELECTA=$<TARGET_FILE:selecta> -DWORK=${CMAKE_CURRENT_BINARY_DIR}/start_phase_trace
+      -DSRC=${PROJECT_SOURCE_DIR}/apps/selecta/main.c
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/m1/start_phase_trace.cmake)
+
+  # I1137: the app ships library-template.db where sel_library_open looks (bundle Contents/Resources, else beside the executable), and a
+  # fresh start with an empty config directory logs `template copied`, not `final schema created`. Fail-before: nothing staged the file.
+  if(TARGET library_template)
+    if(APPLE)
+      set(_sel_tpl_stage "$<TARGET_BUNDLE_CONTENT_DIR:selecta>/Resources")
+    else()
+      set(_sel_tpl_stage "$<TARGET_FILE_DIR:selecta>")
+    endif()
+    add_test(NAME selecta-template-first-start
+      COMMAND ${CMAKE_COMMAND} -DSELECTA=$<TARGET_FILE:selecta> "-DTEMPLATE_DIR=${_sel_tpl_stage}"
+        -DWORK=${CMAKE_CURRENT_BINARY_DIR}/template_first_start -P ${CMAKE_CURRENT_SOURCE_DIR}/m1/template_first_start.cmake)
+    set_tests_properties(selecta-template-first-start PROPERTIES TIMEOUT 60 LABELS library)
+  endif()
+  # I1137: the Selecta Amiga archive tree holds library-template.db beside the program (PROGDIR:), the Installer script and the rexx
+  # scripts; the staging of cmake/selecta_dist.cmake runs here with stand-in files, the Amiga CI step runs it on the real build.
+  add_test(NAME selecta-dist-layout COMMAND "${CMAKE_COMMAND}" -DMODE=selftest "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/selecta_dist_selftest"
+    "-DROOT=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/selecta_dist.cmake")
+  set_tests_properties(selecta-dist-layout PROPERTIES TIMEOUT 30 LABELS library)
 
   # I916: a UI that refuses its flags hands the shell the reason (sel_ui_open_args.why); the start-up report names it
   # instead of "the UI could not open (no terminal?)". rc 1 is the WILL_FAIL half.
@@ -851,6 +987,13 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-companion-decode)
   set_tests_properties(nuade-companion-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_companion_decode_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  # I710av: BP SoundMon 1.0 (mark BPSM) plays through the render entry point (nuade soundmon player); the song is fetched by checksum, exit 77 = skip.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-soundmon-decode)
+  add_test(NAME nuade-soundmon-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/nuade_soundmon_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-soundmon-decode)
+  set_tests_properties(nuade-soundmon-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_soundmon_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 endif()
 
 # T29: playlist codecs (Hippo .prg, M3U, PLS, XSPF), src/library/playlist.
@@ -960,6 +1103,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(catalogue_length_render_test PRIVATE selecta_core selecta_library)
   add_test(NAME engine-catalogue-length-render COMMAND catalogue_length_render_test)
   set_tests_properties(engine-catalogue-length-render PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "catalogue_length_render_ok")
+  # I1196: the catalogue song count touches a bounded number of pages (no COUNT over songs on the single library worker).
+  add_executable(library_total_cost_test engine/library_total_cost_test.c)
+  target_include_directories(library_total_cost_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_total_cost_test PRIVATE selecta_core selecta_library)
+  add_test(NAME engine-library-total-cost COMMAND library_total_cost_test)
+  set_tests_properties(engine-library-total-cost PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "library_total_cost_ok")
   add_executable(hw_prepare_test engine/hw_prepare_test.c)
   target_link_libraries(hw_prepare_test PRIVATE selecta_core)
   # I732: the native kplayer adapter's tracker hooks, through the engine's own lookup (host stub for the 68k call).
@@ -1028,6 +1177,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_libfilter_left_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-libfilter-left COMMAND uim_libfilter_left_test)
   set_tests_properties(uim-libfilter-left PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_libfilter_left_ok")
+  # I1222c: the text tier's layout in cells (SEL_UIM_TIER_TEXT, no hints region).
+  add_executable(uim_layout_text_test uimodel/layout_text_test.c)
+  target_link_libraries(uim_layout_text_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-layout-text COMMAND uim_layout_text_test)
+  set_tests_properties(uim-layout-text PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_layout_text_ok")
   # I611: Your Library sort comparators and the text filter.
   add_executable(uim_lsort_test uimodel/lsort_test.c)
   target_link_libraries(uim_lsort_test PRIVATE selecta_uimodel selecta_core)
@@ -1879,6 +2033,17 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_screen.cmake")
   set_tests_properties(metadata-panel PROPERTIES LABELS m3)
 
+  add_test(NAME text-ui-songinfo-page
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_empty.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_page.keys"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/songinfo_page"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_page.cmake")
+  set_tests_properties(text-ui-songinfo-page PROPERTIES LABELS m3)
+
   add_test(NAME song-key
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>"
       "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.sel"
@@ -2130,6 +2295,28 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I710aq: PlayerPRO MAD songs (.mad) play through the render entry point (bbmp_playerpro module, GPL-3.0 bbmp engine on PlayerPROCore). Songs are fetched by checksum,
+  # exit 77 = skip. An Mlat Adlib Tracker shaped .mad (adplug's), a zero file and a cut-off song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/playerpro-decode)
+    add_test(NAME playerpro-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/playerpro_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/playerpro-decode)
+    set_tests_properties(playerpro-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "playerpro_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
+  # I710ar: Polly Tracker songs (.mod) play through the render entry point (sid module, vendored C64 player in front of the song). Songs are fetched by
+  # checksum, exit 77 = skip. A zero file, an Amiga M.K. shaped file and an oversize file must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/polly-decode)
+    add_test(NAME polly-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/polly_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/polly-decode)
+    set_tests_properties(polly-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "polly_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ak: FAC SoundTracker (MSX .mus) songs play through the render entry point (bbmp_fac module, GPL-3.0). Songs and
   # drum kits are fetched by checksum, exit 77 = skip. A non-FAC .mus must not be claimed.
   if(SELECTA_GPL_PLUGINS)
@@ -2138,6 +2325,17 @@ if(NOT SEL_AMIGA)
       COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/fac_decode.sh $<TARGET_FILE:selecta-cli>
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/fac-decode)
     set_tests_properties(fac-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "fac_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
+  # I710as: bbmp's Ad Lib helper formats (.fmf .ftf .sig .lem .mus .cal .vib .fmt .edl) play through the render entry point (bbmp_adlib module, GPL-3.0). Negatives always run;
+  # the songs come from tests/m3/fixtures/bbmp_adlib.manifest (fetched by checksum), exit 77 = skip (no fixture listed).
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adlib-decode)
+    add_test(NAME adlib-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/adlib_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adlib-decode)
+    set_tests_properties(adlib-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adlib_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
@@ -2215,6 +2413,56 @@ if(NOT SEL_AMIGA)
       COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/smx_decode.sh $<TARGET_FILE:selecta-cli>
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/smx-decode)
     set_tests_properties(smx-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "smx_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
+  # I710al: GoatTracker 1 and 2 songs (.sng) play through the render entry point (goattracker module: GoatTracker play routine and reSID, GPL-2.0-or-later glue). Songs are fetched by checksum, exit 77 = skip.
+  # Other .sng formats (SCC-Musixx-shaped, zero file, junk, cut-off songs) must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/goattracker-decode)
+    add_test(NAME goattracker-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/goattracker_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/goattracker-decode)
+    set_tests_properties(goattracker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "goattracker_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I710al1: hostile .sng input (fixed-seed byte mutations of a GT1 and a GT2 song) never crashes or hangs the loader; SELECTA_GT_MAX_SECONDS caps each scan.
+    add_test(NAME goattracker-mutate
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/goattracker_mutate.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/goattracker-decode)
+    set_tests_properties(goattracker-mutate PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "goattracker_mutate_ok" SKIP_RETURN_CODE 77 TIMEOUT 600
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules;SELECTA_GT_MAX_SECONDS=3")
+  endif()
+
+  # I710an: Synder SNG-Player songs (.sng) play through the render entry point (bbmp_synder module, GPL-3.0 bbmp-synder). Songs are fetched by checksum, exit 77 = skip.
+  # Other .sng formats (GoatTracker-style, zero file, cut-off song) must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/synder-decode)
+    add_test(NAME synder-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/synder_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/synder-decode)
+    set_tests_properties(synder-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "synder_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
+  # I710ao: MONOTONE songs (.mon) play through the render entry point (bbmp_monotone module, GPL-3.0 bbmp monotone.cpp). Songs are fetched by checksum, exit 77 = skip.
+  # A .mon file with another magic (nuade maniacsofnoise shape), a zero file and a cut-off song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/monotone-decode)
+    add_test(NAME monotone-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/monotone_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/monotone-decode)
+    set_tests_properties(monotone-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "monotone_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
+  # I710ap: DigiTrekker songs (.dtm) play through the render entry point (bbmp_digitrekker module, GPL-3.0 bbmp digitrekker.cpp). Songs are fetched by checksum, exit 77 = skip.
+  # A Digital Tracker header, a DeFy-like file, a zero file and a cut-off song must not be claimed.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/digitrekker-decode)
+    add_test(NAME digitrekker-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/digitrekker_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/digitrekker-decode)
+    set_tests_properties(digitrekker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "digitrekker_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
@@ -2588,6 +2836,13 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)
     set_tests_properties(sid-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_decode_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I1226: the sid module answers SEL_RP_VIZ_SID (sid_chips >= 1, registers change across viz blocks) through the engine.
+    add_executable(sid_viz_test engine/sid_viz_test.c)
+    target_link_libraries(sid_viz_test PRIVATE selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+    add_dependencies(sid_viz_test sel_module_sid)
+    add_test(NAME sid-viz-regs COMMAND sid_viz_test ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_sweep.sid)
+    set_tests_properties(sid-viz-regs PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "sid_viz_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-mute)
     add_test(NAME sid-mute
       COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_mute.sh $<TARGET_FILE:selecta-cli>
@@ -2661,6 +2916,16 @@ if(NOT SEL_AMIGA)
                 ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/adplug_test.raw
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-decode)
       set_tests_properties(adplug-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_decode_ok"
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
+
+    # I710aw: EdLib D01 (JCH header, version 1 song) plays through the render entry point (adplug d00 player); songs fetched by checksum, exit 77 = skip.
+    if(TARGET sel_module_adplug)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-edlib-d01-decode)
+      add_test(NAME adplug-edlib-d01-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/adplug_edlib_d01_decode.sh $<TARGET_FILE:selecta-cli>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-edlib-d01-decode)
+      set_tests_properties(adplug-edlib-d01-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_edlib_d01_decode_ok" SKIP_RETURN_CODE 77
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
 
@@ -2791,6 +3056,16 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60)
 endif()
 
+# I1218 hvsc-builtin-mirror: an hvsc song key (hosted by modland) fetches from the built-in Modland mirror list under
+# pub/modules/HVSC/ (the old hvsc.de/download base was 404). No SELECTA_MIRRORS override.
+if(NOT SEL_AMIGA)
+  add_test(NAME hvsc-builtin-mirror
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv" -P "${SEL_NET_DIR}/hvsc_builtin_mirror.cmake")
+  set_tests_properties(hvsc-builtin-mirror PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60)
+endif()
+
 # I94a (row I94 refinement, user decision Q24): the first loop of a non-looping song counts as the song's end,
 # so SONG_ENDED reports `end`; a song that loops by design (selecta-loop.mod, B01 jump) keeps `loop`.
 # Reachability: the script drives the engine dispatch; the nuade adapter turns the wrap to order 0 into ENDED.
@@ -2799,6 +3074,39 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DSCRIPTS=${CMAKE_CURRENT_SOURCE_DIR}/m13"
       "-DSONGS=${CMAKE_CURRENT_BINARY_DIR}/songs"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/first_check.cmake")
+endif()
+
+# I1184: text-ui-shared-actions. The text UI binds the shared action table's keys (shuffle, repeat, album, queue,
+# like, Statistics hide, Switch to Desktop); sentinel text_table_actions counts the table lines the keys fired.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-shared-actions
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions_c.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_shared_actions"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_shared_actions.cmake")
+  set_tests_properties(text-ui-shared-actions PROPERTIES LABELS m3)
+endif()
+
+# I1185: the text UI layouts (Ctrl-1..4) and visualizers (Ctrl-5..8), including the SID registers panel on a fed tune.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-layout-viz
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DSID_MODULES=${PROJECT_BINARY_DIR}/tests/fixtures/plugin_sidfeed/mod"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_d.keys"
+      "-DKEYS_E=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_e.keys"
+      "-DKEYS_G=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_g.keys"
+      "-DKEYS_H=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_h.keys"
+      "-DKEYS_I=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz_i.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_layout_viz"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_layout_viz.cmake")
+  set_tests_properties(text-ui-layout-viz PROPERTIES LABELS m3)
 endif()
 
 # M3 Phase 5 (I205, I206): T98 text-ui-library-screen. The shell drives L, /, a query and Enter over
@@ -2995,6 +3303,12 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32 AND SELECTA_UI_DESKTOP)
       "-DPLUGINS=${SEL_SYSFILE_PROBE_DIR}" -P "${SEL_NET_DIR}/sysfile_desktop.cmake")
   set_tests_properties(sysfile-desktop PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 120 PASS_REGULAR_EXPRESSION "sysfile_desktop_ok")
+  # I1225: a song open (slow remote fetch, slow system-file download) never blocks the desktop UI thread.
+  add_test(NAME dui-open-async
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DPLUGINS=${SEL_SYSFILE_PROBE_DIR}" -P "${SEL_NET_DIR}/open_async.cmake")
+  set_tests_properties(dui-open-async PROPERTIES LABELS "m3;dui" FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "open_async_ok")
 endif()
 
 # Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).
@@ -3179,6 +3493,27 @@ if(NOT SEL_AMIGA)
   target_include_directories(library_write_gen_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_write_gen_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-write-gen COMMAND library_write_gen_test)
+  add_executable(library_schema_tx_test library/schema_tx_test.c)
+  target_include_directories(library_schema_tx_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_schema_tx_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-schema-tx COMMAND library_schema_tx_test ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(library-schema-tx PROPERTIES PASS_REGULAR_EXPRESSION "schema_tx_ok")
+  # I625a8b: the v18 step on an empty songs table issues no slice statements (sel_dup_rebuild cost 1657 ms there at 68020 speed).
+  add_executable(library_dup_rebuild_empty_test library/dup_rebuild_empty_test.c)
+  target_include_directories(library_dup_rebuild_empty_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_dup_rebuild_empty_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-dup-rebuild-empty COMMAND library_dup_rebuild_empty_test)
+  set_tests_properties(library-dup-rebuild-empty PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "dup_rebuild_empty_ok")
+  # I625a8c: a fresh library.db comes from SCHEMA_FINAL (no ALTER) and equals what the 18 migrations leave.
+  add_executable(library_schema_final_test library/schema_final_test.c)
+  target_include_directories(library_schema_final_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_schema_final_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-schema-final COMMAND library_schema_final_test)
+  set_tests_properties(library-schema-final PROPERTIES LABELS "m3;library" TIMEOUT 30 PASS_REGULAR_EXPRESSION "schema_final_ok")
+  # I625a8e: the prebuilt template database equals SCHEMA_FINAL, and a missing library.db is copied from it.
+  add_dependencies(library_schema_final_test library_template)
+  add_test(NAME library-template-schema COMMAND library_schema_final_test --template ${CMAKE_BINARY_DIR}/library-template.db)
+  set_tests_properties(library-template-schema PROPERTIES LABELS "m3;library" TIMEOUT 30 PASS_REGULAR_EXPRESSION "template_ok")
   set_tests_properties(library-write-gen PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "write_gen_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
@@ -3289,6 +3624,12 @@ if(NOT SEL_AMIGA)
   add_executable(net_table_fanout_test net_table_fanout_test.c)
   target_include_directories(net_table_fanout_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(net_table_fanout_test PRIVATE selecta_library selecta_registry selecta_core)
+  # I1218: a hosted source (hvsc, HOSTED_BY modland) fetches from the host's mirrors under the host path, on the host and the Amiga route.
+  add_executable(hosted_mirror_test net/hosted_mirror_test.c)
+  target_include_directories(hosted_mirror_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(hosted_mirror_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME hosted-mirror COMMAND hosted_mirror_test)
+  set_tests_properties(hosted-mirror PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "hosted_mirror_ok")
   add_test(NAME net-table-fanout COMMAND net_table_fanout_test)
   set_tests_properties(net-table-fanout PROPERTIES LABELS m3 TIMEOUT 20 PASS_REGULAR_EXPRESSION "net_table_fanout_ok")
   # I196d: the recording split walker cuts at MP3 frame and Ogg page starts.
@@ -3496,6 +3837,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(archiveorg-search PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_search_ok")
 
+  # I1003a: the online cover scraper (MusicBrainz + Cover Art Archive, iTunes fallback) fills the artwork table for albums without a
+  # cover; recorded misses are not retried; SELECTA_ART_SCRAPE=off sends nothing.
+  add_test(NAME art-scrape
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXLIB=${CMAKE_CURRENT_SOURCE_DIR}/library/fixtures"
+      -P "${SEL_NET_DIR}/art_scrape.cmake")
+  set_tests_properties(art-scrape PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "art_scrape_ok")
+
   # I1024d: SOURCE_SEARCH radiobrowser over a local /json/stations/search fixture: codec filter, sink rows, -1 when unreachable.
   add_test(NAME radiobrowser-search
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/radiobrowser_search.cmake")
@@ -3652,6 +4001,13 @@ if(NOT SEL_AMIGA)
   add_executable(collection_view_test engine/collection_view_test.c)
   target_include_directories(collection_view_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(collection_view_test PRIVATE selecta_library selecta_registry selecta_core)
+  # I1082f: published snapshot; a UI thread walks queue/view/collection while the engine thread edits them 10000 times. TSan
+  # (-DSELECTA_TSAN=ON, build/tsan) must stay silent; SELECTA_TEST_NOPUB=1 reads live state and TSan reports.
+  add_executable(pub_snapshot_test engine/pub_snapshot_test.c)
+  target_include_directories(pub_snapshot_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(pub_snapshot_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-pub-snapshot COMMAND pub_snapshot_test)
+  set_tests_properties(engine-pub-snapshot PROPERTIES TIMEOUT 300 PASS_REGULAR_EXPRESSION "pub_snapshot_ok")
   add_test(NAME engine-collection-view COMMAND collection_view_test)
   set_tests_properties(engine-collection-view PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "collection_view_ok")
   add_test(NAME engine-play-context-lists COMMAND play_context_lists_test)
@@ -3959,6 +4315,17 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 endif()
 
+# I1223c: NerdTracker II songs (.ned) play through the render entry point (bbmp_ned module, GPL-3.0 engine, GPL-plugin gate). The replay routine
+# is two system files the test assembles from nedplay.zip (needs cc65), songs fetched by checksum (tests/m3/fixtures/bbmp_ned.SOURCE), exit 77 = skip.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ned-decode)
+  add_test(NAME ned-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/ned_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ned-decode)
+  set_tests_properties(ned-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "ned_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+endif()
+
 # I710w: SGC and GBR songs play through the render entry point (bbmp_nez module, libnezplug, no GPL gate). Four songs fetched by checksum
 # (tests/m3/fixtures/bbmp_nez.SOURCE), exit 77 = skip. A file that is not an SGC/GBR song must not be claimed.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
@@ -3968,4 +4335,72 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nez-decode)
   set_tests_properties(nez-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nez_decode_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+endif()
+
+# I1186: the text UI library styles (Alt-6..Alt-0, Alt-c): Grid cells, Cover Flow centre row, Compact lines.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-styles
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles_d.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_styles"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_styles.cmake")
+  set_tests_properties(text-ui-styles PROPERTIES LABELS m3)
+endif()
+
+# I1187: the text UI Library mode key (c: Composers, Tree, Columns, Files, History) and queue scope key (x: Library, Album, Playlist).
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-libmode
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_d.keys"
+      "-DKEYS_E=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_e.keys"
+      "-DKEYS_F=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_f.keys"
+      "-DKEYS_G=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode_g.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_libmode"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode.cmake")
+  set_tests_properties(text-ui-libmode PROPERTIES LABELS m3)
+endif()
+
+# I1188: the text UI Settings screen (key S, palette entry) over the shared pref rows; every change is a PREF_SET.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-settings
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings_c.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_settings"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_settings.cmake")
+  set_tests_properties(text-ui-settings PROPERTIES LABELS m3)
+endif()
+# I1189: the text UI Shelf page (Show all) and Collection page (tile Enter, keys e and r) over uimodel/pages.h.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-pages
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_c.keys"
+      "-DKEYS_D=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages_d.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_pages"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages.cmake")
+  set_tests_properties(text-ui-pages PROPERTIES LABELS m3)
+endif()
+
+# I1190: the text UI song menu and playlist menu (key w) over the uimodel label and line builders.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-menu
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu_b.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_menu"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu.cmake")
+  set_tests_properties(text-ui-menu PROPERTIES LABELS m3)
 endif()

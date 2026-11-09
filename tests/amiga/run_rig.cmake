@@ -217,7 +217,7 @@ elseif(TAG STREQUAL "M4MUI")
   ami(ignored exec "Delete >NIL: RAM:mui-out.txt ${P} QUIET" 10)
   if(song_ok)
     # I724: the I716 race made deterministic. ENV:Selecta/MUIDblRace (read once at open) makes the MUI view move the engine cursor to
-    # row 0 ("..") and force a list refresh between the double-click and its handling, so AAL_Active is always reset to ".." when the
+    # row 0 ("..") and force a list refresh between the double-click and its handling, so UPA_List_Active is always reset to ".." when the
     # handler runs; only a handler that acts on the picked (clicked) row plays the song.
     ami(ignored exec "MakeDir >NIL: ENV:Selecta" 10)
     ami(ignored exec "SetEnv Selecta/MUIDblRace 1" 10)

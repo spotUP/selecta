@@ -1,0 +1,6 @@
+bbmp_synder (I710an): bbmp-synder.cpp and resample.h from github.com/creep-ltx/bbmp csrc/synder, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX line in both files, COPYING).
+Synder SNG-Player and SNG-Player Stereo songs (.sng, C64 tunes recorded as per-frame synthesizer settings, DaNyL's SNG-Player, Windows 2008): a clean-room
+player written by bbmp from a description of the file format and the synthesizer (bbmp docs/replayers.md, helper `bbmp-synder`; terms GPL 3 or later).
+No other data or library is needed. bbmp-synder.cpp is a helper program with its own main(); plugins/replayers/bbmp_synder/shim.cpp includes it with main
+renamed (so the file stays unchanged) and drives its Song, Synth and Resampler classes, reproducing the helper's render loop.

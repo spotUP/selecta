@@ -1,0 +1,7 @@
+MONOTONE test songs for tests/m3/monotone_decode.sh (bbmp_monotone module, I710ao). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Monotone/Trixter/understa.mon  58a992106be511c1094dc6afbd31aa4749fb50280f7ee4c19d8f20624e9bf908
+https://modland.com/pub/modules/Monotone/Virt/rickroll.mon  a468527517ff39ea49c62e0fba07e3babea52fafe8088001b843e3f84d6af953
+https://modland.com/pub/modules/Monotone/Yesso/prelude.mon  85cbdc3a440df09b7744f8fbd280f6229d6a21cfb175909a60855623c7f1bf34
+https://modland.com/pub/modules/Monotone/Yesso/test.mon  7bd4a88f56196c63e7631393b394ce7e8a8834cb79cb3c1009d15170bb95fe26
+Engine licence: GPL-3.0-or-later (bbmp csrc/pcmusic/monotone.cpp, third_party/bbmp_monotone); the tracker it ports is The Unlicense.

@@ -29,6 +29,7 @@ struct sid_shim {
 extern "C" {
 
 const uint8_t* sid_shim_builtin_kernal(void) { return sid_openrom_kernal; }
+const uint8_t* sid_shim_polly_player(void) { return sid_polly_player; }
 const uint8_t* sid_shim_builtin_basic(void) { return sid_openrom_basic; }
 const uint8_t* sid_shim_builtin_chargen(void) { return sid_openrom_chargen; }
 
@@ -121,6 +122,21 @@ uint32_t sid_shim_render(sid_shim* s, int16_t* out, uint32_t frames) {
 }
 
 uint32_t sid_shim_cfg_applied(const sid_shim* s) { return s->cfg_applied; }
+
+uint32_t sid_shim_regs(sid_shim* s, uint8_t* regs, uint32_t chips) {
+    uint32_t k = 0;
+    uint8_t st[32];
+    if (s->cfg_applied == 0) {
+        return 0;
+    }
+    for (; k < chips; k++) {
+        if (!s->engine.getSidStatus(k, st)) {
+            break;
+        }
+        std::memcpy(regs + k * 25u, st, 25u);
+    }
+    return k;
+}
 
 uint32_t sid_shim_chips(const sid_shim* s) { return s->tune->getInfo()->sidChips(); }
 

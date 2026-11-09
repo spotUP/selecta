@@ -1,0 +1,7 @@
+NerdTracker II songs for tests/m3/ned_decode.sh (bbmp_ned module, I1223c). Never committed: fetched by sha256 into the git-ignored
+tests/m3/fixtures/.cache. No redistribution licence is stated for the songs (Modland archive, by Memblers).
+https://modland.com/pub/modules/NerdTracker%202/Memblers/gradius.ned  203403d84c5bd32a6a54ee87f15dcb0fe2ba51b9e539c8a626a1e3e73a003ecb
+https://modland.com/pub/modules/NerdTracker%202/Memblers/butl1.ned  eaa1919a2311fe23a975e086e5961d4d147ad9d67c4241ed1d8395c0c1be0edd
+The replay routine is not a fixture: the test assembles it from nedplay.zip (sha256 84602a2164280c3a10b080c21fd43f3cac7b6e41e6a53e94faf859c596b4e76f,
+https://www.nesdev.org/nt2/download/nedplay.zip) with cc65 2.19 and compares with the sha256 the plugin declares. Giftware, non-commercial use only.
+Engine licence: GPL-3.0-or-later (bbmp csrc/retro ned engine, third_party/bbmp_ned).

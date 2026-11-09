@@ -1,0 +1,12 @@
+# I1189: H, Down x3 to the New This Week heading, Enter = Show all.
+wait 400
+H
+wait 500
+Down
+wait 100
+Down
+wait 100
+Down
+wait 100
+Enter
+wait 400

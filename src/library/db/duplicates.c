@@ -321,12 +321,13 @@ int sel_dup_rebuild(sqlite3* db) {
     if (rc == SQLITE_OK && sqlite3_step(edge) == SQLITE_ROW) maxid = sqlite3_column_int64(edge, 0);
     sqlite3_finalize(edge);
     edge = NULL;
-    if (rc == SQLITE_OK) {
-        rc = sqlite3_prepare_v2(db,
-                                "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE id > ?1 AND id <= ?2 AND (dup_of IS NOT NULL OR dup_members <> 1)"
-                                " AND NOT (COALESCE(md5, '') <> '' AND EXISTS (SELECT 1 FROM songs o WHERE o.md5 = songs.md5 AND o.md5 <> '' AND o.id <> songs.id))",
-                                -1, &clear, NULL);
-    }
+    /* I625a8b: no row, no group. Preparing the UPDATE statements compiles every songs trigger and opens the FTS table, which cost
+     * 1657 ms of a fresh library's v18 step on a 68020 with zero rows to change. */
+    if (rc != SQLITE_OK || maxid == 0) return rc;
+    rc = sqlite3_prepare_v2(db,
+                            "UPDATE songs SET dup_of = NULL, dup_members = 1 WHERE id > ?1 AND id <= ?2 AND (dup_of IS NOT NULL OR dup_members <> 1)"
+                            " AND NOT (COALESCE(md5, '') <> '' AND EXISTS (SELECT 1 FROM songs o WHERE o.md5 = songs.md5 AND o.md5 <> '' AND o.id <> songs.id))",
+                            -1, &clear, NULL);
     for (a = 0; rc == SQLITE_OK && a < maxid; a += DUP_SLICE_ROWS) {
         sqlite3_bind_int64(clear, 1, a);
         sqlite3_bind_int64(clear, 2, a + DUP_SLICE_ROWS);

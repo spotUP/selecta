@@ -1,4 +1,4 @@
-/* play <song> --output <id> --seconds <n> [--rate <hz>] [--resample <name>] [--record <dir>]
+/* play <song> --output <id> --seconds <n> [--volume <0..100>] [--rate <hz>] [--resample <name>] [--record <dir>]
  * (T16): drives a real output (coreaudio) from the engine. The output owns
  * the clock; OUT_PUMP blocks until the requested frames have been played.
  * Prints `callbacks=K frames=F` from the output's own stats. Exit 77 when the
@@ -37,6 +37,7 @@ int sel_cli_play(int argc, char** argv) {
     void* out;
     const char* id = NULL;
     const char* record = NULL;
+    unsigned long volume = 100;
     unsigned long rate = 0, seconds = 10; /* 0: the output's preferred rate */
     uint32_t resampler = 1; /* linear */
     uint32_t total, played = 0, callbacks = 0, frames = 0;
@@ -52,6 +53,8 @@ int sel_cli_play(int argc, char** argv) {
             id = argv[i + 1];
         } else if (strcmp(argv[i], "--seconds") == 0) {
             seconds = strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--volume") == 0) {
+            volume = strtoul(argv[i + 1], NULL, 10); /* I1144: a test plays at 0 so nothing is heard */
         } else if (strcmp(argv[i], "--record") == 0) {
             record = argv[i + 1]; /* I196c: OPTION record_to <dir> before OPEN */
         } else if (strcmp(argv[i], "--rate") == 0) {
@@ -77,6 +80,12 @@ int sel_cli_play(int argc, char** argv) {
     e = sel_cli_start_song("play", host, argv[0], (uint32_t)rate, resampler);
     if (e == NULL) {
         return 1;
+    }
+    if (volume != 100) {
+        char line[24];
+        char pool[64];
+        snprintf(line, sizeof line, "VOLUME %lu", volume);
+        (void)sel_engine_send_line(e, line, pool, sizeof pool);
     }
     sel_engine_set_output(e, o.hooks);
     out = o.open(host, (uint32_t)rate, 2);

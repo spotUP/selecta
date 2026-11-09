@@ -5,19 +5,38 @@
 #include <stdio.h>
 #include <string.h>
 
-#define BAR_H 72
-#define BAR_ONE_ROW_H 40 /* DUI-P4-20: the footer as one row on a short canvas */
-#define BANNER_H 40
-#define SIDEBAR_WIDE 220
-#define SIDEBAR_NARROW 200
-#define SIDEBAR_ICONS 56
-#define SIDEBAR_EXPANDED_WIDE 360 /* I609: the widened Your Library sidebar, three-column layout */
-#define SIDEBAR_EXPANDED_NARROW 320 /* two-column layout */
-#define SIDEBAR_EXPANDED_ICONS 220 /* the icon rail opens to a labelled sidebar */
+/* I1222c: per-tier metrics. Default and bitmap hold the desktop pixel values (I609 expanded widths, DUI-P4-20 one row footer, I615
+ * top bar); the text tier counts cells. Text: three columns from 80 cols up (sidebar 20, main the rest, detail 30), wider panels from
+ * 120 cols (sidebar 26, detail 34), an icon rail from 60 cols, mini below; a 1 row top bar; the player 2 rows, 1 row at 25 rows and
+ * below; no hints row (Johan, 2026-11-09). */
+static const sel_uim_metrics k_metrics[SEL_UIM_TIER_COUNT] = {
+    {SEL_UIM_BP_THREE_COLUMN_MIN, SEL_UIM_BP_TWO_COLUMN_MIN, SEL_UIM_BP_ICON_SIDEBAR_MIN, 220, 200, 56, 360, 320, 220, 0, 320, 240,
+     120, 56, 72, 40, SEL_UIM_FOOTER_ONE_ROW_MAX_H, 40},
+    {SEL_UIM_BP_THREE_COLUMN_MIN, SEL_UIM_BP_TWO_COLUMN_MIN, SEL_UIM_BP_ICON_SIDEBAR_MIN, 220, 200, 56, 360, 320, 220, 0, 320, 240,
+     120, 56, 72, 40, SEL_UIM_FOOTER_ONE_ROW_MAX_H, 40},
+    {80, 80, 60, 20, 20, 3, 0, 0, 0, 40, 30, 30, 8, 1, 2, 1, 25, 0},
+};
+#define TEXT_WIDE_COLS 120u /* text: from here the sidebar is 26 and the detail 34 wide */
+#define TEXT_SIDE_WIDE 26u
+#define TEXT_DETAIL_WIDE 34u
 #define SIDEBAR_RAIL_LABELLED 160 /* I526 D1: the bitmap tier rail, mini8 labels beside the icon */
-#define DETAIL_W 320
-#define MAIN_MIN_W 240
-#define MAIN_MIN_H 120
+
+#define BAR_H k_metrics[SEL_UIM_TIER_DEFAULT].bar_h
+#define BAR_ONE_ROW_H k_metrics[SEL_UIM_TIER_DEFAULT].bar_one_row_h
+#define BANNER_H k_metrics[SEL_UIM_TIER_DEFAULT].banner_h
+#define SIDEBAR_WIDE k_metrics[SEL_UIM_TIER_DEFAULT].side_wide
+#define SIDEBAR_NARROW k_metrics[SEL_UIM_TIER_DEFAULT].side_narrow
+#define SIDEBAR_ICONS k_metrics[SEL_UIM_TIER_DEFAULT].side_icons
+#define SIDEBAR_EXPANDED_WIDE k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_wide /* I609: the widened Your Library sidebar, three-column layout */
+#define SIDEBAR_EXPANDED_NARROW k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_narrow /* two-column layout */
+#define SIDEBAR_EXPANDED_ICONS k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_icons /* the icon rail opens to a labelled sidebar */
+#define DETAIL_W k_metrics[SEL_UIM_TIER_DEFAULT].detail_w
+#define MAIN_MIN_W k_metrics[SEL_UIM_TIER_DEFAULT].main_min_w
+#define MAIN_MIN_H k_metrics[SEL_UIM_TIER_DEFAULT].main_min_h
+
+const sel_uim_metrics* sel_uim_metrics_for(uint32_t tier) {
+    return &k_metrics[tier < SEL_UIM_TIER_COUNT ? tier : SEL_UIM_TIER_DEFAULT];
+}
 
 static const char* const k_layout_names[SEL_UIM_BP_COUNT] = {"three-column", "two-column", "icon-sidebar",
                                                              "mini-suggestion"};
@@ -129,6 +148,11 @@ void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32
     sel_uim_layout_compute_panel(l, width, height, tier, 0u, BAR_H, 0u, detail_hidden);
 }
 
+/* I1166b: as compute_tier_panel with the Expand Library sidebar (`expand`, the desktop side_wide) for the MUI window. */
+void sel_uim_layout_compute_tier_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t expand) {
+    sel_uim_layout_compute_panel(l, width, height, tier, 0u, BAR_H, expand, detail_hidden);
+}
+
 /* I619: as compute_expand; a non-zero `detail_hidden` drops the Now Playing column of the three column breakpoint, the main
  * region taking its width. */
 void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
@@ -173,6 +197,56 @@ void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t he
         add(l, "detail", detail, MAIN_MIN_H, (int32_t)(side + main_w), (int32_t)tb_h, detail, body_h);
     }
     add(l, "player", 0, 0, 0, (int32_t)(tb_h + body_h), width, bar_h);
+}
+
+/* I1222c: the text tier's layout in cells. Same region names as the desktop, no hints row. From 80 cols three columns (sidebar 20, main
+ * the rest, detail 30; from 120 cols 26 and 34), 60 to 79 cols an icon rail, below that the player alone. The top bar is one row, kept
+ * when the main region still has its minimum height. `expand` widens the sidebar to 40 percent of the columns, capped so the main
+ * region keeps its minimum; `detail_hidden` drops the detail column. Returns 0, or 1 for an empty canvas. */
+int sel_uim_layout_compute_text(sel_uim_layout* l, uint32_t cols, uint32_t rows, uint32_t expand, uint32_t detail_hidden) {
+    const sel_uim_metrics* m = sel_uim_metrics_for(SEL_UIM_TIER_TEXT);
+    uint32_t bar_h, tb_h, body_h, side = 0, detail = 0, main_w;
+    memset(l, 0, sizeof *l);
+    l->width = cols;
+    l->height = rows;
+    if (cols == 0u || rows == 0u) {
+        return 1;
+    }
+    bar_h = rows <= (uint32_t)m->one_row_max_h ? (uint32_t)m->bar_one_row_h : (uint32_t)m->bar_h;
+    bar_h = bar_h > rows ? rows : bar_h;
+    tb_h = (cols >= (uint32_t)m->bp_icons && rows >= bar_h + (uint32_t)m->topbar_h + (uint32_t)m->main_min_h) ? (uint32_t)m->topbar_h : 0u;
+    body_h = rows - bar_h - tb_h;
+    if (cols >= (uint32_t)m->bp_three) {
+        l->breakpoint = SEL_UIM_BP_THREE_COLUMN;
+        side = cols >= TEXT_WIDE_COLS ? TEXT_SIDE_WIDE : (uint32_t)m->side_wide;
+        detail = detail_hidden ? 0u : (cols >= TEXT_WIDE_COLS ? TEXT_DETAIL_WIDE : (uint32_t)m->detail_w);
+    } else if (cols >= (uint32_t)m->bp_icons) {
+        l->breakpoint = SEL_UIM_BP_ICON_SIDEBAR;
+        side = (uint32_t)m->side_icons;
+    } else {
+        l->breakpoint = SEL_UIM_BP_MINI_SUGGESTION;
+    }
+    if (expand && l->breakpoint == SEL_UIM_BP_THREE_COLUMN) {
+        uint32_t want = cols * (uint32_t)m->side_exp_pct / 100u;
+        uint32_t cap = cols > detail + (uint32_t)m->main_min_w ? cols - detail - (uint32_t)m->main_min_w : 0u;
+        want = want > cap ? cap : want;
+        side = want > side ? want : side;
+    }
+    main_w = cols - side - detail;
+    if (tb_h > 0u) {
+        topbar_set(&l->topbar, "topbar", (int32_t)side, 0, cols - side, tb_h);
+    }
+    if (side > 0u) {
+        add(l, "sidebar", side, (uint32_t)m->main_min_h, 0, 0, side, tb_h + body_h);
+    }
+    if (l->breakpoint != SEL_UIM_BP_MINI_SUGGESTION) {
+        add(l, "main", (uint32_t)m->main_min_w, (uint32_t)m->main_min_h, (int32_t)side, (int32_t)tb_h, main_w, body_h);
+    }
+    if (detail > 0u) {
+        add(l, "detail", detail, (uint32_t)m->main_min_h, (int32_t)(side + main_w), (int32_t)tb_h, detail, body_h);
+    }
+    add(l, "player", 0, 0, 0, (int32_t)(rows - bar_h), cols, bar_h);
+    return 0;
 }
 
 /* I668: puts the sidebar at `side` wide mid-tween and gives the main region the rest, the detail column and the player staying put.

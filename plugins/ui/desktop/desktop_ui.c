@@ -116,6 +116,7 @@ typedef struct song_ref {
     uint32_t list_id;      /* I632d: which list of that kind (page, playlist id, drilldown) */
     uint32_t list_version; /* I632d: the list's version: a sort, filter, search or page change makes a new one */
     uint32_t list_index;   /* I632d: the row's position in the whole list (not in the window), the selection model's row number */
+    uint32_t ctx_pos;      /* I994e: the row's shown position on a playlist or collection page: the PLAY_CONTEXT start (list_index is the stored index on a playlist page) */
     int online;            /* I406b: an online search hit (path = the engine's `<source>:<path>` key): the last item saves it to the library */
 } song_ref;
 
@@ -224,7 +225,10 @@ typedef struct desk {
     uint8_t* icon_buf[DESK_ICON_SIZES]; /* resampled masks (I460) for sizes that are not baked; NULL when baked */
     uint32_t icon_resampled; /* sizes of the current icon atlas that were resampled */
     txt_bindings binds;      /* the keys of the action table (DUI-P3-3) */
-    uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows;
+    uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows, view_cursor_repaints, search_skips;
+    int64_t search_want, search_want_from; /* I1151: last VIEW_CURSOR the search list sent and the cursor it was sent from (0,0 at start: from equals the cursor) */
+    uint32_t view_cur_seen, view_win_seen; /* I1151: the engine view's cursor and window start the last turn saw */
+    int view_pos_set, view_kb_seen; /* kb_list as drawn: the first Down shows the highlight although the cursor stays on row 0 */
     uint32_t fired_seen[4];  /* one bit per action row that fired */
     int32_t focus;           /* focus stop: layout regions in order, then the search field; -1 = none */
     char query[64];          /* the type-to-search text */
@@ -249,6 +253,7 @@ typedef struct desk {
     int32_t col_av_w;
     uint32_t col_av_hash;
     int pls_recent;          /* I994d4: the next pls_open is a click on a playlist (feeds Recents); any other open rebuilds the page only */
+    uint32_t col_eshown;      /* I994d5: rows the engine says are shown (pg->shown) */
     uint32_t col_read_serial; /* I994d4: serial of the page pls_reload_run last read: a newer one (own change, view) is read again */
     uint32_t col_open_serial; /* serial of the published collection page when this page was opened: only a newer page is this page's */
     char col_key[256];       /* the item key of a kind page (album id, artist name, composer canon) */
@@ -268,10 +273,12 @@ typedef struct desk {
     char si_composer_key[SEL_COMPOSER_MAX]; /* its composer canon, from the song's db row */
     char si_composer_ref[512]; /* the song path si_composer_key was read for */
     int32_t si_composer_row; /* the info row index of the Author tag, -1 when the song has none */
+    sel_gui_rect search_plain_row; /* I1011: the first Albums or Artists row drawn this frame (no song_row_reg), w 0 when none; dump line searchplainrow */
     uint32_t row_hover_fill; /* I690b: the fill the list row under the pointer was last painted with, 0 when none (dump line plhover) */
     uint32_t link_hover;     /* I690b: 1 artist or 2 album link of a track row is underlined under the pointer, 0 none (dump line pllink) */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     sel_gui_rect col_more_drawn; /* I1065: where the last frame drew Show more (all zero when it did not) */
+    uint32_t pls_briefed; /* I1198: 1 once the briefs answer filled pls_title/pls_meta of the current song set */
     uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
     uint32_t local_icon_side, local_icon_head; /* I938: the icon the Local Files sidebar tile and the Local Files page header last drew (dump line localicon) */
@@ -284,12 +291,14 @@ typedef struct desk {
     int col_cover;           /* 1 when col_color came from the first song's cover */
     int col_cover_wait;      /* I906c: the header cover is queued on the art worker; the header refreshes when it lands */
     int col_search;          /* 1 while the collection's search field has the keyboard */
+    uint32_t col_source_searches; /* I1229: clicks on a searchable source page's field that opened the Search page scoped to it */
     char col_q[64];
     size_t col_qlen;
     uint32_t add_id;         /* I652b: the playlist the Library page adds to (0 = the Library page is not in add mode) */
     char add_name[96];
     uint32_t add_sent;       /* I652b: PLAYLIST_ADD_SONG lines sent from the Library page in add mode */
     uint32_t add_drawn;      /* I652b: Add controls drawn on the Library rows this frame */
+    uint32_t row_more_hover; /* I1147: song rows that drew their trailing "..." this frame because the pointer is on them */
     int imp_wait;            /* I652c: a playlist dialog is open, its answer arrives as a drop: 1 playlist file, 2 folder (I652d) */
     uint32_t addf_sent, addf_seen; /* I652d sentinels: PLAYLIST_ADD_FOLDER lines sent / engine folder adds the UI has shown */
     uint32_t pl_fail_seen; /* I652e: engine import / add-folder failures the UI has shown */
@@ -377,6 +386,10 @@ typedef struct desk {
     int32_t search_restore_q16; /* I1012: the scroll a Back or Forward to the Search page puts back once its results are sent again */
     int search_restore;      /* I1012: 1 while search_restore_q16 waits for the search to fire, 2 while it waits for the results to be tall enough */
     uint32_t search_wheels;  /* sentinel: wheel notches the Search page scroll path took */
+    uint32_t search_follows; /* sentinel (I1161): keyboard moves that ran the Search list scroll-follow */
+    int32_t side_cur;        /* I1183: the sidebar stop's keyboard cursor: shown doors in slot order, then the Your Library rows; -1 = none */
+    uint32_t side_cur_draws; /* frames that drew the cursor (sentinel) */
+    uint32_t route_main, route_player, route_sidebar, route_detail; /* sentinels (I1164): arrow and Enter keys routed by the focused stop */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
     int32_t set_y_q16;       /* I799a: Settings scroll offset in logical pixels, Q16 */
@@ -396,17 +409,18 @@ typedef struct desk {
     uint32_t badge_drawn;    /* I1020: the source badges the last Search frame painted (one per result row); badge_text keeps the first 16 names for the dump */
     char badge_text[16][48];
     uint32_t facet_drawn;    /* I1019f: the facet chips the last Search frame painted (the dump sentinel that the row is drawn under every source pick) */
+    int scope_filtered;      /* I1224: the scope is a source chip clicked over All results already shown: the grouped view stays and only that source's From section is drawn; no new query */
     char scope[24];          /* I1019f: the source chip in force: "" All sources (the fan-out, every launch), SEARCH_SCOPE_LIBRARY the library alone, else the id of one online source (SOURCE_SEARCH). Never persisted */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
     uint32_t art_waits;      /* I906c: headless naps spent waiting for the background cover batches */
     uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
     uint32_t sync_waits;     /* I1077d: headless naps spent waiting for a running LIBRARY_SYNC to end */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
-    uint32_t on_chip_first, on_chip_scrolls; /* I1073: the source chip that leads the scrolled chip row, chevron scrolls that moved it (sentinel) */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
     struct { char id[64]; sel_gui_rect rect; } search_sync[16]; uint32_t search_sync_n, search_sync_clicks; /* I1053b: the Sync buttons of the Not synced sections the last frame drew */
     char search_sec_head[16][72]; uint32_t search_sec_rows[16], search_sec_n; int32_t search_sec_y[16]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
+    struct { char name[96]; sel_gui_rect rect; } search_art[48]; uint32_t search_art_n, search_art_opens; /* I1207: the Artists rows/tiles the last Search frame drew; a click opens that artist's page */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
@@ -432,6 +446,9 @@ typedef struct desk {
     uint32_t sort_dir;       /* 0 queue order, 1 ascending, 2 descending */
     int sm_open;             /* the shared song menu is open (I305) */
     int sm_lit;              /* I874: the menu item drawn highlighted by the last paint, -1 for none (dump line smenu_lit) */
+    int sm_key;              /* I1150: the menu item the arrow keys lit, -1 for none; valid only while sm_key_menu == menus and sm_key_step == sm_step */
+    uint32_t sm_key_menu;
+    int sm_key_step;
     int stats_open;          /* the Library Statistics panel (More) is expanded over the grid (I455) */
     uint32_t stats_panel_draws, stats_panel_rows; /* panels painted, and the statistics rows in the last one */
     int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library, 3 = Quit Selecta */
@@ -449,6 +466,11 @@ typedef struct desk {
     song_row sm_rows[SM_ROWS]; /* the song rows drawn in the main region this frame: the one registry every page feeds */
     sel_engine_library_item sm_pls[8]; /* the song menu's Add to Playlist step: all playlists, not the sidebar's filtered list */
     uint32_t sm_pl_n, sm_want, sm_inflight, sm_posts, sm_takes; /* I906e: the Add to Playlist list is read on the engine's items slot, shared with the sidebar's (one at a time) */
+    uint32_t sm_multi_n;    /* I632: songs the open song menu acts on when it was opened on a selected row of a multi-selection (0 = the one row, sm_ref) */
+    uint32_t sm_multi_ver;  /* the selection's list version, frozen at open */
+    char sm_multi_list[24]; /* the engine's name of that list: queue, view or playlist:<id> */
+    char sm_multi_ranges[256]; /* the selection as ranges text in list order */
+    uint32_t sm_multi_adds; /* SONGS_PLAYLIST_ADD lines sent from the song menu */
     uint32_t sm_n, sm_opens, sm_picks, sm_pl_adds;
     sel_uim_selset sel; /* I632d: the one selection of the list on screen (src/uimodel/select.c) */
     size_t brf_cap; /* I948a: the answer buffer size the read was posted with */
@@ -475,6 +497,7 @@ typedef struct desk {
     int ydiv_opt;            /* --ydiv N: forces the pixel aspect (the mem backend tests the AGA 640x256 layout); 0 = by backend */
     int is_aga;              /* the aga backend: canvases up to 300 rows get ydiv 2 (I468) */
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
+    int pg_back;             /* 1 only while Back or Forward walks (desk_route also sets pg_walk): the kept search scope stays (I1224) */
     uint32_t nav_arrow_clicks; /* history arrow clicks */
     uint32_t vol_clicks, seek_clicks; /* footer bar clicks and drags sent as VOLUME and SEEK (I312) */
     const char* output_id;      /* I1039: the id of the output the shell opened */
@@ -507,10 +530,10 @@ typedef struct desk {
     int32_t shelf_back_y_q16;                              /* I617: the Home scroll kept while the Shelf page is open */
     uint32_t show_all_draws, show_all_clicks, shelf_page_draws, shelf_page_opens, shelf_page_tiles; /* I617: Show all links drawn, clicked, and Shelf page frames drawn */
     sel_gui_rect show_all_rect[8];                 /* I617: the Show all link of each shelf as last drawn, w 0 when not drawn */
+    uint32_t bar_np_clicks; /* I960d: clicks on the player bar's cover or title that opened the Now Playing page */
     uint32_t detail_hidden, np_toggle_clicks, np_add_clicks; /* I619: the Now Playing column is hidden; clicks on its top bar toggle and on the add button */
     sel_gui_rect np_add;                                      /* I619: the round add-to-library button beside the track title */
     char np_ctx_shown[96];                                     /* I619: the heading the last Now Playing draw showed */
-    char np_ctx[96];                                          /* I619: the playlist the playing song was started from, "" when none */
     uint32_t topbar_draws, topbar_home_clicks, topbar_browse_clicks; /* I615: top bar frames drawn, Home and Browse button clicks */
     uint32_t side_wide, side_plus_clicks, side_wide_clicks; /* I609: the sidebar is widened; header Create Playlist and width toggle clicks */
     uint32_t side_anim, side_from, side_to, side_tween_frames; /* I668: the width tween runs, its ends in logical px, frames relaid out by it */
@@ -518,7 +541,7 @@ typedef struct desk {
     sel_gui_rect side_sub_btn;
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
-    uint32_t side_chip, side_filters, side_chip_scrolls; /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
+    uint32_t side_chip, side_filters, side_chip_scrolls;  /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
     uint32_t side_sort, side_view; /* I611: the Your Library sort (SEL_UIM_LSORT_*) and view size (SEL_UIM_LVIEW_*) */
     uint32_t side_prefs_read, side_pref_sets; /* I611: the sort/view prefs were read once; PREF_SET lines sent for them */
     uint32_t lib_view_sends; /* I611: COMPOSERS_VIEW lines sent for the Library page rows */
@@ -575,7 +598,7 @@ typedef struct desk {
     uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
-    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 13];
+    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 16];
     int sleeping;           /* a `sleep` script line is waiting for its wall-clock deadline */
     uint32_t sleep_until;   /* host clock_ms at which it ends */
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
@@ -591,16 +614,13 @@ typedef struct desk {
     uint32_t flow_rec_n;
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slices B, C; I678i retired files, history, sources) */
-    struct { char key[24], kind[12], name[40], path[96]; int enabled, searchable, syncable; uint32_t count; int64_t synced; int64_t snooze; int due; } src[SEL_SOURCE_MAX]; /* the SOURCES rows of the Sources tab (I265) */
+    sel_uim_src_row src[SEL_SOURCE_MAX]; /* the SOURCES rows of the Sources tab (I265) */
     uint32_t src_n;          /* rows held in src */
-    uint32_t nag_off;        /* bit k set: the sync offer (I527) has dialog row k unchecked; all start checked */
+    sel_uim_offer nag;       /* the sync offer (I527, I602): the shared model of src/uimodel/sources.c (I1182), which lists its rows, their ticks and whether it was shown */
     uint32_t sync_pending;   /* bit i set: a LIBRARY_SYNC for source row i is queued or running; cleared by its outcome (I582) */
     uint32_t sync_failed;    /* bit i set: the last sync of source row i ended in ERROR sync_failed or sync_busy (I582) */
     uint32_t nag_syncs;      /* sources the offer's Sync button sent LIBRARY_SYNC for (the test's sentinel) */
     int nag_asked;           /* the launch SOURCES request was sent (I527) */
-    int nag_done;            /* the sync offer dialog was shown this launch: it opens once, on the first Library visit with a due source (I602) */
-    uint32_t nagdlg_n;       /* rows the sync offer dialog lists */
-    char nagdlg_key[SEL_SOURCE_MAX][24]; /* one per registry source (I921); their source keys (I789): src[] is rebuilt by every SOURCES answer, so an index would drift */
     uint32_t nagdlg_opens;   /* sentinel: sync offer dialogs opened */
     uint32_t nagdlg_draws;   /* sentinel: sync offer dialog paints (I789: opened is not shown) */
     uint32_t src_gen;        /* sentinel (I826): SOURCES rows that changed what the pages draw */
@@ -638,6 +658,9 @@ typedef struct desk {
     uint32_t viz_cap;            /* pixels viz_px holds */
     uint32_t viz_seq;            /* sequence number of the newest frame drawn */
     uint32_t viz_frames;         /* frames drawn to screen, one per new engine frame (sentinel) */
+    uint32_t viz_tip_up;         /* I292a: visualizer frames drawn while a tooltip was up (sentinel) */
+    uint32_t viz_falloff_runs;   /* I292b: spectrum falloff steps seen on the shown viz frame (sentinel) */
+    uint32_t viz_tip_drawn;      /* I292a: of those, the frames that drew the tooltip again over the repainted area */
     uint32_t viz_prims;          /* primitives the last render reported */
     uint32_t viz_panes;          /* panes the last Visualizer page drew */
     uint32_t viz_sigpath;        /* signal path texts drawn */
@@ -663,7 +686,7 @@ static sel_gui_rect settings_entry_rect(desk* d);
 static int desk_present(desk* d);
 static int desk_event_frame(desk* d, int changed);
 static void desk_draw_focus(desk* d);
-static void desk_draw_tip(desk* d);
+static int desk_draw_tip(desk* d);
 static void desk_draw_overlay(desk* d);
 static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home);
 static uint32_t desk_toast_wait(const desk* d);
@@ -680,6 +703,7 @@ enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 static int in_rect(sel_gui_rect r, int32_t x, int32_t y);
+static int pointer_on_song_menu(const desk* d);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
 static const char* desk_slot_action(const desk* d, uint32_t i);
@@ -875,6 +899,17 @@ static int32_t cvh(const desk* d) {
     return d->canvas->h * (d->canvas->ydiv > 1 ? d->canvas->ydiv : 1);
 }
 
+/* The focus stop of the layout region `name` (DUI-P3-3: the regions in layout order are the stops), or -1. */
+static int32_t region_stop(const desk* d, const char* name) {
+    uint32_t i;
+    for (i = 0; i < d->layout.count; i++) {
+        if (strcmp(d->layout.regions[i].name, name) == 0) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
 static sel_gui_rect region_rect(const desk* d, const char* name) {
     uint32_t i;
     for (i = 0; i < d->layout.count; i++) {
@@ -1065,8 +1100,14 @@ static uint32_t row_ink(desk* d, sel_gui_rect row, uint32_t rest) {
  * A selected row takes the raised surface, a row under the pointer the hover surface, a row that is both the pressed surface, so
  * the pointer shows on every row, the selected one included. 0 = no fill. The pointer is read directly (not through hover_box) so
  * a link inside the row, which owns the hover box while the pointer is on it, does not take the row's fill away. */
+/* 1 while the pointer hovers a list row: no dialog overlay is up and the pointer is not on the open song menu's panel, which
+ * covers the rows under it (I1146 hover fill, I1147 trailing "..." button). The one test every row hover look reads. */
+static int row_hovered(const desk* d, sel_gui_rect row) {
+    return d->overlay == 0 && !pointer_on_song_menu(d) && in_rect(row, d->ptr_x, d->ptr_y);
+}
+
 static uint32_t list_row_fill(desk* d, sel_gui_rect row, int selected) {
-    int hovered = d->overlay == 0 && in_rect(row, d->ptr_x, d->ptr_y);
+    int hovered = row_hovered(d, row);
     uint32_t fill = hovered ? ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_SURFACE_PRESSED : SEL_GUI_TOKEN_SURFACE_HOVER])
                             : selected ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) : 0u;
     if (hovered) {
@@ -1253,6 +1294,8 @@ static uint32_t art_keys(const sel_state* st, const char** out, uint32_t cap);
 static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
 static int32_t side_lib_at(const desk* d, int32_t x, int32_t y);
+static int32_t side_cur_count(const desk* d); /* I1183 */
+static sel_gui_rect side_cur_rect(const desk* d, int32_t p);
 static int32_t side_lib_max_q16(const desk* d);
 static void side_lib_reload(desk* d);
 static void sm_lib_want(desk* d);
@@ -1275,10 +1318,10 @@ static void side_sort_pick(desk* d, uint32_t sort);
 static void side_view_pick(desk* d, uint32_t view);
 static void side_chip_click(desk* d, int32_t c);
 static int side_chip_single(desk* d);
-static int side_chip_has_x(desk* d);
 static int side_chip_left_clear(desk* d);
 static int side_lib_open_item(const desk* d, uint32_t i);
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k);
+static int side_chip_on(const desk* d, uint32_t k);
 static int32_t side_chips_h(const desk* d);
 static int side_table(const desk* d);
 static int32_t side_table_head_h(const desk* d);
@@ -1294,6 +1337,7 @@ static sel_gui_rect nav_arrow_rect(const desk* d, sel_gui_rect mn, int32_t k);
 static int nav_arrows_shown(const desk* d, sel_gui_rect mn);
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i);
 static void draw_player_left(desk* d);
+static int player_left_rects(const desk* d, sel_gui_rect* ar, sel_gui_rect* box, sel_gui_rect* all);
 
 /* The footer bars (I312). The seek row spans tw pixels from x0, centred over the transport buttons, with the times at
  * both ends; the volume bar sits at the right end under the status text, its speaker icon to its left. Drawing and
@@ -1885,6 +1929,8 @@ static int desk_pls_import_pick(desk* d);
 static int desk_pls_folder_pick(desk* d);
 static int desk_send_path(desk* d, const char* verb, const char* path);
 static int desk_play_path(desk* d, const char* path);
+static int desk_play_context(desk* d, uint32_t kind, uint32_t id, uint32_t version, uint32_t index, const char* name);
+static int desk_play_ref(desk* d, const song_ref* r);
 static const sel_uim_action* desk_action_by_id(const char* id);
 
 static int32_t songs_top(const desk* d) {
@@ -2218,47 +2264,12 @@ enum { SHELF_MAX = 8, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_
  * tiles each, see home_reload): Home scrolls by pixels, not by window, so a row past the window is a shelf that never shows. */
 enum { HOME_WINDOW_ROWS = 128 };
 
-typedef struct shelf {
-    uint32_t head;  /* index of the heading in the view window */
-    uint32_t first; /* index of the first row after it */
-    uint32_t tiles; /* rows with a key */
-    uint32_t rows;  /* rows after the heading */
-} shelf;
+typedef sel_uim_shelf shelf; /* I1189: the split lives in uimodel/pages.c */
 
 /* Splits the HOME window into shelves; 0 when the view is not the HOME source. A heading with no row under it is not a
  * shelf (I311): it draws nothing and the shelves below move up. */
 static uint32_t home_shelves(const sel_state* st, shelf* out) {
-    const sel_view_state* v = st->view;
-    uint32_t i, k, n = 0;
-    int in_quick = 0;
-    if (v == NULL || v->source != SEL_VIEW_HOME) {
-        return 0;
-    }
-    for (i = 0; i < v->row_n; i++) {
-        if (v->rows[i].kind == SEL_ROW_HEADING) {
-            in_quick = (int)v->rows[i].quick; /* I478: the quick-pick grid is not a shelf; home_quick reads it */
-            if (in_quick) {
-                continue;
-            }
-            if (n == SHELF_MAX) {
-                break;
-            }
-            out[n].head = i;
-            out[n].first = i + 1u;
-            out[n].tiles = 0;
-            out[n].rows = 0;
-            n++;
-        } else if (n > 0u && !in_quick) {
-            out[n - 1u].rows++;
-            out[n - 1u].tiles += v->rows[i].key != NULL;
-        }
-    }
-    for (i = 0, k = 0; i < n; i++) {
-        if (out[i].rows > 0u) {
-            out[k++] = out[i];
-        }
-    }
-    return k;
+    return sel_uim_home_shelves(st->view, (sel_uim_shelf*)out, SHELF_MAX); /* I1189: the one split every UI shares */
 }
 
 /* 1 when the HOME source holds at least one tile: the shelves replace the queue grid. */
@@ -2620,33 +2631,13 @@ static void shelf_activate_row(desk* d, uint32_t row) {
     if (row == 0xFFFFFFFFu) {
         return;
     }
-    if (st->view->rows[row].composer) { /* I479: a composer tile opens that composer's page */
-        char canon[SEL_COMPOSER_MAX]; /* copied first: the page change replaces the view */
-        snprintf(canon, sizeof canon, "%s", st->view->rows[row].key);
-        desk_route(d, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, canon, canon, ""); /* I678f/I678h2: the composer's collection page */
-        d->shelf_plays++;
-        return;
-    }
-    if (st->view->rows[row].album && st->view->rows[row].art_id != 0u) { /* I678h2: an album tile opens the album page by the id its row carries */
-        char key[16], name[96], sub[96];
-        uint32_t id = st->view->rows[row].art_id; /* copied first: the page change replaces the view */
-        snprintf(key, sizeof key, "%u", (unsigned)id);
-        snprintf(name, sizeof name, "%s", st->view->rows[row].key != NULL ? st->view->rows[row].key : "");
-        snprintf(sub, sizeof sub, "%s", st->view->rows[row].artist != NULL ? st->view->rows[row].artist : "");
-        desk_route(d, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_ALBUM, id, key, name, sub);
-        d->shelf_plays++;
-        return;
-    }
-    if (st->view->rows[row].item_kind != 0u) { /* I678j: an item card opens that item's page */
-        char key[160], name[256], sub[160]; /* copied first: the page change replaces the view */
-        uint32_t kind = st->view->rows[row].item_kind - 1u;
-        const char* art = st->view->rows[row].artist;
-        snprintf(key, sizeof key, "%s", st->view->rows[row].key != NULL ? st->view->rows[row].key : "");
-        snprintf(name, sizeof name, "%s", st->view->rows[row].text);
-        snprintf(sub, sizeof sub, "%s", art != NULL ? art : "");
-        desk_item_open(d, SEL_ROUTE_HOME_TILE, kind, (uint32_t)strtoul(key, NULL, 10), key, name, sub);
-        d->shelf_plays++;
-        return;
+    { /* I1189: composer, album and item tiles open their page; the shared helper says which (uimodel/pages.c) */
+        sel_uim_tile tile; /* copies: the page change replaces the view */
+        if (sel_uim_tile_route(&st->view->rows[row], &tile)) {
+            desk_item_open(d, SEL_ROUTE_HOME_TILE, tile.kind, tile.id, tile.key, tile.name, tile.sub);
+            d->shelf_plays++;
+            return;
+        }
     }
     snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + row));
     desk_send(d, line);
@@ -2824,12 +2815,12 @@ static int shelf_nav_click(desk* d, int32_t x, int32_t y) {
  * everywhere else (DUI-P4-18). */
 
 static int song_menu_count(const desk* d) {
-    return SONG_MENU_ITEMS + (d->sm_ref.pl_id != 0u ? 1 : 0); /* I633: a playlist row adds Remove from Playlist */
+    return (int)sel_uim_song_menu_n(d->sm_ref.pl_id != 0u); /* I633: a playlist row adds Remove from Playlist (I1179: the count is shared with the MUI) */
 }
 
 static const char* song_menu_label(const desk* d, int32_t k) {
     if (k == SONG_MENU_ITEMS) {
-        return "Remove from Playlist";
+        return sel_uim_plremove_label();
     }
     if (k == 4 && d->sm_ref.online) {
         return "Save to Library";
@@ -2839,7 +2830,6 @@ static const char* song_menu_label(const desk* d, int32_t k) {
 
 /* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
 static int32_t song_menu_n(const desk* d) {
-    int32_t n = 1;
     if (d->sm_step == 0) {
         return song_menu_count(d);
     }
@@ -2855,8 +2845,7 @@ static int32_t song_menu_n(const desk* d) {
     if (d->sm_step == 3) {
         return d->sm_pl_folder ? 1 : 2;
     }
-    n = (int32_t)d->sm_pl_n;
-    return n > 0 ? n : 1;
+    return (int32_t)d->sm_pl_n + 1; /* I632: the first item is New Playlist..., then every saved playlist */
 }
 
 /* The window in canvas pixels: the one rectangle a floating menu is placed in and clipped to, whichever region the pointer was in. */
@@ -2881,6 +2870,17 @@ static sel_gui_rect song_menu_item_rect(const desk* d, int32_t k) {
         y = mn.y;
     }
     return rect_of(x, y + k * lpx(d, SONG_MENU_ITEM_H), w, lpx(d, SONG_MENU_ITEM_H));
+}
+
+/* I1146: 1 while the song menu is open and the pointer is on its panel. The panel is a window-level overlay: a list row the panel covers
+ * takes no hover fill, else the fill changes under the panel's anti-aliased edge and shadow as the pointer crosses the items (I655). */
+static int pointer_on_song_menu(const desk* d) {
+    sel_gui_rect first;
+    if (!d->sm_open) {
+        return 0;
+    }
+    first = song_menu_item_rect(d, 0);
+    return in_rect(rect_of(first.x, first.y, first.w, first.h * song_menu_n(d)), d->ptr_x, d->ptr_y);
 }
 
 /* I1039: sends a device pick (the pref the output plugin polls in its pump) and closes the device menu. */
@@ -2923,8 +2923,27 @@ static void dev_route_sync(desk* d) {
 }
 #endif
 
+/* I632: a right-click on a row inside a selection of two or more songs opens the menu for the whole selection (design
+ * 2026-10-28-multi-select, lines 12-18); the list, its version and the ranges are frozen here so a later repaint cannot change them. */
+static void song_menu_selection(desk* d, const song_ref* ref) {
+    d->sm_multi_n = 0u;
+    if (ref->list_kind == 0u || d->sel.list.kind != ref->list_kind || d->sel.list.id != ref->list_id || d->sel.list.version != ref->list_version ||
+        sel_uim_selset_count(&d->sel) < 2u || !sel_uim_selset_contains(&d->sel, ref->list_index)) {
+        return;
+    }
+    if (sel_uim_selset_format(&d->sel, d->sm_multi_ranges, sizeof d->sm_multi_ranges) == 0u) {
+        return;
+    }
+    if (sel_uim_list_name(ref->list_kind, ref->list_id, d->sm_multi_list, sizeof d->sm_multi_list) == 0u) {
+        return;
+    }
+    d->sm_multi_ver = ref->list_version;
+    d->sm_multi_n = sel_uim_selset_count(&d->sel);
+}
+
 static void song_menu_open(desk* d, int32_t x, int32_t y, const song_ref* ref) {
     d->sm_ref = *ref;
+    song_menu_selection(d, ref);
     d->sm_open = 1;
     d->sm_step = 0;
     d->menu_x = x;
@@ -3012,7 +3031,10 @@ static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_
         d->add_drawn++;
         return e;
     }
-    if (in_rect(r, d->ptr_x, d->ptr_y) || (d->sm_open && strcmp(d->sm_ref.path, path) == 0)) {
+    if (row_hovered(d, r) || (d->sm_open && strcmp(d->sm_ref.path, path) == 0)) { /* I1147: not for a row under the open menu's panel */
+        if (row_hovered(d, r)) {
+            d->row_more_hover++;
+        }
         hover_reg(d, e->more);
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_ELLIPSIS, e->more, eh,
                           row_ink(d, e->more, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED])));
@@ -3049,6 +3071,11 @@ static void np_title_reg(desk* d) {
     }
 }
 
+/* I1150: the arrow-key highlight belongs to one open menu level; a new menu (menus moves) or a new step drops it. */
+static int song_menu_key_valid(const desk* d) {
+    return d->sm_open && d->sm_key >= 0 && d->sm_key_menu == d->menus && d->sm_key_step == d->sm_step;
+}
+
 static void song_menu_draw(desk* d) {
     int32_t k, n;
     const sel_gui_atlas* semi = desk_font(d, 1, 13);
@@ -3069,9 +3096,9 @@ static void song_menu_draw(desk* d) {
         sel_gui_round_rect(d->canvas, panel, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
         for (k = 0; k < n; k++) {
             sel_gui_rect m = song_menu_item_rect(d, k);
-            int lit = hover_weight(d, m) > 0;
+            int lit = song_menu_key_valid(d) ? k == d->sm_key : hover_weight(d, m) > 0; /* I1150: the key highlight wins until the pointer moves */
             const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k)
-                              : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "No playlists";
+                              : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "New Playlist...";
             hover_reg(d, m);
             if (d->sm_step == 5) { /* I1039: output devices: System default, then the list; the pick is checked, AirPlay rows carry the AirPlay icon */
                 const char* cur = desk_pref(d, "output.device", "");
@@ -3137,8 +3164,8 @@ static void song_menu_draw(desk* d) {
                                    lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
                                    ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
             }
-            if (d->sm_step == 1 && (uint32_t)k < d->sm_pl_n) {
-                label = d->sm_pls[k].name;
+            if (d->sm_step == 1 && k > 0 && (uint32_t)k <= d->sm_pl_n) {
+                label = d->sm_pls[k - 1].name;
             }
             sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 8), m.y + lpx(d, 4), m.w - lpx(d, 16), semi->line_height), label,
                               ARGB(d->theme.token[lit ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]), 1, &d->text);
@@ -3151,9 +3178,9 @@ static void song_menu_draw(desk* d) {
 /* ---- The confirm dialog of the two library removals (DUI-P4-18): Remove from Library names the song, Clear Library names
  * the song count. Nothing is sent until Confirm; Cancel, Escape or a click outside close it. ---- */
 
-enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = SEL_SOURCE_MAX };
+enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32 };
 /* I921: the sync offer lists every due source the registry can hold (C99 compile-time check: a negative array size fails the build). */
-typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nagdlg_key) / sizeof(((desk*)0)->nagdlg_key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
+typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nag.key) / sizeof(((desk*)0)->nag.key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
 enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5, DLG_SYSFILE = 6 };
 
 static const char* path_base(const char* p);
@@ -3168,8 +3195,8 @@ static sel_gui_rect dlg_panel_rect(const desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t w = lpx(d, d->dlg_open == DLG_SYSFILE ? 580 : 440), h = lpx(d, 168);
     if (d->dlg_open == DLG_SYNC) { /* I602: a column of NAG_COL_ROWS source rows, another column beside it for each NAG_COL_ROWS more */
-        uint32_t rows = d->nagdlg_n < (uint32_t)NAG_COL_ROWS ? d->nagdlg_n : (uint32_t)NAG_COL_ROWS;
-        uint32_t cols = nagdlg_cols(d->nagdlg_n);
+        uint32_t rows = d->nag.n < (uint32_t)NAG_COL_ROWS ? d->nag.n : (uint32_t)NAG_COL_ROWS;
+        uint32_t cols = nagdlg_cols(d->nag.n);
         w = lpx(d, cols > 1u ? 40 + 260 * (int32_t)cols : 440);
         w = w < mn.w - 2 * lpx(d, 16) ? w : mn.w - 2 * lpx(d, 16);
         h = lpx(d, 20 + 28 + 12 + NAG_ROW_H * (int32_t)rows + 16 + 32 + 20);
@@ -3214,15 +3241,7 @@ static void draw_home(desk* d);
 /* The sync offer dialog (I602): title, a checkbox per due source (all ticked), and Never / Not now / Sync now on the bottom row,
  * right aligned. The rows are the sources due when it opened, so a SOURCES answer during the dialog does not move them. */
 static void nagdlg_open(desk* d) {
-    uint32_t i;
-    d->nagdlg_n = 0;
-    for (i = 0; i < d->src_n && d->nagdlg_n < NAG_MAX; i++) {
-        if (d->src[i].due) {
-            snprintf(d->nagdlg_key[d->nagdlg_n++], sizeof d->nagdlg_key[0], "%s", d->src[i].key);
-        }
-    }
-    d->nag_off = 0;
-    d->nag_done = 1;
+    sel_uim_offer_open(&d->nag, d->src, d->src_n);
     d->dlg_open = DLG_SYNC;
     d->dlg_opens++;
     d->nagdlg_opens++;
@@ -3234,7 +3253,7 @@ static void nagdlg_open(desk* d) {
 static int nagdlg_src(const desk* d, uint32_t k) {
     uint32_t i;
     for (i = 0; i < d->src_n; i++) {
-        if (strcmp(d->src[i].key, d->nagdlg_key[k]) == 0) {
+        if (strcmp(d->src[i].key, d->nag.key[k]) == 0) {
             return (int)i;
         }
     }
@@ -3250,7 +3269,7 @@ static sel_gui_rect nagdlg_button_rect(const desk* d, uint32_t i) {
 
 static sel_gui_rect nagdlg_row_rect(const desk* d, uint32_t k) {
     sel_gui_rect p = dlg_panel_rect(d);
-    int32_t m = lpx(d, 20), cw = (p.w - 2 * m) / (int32_t)nagdlg_cols(d->nagdlg_n);
+    int32_t m = lpx(d, 20), cw = (p.w - 2 * m) / (int32_t)nagdlg_cols(d->nag.n);
     return rect_of(p.x + m + (int32_t)(k / NAG_COL_ROWS) * cw, p.y + lpx(d, 20 + 28 + 12) + (int32_t)(k % NAG_COL_ROWS) * lpx(d, NAG_ROW_H), cw, lpx(d, NAG_ROW_H));
 }
 
@@ -3262,18 +3281,8 @@ static sel_gui_rect nagdlg_box_rect(const desk* d, sel_gui_rect row) {
 /* Sync now sends the ticked rows (the Sources page's message) and snoozes the unticked ones; Not now stores the global notice time;
  * Never switches the ticked sources off in library.sources_off, the setting the Sources tab toggles. */
 static void nagdlg_close(desk* d, int action) {
-    uint32_t k, ticked = 0, unticked = 0; /* src[] row masks, resolved by key now: the sends below only queue lines, no SOURCES answer lands inside this call */
-    for (k = 0; k < d->nagdlg_n; k++) {
-        int idx = nagdlg_src(d, k);
-        if (idx < 0) {
-            continue;
-        }
-        if (d->nag_off & (1u << k)) {
-            unticked |= 1u << idx;
-        } else {
-            ticked |= 1u << idx;
-        }
-    }
+    uint32_t k, ticked, unticked; /* src[] row masks, resolved by key now: the sends below only queue lines, no SOURCES answer lands inside this call */
+    sel_uim_offer_masks(&d->nag, d->src, d->src_n, &ticked, &unticked);
     d->dlg_open = DLG_NONE;
     if (action == 2) {
         for (k = 0; k < d->src_n; k++) {
@@ -3295,7 +3304,7 @@ static void nagdlg_close(desk* d, int action) {
         nag_dismiss(d);
         d->dlg_cancels++;
     }
-    d->nag_off = 0;
+    d->nag.off = 0;
     d->repaint = 1;
     draw_home(d);
 }
@@ -3306,15 +3315,15 @@ static void nagdlg_draw(desk* d, sel_gui_rect p) {
     int32_t m = lpx(d, 20), pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     char title[96];
     d->nagdlg_draws++;
-    snprintf(title, sizeof title, "%u source%s not synced for a while", (unsigned)d->nagdlg_n, d->nagdlg_n == 1u ? "" : "s");
+    sel_uim_offer_title(&d->nag, title, sizeof title);
     sel_gui_text_wrap(d->canvas, head, rect_of(p.x + m, p.y + m, p.w - 2 * m, head->line_height), title, tx, 1, &d->text);
-    for (k = 0; k < d->nagdlg_n; k++) {
+    for (k = 0; k < d->nag.n; k++) {
         int idx = nagdlg_src(d, k);
         sel_gui_rect row = nagdlg_row_rect(d, k), bx = nagdlg_box_rect(d, row);
-        int on = !(d->nag_off & (1u << k));
+        int on = sel_uim_offer_ticked(&d->nag, k);
         char line[96];
         if (idx < 0) { /* the source left the list since the dialog opened: still a row, no state to show */
-            snprintf(line, sizeof line, "%s", d->nagdlg_key[k]);
+            snprintf(line, sizeof line, "%s", d->nag.key[k]);
             draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.x + row.w - (bx.x + bx.w + pad), row.h), line, 0, 14, mu);
             continue;
         }
@@ -3322,13 +3331,7 @@ static void nagdlg_draw(desk* d, sel_gui_rect p) {
         if (on) {
             sel_gui_round_rect(d->canvas, rect_of(bx.x + bx.w / 4, bx.y + bx.h / 4, bx.w / 2, bx.h / 2), lpx(d, 2), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
         }
-        if (d->sync_pending & (1u << idx)) {
-            snprintf(line, sizeof line, "%s, Syncing", d->src[idx].name);
-        } else if (d->src[idx].synced > 0) {
-            snprintf(line, sizeof line, "%s, last synced %lld days ago", d->src[idx].name, (long long)((time(NULL) - d->src[idx].synced) / 86400));
-        } else {
-            snprintf(line, sizeof line, "%s, never synced", d->src[idx].name);
-        }
+        sel_uim_offer_row_text(&d->src[idx], (d->sync_pending & (1u << idx)) != 0u, (int64_t)time(NULL), line, sizeof line);
         draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.x + row.w - (bx.x + bx.w + pad), row.h), line, 0, 14, on ? tx : mu);
     }
     draw_button(d, nagdlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Never", 14, tx);
@@ -3347,9 +3350,9 @@ static int nagdlg_pointer(desk* d, const sel_gui_input* ev) {
             return 1;
         }
     }
-    for (k = 0; k < d->nagdlg_n; k++) {
+    for (k = 0; k < d->nag.n; k++) {
         if (in_rect(nagdlg_row_rect(d, k), ev->x, ev->y)) {
-            d->nag_off ^= 1u << k;
+            sel_uim_offer_toggle(&d->nag, k);
             d->repaint = 1;
             break;
         }
@@ -3526,7 +3529,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (d->sm_open) {
-        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 || d->sm_step == 5 ? song_menu_n(d) : 8;
+        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 || d->sm_step == 5 || d->sm_step == 1 ? song_menu_n(d) : 8;
         int keep = 0;
         if (d->sm_step == 4) { /* I611: the library sort and view menu: sort rows pick a sort, the strip a view, headers and the separator stay */
             for (k = 0; k < 8; k++) {
@@ -3581,17 +3584,27 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 d->queue_cmds++;
                 desk_send(d, line);
             } else if (d->sm_step == 1) {
-                uint32_t pid = (uint32_t)k < d->sm_pl_n ? d->sm_pls[k].id : 0u;
-                if (pid != 0u) {
-                    char line[640];
+                /* I632: item 0 is New Playlist... (playlist id 0 makes an empty one in the engine), then the saved playlists. The whole
+                 * selection goes in one SONGS_PLAYLIST_ADD when the menu was opened on a selected row, else the one song. */
+                uint32_t pid = k > 0 && (uint32_t)k <= d->sm_pl_n ? d->sm_pls[k - 1].id : 0u;
+                const char* pname = k > 0 && (uint32_t)k <= d->sm_pl_n ? d->sm_pls[k - 1].name : "New Playlist";
+                char line[1024], text[160];
+                if (d->sm_multi_n > 0u) {
+                    snprintf(line, sizeof line, "SONGS_PLAYLIST_ADD %u %s %u \"%s\"", (unsigned)pid, d->sm_multi_list, (unsigned)d->sm_multi_ver,
+                             d->sm_multi_ranges);
+                    d->sm_multi_adds++;
+                    snprintf(text, sizeof text, "Added %u songs to %s", (unsigned)d->sm_multi_n, pname);
+                } else {
                     snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)pid, d->sm_ref.path);
-                    desk_send(d, line);
-                    d->sm_pl_adds++;
-                    desk_toast(d, "Added to playlist");
+                    snprintf(text, sizeof text, "Added to %s", pname);
                 }
+                desk_send(d, line);
+                d->sm_pl_adds++;
+                d->side_stale = 1u; /* a new playlist joins the sidebar list */
+                desk_toast(d, text);
             } else if (k == SONG_MENU_ITEMS) { /* I633: the playlist page's own item */
                 char line[48];
-                snprintf(line, sizeof line, "PLAYLIST_REMOVE_SONG %u %u", (unsigned)d->sm_ref.pl_id, (unsigned)d->sm_ref.pl_index);
+                sel_uim_plremove_line(d->sm_ref.pl_id, d->sm_ref.pl_index, line, sizeof line);
                 desk_send(d, line);
                 d->pls_stale = 1u; /* the engine applies the command on its next pump: the page reads the list again then */
                 d->side_stale = 1u;
@@ -3621,7 +3634,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                     snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)d->sm_ref.qid);
                     desk_send(d, line);
                 } else if (k == 0) {
-                    desk_play_path(d, d->sm_ref.path);
+                    desk_play_ref(d, &d->sm_ref);
                     d->row_plays++;
                 } else {
                     desk_send_path(d, k == 1 ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", d->sm_ref.path);
@@ -3655,6 +3668,9 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 memset(&ref, 0, sizeof ref);
                 snprintf(ref.path, sizeof ref.path, "%s", d->on_row[i].key);
                 ref.online = 1;
+                ref.list_kind = (uint32_t)SEL_UIM_LIST_HITS; /* I994e: the menu's Play continues with the next hits */
+                ref.list_version = sel_engine_state(d->engine)->search_serial;
+                ref.list_index = i;
                 song_menu_open(d, ev->x, ev->y, &ref);
                 draw_home(d);
                 return 1;
@@ -3688,6 +3704,69 @@ static int song_menu_key(desk* d) {
     song_menu_open(d, d->sm_rows[pick].r.x + lpx(d, 16), d->sm_rows[pick].r.y + d->sm_rows[pick].r.h, &d->sm_rows[pick].ref);
     draw_home(d);
     return 1;
+}
+
+/* I1150: the items a key can light: the sort menu (step 4) skips its headers, separator and the icon strip; every other step
+ * lights every item. */
+static int song_menu_key_item(const desk* d, int32_t k) {
+    return d->sm_step != 4 || (k >= 1 && k <= 4);
+}
+
+static void song_menu_key_set(desk* d, int32_t k) {
+    d->sm_key = k;
+    d->sm_key_menu = d->menus;
+    d->sm_key_step = d->sm_step;
+}
+
+/* I1150: an open menu level owns the keyboard (I1147) and is driven by it: Up/Down/Home/End move the highlight (wrapping),
+ * Enter, Space or Right on Add to Playlist pick the lit item through the same path as a click on it, Left on the playlist step goes
+ * back to the song items, Escape closes. Every other key stops here. */
+static void song_menu_keynav(desk* d, const sel_gui_input* ev) {
+    int32_t n = song_menu_n(d), k, cur = song_menu_key_valid(d) ? d->sm_key : -1, i;
+    uint32_t code = ev->code;
+    if (ev->mods != 0u) {
+        return;
+    }
+    if (code == 27u) {
+        d->sm_open = 0;
+        draw_home(d);
+        return;
+    }
+    if (code == TXT_KEY_UP || code == TXT_KEY_DOWN || code == TXT_KEY_HOME || code == TXT_KEY_END) {
+        int32_t step = code == TXT_KEY_UP || code == TXT_KEY_END ? -1 : 1;
+        k = code == TXT_KEY_HOME ? -1 : code == TXT_KEY_END ? n : cur < 0 ? (step > 0 ? -1 : n) : cur;
+        for (i = 0; i < n; i++) {
+            k += step;
+            if (code == TXT_KEY_UP || code == TXT_KEY_DOWN) {
+                k = (k + n) % n;
+            }
+            if (k >= 0 && k < n && song_menu_key_item(d, k)) {
+                song_menu_key_set(d, k);
+                break;
+            }
+        }
+        draw_home(d);
+        return;
+    }
+    if (code == TXT_KEY_LEFT && d->sm_step == 1) {
+        d->sm_step = 0;
+        song_menu_key_set(d, 3); /* back on Add to Playlist, the item that opened the step */
+        draw_home(d);
+        return;
+    }
+    if (cur >= 0 && (code == 13u || code == ' ' || (code == TXT_KEY_RIGHT && d->sm_step == 0 && cur == 3))) {
+        sel_gui_input click;
+        sel_gui_rect m = song_menu_item_rect(d, cur);
+        int32_t step0 = d->sm_step;
+        memset(&click, 0, sizeof click);
+        click.kind = SEL_GUI_IN_CLICK;
+        click.x = m.x + m.w / 2;
+        click.y = m.y + m.h / 2;
+        song_menu_pointer(d, &click);
+        if (d->sm_open && d->sm_step != step0) {
+            song_menu_key_set(d, 0); /* the new step opens with its first item lit */
+        }
+    }
 }
 
 /* I478: the quick-pick grid: a card of the shelf tiles' surface and radius, small square art on the left, the name beside it. */
@@ -3870,14 +3949,6 @@ static int32_t lib_gap(desk* d) {
 
 /* Sync on launch (I527, I602): SOURCES rows the engine marked due are offered once per launch in a modal dialog (DLG_SYNC) on
  * the first visit to the Library page. The Library layout itself carries no banner: the list starts under the tabs. */
-
-static uint32_t nag_count(const desk* d) {
-    uint32_t i, n = 0;
-    for (i = 0; i < d->src_n; i++) {
-        n += d->src[i].due ? 1u : 0u;
-    }
-    return n;
-}
 
 static int lib_header_inline(desk* d);
 
@@ -4384,13 +4455,7 @@ enum { QUEUE_BTN_Y = 64, QUEUE_BTN_H = 32, QUEUE_BTN_W = 128, QUEUE_BTN_GAP = 8,
        QUEUE_NEXT_W = 104, QUEUE_DEL_W = 40, QUEUE_BUTTONS = 4 };
 
 static uint32_t queue_scope_index(const sel_state* st) {
-    uint32_t k;
-    for (k = 0; k < 3u; k++) {
-        if (strcmp(st->options[SEL_OPT_SCOPE], sel_uim_scope_name((uint32_t)k)) == 0) {
-            return k;
-        }
-    }
-    return 0u;
+    return sel_uim_scope_index(st->options[SEL_OPT_SCOPE]);
 }
 
 static sel_gui_rect queue_btn_rect(desk* d, sel_gui_rect mn, uint32_t k) {
@@ -4773,19 +4838,7 @@ static int32_t pl_sel_row(const desk* d, const sel_view_state* v) {
 
 /* The folder a new item goes into: the selected folder, the folder above a selected playlist, 0 (the root) otherwise. */
 static uint32_t pl_target_folder(const desk* d, const sel_view_state* v) {
-    int32_t s = pl_sel_row(d, v), at;
-    if (s < 0) {
-        return 0u;
-    }
-    if (v->rows[s].kind == (uint32_t)SEL_ROW_FOLDER) {
-        return v->rows[s].id;
-    }
-    for (at = s - 1; at >= 0; at--) {
-        if (v->rows[at].kind == (uint32_t)SEL_ROW_FOLDER && v->rows[at].depth < v->rows[s].depth) {
-            return v->rows[at].id;
-        }
-    }
-    return 0u;
+    return v == NULL ? 0u : sel_uim_pl_target_folder(v->rows, v->row_n, pl_sel_row(d, v));
 }
 
 static uint32_t pl_hash(const sel_view_state* v) {
@@ -4803,7 +4856,7 @@ static uint32_t pl_hash(const sel_view_state* v) {
 }
 
 static const char* pl_button_label(uint32_t k) {
-    return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : "Play";
+    return sel_uim_plbtn_label(k);
 }
 
 /* ---- The playlist page (I633): the Playlists page shows one saved playlist as a Spotify-style page: cover, name, song count,
@@ -4924,8 +4977,8 @@ static void pls_briefs_follow(desk* d) {
                 d->pls_meta[i].album_id = (uint32_t)strtoul(aid, NULL, 10);
                 r = aid + strlen(aid) + 1u;
             }
+            d->pls_briefed = 1u;
             d->pls_cols_ok = 0u;
-            col_rebuild(d);
             col_cover_refresh(d);
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             d->repaint = 1;
@@ -4937,14 +4990,52 @@ static void pls_briefs_follow(desk* d) {
     }
 }
 
+/* I1198: the page's song set is its identity. A reload that reads the same songs in the same order (a touch-only library change: the Recents
+ * touch of the page open, a play count while a song plays) must not throw the resolved titles away nor invalidate the briefs read in flight:
+ * the carried model is the old one, byte for byte. */
+typedef struct pls_prev {
+    char* buf;
+    char (*title)[96];
+    pls_meta_row* meta;
+    uint32_t n, briefed, ver;
+} pls_prev;
+
+static size_t pls_buf_len(const char* buf) {
+    size_t len = 0;
+    const char* k;
+    for (k = buf; k != NULL && *k != '\0'; k += strlen(k) + 1u) {
+        len = (size_t)(k - buf) + strlen(k) + 1u;
+    }
+    return len;
+}
+
+static void pls_prev_free(pls_prev* pv) {
+    free(pv->buf);
+    free(pv->title);
+    free(pv->meta);
+    memset(pv, 0, sizeof *pv);
+}
+
 static void pls_reload_run(desk* d) {
     char* buf = (char*)malloc(2u);
     uint32_t n = 0, i;
     const char* k;
+    pls_prev pv;
+    pv.buf = d->pls_buf;
+    pv.title = d->pls_title;
+    pv.meta = d->pls_meta;
+    pv.n = d->pls_n;
+    pv.briefed = d->pls_briefed;
+    pv.ver = d->pls_ver;
+    d->pls_buf = NULL; /* pls_free would free them; they are kept until the new set is known */
+    d->pls_title = NULL;
+    d->pls_meta = NULL;
     d->pls_stale = 0u;
     d->pls_ver++;
+    d->pls_briefed = 0u;
     pls_free(d);
     if (buf == NULL) {
+        pls_prev_free(&pv);
         return;
     }
     { /* I678f, I994d4: every collection page, a playlist too: COLLECTION_OPEN made the page, the UI only reads state.collection */
@@ -4988,6 +5079,7 @@ static void pls_reload_run(desk* d) {
                 free(buf);
                 free(d->col_plays);
                 d->col_plays = NULL;
+                pls_prev_free(&pv);
                 return;
             }
             for (r = pg->rows, k = buf, len = 0, i = 0; i < ns && *r != '\0'; i++) {
@@ -5022,6 +5114,7 @@ static void pls_reload_run(desk* d) {
         d->pls_title = NULL;
         d->pls_meta = NULL;
         free(buf);
+        pls_prev_free(&pv);
         return;
     }
     d->pls_buf = buf;
@@ -5030,9 +5123,24 @@ static void pls_reload_run(desk* d) {
             d->pls_off[i] = (uint32_t)(k - buf);
             snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
         }
-        d->brf_want = n > 0u ? 1u : 0u;
+        if (n > 0u && pv.n == n && pls_buf_len(pv.buf) == pls_buf_len(buf) && memcmp(pv.buf, buf, pls_buf_len(buf)) == 0) {
+            if (pv.briefed) { /* the same songs, already resolved: keep titles and meta, no new read */
+                memcpy(d->pls_title, pv.title, (size_t)n * sizeof *d->pls_title);
+                memcpy(d->pls_meta, pv.meta, (size_t)n * sizeof *d->pls_meta);
+                d->pls_briefed = 1u;
+                d->brf_want = 0u;
+            } else if (d->brf_inflight && d->brf_ver == pv.ver) { /* the same songs, answer on its way (posted for this very set): it fits this model, so it belongs to this version */
+                d->brf_ver = d->pls_ver;
+                d->brf_want = 0u;
+            } else {
+                d->brf_want = 1u;
+            }
+        } else {
+            d->brf_want = n > 0u ? 1u : 0u;
+        }
         pls_briefs_want(d);
     }
+    pls_prev_free(&pv);
     d->pls_n = i;
     {   /* I691d (Q3): the page's cover is the majority family of its songs, like an album's */
         sel_platform_family_tally tally;
@@ -5051,38 +5159,9 @@ static void pls_reload_run(desk* d) {
 
 /* ---- I678e: the collection page (design doc 7): one page for a playlist now, an album, artist or composer later. The search
  * filter and the sort live here as an order over the loaded songs; the header colour is the dominant colour of the cover. ---- */
-static const desk* g_col_d;
-
-static int col_ci_cmp(const char* a, const char* b) {
-    for (; *a != '\0' && *b != '\0'; a++, b++) {
-        int x = tolower((unsigned char)*a), y = tolower((unsigned char)*b);
-        if (x != y) {
-            return x - y;
-        }
-    }
-    return tolower((unsigned char)*a) - tolower((unsigned char)*b);
-}
-
-static int col_match(const char* title, const char* q) {
-    size_t n = strlen(q), i, m = strlen(title);
-    for (i = 0; i + n <= m; i++) {
-        size_t j;
-        for (j = 0; j < n && tolower((unsigned char)title[i + j]) == tolower((unsigned char)q[j]); j++) {
-        }
-        if (j == n) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int col_order_cmp(const void* a, const void* b) {
-    uint32_t x = *(const uint32_t*)a, y = *(const uint32_t*)b;
-    int c = col_ci_cmp(g_col_d->pls_title[x], g_col_d->pls_title[y]);
-    return c != 0 ? c : (x < y ? -1 : x > y);
-}
-
+/* I994d5: the engine owns the search filter and the sort (COLLECTION_VIEW, design 11.7); col_rebuild only copies the order it published. */
 static void col_rebuild(desk* d) {
+    const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
     uint32_t i, n = 0u;
     free(d->pls_ord);
     d->pls_ord = (uint32_t*)malloc((d->pls_n + 1u) * sizeof *d->pls_ord);
@@ -5090,16 +5169,20 @@ static void col_rebuild(desk* d) {
     if (d->pls_ord == NULL) {
         return;
     }
-    for (i = 0; i < d->pls_n; i++) {
-        if (d->col_qlen == 0u || col_match(d->pls_title[i], d->col_q)) {
-            d->pls_ord[n++] = i;
+    if (pg != NULL && pg->serial == d->col_read_serial && pg->order != NULL) {
+        for (i = 0; i < pg->shown && i < d->pls_n; i++) {
+            if (pg->order[i] < d->pls_n) {
+                d->pls_ord[n++] = pg->order[i];
+            }
+        }
+    } else {
+        n = pg != NULL && pg->serial == d->col_read_serial && pg->shown < d->pls_n ? pg->shown : d->pls_n; /* no order: identity (drill group pages) */
+        for (i = 0; i < n; i++) {
+            d->pls_ord[i] = i;
         }
     }
-    if (d->col_sort == 1u && n > 1u) {
-        g_col_d = d;
-        qsort(d->pls_ord, n, sizeof *d->pls_ord, col_order_cmp);
-    }
     d->pls_vn = n;
+    d->col_eshown = pg != NULL ? pg->shown : 0u;
 }
 
 /* The header colour: the dominant colour of the first song's cover, else the accent. The band fades from it into the panel. */
@@ -5118,7 +5201,9 @@ static void col_cover_refresh(desk* d) {
 }
 
 static void col_changed(desk* d) {
-    col_rebuild(d);
+    char line[128];
+    snprintf(line, sizeof line, "COLLECTION_VIEW \"%s\" %u", d->col_q, (unsigned)d->col_sort); /* I994d5: the engine filters and sorts, the page redraws when the new serial lands */
+    desk_send(d, line);
     d->pls_scroll = 0u;
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -5210,6 +5295,19 @@ static sel_gui_rect pls_more_rect(desk* d, sel_gui_rect mn) {
 }
 
 /* I678e: the action row's sort button and search field, right of More (shown while the collection has songs). */
+/* I1224: the sort button and the search field of a collection page: any page with rows, and a source page always (a remote source
+ * such as HVSC lists nothing before it is browsed or synced, yet carries the same list tools as every other list page). */
+static int col_tools_shown(const desk* d) {
+    return d->pls_n > 0u || d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE;
+}
+
+/* I1229: the search scope of the open collection page: the source key when the page is a searchable source (HVSC, Modland,
+ * Modules.pl...), else NULL. A searchable source's catalogue is far larger than the folder rows its page has loaded, so the
+ * page's search field searches the source (the Search page scoped to it), never only the loaded rows. */
+static const char* col_source_scope(const desk* d) {
+    return d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? sel_uim_search_scope_of_source(d->src, d->src_n, d->col_key) : NULL;
+}
+
 static sel_gui_rect col_sort_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect m = pls_more_rect(d, mn);
     return rect_of(m.x + m.w + lpx(d, QUEUE_BTN_GAP), m.y, m.w + lpx(d, 48), m.h);
@@ -5566,39 +5664,16 @@ static int col_kind_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     return 0;
 }
 
-/* Play on a kind page: the first song plays and every other song of the collection queues behind it (queue_count = N). Shuffle
- * plays the same songs in a random order (Fisher-Yates over the indexes). */
+/* Play on a kind page: the engine plays row 0 (or a random row under Shuffle) and queues the rest of the page's collection behind
+ * it as the play context (I994e, D5): one command, no per-song QUEUE_ADD, no UI-side shuffle. */
 static int col_kind_play(desk* d, int shuffle) {
-    uint32_t i, n = d->pls_n, *ord, seed;
-    if (n == 0u) {
+    if (d->pls_n == 0u) {
         return 1;
-    }
-    ord = (uint32_t*)malloc(n * sizeof *ord);
-    if (ord == NULL) {
-        return 1;
-    }
-    for (i = 0; i < n; i++) {
-        ord[i] = i;
     }
     if (shuffle) {
-        seed = (uint32_t)time(NULL) ^ (n * 2654435761u) ^ 0x9E3779B9u;
-        for (i = n - 1u; i > 0u; i--) {
-            uint32_t j, t;
-            seed ^= seed << 13;
-            seed ^= seed >> 17;
-            seed ^= seed << 5;
-            j = seed % (i + 1u);
-            t = ord[i];
-            ord[i] = ord[j];
-            ord[j] = t;
-        }
+        desk_send(d, "SHUFFLE on");
     }
-    snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name);
-    desk_play_path(d, pls_key(d, ord[0]));
-    for (i = 1; i < n; i++) {
-        desk_send_path(d, "QUEUE_ADD", pls_key(d, ord[i]));
-    }
-    free(ord);
+    desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, shuffle ? SEL_CONTEXT_START_RANDOM : 0u, d->pls_name);
     d->repaint = 1;
     return 1;
 }
@@ -5824,7 +5899,6 @@ static void col_round_art(desk* d, sel_gui_rect r) {
 /* I678g: the source status block of a source page: the sync state and the same switch and Sync button as the Library Sources tab
  * (src_toggle_send, src_sync_send). col_src_index is the registered source the page shows, d->src_n when the engine does not know it. */
 static int src_toggle_send(desk* d, uint32_t flip);
-static int src_remote(const desk* d, uint32_t i);
 static int src_syncable(const desk* d, uint32_t i);
 
 typedef struct src_radio_entry {
@@ -5882,16 +5956,8 @@ static sel_gui_rect col_src_radio_rect(desk* d, sel_gui_rect mn) {
 static void col_src_status(const desk* d, uint32_t i, char* out, size_t cap) {
     if (i >= d->src_n) {
         snprintf(out, cap, "Not a registered source");
-    } else if (!d->src[i].enabled) {
-        snprintf(out, cap, "%s, switched off", src_remote(d, i) ? "Remote" : "Local");
-    } else if (!src_remote(d, i)) {
-        snprintf(out, cap, "Local, switched on");
-    } else if (!src_syncable(d, i)) {
-        snprintf(out, cap, "Remote, search only");
-    } else if (d->src[i].synced > 0) {
-        snprintf(out, cap, "Remote, last synced %lld days ago", (long long)((time(NULL) - d->src[i].synced) / 86400));
     } else {
-        snprintf(out, cap, "Remote, never synced");
+        sel_uim_src_status(&d->src[i], (d->sync_pending & (1u << i)) != 0u, (d->sync_failed & (1u << i)) != 0u, (int64_t)time(NULL), out, cap);
     }
 }
 
@@ -6092,7 +6158,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     }
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     draw_button(d, pls_more_rect(d, mn), surf, d->col_kind == 0u ? "More" : "Shuffle", 13, text);
-    if (d->pls_n > 0u) { /* I678e: the sort button and the search field */
+    if (col_tools_shown(d)) { /* I678e: the sort button and the search field */
         sel_gui_rect fr = col_find_rect(d, mn);
         draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
         sel_gui_round_rect(d->canvas, fr, rad, surf);
@@ -6116,7 +6182,12 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         if (e != NULL && d->col_kind == 0u) {
             e->ref.pl_id = d->pls_id;
             e->ref.pl_index = i;
-            song_row_set_list(d, e, SEL_UIM_LIST_PLAYLIST, d->pls_id, d->pls_ver, i);
+        }
+        if (e != NULL) { /* I632e: a playlist page is an engine collection page too (COLLECTION_OPEN): its rows join that list, version col_read_serial, by shown position, which is also what Shift click and the engine count */
+            song_row_set_list(d, e, SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, pos);
+        }
+        if (e != NULL) {
+            e->ref.ctx_pos = pos;
         }
         fill = list_row_fill(d, r, d->col_kind != 0u && (int32_t)pos == d->col_focus); /* I678f2, I690b: focus, hover, or both */
         if (fill != 0u) {
@@ -6299,8 +6370,7 @@ static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
 
 /* Plays the song row at display position pos of the open playlist or collection page: the one path a click and Enter share. */
 static int pls_play_pos(desk* d, uint32_t pos) {
-    snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619 */
-    desk_play_path(d, pls_key(d, d->pls_ord[pos]));
+    desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, pos, d->pls_name);
     d->row_plays++;
     return 1;
 }
@@ -6309,7 +6379,6 @@ static int pls_play_pos(desk* d, uint32_t pos) {
 static int pls_pointer(desk* d, const sel_gui_input* ev) {
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t slot;
-    char line[48];
     if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
         return 0;
     }
@@ -6357,7 +6426,7 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             }
         }
     }
-    if (d->pls_n > 0u) { /* I678e: the sort button cycles Custom Order and Title; the search field takes the keyboard */
+    if (col_tools_shown(d)) { /* I678e: the sort button cycles Custom Order and Title; the search field takes the keyboard */
         if (in_rect(col_sort_rect(d, mn), ev->x, ev->y)) {
             d->col_sort = d->col_sort == 0u ? 1u : 0u;
             d->col_search = 0;
@@ -6366,6 +6435,15 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             return 1;
         }
         d->col_search = in_rect(col_find_rect(d, mn), ev->x, ev->y);
+        if (d->col_search && col_source_scope(d) != NULL) {
+            /* I1229: on a searchable source page the field is that source's search: the Search page opens scoped to the
+             * source (desk_page_apply derives the scope from this page), the field focused, so a query such as "jammer"
+             * reaches the catalogue search instead of filtering the few folder rows the page has loaded */
+            d->col_search = 0;
+            d->col_source_searches++;
+            desk_route(d, SEL_ROUTE_DOOR_SEARCH, 0u, 0u, "", "", "");
+            return 1;
+        }
         if (d->col_search) {
             d->pl_edit = 0;
             d->repaint = 1;
@@ -6398,10 +6476,8 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         return col_kind_play(d, 0);
     }
     if (in_rect(pls_play_rect(d, mn), ev->x, ev->y)) {
-        snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619: the Now Playing panel names the playlist */
-        snprintf(line, sizeof line, "PLAYLIST_PLAY %u", (unsigned)d->pls_id);
         d->repaint = 1;
-        return desk_send(d, line);
+        return desk_play_context(d, (uint32_t)SEL_UIM_LIST_COLLECTION, 0u, d->col_read_serial, 0u, d->pls_name);
     }
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && d->drl_page != 0u) { /* I790: a crumb goes back up, a drill row goes down */
         uint32_t ci;
@@ -6602,7 +6678,7 @@ static int col_key(desk* d, const sel_gui_input* ev) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
     }
-    switch (field_edit(d, d->col_q, &d->col_qlen, sizeof d->col_q, 0, ev)) {
+    switch (field_edit(d, d->col_q, &d->col_qlen, sizeof d->col_q, '"', ev)) {
     case 0:
         return 0;
     case 2:
@@ -7107,6 +7183,7 @@ static int viz_tick(desk* d) {
     desk_frame_begin(d);
     d->viz_frames++;
     d->viz_seq = st->viz->seq;
+    d->viz_falloff_runs = st->viz->falloff_runs;
     d->viz_song_ms = st->song.position_ms != 0u ? st->song.position_ms : st->viz->seq * 20u;
     if (where == VIZ_VISUAL) {
         draw_visual(d);
@@ -7122,6 +7199,12 @@ static int viz_tick(desk* d) {
         sel_gui_clip_push(d->canvas, where == VIZ_PAGE ? d->viz_pane[0] : d->np_viz);
     }
     desk_draw_window_overlays(d);
+    /* I292a: a tooltip over the visualizer was painted over by the frame above and only a full frame restored it, so it
+     * flickered. The tooltip box is opaque; drawn again under the same clip it repaints only its part inside the area. */
+    if (d->tip_shown > 0) {
+        d->viz_tip_up++;
+        d->viz_tip_drawn += (uint32_t)desk_draw_tip(d);
+    }
     if (where != VIZ_VISUAL) {
         sel_gui_clip_pop(d->canvas);
     }
@@ -7431,8 +7514,7 @@ static uint32_t online_scope_count(const desk* d);
 static int desk_scope_online(const desk* d);
 static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k);
 static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k);
-static sel_gui_rect online_chip_chevron(desk* d, sel_gui_rect mn, int right);
-static int online_chip_overflow(desk* d, sel_gui_rect mn);
+static int32_t online_chip_rows(desk* d, sel_gui_rect mn);
 static const char* online_chip_scope(const desk* d, uint32_t k);
 
 enum { SLC_TITLE, SLC_TYPE, SLC_ADDED, SLC_PLAYED, SLC_N };
@@ -7482,21 +7564,21 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "source %u %s|%s|%s|%d|%u\n", (unsigned)i, d->src[i].key, d->src[i].kind, d->src[i].name, d->src[i].enabled, (unsigned)d->src[i].count);
     }
     {
-        uint32_t k, n = d->nagdlg_n;
+        uint32_t k, n = d->nag.n;
         sel_gui_rect pm = panel_rect(d, "main");
-        o = dump_put(d, o, "nag %u syncs %u\n", (unsigned)(d->dlg_open == DLG_SYNC ? d->nagdlg_n : 0u), (unsigned)d->nag_syncs);
+        o = dump_put(d, o, "nag %u syncs %u\n", (unsigned)(d->dlg_open == DLG_SYNC ? d->nag.n : 0u), (unsigned)d->nag_syncs);
         if (d->dlg_open == DLG_PLDEL) { /* I647: the Delete confirm's buttons, for a script to click */
             sel_gui_rect cb = dlg_button_rect(d, 1u);
             o = dump_put(d, o, "dlgconfirm %d %d %d %d\n", (int)cb.x, (int)cb.y, (int)cb.w, (int)cb.h);
         }
-        o = dump_put(d, o, "nagdlg opens %u done %d\nnagdlg draws %u\nliststart %d\n", (unsigned)d->nagdlg_opens, d->nag_done, (unsigned)d->nagdlg_draws, (int)(pm.y + lib_list_y(d)));
+        o = dump_put(d, o, "nagdlg opens %u done %d\nnagdlg draws %u\nliststart %d\n", (unsigned)d->nagdlg_opens, d->nag.done, (unsigned)d->nagdlg_draws, (int)(pm.y + lib_list_y(d)));
         if (d->dlg_open == DLG_SYNC) {
             sel_gui_rect sy = nagdlg_button_rect(d, 2u), lt = nagdlg_button_rect(d, 1u), nv = nagdlg_button_rect(d, 0u), pn = dlg_panel_rect(d);
             o = dump_put(d, o, "nagpanel %d %d %d %d\nnagsync %d %d %d %d\nnaglater %d %d %d %d\nnagnever %d %d %d %d\n", (int)pn.x, (int)pn.y, (int)pn.w, (int)pn.h,
                          (int)sy.x, (int)sy.y, (int)sy.w, (int)sy.h, (int)lt.x, (int)lt.y, (int)lt.w, (int)lt.h, (int)nv.x, (int)nv.y, (int)nv.w, (int)nv.h);
             for (k = 0; k < n; k++) {
                 sel_gui_rect row = nagdlg_row_rect(d, k), bx = nagdlg_box_rect(d, row);
-                o = dump_put(d, o, "nagrow %u %s|%d %d %d %d %d\n", (unsigned)k, d->nagdlg_key[k], !(d->nag_off & (1u << k)), (int)bx.x, (int)bx.y, (int)bx.w, (int)bx.h);
+                o = dump_put(d, o, "nagrow %u %s|%d %d %d %d %d\n", (unsigned)k, d->nag.key[k], sel_uim_offer_ticked(&d->nag, k), (int)bx.x, (int)bx.y, (int)bx.w, (int)bx.h);
             }
         }
     }
@@ -7640,10 +7722,10 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "viz_stats %s %s\n", d->viz_id[i], line);
         }
     }
-    o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d\n",
+    o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d np_viz %d %d %d %d\n",
                           (unsigned)d->viz_clicks, (int)d->viz_btn[0][0].x, (int)d->viz_btn[0][0].y, (int)d->viz_btn[0][0].w,
                           (int)d->viz_btn[0][0].h, (int)d->viz_btn[1][0].x, (int)d->viz_btn[1][0].y, (int)d->viz_btn[1][0].w,
-                          (int)d->viz_btn[1][0].h);
+                          (int)d->viz_btn[1][0].h, (int)d->np_viz.x, (int)d->np_viz.y, (int)d->np_viz.w, (int)d->np_viz.h);
     for (p = st->panel, i = 0; p != NULL && *p != '\0' && i < 16u && o + 400u < sizeof d->library_dump; i++) {
         const char* v = p + strlen(p) + 1;
         o = dump_put(d, o, "meta %u %s|%s\n", (unsigned)i, p, v);
@@ -7675,12 +7757,16 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "pastes %u\n", (unsigned)d->pastes); /* I999 */
+    o = dump_put(d, o, "online_filter filtered=%d queries=%u\n", d->scope_filtered, (unsigned)d->searches); /* I1224 */
+    o = dump_put(d, o, "col_source_search opens=%u\n", (unsigned)d->col_source_searches); /* I1229 */
     o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u saves=%u\n", d->scope[0] != '\0' ? d->scope : "-",
                  (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays, (unsigned)d->on_saves);
     {
         sel_engine_stats pes; /* I406b: the engine's pin counters: the sentinel that the library pin path ran */
         sel_engine_stats_get(d->engine, &pes);
         o = dump_put(d, o, "online_pin pins=%u pin_rows=%u\n", (unsigned)pes.source_pins, (unsigned)pes.pin_rows);
+        o = dump_put(d, o, "playctx plays=%u rows=%u ctx=[%s] queue=%u heading=[%s]\n", (unsigned)pes.context_plays, (unsigned)pes.context_rows,
+                     sel_engine_state(d->engine)->ctx_name, (unsigned)sel_engine_state(d->engine)->queue_count, d->np_ctx_shown); /* I994e */
     }
     {
         uint32_t oi;
@@ -7689,13 +7775,7 @@ static const char* library_dump_build(desk* d) {
             const char* csc = online_chip_scope(d, oi); /* the source key the chip stands for ("-" for All sources): tests pick a chip by it, never by index */
             o = dump_put(d, o, "online_chip %u %d %d %d %d scope=%s\n", (unsigned)oi, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h, csc[0] != '\0' ? csc : "-");
         }
-        { /* I1073: the chip row's chevrons (0 0 0 0 while the chips fit) and the chevron scrolls that moved it */
-            sel_gui_rect pm = panel_rect(d, "main");
-            int ov = online_chip_overflow(d, pm);
-            sel_gui_rect lc = ov ? online_chip_chevron(d, pm, 0) : rect_of(0, 0, 0, 0), rc = ov ? online_chip_chevron(d, pm, 1) : rect_of(0, 0, 0, 0);
-            o = dump_put(d, o, "online_chips overflow=%d scrolls=%u lead=%u left %d %d %d %d right %d %d %d %d\n", ov, (unsigned)d->on_chip_scrolls,
-                         (unsigned)d->on_chip_first, (int)lc.x, (int)lc.y, (int)lc.w, (int)lc.h, (int)rc.x, (int)rc.y, (int)rc.w, (int)rc.h);
-        }
+        o = dump_put(d, o, "online_chips rows=%d\n", (int)online_chip_rows(d, panel_rect(d, "main"))); /* I1224: the wrapped chip row's rows */
         for (oi = 0; oi < 4u; oi++) { /* I1019f: the facet row (SEARCH_FACETS), always drawn */
             sel_gui_rect fr = search_facet_rect(d, panel_rect(d, "main"), oi);
             o = dump_put(d, o, "search_facet_chip %u %d %d %d %d\n", (unsigned)oi, (int)fr.x, (int)fr.y, (int)fr.w, (int)fr.h);
@@ -7761,11 +7841,16 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "searchrow %u %d %d %d %d key=%s\n", (unsigned)j, (int)d->sm_rows[j].r.x, (int)d->sm_rows[j].r.y, (int)d->sm_rows[j].r.w,
                      (int)d->sm_rows[j].r.h, d->sm_rows[j].ref.path);
     }
+    for (uint32_t j = 0; d->page == SEL_UIM_PG_SEARCH && j < d->search_art_n && o + 300u < sizeof d->library_dump; j++) { /* I1207: the Artists rows a script clicks */
+        o = dump_put(d, o, "searchartist %u %d %d %d %d name=%s opens=%u\n", (unsigned)j, (int)d->search_art[j].rect.x, (int)d->search_art[j].rect.y,
+                     (int)d->search_art[j].rect.w, (int)d->search_art[j].rect.h, d->search_art[j].name, (unsigned)d->search_art_opens);
+    }
     if (d->page == SEL_UIM_PG_SEARCH) { /* I1011: the fill list_row_fill last gave the row under the pointer (the shared list-row hover path) */
         o = dump_put(d, o, "searchhover fill=%08x\n", (unsigned)d->row_hover_fill);
+        o = dump_put(d, o, "searchplainrow %d %d %d %d\n", (int)d->search_plain_row.x, (int)d->search_plain_row.y, (int)d->search_plain_row.w, (int)d->search_plain_row.h);
     }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
-    o = dump_put(d, o, "search scroll y=%d max=%d wheels=%u\n", d->search_q16, search_max_q16(d), (unsigned)d->search_wheels);
+    o = dump_put(d, o, "search scroll y=%d max=%d wheels=%u follows=%u\n", d->search_q16, search_max_q16(d), (unsigned)d->search_wheels, (unsigned)d->search_follows);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
@@ -7842,11 +7927,13 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect cs = col_sort_rect(d, pmn), cf = col_find_rect(d, pmn);
             sel_engine_stats cst;
             sel_engine_stats_get(d->engine, &cst);
-            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d header_art_px=%d flat=%u\n",
+            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d header_art_px=%d flat=%u views=%u orders=%u eshown=%u\n",
                          d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? "composer" : d->col_kind == COL_LIKED ? "liked" : d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT ? "recent" : d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL ? "local" : "source",
                          (unsigned)cst.collection_opens, (unsigned)art_dominants(d->art), d->col_cover, (unsigned)d->col_color, (unsigned)d->col_top,
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
-                         (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws);
+                         (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws,
+                         (unsigned)cst.collection_views, (unsigned)cst.collection_orders, (unsigned)d->col_eshown);
+            o = dump_put(d, o, "collection_tools shown=%d\n", col_tools_shown(d)); /* I1224 */
             if (d->col_kind != 0u) { /* I678f: the kind page's shelves, the Popular limit and the geometry a script clicks */
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
                 o = dump_put(d, o, "kindscroll scroll=%u max=%u listtop=%d moredrawn=%d,%d,%d,%d\n", (unsigned)d->pls_scroll, (unsigned)col_scroll_max(d, pmn),
@@ -8107,6 +8194,7 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect m0 = song_menu_item_rect(d, 0);
             o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
             o = dump_put(d, o, "smenu_lit %d\n", d->sm_lit);
+            o = dump_put(d, o, "smenu_rowmore %u\n", (unsigned)d->row_more_hover); /* I1147: rows showing "..." from the pointer while the menu is open */
             o = dump_put(d, o, "smenu_pl step=%d playlists=%u sidebar_rows=%u\n", d->sm_step, (unsigned)d->sm_pl_n, (unsigned)d->side_n);
         }
         o = dump_put(d, o, "srcpaint gen=%u painted=%u\n", (unsigned)d->src_gen, (unsigned)d->src_painted);
@@ -8140,9 +8228,14 @@ static const char* library_dump_build(desk* d) {
         }
         {
             sel_gui_rect ta = d->np_add, tt = np_toggle_rect(d), md = region_rect(d, "main");
-            o = dump_put(d, o, "np_panel context=[%s] add %d %d %d %d add_clicks=%u toggle %d %d %d %d toggle_clicks=%u hidden=%u detail_w=%d main_w=%d\n",
+            o = dump_put(d, o, "np_panel context=[%s] add %d %d %d %d add_clicks=%u toggle %d %d %d %d toggle_clicks=%u hidden=%u detail_w=%d main_w=%d bar_np_clicks=%u\n",
                          d->np_ctx_shown, (int)ta.x, (int)ta.y, (int)ta.w, (int)ta.h, (unsigned)d->np_add_clicks, (int)tt.x, (int)tt.y,
-                         (int)tt.w, (int)tt.h, (unsigned)d->np_toggle_clicks, (unsigned)d->detail_hidden, (int)region_rect(d, "detail").w, (int)md.w);
+                         (int)tt.w, (int)tt.h, (unsigned)d->np_toggle_clicks, (unsigned)d->detail_hidden, (int)region_rect(d, "detail").w, (int)md.w, (unsigned)d->bar_np_clicks);
+        }
+        {
+            sel_gui_rect ba = {0, 0, 0, 0}, bb = {0, 0, 0, 0}, bc = {0, 0, 0, 0};
+            player_left_rects(d, &ba, &bb, &bc);
+            o = dump_put(d, o, "bar_np art %d %d %d %d clicks=%u page=%s\n", (int)ba.x, (int)ba.y, (int)ba.w, (int)ba.h, (unsigned)d->bar_np_clicks, d->np_page ? "nowplaying" : "other");
         }
         o = dump_put(d, o, "showall draws=%u clicks=%u page_draws=%u opens=%u open=%u tiles=%u at %d %d %d %d\n", (unsigned)d->show_all_draws,
                      (unsigned)d->show_all_clicks, (unsigned)d->shelf_page_draws, (unsigned)d->shelf_page_opens, (unsigned)d->shelf_open,
@@ -8183,7 +8276,7 @@ static const char* library_dump_build(desk* d) {
         }
         for (k = 0; k < (uint32_t)SIDE_CHIPS && side_chips_h(d) > 0; k++) {
             sel_gui_rect r = side_chip_rect(d, k);
-            o = dump_put(d, o, "sidechip %u %d %d %d %d\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h);
+            o = dump_put(d, o, "sidechip %u %d %d %d %d sel=%d\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h, side_chip_on(d, k));
         }
         {
             sel_gui_rect lc = side_chip_chevron(d, 0), rc = side_chip_chevron(d, 1);
@@ -8316,6 +8409,8 @@ static const char* library_dump_build(desk* d) {
     if (o + 300u < sizeof d->library_dump) { /* I632d: the selection of the list on screen */
         char ranges[96];
         sel_uim_selset_format(&d->sel, ranges, sizeof ranges);
+        o = dump_put(d, o, "song_menu_multi n=%u adds=%u list=%s version=%u ranges=%s\n", (unsigned)d->sm_multi_n, (unsigned)d->sm_multi_adds,
+                     d->sm_multi_n > 0u ? d->sm_multi_list : "-", (unsigned)d->sm_multi_ver, d->sm_multi_n > 0u ? d->sm_multi_ranges : "-");
         o = dump_put(d, o, "select count=%u runs=%u list=%u,%u,%u ranges=%s clicks=%u keys=%u\n", (unsigned)sel_uim_selset_count(&d->sel),
                      (unsigned)sel_uim_selset_run_count(&d->sel), (unsigned)d->sel.list.kind, (unsigned)d->sel.list.id,
                      (unsigned)d->sel.list.version, ranges[0] != '\0' ? ranges : "-", (unsigned)d->sel_clicks, (unsigned)d->sel_keys);
@@ -8447,6 +8542,14 @@ static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_ro
     }
 }
 
+/* I1207: remembers the rectangle an Artists row or tile of the Search page was drawn at, with the artist name it opens. */
+static void search_artist_reg(desk* d, sel_gui_rect r, const char* name) {
+    if (d->search_art_n < sizeof d->search_art / sizeof d->search_art[0] && r.w > 0 && r.h > 0) {
+        snprintf(d->search_art[d->search_art_n].name, sizeof d->search_art[0].name, "%s", name);
+        d->search_art[d->search_art_n++].rect = r;
+    }
+}
+
 /* The tile grid over the rows of v from the absolute y y0 down. The Library draws the engine's view and registers its rows with
  * lib_view_row_reg; the Search page (I615b) draws a filtered copy of its rows and registers the songs with the song menu. */
 static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, int32_t y0, int lib_reg) {
@@ -8484,6 +8587,8 @@ static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
             lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
         } else if (r->key != NULL) {
             song_row_reg(d, t, r->key, 0, 0, 0);
+        } else if (!r->album && r->text != NULL && r->text[0] != '\0') { /* I1207: the Search grid's only key-less, non-album tiles are the Artists */
+            search_artist_reg(d, t, r->text);
         }
         sel_gui_dirty_add(d->canvas, t);
         d->grid_tiles++;
@@ -8823,13 +8928,9 @@ static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r) {
     return rect_of(src_toggle_rect(d, r).x - lpx(d, 16 + SRC_SYNC_W), r.y + (r.h - lpx(d, 32)) / 2, lpx(d, SRC_SYNC_W), lpx(d, 32));
 }
 
-static int src_remote(const desk* d, uint32_t i) {
-    return strcmp(d->src[i].kind, "remote") == 0;
-}
-
 /* A remote source the engine can sync (I814): a search-only source has no Sync button and no sync status. */
 static int src_syncable(const desk* d, uint32_t i) {
-    return src_remote(d, i) && d->src[i].syncable;
+    return sel_uim_src_syncable(&d->src[i]);
 }
 
 /* Sends the switch-off list with source `flip` toggled and the `force_off` sources off (Never, I602), then asks SOURCES for the stored state. */
@@ -8908,25 +9009,10 @@ static void sync_row_done(desk* d, int row, int failed) {
 /* Stores the per-source snooze (library.sync_snoozed, I582) of the banner rows left unticked at Sync: "id:days" for them and
  * for every source the engine already reported a snooze for, then asks SOURCES. The global notice stays untouched. */
 static void nag_snooze(desk* d, uint32_t unticked) {
-    char line[480], csv[440]; /* 16 sources of "key:days" must fit (desk_send ring slot is 512); 128 dropped the tail with 11 snoozed (I786a) */
-    size_t n = 0;
-    uint32_t k;
-    csv[0] = '\0';
-    for (k = 0; k < d->src_n; k++) {
-        int64_t days = (unticked & (1u << k)) ? (int64_t)time(NULL) / 86400 : d->src[k].snooze / 86400;
-        char entry[48];
-        size_t len;
-        if (days <= 0) {
-            continue;
-        }
-        len = (size_t)snprintf(entry, sizeof entry, "%s%s:%lld", n > 0 ? "," : "", d->src[k].key, (long long)days);
-        if (n + len < sizeof csv) {
-            memcpy(csv + n, entry, len + 1u);
-            n += len;
-        }
+    char line[480];
+    if (sel_uim_offer_snooze_line(d->src, d->src_n, unticked, (int64_t)time(NULL), line, sizeof line) != 0u) {
+        desk_send(d, line);
     }
-    snprintf(line, sizeof line, "PREF_SET library.sync_snoozed \"%s\"", csv);
-    desk_send(d, line);
     d->src_wait = 1;
     desk_send(d, "SOURCES");
 }
@@ -9260,13 +9346,26 @@ static const char* online_chip_name(const desk* d, uint32_t k) {
 
 /* Whether one online source is picked (a SOURCE_SEARCH scope), not All sources or the Library. */
 static int desk_scope_online(const desk* d) {
-    return d->scope[0] != '\0' && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) != 0;
+    return d->scope[0] != '\0' && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) != 0 && !d->scope_filtered;
 }
 
 /* A click on a source chip picks it; the selected chip, or All sources, returns to All sources (I1019f). Nothing is persisted. */
 static void online_scope_pick(desk* d, uint32_t k) {
     const char* want = online_chip_scope(d, k);
-    snprintf(d->scope, sizeof d->scope, "%s", strcmp(want, d->scope) == 0 ? "" : want);
+    const sel_state* st = sel_engine_state(d->engine);
+    int all_shown = d->search_on && d->qlen > 0u && st != NULL && st->view != NULL && st->view->source == SEL_VIEW_SEARCH
+                    && (d->scope[0] == '\0' || d->scope_filtered); /* the All results are in the engine's view */
+    int to_source = online_scope_row(d, k) >= 0, same = strcmp(want, d->scope) == 0;
+    if (all_shown && (to_source || (k == 0u && d->scope_filtered))) { /* I1224: filter what is shown, do not search again; the selected chip or All sources lifts the filter */
+        snprintf(d->scope, sizeof d->scope, "%s", same ? "" : want);
+        d->scope_filtered = d->scope[0] != '\0';
+        d->search_q16 = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return;
+    }
+    d->scope_filtered = 0;
+    snprintf(d->scope, sizeof d->scope, "%s", same ? "" : want);
     d->on_state = 0u;
     d->on_n = 0u;
     d->search_on = 0;
@@ -9320,9 +9419,27 @@ static int online_event(desk* d, const sel_tag* t) {
     return 0;
 }
 
-/* I1073: the source chip row scrolls sideways by whole chips, the sidebar chip row's band and chevrons (I610/I669): one row under
- * the search field, above the facet row (I1019f); when the chips overflow it a round chevron button at each end takes its square
- * and the chips between are clipped to the band. */
+/* I1224: the one wrap routine of every chip row (the sidebar chips, I1221, and the Search page's source chips): chip k of n, widths w[],
+ * `gap` between chips, in a band `bw` wide, sits at x offset *x on row *row; a chip that does not fit the rest of its row starts the next. */
+static void chip_flow_place(const int32_t* w, uint32_t n, int32_t gap, int32_t bw, uint32_t k, int32_t* x, int32_t* row) {
+    uint32_t i;
+    int32_t cx = 0, r = 0;
+    for (i = 0; i < n && i <= k; i++) {
+        if (cx > 0 && cx + w[i] > bw) {
+            cx = 0;
+            r++;
+        }
+        if (i == k) {
+            break;
+        }
+        cx += w[i] + gap;
+    }
+    *x = cx;
+    *row = r;
+}
+
+/* I1224: the source chips wrap onto as many rows as they need (the sidebar chips' flow, I1221: chip_flow_place), so none is clipped or
+ * hidden behind a chevron (supersedes the I1073 scrolling row). Each further row pushes the facet row and the results body down. */
 enum { ONLINE_CHIP_PAD = 14, ONLINE_CHIP_GAP = 8, ONLINE_CHIPS_MAX = 2 + SEL_SOURCE_MAX };
 
 static int32_t online_chip_w(desk* d, uint32_t k) {
@@ -9341,102 +9458,43 @@ static uint32_t online_chip_widths(desk* d, int32_t* w) {
     return n;
 }
 
-/* The whole row under the search field, margin to margin. */
+/* The first row of chips under the search field, margin to margin; further rows follow at online_chip_pitch. */
 static sel_gui_rect online_chip_row(desk* d, sel_gui_rect mn) {
     int32_t mg = lpx(d, HOME_MARGIN);
     return rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16), mn.w - 2 * mg, lpx(d, HOME_CHIP_H));
 }
 
-/* The scrolling band of the chips: the row, less a chevron square and gap at each end when the chips overflow it. */
-static sel_gui_rect online_chip_band(desk* d, sel_gui_rect mn, int* overflow) {
-    int32_t w[ONLINE_CHIPS_MAX], cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
-    sel_gui_rect r = online_chip_row(d, mn);
+static int32_t online_chip_pitch(const desk* d) {
+    return lpx(d, HOME_CHIP_H + 8);
+}
+
+/* The rows the chips take at this main width. */
+static int32_t online_chip_rows(desk* d, sel_gui_rect mn) {
+    int32_t w[ONLINE_CHIPS_MAX], x, row;
     uint32_t n = online_chip_widths(d, w);
-    *overflow = sel_uim_lfilter_chips_single(0, sel_uim_lfilter_chips_total(w, n, lpx(d, ONLINE_CHIP_GAP)), r.w);
-    return *overflow ? rect_of(r.x + cv + gap, r.y, r.w - 2 * (cv + gap), r.h) : r;
+    chip_flow_place(w, n, lpx(d, ONLINE_CHIP_GAP), online_chip_row(d, mn).w, n - 1u, &x, &row);
+    return row + 1;
 }
 
-static int online_chip_overflow(desk* d, sel_gui_rect mn) {
-    int ov;
-    online_chip_band(d, mn, &ov);
-    return ov;
+/* The height the extra chip rows add under the first one (0 while the chips fit one row): the facet row and the body move down by it. */
+static int32_t online_chip_extra_h(desk* d, sel_gui_rect mn) {
+    return (online_chip_rows(d, mn) - 1) * online_chip_pitch(d);
 }
 
-/* The left (right = 0) or right chevron button at the row's ends. */
-static sel_gui_rect online_chip_chevron(desk* d, sel_gui_rect mn, int right) {
-    sel_gui_rect r = online_chip_row(d, mn);
-    int32_t cv = lpx(d, HOME_CHIP_H);
-    return rect_of(right ? r.x + r.w - cv : r.x, r.y, cv, cv);
-}
-
-/* The chip that leads the band: the scroll position, clamped so the last chip never leaves the right end (a wider window or a
- * shorter source list pulls it back). */
-static uint32_t online_chip_lead(desk* d, sel_gui_rect mn) {
-    int ov;
-    int32_t w[ONLINE_CHIPS_MAX];
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t n = online_chip_widths(d, w), last;
-    if (!ov) {
-        return 0u;
-    }
-    last = sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w);
-    return d->on_chip_first < last ? d->on_chip_first : last;
-}
-
-/* The k-th chip as laid out on the scrolled row (it may lie outside the band). */
-static sel_gui_rect online_chip_place(desk* d, sel_gui_rect mn, uint32_t k) {
-    int ov;
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t i, lead = online_chip_lead(d, mn);
-    int32_t x = b.x, gap = lpx(d, ONLINE_CHIP_GAP);
-    for (i = lead; i < k; i++) {
-        x += online_chip_w(d, i) + gap;
-    }
-    for (i = k; i < lead; i++) {
-        x -= online_chip_w(d, i) + gap;
-    }
-    return rect_of(x, b.y, online_chip_w(d, k), lpx(d, HOME_CHIP_H));
-}
-
-/* The k-th source chip's visible part: the placed chip cut to the band, empty when it is scrolled out (the hit rect and the dump). */
+/* The k-th source chip's rectangle in the wrapped flow. */
 static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
-    int ov;
-    return sel_gui_rect_intersect(online_chip_place(d, mn, k), online_chip_band(d, mn, &ov));
+    int32_t w[ONLINE_CHIPS_MAX], x, row;
+    uint32_t n = online_chip_widths(d, w);
+    sel_gui_rect b = online_chip_row(d, mn);
+    chip_flow_place(w, n, lpx(d, ONLINE_CHIP_GAP), b.w, k, &x, &row);
+    return rect_of(b.x + x, b.y + row * online_chip_pitch(d), k < n ? w[k] : 0, lpx(d, HOME_CHIP_H));
 }
 
-/* A chevron press: one chip back or on, stopping at both ends. Returns 1 when the row moved. */
-static int online_chip_scroll(desk* d, sel_gui_rect mn, int dir) {
-    int ov;
-    int32_t w[ONLINE_CHIPS_MAX];
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t n = online_chip_widths(d, w), lead = online_chip_lead(d, mn), last = sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w);
-    if (!ov || (dir < 0 && lead == 0u) || (dir > 0 && lead >= last)) {
-        return 0;
-    }
-    d->on_chip_first = dir < 0 ? lead - 1u : lead + 1u;
-    d->on_chip_scrolls++;
-    d->repaint = 1;
-    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-    return 1;
-}
-
-/* The source chips, clipped to the band; the selected one is filled like the active facet. With an overflow the chevrons at the
- * ends show in the text colour while they can move the row, muted at its ends. */
+/* The source chips; the selected one is filled like the active facet. */
 static void online_draw_chips(desk* d, sel_gui_rect mn) {
-    int ov;
-    int32_t w[ONLINE_CHIPS_MAX];
-    sel_gui_rect b = online_chip_band(d, mn, &ov);
-    uint32_t k, n = online_chip_widths(d, w), lead = online_chip_lead(d, mn);
-    sel_gui_clip_push(d->canvas, b);
-    for (k = 0; k < n; k++) {
-        if (online_chip_rect(d, mn, k).w > 0) {
-            draw_chip(d, online_chip_place(d, mn, k), online_chip_name(d, k), strcmp(online_chip_scope(d, k), d->scope) == 0, SEL_GUI_TOKEN_SURFACE);
-        }
-    }
-    sel_gui_clip_pop(d->canvas);
-    if (ov) {
-        draw_chevron_button(d, online_chip_chevron(d, mn, 0), 0, lead > 0u);
-        draw_chevron_button(d, online_chip_chevron(d, mn, 1), 1, lead < sel_uim_lfilter_chips_first_max(w, n, lpx(d, ONLINE_CHIP_GAP), b.w));
+    uint32_t k, n = online_scope_count(d);
+    for (k = 0; k < n && k < (uint32_t)ONLINE_CHIPS_MAX; k++) {
+        draw_chip(d, online_chip_rect(d, mn, k), online_chip_name(d, k), strcmp(online_chip_scope(d, k), d->scope) == 0, SEL_GUI_TOKEN_SURFACE);
     }
 }
 
@@ -9499,16 +9557,6 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
 /* A click in the Search page's main region: a scope chip, a hit (opens and plays it). Returns 1 when used. */
 static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
     uint32_t k, n = online_scope_count(d);
-    if (online_chip_overflow(d, pm)) { /* I1073: a chevron scrolls the chip row (at an end it still takes the click) */
-        if (in_rect(online_chip_chevron(d, pm, 0), x, y)) {
-            online_chip_scroll(d, pm, -1);
-            return 1;
-        }
-        if (in_rect(online_chip_chevron(d, pm, 1), x, y)) {
-            online_chip_scroll(d, pm, 1);
-            return 1;
-        }
-    }
     for (k = 0; k < n; k++) {
         if (in_rect(online_chip_rect(d, pm, k), x, y)) {
             online_scope_pick(d, k);
@@ -9520,7 +9568,8 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
     }
     for (k = 0; k < d->on_n; k++) {
         if (d->on_row[k].drawn && in_rect(d->on_row[k].rect, x, y)) {
-            desk_play_path(d, d->on_row[k].key); /* the engine's key is `<source>:<path>` already */
+            /* I994e (D6): the hit plays inside the hit list, so the next hits follow; k is the engine's hit index (both cap at 120) */
+            desk_play_context(d, (uint32_t)SEL_UIM_LIST_HITS, 0u, sel_engine_state(d->engine)->search_serial, k, "Search");
             d->on_plays++;
             return 1;
         }
@@ -9531,6 +9580,7 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
 static void desk_search_fire(desk* d) {
     char line[160];
+    d->scope_filtered = 0; /* I1224: a fresh query replaces the All results a filter was cut from */
     d->search_pending = 0;
     d->search_q16 = 0; /* new results open at the top; a Search page restored by Back or Forward gets its offset once the results are tall enough (I1012) */
     d->search_restore = d->search_restore == 1 ? 2 : 0;
@@ -9581,7 +9631,7 @@ static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k) {
     for (i = 0; i < (int32_t)k && chip != NULL; i++) {
         x += sel_gui_text_width(chip, search_facet_name[i], strlen(search_facet_name[i])) + 2 * lpx(d, 14) + lpx(d, 8);
     }
-    return rect_of(x, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8),
+    return rect_of(x, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8) + online_chip_extra_h(d, mn),
                    (chip != NULL ? sel_gui_text_width(chip, search_facet_name[k], strlen(search_facet_name[k])) : 40) + 2 * lpx(d, 14),
                    lpx(d, HOME_CHIP_H));
 }
@@ -9689,14 +9739,29 @@ static int browse_click(desk* d, int32_t x, int32_t y) {
 /* The Search page's results body: from under the facet chips to the bottom of main. The list and online results scroll
  * inside it by search_q16; the field and the chips above stay put. */
 static int32_t search_body_y(desk* d, sel_gui_rect mn) {
-    return mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8) + lpx(d, HOME_CHIP_H + 16);
+    return mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8) + lpx(d, HOME_CHIP_H + 16) + online_chip_extra_h(d, mn);
 }
 
 /* The height in pixels of the results the list layouts draw: the online hits (radio entry, then 48 px rows) or the engine's
  * groups (a 32 px heading, then 32 px rows, for the shown facet). Grid and Cover Flow follow the cursor instead (0). One walk
  * the draw and the wheel share, so the scroll bound is the drawn height. */
+/* I1224: whether a "From <name> (n)" heading belongs to the source the scope names. */
+static int heading_names_scope_source(const desk* d, const char* heading) {
+    uint32_t i;
+    for (i = 0; i < d->src_n && i < sizeof d->src / sizeof d->src[0]; i++) {
+        if (strcmp(d->src[i].key, d->scope) == 0) {
+            size_t nl = strlen(d->src[i].name);
+            return strncmp(heading, "From ", 5) == 0 && strncmp(heading + 5, d->src[i].name, nl) == 0 && heading[5 + nl] == ' ';
+        }
+    }
+    return 0;
+}
+
 /* Whether the group of a heading (sel_uim_search_group) is drawn under the facet chip: online From sections are song results (I1019e). */
-static int search_group_shown(const desk* d, uint32_t group) {
+static int search_group_shown(const desk* d, uint32_t group, const char* heading) {
+    if (d->scope_filtered) { /* I1224: a source chip clicked over the shown All results keeps only that source's From section (no new query) */
+        return group == 4u && heading_names_scope_source(d, heading);
+    }
     if (group == 4u && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) == 0) { /* the Library chip: no From section */
         return 0;
     }
@@ -9721,7 +9786,7 @@ static int desk_search_out(const desk* d) {
     return 0;
 }
 
-static int32_t search_content_h(desk* d) {
+static int32_t search_rows_h(desk* d, uint32_t upto) {
     const sel_state* st = sel_engine_state(d->engine);
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     uint32_t k, group = 0;
@@ -9733,12 +9798,12 @@ static int32_t search_content_h(desk* d) {
     if (v == NULL || d->browse_filter || v->style == (uint32_t)SEL_VIEW_STYLE_GRID || v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW) {
         return 0;
     }
-    for (k = 0; k < v->row_n; k++) {
+    for (k = 0; k < v->row_n && k < upto; k++) {
         const sel_view_row* r = &v->rows[k];
         if (r->kind == SEL_ROW_HEADING) {
             const char* t = r->text != NULL ? r->text : "";
             group = sel_uim_search_group(t);
-            show = search_group_shown(d, group);
+            show = search_group_shown(d, group, t);
             if (show && heads++ > 0) {
                 h += lpx(d, SEARCH_SECTION_GAP);
             }
@@ -9748,6 +9813,11 @@ static int32_t search_content_h(desk* d) {
         }
     }
     return h;
+}
+
+/* The whole drawn height of the results (search_rows_h over every row). */
+static int32_t search_content_h(desk* d) {
+    return search_rows_h(d, UINT32_MAX);
 }
 
 static int32_t search_max_q16(desk* d) {
@@ -9796,7 +9866,9 @@ static void draw_search(desk* d) {
     sel_gui_clip_push(d->canvas, rect_of(mn.x, y, mn.w, mn.y + mn.h - y));
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
     d->search_sec_n = 0;
+    memset(&d->search_plain_row, 0, sizeof d->search_plain_row);
     d->search_sync_n = 0;
+    d->search_art_n = 0;
     if (desk_scope_online(d)) { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
         d->search_drawn = d->on_drawn;
@@ -9815,7 +9887,7 @@ static void draw_search(desk* d) {
             if (r->kind == SEL_ROW_HEADING) {
                 const char* t = r->text != NULL ? r->text : "", *par = strchr(t, '(');
                 group = sel_uim_search_group(t);
-                show = search_group_shown(d, group);
+                show = search_group_shown(d, group, t);
                 if (group >= 1u && group <= 3u) {
                     d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
                 }
@@ -9851,13 +9923,13 @@ static void draw_search(desk* d) {
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
             const char* t = r->text != NULL ? r->text : "";
-            if (r->kind != SEL_ROW_HEADING && group == 4u && d->search_sec_n > 0u) {
+            if (r->kind != SEL_ROW_HEADING && group == 4u && show && d->search_sec_n > 0u) {
                 d->search_sec_rows[d->search_sec_n - 1u]++;
             }
             if (r->kind == SEL_ROW_HEADING) {
                 const char* par = strchr(t, '(');
                 group = sel_uim_search_group(t);
-                show = search_group_shown(d, group);
+                show = search_group_shown(d, group, t);
                 if (group >= 1u && group <= 3u) {
                     d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
                 }
@@ -9875,7 +9947,7 @@ static void draw_search(desk* d) {
                 if (show && heads++ > 0u) { /* I1041: a gap above every section heading but the first */
                     y += lpx(d, SEARCH_SECTION_GAP);
                 }
-                if (group == 4u && d->search_sec_n < 16u) { /* the dump's per-section line */
+                if (group == 4u && show && d->search_sec_n < 16u) { /* the dump's per-section line */
                     snprintf(d->search_sec_head[d->search_sec_n], sizeof d->search_sec_head[0], "%s", t);
                     d->search_sec_y[d->search_sec_n] = y;
                     d->search_sec_rows[d->search_sec_n++] = 0;
@@ -9891,7 +9963,12 @@ static void draw_search(desk* d) {
                 {
                     /* I498, I1011: the keyboard focus row and the row under the pointer take the one list-row fill every song list uses */
                     sel_gui_rect rr = rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H));
-                    uint32_t rf = list_row_fill(d, rr, d->kb_list && v->window_start + k == v->cursor);
+                    uint32_t rf;
+                    hover_reg(d, rr); /* I1011: Albums and Artists rows have no song_row_reg; without a registered box a pointer move never repaints them */
+                    if (group != 1u && group != 4u && d->search_plain_row.w == 0) {
+                        d->search_plain_row = rr;
+                    }
+                    rf = list_row_fill(d, rr, d->kb_list && v->window_start + k == v->cursor);
                     if (rf != 0u) {
                         sel_gui_fill_rect(d->canvas, rr, rf);
                     }
@@ -9920,6 +9997,9 @@ static void draw_search(desk* d) {
                     song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),
                                       SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
                 }
+                if (group == 3u && r->key == NULL && t[0] != '\0') { /* I1207: an Artists row opens the artist's page */
+                    search_artist_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), t);
+                }
                 y += lpx(d, SEARCH_ROW_H);
                 drawn_all++;
                 shown += group == 1u;
@@ -9941,42 +10021,6 @@ static void draw_search(desk* d) {
  * choice, a check row a switch, a slider row a bar, a string row a text field. Every change sends the same PREF_SET line the MUI
  * window sends (sel_uim_pref_line), so the engine writes prefs.conf. ---- */
 enum { SET_ROW_H = 52, SET_CTL_W = 240, SET_HEAD_H = 56, SET_CREDIT_H = 88 };
-
-/* The nth choice of a cycle row's comma list, copied to out; returns the list length. */
-static uint32_t set_choice(const char* choices, uint32_t n, char* out, size_t cap) {
-    uint32_t i = 0, count = 1;
-    const char* p = choices;
-    out[0] = '\0';
-    for (; *p != '\0'; p++) {
-        count += *p == ',';
-    }
-    p = choices;
-    while (i < n && strchr(p, ',') != NULL) {
-        p = strchr(p, ',') + 1;
-        i++;
-    }
-    if (i == n) {
-        const char* e = strchr(p, ',');
-        size_t len = e != NULL ? (size_t)(e - p) : strlen(p);
-        len = len < cap - 1u ? len : cap - 1u;
-        memcpy(out, p, len);
-        out[len] = '\0';
-    }
-    return count;
-}
-
-/* The index of the choice equal to cur, 0 when none is. */
-static uint32_t set_choice_index(const char* choices, const char* cur) {
-    char c[48];
-    uint32_t n = set_choice(choices, 0u, c, sizeof c), i;
-    for (i = 0; i < n; i++) {
-        set_choice(choices, i, c, sizeof c);
-        if (strcmp(c, cur) == 0) {
-            return i;
-        }
-    }
-    return 0u;
-}
 
 /* A string pref that holds a credential is shown as dots, never as its text. */
 static int set_secret(const char* key) {
@@ -10035,7 +10079,7 @@ static void draw_settings(desk* d) {
         draw_text(d, rect_of(row.x, y, row.w - cw - lpx(d, 16), rh), r->label, 0, 14, text);
         if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
             char v[48];
-            set_choice(r->choices, set_choice_index(r->choices, cur), v, sizeof v);
+            sel_uim_pref_choice(r->choices, sel_uim_pref_choice_index(r->choices, cur), v, sizeof v);
             draw_button(d, c, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]), v, 13, text);
         } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
             int on = cur[0] == '1';
@@ -10182,8 +10226,8 @@ static int settings_click(desk* d, int32_t x, int32_t y) {
             return slot >= 0 ? settings_rom_pick(d, (uint32_t)slot) : 1;
         }
         if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
-            uint32_t count = set_choice(r->choices, 0u, v, sizeof v);
-            set_choice(r->choices, (set_choice_index(r->choices, desk_pref(d, r->key, "")) + 1u) % count, v, sizeof v);
+            uint32_t count = sel_uim_pref_choice(r->choices, 0u, v, sizeof v);
+            sel_uim_pref_choice(r->choices, (sel_uim_pref_choice_index(r->choices, desk_pref(d, r->key, "")) + 1u) % count, v, sizeof v);
             set_send(d, r, v);
         } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
             set_send(d, r, desk_pref(d, r->key, "")[0] == '1' ? "0" : "1");
@@ -10225,6 +10269,7 @@ static void draw_home_content(desk* d) {
     const char** akeys = NULL;
     uint32_t akn = 0;
     d->sm_n = 0;
+    d->row_more_hover = 0u;
     np_title_reg(d);
     hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
     if (d->page == SEL_UIM_PG_BROWSE) {
@@ -10677,6 +10722,7 @@ static void desk_rt_search_restore(desk* d, const sel_route_entry* e) {
     d->qlen = strlen(d->query);
     d->search_facet = e->aux < 4u ? e->aux : 0u;
     snprintf(d->scope, sizeof d->scope, "%s", e->sub);
+    d->scope_filtered = 0;
     d->search_restore_q16 = e->scroll;
     d->search_restore = d->qlen > 0u && e->scroll > 0 ? 1 : 0;
 }
@@ -10761,6 +10807,13 @@ static void desk_page_apply(desk* d, desk_page pg) {
     }
     d->focus = -1;
     if (pg == SEL_UIM_PG_SEARCH) {
+        if (!d->pg_back && from != SEL_UIM_PG_SEARCH) { /* I1224: the scope follows the page search is opened from: a source page searches that source, any other page All sources (Back and Forward put the kept scope back) */
+            const char* sc = from == SEL_UIM_PG_COLLECTION ? col_source_scope(d) : NULL;
+            snprintf(d->scope, sizeof d->scope, "%s", sc != NULL ? sc : "");
+            d->scope_filtered = 0;
+            d->on_state = 0u;
+            d->on_n = 0u;
+        }
         desk_search_focus(d, d->pg_walk || d->search_keep);
     }
     desk_page_load(d, pg);
@@ -10830,6 +10883,7 @@ static int desk_page_walk(desk* d, int dir) {
     w = sel_route_hist_walk(&d->rh, dir);
     e = *w;
     d->pg_walk = 1;
+    d->pg_back = 1;
     if (e.page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
         d->shelf_open = e.id;
     }
@@ -10843,6 +10897,7 @@ static int desk_page_walk(desk* d, int dir) {
     }
     moved = desk_present(d);
     d->pg_walk = 0;
+    d->pg_back = 0;
     return moved;
 }
 
@@ -10881,7 +10936,12 @@ static int desk_route_door(desk* d, desk_page pg) {
 static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect pa, pbx, pall;
     uint32_t i;
+    if (player_left_rects(d, &pa, &pbx, &pall) && (in_rect(pa, x, y) || in_rect(pbx, x, y))) { /* I960d: the bar's cover or title opens Now Playing */
+        d->bar_np_clicks++;
+        return desk_route_door(d, SEL_UIM_PG_NOWPLAYING);
+    }
     if (d->page == SEL_UIM_PG_BROWSE && in_rect(mn, x, y)) {
         return browse_click(d, x, y);
     }
@@ -10894,6 +10954,16 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
                 if (search_sync_start(d, d->search_sync[i].id)) {
                     return 1;
                 }
+            }
+        }
+    }
+    if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* I1207: a click on an Artists row or tile opens that artist's collection page (with Back history) */
+        for (i = 0; i < d->search_art_n; i++) {
+            if (in_rect(d->search_art[i].rect, x, y)) {
+                char artist[96]; /* copied first: the page change replaces the Search rows */
+                snprintf(artist, sizeof artist, "%s", d->search_art[i].name);
+                d->search_art_opens++;
+                return desk_route(d, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, artist, artist, "");
             }
         }
     }
@@ -11214,8 +11284,53 @@ static const char* side_hdr_label(const desk* d, uint32_t which) {
 /* I670: names, kind masks, the clamp and the filter pass live in src/uimodel/libfilter.c, shared with the MUI control. side_chip is the filter index. */
 #define side_chip_name_at(k) sel_uim_lfilter_label((k) + 1u)
 
+/* I669: pads and gap of the chips. I1221: the chips wrap onto further rows instead of hiding behind a single label, so every chip stays in view. */
+enum { SIDE_CHIP_PAD = 10, SIDE_CHIP_GAP = 6 };
+
+/* The chip's width: its label plus the side pads. The atlas lookup only fills a lazy cache, so a const desk is cast for it. */
+static int32_t side_chip_w(const desk* d, uint32_t k) {
+    const sel_gui_atlas* at = desk_font((desk*)d, 1, 13);
+    return (at != NULL ? sel_gui_text_width(at, side_chip_name_at(k), strlen(side_chip_name_at(k))) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
+}
+
+/* I1221: where chip k sits in the wrapped flow of a band `bw` wide: its x offset in the band and its row (the shared chip_flow_place, I1224). */
+static void side_chip_place(const desk* d, int32_t bw, uint32_t k, int32_t* x, int32_t* row) {
+    int32_t w[SIDE_CHIPS];
+    uint32_t i;
+    for (i = 0; i < (uint32_t)SIDE_CHIPS; i++) {
+        w[i] = side_chip_w(d, i);
+    }
+    chip_flow_place(w, (uint32_t)SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP), bw, k, x, row);
+}
+
+static int32_t side_chip_band_w(const desk* d) {
+    return side_lib_header_rect(d).w - 2 * lpx(d, 12);
+}
+
+/* The rows the six chips take at the current sidebar width. The bitmap tier keeps its single label (6-row chips would be too small to read side by side, I669): one row. */
+static int32_t side_chip_rows(const desk* d) {
+    int32_t x, row;
+    if (desk_bitmap_text(d)) {
+        return 1;
+    }
+    side_chip_place(d, side_chip_band_w(d), SIDE_CHIPS - 1u, &x, &row);
+    return row + 1;
+}
+
+/* I678d: the second-level By You chip of Playlists takes a row of its own under the chips (desktop tiers; the label tier has no room). */
+static int side_chip_sub_row(const desk* d) {
+    return d->side_chip == 1u && !desk_bitmap_text(d);
+}
+
+static int32_t side_chip_pitch(const desk* d) {
+    return lpx(d, HOME_CHIP_H) + lpx(d, SIDE_CHIP_GAP);
+}
+
 static int32_t side_chips_h(const desk* d) {
-    return region_rect(d, "sidebar").w > lpx(d, 120) ? lpx(d, HOME_CHIP_H + 8) : 0;
+    if (region_rect(d, "sidebar").w <= lpx(d, 120)) {
+        return 0;
+    }
+    return lpx(d, HOME_CHIP_H + 8) + (side_chip_rows(d) - 1 + (side_chip_sub_row(d) ? 1 : 0)) * side_chip_pitch(d);
 }
 
 static sel_gui_rect side_chips_rect(const desk* d) {
@@ -11223,49 +11338,22 @@ static sel_gui_rect side_chips_rect(const desk* d) {
     return rect_of(h.x, h.y + h.h, h.w, side_chips_h(d));
 }
 
-/* I669: pads and gap tight enough that the four chips fit the expanded sidebar (360 wide). */
-enum { SIDE_CHIP_PAD = 10, SIDE_CHIP_GAP = 6 };
-
-/* The chip's width: its label plus the side pads. */
-static int32_t side_chip_w(desk* d, uint32_t k) {
-    const sel_gui_atlas* at = desk_font(d, 1, 13);
-    return (at != NULL ? sel_gui_text_width(at, side_chip_name_at(k), strlen(side_chip_name_at(k))) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
-}
-
-static int32_t side_chip_total(desk* d) {
-    int32_t w[SIDE_CHIPS];
-    uint32_t k;
-    for (k = 0; k < SIDE_CHIPS; k++) {
-        w[k] = side_chip_w(d, k);
-    }
-    return sel_uim_lfilter_chips_total(w, SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP));
-}
-
-
-/* The scrolling band of the chips: the row less the pad; with an overflow a chevron button at each end takes its square. The
- * bitmap tier always counts as an overflow: its 6-row chips would be too small to read side by side (I669). */
+/* The band of the chips: the row less the pad; the bitmap tier's single label has a chevron button at each end taking its square (I669). */
 static sel_gui_rect side_chip_band(desk* d, int* overflow) {
     sel_gui_rect r = side_chips_rect(d);
     int32_t pad = lpx(d, 12), cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
     sel_gui_rect b = rect_of(r.x + pad, r.y, r.w - 2 * pad, r.h);
-    *overflow = sel_uim_lfilter_chips_single(desk_bitmap_text(d), side_chip_total(d), b.w); /* I669: the shared chips-or-label decision */
-    if (!*overflow && side_chip_has_x(d)) { /* only the selected chip shows, right of the X */
-        b = rect_of(b.x + cv + gap, b.y, b.w - (cv + gap), b.h);
-    }
+    *overflow = desk_bitmap_text(d);
     if (*overflow) {
         b = rect_of(b.x + cv + gap, b.y, b.w - 2 * (cv + gap), b.h);
     }
     return b;
 }
 
-/* I678b: with a chip selected the left slot of the row is the round clear (X) button; the bitmap tier keeps its stepping chevron. */
-static int side_chip_has_x(desk* d) {
-    return d->side_chip != 0u && !desk_bitmap_text(d);
-}
-
-/* I831: whether the left button of the row is the x; the shared rule (sel_uim_lfilter_left_clears) also covers the label mode on the bitmap tier. */
+/* I831: whether the left button of the label is the x; the shared rule (sel_uim_lfilter_left_clears) applies to the bitmap tier's label only.
+ * I1221: the chip row has no x; the chip in force clears by a click on it again. */
 static int side_chip_left_clear(desk* d) {
-    return sel_uim_lfilter_left_clears(d->side_chip);
+    return desk_bitmap_text(d) && sel_uim_lfilter_left_clears(d->side_chip);
 }
 
 static sel_gui_rect side_chip_chevron(desk* d, int right) {
@@ -11274,31 +11362,38 @@ static sel_gui_rect side_chip_chevron(desk* d, int right) {
     return rect_of(right ? r.x + r.w - pad - cv : r.x + pad, r.y, cv, cv);
 }
 
-/* I669: one control instead of the chip row when the chips do not fit the sidebar (and on the bitmap tier): a label naming
- * the filter in force that the chevrons step through All and the chips (a row of chips with only one in view hides the
- * choices, so a click on it means nothing). */
+/* I669: the bitmap tier shows one control instead of the chip row: a label naming the filter in force that the chevrons step through All and the chips. */
 static int side_chip_single(desk* d) {
     int ov;
     side_chip_band(d, &ov);
     return ov;
 }
 
-/* The chip rectangle k; with a single control chip 0 is that control across the band and the rest are empty. */
+/* The chip rectangle k; with the single label chip 0 is that control across the band and the rest are empty. */
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k) {
     int ov;
-    uint32_t i;
+    int32_t x, row;
     sel_gui_rect b = side_chip_band(d, &ov);
-    int32_t x = b.x;
-    if (side_chip_single(d)) {
+    if (ov) {
         return k == 0u ? rect_of(b.x, b.y, b.w, lpx(d, HOME_CHIP_H)) : rect_of(0, 0, 0, 0);
     }
-    if (d->side_chip != 0u && !side_chip_single(d) && side_chip_has_x(d)) { /* I678b: the other chips hide while one is selected */
-        return k + 1u == d->side_chip ? rect_of(x, b.y, side_chip_w(d, k), lpx(d, HOME_CHIP_H)) : rect_of(0, 0, 0, 0);
+    side_chip_place(d, b.w, k, &x, &row);
+    return rect_of(b.x + x, b.y + row * side_chip_pitch(d), side_chip_w(d, k), lpx(d, HOME_CHIP_H));
+}
+
+/* I1221: whether chip k is the one in force, the only chip that takes the accent (selected) fill; the draw and the dump both ask here. */
+static int side_chip_on(const desk* d, uint32_t k) {
+    return d->side_chip == k + 1u;
+}
+
+/* I678d: the By You chip, on the row under the chips while Playlists is in force; empty otherwise. */
+static sel_gui_rect side_chip_sub_rect(desk* d) {
+    int ov;
+    sel_gui_rect b = side_chip_band(d, &ov);
+    if (!side_chip_sub_row(d) || side_chips_h(d) == 0) {
+        return rect_of(0, 0, 0, 0);
     }
-    for (i = 0; i < k; i++) {
-        x += side_chip_w(d, i) + lpx(d, SIDE_CHIP_GAP);
-    }
-    return rect_of(x, b.y, side_chip_w(d, k), lpx(d, HOME_CHIP_H));
+    return rect_of(b.x, b.y + side_chip_rows(d) * side_chip_pitch(d), lpx(d, 64), lpx(d, HOME_CHIP_H));
 }
 
 /* The control under a point: a chip 0..SIDE_CHIPS-1, SIDE_CHIPS for the left and SIDE_CHIPS + 1 for the right chevron, -1 for none. */
@@ -11959,23 +12054,15 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         sel_gui_rect band = side_chip_band(d, &ov), cr = side_chips_rect(d);
         sel_gui_clip_push(d->canvas, band);
         if (side_chip_single(d)) {
-            sel_gui_rect sr = side_chip_rect(d, 0);
-            if (d->side_chip == 1u && side_chip_has_x(d)) { /* I678d: room at the right end for the By You chip */
-                sr.w -= lpx(d, 64) + lpx(d, SIDE_CHIP_GAP);
-            }
-            draw_chip(d, sr, d->side_chip == 0u ? "All" : side_chip_name_at(d->side_chip - 1u), d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
+            draw_chip(d, side_chip_rect(d, 0), d->side_chip == 0u ? "All" : side_chip_name_at(d->side_chip - 1u), d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
         } else {
-            for (k = 0; k < SIDE_CHIPS; k++) {
-                if (side_chip_rect(d, k).w > 0) { /* I678b: a selected chip hides the others */
-                    draw_chip(d, side_chip_rect(d, k), side_chip_name_at(k), d->side_chip == k + 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
-                }
+            for (k = 0; k < SIDE_CHIPS; k++) { /* I1221: every chip stays in view; only the one in force takes the selected fill */
+                draw_chip(d, side_chip_rect(d, k), side_chip_name_at(k), side_chip_on(d, k), SEL_GUI_TOKEN_SURFACE_RAISED);
             }
         }
         sel_gui_clip_pop(d->canvas);
-        d->side_sub_btn = rect_of(0, 0, 0, 0);
-        if (d->side_chip == 1u && side_chip_has_x(d)) { /* I678d: the second-level chip of Playlists */
-            sel_gui_rect pr = side_chip_rect(d, 0);
-            d->side_sub_btn = rect_of(side_chip_single(d) ? pr.x + pr.w - lpx(d, 64) : pr.x + pr.w + lpx(d, SIDE_CHIP_GAP), pr.y, lpx(d, 64), pr.h);
+        d->side_sub_btn = side_chip_sub_rect(d);
+        if (d->side_sub_btn.w > 0) { /* I678d: the second-level chip of Playlists */
             draw_chip(d, d->side_sub_btn, "By You", d->side_sub == 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
         }
         if (side_chip_left_clear(d)) { /* I678b: the round clear button left of the selected chip; I831: also the label mode */
@@ -12001,10 +12088,9 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     if (labels && side_table(d)) { /* I678d: the table header over the rows */
         uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
         int32_t hy = v.y - side_table_head_h(d), k;
-        static const char* const heads[SLC_N] = {"Title", "Type", "Date Added", "Played"};
         for (k = 0; k < SLC_N; k++) {
             if (scw[k] > 0) {
-                draw_text(d, rect_of(v.x + pad + scx[k], hy, scw[k], side_table_head_h(d)), heads[k], 1, 12, muted);
+                draw_text(d, rect_of(v.x + pad + scx[k], hy, scw[k], side_table_head_h(d)), sel_uim_side_col_name((uint32_t)k), 1, 12, muted);
             }
         }
     }
@@ -12154,22 +12240,41 @@ static void draw_sidebar(desk* d) {
         d->home_parts |= HP_NAV;
     }
     side_lib_draw(d, sb);
+    if (d->focus >= 0 && d->focus == region_stop(d, "sidebar") && d->side_cur >= 0 && d->side_cur < side_cur_count(d)) { /* I1183: the keyboard cursor */
+        sel_gui_rect cr = side_cur_rect(d, d->side_cur);
+        int32_t t = lpx(d, 2);
+        uint32_t col = ARGB(d->theme.token[SEL_GUI_TOKEN_FOCUS_RING]);
+        if (cr.w > 2 * t && cr.h > 2 * t) {
+            sel_gui_round_frame(d->canvas, cr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), t, col);
+            sel_gui_dirty_add(d->canvas, cr);
+            d->side_cur_draws++;
+        }
+    }
 }
 
 /* The player bar's left block (mockup footer): artwork of the playing song with its title and artist beside it. Hidden
  * when the bar is too narrow to share the row with the transport. */
-static void draw_player_left(desk* d) {
-    const sel_uim_frame* f = &d->uim.frame;
+/* The left block of the player bar: cover and title box (one geometry for the draw and the click, I960d). 0 when the bar is too
+ * small to show it. */
+static int player_left_rects(const desk* d, sel_gui_rect* ar, sel_gui_rect* box, sel_gui_rect* all) {
     sel_gui_rect pl = region_rect(d, "player");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t as = lpx(d, 56), gap = lpx(d, 12);
-    sel_gui_rect ar, box, all;
     if (pl.w < lpx(d, 900) || pl.h < as) {
+        return 0;
+    }
+    *ar = rect_of(pl.x + sp, pl.y + (pl.h - as) / 2, as, as);
+    *box = rect_of(ar->x + as + gap, ar->y, lpx(d, 300) - as - gap - sp, as);
+    *all = rect_of(pl.x, pl.y, lpx(d, 300) + sp, pl.h);
+    return 1;
+}
+
+static void draw_player_left(desk* d) {
+    const sel_uim_frame* f = &d->uim.frame;
+    sel_gui_rect ar, box, all;
+    if (!player_left_rects(d, &ar, &box, &all)) {
         return;
     }
-    ar = rect_of(pl.x + sp, pl.y + (pl.h - as) / 2, as, as);
-    box = rect_of(ar.x + as + gap, ar.y, lpx(d, 300) - as - gap - sp, as);
-    all = rect_of(pl.x, pl.y, lpx(d, 300) + sp, pl.h);
     sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     if (cover_draw(d, ar, sel_engine_state(d->engine)->song.path, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]))) { /* I692 */
         d->cover_bar++;
@@ -12242,7 +12347,7 @@ static void draw_nowplaying(desk* d) {
     }
     draw_panel(d, "detail");
     /* I619: the context the song plays from heads the panel (Spotify): the playlist, else the release, else the plain heading. */
-    ctx = d->np_ctx;
+    ctx = st->ctx_name; /* I994e: the engine names the context the playing song started from */
     if (ctx[0] == '\0' && st->panel != NULL) {
         const char* q = st->panel;
         while (*q != '\0') {
@@ -12575,17 +12680,17 @@ static void draw_transport(desk* d) {
 
 /* The tooltip box above its button; the fade tween moves the box and the text from the surface to their final
  * colours. */
-static void desk_draw_tip(desk* d) {
+static int desk_draw_tip(desk* d) {
     sel_gui_rect b, box;
     int32_t door;
     const sel_gui_atlas* at;
     int32_t w, pad, q;
     if (d->tip_shown <= 0) {
-        return;
+        return 0;
     }
     at = desk_font(d, 0, 13);
     if (at == NULL) {
-        return;
+        return 0;
     }
     q = sel_gui_tween_value(&d->tl, ANIM_KEY_TIP, 65536);
     door = d->tip_shown - 1 - (int32_t)TRANSPORT_COUNT;
@@ -12615,6 +12720,7 @@ static void desk_draw_tip(desk* d) {
     draw_text(d, rect_of(box.x + pad, box.y, w - 2 * pad, box.h), d->tip_text, 0, 13,
               desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE_PRESSED], d->theme.token[SEL_GUI_TOKEN_TEXT], q));
     sel_gui_dirty_add(d->canvas, box);
+    return 1;
 }
 
 /* I244: the action-bound controls besides the transport row share its tooltip path. Control c: 0..5 are the visualizer
@@ -13001,6 +13107,131 @@ static void desk_focus_move(desk* d, int32_t dir) {
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
+/* A sidebar door opens its page: the one path a click and the keyboard cursor (I1183) share. */
+static int sidebar_door_open(desk* d, int32_t door) {
+    d->nav_clicks++;
+    return desk_route_door(d, door_page((uint32_t)door));
+}
+
+/* A Your Library row opens that item in the main region: the one path a click and the keyboard cursor share. */
+static int side_row_open(desk* d, uint32_t i) {
+    d->side_opens++;
+    desk_item_open(d, SEL_ROUTE_SIDEBAR_ROW, d->side_items[i].kind, d->side_items[i].id, d->side_items[i].key, d->side_items[i].name, d->side_items[i].sub);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return 1;
+}
+
+/* I1183: the sidebar stop's rows in cursor order: the shown doors by slot, then the Your Library rows. */
+static int32_t side_cur_count(const desk* d) {
+    return (int32_t)desk_door_slot(d, DOOR_COUNT) + (int32_t)d->side_n;
+}
+
+/* The door whose slot is p, -1 when p is past the doors. */
+static int32_t side_cur_door(const desk* d, int32_t p) {
+    uint32_t k;
+    for (k = 0; k < DOOR_COUNT; k++) {
+        if (desk_door_shown(d, k) && (int32_t)desk_door_slot(d, k) == p) {
+            return (int32_t)k;
+        }
+    }
+    return -1;
+}
+
+/* The canvas rectangle of cursor position p; zero-sized when a library row is scrolled out of the view. */
+static sel_gui_rect side_cur_rect(const desk* d, int32_t p) {
+    int32_t nd = (int32_t)desk_door_slot(d, DOOR_COUNT);
+    if (p < nd) {
+        int32_t door = side_cur_door(d, p);
+        return door >= 0 ? sidebar_door_rect(d, (uint32_t)door) : rect_of(0, 0, 0, 0);
+    }
+    return side_lib_row_rect(d, (uint32_t)(p - nd));
+}
+
+/* Scrolls the Your Library list so library row i is inside the view. */
+static void side_cur_follow(desk* d, uint32_t i) {
+    sel_gui_rect v = side_lib_view_rect(d), r = side_lib_row_rect(d, i);
+    int32_t max = side_lib_max_q16(d);
+    if (r.y < v.y) {
+        d->side_y_q16 -= px_to_logical_ceil(d, v.y - r.y) << 16;
+    } else if (r.y + r.h > v.y + v.h) {
+        d->side_y_q16 += px_to_logical_ceil(d, r.y + r.h - (v.y + v.h)) << 16;
+    }
+    d->side_y_q16 = d->side_y_q16 < 0 ? 0 : (d->side_y_q16 > max ? max : d->side_y_q16);
+}
+
+/* I1183: Up/Down/Home/End move the sidebar cursor, Enter opens its row through the click handlers. */
+static void side_cur_key(desk* d, uint32_t code) {
+    int32_t n = side_cur_count(d), nd = (int32_t)desk_door_slot(d, DOOR_COUNT), p = d->side_cur;
+    if (n <= 0) {
+        return;
+    }
+    if (code == 13u) {
+        if (p >= 0 && p < n) {
+            if (p < nd) {
+                sidebar_door_open(d, side_cur_door(d, p));
+            } else {
+                side_row_open(d, (uint32_t)(p - nd));
+            }
+        }
+        return;
+    }
+    if (code == TXT_KEY_DOWN) {
+        p = p < 0 ? 0 : (p + 1 < n ? p + 1 : p);
+    } else if (code == TXT_KEY_UP) {
+        p = p < 0 ? 0 : (p > 0 ? p - 1 : 0);
+    } else if (code == TXT_KEY_HOME) {
+        p = 0;
+    } else if (code == TXT_KEY_END) {
+        p = n - 1;
+    }
+    d->side_cur = p;
+    if (p >= nd) {
+        side_cur_follow(d, (uint32_t)(p - nd));
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+/* I1164: arrow keys and Enter act on the focused stop only. Returns 1 when the key was taken here (the focused stop is the
+ * player, the sidebar or the detail panel), 0 for the main region and for no stop, which keep the page list handling.
+ * The player stop reuses the text UI's `player:` bindings (Up/Down volume, Left/Right seek, Enter play/pause). The sidebar's
+ * Your Library list has no keyboard cursor yet, so its stop moves no list; the detail panel has no list. */
+static int desk_focus_route(desk* d, const sel_gui_input* ev) {
+    int32_t f = d->focus;
+    int arrow = ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT;
+    int home_end = ev->code == TXT_KEY_HOME || ev->code == TXT_KEY_END;
+    if (ev->mods != 0u || (!arrow && ev->code != 13u && !(home_end && f >= 0 && f == region_stop(d, "sidebar")))) {
+        return 0;
+    }
+    if (f >= 0 && f == region_stop(d, "player")) {
+        txt_bindings def;
+        const char* act;
+        txt_bindings_default(&def);
+        act = txt_bindings_lookup(&def, TXT_CTX_PLAYER, ev->code, ev->mods);
+        d->route_player++;
+        if (act != NULL && strcmp(act, "@play_pause") == 0) {
+            desk_send(d, sel_engine_state(d->engine)->play == SEL_STOPPED ? "PLAY" : "PAUSE");
+        } else if (act != NULL && act[0] != '@') {
+            desk_send(d, act);
+        }
+        return 1;
+    }
+    if (f >= 0 && f == region_stop(d, "sidebar")) {
+        d->route_sidebar++;
+        side_cur_key(d, ev->code);
+        return 1;
+    }
+    if (f >= 0 && f == region_stop(d, "detail")) {
+        d->route_detail++;
+        return 1;
+    }
+    if (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u) {
+        d->route_main++;
+    }
+    return 0;
+}
+
 /* The ring of the focused stop: two logical pixels in the focus-ring token. The search stop is the field at the top
  * of the main region. */
 static void desk_draw_focus(desk* d) {
@@ -13068,13 +13299,7 @@ static int desk_transport_click(desk* d, uint32_t i) {
 }
 
 /* The keys of the action table become the desktop bindings, loaded through the same txt_bindings the text UI uses. */
-/* The text UI's page keys and the page each opens: the one table both the key load and the key dispatch read (I279). */
-static const struct {
-    const char* action;
-    desk_page page;
-} k_page_keys[] = {{"@home", SEL_UIM_PG_HOME},       {"@library", SEL_UIM_PG_FOLDERS}, {"@folders", SEL_UIM_PG_PLAYLISTS},
-                   {"@info", SEL_UIM_PG_SONGINFO},   {"@viz", SEL_UIM_PG_VIZ},         {"@pattern", SEL_UIM_PG_TRACKER}};
-
+/* The text UI's page keys and the page each opens: sel_uim_page_key_at, the one table the key load and the key dispatch read (I279). */
 static void desk_bind_actions(desk* d) {
     uint32_t i, n = sel_uim_action_count();
     memset(&d->binds, 0, sizeof d->binds);
@@ -13092,8 +13317,14 @@ static void desk_bind_actions(desk* d) {
         txt_bindings def;
         uint32_t k;
         txt_bindings_default(&def);
-        for (k = 0; k < sizeof overlay_actions / sizeof overlay_actions[0] + sizeof k_page_keys / sizeof k_page_keys[0]; k++) {
-            const char* action = k < sizeof overlay_actions / sizeof overlay_actions[0] ? overlay_actions[k] : k_page_keys[k - sizeof overlay_actions / sizeof overlay_actions[0]].action;
+        for (k = 0; k < sizeof overlay_actions / sizeof overlay_actions[0] + SEL_UIM_PAGE_KEY_COUNT; k++) {
+            const char* action = NULL;
+            uint32_t kpage;
+            if (k < sizeof overlay_actions / sizeof overlay_actions[0]) {
+                action = overlay_actions[k];
+            } else {
+                sel_uim_page_key_at(k - (uint32_t)(sizeof overlay_actions / sizeof overlay_actions[0]), &action, &kpage);
+            }
             char key[24], row[64];
             if (txt_bindings_key_for(&def, action, key, sizeof key) != NULL) {
                 snprintf(row, sizeof row, "%s %s\n", key, action);
@@ -13579,7 +13810,7 @@ static int queue_list_key(desk* d, const sel_gui_input* ev) {
         }
         d->kb_activates++;
         d->row_plays++;
-        desk_play_path(d, st->queue_text + st->queue[d->q_focus].path_offset);
+        desk_play_context(d, (uint32_t)SEL_UIM_LIST_QUEUE, 0u, st->queue_version, (uint32_t)d->q_focus, "");
         return 1;
     }
     to = list_nav(ev->code, d->q_focus, n, page);
@@ -13718,6 +13949,65 @@ static int view_first_down(desk* d, const sel_gui_input* ev) {
     return 1;
 }
 
+/* I1151: Up/Down on the Search page's list (the grouped rows draw_search draws) step over the rows it does not draw as a
+ * row: the group headings and the rows of a group the facet chip hides. The cursor used to land on them, so a key press
+ * moved the highlight to a row with no fill and nothing changed on screen (the first Down went to the heading at row 0).
+ * Sends the absolute VIEW_CURSOR of the next drawn row; the window holds the rows from 0, so the group of each row is
+ * known from the headings above it. Returns 1 when it sent a move. */
+static int search_list_step(desk* d, const sel_view_state* v, int first, int dir) {
+    int64_t from = first ? -1 : (int64_t)v->cursor, to = -1;
+    uint32_t k, group = 0;
+    int show = 0;
+    char line[32];
+    if (v->window_start != 0u) {
+        return 0;
+    }
+    if (!first && d->search_want >= 0 && (int64_t)v->cursor == d->search_want_from) {
+        from = d->search_want; /* the engine has not applied the last move yet: step on from where it goes, not back to it */
+    }
+    for (k = 0; k < v->row_n; k++) {
+        const sel_view_row* r = &v->rows[k];
+        if (r->kind == SEL_ROW_HEADING) {
+            group = sel_uim_search_group(r->text != NULL ? r->text : "");
+            show = search_group_shown(d, group, r->text != NULL ? r->text : "");
+            continue;
+        }
+        if (!show) {
+            continue;
+        }
+        if (dir > 0 && (int64_t)k > from) {
+            to = k;
+            break;
+        }
+        if (dir < 0 && (int64_t)k < from) {
+            to = k; /* the last drawn row above the cursor */
+        }
+    }
+    if (to < 0) {
+        return 0;
+    }
+    { /* I1161: the list scrolls with the cursor row, as every other keyboard list does (list_scroll_into); the heading
+       * right above the row comes into view with it */
+        sel_gui_rect mn = panel_rect(d, "main");
+        int32_t view_h = px_to_logical(d, mn.y + mn.h - search_body_y(d, mn));
+        int32_t row_top = px_to_logical(d, search_rows_h(d, (uint32_t)to)), rh = SEARCH_ROW_H, max_q16 = search_max_q16(d);
+        if (to > 0 && v->rows[to - 1].kind == SEL_ROW_HEADING) {
+            row_top -= 32;
+            rh += 32;
+        }
+        d->search_q16 = list_scroll_into(d->search_q16, row_top < 0 ? 0 : row_top, rh, view_h);
+        d->search_q16 = d->search_q16 > max_q16 ? max_q16 : d->search_q16;
+        d->search_restore = 0; /* the user moves: a waiting restore is dropped */
+        d->search_follows++;
+    }
+    snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)to);
+    d->search_want = to;
+    d->search_want_from = (int64_t)v->cursor;
+    desk_send(d, line);
+    d->arrows++;
+    return 1;
+}
+
 static int desk_key(desk* d, const sel_gui_input* ev) {
     const char* act;
     d->keys_in++;
@@ -13738,6 +14028,10 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return overlay_key(d, ev);
     }
     if (ev->code == TXT_KEY_F1 + 9u && (ev->mods & TXT_MOD_SHIFT) != 0u && song_menu_key(d)) {
+        return 1;
+    }
+    if (d->sm_open) { /* I1147: an open menu level owns the keyboard and never passes a key to the list behind; I1150: it is driven by them */
+        song_menu_keynav(d, ev);
         return 1;
     }
     if (d->page == SEL_UIM_PG_SETTINGS && d->set_focus >= 0 && settings_key(d, ev)) { /* I799a */
@@ -13776,10 +14070,17 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         draw_home(d);
         return 1;
     }
+    if (ev->code == 9u && (ev->mods & ~TXT_MOD_SHIFT) == 0u) {
+        /* I1151: Tab and Shift+Tab move the focus ring from every stop, the search field too; the field branch below took
+         * every key, so Tab stuck in the field */
+        desk_focus_move(d, (ev->mods & TXT_MOD_SHIFT) != 0u ? -1 : 1);
+        return desk_present(d);
+    }
     if (d->focus == (int32_t)d->layout.count && ev->code == TXT_KEY_DOWN && ev->mods == 0u) {
         /* I1009: Enter no longer drops the field's focus, so Down is the way into the results: it hands the keyboard to the
-         * list and falls through to the list key handling below for this same press (Enter on a row then opens it) */
-        d->focus = 0;
+         * list and falls through to the list key handling below for this same press (Enter on a row then opens it).
+         * I1151: the focus goes to the main region the results are in, not to stop 0 (the sidebar) */
+        d->focus = region_stop(d, "main");
     }
     if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
         /* I1036: an edit key (Backspace is bound to @back) stays with the field */
@@ -13791,7 +14092,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         }
         if (ev->code == 27u) {
             d->search_pending = 0; /* Escape leaves without a search */
-            d->focus = 0;
+            d->focus = -1; /* I1151: no stop keeps the focus, as a click elsewhere in main (stop 0 was the sidebar) */
         } else if (ev->code == 13u && (strncmp(d->query, "http://", 7u) == 0 || strncmp(d->query, "https://", 8u) == 0)) {
             /* I725a: a typed or pasted stream URL (a stream, or a .pls / .m3u list of streams) is saved to the
              * "Streams" playlist and played; the ICY title reaches the now-playing bar through the engine. */
@@ -13817,10 +14118,6 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
     }
-    if (ev->code == 9u && (ev->mods & ~TXT_MOD_SHIFT) == 0u) {
-        desk_focus_move(d, (ev->mods & TXT_MOD_SHIFT) != 0u ? -1 : 1);
-        return desk_present(d);
-    }
     if (ev->code == '/' && ev->mods == 0u) {
         return desk_page_goto(d, SEL_UIM_PG_SEARCH);
     }
@@ -13836,6 +14133,9 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
+    }
+    if (desk_focus_route(d, ev)) {
+        return 0; /* the engine answers a player key; the page list did not move */
     }
     if (d->songs && songs_list_key(d, ev)) {
         return 1;
@@ -13858,6 +14158,17 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         sel_engine_state(d->engine)->view->source == SEL_VIEW_SEARCH && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u)) {
         const sel_view_state* sv = sel_engine_state(d->engine)->view;
         const sel_view_row* sr = sv->cursor >= sv->window_start && sv->cursor - sv->window_start < sv->row_n ? &sv->rows[sv->cursor - sv->window_start] : NULL;
+        if ((ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN) && !d->browse_filter && sv->style != (uint32_t)SEL_VIEW_STYLE_GRID &&
+            sv->style != (uint32_t)SEL_VIEW_STYLE_COVERFLOW && !desk_scope_online(d)) { /* the grouped list (I1151) */
+            int first = !d->kb_list;
+            if (!first || ev->code == TXT_KEY_DOWN) {
+                d->kb_list = 1;
+                if (search_list_step(d, sv, first, ev->code == TXT_KEY_DOWN ? 1 : -1)) {
+                    d->search_skips++;
+                }
+                return 0; /* no drawn row past the cursor: the highlight stays */
+            }
+        }
         if (view_first_down(d, ev)) {
             return 0;
         }
@@ -13869,7 +14180,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         if (ev->code == 13u && sr != NULL && sr->kind != (uint32_t)SEL_ROW_HEADING && !sr->album && sr->key != NULL) {
             d->kb_activates++;
             d->row_plays++;
-            return desk_play_path(d, sr->key);
+            return desk_play_context(d, (uint32_t)SEL_UIM_LIST_VIEW, (uint32_t)d->page, sv->version, sv->cursor, "Search");
         }
         d->kb_activates += ev->code == 13u;
     }
@@ -13927,10 +14238,12 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     }
     if (act != NULL) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
         uint32_t k;
-        for (k = 0; k < sizeof k_page_keys / sizeof k_page_keys[0]; k++) {
-            if (strcmp(act, k_page_keys[k].action) == 0) {
+        const char* pact;
+        uint32_t ppage;
+        for (k = 0; sel_uim_page_key_at(k, &pact, &ppage); k++) {
+            if (strcmp(act, pact) == 0) {
                 d->nav_keys++;
-                return desk_page_goto(d, k_page_keys[k].page);
+                return desk_page_goto(d, ppage);
             }
         }
     }
@@ -13978,8 +14291,7 @@ static int songs_send_path(desk* d, const char* verb, int32_t row) {
 
 /* Plays a display row: OPEN only loads, so the play intent sends OPEN then PLAY. */
 static int songs_play_row(desk* d, int32_t row) {
-    const sel_state* st = sel_engine_state(d->engine);
-    return desk_play_path(d, st->queue_text + st->queue[d->order[row]].path_offset);
+    return desk_play_context(d, (uint32_t)SEL_UIM_LIST_QUEUE, 0u, sel_engine_state(d->engine)->queue_version, d->order[row], "");
 }
 
 /* One pointer event (DUI-P3-2): the region is found on the layout tree first, then the part inside it. Returns 1 when
@@ -14047,7 +14359,7 @@ static int select_active(const desk* d, sel_uim_list_id* l, uint32_t* rows) {
         l->id = r->list_id;
         l->version = r->list_version;
         *rows = r->list_kind == (uint32_t)SEL_UIM_LIST_QUEUE ? st->queue_count
-              : r->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST ? d->pls_n
+              : r->list_kind == (uint32_t)SEL_UIM_LIST_PLAYLIST || r->list_kind == (uint32_t)SEL_UIM_LIST_COLLECTION ? d->pls_n
               : r->list_id >= 1000u ? lib_list_n(st) : (st->view != NULL ? st->view->row_count : 0u);
         return 1;
     }
@@ -14128,7 +14440,7 @@ static int select_key(desk* d, const sel_gui_input* ev) {
         uint32_t next;
         sel_uim_selset_bind(&d->sel, l);
         if (sel_uim_selset_count(&d->sel) == 0u) {
-            int32_t f = l.kind == (uint32_t)SEL_UIM_LIST_QUEUE ? d->q_focus : l.kind == (uint32_t)SEL_UIM_LIST_PLAYLIST ? 0
+            int32_t f = l.kind == (uint32_t)SEL_UIM_LIST_QUEUE ? d->q_focus : l.kind == (uint32_t)SEL_UIM_LIST_PLAYLIST || l.kind == (uint32_t)SEL_UIM_LIST_COLLECTION ? 0
                       : l.id >= 1000u ? d->lib_focus : (st->view != NULL ? (int32_t)st->view->cursor : 0);
             d->sel_cur = f < 0 ? 0u : (uint32_t)f;
             sel_uim_selset_select_one(&d->sel, d->sel_cur);
@@ -14158,7 +14470,7 @@ static int song_row_dblclick(desk* d, const sel_gui_input* ev) {
             d->clicks++;
             d->double_clicks++;
             d->row_plays++;
-            desk_play_path(d, d->sm_rows[i].ref.path);
+            desk_play_ref(d, &d->sm_rows[i].ref);
             return 1;
         }
     }
@@ -14181,6 +14493,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         return 1;
     }
     if (song_menu_pointer(d, ev)) {
+        return 1;
+    }
+    if (d->sm_open && ev->kind == SEL_GUI_IN_DRAG) { /* I1147: an open menu level (every sm_step, the Add to Playlist submenu included) is modal: a drag does not reach the rows behind it */
         return 1;
     }
     if (select_pointer(d, ev)) {
@@ -14215,8 +14530,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* a sidebar door opens its page */
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
         if (door >= 0) {
-            d->nav_clicks++;
-            return desk_route_door(d, door_page((uint32_t)door));
+            return sidebar_door_open(d, door);
         }
         if (in_rect(side_hdr_title_rect(d), ev->x, ev->y)) { /* I678h (D1): the "Your Library" title opens nothing; the route table counts the click */
             d->nav_clicks++;
@@ -14261,12 +14575,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         }
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
-            d->side_opens++;
-            desk_item_open(d, SEL_ROUTE_SIDEBAR_ROW, d->side_items[door].kind, d->side_items[door].id, d->side_items[door].key, d->side_items[door].name,
-                           d->side_items[door].sub);
-            d->repaint = 1;
-            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-            return 1;
+            return side_row_open(d, (uint32_t)door);
         }
     }
     if ((in_main || (ev->kind == SEL_GUI_IN_MOVE && ev->code == 1u)) && lib_bar_pointer(d, ev)) { /* I541: the Library scrollbar */
@@ -14478,6 +14787,9 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
  * the list; pinch in the tile grid moves the tile size one token step (clamped); swipe is Back and Forward. Returns 1
  * when the picture changed. */
 static int desk_gesture(desk* d, const sel_gui_input* ev) {
+    if (d->sm_open && !(d->home && d->open_tile == 0)) { /* I1147: an open menu is modal: wheel, pinch and swipe do not scroll or move the lists behind it (Home keeps closing it on scroll) */
+        return 0;
+    }
     if (ev->kind == SEL_GUI_IN_WHEEL) {
         if (side_lib_max_q16(d) > 0 && in_rect(side_lib_view_rect(d), d->ptr_x, d->ptr_y)) { /* I608: a sidebar list longer than its view scrolls under the pointer */
             int32_t max_q16 = side_lib_max_q16(d);
@@ -14609,6 +14921,35 @@ static int desk_send_path(desk* d, const char* verb, const char* path) {
 static int desk_play_path(desk* d, const char* path) {
     desk_send_path(d, "OPEN", path);
     return desk_send(d, "PLAY");
+}
+
+/* I994e: PLAY_CONTEXT for one row of a tagged list: the engine plays that row and queues the rest of the list behind it (design
+ * 2026-11-02-I994 section 6). The formatter is the shared uimodel one. Returns 1 when the engine took the line. */
+static int desk_play_context(desk* d, uint32_t kind, uint32_t id, uint32_t version, uint32_t index, const char* name) {
+    char line[256];
+    if (sel_uim_context_line(kind, id, version, index, name, line, sizeof line) == 0u) {
+        return 0;
+    }
+    return desk_send(d, line);
+}
+
+/* The context name a list's rows start under: the open page's name, "Search" for a search list, none for the queue. */
+static const char* desk_ctx_name(const desk* d, uint32_t kind) {
+    if (kind == (uint32_t)SEL_UIM_LIST_PLAYLIST || kind == (uint32_t)SEL_UIM_LIST_COLLECTION) {
+        return d->pls_name;
+    }
+    if (kind == (uint32_t)SEL_UIM_LIST_HITS || (kind == (uint32_t)SEL_UIM_LIST_VIEW && d->page == SEL_UIM_PG_SEARCH)) {
+        return "Search";
+    }
+    return "";
+}
+
+/* Plays the row a song_ref names: inside its list when the row is tagged, else the single song. */
+static int desk_play_ref(desk* d, const song_ref* r) {
+    if (r->list_kind == 0u) {
+        return desk_play_path(d, r->path);
+    }
+    return desk_play_context(d, r->list_kind, r->list_id, r->list_version, r->list_index, desk_ctx_name(d, r->list_kind));
 }
 
 /* A dropped file or folder (DUI-P5-11). A folder runs the LIBRARY_SCAN that Add Folder runs; a lone file
@@ -14933,6 +15274,9 @@ static int desk_route_input(desk* d, const sel_gui_input* ev_in) {
             return desk_event_frame(d, desk_pls_import(d, ev->path));
         }
         return desk_event_frame(d, desk_drop_path(d, ev->path, ev->x != 0));
+    }
+    if (ev->kind == SEL_GUI_IN_MOVE && d->sm_key >= 0) { /* I1150: the pointer takes the menu highlight back from the arrow keys */
+        d->sm_key = -1;
     }
     if (ev->kind == SEL_GUI_IN_CLICK || ev->kind == SEL_GUI_IN_MOVE || ev->kind == SEL_GUI_IN_DRAG) {
         int changed = desk_pointer(d, ev);
@@ -16134,6 +16478,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         }
     }
     d->focus = -1;
+    d->side_cur = -1;
     desk_bind_actions(d);
     if (desk_opt(a, "--scale") != NULL) {
         int sc = atoi(desk_opt(a, "--scale"));
@@ -16321,17 +16666,7 @@ static void desk_on_event(void* state, const sel_message* evt) {
             if (n == d->src_n) d->src_n++;
             unsigned char before[sizeof d->src[0]]; /* the row held from the last SOURCES answer: an identical answer paints nothing new */
             memcpy(before, &d->src[n], sizeof before);
-            snprintf(d->src[n].key, sizeof d->src[n].key, "%s", (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)""));
-            snprintf(d->src[n].kind, sizeof d->src[n].kind, "%s", (const char*)sel_tag_find(t, SEL_SRC_KIND, (uintptr_t)""));
-            snprintf(d->src[n].name, sizeof d->src[n].name, "%s", (const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""));
-            snprintf(d->src[n].path, sizeof d->src[n].path, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
-            d->src[n].enabled = sel_tag_find(t, SEL_SRC_ENABLED, 1) != 0;
-            d->src[n].searchable = sel_tag_find(t, SEL_SRC_SEARCHABLE, 0) != 0;
-            d->src[n].syncable = sel_tag_find(t, SEL_SRC_SYNCABLE, 0) != 0;
-            d->src[n].count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
-            d->src[n].synced = (int64_t)sel_tag_find(t, SEL_SRC_SYNCED, 0);
-            d->src[n].due = sel_tag_find(t, SEL_SRC_DUE, 0) != 0;
-            d->src[n].snooze = (int64_t)sel_tag_find(t, SEL_SRC_SNOOZED, 0);
+            sel_uim_src_parse(t, &d->src[n]);
             changed = memcmp(before, &d->src[n], sizeof before) != 0;
         }
         d->src_gen += changed ? 1u : 0u;
@@ -16472,8 +16807,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         d->src_wait = 1;
         desk_send(d, "SOURCES");
     }
-    if (!d->nag_done && !d->dlg_open && !d->src_wait && d->frames > 0u &&
-        nag_count(d) > 0u) { /* I786: the sync offer opens once per launch, on any page, as soon as a source is due */
+    if (sel_uim_offer_wanted(&d->nag, d->dlg_open || d->src_wait || d->frames == 0u, d->src, d->src_n)) { /* I786: the sync offer opens once per launch, on any page, as soon as a source is due */
         nagdlg_open(d);
     }
     if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */
@@ -16589,6 +16923,18 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         if (sig != d->home_sig) {
             d->home_sig = sig;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
+        /* I1151: Up/Down move the engine view's cursor (or its window) after the engine answers; the signature above does not
+         * see that, so no frame was drawn and the highlight stayed on the old row. */
+        if (!d->view_pos_set || hv->cursor != d->view_cur_seen || hv->window_start != d->view_win_seen || d->kb_list != d->view_kb_seen) {
+            if (d->view_pos_set) {
+                d->view_cursor_repaints++;
+                d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            }
+            d->view_cur_seen = hv->cursor;
+            d->view_win_seen = hv->window_start;
+            d->view_kb_seen = d->kb_list;
+            d->view_pos_set = 1;
         }
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
@@ -16957,6 +17303,10 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->headline_hits[0];
         d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_24;
         d->stats[n++].value = d->headline_hits[1];
+        d->stats[n].tag = SEL_UI_STAT_VIEW_CURSOR_REPAINTS;
+        d->stats[n++].value = d->view_cursor_repaints;
+        d->stats[n].tag = SEL_UI_STAT_SEARCH_SKIPS;
+        d->stats[n++].value = d->search_skips;
         d->stats[n].tag = SEL_UI_STAT_CTL_LINES;
         d->stats[n++].value = d->ctl_lines;
         d->stats[n].tag = SEL_UI_STAT_CTL_STATES;
@@ -16967,6 +17317,30 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->shelf_album_art_draws;
         d->stats[n].tag = SEL_UI_STAT_TOOLTIP_TARGETS;
         d->stats[n++].value = desk_tip_targets(d);
+        d->stats[n].tag = SEL_UI_STAT_VIZ_TIP_UP;
+        d->stats[n++].value = d->viz_tip_up;
+        d->stats[n].tag = SEL_UI_STAT_VIZ_TIP_DRAWN;
+        d->stats[n++].value = d->viz_tip_drawn;
+        d->stats[n].tag = SEL_UI_STAT_VIZ_FALLOFF_RUNS;
+        d->stats[n++].value = d->viz_falloff_runs;
+        d->stats[n].tag = SEL_UI_STAT_SEARCH_SCROLL;
+        d->stats[n++].value = (uint32_t)(d->search_q16 >> 16);
+        d->stats[n].tag = SEL_UI_STAT_SEARCH_FOLLOWS;
+        d->stats[n++].value = d->search_follows;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_MAIN;
+        d->stats[n++].value = d->route_main;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_PLAYER;
+        d->stats[n++].value = d->route_player;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_SIDEBAR;
+        d->stats[n++].value = d->route_sidebar;
+        d->stats[n].tag = SEL_UI_STAT_FOCUS_ROUTE_DETAIL;
+        d->stats[n++].value = d->route_detail;
+        d->stats[n].tag = SEL_UI_STAT_SIDE_CURSOR;
+        d->stats[n++].value = (uint32_t)(d->side_cur + 1);
+        d->stats[n].tag = SEL_UI_STAT_SIDE_CURSOR_DRAWS;
+        d->stats[n++].value = d->side_cur_draws;
+        d->stats[n].tag = SEL_UI_STAT_PAGE;
+        d->stats[n++].value = (uint32_t)d->page;
         d->stats[n].tag = SEL_TAG_END;
     }
 

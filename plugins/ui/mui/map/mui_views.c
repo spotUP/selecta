@@ -4,6 +4,7 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/viewcmds.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -166,6 +167,13 @@ const char* mui_song_menu_follow(uint32_t item) {
     return item == 0u ? "PLAY" : NULL;
 }
 
+uint32_t mui_ctx_kind(uint32_t row_kind) {
+    return row_kind == (uint32_t)SEL_ROW_FILE      ? SEL_UIM_CTXK_SONG
+           : row_kind == (uint32_t)SEL_ROW_QUEUE   ? SEL_UIM_CTXK_QUEUE
+           : row_kind == (uint32_t)SEL_ROW_PLAYLIST ? SEL_UIM_CTXK_PLAYLIST
+                                                    : SEL_UIM_CTXK_NONE;
+}
+
 /* MUI-P4-5: playlist row actions. Open activates the row the list cursor is on (the list click sets VIEW_CURSOR first). */
 uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, char* out, size_t cap) {
     if (strcmp(action, "open") == 0) {
@@ -286,9 +294,9 @@ static const mui_page_slot_t g_page_slots[SEL_UIM_PG_COUNT] = {
     [SEL_UIM_PG_SONGINFO] = {MUI_PAGE_GROUP, NULL},
     [SEL_UIM_PG_VIZ] = {MUI_PAGE_MAIN_VIEW, NULL},     /* I735: the main-area Visualizer pane (mui_pane_open), reached by the @viz key and the View menu */
     [SEL_UIM_PG_TRACKER] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I735: the main-area Pattern pane, @pattern */
-    [SEL_UIM_PG_SHELF] = {MUI_PAGE_EXEMPT, "Show all on a Home shelf has no MUI handler yet (drift doc section 5)"},
+    [SEL_UIM_PG_SHELF] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I1172: Show all keeps the Home source; mui_home_fill shows the one chosen shelf in full (mui_route_on_shelf) */
     [SEL_UIM_PG_BROWSE] = {MUI_PAGE_MAIN_VIEW, NULL}, /* the top bar Browse button sends mui_topbar_browse_lines */
-    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_EXEMPT, "an album, artist or playlist page has no MUI handler yet; the main list shows the playlist source (drift doc section 5)"},
+    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I1172: album, artist, composer and playlist pages: COLLECTION_OPEN + the collection page group (mui_route_sync) */
     [SEL_UIM_PG_SETTINGS] = {MUI_PAGE_EXEMPT, "MUI opens Settings as its own window (mui_settings_open, MUI-P4-10) on the shared pref rows, not as a main-area page (I799a added the page)"}};
 
 const mui_page_slot_t* mui_page_slot(uint32_t page) {
@@ -309,7 +317,8 @@ static const struct {
     const char* title;
 } k_panes[MUI_PANE_COUNT] = {{SEL_UIM_PG_HOME, NULL, "List"},
                              {SEL_UIM_PG_VIZ, "@viz", "Visualizer Page"},
-                             {SEL_UIM_PG_TRACKER, "@pattern", "Pattern Page"}};
+                             {SEL_UIM_PG_TRACKER, "@pattern", "Pattern Page"},
+                             {SEL_UIM_PG_NOWPLAYING, NULL, "Now Playing Page"}}; /* I960: no key (the Mac has none; `n` is next) */
 
 uint32_t mui_pane_of_page(uint32_t page) {
     uint32_t p;
@@ -328,7 +337,7 @@ uint32_t mui_pane_page(uint32_t pane) {
 uint32_t mui_pane_of_action(const char* act) {
     uint32_t p;
     for (p = 1; act != NULL && p < MUI_PANE_COUNT; p++) {
-        if (strcmp(k_panes[p].action, act) == 0) {
+        if (k_panes[p].action != NULL && strcmp(k_panes[p].action, act) == 0) {
             return p;
         }
     }
@@ -342,7 +351,7 @@ const char* mui_pane_title(uint32_t pane) {
 char mui_pane_shortcut(uint32_t pane) {
     txt_bindings def;
     char key[24];
-    if (pane == MUI_PANE_LIST || pane >= MUI_PANE_COUNT) {
+    if (pane == MUI_PANE_LIST || pane >= MUI_PANE_COUNT || k_panes[pane].action == NULL) {
         return '\0';
     }
     txt_bindings_default(&def);
@@ -370,6 +379,28 @@ uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods) {
         return MUI_PANE_COUNT;
     }
     return mui_pane_open(mp, k_panes[pane].page);
+}
+
+uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab) {
+    const sel_uim_door* d = sel_uim_door_at(door);
+    uint32_t pg;
+    if (tab != NULL) {
+        *tab = 0u;
+    }
+    if (!compact || d == NULL || d->line != NULL) {
+        return MUI_PANE_COUNT;
+    }
+    pg = sel_uim_page_by_name(d->page);
+    if (pg == (uint32_t)SEL_UIM_PG_NOWPLAYING) {
+        return MUI_PANE_NOWPLAYING;
+    }
+    if (pg == (uint32_t)SEL_UIM_PG_SONGINFO) {
+        if (tab != NULL) {
+            *tab = 1u;
+        }
+        return MUI_PANE_NOWPLAYING;
+    }
+    return MUI_PANE_COUNT;
 }
 
 /* I670: see mui_map.h. */

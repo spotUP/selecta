@@ -1,0 +1,20 @@
+{
+ "/ws/2/release/?query=release%3A%22Scrape%20Hit%22%20AND%20artist%3A%22Scrape%20Artist%22&limit=1&fmt=json": {
+  "body": "{\"releases\": [{\"id\": \"0a1b2c3d-1111-4222-8333-444455556666\", \"score\": 100, \"title\": \"Scrape Hit\"}]}",
+  "headers": {
+   "Content-Type": "application/json"
+  }
+ },
+ "/ws/2/release/?query=release%3A%22Scrape%20Miss%22%20AND%20artist%3A%22Scrape%20Artist%22&limit=1&fmt=json": {
+  "body": "{\"releases\":[]}",
+  "headers": {
+   "Content-Type": "application/json"
+  }
+ },
+ "/ws/2/release/?query=release%3A%22Scrape%20Itunes%22%20AND%20artist%3A%22Scrape%20Artist%22&limit=1&fmt=json": {
+  "body": "{\"releases\":[]}",
+  "headers": {
+   "Content-Type": "application/json"
+  }
+ }
+}

@@ -58,6 +58,8 @@ jobs:
   # song, and the two desktop-console frame rows need host targets not built here.
   amiga-68020:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     container:
       image: liv2/amiga-gcc:main@sha256:570461426e8eabdde4f7507da62ed985a9c07147ecb12d0754d85678255eb34d
     steps:
@@ -71,12 +73,61 @@ jobs:
       - name: Configure (host bake tools)
         run: cmake -S . -B build/host -G Ninja
       - name: Build (host bake tools)
-        run: cmake --build build/host --target gui_iconbake gui_fontbake
+        run: cmake --build build/host --target gui_iconbake gui_fontbake library_template_bake
       - name: Configure (68020)
-        run: cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DCMAKE_BUILD_TYPE=Debug -DAMIGA_GCC_ROOT=/opt/amiga -DSELECTA_ICONBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_iconbake -DSELECTA_FONTBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_fontbake
+        run: cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DCMAKE_BUILD_TYPE=Debug -DAMIGA_GCC_ROOT=/opt/amiga -DSELECTA_ICONBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_iconbake -DSELECTA_FONTBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_fontbake -DSELECTA_TEMPLATEBAKE_EXE=$PWD/build/host/src/library/library_template_bake
       - name: Build (68020)
         run: cmake --build build/amiga -j2
+      # I1137: the Selecta archive tree (program, library-template.db beside it, Install-Selecta, rexx), packed with lha when found, else zipped.
+      - name: Build Selecta package
+        run: |
+          (apt-get install -y lha || apt-get install -y jlha-utils) >/dev/null 2>&1 || true
+          cmake --build build/amiga --target selecta_dist
+          cd build/amiga/dist
+          if command -v lha >/dev/null 2>&1; then lha ao5 Selecta.lha Selecta; else cmake -E tar cf Selecta.zip --format=zip Selecta; fi
+          ls -l
+      - name: Upload Selecta package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Selecta-amiga
+          path: |
+            build/amiga/dist/Selecta.lha
+            build/amiga/dist/Selecta.zip
+          if-no-files-found: error
+      - name: Attach Selecta package to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd build/amiga/dist
+          gh release upload "${GITHUB_REF_NAME}" $(ls Selecta.lha Selecta.zip 2>/dev/null) --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build (host selecta-cli)
         run: cmake --build build/host --target selecta-cli
       - name: Test (vamos)
         run: ctest --test-dir build/host -R amiga -E 'render-golden|amiga-machine$|amiga-text-ui-vamos|amiga-console-first-frame-vamos' --output-on-failure
+      # I685l: the UP-MCC package (design 2026-11-06-mui-mcc-package.md section 9). lha is not known to be in the image: try to install
+      # one (a failure is not fatal); without lha the staged drawer is zipped instead. No Aminet upload (row I685m).
+      - name: Build UP-MCC package
+        run: |
+          (apt-get install -y lha || apt-get install -y jlha-utils) >/dev/null 2>&1 || true
+          cmake -S . -B build/amiga >/dev/null
+          cmake --build build/amiga --target up_mcc_dist
+          cd build/amiga/plugins/shared/mcc/dist
+          if [ ! -f UP-MCC.lha ]; then cmake -E tar cf UP-MCC.zip --format=zip UP-MCC; fi
+          ls -l
+      - name: Upload UP-MCC package
+        uses: actions/upload-artifact@v4
+        with:
+          name: UP-MCC
+          path: |
+            build/amiga/plugins/shared/mcc/dist/UP-MCC.lha
+            build/amiga/plugins/shared/mcc/dist/UP-MCC.zip
+            build/amiga/plugins/shared/mcc/dist/UP-MCC.readme
+          if-no-files-found: error
+      - name: Attach UP-MCC to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd build/amiga/plugins/shared/mcc/dist
+          gh release upload "${GITHUB_REF_NAME}" UP-MCC.readme $(ls UP-MCC.lha UP-MCC.zip 2>/dev/null) --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

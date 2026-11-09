@@ -1,6 +1,6 @@
 # dui-sidebar-async (I787): the sidebar Your Library read never blocks a frame. -DSELECTA -DWORK -DSDL_BUILT.
 # SELECTA_LIB_ITEMS_SLOW_MS=800 makes every list read take 0.8 s in the library worker. Driven through the desktop UI's SDL timed events:
-#   1. the first list read is posted at the first draw and a click on the chip chevron arrives while it is in flight,
+#   1. the first list read is posted at the first draw and a click on the Playlists chip (I1221) arrives while it is in flight,
 #   2. the loop kept drawing: sidelib_async flight_frames >= 1 (frames drawn while a read was in flight),
 #   3. the async path ran: posts >= 2 and takes >= 1 (sentinels),
 #   4. the result of the first read (mask All) is dropped, the list is read again for the Playlists chip and the list ends with
@@ -24,8 +24,8 @@ if(NOT rc EQUAL 0)
 endif()
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
 dui_run(c0 --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x800 --input "${WORK}/idle.txt")
-if(NOT "${c0}" MATCHES "sidechev L [0-9]+ [0-9]+ [0-9]+ [0-9]+ R ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
-  message(FATAL_ERROR "no sidechev in:\n${c0}")
+if(NOT "${c0}" MATCHES "sidechip 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no sidechip 0 in:\n${c0}")
 endif()
 math(EXPR rx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR ry "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
@@ -34,7 +34,7 @@ set(ENV{SELECTA_SDL_TEST_LIVE} 1)
 set(ENV{SELECTA_SOCKET} "/tmp/selecta-dui-sidebar-async.sock")
 set(ENV{SELECTA_LIB_ITEMS_SLOW_MS} 800)
 file(REMOVE_RECURSE "${WORK}/cfg")
-# click the right chevron at 300 ms (first read still in flight), move the pointer across the sidebar while the reads run, quit at 4 s
+# click the Playlists chip at 300 ms (first read still in flight), move the pointer across the sidebar while the reads run, quit at 4 s
 set(tokens "m${rx},${ry}@300 d1,${rx},${ry}@350 u1,${rx},${ry}@400")
 foreach(k RANGE 0 9)
   math(EXPR t "500 + ${k} * 120")

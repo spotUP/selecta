@@ -1,0 +1,7 @@
+# I1211: the palette (Ctrl-P) with the query SID lists the SID PatternScope action row from the shared action table, and its key is C-v, the binding of "PREF_SET ui.desktop.viz viz_sidregs".
+wait 300
+Ctrl-P
+S
+I
+D
+wait 300

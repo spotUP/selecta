@@ -274,6 +274,7 @@ typedef struct sel_state {
     const char* lyric_current;  /* text of that line, NULL when lyric_line is -1 */
     const char* lyric_prev;     /* DUI-P4-7: text of the line before the current one, NULL when there is none */
     const char* lyric_next;     /* DUI-P4-7: text of the line after the current one (the first line while lyric_line is -1), NULL when none */
+    uint32_t queue_text_bytes;  /* I1082d: bytes of `queue_text` in use (the published snapshot copies that much) */
 } sel_state;
 
 struct sel_library;
@@ -365,6 +366,10 @@ int sel_config_dir(char* out, size_t cap);
 /* The app plugin folder beside the running executable (Contents/PlugIns in a macOS bundle, else <exe dir>/plugins);
  * 0 when unknown or it does not fit (always on the Amiga). The module loader and the About view read this one folder. */
 int sel_app_plugin_dir(char* out, size_t cap);
+/* I1137: the directory of the running executable (src/library/db/appdir.c); 0 when unknown (always on the Amiga). */
+int sel_app_exe_dir(char* out, size_t cap);
+/* I1137: where the app ships its data files: Contents/Resources in a macOS bundle, else the executable's directory (src/library/db/db.c). */
+int sel_app_data_dir(char* out, size_t cap);
 
 /* The default library DB: PROGDIR:library.db on the Amiga, else library.db in the config directory (created when
  * missing). NULL when no location is known. The shell and selecta-cli library scan share it. */
@@ -413,6 +418,15 @@ int sel_engine_sources_pending(const sel_engine* e);
 uint32_t sel_engine_pump_reads(sel_engine* e, sel_event_sink sink, void* ctx, unsigned timeout_ms);
 
 const sel_state* sel_engine_state(const sel_engine* e);
+/* I1082d (design doc 2026-11-05-I1082-engine-thread section 2.1): the published snapshot. mode 1: every pump ends with a deep
+ * copy of sel_state into a triple buffer and sel_engine_state returns the copy the UI thread last acquired (call
+ * sel_engine_ui_acquire at the start of each UI turn); mode 2: publish and count only, sel_engine_state stays live (measuring);
+ * mode 0 (the default, single-thread shells): nothing is published. Call before the engine thread starts. 0 on no memory. */
+int sel_engine_publish_enable(sel_engine* e, unsigned mode);
+/* UI thread: takes the newest published snapshot (no-op when none is newer, or when publishing is off). Returns 1 when it moved. */
+int sel_engine_ui_acquire(sel_engine* e);
+/* Snapshot cost: publishes done, the largest copy in bytes and the longest copy in microseconds (sentinels pub_bytes_max=, pub_us_max=). */
+void sel_engine_publish_stats(const sel_engine* e, uint32_t* publishes, uint32_t* bytes_max, uint32_t* us_max);
 /* The host to hand to plugins outside playback (integrations, I177b): a copy of the engine's host whose
  * config_get answers a non-empty engine pref (include/selecta/prefs.def) first, then the real host. Valid until
  * sel_engine_destroy. */
@@ -541,9 +555,14 @@ typedef struct sel_engine_stats {
     uint32_t panel_reads;         /* panel reads that landed and were published (I906d sentinel) */
     uint32_t vote_reads;          /* view vote count reads that landed (I906g sentinel) */
     uint32_t play_meta_reads;     /* song-start reads (best source, config, loudness) that landed (I906g sentinel) */
+    uint32_t open_fetch_reads;    /* I1225: remote song files the song-start read fetched into the cache off the pump (sentinel) */
+    uint32_t open_fetch_ms_max;   /* I1225: longest remote-file fetch run on the pump thread inside an open, ms (0 after the fix on a cold cache) */
+    uint32_t open_rp_ms_max;      /* I1225: longest replayer open (RP_OPEN) on the pump thread, ms */
+    uint32_t open_prepare_ms_max; /* I1225: longest whole slot prepare (read, probe, open, start) on the pump thread, ms */
     uint32_t art_reads;           /* view artwork id batches that landed (I906d sentinel) */
     uint32_t group_reads;         /* queue group reads that landed (I906e sentinel) */
     uint32_t text_reads;          /* song text batches (title, group, metadata) read off the pump that landed (I906e sentinel) */
+    uint32_t playlist_reloads;    /* I1082e sentinel: folder reloads the pump posted for a playlist_keys_take made on the UI thread */
     uint32_t total_reads;         /* catalogue song counts read off the pump that landed (I936 sentinel) */
     uint32_t lyric_fetches;       /* DEViLBOX lyrics requests queued, none for a song with a .lrc or a message (I193 sentinel) */
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */

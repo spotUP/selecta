@@ -39,4 +39,5 @@ Files named `sel_*.dylib` or `sel_*.so` are loaded from, in order:
 
 Headers in include/selecta are MIT. A module of any licence may include them. A GPL module includes only include/selecta and
 its own vendored code, and ships as a separate file with its own COPYING; the core binaries never contain GPL code. The in-tree
-GPL modules build only with `-DSELECTA_GPL_PLUGINS=ON` (default OFF).
+GPL modules build by default (`SELECTA_GPL_PLUGINS`, default ON, I1075). A desktop dev configure with it OFF stops with an
+error; `-DSELECTA_RELEASE_MIT_ONLY=ON` is the only way to build a desktop app without them (I1218b).

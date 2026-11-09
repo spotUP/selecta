@@ -23,6 +23,11 @@ set_tests_properties(dui-build-deps PROPERTIES LABELS dui RUN_SERIAL TRUE)
 
 # Primitive unit test of the rasterizer, run by dui-draw (DUI-P2-1).
 add_executable(dui_draw_unit draw_unit.c)
+# I292b: spectrum over the whole ring, peak falloff.
+add_executable(dui_viz_spectrum_unit viz_spectrum_unit.c)
+target_link_libraries(dui_viz_spectrum_unit PRIVATE selecta_core m)
+add_test(NAME dui-viz-spectrum-unit COMMAND dui_viz_spectrum_unit whole falloff)
+set_tests_properties(dui-viz-spectrum-unit PROPERTIES LABELS viz TIMEOUT 60)
 target_link_libraries(dui_draw_unit PRIVATE selecta_gui)
 
 # The shell-driven tests (DUI-P1-1 to P1-4) run the real selecta binary on the generated modules.
@@ -60,7 +65,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-art-async PROPERTIES LABELS lib-ui-art TIMEOUT 60 PASS_REGULAR_EXPRESSION "art_async_ok") # ledger row, not a plan item: no dui label
 endif()
 if(NOT SEL_AMIGA)
-  foreach(spec "dui-default-ui:default_ui" "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-breakpoints:breakpoints" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-artwork-late-album:artwork_late_album" "dui-cover-tiles:cover_tiles" "dui-platform-covers:platform_covers" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library-retired:library_retired" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-search-view-mode:search_view_mode" "dui-browse-tiles:browse_tiles" "dui-browse-modland-tile:browse_modland_tile" "dui-search-catalogue:search_catalogue" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-footer-one-row:footer_one_row" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-follow-keeps-place:library_follow_keeps_place" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "dui-select-lists:select_lists" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-stats-panel:stats_panel" "dui-home-cover-shadow:home_cover_shadow" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom" "dui-list-keys:list_keys" "dui-library-scroll:library_scroll" "dui-library-scroll-drag:library_scroll_drag" "dui-sources-counters:sources_counters" "dui-sync-banner:sync_banner" "dui-sync-offer-keys:sync_offer_keys" "dui-sync-nowait:sync_nowait" "dui-sync-card-front:sync_card_front" "dui-sync-bar:sync_bar" "dui-sync-offer-idle:sync_offer_idle" "dui-tall-pixels:tall_pixels" "dui-aga-button-polish:aga_button_polish" "dui-aga-native-text:aga_native_text" "window-raise:window_raise" "dui-idle-turns:idle_turns" "dui-start-home:start_home" "dui-home-tile-tint:home_tile_tint" "dui-sidebar-library:sidebar_library" "dui-sidebar-mixed:sidebar_mixed" "dui-sidebar-recents:sidebar_recents" "dui-sidebar-chips:sidebar_chips" "dui-sidebar-density:sidebar_density" "dui-playlist-page:playlist_page" "dui-quit-dialog:quit_dialog" "dui-home-copper:home_copper" "dui-topbar:topbar" "dui-show-all:show_all" "dui-topbar-doors:topbar_doors" "dui-nowplaying-panel:nowplaying_panel" "dui-collection-page:collection_page" "dui-kind-pages:kind_pages" "dui-source-drill:source_drill" "dui-click-map:click_map" "dui-playing-mark:playing_mark" "dui-hover-motion:hover_motion" "dui-home-shelves:home_shelves" "dui-home-item-art:home_item_art" "dui-aga-library:aga_library" "dui-search-dblclick:search_dblclick" "dui-search-enter-focus:search_enter_focus" "dui-sidebar-async:sidebar_async" "dui-sources-first-paint:sources_first_paint" "dui-sources-repaint:sources_repaint" "dui-frame-cost:frame_cost" "dui-lib-ui-guard:lib_ui_guard" "dui-files-tab-first-frame:files_tab_first_frame" "dui-collection-open-touch:collection_open_touch" "dui-song-panel-art-async:song_panel_art_async" "dui-song-total-async:song_total_async" "dui-stats-nowait:stats_nowait" "dui-direct-calls-async:direct_calls_async" "dui-composer-settle:composer_settle" "dui-nav-turn-cost:nav_turn_cost" "dui-paste:paste" "dui-output-device:output_device" "dui-toast-fit:toast_fit" "dui-row-text-widths:row_text_widths" "dui-live-refresh-source:live_refresh_source")
+  foreach(spec "dui-default-ui:default_ui" "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-breakpoints:breakpoints" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-artwork-late-album:artwork_late_album" "dui-cover-tiles:cover_tiles" "dui-platform-covers:platform_covers" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library-retired:library_retired" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-search-view-mode:search_view_mode" "dui-browse-tiles:browse_tiles" "dui-browse-modland-tile:browse_modland_tile" "dui-search-catalogue:search_catalogue" "dui-source-page-search:source_page_search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-footer-one-row:footer_one_row" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-follow-keeps-place:library_follow_keeps_place" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "dui-select-lists:select_lists" "dui-song-menu-multi-playlist:song_menu_multi_playlist" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-stats-panel:stats_panel" "dui-home-cover-shadow:home_cover_shadow" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom" "dui-list-keys:list_keys" "dui-library-scroll:library_scroll" "dui-library-scroll-drag:library_scroll_drag" "dui-sources-counters:sources_counters" "dui-sync-banner:sync_banner" "dui-sync-offer-keys:sync_offer_keys" "dui-sync-nowait:sync_nowait" "dui-sync-card-front:sync_card_front" "dui-sync-bar:sync_bar" "dui-sync-offer-idle:sync_offer_idle" "dui-tall-pixels:tall_pixels" "dui-aga-button-polish:aga_button_polish" "dui-aga-native-text:aga_native_text" "window-raise:window_raise" "dui-idle-turns:idle_turns" "dui-start-home:start_home" "dui-home-tile-tint:home_tile_tint" "dui-sidebar-library:sidebar_library" "dui-sidebar-mixed:sidebar_mixed" "dui-sidebar-recents:sidebar_recents" "dui-sidebar-chips:sidebar_chips" "dui-sidebar-density:sidebar_density" "dui-playlist-page:playlist_page" "dui-quit-dialog:quit_dialog" "dui-home-copper:home_copper" "dui-topbar:topbar" "dui-show-all:show_all" "dui-topbar-doors:topbar_doors" "dui-nowplaying-panel:nowplaying_panel" "dui-collection-page:collection_page" "dui-play-context:play_context" "dui-kind-pages:kind_pages" "dui-source-drill:source_drill" "dui-click-map:click_map" "dui-playing-mark:playing_mark" "dui-hover-motion:hover_motion" "dui-home-shelves:home_shelves" "dui-home-item-art:home_item_art" "dui-aga-library:aga_library" "dui-search-dblclick:search_dblclick" "dui-search-artist-click:search_artist_click" "dui-search-enter-focus:search_enter_focus" "dui-sidebar-async:sidebar_async" "dui-sources-first-paint:sources_first_paint" "dui-sources-repaint:sources_repaint" "dui-frame-cost:frame_cost" "dui-lib-ui-guard:lib_ui_guard" "dui-files-tab-first-frame:files_tab_first_frame" "dui-collection-open-touch:collection_open_touch" "dui-collection-titles-touch:collection_titles_touch" "dui-song-panel-art-async:song_panel_art_async" "dui-song-total-async:song_total_async" "dui-stats-nowait:stats_nowait" "dui-direct-calls-async:direct_calls_async" "dui-composer-settle:composer_settle" "dui-nav-turn-cost:nav_turn_cost" "dui-paste:paste" "dui-output-device:output_device" "dui-toast-fit:toast_fit" "dui-row-text-widths:row_text_widths" "dui-live-refresh-source:live_refresh_source" "dui-list-key-frames:list_key_frames" "dui-viz-tip-flicker:viz_tip_flicker" "dui-bar-nowplaying:bar_nowplaying" "dui-viz-falloff-live:viz_falloff_live" "dui-sidebar-chips-wide:sidebar_chips_wide")
     string(REPLACE ":" ";" pair "${spec}")
     list(GET pair 0 tname)
     list(GET pair 1 script)
@@ -81,10 +86,12 @@ if(NOT SEL_AMIGA)
       set(tlabel nav)
     elseif(tname STREQUAL "dui-song-menu-live" OR tname STREQUAL "dui-song-menu-lists") # I371: more cases of DUI-P4-16, whose one dui test is dui-song-menu; label song-menu keeps dui-ratchet at one test per plan id
       set(tlabel song-menu)
-    elseif(tname STREQUAL "dui-select-lists") # I632d: multi-select on the desktop lists, a case of the multi-select plan; label select-lists keeps dui-ratchet at one test per plan id
+    elseif(tname STREQUAL "dui-select-lists" OR tname STREQUAL "dui-song-menu-multi-playlist") # I632d: multi-select on the desktop lists, a case of the multi-select plan; label select-lists keeps dui-ratchet at one test per plan id
       set(tlabel select-lists)
     elseif(tname STREQUAL "dui-search-dblclick") # I714: double-click plays a Search song row, not a plan item; label search-dblclick keeps dui-ratchet at one test per plan id
       set(tlabel search-dblclick)
+    elseif(tname STREQUAL "dui-search-artist-click") # I1207: a click on a Search Artists row opens the artist page; ledger row, not a plan item
+      set(tlabel search-artist-click)
     elseif(tname STREQUAL "dui-default-ui") # I1023: the machine default UI of a launch with no --ui, not a plan item
       set(tlabel default-ui)
     elseif(tname STREQUAL "dui-queue-scroll") # I258: the wheel scroll of DUI-P4-8, whose one dui test is dui-queue; not a plan item
@@ -111,7 +118,7 @@ if(NOT SEL_AMIGA)
       set(tlabel sync-banner)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
-    elseif(tname STREQUAL "dui-aga-native-text" OR tname STREQUAL "dui-idle-turns" OR tname STREQUAL "dui-library-scroll" OR tname STREQUAL "dui-library-scroll-drag" OR tname STREQUAL "dui-sources-counters" OR tname STREQUAL "dui-sync-offer-keys" OR tname STREQUAL "dui-quit-dialog") # I526 I525 I541 I549 I546: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
+    elseif(tname STREQUAL "dui-aga-native-text" OR tname STREQUAL "dui-list-key-frames" OR tname STREQUAL "dui-idle-turns" OR tname STREQUAL "dui-library-scroll" OR tname STREQUAL "dui-library-scroll-drag" OR tname STREQUAL "dui-sources-counters" OR tname STREQUAL "dui-sync-offer-keys" OR tname STREQUAL "dui-quit-dialog") # I526 I525 I541 I549 I546: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
       string(REPLACE "dui-" "" tlabel "${tname}")
     elseif(tname STREQUAL "dui-view-exec-order") # I398: --view enters its page before --exec runs; ledger row, not a plan item
       set(tlabel view-exec-order)
@@ -139,6 +146,8 @@ if(NOT SEL_AMIGA)
       set(tlabel playing-mark)
     elseif(tname STREQUAL "dui-collection-page") # I678e: a playlist opens as the collection page through COLLECTION_OPEN; ledger row, not a plan item
       set(tlabel collection-page)
+    elseif(tname STREQUAL "dui-play-context") # I994e: a collection-page row click sends PLAY_CONTEXT; ledger row, not a plan item
+      set(tlabel play-context)
     elseif(tname STREQUAL "dui-search-catalogue") # I1053a: archive sources answer Search from the catalogue FTS, Not synced plus Sync; ledger row, not a plan item
       set(tlabel search-catalogue)
     elseif(tname STREQUAL "dui-output-device") # I1039: the devices button and picker; ledger row, not a plan item
@@ -147,6 +156,8 @@ if(NOT SEL_AMIGA)
       set(tlabel sidebar-recents)
     elseif(tname STREQUAL "dui-sidebar-chips") # I678b: the six kind chips filter through the kind mask, X clears; ledger row, not a plan item
       set(tlabel sidebar-chips)
+    elseif(tname STREQUAL "dui-sidebar-chips-wide") # I1208: the expanded sidebar shows the chip row; ledger row, not a plan item
+      set(tlabel sidebar-chips-wide)
     elseif(tname STREQUAL "dui-sidebar-library") # I608: the sidebar Your Library list; ledger row, not a plan item
       set(tlabel sidebar-library)
     elseif(tname STREQUAL "dui-sidebar-async") # I787: the sidebar list read runs off the drawing thread; ledger row, not a plan item
@@ -165,6 +176,8 @@ if(NOT SEL_AMIGA)
       set(tlabel library-follow-keeps-place)
     elseif(tname STREQUAL "dui-live-refresh-source") # I1077a: an open source page follows a sync it did not start; ledger row, not a plan item, so no dui label (dui-ratchet counts dui against the plan ids)
       set(tlabel live-refresh-source)
+    elseif(tname STREQUAL "dui-bar-nowplaying") # I960d: a click on the player bar cover or title opens the Now Playing page; ledger row, not a plan item
+      set(tlabel bar-nowplaying)
     elseif(tname STREQUAL "dui-toast-fit") # I1046: the toast box sizes to its text and wraps; ledger row, not a plan item
       set(tlabel toast-fit)
     elseif(tname STREQUAL "dui-source-drill") # I790: the source page opens its drill level by level, rows built stay in the window; ledger row, not a plan item
@@ -177,6 +190,8 @@ if(NOT SEL_AMIGA)
       set(tlabel files-tab-first-frame)
     elseif(tname STREQUAL "dui-collection-open-touch") # I910b: COLLECTION_OPEN touches Recents on the worker, no 0 songs header, source title is the name; ledger row, not a plan item
       set(tlabel collection-open-touch)
+    elseif(tname STREQUAL "dui-collection-titles-touch") # I1198: touch-only library changes never throw the page titles away; ledger row, not a plan item
+      set(tlabel collection-titles-touch)
     elseif(tname STREQUAL "dui-composer-settle") # I948: a SEL_VIEW_FOLDERS page re-reads the sidebar only when the saved playlists change; ledger row, not a plan item
       set(tlabel composer-settle)
     elseif(tname STREQUAL "dui-song-panel-art-async") # I906d: the song panel read and view art ids ride posted read slots, the pump never waits; ledger row, not a plan item
@@ -279,14 +294,22 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-search-badge PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-badge.tmp")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-badge.tmp")
-  # I1073: the Search source chips scroll sideways with chevrons; at 1280 px Modules.pl is scrolled in and picked.
-  add_test(NAME dui-search-chip-scroll
+  # I1224: the Search source chips wrap onto several rows (none clipped); the last wrapped chip is picked by a click.
+  add_test(NAME dui-search-chip-wrap
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
-      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-chip-scroll" "-DNETWORK=${SEL_NET_WORK}"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/search_chip_scroll.cmake")
-  set_tests_properties(dui-search-chip-scroll PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
-    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-chip-scroll.tmp")
-  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-chip-scroll.tmp")
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-chip-wrap" "-DNETWORK=${SEL_NET_WORK}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/search_chip_wrap.cmake")
+  set_tests_properties(dui-search-chip-wrap PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-chip-wrap.tmp")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-chip-wrap.tmp")
+  # I1224: a source chip over shown All results filters them (no new query); the selected chip again lifts the filter.
+  add_test(NAME dui-search-chip-filter
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-chip-filter" "-DNETWORK=${SEL_NET_WORK}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/search_chip_filter.cmake")
+  set_tests_properties(dui-search-chip-filter PROPERTIES LABELS search-online TIMEOUT 300 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-chip-filter.tmp")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-chip-filter.tmp")
   # I832: quitting during the fixture's 4 s first-byte delay returns well under the delay (the search task's net wait sees the cancel).
   add_test(NAME dui-search-online-quit
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}"

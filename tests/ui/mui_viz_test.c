@@ -45,8 +45,8 @@ static int test_surface(void) {
     memset(&f, 0, sizeof f);
     CHECK(mui_viz_bind(&v, bare) == 0, "descriptor without hook binds");
     CHECK(mui_viz_bind(&v, desc) == 1 && v.fn == fake_render, "hook not found");
-    CHECK(mui_viz_fit(&v, 0, 3) == 0, "empty size accepted");
-    CHECK(mui_viz_fit(&v, 7, 3) == 1, "fit 7x3");
+    CHECK(mui_viz_fit(&v, 0, 3, 256) == 0, "empty size accepted");
+    CHECK(mui_viz_fit(&v, 7, 3, 256) == 1, "fit 7x3");
     CHECK(v.surf.fmt == SEL_PIX_INDEX8 && v.surf.pitch >= v.surf.w, "surface fmt/pitch");
     v.palette[MUI_VIZ_BACKGROUND] = 0xFF000000u;
     v.palette[MUI_VIZ_PRIMARY] = 0xFF00FF00u;
@@ -108,25 +108,25 @@ static int test_set(void) {
     CHECK(mui_vizset_load(&s, fake_find, NULL) == 3u, "reload");
     calls0 = fake_calls;
     f.seq = 0;
-    CHECK(mui_vizset_step(&s, &v, &f, &b, 1000u, 6u, 2u, px) == 0 && fake_calls == calls0, "seq 0 rendered");
-    CHECK(mui_vizset_step(&s, &v, NULL, &b, 1000u, 6u, 2u, px) == 0 && fake_calls == calls0, "no frame rendered");
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 1000u, 6u, 2u, 256, px) == 0 && fake_calls == calls0, "seq 0 rendered");
+    CHECK(mui_vizset_step(&s, &v, NULL, &b, 1000u, 6u, 2u, 256, px) == 0 && fake_calls == calls0, "no frame rendered");
     f.seq = 1;
-    CHECK(mui_vizset_step(&s, &v, &f, &b, 1000u, 6u, 2u, px) == 1 && fake_calls == calls0 + 1u && v.frames >= 1u,
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 1000u, 6u, 2u, 256, px) == 1 && fake_calls == calls0 + 1u && v.frames >= 1u,
           "first new frame did not render (calls %u)", fake_calls - calls0);
-    CHECK(mui_vizset_step(&s, &v, &f, &b, 1100u, 6u, 2u, px) == 0 && fake_calls == calls0 + 1u, "same seq rendered twice");
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 1100u, 6u, 2u, 256, px) == 0 && fake_calls == calls0 + 1u, "same seq rendered twice");
     f.seq = 2;
-    CHECK(mui_vizset_step(&s, &v, &f, &b, 1010u, 6u, 2u, px) == 0 && fake_calls == calls0 + 1u, "budget did not gate (10 ms < 40 ms)");
-    CHECK(mui_vizset_step(&s, &v, &f, &b, 1050u, 6u, 2u, px) == 1 && fake_calls == calls0 + 2u, "frame after the interval did not render");
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 1010u, 6u, 2u, 256, px) == 0 && fake_calls == calls0 + 1u, "budget did not gate (10 ms < 40 ms)");
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 1050u, 6u, 2u, 256, px) == 1 && fake_calls == calls0 + 2u, "frame after the interval did not render");
     /* SID PatternScope (I434j4): selectable by its id, draws only with a register feed. */
     CHECK(mui_vizset_select(&s, "viz_sidregs") == 2 && s.sel == 2u, "select viz_sidregs");
     CHECK(mui_vizset_line(&s) != NULL && strstr(mui_vizset_line(&s), "ui.desktop.viz viz_sidregs") != NULL, "sidregs pick line");
     v.frames = 0;
     f.seq = 3;
     f.sid_chips = 0u;
-    CHECK(mui_vizset_step(&s, &v, &f, &b, 2000u, 6u, 2u, px) == 1 && v.frames == 0u, "no SID feed raised frames");
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 2000u, 6u, 2u, 256, px) == 1 && v.frames == 0u, "no SID feed raised frames");
     f.seq = 4;
     f.sid_chips = 1u;
-    CHECK(mui_vizset_step(&s, &v, &f, &b, 2100u, 6u, 2u, px) == 1 && v.frames == 1u, "SID feed did not raise frames (%u)", v.frames);
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 2100u, 6u, 2u, 256, px) == 1 && v.frames == 1u, "SID feed did not raise frames (%u)", v.frames);
     mui_viz_release(&v);
     return failures;
 }

@@ -22,7 +22,7 @@ typedef struct adplug_state {
     sel_tag meta[8];
 } adplug_state;
 
-#define AP_EXTENSIONS "hsc,sng,imf,wlf,adlib,a2m,a2t,amd,xms,bam,cmf,adl,d00,dfm,hsp,ksm,mad,mus,mdy,ims,mdi,sci,laa,mkj,cff,dmo,dtm,mtk,mtr,rad,rac,raw,sat,sa2,xad,bmf,lds,plx,rol,xsm,pis,msc,rix,mkf,jbm,got,sop,hsq,sqx,sdb,agd,ha2"
+#define AP_EXTENSIONS "hsc,sng,imf,wlf,adlib,a2m,a2t,amd,xms,bam,cmf,adl,d00,d01,dfm,hsp,ksm,mad,mus,mdy,ims,mdi,sci,laa,mkj,cff,dmo,dtm,mtk,mtr,rad,rac,raw,sat,sa2,xad,bmf,lds,plx,rol,xsm,pis,msc,rix,mkf,jbm,got,sop,hsq,sqx,sdb,agd,ha2"
 
 /* AdPlug dispatches on the extension and each player validates its own header in open: claim UNSURE on a listed
  * extension only. */

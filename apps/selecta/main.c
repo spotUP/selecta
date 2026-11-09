@@ -32,6 +32,7 @@
 #ifdef __amigaos__
 #include "arexx.h"
 #endif
+#include <time.h>
 #include "catalogue.h"
 #include "startup_error.h"
 #include "console_fallback.h"
@@ -72,11 +73,37 @@ typedef struct shell_ui {
 static shell_ui g_uis[SHELL_MAX_UIS];
 static unsigned g_ui_count;
 static int g_trace; /* --stats: one stderr line per launch phase (I524b) */
+static int g_phase_trace; /* --log or --stats: the phase lines only (I625a); the rest of --stats stays on --stats */
+static uint32_t g_trace_t0; /* host clock at main entry; trace lines print ms since this */
 static void sel_trace(const sel_host* h, const char* phase) {
-    if (g_trace) {
-        fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)h->clock_ms(h), phase);
+    if (g_trace || g_phase_trace) {
+        fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)(h->clock_ms(h) - g_trace_t0), phase);
+        /* I625a4: the Amiga stderr (libnix) buffers into the --log file; a start that hangs must still leave the line. */
+        fflush(stderr);
     }
 }
+/* I625a: wall clock at main entry, so load-to-main is the difference between this and a system time printed just before
+ * the launch in the same shell line (the executable load and relocation happen before main and no host clock sees them). */
+#if defined(__amigaos__) || defined(AMIGA)
+#include <proto/dos.h>
+#include <dos/dos.h>
+static void sel_trace_system_time(void) {
+    struct DateStamp ds;
+    unsigned long secs;
+    DateStamp(&ds);
+    secs = (unsigned long)ds.ds_Minute * 60UL + (unsigned long)ds.ds_Tick / 50UL;
+    fprintf(stderr, "trace system_time=%02lu:%02lu:%02lu.%02lu (hh:mm:ss.hundredths)\n", secs / 3600UL, (secs / 60UL) % 60UL,
+            secs % 60UL, ((unsigned long)ds.ds_Tick % 50UL) * 2UL);
+}
+#else
+static void sel_trace_system_time(void) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    if (t != NULL) {
+        fprintf(stderr, "trace system_time=%02d:%02d:%02d.00 (hh:mm:ss.hundredths)\n", t->tm_hour, t->tm_min, t->tm_sec);
+    }
+}
+#endif
 #if defined(__amigaos__) || defined(AMIGA)
 #include <proto/dos.h>
 #include <dos/dosextens.h>
@@ -614,11 +641,21 @@ int main(int argc, char** argv)
         for (ta = 1; ta < argc; ta++) {
             g_trace = g_trace || strcmp(argv[ta], "--stats") == 0;
         }
+        g_phase_trace = g_trace || option(argc, argv, "--log", "")[0] != '\0';
+        g_trace_t0 = host->clock_ms(host);
+    }
+    if (g_phase_trace) {
+        sel_trace_system_time();
+        fflush(stderr); /* I625a4: see sel_trace */
     }
     sel_trace(host, "main begin");
     sel_trace_load_address();
-    sel_registry_init_machine(host, machine_tags);
-    sel_trace(host, "registry init done");
+    {
+        uint32_t registered = sel_registry_init_machine(host, machine_tags);
+        char note[80];
+        snprintf(note, sizeof note, "registry init and plugin registration done plugins=%u", (unsigned)registered);
+        sel_trace(host, note);
+    }
     if (ui_id == NULL) {
         /* I1023: a launch with no --ui (a double-click on Selecta.app) takes the machine default UI, and its default backend. */
         int user_launch = default_ui_allowed(argc, argv);
@@ -693,6 +730,7 @@ int main(int argc, char** argv)
          * never touches the user's default DB, so a test does not depend on the machine it runs on. */
         const char* db = option(argc, argv, "--db", NULL);
         char dbpath[300];
+        sel_library_trace_enable(g_trace || g_phase_trace);
         if (db == NULL && !has_keys && !is_null) {
             db = default_db_path(dbpath, sizeof dbpath);
         }
@@ -709,13 +747,16 @@ int main(int argc, char** argv)
     if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
         cfg.config_dir = cfgdir;
     }
-    sel_trace(host, "library open done");
+    sel_trace(host, "library open done (sel_library_open plus first queries)");
     if (library != NULL) sel_library_watch(1); /* I906a: this thread runs every UI and the engine pump; a library wait here is a debug-guard hit */
     e = sel_engine_create(host, &cfg);
-    sel_trace(host, "engine created");
+    sel_trace(host, "engine created (prefs load, catalogue open, source setup)");
     if (e == NULL) {
         STARTUP_FAIL("engine allocation failed");
         return 1;
+    }
+    if (getenv("SELECTA_PUBLISH_MEASURE") != NULL) {
+        (void)sel_engine_publish_enable(e, 2u); /* I1082d: copy the state every pump without serving it, so --stats shows pub_bytes_max and pub_us_max */
     }
     rate = sel_registry_output_rate(oh, machine_tags);
     sel_engine_set_mix(e, rate, SHELL_RESAMPLER);
@@ -753,6 +794,7 @@ int main(int argc, char** argv)
     args.output_id = out_id;
     args.argc = argc;
     args.argv = (const char* const*)argv;
+    args.trace = sel_trace;
     args.why = ui_why;
     args.why_cap = sizeof ui_why;
     if (library != NULL) {
@@ -816,15 +858,14 @@ int main(int argc, char** argv)
         sel_ctl_path(ctl_path, sizeof ctl_path);
         ctl_fd = sel_ctl_listen(ctl_path);
         if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {
-            STARTUP_FAIL("already running (%s)", ctl_path);
-            for (u = 0; u < g_ui_count; u++) {
-                g_uis[u].close(g_uis[u].state);
+            /* I1162b: a second instance (the text UI beside the desktop app) runs a full UI on the same library with no
+             * control socket. ctl_fd must stay negative so the serve and close paths skip it: sel_ctl_close would unlink
+             * the first instance's socket file. */
+            ctl_fd = -1;
+            fprintf(stderr, "selecta: another instance owns %s; this one runs without remote control\n", ctl_path);
+            if (g_trace) {
+                fprintf(stderr, "second_instance_no_socket=1\n");
             }
-            if (so.out != NULL) {
-                so.close(so.out);
-            }
-            sel_engine_destroy(e);
-            return 1;
         }
     }
 #endif
@@ -886,7 +927,9 @@ int main(int argc, char** argv)
             sel_engine_report_error(e, "tls_unavailable", tls_note);
         }
     }
+    sel_trace(host, "all UIs open, first pump begin");
     pump_turn(e, clockless, sink, ctx);
+    sel_trace(host, "first pump done (start-up source sync turn)");
     for (a = 1; a < argc; a++) { /* `selecta <share link>` opens the song, playlist or view the link names (I180) */
         if (sel_share_is_link(argv[a])) {
             char pool[1536];
@@ -919,7 +962,9 @@ int main(int argc, char** argv)
                 }
             } else if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
                 (void)sel_engine_pump_reads(e, sink, ctx, 60000u); /* I829: a --exec line is a script step: its posted read lands first */
+                sel_trace(host, "sel_engine_scan_wait begin");
                 sel_engine_scan_wait(e, sink, ctx); /* a --exec LIBRARY_SCAN finishes before the next option (I336) */
+                sel_trace(host, "sel_engine_scan_wait done");
             }
         }
     }
@@ -938,6 +983,9 @@ int main(int argc, char** argv)
                 wait_ms_max = wait_ms;
             }
             wr = g_uis[u].wait(g_uis[u].state, wait_ms);
+            if (waits == 0 && u == 0) {
+                sel_trace(host, "first frame shown (first UI wait returned)");
+            }
             if (wr > r) {
                 r = wr;
             }
@@ -997,6 +1045,11 @@ int main(int argc, char** argv)
     printf("radio_appends=%u\n", (unsigned)est.radio_appends); /* I906g: songs the posted radio draw appended */
     printf("shell_wait_ms_min=%u shell_wait_ms_max=%u\n", (unsigned)(wait_ms_min == 0xFFFFFFFFu ? 0u : wait_ms_min), (unsigned)wait_ms_max); /* what the shell asked the UI to wait (I684c) */
     printf("ui_gap_ms_max=%u engine_thread=%d engine_pumps=%u evt_ring_events=%u\n", (unsigned)gap_ms_max, engine_thread, (unsigned)g_engine_pumps, (unsigned)g_evt_ring_events); /* I1082a, I1082c */
+    {
+        uint32_t pub_n, pub_bytes, pub_us;
+        sel_engine_publish_stats(e, &pub_n, &pub_bytes, &pub_us);
+        printf("publishes=%u pub_bytes_max=%u pub_us_max=%u\n", (unsigned)pub_n, (unsigned)pub_bytes, (unsigned)pub_us); /* I1082d */
+    }
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
     printf("hw_handovers=%u hw_starts=%u replayer=%s\n", (unsigned)est.hw_handovers, (unsigned)est.hw_starts,
@@ -1039,6 +1092,29 @@ int main(int argc, char** argv)
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_BINDINGS, 0), (unsigned)sel_engine_state(e)->queue_count,
            (unsigned)est.undo_depth, (unsigned)est.redo_depth, sel_view_style_label(sel_engine_state(e)->view->style));
 
+    printf("options random=%s repeat=%s queue_count=%u\n", sel_engine_state(e)->options[SEL_OPT_RANDOM], sel_engine_state(e)->options[SEL_OPT_REPEAT],
+           (unsigned)sel_engine_state(e)->queue_count); /* I1184: what the option keys left */
+    printf("text_table_actions=%u log=%s\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_TABLE_ACTIONS, 0), (const char*)sel_tag_find(ust, SEL_UI_STAT_TABLE_ACTION_LOG, (uintptr_t)""));
+    printf("text_layout=%u layout_sets=%u sid_frames=%u\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LAYOUT, 0) & 0xFFu),
+           (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LAYOUT, 0) >> 8), (unsigned)sel_tag_find(ust, SEL_UI_STAT_SID_FRAMES, 0));
+    printf("text_libmode=%u text_scope=%u mode_keys=%u scope_keys=%u\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) >> 4 & 0xFu),
+           (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) & 0xFu), (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) >> 8 & 0xFFu),
+           (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) >> 16 & 0xFFu));
+    printf("text_menu opens=%u picks=%u answers=%u log=%s\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_MENU, 0) & 0xFFu),
+           (unsigned)(sel_tag_find(ust, SEL_UI_STAT_MENU, 0) >> 8 & 0xFFu), (unsigned)(sel_tag_find(ust, SEL_UI_STAT_MENU, 0) >> 16 & 0xFFu),
+           (const char*)sel_tag_find(ust, SEL_UI_STAT_MENU_LOG, (uintptr_t)""));
+    printf("text_style=%u style_draws=%u\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_STYLE, 0) & 0xFFu),
+           (unsigned)(sel_tag_find(ust, SEL_UI_STAT_STYLE, 0) >> 8));
+    {
+        const sel_host* ph = sel_engine_plugin_host(e);
+        uintptr_t pgs = sel_tag_find(ust, SEL_UI_STAT_PAGES, 0);
+        printf("text_pages shelf_opens=%u collection_opens=%u page_rows=%u page=%u\n", (unsigned)(pgs & 0xFFu),
+               (unsigned)((pgs >> 8) & 0xFFu), (unsigned)((pgs >> 16) & 0xFFu), (unsigned)((pgs >> 24) & 0xFu));
+        uintptr_t st = sel_tag_find(ust, SEL_UI_STAT_SETTINGS, 0);
+        printf("text_settings_sets=%u settings_opens=%u settings_row=%u crossfeed=%s stereo_width=%s\n", (unsigned)(st & 0xFFu),
+               (unsigned)(st >> 8 & 0xFFu), (unsigned)(st >> 16 & 0xFFu), ph != NULL ? ph->config_get(ph, "dsp.crossfeed", "") : "",
+               ph != NULL ? ph->config_get(ph, "mix.stereo_width", "") : "");
+    }
     printf("seek_path=%u volume=%d view_cursor=%u\n", (unsigned)est.seek_path, (int)sel_engine_state(e)->volume,
            (unsigned)sel_engine_state(e)->view->cursor);
     printf("view_window=%u\n", (unsigned)sel_engine_state(e)->view->window_rows);
@@ -1059,7 +1135,7 @@ int main(int argc, char** argv)
         for (u = 0; u < g_ui_count; u++) {
             const sel_tag* us = ui_stats_of(&g_uis[u]);
             printf("ui_open_mui=%u\n", (unsigned)sel_tag_find(us, SEL_UI_STAT_OPEN_MUI, 0)); /* MUI-P1-5 sentinel */
-            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%s draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%s present_hash=%s upload_pixels=%u presents=%u scale=%u atlas_rebuilds=%u icon_rebuilds=%u atlas_builds=%u actions_fired=%u actions_distinct=%u focus_moves=%u searches=%u arrows=%u focus=%u hovers=%u clicks=%u double_clicks=%u drags=%u sorts=%u sort_dir=%u top_row=%u menus=%u row_plays=%u tooltips=%u gestures=%u tile_size=%u scroll_px=%u open_tile=%u transport_hits=%u play_state=%u repeat_mode=%u random_on=%u subsong=%u frame_parts=%u home_parts=%u tile_cards=%u palette_colours_ui=%u palette_colours_art=%u palette_colours_tile=%u palette_colours_panel=%u palette_colours_flow=%u quant_calls=%u art_ms_max=%u turn_ms_max=%u frame_ms_min=%u frame_ms_avg=%u frame_ms_max=%u page_dirty_pixels=%u paint_ms_min=%u paint_ms_avg=%u paint_ms_max=%u present_ms_min=%u present_ms_avg=%u present_ms_max=%u atlas_ms=%u atlas_baked_hits=%u icon_resampled=%u ui_scale_q16=%u ui_zoom=%s ui_logical=%ux%u shelf_album_art_draws=%u tooltip_targets=%u bitmap_hits_mini4=%u bitmap_hits_mini6=%u bitmap_hits_mini8=%u headline_hits_18=%u headline_hits_24=%u\n", g_uis[u].id,
+            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%s draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%s present_hash=%s upload_pixels=%u presents=%u scale=%u atlas_rebuilds=%u icon_rebuilds=%u atlas_builds=%u actions_fired=%u actions_distinct=%u focus_moves=%u searches=%u arrows=%u focus=%u hovers=%u clicks=%u double_clicks=%u drags=%u sorts=%u sort_dir=%u top_row=%u menus=%u row_plays=%u tooltips=%u gestures=%u tile_size=%u scroll_px=%u open_tile=%u transport_hits=%u play_state=%u repeat_mode=%u random_on=%u subsong=%u frame_parts=%u home_parts=%u tile_cards=%u palette_colours_ui=%u palette_colours_art=%u palette_colours_tile=%u palette_colours_panel=%u palette_colours_flow=%u quant_calls=%u art_ms_max=%u turn_ms_max=%u frame_ms_min=%u frame_ms_avg=%u frame_ms_max=%u page_dirty_pixels=%u paint_ms_min=%u paint_ms_avg=%u paint_ms_max=%u present_ms_min=%u present_ms_avg=%u present_ms_max=%u atlas_ms=%u atlas_baked_hits=%u icon_resampled=%u ui_scale_q16=%u ui_zoom=%s ui_logical=%ux%u shelf_album_art_draws=%u tooltip_targets=%u bitmap_hits_mini4=%u bitmap_hits_mini6=%u bitmap_hits_mini8=%u headline_hits_18=%u headline_hits_24=%u view_cursor_repaints=%u search_skips=%u viz_tip_up=%u viz_tip_drawn=%u viz_falloff_runs=%u search_scroll=%u search_follows=%u focus_route_main=%u focus_route_player=%u focus_route_sidebar=%u focus_route_detail=%u side_cursor=%u side_cursor_draws=%u page=%u\n", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAMES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_WIDGET_DRAWS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_UPDATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_DIRTY, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TWEENS, 0),
@@ -1111,7 +1187,15 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TOOLTIP_TARGETS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI4, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI6, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI8, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_18, 0),
-                   (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_24, 0));
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_24, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_VIEW_CURSOR_REPAINTS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_SEARCH_SKIPS, 0),
+                    (unsigned)sel_tag_find(us, SEL_UI_STAT_VIZ_TIP_UP, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_VIZ_TIP_DRAWN, 0),
+                    (unsigned)sel_tag_find(us, SEL_UI_STAT_VIZ_FALLOFF_RUNS, 0),
+                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SEARCH_SCROLL, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_SEARCH_FOLLOWS, 0),
+                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FOCUS_ROUTE_MAIN, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FOCUS_ROUTE_PLAYER, 0),
+                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FOCUS_ROUTE_SIDEBAR, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FOCUS_ROUTE_DETAIL, 0),
+                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SIDE_CURSOR, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_SIDE_CURSOR_DRAWS, 0),
+                    (unsigned)sel_tag_find(us, SEL_UI_STAT_PAGE, 0));
             printf("ui_stats_pump id=%s pump_ms_max=%u lib_ui_guard_hits=%u lib_ui_allowed_waits=%u lib_ui_watched_waits=%u lib_ui_wait_ms=%u\n", g_uis[u].id,
                    (unsigned)g_pump_ms_max, (unsigned)sel_library_ui_guard_hits(), (unsigned)sel_library_allowed_waits(),
                    (unsigned)sel_library_watched_waits(), (unsigned)sel_library_watched_wait_ms());
@@ -1176,9 +1260,14 @@ int main(int argc, char** argv)
     printf("splash_frames=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_SPLASH_FRAMES, 0));
     printf("meta_panel panel_loads=%u meta_panel_rows=%u\n", (unsigned)est.panel_loads,
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_META_PANEL_ROWS, 0));
+    printf("text_pages songinfo_actions=%u nowplay_draws=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_SONGINFO_ACTIONS, 0),
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_NOWPLAY_DRAWS, 0));
     printf("view_reads panel_reads=%u art_reads=%u total_reads=%u text_reads=%u group_reads=%u\n", (unsigned)est.panel_reads, (unsigned)est.art_reads, (unsigned)est.total_reads, (unsigned)est.text_reads, (unsigned)est.group_reads); /* I906d, I936 sentinels */
 
     printf("play_reads play_meta_reads=%u vote_reads=%u\n", (unsigned)est.play_meta_reads, (unsigned)est.vote_reads); /* I906g sentinel */
+    printf("open_phases open_fetch_reads=%u open_fetch_ms_max=%u open_rp_ms_max=%u open_prepare_ms_max=%u\n",
+           (unsigned)est.open_fetch_reads, (unsigned)est.open_fetch_ms_max, (unsigned)est.open_rp_ms_max,
+           (unsigned)est.open_prepare_ms_max); /* I1225 */
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
     printf("song_note bank_missing=%u\n", (unsigned)sel_engine_state(e)->song.bank_missing); /* I1127c sentinel */

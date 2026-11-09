@@ -238,23 +238,33 @@ static void fft256(int32_t* re, int32_t* im) {
     }
 }
 
+/* I292b: the whole ring is analysed, not its newest 256 frames. A 20 ms block is 882 frames; one window saw 29 percent
+ * of it, so a bar jumped with whichever part of the block fell into the window. The ring is cut into consecutive 256
+ * frame windows (1024 frames: four, the newest block and a little older sound) and the bin magnitudes are averaged. */
 void sel_viz_spectrum(const int16_t* stereo, uint32_t frames, uint32_t rate, int16_t band[SEL_VIZ_BANDS]) {
     int32_t re[FFT_N], im[FFT_N];
+    uint32_t sum[FFT_N / 2u];
     int16_t mag[FFT_N / 2u];
-    uint32_t i, b;
+    uint32_t i, b, w, windows;
     memset(band, 0, SEL_VIZ_BANDS * sizeof band[0]);
     if (frames < FFT_N || rate == 0) return;
-    stereo += (size_t)(frames - FFT_N) * 2u; /* the newest 256 frames */
-    for (i = 0; i < FFT_N; i++) {
-        int32_t mono = ((int32_t)stereo[i * 2u] + stereo[i * 2u + 1u]) >> 1;
-        re[i] = (mono * sel_viz_hann[i]) >> 15;
-        im[i] = 0;
+    windows = frames / FFT_N;
+    stereo += (size_t)(frames - windows * FFT_N) * 2u; /* the windows end at the newest frame */
+    memset(sum, 0, sizeof sum);
+    for (w = 0; w < windows; w++) {
+        const int16_t* src = stereo + (size_t)w * FFT_N * 2u;
+        for (i = 0; i < FFT_N; i++) {
+            int32_t mono = ((int32_t)src[i * 2u] + src[i * 2u + 1u]) >> 1;
+            re[i] = (mono * sel_viz_hann[i]) >> 15;
+            im[i] = 0;
+        }
+        fft256(re, im);
+        for (i = 0; i < FFT_N / 2u; i++) {
+            uint64_t m = isqrt64((uint64_t)((int64_t)re[i] * re[i] + (int64_t)im[i] * im[i])) * 4u;
+            sum[i] += (uint32_t)(m > 32767u ? 32767u : m);
+        }
     }
-    fft256(re, im);
-    for (i = 0; i < FFT_N / 2u; i++) {
-        uint64_t m = isqrt64((uint64_t)((int64_t)re[i] * re[i] + (int64_t)im[i] * im[i])) * 4u;
-        mag[i] = (int16_t)(m > 32767u ? 32767u : m);
-    }
+    for (i = 0; i < FFT_N / 2u; i++) mag[i] = (int16_t)(sum[i] / windows);
     for (b = 0; b < SEL_VIZ_BANDS; b++) {
         uint32_t lo = bin_of(sel_viz_edge_hz[b], rate), hi = bin_of(sel_viz_edge_hz[b + 1u], rate);
         int16_t peak = 0;
@@ -268,12 +278,36 @@ void sel_viz_spectrum(const int16_t* stereo, uint32_t frames, uint32_t rate, int
     }
 }
 
+/* I292b: peak falloff, the one place both UIs get it from (they draw f->band). Rises at once, falls linearly. */
+int sel_viz_falloff(int16_t level[], const int16_t raw[], uint32_t n, uint32_t dt_ms) {
+    uint32_t i, dec;
+    if (dt_ms > 2000u) dt_ms = 2000u;
+    dec = (SEL_VIZ_FALL_PER_SECOND * dt_ms) / 1000u;
+    for (i = 0; i < n; i++) {
+        int32_t v = (int32_t)level[i] - (int32_t)dec;
+        if (raw[i] >= v) v = raw[i];
+        if (v < 0) v = 0;
+        level[i] = (int16_t)v;
+    }
+    return 1; /* the step ran: the caller counts it for the sentinel */
+}
+
 void sel_viz_analyse(sel_viz_tap* t, int with_spectrum) {
     sel_viz_frame* f = shown_frame(t); /* the shown frame, not the newest: with a visual delay they differ (I1042) */
     if (f->seq == 0) return;
     f->correlation = (int16_t)sel_viz_correlation(f->pcm, SEL_VIZ_PCM_FRAMES);
     if (with_spectrum) {
         sel_viz_spectrum(f->pcm, SEL_VIZ_PCM_FRAMES, f->rate, f->band);
+        /* Time between shown frames is blocks times 20 ms, so the fall does not depend on how often the UI polls. */
+        if (t->smooth_seq == 0u || f->seq < t->smooth_seq) {
+            memcpy(t->smooth, f->band, sizeof t->smooth);
+        } else {
+            t->falloff_runs += (uint32_t)sel_viz_falloff(t->smooth, f->band, SEL_VIZ_BANDS,
+                                                         (f->seq - t->smooth_seq) * (1000u / SEL_VIZ_BLOCKS_PER_SECOND));
+        }
+        t->smooth_seq = f->seq;
+        memcpy(f->band, t->smooth, sizeof t->smooth);
+        f->falloff_runs = t->falloff_runs;
         f->spectrum_valid = 1;
     }
 }

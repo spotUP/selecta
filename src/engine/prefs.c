@@ -104,15 +104,28 @@ int sel_prefs_load(sel_prefs* p, const char* dir) {
     return 1;
 }
 
+/* I1162d: written to prefs.conf.tmp in the same directory, closed, then renamed over prefs.conf, so a
+ * second Selecta never reads a half-written file. Last writer wins per key. Where rename() does not
+ * replace an existing file (AmigaOS dos.library), the target is removed and the rename retried. */
 int sel_prefs_save(const sel_prefs* p, const char* dir) {
-    char path[512];
+    char path[512], tmp[520];
     FILE* f;
-    int i;
-    if (!conf_path(path, sizeof path, dir) || !sel_config_mkdir(dir) || (f = fopen(path, "w")) == NULL) {
+    int i, ok;
+    if (!conf_path(path, sizeof path, dir) || !sel_config_mkdir(dir) ||
+        snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp || (f = fopen(tmp, "w")) == NULL) {
         return 0;
     }
     for (i = 0; i < SEL_PREF_COUNT; i++) {
         fprintf(f, "%s = %s\n", k_keys[i], p->value[i]);
     }
-    return fclose(f) == 0;
+    ok = fflush(f) == 0 && ferror(f) == 0;
+    ok = fclose(f) == 0 && ok;
+    if (ok && rename(tmp, path) != 0) {
+        remove(path);
+        ok = rename(tmp, path) == 0;
+    }
+    if (!ok) {
+        remove(tmp);
+    }
+    return ok;
 }

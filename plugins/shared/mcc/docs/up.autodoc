@@ -1,0 +1,1171 @@
+/* AutoDoc source of the UP-MCC package (design section 8.5). tools/mcc_autodoc.py turns these blocks into Docs/<name>.doc;
+ * ctest mcc-autodoc fails when a public UPA_/UPM_ name in include/mcc/up.h or a UP_ function in up_lib.h has no block here.
+ * Licence: MIT, like the package. */
+
+/****** UP-Text.mcc/UPA_Text_Contents ******
+*
+*   NAME
+*       UPA_Text_Contents -- attribute of UP-Text.mcc
+*
+*   FUNCTION
+*       STRPTR copied into the object; redraws only when it changed
+*
+*   INPUTS
+*       UPA_Text_Contents - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Text.mcc
+*
+******/
+
+/****** UP-Text.mcc/UPA_Text_Widest ******
+*
+*   NAME
+*       UPA_Text_Widest -- attribute of UP-Text.mcc
+*
+*   FUNCTION
+*       STRPTR longest text the line shows (default width); absent = contents
+*
+*   INPUTS
+*       UPA_Text_Widest - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Text.mcc
+*
+******/
+
+/****** UP-Text.mcc/UPA_Text_Tone ******
+*
+*   NAME
+*       UPA_Text_Tone -- attribute of UP-Text.mcc
+*
+*   FUNCTION
+*       UPV_Text_Tone_*
+*
+*   INPUTS
+*       UPA_Text_Tone - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Text.mcc
+*
+******/
+
+/****** UP-Text.mcc/UPA_Text_Align ******
+*
+*   NAME
+*       UPA_Text_Align -- attribute of UP-Text.mcc
+*
+*   FUNCTION
+*       UPV_Text_Align_*
+*
+*   INPUTS
+*       UPA_Text_Align - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Text.mcc
+*
+******/
+
+/****** UP-Text.mcc/UPA_Text_Ellipsis ******
+*
+*   NAME
+*       UPA_Text_Ellipsis -- attribute of UP-Text.mcc
+*
+*   FUNCTION
+*       BOOL cut with "..." when wider than the box
+*
+*   INPUTS
+*       UPA_Text_Ellipsis - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Text.mcc
+*
+******/
+
+/****** UP-Text.mcc/UPA_Text_Fixed ******
+*
+*   NAME
+*       UPA_Text_Fixed -- attribute of UP-Text.mcc
+*
+*   FUNCTION
+*       BOOL never wider than the default width of the widest text
+*
+*   INPUTS
+*       UPA_Text_Fixed - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Text.mcc
+*
+******/
+
+/****** UP-Slider.mcc/UP-Slider.mcc ******
+*
+*   NAME
+*       UP-Slider.mcc -- MUI class, themed horizontal slider
+*
+*   FUNCTION
+*       The class has no UPA_ attributes of its own: it is driven by the standard MUI numeric attributes MUIA_Numeric_Min, MUIA_Numeric_Max and MUIA_Numeric_Value (and MUIA_FixWidth). Create it with MUI_NewObject("UP-Slider.mcc", ...) or UP_NewSlider.
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP_NewSlider
+*
+******/
+
+/****** UP-Balance.mcc/UP-Balance.mcc ******
+*
+*   NAME
+*       UP-Balance.mcc -- MUI class, themed balance (divider) between two group children
+*
+*   FUNCTION
+*       The class has no UPA_ attributes of its own: it is used like the MUI Balance class. Create it with MUI_NewObject("UP-Balance.mcc", ...) or UP_NewBalance.
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP_NewBalance
+*
+******/
+
+/****** UP-Progress.mcc/UPA_Progress_Value ******
+*
+*   NAME
+*       UPA_Progress_Value -- attribute of UP-Progress.mcc
+*
+*   FUNCTION
+*       LONG: filled part
+*
+*   INPUTS
+*       UPA_Progress_Value - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Progress.mcc
+*
+******/
+
+/****** UP-Progress.mcc/UPA_Progress_Max ******
+*
+*   NAME
+*       UPA_Progress_Max -- attribute of UP-Progress.mcc
+*
+*   FUNCTION
+*       LONG: value that fills the bar
+*
+*   INPUTS
+*       UPA_Progress_Max - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Progress.mcc
+*
+******/
+
+/****** UP-Cycle.mcc/UPA_Cycle_Active ******
+*
+*   NAME
+*       UPA_Cycle_Active -- attribute of UP-Cycle.mcc
+*
+*   FUNCTION
+*       LONG: index of the shown entry (notifies)
+*
+*   INPUTS
+*       UPA_Cycle_Active - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Cycle.mcc
+*
+******/
+
+/****** UP-Cycle.mcc/UPA_Cycle_Entries ******
+*
+*   NAME
+*       UPA_Cycle_Entries -- attribute of UP-Cycle.mcc
+*
+*   FUNCTION
+*       Char**: NULL terminated, must outlive the object
+*
+*   INPUTS
+*       UPA_Cycle_Entries - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Cycle.mcc
+*
+******/
+
+/****** UP-Tabs.mcc/UPA_Tabs_Active ******
+*
+*   NAME
+*       UPA_Tabs_Active -- attribute of UP-Tabs.mcc
+*
+*   FUNCTION
+*       LONG: index of the active tab (notifies)
+*
+*   INPUTS
+*       UPA_Tabs_Active - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Tabs.mcc
+*
+******/
+
+/****** UP-Tabs.mcc/UPA_Tabs_Captions ******
+*
+*   NAME
+*       UPA_Tabs_Captions -- attribute of UP-Tabs.mcc
+*
+*   FUNCTION
+*       Char**: NULL terminated, at most MUI_AATABS_MAX, must outlive the object
+*
+*   INPUTS
+*       UPA_Tabs_Captions - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Tabs.mcc
+*
+******/
+
+/****** UP-Scroller.mcc/UPA_Scroller_First ******
+*
+*   NAME
+*       UPA_Scroller_First -- attribute of UP-Scroller.mcc
+*
+*   FUNCTION
+*       LONG: first visible entry (notifies)
+*
+*   INPUTS
+*       UPA_Scroller_First - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Scroller.mcc
+*
+******/
+
+/****** UP-Scroller.mcc/UPA_Scroller_Visible ******
+*
+*   NAME
+*       UPA_Scroller_Visible -- attribute of UP-Scroller.mcc
+*
+*   FUNCTION
+*       LONG: entries that fit the owner
+*
+*   INPUTS
+*       UPA_Scroller_Visible - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Scroller.mcc
+*
+******/
+
+/****** UP-Scroller.mcc/UPA_Scroller_Entries ******
+*
+*   NAME
+*       UPA_Scroller_Entries -- attribute of UP-Scroller.mcc
+*
+*   FUNCTION
+*       LONG: entries in the owner
+*
+*   INPUTS
+*       UPA_Scroller_Entries - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Scroller.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_Count ******
+*
+*   NAME
+*       UPA_List_Count -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       LONG: rows (notifies)
+*
+*   INPUTS
+*       UPA_List_Count - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_Active ******
+*
+*   NAME
+*       UPA_List_Active -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       LONG: selected row, -1 none (notifies)
+*
+*   INPUTS
+*       UPA_List_Active - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_First ******
+*
+*   NAME
+*       UPA_List_First -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       LONG: first visible row (notifies)
+*
+*   INPUTS
+*       UPA_List_First - access ISG. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_Picked ******
+*
+*   NAME
+*       UPA_List_Picked -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       LONG: row chosen by click or Return (notifies every time)
+*
+*   INPUTS
+*       UPA_List_Picked - access G. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_Columns ******
+*
+*   NAME
+*       UPA_List_Columns -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       Struct UP_ListColumns*, copied: the shown columns, may change while live
+*
+*   INPUTS
+*       UPA_List_Columns - access IS. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_Playing ******
+*
+*   NAME
+*       UPA_List_Playing -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       LONG: row whose first column is drawn in ACCENT, -1 none
+*
+*   INPUTS
+*       UPA_List_Playing - access IS. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_RowHook ******
+*
+*   NAME
+*       UPA_List_RowHook -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       Struct Hook*: single column text; msg struct UP_ListCell (col 0), returns const char*
+*
+*   INPUTS
+*       UPA_List_RowHook - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_CellHook ******
+*
+*   NAME
+*       UPA_List_CellHook -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       Struct Hook*: multi column text; row -1 asks the column title; same msg
+*
+*   INPUTS
+*       UPA_List_CellHook - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_MaxRows ******
+*
+*   NAME
+*       UPA_List_MaxRows -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       LONG: default height in rows (absent or 0 = 8)
+*
+*   INPUTS
+*       UPA_List_MaxRows - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_Title ******
+*
+*   NAME
+*       UPA_List_Title -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       BOOL: a title row above the rows (the cell hook is asked for row -1)
+*
+*   INPUTS
+*       UPA_List_Title - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_DoublePick ******
+*
+*   NAME
+*       UPA_List_DoublePick -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       BOOL: UPA_List_Picked only on a double click or Return
+*
+*   INPUTS
+*       UPA_List_DoublePick - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPA_List_NoSelect ******
+*
+*   NAME
+*       UPA_List_NoSelect -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       BOOL: no hover, no selection, wheel only
+*
+*   INPUTS
+*       UPA_List_NoSelect - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-List.mcc/UPM_List_GetRow ******
+*
+*   NAME
+*       UPM_List_GetRow -- method of UP-List.mcc
+*
+*   FUNCTION
+*       Method: read one row back for tools that drive the window from outside. The caller fills row and text capacity; the method returns TRUE when the row exists, with the cell texts joined by two spaces, the row box in window coordinates and the selected flag.
+*
+*   INPUTS
+*       UPM_List_GetRow - method id. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Send with DoMethod; see FUNCTION for the return value.
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_Caption ******
+*
+*   NAME
+*       UPA_Button_Caption -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       STRPTR shown text
+*
+*   INPUTS
+*       UPA_Button_Caption - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_Widest ******
+*
+*   NAME
+*       UPA_Button_Widest -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       STRPTR longest caption (sets the minimum width); absent = fit the caption
+*
+*   INPUTS
+*       UPA_Button_Widest - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_Icon ******
+*
+*   NAME
+*       UPA_Button_Icon -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       STRPTR Lucide icon name of the baked set ("play", "skip-forward"); NULL, absent or unknown = none
+*
+*   INPUTS
+*       UPA_Button_Icon - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_AltIcon ******
+*
+*   NAME
+*       UPA_Button_AltIcon -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       STRPTR icon name swapped in by mui_aabtn_set_alt; NULL, absent or unknown = none
+*
+*   INPUTS
+*       UPA_Button_AltIcon - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_IconOnly ******
+*
+*   NAME
+*       UPA_Button_IconOnly -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       BOOL no caption drawn
+*
+*   INPUTS
+*       UPA_Button_IconOnly - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_Role ******
+*
+*   NAME
+*       UPA_Button_Role -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       UPV_Button_Role_*
+*
+*   INPUTS
+*       UPA_Button_Role - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_FixedWidth ******
+*
+*   NAME
+*       UPA_Button_FixedWidth -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       LONG exact width in px, 0 = from the contents
+*
+*   INPUTS
+*       UPA_Button_FixedWidth - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_FixedHeight ******
+*
+*   NAME
+*       UPA_Button_FixedHeight -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       LONG exact height in px, 0 = from the contents
+*
+*   INPUTS
+*       UPA_Button_FixedHeight - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_Align ******
+*
+*   NAME
+*       UPA_Button_Align -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       UPV_Button_Align_*
+*
+*   INPUTS
+*       UPA_Button_Align - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Button.mcc/UPA_Button_IconData ******
+*
+*   NAME
+*       UPA_Button_IconData -- attribute of UP-Button.mcc
+*
+*   FUNCTION
+*       Struct UP_IconData*: caller icon for a glyph not in the set; used when UPA_Button_Icon names none. The struct and its mask are NOT copied: they must stay valid until the object is disposed
+*
+*   INPUTS
+*       UPA_Button_IconData - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Button.mcc
+*
+******/
+
+/****** UP-Field.mcc/UPM_Field_Redraw ******
+*
+*   NAME
+*       UPM_Field_Redraw -- method of UP-Field.mcc
+*
+*   FUNCTION
+*       Method: the window's active object changed, repaint the outline
+*
+*   INPUTS
+*       UPM_Field_Redraw - method id. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Send with DoMethod; see FUNCTION for the return value.
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Field.mcc
+*
+******/
+
+/****** UP-Field.mcc/UPA_Field_Tokens ******
+*
+*   NAME
+*       UPA_Field_Tokens -- attribute of UP-Field.mcc
+*
+*   FUNCTION
+*       Const uint32_t*: theme token array
+*
+*   INPUTS
+*       UPA_Field_Tokens - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Field.mcc
+*
+******/
+
+/****** UP-Field.mcc/UPA_Field_String ******
+*
+*   NAME
+*       UPA_Field_String -- attribute of UP-Field.mcc
+*
+*   FUNCTION
+*       Object*: the inner string gadget (for MUIA_String_Acknowledge notifies)
+*
+*   INPUTS
+*       UPA_Field_String - access G. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Field.mcc
+*
+******/
+
+/****** UP-Field.mcc/UPA_Field_Placeholder ******
+*
+*   NAME
+*       UPA_Field_Placeholder -- attribute of UP-Field.mcc
+*
+*   FUNCTION
+*       STRPTR hint while empty and not active; must outlive the field
+*
+*   INPUTS
+*       UPA_Field_Placeholder - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Field.mcc
+*
+******/
+
+/****** UP-Field.mcc/UPA_Field_MaxWidth ******
+*
+*   NAME
+*       UPA_Field_MaxWidth -- attribute of UP-Field.mcc
+*
+*   FUNCTION
+*       LONG cap of the field's MaxWidth in px, 0 = unbounded
+*
+*   INPUTS
+*       UPA_Field_MaxWidth - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Field.mcc
+*
+******/
+
+/****** UP-Panel.mcc/UPA_Panel_Tokens ******
+*
+*   NAME
+*       UPA_Panel_Tokens -- attribute of UP-Panel.mcc
+*
+*   FUNCTION
+*       Const uint32_t*: theme token array
+*
+*   INPUTS
+*       UPA_Panel_Tokens - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Panel.mcc
+*
+******/
+
+/****** UP-Panel.mcc/UPA_Panel_Role ******
+*
+*   NAME
+*       UPA_Panel_Role -- attribute of UP-Panel.mcc
+*
+*   FUNCTION
+*       UPV_Panel_Role_*
+*
+*   INPUTS
+*       UPA_Panel_Role - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Panel.mcc
+*
+******/
+
+/****** UP-Panel.mcc/UPA_Panel_Self ******
+*
+*   NAME
+*       UPA_Panel_Self -- attribute of UP-Panel.mcc
+*
+*   FUNCTION
+*       Object*: the panel itself. A MUI Group passes an unknown OM_GET on
+*       to its children, so a UPA_Panel_Role answer counts only when
+*       UPA_Panel_Self names the object that was asked.
+*
+*   INPUTS
+*       UPA_Panel_Self - access G. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Panel.mcc, UPA_Panel_Role
+*
+******/
+
+/****** UP-Panel.mcc/UPA_Panel_FixedWidth ******
+*
+*   NAME
+*       UPA_Panel_FixedWidth -- attribute of UP-Panel.mcc
+*
+*   FUNCTION
+*       LONG > 0: fixed width and height, no inner padding
+*
+*   INPUTS
+*       UPA_Panel_FixedWidth - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Panel.mcc
+*
+******/
+
+/****** UP-Panel.mcc/UPA_Panel_FixedHeight ******
+*
+*   NAME
+*       UPA_Panel_FixedHeight -- attribute of UP-Panel.mcc
+*
+*   FUNCTION
+*       LONG > 0 with FixedWidth: the fixed height when it differs
+*
+*   INPUTS
+*       UPA_Panel_FixedHeight - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Panel.mcc
+*
+******/
+
+/****** UP-Shared.mcc/UPM_Shared_Fire ******
+*
+*   NAME
+*       UPM_Shared_Fire -- method of UP-Shared.mcc
+*
+*   FUNCTION
+*       Private method the timer node sends to the owner
+*
+*   INPUTS
+*       UPM_Shared_Fire - method id. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Send with DoMethod; see FUNCTION for the return value.
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Shared.mcc
+*
+******/
+
+/****** UP-Shared.mcc/UPA_Shared_Side ******
+*
+*   NAME
+*       UPA_Shared_Side -- attribute of UP-Shared.mcc
+*
+*   FUNCTION
+*       I/S: preferred side, MUI_AA_TIP_*
+*
+*   INPUTS
+*       UPA_Shared_Side - method id. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Shared.mcc
+*
+******/
+
+/****** UP-Shared.mcc/UPA_Shared_Origin ******
+*
+*   NAME
+*       UPA_Shared_Origin -- attribute of UP-Shared.mcc
+*
+*   FUNCTION
+*       ---- Constructors: the tag list is the whole interface. Defaults a caller does not give (no frame, cycle chain) are the class's. ----
+*
+*   INPUTS
+*       UPA_Shared_Origin - method id. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Shared.mcc
+*
+******/
+
+/****** up-mcc.library/UP_ThemeLoad ******
+*
+*   NAME
+*       UP_ThemeLoad -- up-mcc.library function
+*
+*   FUNCTION
+*       Validate the theme file at path (empty or NULL: ENV:UP-MCC/theme) and apply it to every UP- object.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       0, or -1 with the tokens untouched when the file is missing or malformed.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_ThemeReload ******
+*
+*   NAME
+*       UP_ThemeReload -- up-mcc.library function
+*
+*   FUNCTION
+*       Resolve the theme again (built-in, ENV file, last accepted path) and apply it.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       0.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_ThemeSetTokens ******
+*
+*   NAME
+*       UP_ThemeSetTokens -- up-mcc.library function
+*
+*   FUNCTION
+*       Store count 0xRRGGBB tokens (UPTOK_ order) over the front of the token array, then recolour every UP- object. Extra entries are ignored.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       0, or -1 for a NULL array or zero count.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_ThemeTokens ******
+*
+*   NAME
+*       UP_ThemeTokens -- up-mcc.library function
+*
+*   FUNCTION
+*       The token array in force, UPTOK_END_ entries; valid until the next set or reload.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       Pointer to the token array.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_ThemeAttach ******
+*
+*   NAME
+*       UP_ThemeAttach -- up-mcc.library function
+*
+*   FUNCTION
+*       Register an object for recolours from any process. key identifies the entry, app is the object MUI application, hook runs on the application task.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       0, or -1.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_ThemeDetach ******
+*
+*   NAME
+*       UP_ThemeDetach -- up-mcc.library function
+*
+*   FUNCTION
+*       Remove the registry entry for key.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       0, or -1 when unknown.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_ThemeObjects ******
+*
+*   NAME
+*       UP_ThemeObjects -- up-mcc.library function
+*
+*   FUNCTION
+*       Count the registered entries.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       Number of entries.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_IconFind ******
+*
+*   NAME
+*       UP_IconFind -- up-mcc.library function
+*
+*   FUNCTION
+*       Index of the baked Lucide icon by name ("play"), usable with UPA_Button_Icon.
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       Index, or -1 when unknown.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/
+
+/****** up-mcc.library/UP_SetFontFile ******
+*
+*   NAME
+*       UP_SetFontFile -- up-mcc.library function
+*
+*   FUNCTION
+*       Append a TrueType file to the font search list (up to 4, duplicates ignored).
+*
+*   INPUTS
+*       See the prototype in <mcc/up_lib.h>.
+*
+*   RESULT
+*       0, or -1.
+*
+*   SEE ALSO
+*       <mcc/up_lib.h>, dist/sfd/up-mcc_lib.sfd
+*
+******/

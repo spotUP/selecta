@@ -123,12 +123,12 @@ uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]) {
  * left edge ("collapsed"). Title, Artist and Album carry weights and share the width the fixed Length / Format cells leave. */
 static const int k_col_weight[MUI_COL_COUNT] = {40, 25, 25, 0, 0};
 
-void mui_columns_format(uint32_t breakpoint, char* out, size_t cap) {
+void mui_columns_format(uint32_t breakpoint, char* out, size_t cap, int aspect_q8) {
     uint8_t cols[MUI_COL_COUNT];
     uint32_t i, n = mui_columns_for(breakpoint, cols);
     size_t used = 0;
     mui_aa_list_t lm;
-    mui_aa_list_metrics(13, &lm); /* I667i: 8 px between a divider and the text on each side (design 3.6) */
+    mui_aa_list_metrics(13, aspect_q8, &lm); /* I667i: 8 px between a divider and the text on each side (design 3.6) */
     out[0] = '\0';
     for (i = 0; i < n; i++) {
         int w = k_col_weight[cols[i]];

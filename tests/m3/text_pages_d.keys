@@ -1,0 +1,14 @@
+# I1189: r on a song tile has no album id: a status line, no page.
+wait 400
+H
+wait 500
+Down
+wait 100
+Down
+wait 100
+Down
+wait 100
+Down
+wait 100
+r
+wait 400

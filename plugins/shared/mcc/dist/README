@@ -1,0 +1,63 @@
+UP-MCC 1.0
+==========
+
+What it is
+  UP-MCC is a package of eleven MUI 3.8 custom classes with a modern, flat look (rounded frames, theme colours, baked
+  Lucide icons, optional anti-aliased text), a preferences class, a shared support library and a demonstration program.
+  The classes are ordinary MUI external classes: any program creates them by name with MUI_NewObject.
+
+Requirements
+  AmigaOS 3.0 or newer, a 68020 or better, MUI 3.8 (no MUI 4 or 5 needed).
+  Optional: ttengine.library (Aminet, text/font) for anti-aliased text. Without it the classes draw plain text.
+  UP-MCC does not ship ttengine.
+
+Install
+  Open the drawer UP-MCC and start Install-UP-MCC (double click, or run it with the Installer program). The installer copies:
+    Libs/mui/UP-*.mcc and UP-MCC.mcp   to  MUI:Libs/mui/
+    Libs/up-mcc.library                to  LIBS:
+    Fonts/Inter-Regular.ttf            to  FONTS:
+    Themes/*.theme                     to  ENVARC:UP-MCC/ and ENV:UP-MCC/
+  It also offers the programmer headers, the documentation and the demonstration program.
+  Check the result with:  Version LIBS:up-mcc.library
+
+Classes
+  UP-Button.mcc     button with caption and/or Lucide icon (roles normal, accent, ghost, toggle, tab)
+  UP-Text.mcc       one line of text in a tone (normal, muted, title), with alignment and ellipsis
+  UP-Panel.mcc      themed surface with a role (panel, surface, raised)
+  UP-Tabs.mcc       tab strip with an active tab
+  UP-Balance.mcc    divider between two groups
+  UP-Slider.mcc     slider
+  UP-Progress.mcc   progress bar
+  UP-Cycle.mcc      cycle gadget with a list of entries
+  UP-Field.mcc      text entry field with outline and placeholder
+  UP-Scroller.mcc   scroller for a list
+  UP-List.mcc       list with columns, selection and a playing row marker
+  UP-MCC.mcp        preferences class: edit and save the theme, reload it live in every running program
+
+Theme files and ENV:UP-MCC/
+  A theme file is plain text, one "name = value" line per colour or size. Dark.theme is the built-in default; Light.theme is
+  the light variant. The classes read ENV:UP-MCC/theme at start and again on UP_ThemeReload. The permanent copy lives in
+  ENVARC:UP-MCC/.
+
+Preferences
+  UP-MCC.mcp is a MUI preferences class. Its edits recolour every running program that uses the classes, at once, through
+  up-mcc.library.
+
+Using the classes from C
+  Include <mcc/up.h> (it pulls in <mcc/up_lib.h>). Create an object by class name, no UP_New* function is needed:
+    Object *b = MUI_NewObject("UP-Button.mcc", UPA_Button_Caption, (IPTR)"Play", UPA_Button_Icon, (IPTR)"play", TAG_DONE);
+  Attributes are UPA_<Class>_<Name> tags, methods are UPM_<Class>_<Name>. Docs/UP-<Class>.mcc.doc lists every one with its
+  access letters (I set at creation, S settable later, G readable). Library functions (UP_ThemeLoad, UP_ThemeReload,
+  UP_IconFind and others) are in Docs/up-mcc.library.doc; open up-mcc.library version 1 or use the inline headers in Include/.
+  Demo/updemo.c is a complete example that creates all eleven classes.
+
+Licence
+  The package code is MIT licensed (Docs/LICENSE).
+  Third-party files: the Lucide icons are ISC licensed (Docs/LICENSE.Lucide); the Inter font is licensed under the SIL
+  Open Font License 1.1 (Docs/LICENSE.Inter).
+
+Source and contact
+  https://github.com/spotUP/selecta  (author: spotUP)
+
+Version
+  1.0

@@ -264,6 +264,19 @@ int main(void) {
         CHECK(strcmp(r, "local:big3000.mod") == 0);
     }
 
+    /* I994d5a: a bare-path playlist entry (no source prefix) counts the plays of its history key "local:<path>". */
+    sql(lib, "INSERT INTO playlists(id, name) VALUES(901, 'Bare');"
+             "INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(901, 0, 'bare901.mod');"
+             "INSERT INTO history(key, played_at, duration_ms, skipped) VALUES('local:bare901.mod', 100, 1000, 0);");
+    snprintf(line, sizeof line, "COLLECTION_OPEN %u \"901\"", (unsigned)SEL_LIB_ITEM_PLAYLIST);
+    run(e, line);
+    pg = sel_engine_state(e)->collection;
+    CHECK(pg != NULL && pg->songs == 1u && pg->rows != NULL);
+    if (pg != NULL && pg->rows != NULL) {
+        CHECK(strcmp(pg->rows, "bare901.mod") == 0);
+        CHECK(strcmp(pg->rows + strlen(pg->rows) + 1u, "1") == 0);
+    }
+
     /* A drill group page has no order and builds none. */
     orders = stats(e).collection_orders;
     snprintf(line, sizeof line, "COLLECTION_OPEN %u \"local\"", (unsigned)SEL_LIB_ITEM_SOURCE);

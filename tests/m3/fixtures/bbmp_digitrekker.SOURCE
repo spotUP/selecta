@@ -1,0 +1,5 @@
+DigiTrekker test songs for tests/m3/digitrekker_decode.sh (bbmp_digitrekker module, I710ap). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. No redistribution licence is stated for the songs.
+https://modland.com/pub/modules/Digitrekker/Horst%20Beham/demorave.dtm  39f0b2cf51b85cda3ec17b93908225c65180cd4f492b802489f256373b3bcbaf
+https://modland.com/pub/modules/Digitrekker/_unknown/keepcool.dtm  e0cb080daebd9d2071d280a3e78abc0d6757896daa3f3b457d7b14b236da9e55
+Engine licence: GPL-3.0-or-later (bbmp csrc/pcmusic/digitrekker.cpp, third_party/bbmp_digitrekker).

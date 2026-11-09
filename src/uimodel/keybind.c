@@ -4,6 +4,7 @@
 #include <selecta/uimodel/keys.h>
 
 #include <selecta/protocol.h>
+#include <selecta/uimodel.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -13,7 +14,7 @@ static const char* const k_actions[] = {
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
     "library",    "search",       "show_list",    "folders",     "home",
-    "stats",      "forward",
+    "stats",      "forward",    "lib_mode",   "queue_scope", "settings",
     "viz",        "pattern",    "solo",         "voice1",        "voice2",       "voice3",
     "voice4",     "voice5",     "voice6",       "voice7",        "voice8",       "voice9",
 };
@@ -87,12 +88,12 @@ int txt_key_parse(const char* name, uint32_t* code, uint32_t* mods) {
     return 0;
 }
 
-static const char* const k_ctx_prefix[] = {"", "list:", "player:"};
+static const char* const k_ctx_prefix[] = {"", "list:", "player:", "page:"};
 
 int txt_key_parse_ctx(const char* name, uint32_t* ctx, uint32_t* code, uint32_t* mods) {
     uint32_t c;
     *ctx = TXT_CTX_ANY;
-    for (c = TXT_CTX_LIST; c <= TXT_CTX_PLAYER; c++) {
+    for (c = TXT_CTX_LIST; c <= TXT_CTX_PAGE; c++) {
         size_t n = strlen(k_ctx_prefix[c]);
         if (strncmp(name, k_ctx_prefix[c], n) == 0) {
             *ctx = c;
@@ -159,9 +160,14 @@ static const struct {
     {"o", "@solo"},            {".", "PITCH +100"},
     {",", "PITCH -100"},       {"C-Right", "TEMPO +5"},
     {"C-Left", "TEMPO -5"},
+    /* I1205: a terminal sends Ctrl-8 as 0x7F (Backspace), so the shared table's C-8 never arrives; Ctrl-V does. */
+    {"C-v", "PREF_SET ui.desktop.viz viz_sidregs"},
     {"l", "@library"},          {"/", "@search"},
     {"f", "@folders"},         {"b", "@stats"},
-    {"H", "@home"},
+    {"H", "@home"},          {"c", "@lib_mode"},
+    {"x", "@queue_scope"},    {"S", "@settings"},
+    {"e", "@artist_page"},   {"r", "@album_page"},
+    {"w", "@menu"},
     {"M-l", "FILTER_LED toggle"},
     /* Context rows. Left and Right page a list and seek when the pattern or viz panel fills the
        main pane; Alt+arrows seek everywhere. Terminal.app sends Option+Left and Option+Right as
@@ -174,6 +180,12 @@ static const struct {
     {"player:PageUp", "@subsong_prev"}, {"player:PageDown", "@subsong_next"},
     {"player:Home", "SEEK 0"},   {"player:Enter", "@play_pause"},
     {"player:Backspace", "@show_list"}, {"player:Escape", "@show_list"},
+    /* I1191: the Now Playing (N) and Song Information (I) pages. On Song Information w marks the song as sounding
+       wrong, x skips it, e edits the note and Enter saves it, as the desktop buttons do. */
+    {"I", "@songinfo"},        {"N", "@nowplaying"},
+    {"page:Escape", "@page_close"}, {"page:Backspace", "@page_close"},
+    {"page:w", "@si_wrong"},   {"page:x", "@si_skip"},
+    {"page:e", "@si_edit"},    {"page:Enter", "@si_save"},
 };
 
 static int find(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
@@ -215,11 +227,21 @@ static void unset(txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
 
 void txt_bindings_default(txt_bindings* b) {
     size_t i;
-    uint32_t ctx, code, mods;
+    uint32_t ctx, code, mods, n = sel_uim_action_count();
     memset(b, 0, sizeof *b);
     for (i = 0; i < sizeof k_defaults / sizeof k_defaults[0]; i++) {
         if (txt_key_parse_ctx(k_defaults[i].key, &ctx, &code, &mods)) {
             (void)set(b, ctx, code, mods, k_defaults[i].action);
+        }
+    }
+    /* I1184: the shared action table (actions.c) is the source of every other key, the one the desktop UI binds
+     * through too. A key the text table named above keeps its own meaning; The ui.desktop.mode / viz rows (I1185) are
+     * the layouts and visualizers, which the text UI answers with its own panels (tui_pref_local). */
+    for (i = 0; i < n; i++) {
+        const sel_uim_action* a = sel_uim_action_at((uint32_t)i);
+        if (a->key[0] != '\0' && (strncmp(a->line, "PREF_SET", 8) != 0 || strncmp(a->line, "PREF_SET ui.desktop.", 20) == 0) && txt_key_parse(a->key, &code, &mods) &&
+            find(b, TXT_CTX_ANY, code, mods) < 0) {
+            (void)set(b, TXT_CTX_ANY, code, mods, a->line);
         }
     }
 }
@@ -311,7 +333,7 @@ const char* txt_bindings_lookup(const txt_bindings* b, uint32_t ctx, uint32_t co
 }
 
 static const char* row_name(const txt_bind* r, char* out, size_t cap) {
-    const char* pre = r->ctx <= TXT_CTX_PLAYER ? k_ctx_prefix[r->ctx] : "";
+    const char* pre = r->ctx <= TXT_CTX_PAGE ? k_ctx_prefix[r->ctx] : "";
     size_t n = strlen(pre);
     if (n >= cap || !txt_key_name(r->code, r->mods, out + n, cap - n)) {
         return NULL;
@@ -322,19 +344,52 @@ static const char* row_name(const txt_bind* r, char* out, size_t cap) {
 
 const char* txt_bindings_key_for(const txt_bindings* b, const char* action, char* out, size_t cap) {
     uint32_t i;
-    size_t verb = strcspn(action, " \t");
-    int first_word = -1;
+    /* Only a binding that runs exactly this action names its key. A verb listed bare (the palette) never borrows the key of a
+       binding that carries arguments ("PREF_SET ui.desktop.viz viz_sidregs" runs one case of PREF_SET), I1210. */
     for (i = 0; i < b->count; i++) {
         if (strcmp(b->rows[i].action, action) == 0) {
             return row_name(&b->rows[i], out, cap);
         }
-        if (first_word < 0 && strncmp(b->rows[i].action, action, verb) == 0 &&
-            (b->rows[i].action[verb] == ' ' || b->rows[i].action[verb] == '\0')) {
-            first_word = (int)i;
-        }
-    }
-    if (first_word >= 0) {
-        return row_name(&b->rows[first_word], out, cap);
     }
     return NULL;
+}
+
+uint32_t txt_key_from_amiga_raw(unsigned raw) {
+    switch (raw) {
+    case 0x4C: return TXT_KEY_UP;
+    case 0x4D: return TXT_KEY_DOWN;
+    case 0x4E: return TXT_KEY_RIGHT;
+    case 0x4F: return TXT_KEY_LEFT;
+    case 0x46: return TXT_KEY_DELETE;
+    case 0x47: return TXT_KEY_INSERT;
+    case 0x48: return TXT_KEY_PAGE_UP;
+    case 0x49: return TXT_KEY_PAGE_DOWN;
+    case 0x70: return TXT_KEY_HOME;
+    case 0x71: return TXT_KEY_END;
+    case 0x4B: return TXT_KEY_F1 + 10;
+    case 0x6F: return TXT_KEY_F1 + 11;
+    case 0x44: case 0x43: return 13;
+    case 0x45: return 27;
+    case 0x42: return 9;
+    case 0x41: return 127;
+    default: break;
+    }
+    if (raw >= 0x50 && raw <= 0x59) {
+        return TXT_KEY_F1 + (uint32_t)(raw - 0x50);
+    }
+    return 0;
+}
+
+uint32_t txt_mods_from_amiga_qual(unsigned qual) {
+    uint32_t m = 0;
+    if (qual & 0x0003u) { /* IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT */
+        m |= TXT_MOD_SHIFT;
+    }
+    if (qual & 0x0008u) { /* IEQUALIFIER_CONTROL */
+        m |= TXT_MOD_CTRL;
+    }
+    if (qual & 0x0030u) { /* IEQUALIFIER_LALT | IEQUALIFIER_RALT */
+        m |= TXT_MOD_ALT;
+    }
+    return m;
 }

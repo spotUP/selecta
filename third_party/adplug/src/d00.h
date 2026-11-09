@@ -30,7 +30,7 @@ class Cd00Player: public CPlayer
   static CPlayer *factory(Copl *newopl);
 
   Cd00Player(Copl *newopl)
-    : CPlayer(newopl), filedata(0)
+    : CPlayer(newopl), filedata(0), newhdr(false)
     { };
   ~Cd00Player()
     { if(filedata) delete [] filedata; };
@@ -97,6 +97,7 @@ class Cd00Player: public CPlayer
   d00header *header;
   d00header1 *header1;
   char *filedata;
+  bool newhdr;	// the song has the JCH (d00header) layout, version 1 included
   unsigned long filesize;
 
  private:

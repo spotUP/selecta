@@ -44,6 +44,16 @@ uint32_t sel_uim_libmode_lines(uint32_t mode, uint32_t window_rows, char out[SEL
 const char* sel_uim_scope_name(uint32_t i) { return i < SEL_UIM_QUEUE_SCOPES ? k_scope_name[i] : NULL; }
 const char* sel_uim_scope_label(uint32_t i) { return i < SEL_UIM_QUEUE_SCOPES ? k_scope_label[i] : NULL; }
 
+uint32_t sel_uim_scope_index(const char* name) {
+    uint32_t k;
+    for (k = 0; name != NULL && k < SEL_UIM_QUEUE_SCOPES; k++) {
+        if (strcmp(name, k_scope_name[k]) == 0) {
+            return k;
+        }
+    }
+    return 0u;
+}
+
 uint32_t sel_uim_scope_line(uint32_t i, char* out, uint32_t cap) {
     int n;
     if (i >= SEL_UIM_QUEUE_SCOPES || out == NULL || cap == 0u) {
@@ -148,6 +158,11 @@ static const uint32_t g_side_chip_mask[SEL_UIM_SIDE_CHIPS] = {
 static const char* const g_side_text[SEL_UIM_SIDE_TEXTS] = {
     "Your Library", "Create Playlist", "Expand Library", "Collapse Library", "All", "By You", "Nothing here yet.", "No playlists yet.",
     "Create your first playlist", "Name it, then add songs from your library", "Create playlist"};
+
+const char* sel_uim_side_col_name(uint32_t i) {
+    static const char* const k_cols[4] = {"Title", "Type", "Date Added", "Played"};
+    return i < 4u ? k_cols[i] : NULL;
+}
 
 const char* sel_uim_side_chip_name(uint32_t i) {
     return i < SEL_UIM_SIDE_CHIPS ? g_side_chip_name[i] : (const char*)0;

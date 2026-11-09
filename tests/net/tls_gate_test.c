@@ -55,15 +55,15 @@ static int has_https(const sel_mirror_set* s) {
 
 static int mirrors_mode(void) {
     sel_mirror_set s;
-    unsigned n_on_hvsc, n_on_modland;
+    unsigned n_on_asma, n_on_modland;
     if (strcmp(sel_tls_backend(), "mbedtls") != 0 || !sel_tls_available() || sel_tls_missing_note() != NULL) {
         printf("FAIL host backend\n");
         return 1;
     }
-    n_on_hvsc = sel_mirrors_init(&s, "hvsc", 0);
+    n_on_asma = sel_mirrors_init(&s, "asma", 0);
     n_on_modland = sel_mirrors_init(&s, "modland", 0);
-    if (n_on_hvsc != 1 || strncmp(sel_devilbox_base(), "https://", 8) != 0) {
-        printf("FAIL tls on: hvsc=%u base=%s\n", n_on_hvsc, sel_devilbox_base());
+    if (n_on_asma != 1 || strncmp(sel_devilbox_base(), "https://", 8) != 0) {
+        printf("FAIL tls on: asma=%u base=%s\n", n_on_asma, sel_devilbox_base());
         return 1;
     }
     sel_tls_test_force(0);
@@ -71,7 +71,7 @@ static int mirrors_mode(void) {
         printf("FAIL forced off\n");
         return 1;
     }
-    if (sel_mirrors_init(&s, "hvsc", 0) != 0 || sel_mirrors_init(&s, "asma", 0) != 0) {
+    if (sel_mirrors_init(&s, "sndh", 0) != 0 || sel_mirrors_init(&s, "asma", 0) != 0) {
         printf("FAIL https-only source kept a mirror\n");
         return 1;
     }
@@ -79,8 +79,8 @@ static int mirrors_mode(void) {
         printf("FAIL modland list count=%u https=%d\n", s.count, has_https(&s));
         return 1;
     }
-    setenv("SELECTA_MIRRORS_HVSC", "https://a.example/,http://b.example/", 1);
-    if (sel_mirrors_init(&s, "hvsc", 0) != 1 || has_https(&s) || strcmp(s.base[0], "http://b.example/") != 0) {
+    setenv("SELECTA_MIRRORS_ASMA", "https://a.example/,http://b.example/", 1);
+    if (sel_mirrors_init(&s, "asma", 0) != 1 || has_https(&s) || strcmp(s.base[0], "http://b.example/") != 0) {
         printf("FAIL env list not filtered\n");
         return 1;
     }

@@ -85,6 +85,11 @@ bool Cd00Player::load(const std::string &filename, const CFileProvider &fp)
     // Set the header position so we seek to the right place later
     headerstart=0x6b;
   // Check for version 2-4 header
+  } else if(!strncmp(checkhead->id,"JCH\x26\x02\x66",6) && checkhead->type == 0x80 &&
+     checkhead->version == 1 && checkhead->subsongs) {
+    // EdLib D01 (Modland "EdLib D01/JCH", I710aw): the full 0x6b-byte JCH header is followed by the version 2 pointer
+    // table, but the song is version 1 (type 0x80, soundcard 1, level/pulse table where v2 has its spfxptr). Any extension.
+    delete checkhead;
   } else if(strncmp(checkhead->id,"JCH\x26\x02\x66",6) || checkhead->type ||
      !checkhead->subsongs || checkhead->soundcard ||
      checkhead->version < 2 || checkhead->version > 4) {
@@ -109,7 +114,8 @@ bool Cd00Player::load(const std::string &filename, const CFileProvider &fp)
   f->readString((char *)filedata, filesize);
   filedata[filesize] = 0;
   fp.close(f);
-  if(!ver1) {	// version 2 and above
+  newhdr = !ver1;
+  if(!ver1) {	// JCH header: version 2 and above, or the EdLib D01 version 1 song
     header = (struct d00header *)filedata;
     if (filesize < sizeof(d00header) ||
 	filesize < LE_WORD(&header->infoptr) ||
@@ -150,11 +156,13 @@ bool Cd00Player::load(const std::string &filename, const CFileProvider &fp)
     spfx = 0;
     header1->speed = 70;		// v0 files default to 70Hz
     break;
-  case 1:
-    if (filesize <= LE_WORD(&header1->lpulptr)) return false;
-    levpuls = (struct Slevpuls *)((char *)filedata + LE_WORD(&header1->lpulptr));
+  case 1: {
+    unsigned short lpulptr = newhdr ? LE_WORD(&header->spfxptr) : LE_WORD(&header1->lpulptr);	// same slot in both layouts
+    if (filesize <= lpulptr) return false;
+    levpuls = (struct Slevpuls *)((char *)filedata + lpulptr);
     spfx = 0;
     break;
+  }
   case 2:
     if (filesize <= LE_WORD(&header->spfxptr)) return false;
     levpuls = (struct Slevpuls *)((char *)filedata + LE_WORD(&header->spfxptr));
@@ -477,7 +485,7 @@ void Cd00Player::rewind(int subsong)
   if(subsong < 0) subsong = cursubsong;
 
   size_t dataofs = subsong * sizeof(Stpoin)
-    + LE_WORD(&(version > 1 ? header->tpoin : header1->tpoin));
+    + LE_WORD(&(newhdr ? header->tpoin : header1->tpoin));
   if ((unsigned int)subsong < getsubsongs() && dataofs + sizeof(Stpoin) <= filesize)
     memcpy(&tpoin, filedata + dataofs, sizeof(Stpoin));
   else
@@ -509,13 +517,13 @@ void Cd00Player::rewind(int subsong)
 std::string Cd00Player::gettype()
 {
   char	tmpstr[40];
-  snprintf(tmpstr, sizeof(tmpstr), "EdLib packed (version %d)", version > 1 ? header->version : header1->version);
+  snprintf(tmpstr, sizeof(tmpstr), "EdLib packed (version %d)", newhdr ? header->version : header1->version);
   return std::string(tmpstr);
 }
 
 float Cd00Player::getrefresh()
 {
-  if(version > 1)
+  if(newhdr)
     return header->speed;
   else
     return header1->speed;
@@ -523,7 +531,7 @@ float Cd00Player::getrefresh()
 
 unsigned int Cd00Player::getsubsongs()
 {
-  if(version <= 1)	// return number of subsongs
+  if(!newhdr)	// return number of subsongs
     return header1->subsongs;
   else
     return header->subsongs;

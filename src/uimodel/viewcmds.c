@@ -17,6 +17,26 @@ uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, 
                         : done(snprintf(out, cap, "PLAYLIST_CREATE \"%s\" %u", name, (unsigned)folder), cap);
 }
 
+const char* sel_uim_plbtn_label(uint32_t k) {
+    return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : k == 2u ? "Play" : NULL;
+}
+
+uint32_t sel_uim_pl_target_folder(const sel_view_row* rows, uint32_t row_n, int32_t sel) {
+    int32_t at;
+    if (rows == NULL || sel < 0 || (uint32_t)sel >= row_n) {
+        return 0u;
+    }
+    if (rows[sel].kind == (uint32_t)SEL_ROW_FOLDER) {
+        return rows[sel].id;
+    }
+    for (at = sel - 1; at >= 0; at--) {
+        if (rows[at].kind == (uint32_t)SEL_ROW_FOLDER && rows[at].depth < rows[sel].depth) {
+            return rows[at].id;
+        }
+    }
+    return 0u;
+}
+
 uint32_t sel_uim_plrename_line(uint32_t id, const char* name, char* out, uint32_t cap) {
     return name == NULL || name[0] == '\0' ? 0u : done(snprintf(out, cap, "PLAYLIST_RENAME %u \"%s\"", (unsigned)id, name), cap);
 }
@@ -34,6 +54,32 @@ uint32_t sel_uim_plmenu_action(uint32_t folder, uint32_t k) {
 
 const char* sel_uim_plmenu_label(uint32_t action) {
     return action == SEL_UIM_PLACT_RENAME ? "Rename" : action == SEL_UIM_PLACT_DELETE ? "Delete" : NULL;
+}
+
+uint32_t sel_uim_ctx_mask(uint32_t kind) {
+    switch (kind) {
+    case SEL_UIM_CTXK_SONG:
+    case SEL_UIM_CTXK_QUEUE:
+        return 0x1Fu;
+    case SEL_UIM_CTXK_PLSONG:
+        return 0x1Fu | SEL_UIM_CTX_PLREMOVE;
+    case SEL_UIM_CTXK_PLAYLIST:
+        return SEL_UIM_CTX_RENAME | SEL_UIM_CTX_DELETE;
+    case SEL_UIM_CTXK_FOLDER:
+        return SEL_UIM_CTX_DELETE; /* a folder has no rename verb (sel_uim_plmenu_action) */
+    default:
+        return 0u;
+    }
+}
+
+uint32_t sel_uim_song_menu_n(int in_playlist) {
+    return 5u + (in_playlist ? 1u : 0u);
+}
+
+const char* sel_uim_plremove_label(void) { return "Remove from Playlist"; }
+
+uint32_t sel_uim_plremove_line(uint32_t playlist_id, uint32_t index, char* out, uint32_t cap) {
+    return playlist_id == 0u ? 0u : done(snprintf(out, cap, "PLAYLIST_REMOVE_SONG %u %u", (unsigned)playlist_id, (unsigned)index), cap);
 }
 
 uint32_t sel_uim_pldel_text(uint32_t folder, const char* name, char* out, uint32_t cap) {

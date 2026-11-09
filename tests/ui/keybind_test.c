@@ -61,7 +61,7 @@ int main(void) {
         CHECK(is(txt_bindings_lookup(&c, TXT_CTX_LIST, TXT_KEY_RIGHT, 0), "NEXT"));
         CHECK(is(txt_bindings_lookup(&c, TXT_CTX_PLAYER, TXT_KEY_RIGHT, 0), "SEEK +5000"));
         CHECK(is(txt_bindings_lookup(&c, TXT_CTX_PLAYER, TXT_KEY_LEFT, 0), "@page_up")); /* the any-context row */
-        CHECK(txt_bindings_lookup(&c, TXT_CTX_LIST, 'x', 0) == NULL);
+        CHECK(txt_bindings_lookup(&c, TXT_CTX_LIST, 'Z', 0) == NULL); /* x is the queue scope key since I1187; Z stays unbound */
         CHECK(txt_bindings_key_for(&c, "@show_list", cname, sizeof cname) != NULL && strcmp(cname, "player:Backspace") == 0);
     }
     CHECK(is(look(&b, 'a', 0), "@add_file"));
@@ -81,7 +81,9 @@ int main(void) {
     CHECK(is(look(&b, TXT_KEY_RIGHT, TXT_MOD_CTRL), "TEMPO +5"));
     CHECK(is(look(&b, TXT_KEY_LEFT, TXT_MOD_CTRL), "TEMPO -5"));
     CHECK(look(&b, 'V', 0) == NULL);
-    CHECK(look(&b, 'x', 0) == NULL);
+    CHECK(is(look(&b, 'x', 0), "@queue_scope")); /* I1187 */
+    CHECK(is(look(&b, 'c', 0), "@lib_mode"));
+    CHECK(look(&b, 'Z', 0) == NULL);
 
     /* a file line overrides or adds */
     CHECK(txt_bindings_load(&b, "# comment\n\nx QUEUE_SWAP 1 2\nn QUEUE_CLEAR\n", &bad) == 0);
@@ -141,6 +143,14 @@ int main(void) {
     txt_bindings_default(&b);
     CHECK(txt_bindings_key_for(&b, "NEXT", name, sizeof name) != NULL && strcmp(name, "n") == 0);
     CHECK(txt_bindings_key_for(&b, "NO_BINDING_FOR_THIS", name, sizeof name) == NULL);
+
+    /* Amiga raw keys shared by the desktop and MUI front ends */
+    CHECK(txt_key_from_amiga_raw(0x4C) == TXT_KEY_UP && txt_key_from_amiga_raw(0x71) == TXT_KEY_END);
+    CHECK(txt_key_from_amiga_raw(0x44) == 13u && txt_key_from_amiga_raw(0x42) == 9u);
+    CHECK(txt_key_from_amiga_raw(0x50) == TXT_KEY_F1 && txt_key_from_amiga_raw(0x6F) == TXT_KEY_F1 + 11u);
+    CHECK(txt_key_from_amiga_raw(0x20) == 0u);
+    CHECK(txt_mods_from_amiga_qual(0x0002u) == TXT_MOD_SHIFT && txt_mods_from_amiga_qual(0x0008u) == TXT_MOD_CTRL);
+    CHECK(txt_mods_from_amiga_qual(0x0020u | 0x0001u) == (TXT_MOD_ALT | TXT_MOD_SHIFT));
 
     printf("keybind_test failures=%d\n", g_fail);
     return g_fail != 0;

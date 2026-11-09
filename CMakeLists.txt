@@ -38,12 +38,20 @@ option(SELECTA_GPL_PLUGINS "Build the GPL plugin modules (sndh, sid, ...) as loa
 option(SELECTA_KSS_DRIVERS "Build the libkss replayer module, which ships the MSX driver binaries (MGSDRV, MoonBlaster, MuSICA, OPLLDRV, MPK, Kinrou)" ${SELECTA_GPL_PLUGINS})
 option(SELECTA_RELEASE_MIT_ONLY "Release build: the macOS bundle holds only the MIT modules" OFF)
 option(SEL_TEST_BAD_PLUGIN "Compile a deliberately broken plugin descriptor (T5 negative path)" OFF)
+# I1082f: ThreadSanitizer build (use a separate build directory, e.g. build/tsan); the threaded engine tests report data races.
+option(SELECTA_TSAN "Build everything with -fsanitize=thread" OFF)
+if(SELECTA_TSAN)
+  add_compile_options(-fsanitize=thread -g -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=thread)
+endif()
 
 include(cmake/selecta_submodules.cmake)
 include(cmake/selecta_defs.cmake)
 include(cmake/selecta_plugin.cmake)
 include(cmake/selecta_lint.cmake)
 include(cmake/selecta_desktop.cmake)
+include(cmake/player_set_check.cmake)
+sel_player_set_check()
 include(cmake/selecta_sdk.cmake)
 
 add_subdirectory(src)

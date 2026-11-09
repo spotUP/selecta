@@ -6,6 +6,7 @@
 #include <selecta/uimodel/palette.h>
 
 #include <selecta/protocol.h>
+#include <selecta/uimodel.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -33,24 +34,26 @@ static const txt_palette_item* find(const char* name) {
 }
 
 int main(void) {
-    static const char* const areas[] = {"transport", "queue", "playlists", "view", "protocol"};
+    static const char* const areas[] = {"transport", "queue", "playlists", "view", "actions", "protocol"};
     unsigned char seen[SEL_CMD_COUNT];
+    const uint32_t first_action = SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT;
     uint32_t i, a, last_area = 0, id;
     const txt_palette_item* it;
     txt_bindings_default(&g_b);
 
     /* every verb exactly once, grouped in area order */
     txt_palette_open(&g_p, &g_b);
-    CHECK(g_p.count == SEL_CMD_COUNT);
+    CHECK(sel_uim_action_count() <= TXT_PAL_ACTION_MAX);
+    CHECK(g_p.count == SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT + sel_uim_action_count()); /* I1188 screens, I1211 one row per action */
     memset(seen, 0, sizeof seen);
     for (i = 0; i < g_p.count; i++) {
-        CHECK(g_p.items[i].id < SEL_CMD_COUNT);
+        CHECK(g_p.items[i].id < first_action + sel_uim_action_count());
         if (g_p.items[i].id < SEL_CMD_COUNT) {
             seen[g_p.items[i].id]++;
         }
-        for (a = 0; a < 5 && strcmp(areas[a], g_p.items[i].area) != 0; a++) {
+        for (a = 0; a < 6 && strcmp(areas[a], g_p.items[i].area) != 0; a++) {
         }
-        CHECK(a < 5);
+        CHECK(a < 6);
         CHECK(a >= last_area); /* never back to an earlier group */
         last_area = a;
     }
@@ -71,8 +74,10 @@ int main(void) {
     /* the current binding is shown */
     it = find("NEXT");
     CHECK(it != NULL && strcmp(it->key, "n") == 0);
-    it = find("QUEUE_SHUFFLE");
-    CHECK(it != NULL && it->key[0] == '\0');
+    it = find("COMMANDS");
+    CHECK(it != NULL && it->key[0] == 0);
+    it = find("settings"); /* I1188: a local entry shows its @settings key */
+    CHECK(it != NULL && it->id == SEL_CMD_COUNT && strcmp(it->key, "S") == 0);
 
     /* query qsh: QUEUE_SHUFFLE first */
     txt_palette_set_query(&g_p, "qsh");
@@ -110,6 +115,44 @@ int main(void) {
     txt_palette_open(&g_p, &g_b);
     it = find("NEXT");
     CHECK(it != NULL && strcmp(it->key, "x") == 0);
+
+    /* I1211: one row per action of the shared table, its key read from the binding table by the exact line. Count from
+     * the builders: every action index has exactly one row; every binding whose action text is an action line shows its
+     * key on that action's row. */
+    txt_bindings_default(&g_b);
+    txt_palette_open(&g_p, &g_b);
+    {
+        uint32_t n = sel_uim_action_count(), rows = 0, bound = 0;
+        for (i = 0; i < g_p.count; i++) {
+            if (g_p.items[i].id >= first_action) {
+                const sel_uim_action* act = sel_uim_action_at(g_p.items[i].id - first_action);
+                rows++;
+                CHECK(act != NULL && strcmp(g_p.items[i].name, act->label) == 0 && strcmp(g_p.items[i].line, act->line) == 0);
+            }
+        }
+        CHECK(rows == n);
+        for (i = 0; i < g_b.count; i++) {
+            uint32_t k;
+            for (k = 0; k < n; k++) {
+                if (strcmp(g_b.rows[i].action, sel_uim_action_at(k)->line) == 0) {
+                    uint32_t j;
+                    for (j = 0; j < g_p.count && g_p.items[j].id != first_action + k; j++) {
+                    }
+                    bound++;
+                    CHECK(j < g_p.count && g_p.items[j].key[0] != '\0');
+                    break;
+                }
+            }
+        }
+        CHECK(bound > 20);
+    }
+    for (i = 0; i < g_p.count; i++) { /* SID Registers: the viz_sidregs row shows C-v */
+        if (g_p.items[i].id >= first_action && strcmp(g_p.items[i].line, "PREF_SET ui.desktop.viz viz_sidregs") == 0) {
+            CHECK(strcmp(g_p.items[i].key, "C-v") == 0);
+            break;
+        }
+    }
+    CHECK(i < g_p.count);
 
     printf(g_fail == 0 ? "palette_test: ok\n" : "palette_test: %d failures\n", g_fail);
     (void)areas;

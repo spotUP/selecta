@@ -9,6 +9,7 @@
 # 2. The header colour comes from the cover: alpha (album 2 cover) and beta (album 1 cover) differ, gamma (no cover) has cover=0 and
 #    the accent colour.
 # 3. The sort button cycles Custom Order -> Title: Bass Line, Intro, Main Theme.
+# 3b. views= and orders= (engine sentinels) and eshown= (pg->shown) move with the sort and the search (I994d5).
 # 4. The search field filters: typing "intro" leaves the one row Intro (shown=1 of=3); Backspace x5 shows all three again.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -128,6 +129,15 @@ col_field(sort "${s}" sort)
 expect_eq("sort mode" "${sort}" "1")
 titles_of(t_sorted "${s}")
 expect_eq("title order" "${t_sorted}" "Bass Line;Intro;Main Theme")
+# I994d5: the order came from the engine (COLLECTION_VIEW applied, order published), not a desktop sort.
+col_field(views_s "${s}" views)
+col_field(orders_s "${s}" orders)
+col_field(eshown_s "${s}" eshown)
+expect_eq("COLLECTION_VIEW applied once by the sort button" "${views_s}" "1")
+if(orders_s LESS 2)
+  message(FATAL_ERROR "the engine published no re-order after the sort: orders=${orders_s}")
+endif()
+expect_eq("engine shown count after sort" "${eshown_s}" "3")
 
 # 4. Search: type into the field.
 col_rect(find_xy "${a}" find)
@@ -138,6 +148,12 @@ col_field(of "${q}" of)
 expect_eq("rows in the collection" "${of}" "3")
 titles_of(t_found "${q}")
 expect_eq("filtered row" "${t_found}" "Intro")
+col_field(views_q "${q}" views)
+col_field(eshown_q "${q}" eshown)
+if(views_q LESS 1)
+  message(FATAL_ERROR "the search sent no COLLECTION_VIEW: views=${views_q}")
+endif()
+expect_eq("engine shown count for intro" "${eshown_q}" "1")
 open_run(q2 alpha "click ${find_xy}\nkey i\nkey n\nkey t\nkey r\nkey o\nkey backspace\nkey backspace\nkey backspace\nkey backspace\nkey backspace\nwait 100\n")
 col_field(shown2 "${q2}" shown)
 expect_eq("rows shown after clearing the search" "${shown2}" "3")

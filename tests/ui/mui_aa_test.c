@@ -195,6 +195,8 @@ static void test_text_tone(void) {
     CHECK(mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 15) == 19, "title is font + 4: %d", mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 15));
     CHECK(mui_aa_tone_font_px(MUI_AA_TONE_NORMAL, 15) == 15 && mui_aa_tone_font_px(MUI_AA_TONE_MUTED, 15) == 15, "other tones keep the font");
     CHECK(mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 0) == 0, "bitmap tier stays on its font");
+    CHECK(mui_aa_tone_font_px(MUI_AA_TONE_HEADING, 16) == 32 && mui_aa_tone_font_px(MUI_AA_TONE_HEADING, 0) == 0, "heading is twice the base (Mac 32 over 16), bitmap stays");
+    CHECK(mui_aa_tone_token(MUI_AA_TONE_HEADING) == SEL_GUI_TOKEN_TEXT, "heading tone is TEXT");
     CHECK(mui_pens_label_tone(MUI_LBL_TITLE) == MUI_AA_TONE_TITLE, "title label");
     CHECK(mui_pens_label_slot(MUI_LBL_ALBUM) != MUI_PEN_TEXT_MUTED || mui_pens_label_tone(MUI_LBL_ALBUM) == MUI_AA_TONE_MUTED, "muted label slot gives muted tone");
     CHECK(mui_pens_label_tone(MUI_LBL_SECTION) == (mui_pens_label_slot(MUI_LBL_SECTION) == MUI_PEN_TEXT_MUTED ? MUI_AA_TONE_MUTED : MUI_AA_TONE_NORMAL), "section label tone follows its pen slot");
@@ -225,16 +227,25 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 15, "text constructor sites: %d (definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 4 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
+    CHECK(count_of(ui, "mui_aatext(") == 17, "text constructor sites: %d (I1166b f1cf602d: + the expanded-sidebar table cell in mui_side_cells, the 17th; I960c: + the compact Now Playing page heading; definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 4 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
     CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
           "class does not draw through the shared tone, fit and text helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
+    /* I685w run 6 regression: on the PLAIN backend (no ttengine, rig 2) aa_set_font_px returns early, so the heading tone drew in the
+     * MUI font. The text class must hand the tone to aa_plain_font, and every PLAIN draw path must use aa_plain_textfont. */
+    CHECK(strstr(cls, "aa_plain_font(&d->aa, obj, mui_aa_tone_font_px(d->tone,") != NULL, "text class does not size the PLAIN tone font");
+    {
+        char* dr = slurp(AADRAW_SOURCE);
+        CHECK(dr != NULL && count_of(dr, "aa_plain_textfont(c, obj)") >= 4 && count_of(dr, "OpenDiskFont(") == 1 && strstr(dr, "CloseFont(c->plain)") != NULL,
+              "PLAIN draw paths do not use the tone font: %d", dr != NULL ? count_of(dr, "aa_plain_textfont(c, obj)") : -1);
+        free(dr);
+    }
     CHECK(strstr(cm, "mui_aatext_class.c") != NULL, "class not in the build");
-    /* I716b: the text is readable by GetAttr(AAT_Contents) so wasabid's uitree lists it (rig check MUI-P3-1 waits for "Playing"). */
-    CHECK(strstr(cls, "case OM_GET:") != NULL && strstr(cls, "msg->opg_AttrID == AAT_Contents") != NULL && strstr(cls, "*msg->opg_Storage = (ULONG)(uintptr_t)d->text") != NULL,
-          "AAText does not answer OM_GET AAT_Contents");
+    /* I716b: the text is readable by GetAttr(UPA_Text_Contents) so wasabid's uitree lists it (rig check MUI-P3-1 waits for "Playing"). */
+    CHECK(strstr(cls, "case OM_GET:") != NULL && strstr(cls, "msg->opg_AttrID == UPA_Text_Contents") != NULL && strstr(cls, "*msg->opg_Storage = (ULONG)(uintptr_t)d->text") != NULL,
+          "AAText does not answer OM_GET UPA_Text_Contents");
     free(ui);
     free(cls);
     free(cm);
@@ -258,6 +269,46 @@ static void test_panel_source(void) {
           "class does not draw through the shared panel helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
     CHECK(strstr(cm, "mui_aapanel_class.c") != NULL, "class not in the build");
+    /* I685e5 (design 4.1.1): the pad comes from the panel's own screen through a layout hook, not from creation-time inner offsets. */
+    {
+        char hpath[512];
+        char* hdr;
+        snprintf(hpath, sizeof hpath, "%s", AAPANEL_SOURCE);
+        hpath[strlen(hpath) - 1] = 'h';
+        hdr = slurp(hpath);
+        const char* nw = cls != NULL ? strstr(cls, "Object* UP_NewPanel(") : NULL;
+        const char* pad = cls != NULL ? strstr(cls, "mui_aa_panel_pad(") : NULL;
+        CHECK(hdr != NULL && strstr(hdr, "aspect_q8") == NULL, "mui_aapanel_spec still has aspect_q8");
+        CHECK(strstr(cls, "MUIA_Inner") == NULL, "the panel class still passes MUIA_Inner*");
+        CHECK(count_of(cls, "mui_aa_panel_pad(") == 1 && pad != NULL && nw != NULL && pad < nw && strstr(cls, "mui_aa_panel_pad(d->aa.tok, d->aa.aspect_q8,") != NULL,
+              "mui_aa_panel_pad must be called once, with d->aa.aspect_q8, outside UP_NewPanel: %d", count_of(cls, "mui_aa_panel_pad("));
+        CHECK(nw != NULL && strstr(nw, "MUIA_Group_LayoutHook") != NULL && strstr(cls, "case OM_ADDMEMBER:") != NULL && strstr(cls, "case OM_REMMEMBER:") != NULL,
+              "layout hook not passed in UP_NewPanel, or the dispatcher does not forward OM_ADDMEMBER / OM_REMMEMBER");
+        /* I685w run 6 regression: UP-Demo builds panels by name (MUI_NewObject("UP-Panel.mcc")), and that OM_NEW path made no inner
+         * group and no layout hook, so mui_aa_panel_pad never ran and the card pad never reached the screen. Both paths share one hook init. */
+        {
+            const char* bn = strstr(cls, "static ULONG aapanel_new_by_name(");
+            const char* bn_end = bn != NULL ? strstr(bn, "\n}\n") : NULL;
+            CHECK(bn != NULL && bn_end != NULL && count_of(cls, "aapanel_hook_init()") == 2, "by-name OM_NEW and UP_NewPanel do not share aapanel_hook_init");
+            CHECK(bn != NULL && strstr(bn, "MUIA_Group_LayoutHook") != NULL && strstr(bn, "MUIA_Group_LayoutHook") < bn_end && strstr(bn, "OM_ADDMEMBER") < bn_end && strstr(bn, "d->inner =") < bn_end,
+                  "by-name UP-Panel has no layout hook or inner group, so the pad never applies");
+            CHECK(strstr(cls, "return aapanel_new_by_name(") != NULL, "OM_NEW does not route by-name panels through aapanel_new_by_name");
+            CHECK(strstr(cls, "mui_aa_panel_gap(d->aa.tok, d->aa.aspect_q8, d->role,") != NULL, "panel group spacing not from mui_aa_panel_gap");
+            CHECK(strstr(cls, "mui_aa_panel_role_pad(d->role, px, py)") != NULL, "panel pad not scaled by role");
+            CHECK(strstr(cls, "aapanel_space(d->inner, gx, gy, 0)") != NULL, "the program's plain boxes in a panel keep MUI's prefs spacing");
+            /* I685w run 6 regression (rig 2 shot): a plain Group passes the Role OM_GET on to its children, so a text in a by-name
+             * panel erased in a nested card's colour (heading band 2A2A32 on the 141418 page). The walk must check Self first. */
+            CHECK(strstr(cls, "og->opg_AttrID == UPA_Panel_Self") != NULL, "UP-Panel does not answer UPA_Panel_Self");
+            {
+                char* dr = slurp(AADRAW_SOURCE);
+                CHECK(dr != NULL && strstr(dr, "GetAttr(UPA_Panel_Self, o, &self) && (Object*)self == o && GetAttr(UPA_Panel_Role, o, &role)") != NULL,
+                      "ctx_bg takes a Role answer forwarded by a plain Group");
+                free(dr);
+            }
+        }
+        CHECK(strstr(ui, "sp.aspect_q8") == NULL, "mui_ui.c still sets sp.aspect_q8");
+        free(hdr);
+    }
     free(ui);
     free(cls);
     free(cm);
@@ -289,9 +340,9 @@ static void test_tabs(void) {
     CHECK(line == th.token[SEL_GUI_TOKEN_ACCENT] && line == 0x3B82F6u, "underline is ACCENT 3B82F6");
     CHECK(idle == th.token[SEL_GUI_TOKEN_TEXT_MUTED] && act == th.token[SEL_GUI_TOKEN_TEXT], "idle TEXT_MUTED, active TEXT");
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TAB, MUI_AA_NORMAL, &face, &text);
-    CHECK(text == idle && face == th.token[SEL_GUI_TOKEN_PANEL], "idle tab button: muted text on the panel");
+    CHECK(text == th.token[SEL_GUI_TOKEN_TEXT] && face == th.token[SEL_GUI_TOKEN_SURFACE_RAISED], "idle tab chip: TEXT on SURFACE_RAISED (I685w run 6)");
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TAB, MUI_AA_SELECTED, &face, &text);
-    CHECK(text == act && face == th.token[SEL_GUI_TOKEN_PANEL], "lit tab button: TEXT, face unchanged");
+    CHECK(text == th.token[SEL_GUI_TOKEN_ACCENT_TEXT] && face == th.token[SEL_GUI_TOKEN_ACCENT], "active tab chip: ACCENT face (I685w run 6)");
     CHECK(mui_aa_tabs_calls() > before, "tabs helpers did not run");
 }
 
@@ -307,11 +358,11 @@ static void test_tabs_source(void) {
     }
     CHECK(count_of(ui, "MUIC_Register") == 0 && count_of(ui, "MUIA_Register_") == 0, "stock Register left in mui_ui.c");
     CHECK(count_of(ui, "mui_aatabs_new(") == 2, "AATabs constructor calls in mui_ui.c: %d", count_of(ui, "mui_aatabs_new("));
-    CHECK(count_of(ui, "AATab_Active") >= 1 && count_of(ui, "MUIA_Group_ActivePage") >= 1, "tab strip not wired to the page group");
+    CHECK(count_of(ui, "UPA_Tabs_Active") >= 1 && count_of(ui, "MUIA_Group_ActivePage") >= 1, "tab strip not wired to the page group");
     CHECK(count_of(ui, "mui_aatabs_class_free()") == 1, "class not freed at close");
     CHECK(strstr(cls, "mui_aa_tabs_line(") != NULL && strstr(cls, "mui_aa_tabs_rgb(") != NULL && strstr(cls, "mui_aa_tabs_key(") != NULL && strstr(cls, "mui_aa_tabs_click(") != NULL,
           "class does not run the shared tab helpers");
-    CHECK(strstr(cls, "MUI_AA_ROLE_TAB") != NULL, "tabs are not TAB role buttons");
+    CHECK(strstr(cls, "UPV_Button_Role_Tab") != NULL, "tabs are not TAB role buttons");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
     CHECK(strstr(cm, "mui_aatabs_class.c") != NULL, "class not in the build");
     free(ui);
@@ -354,7 +405,7 @@ static void test_balance_source(void) {
         return;
     }
     CHECK(count_of(ui, "BalanceObject") == 0 && count_of(ui, "MUIC_Balance") == 0, "stock Balance left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aabalance_new()") == 2, "AABalance constructor calls in mui_ui.c: %d", count_of(ui, "mui_aabalance_new()"));
+    CHECK(count_of(ui, "UP_NewBalance(NULL)") == 2, "AABalance constructor calls in mui_ui.c: %d", count_of(ui, "UP_NewBalance(NULL)"));
     CHECK(count_of(ui, "mui_aabalance_class_free()") == 1, "class not freed at close");
     CHECK(strstr(cls, "mui_aa_balance_width(") != NULL && strstr(cls, "mui_aa_balance_line(") != NULL && strstr(cls, "mui_aa_balance_rgb(") != NULL,
           "class does not run the shared balance helpers");
@@ -373,7 +424,7 @@ static void test_balance_source(void) {
 static void test_slider_geom(void) {
     static const int fonts[4] = {0, 13, 15, 17};
     static const int heights[4] = {12, 16, 18, 20};
-    static const int tracks[4] = {2, 4, 4, 4};
+    static const int tracks[4] = {2, 6, 6, 6}; /* I685w run 6: 6 px track as the Mac */
     txt_theme th;
     uint32_t track, fill;
     uint32_t before = mui_aa_slider_calls();
@@ -383,7 +434,7 @@ static void test_slider_geom(void) {
     txt_theme_default(&th);
     for (i = 0; i < 4; i++) {
         mui_aa_slider_t m;
-        mui_aa_slider_metrics(fonts[i], &m);
+        mui_aa_slider_metrics(fonts[i], 256, &m);
         CHECK(m.height == heights[i] && m.track_h == tracks[i] && m.radius == m.track_h / 2 && m.min_w == 80, "tier %d metrics height %d track %d", i, m.height, m.track_h);
     }
     CHECK(mui_aa_slider_fill_w(w, 0, 0, 100) == 0 && mui_aa_slider_fill_w(w, 100, 0, 100) == w && mui_aa_slider_fill_w(w, 50, 0, 100) == 100 &&
@@ -406,7 +457,7 @@ static void test_slider_geom(void) {
     {
         mui_aa_slider_t m;
         int h = 16;
-        mui_aa_slider_metrics(13, &m);
+        mui_aa_slider_metrics(13, 256, &m);
         n = mui_aa_slider_plan(th.token, &m, MUI_AA_NORMAL, w, h, 50, 0, 100, ops);
         CHECK(n == 3 && ops[0].kind == MUI_AA_SLIDER_ERASE && ops[0].x == 0 && ops[0].y == 0 && ops[0].w == w && ops[0].h == h,
               "update plan starts with the full-box erase (n %d)", n);
@@ -437,7 +488,7 @@ static void test_btn_align(void) {
         /* Johan rig 2 2026-10-29: the "> PROGDIR:" breadcrumb text ran past its button. The width was measured once at setup from the
          * blank first caption; a fit button (NULL widest) now re-measures at every layout from the caption it was last given. */
         CHECK(strstr(cls, "aabtn_measure(obj, d);") != NULL && count_of(cls, "aa_text_width(&d->aa, obj, d->widest)") == 1, "width not measured at layout");
-        CHECK(strstr(cls, "d->fit = sp->widest == NULL;") != NULL && strstr(cls, "if (d->fit) {\n        strncpy(d->widest, caption") != NULL,
+        CHECK(strstr(cls, "d->fit = widest == NULL;") != NULL && strstr(cls, "if (d->fit) {\n        strncpy(d->widest, caption") != NULL,
               "fit button does not follow its caption");
         CHECK(strstr(ui, "mui_make_button_i(label, NULL, icon_key, NULL, id, weight, 0, MUI_AA_ROLE_GHOST)") != NULL &&
                   strstr(ui, "s->crumb_btn[k] = mui_make_button_w(") != NULL,
@@ -483,7 +534,7 @@ static void test_slider_partial(void) {
     char* cls = slurp(AASLIDER_SOURCE);
     CHECK(cls != NULL, "cannot read the slider class");
     txt_theme_default(&th);
-    mui_aa_slider_metrics(13, &m);
+    mui_aa_slider_metrics(13, 256, &m);
     for (tick = 0; tick < 200; tick++) {
         long v = tick / 2; /* two ticks per value step: every second tick repeats the value */
         int fw = mui_aa_slider_fill_w(w, v, 0, 100);
@@ -529,7 +580,7 @@ static void test_slider_source(void) {
     CHECK(count_of(ui, "mui_make_slider(") == 4, "slider constructor sites: %d (definition + 3)", count_of(ui, "mui_make_slider("));
     CHECK(count_of(ui, "mui_aaslider_new(") == 1, "one AASlider constructor call: %d", count_of(ui, "mui_aaslider_new("));
     CHECK(count_of(ui, "mui_aaslider_class_free(") == 1, "class freed in mui_close");
-    CHECK(strstr(cls, "mui_aa_slider_plan(") != NULL && strstr(cls, "MUIM_DrawBackground") != NULL && strstr(cls, "mui_aa_slider_value_at(") != NULL &&
+    CHECK(strstr(cls, "mui_aa_slider_plan(") != NULL && strstr(cls, "aa_erase(") != NULL && strstr(cls, "mui_aa_slider_value_at(") != NULL &&
               strstr(cls, "mui_aa_progress_fill_w(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
           "class does not draw through the shared slider helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
@@ -563,7 +614,7 @@ static void test_cycle_step(void) {
     for (i = 0; i < 4; i++) {
         mui_aa_cycle_t m;
         mui_aa_metrics_t b;
-        mui_aa_cycle_metrics(fonts[i], &m);
+        mui_aa_cycle_metrics(fonts[i], 256, &m);
         mui_aa_metrics(fonts[i], &b);
         CHECK(m.height == b.height && m.pad_x == b.pad_x && m.radius == b.radius, "tier %d shares the button metrics", i);
         CHECK(m.chev_w == (i == 0 ? 6 : 8) && m.chev_h == m.chev_w / 2 && m.gap == (i == 0 ? 6 : 8), "tier %d chevron %dx%d gap %d", i, m.chev_w, m.chev_h, m.gap);
@@ -595,7 +646,7 @@ static void test_cycle_source(void) {
         return;
     }
     CHECK(count_of(ui, "MUIC_Cycle") == 0 && count_of(ui, "MUIA_Cycle_") == 0, "stock cycle left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_cycle(") == 6, "cycle constructor sites: %d (definition + 4 + the Visualizer page picker, I735)", count_of(ui, "mui_make_cycle("));
+    CHECK(count_of(ui, "mui_make_cycle(") == 8, "cycle constructor sites: %d (definition + 4 + the Visualizer page picker, I735; + the library mode cycle cyc_libmode, I1175 2cab9cf1; + the Queue scope cycle cyc_scope, I1176)", count_of(ui, "mui_make_cycle("));
     CHECK(count_of(ui, "mui_aacycle_new(") == 1, "one AACycle constructor call: %d", count_of(ui, "mui_aacycle_new("));
     CHECK(count_of(ui, "mui_aacycle_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_cycle_rgb(") != NULL && strstr(cls, "mui_aa_cycle_step(") != NULL && strstr(cls, "mui_aa_cycle_chevron_row(") != NULL &&
@@ -627,14 +678,14 @@ static void test_i667n(void) {
     if (bal != NULL) {
         const char* draw = strstr(bal, "static ULONG aabal_draw(");
         const char* sup = draw != NULL ? strstr(draw, "DoSuperMethodA(cl, obj, (Msg)msg);") : NULL;
-        const char* fill = draw != NULL ? strstr(draw, "RectFill(") : NULL;
+        const char* fill = draw != NULL ? strstr(draw, "aa_rect(") : NULL;
         CHECK(sup != NULL && fill != NULL && sup < fill, "balance draws before the super draw: no clip region, nothing paints");
     }
     if (fld != NULL) {
-        const char* mk = strstr(fld, "Object* mui_aafield_new(");
+        const char* mk = strstr(fld, "Object* UP_NewField(");
         CHECK(mk != NULL, "AAField constructor present");
     }
-    mui_aa_slider_metrics(13, &m);
+    mui_aa_slider_metrics(13, 256, &m);
     n = mui_aa_slider_plan(th.token, &m, MUI_AA_NORMAL, 83, 16, 50, 0, 100, ops);
     for (i = 0; i < n; i++) {
         if (ops[i].kind == MUI_AA_SLIDER_TRACK) {
@@ -689,6 +740,18 @@ static void test_i667n_root(void) {
         const char* use = ob != NULL ? strstr(ob, "mui_theme_pen_precisions(") : NULL;
         CHECK(use != NULL && end != NULL && use < end && strstr(drw, "PRECISION_GUI") == NULL, "aa_pen obtains through the precision plan, no fixed GUI precision");
     }
+    if (drw != NULL) { /* I685w: every fill goes through the paint seam; the classes hold no pen of their own and call no RectFill */
+        char* bal = slurp(AABALANCE_SOURCE);
+        char* tab = slurp(AATABS_SOURCE);
+        CHECK(strstr(drw, "mui_aa_paint_rect(") != NULL && strstr(drw, "mui_aa_paint_round_fill(") != NULL && strstr(drw, "p96_rect_fill(") != NULL &&
+                  strstr(drw, "cgx_fill_pixel_array(") != NULL,
+              "draw helpers bind the paint seam to p96RectFill and FillPixelArray");
+        CHECK(bal != NULL && tab != NULL && strstr(bal, "SetAPen") == NULL && strstr(bal, "RectFill(") == NULL && strstr(tab, "SetAPen") == NULL && strstr(tab, "RectFill(") == NULL &&
+                  strstr(bal, "aa_pen(") == NULL && strstr(tab, "aa_pen(") == NULL,
+              "balance and tabs paint through aa_rect only");
+        free(bal);
+        free(tab);
+    }
     free(fld);
     free(drw);
 }
@@ -702,8 +765,8 @@ static void test_field_plan(void) {
     mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
     uint32_t before = mui_aa_field_calls();
     txt_theme_default(&th);
-    mui_aa_field_metrics(13, &m);
-    mui_aa_field_metrics(0, &s);
+    mui_aa_field_metrics(13, 256, &m);
+    mui_aa_field_metrics(0, 256, &s);
     mui_aa_metrics(13, &b);
     CHECK(m.height == b.height && m.radius == 6 && m.pad_x == 8 && m.outline == 1, "tier M metrics: h %d r %d pad %d", m.height, m.radius, m.pad_x);
     CHECK(s.radius == 4 && s.pad_x == 8 && s.pad_x > s.radius, "tier S radius 4, pad 8 clears it");
@@ -837,9 +900,9 @@ static void test_scroller_geom(void) {
     int ty, th_h;
     uint32_t track, thumb, calls0 = mui_aa_scroller_calls();
     txt_theme_default(&th);
-    mui_aa_scroller_metrics(13, &m);
-    mui_aa_scroller_metrics(0, &ms);
-    CHECK(m.width == 10 && ms.width == 6 && m.radius == 4 && ms.radius == 2 && m.min_thumb == 20, "metrics %d/%d %d/%d %d", m.width, ms.width, m.radius, ms.radius, m.min_thumb);
+    mui_aa_scroller_metrics(13, 256, &m);
+    mui_aa_scroller_metrics(0, 256, &ms);
+    CHECK(m.width == 10 && ms.width == 6 && m.radius == 4 && ms.radius == 2 && m.min_thumb == 20 && m.min_h == 80, "metrics %d/%d %d/%d %d", m.width, ms.width, m.radius, ms.radius, m.min_thumb);
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 20, 20, &ty, &th_h) == 0 && th_h == 0, "no thumb when everything fits");
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 10, 100, &ty, &th_h) == 1 && ty == 0 && th_h == 20, "top thumb %d %d (min 20)", ty, th_h);
     CHECK(mui_aa_scroller_geom(&m, 200, 90, 10, 100, &ty, &th_h) == 1 && ty + th_h == 200, "bottom thumb ends at the track end: %d+%d", ty, th_h);
@@ -847,9 +910,9 @@ static void test_scroller_geom(void) {
     CHECK(mui_aa_scroller_geom(&m, 200, 0, 50, 100, &ty, &th_h) == 1 && th_h == 100, "half visible gives half track: %d", th_h);
     CHECK(mui_aa_scroller_first_at(&m, 200, 10, -50, 10, 100) == 0 && mui_aa_scroller_first_at(&m, 200, 10, 900, 10, 100) == 90, "drag ends clamp");
     mui_aa_scroller_rgb(th.token, MUI_AA_NORMAL, &track, &thumb);
-    CHECK(track == th.token[SEL_GUI_TOKEN_SURFACE] && thumb == th.token[SEL_GUI_TOKEN_TRACK] && thumb == 0x3A3A44u, "normal colours %06X %06X", (unsigned)track, (unsigned)thumb);
+    CHECK(track == th.token[SEL_GUI_TOKEN_SURFACE] && thumb == th.token[SEL_GUI_TOKEN_TEXT_DISABLED] && thumb == 0x62626Eu, "normal colours %06X %06X", (unsigned)track, (unsigned)thumb);
     mui_aa_scroller_rgb(th.token, MUI_AA_HOVER, &track, &thumb);
-    CHECK(thumb == th.token[SEL_GUI_TOKEN_SURFACE_PRESSED] && thumb == 0x3E3E4Au, "hover thumb %06X", (unsigned)thumb);
+    CHECK(thumb == th.token[SEL_GUI_TOKEN_TEXT_MUTED] && thumb == 0xA0A0ACu, "hover thumb %06X", (unsigned)thumb);
     CHECK(mui_aa_scroller_calls() > calls0, "sentinel did not move");
 }
 
@@ -861,12 +924,12 @@ static void test_list_rows(void) {
     int w[3] = {120, 80, 40}, k;
     long a;
     txt_theme_default(&th);
-    mui_aa_list_metrics(13, &m);
-    mui_aa_list_metrics(0, &ms);
+    mui_aa_list_metrics(13, 256, &m);
+    mui_aa_list_metrics(0, 256, &ms);
     CHECK(m.row_h == 21 && ms.row_h == 10 && m.pad_x == 10 && m.gap == 8 && m.pad_y >= 2, "metrics %d %d %d %d %d", m.row_h, ms.row_h, m.pad_x, m.gap, m.pad_y);
-    mui_aa_list_metrics(15, &ms);
+    mui_aa_list_metrics(15, 256, &ms);
     CHECK(ms.row_h == 23, "L row %d", ms.row_h);
-    mui_aa_list_metrics(17, &ms);
+    mui_aa_list_metrics(17, 256, &ms);
     CHECK(ms.row_h == 25, "XL row %d", ms.row_h);
     /* Johan: text sat 5 px from the frame and from the dividers. First column at least the left pad, 8 px each side of a divider. */
     CHECK(mui_aa_list_col_x(&m, 0, w) >= 10, "first column text x %d", mui_aa_list_col_x(&m, 0, w));
@@ -901,7 +964,7 @@ static void test_list_rows(void) {
         for (bp = 0; bp < 4; bp++) {
             const char* p;
             int n = 0;
-            mui_columns_format(bp, f, sizeof f);
+            mui_columns_format(bp, f, sizeof f, 256);
             for (p = f; (p = strstr(p, "DELTA=16 BAR")) != NULL; p++) {
                 n++;
             }
@@ -922,7 +985,7 @@ static void test_list_cols(void) {
     char f[160], line[16];
     uint32_t bp, n;
     txt_theme_default(&th);
-    mui_aa_list_metrics(13, &m);
+    mui_aa_list_metrics(13, 256, &m);
     mui_aa_list_col_widths(&m, 600, 3, weight, fixed, out);
     sum = out[0] + out[1] + out[2];
     /* I1079b: the shared splitter hands the integer remainder to the last weighted column, so the row is filled to the pixel. */
@@ -937,7 +1000,7 @@ static void test_list_cols(void) {
     CHECK(mui_aa_list_calls() > calls0, "sentinel did not move");
     for (bp = 0; bp < 4; bp++) {
         n = mui_columns_weights(bp, w);
-        mui_columns_format(bp, f, sizeof f);
+        mui_columns_format(bp, f, sizeof f, 256);
         CHECK(n == mui_columns_for(bp, (uint8_t[MUI_COL_COUNT]){0}) && n >= 1 && n <= MUI_COL_COUNT, "bp %u columns %u", (unsigned)bp, (unsigned)n);
         for (k = 0; k < (int)n; k++) {
             char want[16];
@@ -968,17 +1031,17 @@ static void test_list_source(void) {
     if (ui == NULL || cy == NULL || ls == NULL || sc == NULL || cm == NULL) {
         return;
     }
-    CHECK(count_of(cy, "MUIC_List") == 0 && count_of(cy, "mui_aalist_new(") == 1, "popup must be an AAList: stock %d, aalist %d", count_of(cy, "MUIC_List"), count_of(cy, "mui_aalist_new("));
-    CHECK(count_of(cy, "AAL_Picked") >= 1, "popup listens to AAL_Picked");
+    CHECK(count_of(cy, "MUIC_List") == 0 && count_of(cy, "UP_NewList(") == 1, "popup must be an AAList: stock %d, aalist %d", count_of(cy, "MUIC_List"), count_of(cy, "UP_NewList("));
+    CHECK(count_of(cy, "UPA_List_Picked") >= 1, "popup listens to UPA_List_Picked");
     CHECK(count_of(ui, "mui_aalist_class_free(") == 1, "AAList class freed once in mui_close");
     /* I667i2 (design 3.6): main, info, tracks, help and lyrics lists are AALists; no stock list, floattext or listview is left. */
     CHECK(count_of(ui, "MUIC_List") == 0 && count_of(ui, "MUIC_Floattext") == 0 && count_of(ui, "MUIC_Listview") == 0, "stock list classes left in mui_ui.c: %d %d %d",
           count_of(ui, "MUIC_List"), count_of(ui, "MUIC_Floattext"), count_of(ui, "MUIC_Listview"));
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aalist_new(") == 5 && count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
+    CHECK(count_of(ui, "mui_aalist_new(") == 6 && /* I1175 2cab9cf1: + the Sources page list src_list, the 6th */  count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
     CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 3 && count_of(ui, "sp.no_select = 1;") == 1,          "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 8, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
-          count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));
+    CHECK(count_of(ui, "UPA_List_Columns") == 1 && count_of(ui, "UPA_List_Playing") == 1 && count_of(ui, "UPA_List_Picked") == 10, /* I1175 2cab9cf1: + src_list notify and read-back */ "columns %d, playing %d, picked %d", count_of(ui, "UPA_List_Columns"),
+          count_of(ui, "UPA_List_Playing"), count_of(ui, "UPA_List_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");
     CHECK(strstr(ui, "aa_live(") == NULL || strstr(ui, "_win(obj) != NULL") == NULL, "aa_live, not _win, guards a live object");
@@ -991,7 +1054,7 @@ static void test_list_source(void) {
     CHECK(strstr(ls, "mui_aa_list_row_rgb(") != NULL && strstr(ls, "mui_aa_list_move(") != NULL && strstr(ls, "mui_aa_list_col_x(") != NULL && strstr(ls, "aa_round_fill(") != NULL,
           "list does not draw through the shared helpers");
     CHECK(strstr(sc, "mui_aa_scroller_geom(") != NULL && strstr(sc, "mui_aa_scroller_rgb(") != NULL && strstr(sc, "aa_round_fill(") != NULL, "scroller does not draw through the shared helpers");
-    CHECK(strstr(ls, "mui_aascroller_new(") != NULL && strstr(ls, "mui_aascroller_class_free(") != NULL, "list builds and frees its scroller");
+    CHECK(strstr(ls, "UP_NewScroller(") != NULL && strstr(ls, "mui_aascroller_class_free(") != NULL, "list builds and frees its scroller");
     CHECK(strstr(ls, "ObtainBestPenA") == NULL && strstr(ls, "0x1") == NULL && strstr(sc, "ObtainBestPenA") == NULL && strstr(sc, "0x3") == NULL, "no pen code or colour literal in the classes");
     CHECK(strstr(cm, "mui_aalist_class.c") != NULL && strstr(cm, "mui_aascroller_class.c") != NULL, "classes not in the build");
     free(ui);
@@ -1031,25 +1094,63 @@ static void test_tight_pad(void) {
     uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
     int px, py;
     tok[SEL_GUI_TOKEN_SPACING] = 8;
-    mui_aa_set_screen_aspect(256);
-    mui_aa_list_metrics(0, &l);
-    mui_aa_slider_metrics(0, &s);
-    mui_aa_scroller_metrics(0, &sc);
+    mui_aa_list_metrics(0, 256, &l);
+    mui_aa_slider_metrics(0, 256, &s);
+    mui_aa_scroller_metrics(0, 256, &sc);
     CHECK(l.pad_x == 6 && l.pad_y == 2 && l.gap == 6, "square list pad %d,%d gap %d", l.pad_x, l.pad_y, l.gap);
     CHECK(s.height == 12 && s.track_h == 2, "square slider height %d track %d", s.height, s.track_h);
     CHECK(sc.width == 6, "square scroller width %d", sc.width);
-    mui_aa_set_screen_aspect(512);
     mui_aa_metrics_aspect(0, 512, &b);
-    mui_aa_list_metrics(0, &l);
-    mui_aa_slider_metrics(0, &s);
-    mui_aa_scroller_metrics(0, &sc);
+    mui_aa_list_metrics(0, 512, &l);
+    mui_aa_slider_metrics(0, 512, &s);
+    mui_aa_scroller_metrics(0, 512, &sc);
     CHECK(l.pad_x == b.pad_x && l.pad_x == 4, "tight list pad_x %d (button %d)", l.pad_x, b.pad_x);
     CHECK(l.pad_y == 1 && l.gap == b.icon_gap && l.gap == 4, "tight list pad_y %d gap %d", l.pad_y, l.gap);
     CHECK(s.height == 6 && s.track_h == 1, "tight slider height %d track %d", s.height, s.track_h);
     CHECK(sc.width == 4, "tight scroller width %d", sc.width);
+    {
+        /* I685e1: the aspect is an argument, not a global: one process answers 256 and 512 side by side, for all five metrics and the icons. */
+        mui_aa_cycle_t c1, c2;
+        mui_aa_field_t f1, f2;
+        mui_aa_list_t l1, l2;
+        mui_aa_slider_t s1, s2;
+        mui_aa_scroller_t k1, k2;
+        mui_aa_cycle_metrics(0, 256, &c1);
+        mui_aa_cycle_metrics(0, 512, &c2);
+        mui_aa_field_metrics(0, 256, &f1);
+        mui_aa_field_metrics(0, 512, &f2);
+        mui_aa_list_metrics(0, 256, &l1);
+        mui_aa_list_metrics(0, 512, &l2);
+        mui_aa_slider_metrics(0, 256, &s1);
+        mui_aa_slider_metrics(0, 512, &s2);
+        mui_aa_scroller_metrics(0, 256, &k1);
+        mui_aa_scroller_metrics(0, 512, &k2);
+        CHECK(c1.height == 14 && c1.pad_x == 6 && c2.height == 12 && c2.pad_x == 4, "cycle 256: %d,%d 512: %d,%d", c1.height, c1.pad_x, c2.height, c2.pad_x);
+        CHECK(f1.height == 14 && f2.height == 12 && f1.pad_x == 8 && f2.pad_x == 8 && f1.pad_y == 2 && f2.pad_y == 2, "field 256: %d 512: %d", f1.height, f2.height);
+        CHECK(l1.pad_x == 6 && l1.pad_y == 2 && l1.gap == 6 && l2.pad_x == 4 && l2.pad_y == 1 && l2.gap == 4, "list 256/512 side by side");
+        CHECK(s1.height == 12 && s1.track_h == 2 && s2.height == 6 && s2.track_h == 1, "slider 256/512 side by side");
+        CHECK(k1.width == 6 && k2.width == 4, "scroller 256: %d 512: %d", k1.width, k2.width);
+        CHECK(mui_model_icon_px(256) == 18 && mui_model_icon_h(256) == 18 && mui_model_icon_px(512) == 16 && mui_model_icon_h(512) == 8, "icon 256: %dx%d 512: %dx%d",
+              mui_model_icon_px(256), mui_model_icon_h(256), mui_model_icon_px(512), mui_model_icon_h(512));
+    }
     mui_aa_panel_pad(tok, 512, &px, &py);
-    CHECK(mui_aa_balance_width(tok, 0) == px, "balance width %d equals tight panel pad_x %d", mui_aa_balance_width(tok, 0), px);
-    mui_aa_set_screen_aspect(256);
+    CHECK(mui_aa_balance_width(tok, 0) == mui_aa_panel_spacing(tok) / 2, "balance width %d is half the SPACING token", mui_aa_balance_width(tok, 0));
+    /* I685w run 5: card pad is 3 SPACING units (Mac 24 px over 8); tall pixels pack across by half. */
+    CHECK(px == 12 && py == mui_aa_rows(24, 512), "tight panel pad %d,%d", px, py);
+    mui_aa_panel_pad(tok, 256, &px, &py);
+    CHECK(px == 24 && py == 24, "square panel pad %d,%d is the Mac 24 px", px, py);
+    mui_aa_panel_role_pad(MUI_AA_PANEL_SURFACE, &px, &py);
+    CHECK(px == 12 && py == 12, "nested Surface card pad %d,%d is the Mac 12 px", px, py);
+    px = py = 24;
+    mui_aa_panel_role_pad(MUI_AA_PANEL_RAISED, &px, &py);
+    CHECK(px == 24 && py == 24, "Raised card pad %d,%d changed", px, py);
+    /* I685w run 6: group gaps 8 inside a card, 16 between cards (Mac 8/16 over SPACING 8); tall pixels pack across by half. */
+    mui_aa_panel_gap(tok, 256, MUI_AA_PANEL_RAISED, &px, &py);
+    CHECK(px == 8 && py == 8, "card gap %d,%d", px, py);
+    mui_aa_panel_gap(tok, 256, MUI_AA_PANEL_PANEL, &px, &py);
+    CHECK(px == 16 && py == 16, "page gap %d,%d", px, py);
+    mui_aa_panel_gap(tok, 512, MUI_AA_PANEL_PANEL, &px, &py);
+    CHECK(px == 8 && py == mui_aa_rows(16, 512), "tight page gap %d,%d", px, py);
 }
 
 /* I972: on RTG 800x600 the text stayed 8 px: the own screen kept the Workbench font, and MUI's stock objects and the PLAIN

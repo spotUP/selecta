@@ -32,9 +32,20 @@ uint32_t mui_route_lit_calls(void);
 
 /* The page the history is on. */
 const sel_route_entry* mui_route_cur(const mui_route* r);
-int mui_route_on_collection(const mui_route* r); /* an album, artist or composer page */
+int mui_route_on_collection(const mui_route* r); /* an album, artist, composer or playlist page */
 int mui_route_on_shelf(const mui_route* r);      /* the Show all page of a Home shelf */
 /* The header line of the open page: the collection's or shelf's name ("Shelf 2" when unnamed). */
 void mui_route_title(const mui_route* r, char* out, size_t cap);
+
+/* I966: a set() of an attribute whose value did not change still runs MUI's notify and relayout path, and mui_refresh runs on every
+ * NewInput. mui_flag remembers the last value written (zero-initialised = unknown); mui_flag_commit returns 1 only when the value
+ * differs, so the caller sets the attribute only then. mui_flag_writes()/mui_flag_skips() are the sentinels. */
+typedef struct mui_flag {
+    uint8_t known;
+    uint8_t value;
+} mui_flag;
+int mui_flag_commit(mui_flag* f, int value);
+uint32_t mui_flag_writes(void);
+uint32_t mui_flag_skips(void);
 
 #endif

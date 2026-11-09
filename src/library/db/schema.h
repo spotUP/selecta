@@ -14,4 +14,7 @@ extern const char SEL_SQL_ALBUM_DROP[];
  * host->log (stderr when host or its log is NULL) with the failing version and sqlite3_errmsg (I787a). */
 int sel_schema_migrate(sqlite3* db, const sel_host* host);
 
+/* The migration chain alone, also on a user_version 0 database (reference for the schema_final invariant test). */
+int sel_schema_migrate_chain(sqlite3* db, const sel_host* host);
+
 #endif

@@ -2,6 +2,9 @@
  * from the shared action table (src/uimodel/actions.c) the desktop UI reads; the models are sel_uim_*. */
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/keybind.h>
+#include <selecta/uimodel/keys.h>
+#include <selecta/uimodel/pages.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -17,6 +20,97 @@ uint32_t mui_action_fire(const char* id, mui_send_fn send, void* ctx) {
     g_fires++;
     return line != NULL && send != NULL && send(ctx, line) != 0;
 }
+
+/* I1171: the window key table, built once from the shared tables. */
+#define KEYROW_MAX 64u
+static mui_key_row g_keyrows[KEYROW_MAX];
+static uint32_t g_keyrow_n;
+static int g_keyrows_built;
+static uint32_t g_key_hits, g_focus_routes;
+
+static void keyrows_build(void) {
+    mui_key_bind binds[96];
+    txt_bindings def;
+    uint32_t i, n = mui_keys_build(binds, 96u);
+    g_keyrow_n = 0;
+    g_keyrows_built = 1;
+    for (i = 0; i < n && i < 96u && g_keyrow_n < KEYROW_MAX; i++) {
+        if (!binds[i].shortcut) {
+            mui_key_row* r = &g_keyrows[g_keyrow_n++];
+            r->kind = MUI_KEYROW_ACTION;
+            r->id = binds[i].id;
+            r->code = binds[i].code;
+            r->mods = binds[i].mods;
+            r->arg = 0;
+        }
+    }
+    txt_bindings_default(&def);
+    for (i = 0; i < (uint32_t)SEL_UIM_PAGE_KEY_COUNT && g_keyrow_n < KEYROW_MAX; i++) {
+        const char* act = NULL;
+        uint32_t page = 0, code = 0, mods = 0, d, pane;
+        char key[24];
+        mui_key_row* r = &g_keyrows[g_keyrow_n];
+        if (!sel_uim_page_key_at(i, &act, &page) || txt_bindings_key_for(&def, act, key, sizeof key) == NULL || !txt_key_parse(key, &code, &mods)) {
+            continue;
+        }
+        pane = mui_pane_of_action(act);
+        r->id = act;
+        r->code = code;
+        r->mods = mods;
+        r->arg = 0;
+        if (pane != MUI_PANE_COUNT) {
+            r->kind = MUI_KEYROW_PANE;
+            r->arg = pane;
+            g_keyrow_n++;
+            continue;
+        }
+        for (d = 0; d < (uint32_t)SEL_UIM_DOOR_COUNT; d++) {
+            if (sel_uim_page_by_name(sel_uim_door_at(d)->page) == page) {
+                r->kind = MUI_KEYROW_DOOR;
+                r->arg = d;
+                g_keyrow_n++;
+                break;
+            }
+        }
+    }
+}
+
+uint32_t mui_key_row_count(void) {
+    if (!g_keyrows_built) {
+        keyrows_build();
+    }
+    return g_keyrow_n;
+}
+
+const mui_key_row* mui_key_row_at(uint32_t i) { return i < mui_key_row_count() ? &g_keyrows[i] : NULL; }
+
+int32_t mui_key_find(uint32_t code, uint32_t mods, int text_active) {
+    uint32_t i, n = mui_key_row_count();
+    for (i = 0; i < n; i++) {
+        const mui_key_row* r = &g_keyrows[i];
+        if (r->code != code || r->mods != mods) {
+            continue;
+        }
+        if (text_active && (r->kind != MUI_KEYROW_ACTION || (code < 256u && mods == 0u))) {
+            continue; /* a plain key is text in a text field */
+        }
+        g_key_hits++;
+        return (int32_t)i;
+    }
+    return -1;
+}
+
+uint32_t mui_key_hits(void) { return g_key_hits; }
+
+uint32_t mui_focus_route(uint32_t code, uint32_t mods, int search_active) {
+    if (search_active && mods == 0u && code == TXT_KEY_DOWN) {
+        g_focus_routes++;
+        return MUI_FOCUS_RESULTS;
+    }
+    return MUI_FOCUS_NONE;
+}
+
+uint32_t mui_focus_routes(void) { return g_focus_routes; }
 
 static const sel_uim_action* action_by_id(const char* id) {
     uint32_t i, n = sel_uim_action_count();
@@ -91,6 +185,23 @@ uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, vo
     return sent;
 }
 
+/* I1175: the Library mode as one route entry key: the mode's lines joined with ';' (the format tile's pattern), so the page history
+ * replays them. Same shared lines as mui_libmode_fire. */
+uint32_t mui_libmode_joined(uint32_t i, uint32_t window_rows, char* out, size_t cap) {
+    char lines[SEL_UIM_LIB_LINES][SEL_UIM_LIB_LINE_MAX];
+    uint32_t k, n = sel_uim_libmode_lines(i, window_rows, lines);
+    size_t used = 0;
+    g_view_fires++;
+    out[0] = '\0';
+    for (k = 0; k < n; k++) {
+        used += (size_t)snprintf(out + used, cap - used, "%s%s", k > 0u ? ";" : "", lines[k]);
+        if (used >= cap) {
+            return k;
+        }
+    }
+    return n;
+}
+
 const char* mui_scope_label(uint32_t i) { return sel_uim_scope_name(i); }
 
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx) {
@@ -107,10 +218,9 @@ uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx) {
 #include <selecta/uimodel/viewcmds.h>
 
 /* MUI-P8-5 */
-static const char* const k_viewbtn[2] = {"New Folder", "New Playlist"};
 
 const char* mui_viewbtn_label(uint32_t i) {
-    return i < MUI_VIEWBTN_COUNT ? (i < 2u ? k_viewbtn[i] : sel_uim_flag_label(i - 2u)) : NULL;
+    return i < MUI_VIEWBTN_COUNT ? (i < 2u ? sel_uim_plbtn_label(i) : sel_uim_flag_label(i - 2u)) : NULL;
 }
 
 uint32_t mui_viewbtn_fire(uint32_t i, const char* text, uint32_t folder, mui_send_fn send, void* ctx) {
@@ -198,6 +308,39 @@ uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap) {
         len += (uint32_t)w;
     }
     return len;
+}
+
+int mui_stats_menu(mui_stats_panel* p, const char* action_id) {
+    if (action_id == NULL) {
+        return 0;
+    }
+    if (strcmp(action_id, "stats_show") == 0) {
+        p->open = 1;
+        p->more = 0;
+        return 1;
+    }
+    if (strcmp(action_id, "stats_hide") == 0) {
+        p->open = 0;
+        p->more = 0;
+        return 1;
+    }
+    return 0;
+}
+
+void mui_stats_more(mui_stats_panel* p) {
+    if (p->open) {
+        p->more = !p->more;
+    }
+}
+
+const char* mui_stats_more_label(const mui_stats_panel* p) { return p->more ? "Less" : "More"; }
+
+uint32_t mui_stats_panel_row(const mui_stats_panel* p, const char* stats, uint32_t i, const char** label, const char** value) {
+    g_stats_builds++;
+    if (!p->open || stats == NULL || i >= sel_uim_stats_shown(stats, p->more)) {
+        return 0;
+    }
+    return sel_uim_stats_row(stats, i, label, value);
 }
 
 #include <selecta/uimodel/panels.h>

@@ -96,9 +96,19 @@ uint32_t mui_tip(uint32_t kind, uint32_t index, const sel_uim_frame* f, int flag
 uint32_t mui_tip_calls(void) { return g_tip_calls; }
 
 uint32_t mui_np_toggle(mui_layout_map_t* m) {
-    mui_layout_map_panel(m, m->width, m->height, m->tier, m->detail_hidden ? 0u : 1u);
+    mui_layout_map_wide(m, m->width, m->height, m->tier, m->detail_hidden ? 0u : 1u, m->side_wide, m->mode);
     g_np_toggles++;
     return m->detail_hidden;
 }
 
 uint32_t mui_np_toggles(void) { return g_np_toggles; }
+
+static uint32_t g_side_toggles;
+
+uint32_t mui_side_wide_toggle(mui_layout_map_t* m) {
+    mui_layout_map_wide(m, m->width, m->height, m->tier, m->detail_hidden, m->side_wide ? 0u : 1u, m->mode);
+    g_side_toggles++;
+    return m->side_wide;
+}
+
+uint32_t mui_side_toggles(void) { return g_side_toggles; }

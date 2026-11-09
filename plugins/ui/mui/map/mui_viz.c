@@ -22,7 +22,7 @@ int mui_viz_bind(mui_viz* v, const sel_tag* desc) {
     return fn != 0;
 }
 
-int mui_viz_fit(mui_viz* v, uint32_t w, uint32_t h) {
+int mui_viz_fit(mui_viz* v, uint32_t w, uint32_t h, int aspect_q8) {
     uint32_t pitch;
     if (w == 0u || h == 0u) {
         return 0;
@@ -43,7 +43,7 @@ int mui_viz_fit(mui_viz* v, uint32_t w, uint32_t h) {
     v->surf.fmt = SEL_PIX_INDEX8;
     v->surf.pixels = v->pixels;
     v->surf.palette = v->palette;
-    v->surf.pix_aspect_q8 = (uint32_t)mui_aa_screen_aspect(); /* I950: the viz plugin corrects its glyphs for tall pixels */
+    v->surf.pix_aspect_q8 = (uint32_t)aspect_q8; /* I950: the viz plugin corrects its glyphs for tall pixels */
     return 1;
 }
 
@@ -154,12 +154,12 @@ int mui_vizset_tick(mui_vizset* s, const sel_viz_frame* f, const sel_uim_budget*
 }
 
 int mui_vizset_step(mui_vizset* s, mui_viz* v, const sel_viz_frame* f, const sel_uim_budget* b, uint32_t now_ms, uint32_t w,
-                    uint32_t h, uint32_t* dst) {
+                    uint32_t h, int aspect_q8, uint32_t* dst) {
     if (w == 0u || h == 0u || dst == NULL || !mui_vizset_tick(s, f, b, now_ms)) {
         return 0;
     }
     v->fn = s->fn[s->sel];
-    if (!mui_viz_fit(v, w, h)) {
+    if (!mui_viz_fit(v, w, h, aspect_q8)) {
         return 0;
     }
     (void)mui_viz_render(v, f);

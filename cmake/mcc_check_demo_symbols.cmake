@@ -1,0 +1,25 @@
+# I685k (design 2026-11-06-mui-mcc-package.md section 10 gate item 1): the symbol table of UP-Demo has no aa_ symbols and no class
+# dispatcher symbols, so the classes it opens are not linked in. Post-build step of target up_demo.
+# Run as: cmake -DNM=<m68k-amigaos-nm> -DBINARY=<UP-Demo> -DCOUNT_FILE=<out> -P mcc_check_demo_symbols.cmake
+execute_process(COMMAND "${NM}" "${BINARY}" OUTPUT_VARIABLE out RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "mcc-demo-symbols: nm failed on ${BINARY}: ${err}")
+endif()
+string(REPLACE "\n" ";" syms "${out}")
+set(total 0)
+set(hits "")
+foreach(s ${syms})
+  if("${s}" STREQUAL "")
+    continue()
+  endif()
+  math(EXPR total "${total} + 1")
+  # aa_ symbols (the Selecta_AA* code: aa_*, mui_aa_*), class descriptions, dispatcher entries, the package constructors
+  if(s MATCHES "(^|[ _.])aa_|_aa[a-z]*_(dispatch|class_desc)|(^|[ _])aa[a-z]*_(dispatch|class_desc)|[ _]UP_New[A-Z]|up_origin_route|MCC_Query")
+    list(APPEND hits "${s}")
+  endif()
+endforeach()
+file(WRITE "${COUNT_FILE}" "${total}\n")
+if(NOT "${hits}" STREQUAL "")
+  message(FATAL_ERROR "mcc-demo-symbols: ${BINARY} contains class code symbols:\n${hits}")
+endif()
+message(STATUS "mcc-demo-symbols OK: ${total} symbols, none of the class code")

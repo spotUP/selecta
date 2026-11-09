@@ -1,0 +1,14 @@
+# I1190 b: l = library tree, Enter expands the group, Down onto a song, w = song menu, Down to Play Next, Enter.
+wait 400
+l
+wait 800
+Enter
+wait 500
+Down
+wait 300
+w
+wait 300
+Down
+wait 200
+Enter
+wait 500

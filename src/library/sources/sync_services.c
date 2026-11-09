@@ -469,7 +469,8 @@ static int cat_search(const sel_host* host, const char* source_id, const char* q
                 break;
             }
             delivered++;
-            m = format + strlen(format) + 1u; /* past the duration and album fields */
+            m = format + strlen(format) + 1u; /* past the duration, album and copies fields */
+            m += strlen(m) + 1u;
             m += strlen(m) + 1u;
             m += strlen(m) + 1u;
             k += strlen(k) + 1u;

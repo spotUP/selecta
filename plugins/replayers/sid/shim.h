@@ -34,6 +34,8 @@ uint32_t sid_shim_render(sid_shim* s, int16_t* out, uint32_t frames);
 uint32_t sid_shim_cfg_applied(const sid_shim* s);
 /* The embedded OpenROMs images (LGPL-3+); sizes 8192, 8192, 4096. */
 const uint8_t* sid_shim_builtin_kernal(void);
+/* The Polly Tracker player (RSID header + 962 bytes), SID_POLLY_PLAYER_SIZE long (I710ar). */
+const uint8_t* sid_shim_polly_player(void);
 const uint8_t* sid_shim_builtin_basic(void);
 const uint8_t* sid_shim_builtin_chargen(void);
 /* SID chips in the tune (1 to 3). */
@@ -41,6 +43,9 @@ uint32_t sid_shim_chips(const sid_shim* s);
 /* Mutes (1) or unmutes (0) voice 0-2 of a chip, or voice 3 (its digi samples). The setting survives
  * a restart. */
 void sid_shim_mute(sid_shim* s, uint32_t chip, uint32_t voice, uint32_t muted);
+/* Last-written register mirror ($D400-$D418, 25 bytes per chip) of the first `chips` chips, from libsidplayfp's
+ * getSidStatus. Returns the chips filled (0 when emulation has not started). */
+uint32_t sid_shim_regs(sid_shim* s, uint8_t* regs, uint32_t chips);
 void sid_shim_close(sid_shim* s);
 
 #ifdef __cplusplus
