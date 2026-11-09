@@ -1177,6 +1177,21 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_libfilter_left_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-libfilter-left COMMAND uim_libfilter_left_test)
   set_tests_properties(uim-libfilter-left PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_libfilter_left_ok")
+  # I1222d: the shared chip wrap (sel_uim_chips_flow).
+  add_executable(uim_libfilter_flow_test uimodel/libfilter_flow_test.c)
+  target_link_libraries(uim_libfilter_flow_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-libfilter-flow COMMAND uim_libfilter_flow_test)
+  set_tests_properties(uim-libfilter-flow PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_libfilter_flow_ok")
+  # I1222e: the shared sidebar stack (brand, doors, library header, chips, tools, list).
+  add_executable(uim_sidestack_test uimodel/sidestack_test.c)
+  target_link_libraries(uim_sidestack_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-sidestack COMMAND uim_sidestack_test)
+  set_tests_properties(uim-sidestack PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_sidestack_ok")
+  # I1222f: the Now Playing panel lines (sel_uim_np_lines).
+  add_executable(uim_nppanel_test uimodel/nppanel_test.c)
+  target_link_libraries(uim_nppanel_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-nppanel COMMAND uim_nppanel_test)
+  set_tests_properties(uim-nppanel PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_nppanel_ok")
   # I1222c: the text tier's layout in cells (SEL_UIM_TIER_TEXT, no hints region).
   add_executable(uim_layout_text_test uimodel/layout_text_test.c)
   target_link_libraries(uim_layout_text_test PRIVATE selecta_uimodel selecta_core)
