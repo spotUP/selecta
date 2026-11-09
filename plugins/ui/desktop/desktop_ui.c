@@ -406,6 +406,7 @@ typedef struct desk {
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played from the source page */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
     struct { char id[64]; sel_gui_rect rect; } search_sync[16]; uint32_t search_sync_n, search_sync_clicks; /* I1053b: the Sync buttons of the Not synced sections the last frame drew */
+    uint32_t search_hidden; /* I1206: the zero-hit categories the last list frame left out (the dump's sentinel that the shared predicate ran) */
     char search_sec_head[16][72]; uint32_t search_sec_rows[16], search_sec_n; int32_t search_sec_y[16]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
@@ -7776,6 +7777,7 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "search_sync %u %s %d %d %d %d clicks=%u\n", (unsigned)si, d->search_sync[si].id, (int)d->search_sync[si].rect.x,
                          (int)d->search_sync[si].rect.y, (int)d->search_sync[si].rect.w, (int)d->search_sync[si].rect.h, (unsigned)d->search_sync_clicks);
         }
+        o = dump_put(d, o, "search_hidden %u\n", (unsigned)d->search_hidden);
         for (si = 0; si < d->search_sec_n; si++) { /* I1019e: one line per From section the list frame drew */
             o = dump_put(d, o, "search_section %u rows=%u %s\n", (unsigned)si, (unsigned)d->search_sec_rows[si], d->search_sec_head[si]);
             o = dump_put(d, o, "search_section_y %u %d\n", (unsigned)si, (int)d->search_sec_y[si]); /* I1041: heading top */
@@ -9730,7 +9732,7 @@ static int32_t search_content_h(desk* d) {
         if (r->kind == SEL_ROW_HEADING) {
             const char* t = r->text != NULL ? r->text : "";
             group = sel_uim_search_group(t);
-            show = search_group_shown(d, group);
+            show = search_group_shown(d, group) && !sel_uim_search_section_hidden(v->rows, v->row_n, k);
             if (show && heads++ > 0) {
                 h += lpx(d, SEARCH_SECTION_GAP);
             }
@@ -9788,6 +9790,7 @@ static void draw_search(desk* d) {
     sel_gui_clip_push(d->canvas, rect_of(mn.x, y, mn.w, mn.y + mn.h - y));
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
     d->search_sec_n = 0;
+    d->search_hidden = 0;
     d->search_sync_n = 0;
     if (desk_scope_online(d)) { /* I406a: an online source: its hits, not the library's groups */
         online_draw_results(d, mn, y);
@@ -9807,7 +9810,7 @@ static void draw_search(desk* d) {
             if (r->kind == SEL_ROW_HEADING) {
                 const char* t = r->text != NULL ? r->text : "", *par = strchr(t, '(');
                 group = sel_uim_search_group(t);
-                show = search_group_shown(d, group);
+                show = search_group_shown(d, group) && !sel_uim_search_section_hidden(v->rows, v->row_n, k);
                 if (group >= 1u && group <= 3u) {
                     d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
                 }
@@ -9837,19 +9840,25 @@ static void draw_search(desk* d) {
     } else if (v != NULL) { /* the engine's groups: a heading row (type and count) starts each, its entries follow */
         uint32_t group = 0, drawn_all = 0, heads = 0;
         int32_t top = y, bottom = mn.y + mn.h, rh = lpx(d, SEARCH_ROW_H);
-        int show = 0;
+        int show = 0, hid = 0;
         char src[72] = "Library"; /* I1020: the source name the rows under the current heading carry as their badge */
         y -= lpx_q16(d, d->search_q16); /* the groups scroll inside the body under the chips; rows outside it are skipped */
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
             const char* t = r->text != NULL ? r->text : "";
-            if (r->kind != SEL_ROW_HEADING && group == 4u && d->search_sec_n > 0u) {
+            if (r->kind != SEL_ROW_HEADING && group == 4u && !hid && d->search_sec_n > 0u) {
                 d->search_sec_rows[d->search_sec_n - 1u]++;
             }
             if (r->kind == SEL_ROW_HEADING) {
                 const char* par = strchr(t, '(');
                 group = sel_uim_search_group(t);
-                show = search_group_shown(d, group);
+                hid = sel_uim_search_section_hidden(v->rows, v->row_n, k);
+                if (hid) { /* I1206: a zero-hit category leaves the page, pending ones until hits arrive */
+                    d->search_hidden++;
+                    show = 0;
+                } else {
+                    show = search_group_shown(d, group);
+                }
                 if (group >= 1u && group <= 3u) {
                     d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
                 }
@@ -9867,7 +9876,7 @@ static void draw_search(desk* d) {
                 if (show && heads++ > 0u) { /* I1041: a gap above every section heading but the first */
                     y += lpx(d, SEARCH_SECTION_GAP);
                 }
-                if (group == 4u && d->search_sec_n < 16u) { /* the dump's per-section line */
+                if (group == 4u && !hid && d->search_sec_n < 16u) { /* the dump's per-section line */
                     snprintf(d->search_sec_head[d->search_sec_n], sizeof d->search_sec_head[0], "%s", t);
                     d->search_sec_y[d->search_sec_n] = y;
                     d->search_sec_rows[d->search_sec_n++] = 0;
@@ -9916,6 +9925,9 @@ static void draw_search(desk* d) {
                 drawn_all++;
                 shown += group == 1u;
             }
+        }
+        if (drawn_all == 0u && d->search_on && d->qlen > 0u) { /* I1206: every category hid; one line says why (a pending one reads Searching) */
+            draw_empty_state(d, mn, top, desk_search_out(d) ? "Searching" : "No results");
         }
         d->search_drawn = drawn_all;
     } else if (!d->search_on) { /* no query yet: a muted hint under the chips */

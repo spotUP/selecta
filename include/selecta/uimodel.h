@@ -113,6 +113,9 @@ size_t sel_uim_search_line(const char* text, char* out, size_t cap);
 size_t sel_uim_search_all_line(const char* text, char* out, size_t cap);
 /* I1019d: the kind of a search view heading row: 1 Songs, 2 Albums, 3 Artists, 4 "From <source>"; 0 for anything else. */
 uint32_t sel_uim_search_group(const char* heading);
+/* I1206: whether the search view heading row at `heading` is a zero-hit category the UIs leave out (its rows too): "Songs/Albums/Artists (0)" and a
+ * "From <source> (0)" whose only row is the keyless Searching or No results state. 0 for anything else, a failed or unsynced source included. */
+int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t heading);
 /* Song context menu (DUI-P4-16): five items on every page; item 4 is Remove from Queue on the Queue page. */
 #define SEL_UIM_SONG_MENU_ITEMS 5u
 const char* sel_uim_song_menu_label(uint32_t item, int on_queue);

@@ -2,6 +2,7 @@
 #include <selecta/uimodel.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* verb + space + the text quoted with backslash and quote escaped; 0 when it does not fit. */
@@ -45,6 +46,28 @@ uint32_t sel_uim_search_group(const char* heading) {
         return 3u;
     }
     return strncmp(heading, "From ", 5) == 0 ? 4u : 0u;
+}
+
+int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t heading) {
+    const char* t;
+    const char* par;
+    const sel_view_row* next;
+    if (rows == NULL || heading >= row_n || rows[heading].kind != SEL_ROW_HEADING || sel_uim_search_group(rows[heading].text) == 0u) {
+        return 0;
+    }
+    t = rows[heading].text;
+    par = strrchr(t, '(');
+    if (par == NULL || strtoul(par + 1, NULL, 10) != 0ul) {
+        return 0; /* a section with hits shows */
+    }
+    next = heading + 1u < row_n ? &rows[heading + 1u] : NULL;
+    if (next == NULL || next->kind == SEL_ROW_HEADING) {
+        return 1; /* 0 hits, no row under it */
+    }
+    /* 0 hits and one keyless state row: Searching (pending, shows once hits arrive), No results (done) and Not synced yet (an empty
+     * catalogue has no hits; the Sources page still offers its sync) hide. Could not reach is a failure, not a zero-hit result, so it stays. */
+    return next->key == NULL && next->text != NULL &&
+           (strcmp(next->text, "Searching") == 0 || strcmp(next->text, "No results") == 0 || strcmp(next->text, "Not synced yet") == 0);
 }
 
 const char* sel_uim_song_menu_label(uint32_t item, int on_queue) {
