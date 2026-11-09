@@ -646,7 +646,7 @@ static void test_cycle_source(void) {
         return;
     }
     CHECK(count_of(ui, "MUIC_Cycle") == 0 && count_of(ui, "MUIA_Cycle_") == 0, "stock cycle left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_cycle(") == 7, "cycle constructor sites: %d (definition + 4 + the Visualizer page picker, I735; + the library mode cycle cyc_libmode, I1175 2cab9cf1)", count_of(ui, "mui_make_cycle("));
+    CHECK(count_of(ui, "mui_make_cycle(") == 8, "cycle constructor sites: %d (definition + 4 + the Visualizer page picker, I735; + the library mode cycle cyc_libmode, I1175 2cab9cf1; + the Queue scope cycle cyc_scope, I1176)", count_of(ui, "mui_make_cycle("));
     CHECK(count_of(ui, "mui_aacycle_new(") == 1, "one AACycle constructor call: %d", count_of(ui, "mui_aacycle_new("));
     CHECK(count_of(ui, "mui_aacycle_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_cycle_rgb(") != NULL && strstr(cls, "mui_aa_cycle_step(") != NULL && strstr(cls, "mui_aa_cycle_chevron_row(") != NULL &&

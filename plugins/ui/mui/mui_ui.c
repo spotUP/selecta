@@ -280,7 +280,11 @@ typedef struct mui_state {
     Object* facet_row;              /* I795 (P5): the Search facet chips above the results */
     Object* facet_btn[SEL_UIM_SEARCH_FACETS];
     uint32_t search_facet;
-    int home_shown, browse_shown, facet_shown, modes_shown;
+    int home_shown, browse_shown, facet_shown, modes_shown, scope_shown;
+    Object* scope_row;              /* I1176: the Queue scope Cycle (Library, Album, Playlist) above the queue list */
+    Object* cyc_scope;
+    const char* scope_ent[MUI_SCOPE_COUNT + 1u];
+    uint32_t scope_seen;            /* the scope index the Cycle shows, from st->options[SEL_OPT_SCOPE] */
     mui_srcs srcs;                  /* I1175: the Sources page rows (map/mui_sources.c), filled by mui_on_event on the engine pump */
     Object* src_page;               /* I1175: the Sources page: row list, Switch and Sync */
     Object* src_list;
@@ -518,6 +522,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_LIBMODE 0x2AC0L         /* I1175: the Library mode Cycle (Composers, Tree, Columns, Files, History, Sources) */
 #define CTL_SRC_LIST 0x2AC1L        /* I1175: a row of the Sources page was picked */
 #define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
+#define CTL_SCOPE 0x2AC4L           /* I1176: the Queue scope Cycle */
 #define CTL_SRC_SYNC 0x2AC3L        /* I1175: the Sources page Sync button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
@@ -1752,6 +1757,23 @@ static Object* mui_mode_row_group(mui_state* s) {
     return s->mode_row;
 }
 
+/* I1176: the Queue scope row (desktop queue page header): sel_uim_scope_label (Scope: Library, Scope: Album, Scope: Playlist, the desktop button text) as one Cycle, shown on the queue list. */
+static Object* mui_scope_row_group(mui_state* s) {
+    uint32_t k;
+    s->scope_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+    for (k = 0; k < MUI_SCOPE_COUNT; k++) {
+        s->scope_ent[k] = sel_uim_scope_label(k);
+    }
+    s->scope_ent[MUI_SCOPE_COUNT] = NULL;
+    s->cyc_scope = mui_make_cycle(s->scope_ent, 0, CTL_SCOPE);
+    if (s->scope_row == NULL || s->cyc_scope == NULL) {
+        return NULL;
+    }
+    DoMethod(s->scope_row, OM_ADDMEMBER, s->cyc_scope);
+    DoMethod(s->scope_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return s->scope_row;
+}
+
 /* I795 (P5): the Search facet chips (sel_uim_search_facets: All, Songs, Albums, Artists), shown while the list's source is Search. */
 static Object* mui_facet_row_group(mui_state* s) {
     uint32_t k;
@@ -1839,13 +1861,14 @@ static Object* mui_main_group(mui_state* s) {
     s->home_page = mui_home_page_group(s);
     s->browse_page = mui_browse_page_group(s);
     s->src_page = mui_sources_page_group(s);
-    if (s->home_page == NULL || s->browse_page == NULL || s->src_page == NULL || mui_facet_row_group(s) == NULL || mui_mode_row_group(s) == NULL) {
+    if (s->home_page == NULL || s->browse_page == NULL || s->src_page == NULL || mui_facet_row_group(s) == NULL || mui_scope_row_group(s) == NULL || mui_mode_row_group(s) == NULL) {
         return NULL;
     }
     DoMethod(g, OM_ADDMEMBER, s->home_page);
     DoMethod(g, OM_ADDMEMBER, s->browse_page);
     DoMethod(g, OM_ADDMEMBER, s->src_page);
     DoMethod(g, OM_ADDMEMBER, s->mode_row);
+    DoMethod(g, OM_ADDMEMBER, s->scope_row);
     DoMethod(g, OM_ADDMEMBER, s->facet_row);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
@@ -2321,7 +2344,8 @@ static void mui_browse_fill(mui_state* s, const sel_state* st) {
 static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_entry* cur, int col) {
     const sel_view_state* v = st->view;
     char key[128];
-    int home = 0, browse = 0, facet = 0, srcp = 0, modes = 0;
+    int home = 0, browse = 0, facet = 0, srcp = 0, modes = 0, scope = 0;
+    uint32_t scope_idx = sel_uim_scope_index(st->options[SEL_OPT_SCOPE]);
     if (v != NULL && v->source == SEL_VIEW_HOME && (cur == NULL || cur->page == (uint32_t)SEL_ROUTE_PAGE_HOME || cur->page == (uint32_t)SEL_ROUTE_PAGE_SHELF)) {
         home = 1;
     }
@@ -2336,6 +2360,11 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
     if (v != NULL && v->source == SEL_VIEW_SEARCH && !col) {
         facet = 1;
     }
+    scope = v != NULL && v->source == SEL_VIEW_QUEUE && !col && !home && !browse && !srcp; /* I1176 */
+    if (scope && scope_idx != s->scope_seen) {
+        s->scope_seen = scope_idx; /* the engine option is the truth; the Cycle follows it */
+        set(s->cyc_scope, UPA_Cycle_Active, (ULONG)scope_idx);
+    }
     if (home) {
         mui_home_fill(s, v, cur);
     }
@@ -2346,7 +2375,7 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
         s->src_gen_seen = s->srcs.gen;
         SetAttrs(s->src_list, UPA_List_Count, (ULONG)s->srcs.n, TAG_DONE);
     }
-    if (col != s->col_shown || home != s->home_shown || browse != s->browse_shown || facet != s->facet_shown || srcp != s->src_shown || modes != s->modes_shown) {
+    if (col != s->col_shown || home != s->home_shown || browse != s->browse_shown || facet != s->facet_shown || srcp != s->src_shown || modes != s->modes_shown || scope != s->scope_shown) {
         ULONG parent = 0;
         uint32_t k;
         s->col_shown = col;
@@ -2355,6 +2384,7 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
         s->facet_shown = facet;
         s->src_shown = srcp;
         s->modes_shown = modes;
+        s->scope_shown = scope;
         GetAttr(MUIA_Parent, s->col_page, &parent);
         if (parent != 0) {
             DoMethod((Object*)parent, MUIM_Group_InitChange);
@@ -2365,6 +2395,7 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
         set(s->facet_row, MUIA_ShowMe, facet ? TRUE : FALSE);
         set(s->src_page, MUIA_ShowMe, srcp ? TRUE : FALSE);
         set(s->mode_row, MUIA_ShowMe, modes ? TRUE : FALSE);
+        set(s->scope_row, MUIA_ShowMe, scope ? TRUE : FALSE);
         set(s->listview, MUIA_ShowMe, col || home || browse || srcp ? FALSE : TRUE);
         for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
             mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
@@ -3308,6 +3339,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_libmode_joined((uint32_t)act, 12u, joined, sizeof joined) > 0u) {
             mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 4u, joined, mui_route_send, s);
         }
+    } else if (id == CTL_SCOPE) { /* I1176: SCOPE <name> then re-read the queue window (mui_scope_fire, the shared scope line) */
+        ULONG act = 0;
+        GetAttr(UPA_Cycle_Active, s->cyc_scope, &act);
+        s->scope_seen = (uint32_t)act;
+        (void)mui_scope_fire((uint32_t)act, mui_p8_send, s);
     } else if (id == CTL_SRC_LIST) {
         long picked = -1;
         GetAttr(UPA_List_Picked, s->src_list, (ULONG*)&picked);
