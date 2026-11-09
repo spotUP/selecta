@@ -1,9 +1,9 @@
 /* bbmp Ad Lib helper formats (row I710as): a RENDER-kind adapter over bbmp's csrc/adlib engines (third_party/bbmp_adlib, GPL-3.0-or-later, clean room) that play
  * Ad Lib songs AdPlug does not: Pixel Painters (.fmf, .ftf), Sound Images Generation 2 (.sig), Lemmings' driver (.lem), First Samurai (.mus), Shadowlands (.cal),
- * Vibrants (.vib), Sagitta FM Tracker (.fmt). The engines drive an OPL chip; shim.cpp runs them on AdPlug's Nuked OPL3 (the adplug_engine target) and keeps the PCM. The extension picks
+ * Vibrants (.vib), Sagitta FM Tracker (.fmt), EdLib Packed (.edl, unpacked with zlib's blast and converted to a D00 song AdPlug plays). The engines drive an OPL chip; shim.cpp runs them on AdPlug's Nuked OPL3 (the adplug_engine target) and keeps the PCM. The extension picks
  * the engine, and the probe asks the engine to read the song's header (a dry run without sound), so a file laid out like another format is not claimed.
  * FM Tracker here is Sagitta's (id "FMTRK" + 1A ...); Davey Taylor's FM Tracker ("FMTracker\x01\x01") fails the engine's header read and stays with libopenmpt.
- * Not here: EdLib D01 (.d01, row I710aw). One song per file; subsongs are the engine's tracks; rendered whole at RP_START. */
+ * A damaged .edl (87 of 179 on Modland, by bbmp's own count) fails the unpack or the JCH header check and is not claimed. Not here: EdLib D01 (.d01, row I710aw). One song per file; subsongs are the engine's tracks; rendered whole at RP_START. */
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
@@ -163,7 +163,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "bbmp_adlib");
     set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
     set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "fmf,ftf,sig,lem,mus,cal,vib,fmt");
+    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "fmf,ftf,sig,lem,mus,cal,vib,fmt,edl");
     set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
     set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
     set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));

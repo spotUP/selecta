@@ -36,6 +36,7 @@
 #include <adplug/nemuopl.h>
 
 #include "common.h"
+#include "misc/common.h"
 
 namespace adlib {
 
@@ -271,6 +272,32 @@ int play(Song& song, Chip& opl, const Info& info, int rate, long long startMs, l
 
 }  // namespace adlib
 
+// EdLib Packed (.edl, row I1204b) comes from bbmp's csrc/misc/edl_cr.cpp (third_party/bbmp_adlib/misc, unchanged, with its own common.h in namespace misc).
+// The misc helper protocol is the adlib one, so these forward to the adlib functions above; the engine's header() call keeps the track's Info and its
+// emit() stops the render in a probe, after the first block of sound.
+namespace misc {
+
+std::string fromCp437(const std::string& s) { return adlib::fromCp437(s); }
+std::string field(const void* p, size_t size) { return adlib::field(p, size); }
+void header(const Info& info) {
+  adlib::Info i;
+  i.tracks = info.tracks;
+  i.track = info.track;
+  i.title = info.title;
+  i.author = info.author;
+  i.type = info.type;
+  i.durationMs = info.durationMs;
+  i.facts = info.facts;
+  i.comment = info.comment;
+  i.names = info.names;
+  adlib::header(i);
+}
+int fail(const std::string& why) { return adlib::fail(why); }
+bool emit(const int16_t* stereo, size_t frames) { return !adlib::g_cap.probeOnly && adlib::emit(stereo, frames); }
+std::vector<uint8_t> readFile(const char* path) { return adlib::readFile(path); }
+
+}  // namespace misc
+
 // C entry points for adapter.c. The engine is chosen by the file name's extension (the formats have no shared magic); the engines then check
 // the song's own structure, and a file they refuse is not claimed. Not thread safe: one song at a time, the host opens and renders on one thread.
 namespace {
@@ -285,6 +312,7 @@ struct Entry {
 const Entry kEngines[] = {
     {"fmf", adlib::playPpfCr}, {"ftf", adlib::playPpfCr}, {"sig", adlib::playSigCr}, {"lem", adlib::playLemCr},
     {"mus", adlib::playMusCr}, {"cal", adlib::playCalCr}, {"vib", adlib::playVibCr}, {"fmt", adlib::playFmtCr},
+    {"edl", misc::playEdlib},
 };
 
 PlayFn engineFor(const char* name) {

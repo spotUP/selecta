@@ -12,9 +12,11 @@ the measured length of the render, floored.
   .cal  Shadowlands             Matt Furniss/shadowlands (roofworlds).cal         04a0b7f0c87d24dbcc758159e0757107d229e270b48d21a71b890c07437dabf0
   .vib  Vibrants                JO/copper.vib                                     2063eb35638e1c798eefbd89e0e2843a28edfd0e8aeeded4843a599bba82c688
 
+  .edl  EdLib Packed            Drax/gooath.edl                                    b1ad05963a2dcc5bb1d8537d365bb20924ecc5fc882682a0b2c3675dbd812e29
   .fmt  FM Tracker (Sagitta)    Morten Stenshorne/lassie come home (alphaville).fmt  ccff8b1bd692a2596e528701747365ba73509e1fe874bae8634f48632525e995
 
-Not in this module and so not in this manifest: EdLib Packed (.edl; AdPlug does not decode it, row I1204b) and Davey Taylor's FM Tracker
+Not in this module and so not in this manifest: Davey Taylor's FM Tracker
 (also .fmt, magic "FMTracker\x01\x01", played by libopenmpt Load_fmt): bbmp_adlib must not claim it, adlib_decode.sh checks that. The bbmp_adlib
-extension list is fmf,ftf,sig,lem,mus,cal,vib,fmt.
+extension list is fmf,ftf,sig,lem,mus,cal,vib,fmt,edl.
 Engine licence: GPL-3.0-or-later (bbmp csrc/adlib, third_party/bbmp_adlib).
+Damaged-.edl negatives are made from gooath.edl at test time (cut at 1200 bytes; bytes 600..1199 zeroed); no second file is fetched.
