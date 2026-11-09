@@ -212,7 +212,21 @@ const char* sel_uim_breakpoint_name(uint32_t bp);
 uint32_t sel_uim_breakpoint_for(uint32_t width);
 /* I526: the layout tier. SEL_UIM_TIER_BITMAP is the native 640 wide bitmap-font screen (AGA 640x256 at scale 1.0): the
  * 600-699 wide canvas gets a labelled rail instead of the mini suggestion. */
-enum { SEL_UIM_TIER_DEFAULT = 0, SEL_UIM_TIER_BITMAP = 1 };
+enum { SEL_UIM_TIER_DEFAULT = 0, SEL_UIM_TIER_BITMAP = 1, SEL_UIM_TIER_TEXT = 2, SEL_UIM_TIER_COUNT = 3 };
+/* I1222c: the numbers a tier's layout is built from. Default and bitmap count logical px; the text tier counts cells (columns and rows). */
+typedef struct sel_uim_metrics {
+    int32_t bp_three, bp_two, bp_icons;                     /* breakpoint edges */
+    int32_t side_wide, side_narrow, side_icons;             /* sidebar per breakpoint */
+    int32_t side_exp_wide, side_exp_narrow, side_exp_icons; /* expanded sidebar */
+    int32_t side_exp_pct;                                   /* 0: fixed widths; else percent of the width (text: 40) */
+    int32_t detail_w, main_min_w, main_min_h;
+    int32_t topbar_h;
+    int32_t bar_h, bar_one_row_h, one_row_max_h;
+    int32_t banner_h; /* mini suggestion banner; 0 on text */
+} sel_uim_metrics;
+const sel_uim_metrics* sel_uim_metrics_for(uint32_t tier);
+/* I1222c: the text tier's layout, `cols` x `rows` cells; regions sidebar, main, detail, player and the topbar rect; no hints row. */
+int sel_uim_layout_compute_text(sel_uim_layout* l, uint32_t cols, uint32_t rows, uint32_t expand, uint32_t detail_hidden);
 uint32_t sel_uim_breakpoint_for_tier(uint32_t width, uint32_t tier);
 void sel_uim_layout_compute_tier(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier);
 /* I547: as compute_tier, with the bitmap tier rail width measured by the caller from its font (0: the default). */
