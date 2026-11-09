@@ -46,6 +46,12 @@ foreach(viz scope levels spectrum sidregs)
   sel_add_plugin(viz_${viz} 4 viz/${viz}/${viz}.c)
   target_link_libraries(sel_plugin_viz_${viz} PUBLIC selecta_plugin_shared)
 endforeach()
+# Krakatoa Smoke (I1052): GPU compute through SDL3, so only with the SDL desktop UI; Metal shaders only (APPLE) until
+# the SPIR-V binding layout lands (KRK-P4-5).
+set(SEL_HAVE_KRAKATOA OFF CACHE INTERNAL "viz_krakatoa is built")
+if(APPLE AND SELECTA_UI_DESKTOP)
+  add_subdirectory(viz/krakatoa)
+endif()
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).
 if(APPLE)
   # I1039: coreaudio_av.m is the AVSampleBufferAudioRenderer path that follows the app's AirPlay route pick (ARC).

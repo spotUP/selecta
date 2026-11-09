@@ -157,6 +157,7 @@ SEL_TAG(VIZ, NAME,             0x4000, STR)
 SEL_TAG(VIZ, OPEN,             0x4001, PTR)
 SEL_TAG(VIZ, FRAME,            0x4002, PTR)
 SEL_TAG(VIZ, CLOSE,            0x4003, PTR)
+SEL_TAG(VIZ, STATS,            0x4004, PTR) /* optional sel_viz_stats_fn: one line of counters for --stats */
 
 SEL_TAG(UI, NAME,              0x5000, STR)
 SEL_TAG(UI, OPEN,              0x5001, PTR)

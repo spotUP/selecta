@@ -143,6 +143,9 @@ typedef struct sel_viz_colors {
 /* VIZ_FRAME hook: draws `f` over the whole surface. Returns the number of primitives drawn (0: nothing, e.g. no frame
  * yet). Integer only; runs on the UI thread. */
 typedef uint32_t (*sel_viz_render_fn)(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c);
+/* Optional VIZ_STATS hook: writes one NUL-terminated line of plugin counters (at most cap bytes, NUL included) for the
+ * host's --stats dump and returns its length. */
+typedef uint32_t (*sel_viz_stats_fn)(char* out, uint32_t cap);
 
 SEL_EXTERN_C_END
 

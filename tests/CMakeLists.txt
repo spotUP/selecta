@@ -1244,6 +1244,12 @@ if(NOT SEL_AMIGA)
   add_executable(sidregs_test viz/sidregs_test.c)
   target_include_directories(sidregs_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/shared")
   add_test(NAME viz-sidregs COMMAND sidregs_test all)
+  # I1052: Krakatoa Smoke portable core (grids, knobs, beats, knob coverage); builds without the GPU part.
+  add_executable(krk_core_test viz/krk_core_test.c "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_core.c")
+  target_include_directories(krk_core_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa")
+  target_link_libraries(krk_core_test PRIVATE m)
+  add_test(NAME krk-core COMMAND krk_core_test)
+  set_tests_properties(krk-core PROPERTIES TIMEOUT 30 PASS_REGULAR_EXPRESSION "krk_core_ok")
 endif()
 if(NOT SEL_AMIGA)
   add_test(NAME viz-taps
