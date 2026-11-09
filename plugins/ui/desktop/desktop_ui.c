@@ -656,6 +656,9 @@ typedef struct desk {
     uint32_t viz_n, viz_sel;     /* plugins found, index of the one the Now Playing strip and the visual layout draw */
     uint32_t* viz_px;            /* RGBA32 target the plugins render into */
     uint32_t viz_cap;            /* pixels viz_px holds */
+    sel_gui_canvas* viz_cv;      /* I1230: canvas view over viz_px, the target of the pen the viz plugins draw with */
+    sel_gui_text_stats viz_text; /* I1230: glyphs viz plugins drew through the pen in the app font (sentinel) */
+    uint32_t viz_shapes;         /* I1230: rounded shapes viz plugins drew through the pen (sentinel) */
     uint32_t viz_seq;            /* sequence number of the newest frame drawn */
     uint32_t viz_frames;         /* frames drawn to screen, one per new engine frame (sentinel) */
     uint32_t viz_tip_up;         /* I292a: visualizer frames drawn while a tooltip was up (sentinel) */
@@ -6973,11 +6976,71 @@ static int viz_visible(const desk* d) {
     return d->np_viz.w > 0 ? VIZ_STRIP : VIZ_NONE;
 }
 
+/* I1230: the pen the desktop hands every viz plugin (sel_viz_pen): labels in the app's own font (the same atlas
+ * draw_text picks for a VIZ_LABEL_PX label) and rounded shapes with the app's rasterizer, both drawn into viz_px through
+ * a canvas view, so the plugin's picture matches the rest of the app instead of the private 4 x 6 viz glyphs. */
+#define VIZ_LABEL_PX 12
+static const sel_gui_atlas* viz_pen_atlas(desk* d, int strong) { return desk_font(d, strong ? 1 : 0, VIZ_LABEL_PX); }
+
+static int32_t viz_pen_width(void* ctx, const char* s, int strong) {
+    const sel_gui_atlas* at = viz_pen_atlas((desk*)ctx, strong);
+    return at != NULL ? sel_gui_text_width(at, s, strlen(s)) : 0;
+}
+
+static uint32_t viz_pen_text(void* ctx, int32_t x, int32_t y, int32_t max_w, const char* s, uint32_t px, int strong) {
+    desk* d = (desk*)ctx;
+    const sel_gui_atlas* at = viz_pen_atlas(d, strong);
+    uint32_t before = d->viz_text.glyphs;
+    if (at == NULL || max_w <= 0) {
+        return 0u;
+    }
+    (void)sel_gui_text_draw(d->viz_cv, at, x, y, s, px, max_w, &d->viz_text);
+    return d->viz_text.glyphs - before;
+}
+
+static void viz_pen_round(void* ctx, int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint32_t px) {
+    desk* d = (desk*)ctx;
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    if (radius > 0) {
+        sel_gui_round_rect(d->viz_cv, rect_of(x, y, w, h), radius, px);
+    } else {
+        sel_gui_fill_rect(d->viz_cv, rect_of(x, y, w, h), px);
+    }
+    d->viz_shapes++;
+}
+
+static uint32_t viz_pen_mix(void* ctx, uint32_t a, uint32_t b, uint32_t q8) {
+    (void)ctx;
+    return desk_mix(a, b, (int32_t)(q8 << 8));
+}
+
+/* Points the canvas view at viz_px for a w x h picture. The view is set up once (sel_gui_canvas_init clears the whole
+ * struct); later pictures only move its size and clip, the plugin clears the pixels itself. */
+static int viz_pen_bind(desk* d, int32_t w, int32_t h) {
+    if (d->viz_cv == NULL) {
+        d->viz_cv = (sel_gui_canvas*)d->host->mem_alloc(d->host, sizeof(sel_gui_canvas), SEL_MEM_FAST);
+        if (d->viz_cv == NULL) {
+            return 0;
+        }
+        sel_gui_canvas_init(d->viz_cv, SEL_GUI_RGBA32, w, h, d->viz_px);
+    }
+    d->viz_cv->w = w;
+    d->viz_cv->h = h;
+    d->viz_cv->pixels = d->viz_px;
+    d->viz_cv->clip[0] = rect_of(0, 0, w, h);
+    d->viz_cv->clip_n = 1u;
+    d->viz_cv->dirty_n = 0u;
+    return 1;
+}
+
 /* Renders plugin `idx` for the newest frame into `r` and blits it. */
 static void viz_draw_area(desk* d, sel_gui_rect r, uint32_t idx) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_surface s;
     sel_viz_colors c;
+    sel_viz_pen pen;
     uint32_t need;
     if (r.w <= 0 || r.h <= 0 || idx >= d->viz_n) {
         return;
@@ -7000,6 +7063,23 @@ static void viz_draw_area(desk* d, sel_gui_rect r, uint32_t idx) {
     s.pixels = d->viz_px;
     s.palette = NULL;
     s.pix_aspect_q8 = 0u; /* square pixels */
+    s.pen = NULL;
+    if (viz_pen_bind(d, r.w, r.h)) {
+        const sel_gui_atlas* at = viz_pen_atlas(d, 0);
+        pen.ctx = d;
+        pen.line_h = at != NULL ? at->line_height : 0;
+        pen.radius = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+        pen.card = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]);
+        pen.track = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_PRESSED]);
+        pen.text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
+        pen.muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+        pen.on_accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]);
+        pen.text_width = viz_pen_width;
+        pen.draw_text = viz_pen_text;
+        pen.round_rect = viz_pen_round;
+        pen.mix = viz_pen_mix;
+        s.pen = &pen;
+    }
     c.background = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]);
     c.grid = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]);
     c.primary = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
@@ -7722,6 +7802,8 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "viz_stats %s %s\n", d->viz_id[i], line);
         }
     }
+    o = dump_put(d, o, "viz_pen glyphs %u missing %u shapes %u\n", (unsigned)d->viz_text.glyphs, (unsigned)d->viz_text.missing,
+                 (unsigned)d->viz_shapes);
     o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d np_viz %d %d %d %d\n",
                           (unsigned)d->viz_clicks, (int)d->viz_btn[0][0].x, (int)d->viz_btn[0][0].y, (int)d->viz_btn[0][0].w,
                           (int)d->viz_btn[0][0].h, (int)d->viz_btn[1][0].x, (int)d->viz_btn[1][0].y, (int)d->viz_btn[1][0].w,
@@ -16096,6 +16178,9 @@ static void desk_close(void* state) {
         if (d->canvas != NULL) {
             if (d->viz_px != NULL) {
                 d->host->mem_free(d->host, d->viz_px);
+            }
+            if (d->viz_cv != NULL) {
+                d->host->mem_free(d->host, d->viz_cv);
             }
             d->host->mem_free(d->host, d->canvas->pixels);
             d->host->mem_free(d->host, d->canvas);

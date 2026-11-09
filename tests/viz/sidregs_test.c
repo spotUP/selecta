@@ -35,6 +35,7 @@ static void shot_make(shot* t, uint32_t w, uint32_t h) {
     t->s.pixels = t->px;
     t->s.palette = NULL;
     t->s.pix_aspect_q8 = 0u;
+    t->s.pen = NULL; /* I1230: the plugin's own drawing, as on the Amiga */
 }
 
 static uint8_t at(const shot* t, int x, int y) { return t->px[(uint32_t)y * t->s.pitch + (uint32_t)x]; }
