@@ -227,7 +227,7 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 16, "text constructor sites: %d (I960c: + the compact Now Playing page heading; definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 4 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
+    CHECK(count_of(ui, "mui_aatext(") == 17, "text constructor sites: %d (I1166b f1cf602d: + the expanded-sidebar table cell in mui_side_cells, the 17th; I960c: + the compact Now Playing page heading; definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 4 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
     CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
@@ -646,7 +646,7 @@ static void test_cycle_source(void) {
         return;
     }
     CHECK(count_of(ui, "MUIC_Cycle") == 0 && count_of(ui, "MUIA_Cycle_") == 0, "stock cycle left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_cycle(") == 6, "cycle constructor sites: %d (definition + 4 + the Visualizer page picker, I735)", count_of(ui, "mui_make_cycle("));
+    CHECK(count_of(ui, "mui_make_cycle(") == 7, "cycle constructor sites: %d (definition + 4 + the Visualizer page picker, I735; + the library mode cycle cyc_libmode, I1175 2cab9cf1)", count_of(ui, "mui_make_cycle("));
     CHECK(count_of(ui, "mui_aacycle_new(") == 1, "one AACycle constructor call: %d", count_of(ui, "mui_aacycle_new("));
     CHECK(count_of(ui, "mui_aacycle_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_cycle_rgb(") != NULL && strstr(cls, "mui_aa_cycle_step(") != NULL && strstr(cls, "mui_aa_cycle_chevron_row(") != NULL &&
@@ -1038,9 +1038,9 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "MUIC_List") == 0 && count_of(ui, "MUIC_Floattext") == 0 && count_of(ui, "MUIC_Listview") == 0, "stock list classes left in mui_ui.c: %d %d %d",
           count_of(ui, "MUIC_List"), count_of(ui, "MUIC_Floattext"), count_of(ui, "MUIC_Listview"));
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aalist_new(") == 5 && count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
+    CHECK(count_of(ui, "mui_aalist_new(") == 6 && /* I1175 2cab9cf1: + the Sources page list src_list, the 6th */  count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
     CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 3 && count_of(ui, "sp.no_select = 1;") == 1,          "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "UPA_List_Columns") == 1 && count_of(ui, "UPA_List_Playing") == 1 && count_of(ui, "UPA_List_Picked") == 8, "columns %d, playing %d, picked %d", count_of(ui, "UPA_List_Columns"),
+    CHECK(count_of(ui, "UPA_List_Columns") == 1 && count_of(ui, "UPA_List_Playing") == 1 && count_of(ui, "UPA_List_Picked") == 10, /* I1175 2cab9cf1: + src_list notify and read-back */ "columns %d, playing %d, picked %d", count_of(ui, "UPA_List_Columns"),
           count_of(ui, "UPA_List_Playing"), count_of(ui, "UPA_List_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");

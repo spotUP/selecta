@@ -2114,7 +2114,9 @@ static void test_aabtn_wired(const char* src) {
         CHECK(fn_body(src, wrappers[k], body, sizeof body) != NULL && strstr(body, "mui_make_button_") != NULL, "wrapper %s skips mui_make_button_i", wrappers[k]);
     }
     CHECK(strstr(src, "MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP") == NULL, "mui_ui.c still builds a stock group button");
-    CHECK(strstr(src, "mui_aabtn_new(") != NULL && strstr(src, "mui_aabtn_set_caption(s->btn[i], label)") != NULL, "transport labels do not reach the class");
+    CHECK(strstr(src, "mui_aabtn_new(") != NULL && strstr(src, "mui_caption_set(s->btn[i], label)") != NULL &&
+              fn_body(src, "static void mui_caption_set(", body, sizeof body) != NULL && strstr(body, "mui_aabtn_set_caption(") != NULL,
+          "transport labels do not reach the class"); /* I1139 2872c942: the call goes through mui_caption_set (Latin-1 wrap), which ends in mui_aabtn_set_caption */
     total = MUI_BTN_COUNT + MUI_EXTRA_COUNT + SEL_UIM_DOOR_COUNT + MUI_TOOL_BTNS + crumbs;
     CHECK(crumbs == 6u && total == 37u, "button families add up to %u (crumbs %u), design lists 37", total, crumbs);
 }
@@ -3000,19 +3002,17 @@ static void test_compact_player(void) {
           "compact band: art %ux%u height %u extras %d", (unsigned)c.art_w, (unsigned)c.art_h, (unsigned)c.height, (int)c.extras);
     CHECK(tall.art_h == 56u, "square pixels give a square art, got %u", (unsigned)tall.art_h);
     {
-        /* I949e2 item 6: transport row plus seek row plus the group gap fit inside the 36 px band less its padding, at the tight metrics. */
+        /* I949e2 item 6, rewritten for I973a b6248622: the bar is ONE row (transport, seek and volume side by side), no longer a transport row plus a
+         * seek row plus a group gap. The tallest child of that one row plus the band padding fits the 36 px cap at the tight metrics. */
         mui_aa_metrics_t tm, sqm;
         mui_aa_slider_t sl;
-        uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
-        int gx, gy, need;
-        tok[SEL_GUI_TOKEN_SPACING] = 8;
+        int need;
         mui_aa_metrics_aspect(0, 512, &tm);
         mui_aa_metrics_aspect(0, 256, &sqm);
-        mui_aa_slider_metrics(0, 256, &sl);
-        mui_aa_panel_pad(tok, 512, &gx, &gy);
-        need = tm.height + sl.height + gy;
-        CHECK(need <= MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
-              "compact band: transport %d + seek %d + gap %d = %d of %d", tm.height, sl.height, gy, need, MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD);
+        mui_aa_slider_metrics(0, 512, &sl);
+        need = (tm.height > sl.height ? tm.height : sl.height) + 2 * MUI_PLAYER_COMPACT_PAD;
+        CHECK(need <= MUI_PLAYER_COMPACT_MAX_H && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
+              "compact band: one row, tallest child (button %d, seek %d) + 2 x pad = %d of %d", tm.height, sl.height, need, MUI_PLAYER_COMPACT_MAX_H);
         CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == (uint32_t)MUI_PLAYER_COMPACT_MAX_H, "square band heights moved (I973: the compact cap applies)");
     }
     {
@@ -3427,7 +3427,7 @@ static void test_tiles_reach(void) {
     CHECK(strstr(src, "mui_home_split(") != NULL && strstr(src, "mui_shelf_find(") != NULL && strstr(src, "mui_home_fill(") != NULL, "Home quick row and shelves are built from the view");
     CHECK(strstr(src, "mui_browse_tiles(") != NULL && strstr(src, "mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE))") != NULL, "Browse tiles are built and fire");
     CHECK(strstr(src, "mui_search_facet_line(") != NULL && strstr(src, "sel_uim_search_facets") != NULL && strstr(src, "CTL_FACET_BASE") != NULL, "Search facet chips are built and fire");
-    CHECK(strstr(src, "mui_search_all_line((const char*)text, line") != NULL, "I1019g: the Return handler sends SOURCE_SEARCH *");
+    CHECK(strstr(src, "mui_search_all_line(text, line") != NULL, "I1019g: the Return handler sends SOURCE_SEARCH *");
     CHECK(strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k]") != NULL &&
               strstr(src, "mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE") != NULL && strstr(src, "mui_home_row_fire(s, view, idx)") != NULL,
           "Show all, composer tiles and quick tiles go through the route handler");
