@@ -87,6 +87,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <ctype.h>
 #include <string.h>
 #include <time.h>
 
@@ -7441,6 +7442,7 @@ enum { DRILL_FORMATS_MAX = 512 };
 typedef struct drill_formats {
     char name[DRILL_FORMATS_MAX][40];
     unsigned long count[DRILL_FORMATS_MAX];
+    char size[DRILL_FORMATS_MAX][24];
     uint32_t family[DRILL_FORMATS_MAX];
     uint32_t n;
 } drill_formats;
@@ -7460,7 +7462,19 @@ static void drill_format_row(void* ctx, const char* const* f) {
     if (d->n >= (uint32_t)DRILL_FORMATS_MAX) return;
     snprintf(d->name[d->n], sizeof d->name[d->n], "%s", f[0]);
     d->count[d->n] = strtoul(f[1], NULL, 10);
+    snprintf(d->size[d->n], sizeof d->size[d->n], "%s", f[2]);
     d->n++;
+}
+
+/* Case-insensitive A-Z by the raw format name (the text the drill page shows), empty names last, strcmp as the tie-break. */
+static int drill_format_cmp(const char* a, const char* b) {
+    if (a[0] == '\0' || b[0] == '\0') return (a[0] == '\0') - (b[0] == '\0');
+    for (; *a != '\0' && *b != '\0'; a++, b++) {
+        int ca = tolower((unsigned char)*a), cb = tolower((unsigned char)*b);
+        if (ca != cb) return ca - cb;
+    }
+    if (*a != *b) return (unsigned char)*a - (unsigned char)*b;
+    return 0;
 }
 
 static void drill_sample_row(void* ctx, const char* const* f) {
@@ -7480,11 +7494,35 @@ static int drill_query(sel_engine* e, const char* source, uint32_t level, const 
     return n;
 }
 
+/* The whole format list (paged until a short page), sorted A-Z once here so every UI shows the same order (I1235). */
+static void drill_formats_sorted(sel_engine* e, const char* source, drill_formats* d) {
+    uint32_t i, j, skip = 0u;
+    int got;
+    memset(d, 0, sizeof *d);
+    do {
+        got = drill_query(e, source, SEL_DRILL_FORMATS, "", "", skip, drill_format_row, d);
+        if (got > 0) skip += (uint32_t)got;
+    } while (got >= (int)SEL_DRILL_WINDOW && d->n < (uint32_t)DRILL_FORMATS_MAX);
+    for (i = 1u; i < d->n; i++) {
+        for (j = i; j > 0u && drill_format_cmp(d->name[j - 1u], d->name[j]) > 0; j--) {
+            char tn[40], ts[24];
+            unsigned long tc = d->count[j];
+            memcpy(tn, d->name[j], sizeof tn);
+            memcpy(ts, d->size[j], sizeof ts);
+            memcpy(d->name[j], d->name[j - 1u], sizeof tn);
+            memcpy(d->size[j], d->size[j - 1u], sizeof ts);
+            d->count[j] = d->count[j - 1u];
+            memcpy(d->name[j - 1u], tn, sizeof tn);
+            memcpy(d->size[j - 1u], ts, sizeof ts);
+            d->count[j - 1u] = tc;
+        }
+    }
+}
+
 /* The Platforms fold: the format list (a few dozen rows) folded by family in C, one sample path per format row. */
 static void drill_formats_load(sel_engine* e, const char* source, drill_formats* d) {
     uint32_t i;
-    memset(d, 0, sizeof *d);
-    drill_query(e, source, SEL_DRILL_FORMATS, "", "", 0u, drill_format_row, d);
+    drill_formats_sorted(e, source, d);
     for (i = 0; i < d->n; i++) {
         d->family[i] = (uint32_t)SEL_PLATFORM_FAMILY_MUSIC;
         drill_query(e, source, SEL_DRILL_FORMAT_SAMPLE, d->name[i], "", 0u, drill_sample_row, &d->family[i]);
@@ -7507,7 +7545,19 @@ static void drill_count_row(void* ctx, const char* const* f) {
     (*(unsigned long*)ctx)++;
 }
 
-/* key = source [US kind [US a [US b]]] [RS skip]. Builds the level into b and pg->drill. */
+/* Case-insensitive substring test for the drill find filter (same rule as the desktop find field). */
+static int drill_name_has(const char* name, const char* q) {
+    size_t n = strlen(q), m = strlen(name), i, j;
+    for (i = 0; i + n <= m; i++) {
+        for (j = 0; j < n && tolower((unsigned char)name[i + j]) == tolower((unsigned char)q[j]); j++) {
+        }
+        if (j == n) return 1;
+    }
+    return 0;
+}
+
+/* key = source [US kind [US a [US b]]] [RS skip [GS find]]. Builds the level into b and pg->drill. The find text (I1235) narrows the format list
+ * before it is windowed, so a list longer than SEL_DRILL_WINDOW filters over all of it, not only the loaded window. */
 static void drill_build(sel_engine* e, const char* key, coll_build* b) {
     sel_collection_page* pg = e->coll_target;
     char buf[sizeof pg->key];
@@ -7517,12 +7567,16 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
     int np = 1;
     const char* source;
     const char* kind;
+    const char* find = "";
 
     snprintf(buf, sizeof buf, "%s", key);
     c = strchr(buf, 0x1e);
     if (c != NULL) {
+        char* g;
         *c++ = '\0';
         skip = (uint32_t)strtoul(c, NULL, 10);
+        g = strchr(c, 0x1d);
+        if (g != NULL) find = g + 1;
     }
     part[0] = buf;
     for (c = buf; np < 4 && (c = strchr(c, 0x1f)) != NULL; np++) {
@@ -7535,7 +7589,21 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
     snprintf(pg->key, sizeof pg->key, "%s", source);
     pg->drill = (uint32_t)SEL_DRILL_PAGE_GROUPS;
     if (strcmp(kind, "formats") == 0) {
-        drill_query(e, source, SEL_DRILL_FORMATS, "", "", skip, drill_group_row, b);
+        drill_formats d;
+        drill_formats_sorted(e, source, &d);
+        uint32_t seen = 0u;
+        for (i = 0u; i < d.n && seen < skip + (uint32_t)SEL_DRILL_WINDOW; i++) {
+            const char* parts[3];
+            char num[24];
+            if (find[0] != '\0' && !drill_name_has(d.name[i], find)) continue;
+            if (seen++ < skip) continue;
+            snprintf(num, sizeof num, "%lu", d.count[i]);
+            parts[0] = d.name[i];
+            parts[1] = num;
+            parts[2] = d.size[i];
+            composer_put(&b->rows, parts, 3);
+            b->n++;
+        }
     } else if (strcmp(kind, "format") == 0 && part[2] != NULL && part[3] == NULL) {
         drill_query(e, source, SEL_DRILL_FORMAT_ARTISTS, part[2], "", skip, drill_group_row, b);
     } else if (strcmp(kind, "format") == 0 && part[3] != NULL) {
