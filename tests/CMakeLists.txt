@@ -2989,6 +2989,12 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32 AND SELECTA_UI_DESKTOP)
       "-DPLUGINS=${SEL_SYSFILE_PROBE_DIR}" -P "${SEL_NET_DIR}/sysfile_desktop.cmake")
   set_tests_properties(sysfile-desktop PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 120 PASS_REGULAR_EXPRESSION "sysfile_desktop_ok")
+  # I1225: a song open (slow remote fetch, slow system-file download) never blocks the desktop UI thread.
+  add_test(NAME dui-open-async
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DPLUGINS=${SEL_SYSFILE_PROBE_DIR}" -P "${SEL_NET_DIR}/open_async.cmake")
+  set_tests_properties(dui-open-async PROPERTIES LABELS "m3;dui" FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "open_async_ok")
 endif()
 
 # Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).

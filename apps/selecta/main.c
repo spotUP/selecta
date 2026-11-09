@@ -1179,6 +1179,9 @@ int main(int argc, char** argv)
     printf("view_reads panel_reads=%u art_reads=%u total_reads=%u text_reads=%u group_reads=%u\n", (unsigned)est.panel_reads, (unsigned)est.art_reads, (unsigned)est.total_reads, (unsigned)est.text_reads, (unsigned)est.group_reads); /* I906d, I936 sentinels */
 
     printf("play_reads play_meta_reads=%u vote_reads=%u\n", (unsigned)est.play_meta_reads, (unsigned)est.vote_reads); /* I906g sentinel */
+    printf("open_phases open_fetch_reads=%u open_fetch_ms_max=%u open_rp_ms_max=%u open_prepare_ms_max=%u\n",
+           (unsigned)est.open_fetch_reads, (unsigned)est.open_fetch_ms_max, (unsigned)est.open_rp_ms_max,
+           (unsigned)est.open_prepare_ms_max); /* I1225 */
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
     printf("song_note bank_missing=%u\n", (unsigned)sel_engine_state(e)->song.bank_missing); /* I1127c sentinel */
