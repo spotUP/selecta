@@ -81,6 +81,21 @@ if(NOT "${o}" MATCHES "searchrow [0-9]+ [^\n]*key=modulespl:")
   message(FATAL_ERROR "the From rows are not song rows of the shared loop (no searchrow with a modulespl: key):\n${o}")
 endif()
 
+# ---- I1206: a category with 0 hits is not drawn. The library is empty here, so Songs, Albums and Artists have 0 hits, and every source
+# that did not answer with hits is a zero-hit From section. The sentinel `search_hidden N` counts the headings the shared predicate
+# (sel_uim_search_section_hidden) removed this frame; no drawn From section may read (0), and the hits sections above still draw.
+if(NOT "${o}" MATCHES "search_hidden ([0-9]+)\n")
+  message(FATAL_ERROR "I1206: no search_hidden line in the dump:\n${o}")
+endif()
+if(CMAKE_MATCH_1 LESS 9)
+  message(FATAL_ERROR "I1206: the predicate hid only ${CMAKE_MATCH_1} headings (want >= 9: Songs, Albums, Artists, the zero-hit and Not synced sources):\n${o}")
+endif()
+# A 0-hit section that stays holds exactly one row: "Could not reach <name>" (a failure, not a zero-hit result; this offline fixture has
+# two: Aminet, ZX-Art). Every other zero-hit section (Not synced yet + Sync, No results, Searching) must be gone.
+if("${o}" MATCHES "search_section [0-9]+ rows=([02-9]|[0-9][0-9]+) From [^\n]*\\(0\\)\n")
+  message(FATAL_ERROR "I1206: a From section with 0 hits is still drawn:\n${o}")
+endif()
+
 # ---- I1044: the sources of one fan-out search at the same time, not one after another. The fixture delays modules.pl (4 s), ccMixter and
 # Radio Browser (1.5 s each) on their first byte. In parallel the whole fan-out takes about as long as the slowest source; one after
 # another it takes the sum of all of them (>= 7 s). `search_fanout peak` is the most searches in flight at once, `wall_ms` the span from

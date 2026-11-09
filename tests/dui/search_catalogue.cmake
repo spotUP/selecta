@@ -1,14 +1,12 @@
 # dui-search-catalogue (I1053a, I1053b): the All sources search draws a section for each archive (catalogue) source from the synced
-# rows of the library DB, and a never-synced catalogue source shows "Not synced yet" with a Sync button that starts its sync.
+# rows of the library DB, and a never-synced catalogue source (0 hits) is hidden (I1206; was a Not synced section with a Sync button, I1053b).
 # One reachability test through the real shell: the scripted --input feeder types the query into the Search field (the debounce
 # sends SOURCE_SEARCH *), the desktop dump is the oracle. -DSELECTA -DSQLITE3 -DWORK
 #  1. seeded DB: modland 3 rows, hippo 2, asma 2, hvsc 1, local 1 carry the word "zorkmid"; sndh and keygenmusic have no rows.
 #     `search_section` lines carry the exact hit counts (the sentinel that every catalogue hook ran through sel_catalogue_search
 #     and the library FTS scoped to its source id): From Modland (3), From Hippo (2), From ASMA (2), From HVSC (1). The local row
 #     draws no From Local files section: the Library section above the fan-out already lists it (I1009r, Johan 2026-11-04).
-#  2. the two unsynced sources draw "Not synced yet" (no search_failed) and one `search_sync` button each, no auto-download:
-#     sources_synced stays 0 and the dump shows sync_ui active=0 before any click.
-#  3. clicking the sndh Sync button sends LIBRARY_SYNC for sndh only: `search_sync ... clicks=1` and the sync UI names sndh.
+#  2. the two unsynced sources draw no section and no `search_sync` button (I1206), no search_failed, no auto-download.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -54,44 +52,19 @@ if("${o}" MATCHES "search_section [0-9]+ rows=[0-9]+ From Local files")
   message(FATAL_ERROR "I1009r: All sources must not repeat the Library rows as a From Local files section:\n${sections}")
 endif()
 
-# 2. the unsynced catalogue sources: a Not synced section with a Sync button each, nothing downloaded
+# 2. the unsynced catalogue sources have no hits, so I1206 hides their sections and the Sync buttons under them (the Sources page
+# still offers the sync): no From SNDH / From Keygen Music section, no search_sync button, nothing downloaded
 foreach(nm "SNDH" "Keygen Music")
-  if(NOT "${o}" MATCHES "search_section [0-9]+ rows=2 From ${nm} \\(0\\)\n")
-    message(FATAL_ERROR "I1053b: 'From ${nm} (0)' must hold the Not synced row and the Sync row:\n${sections}")
+  if("${o}" MATCHES "search_section [0-9]+ rows=[0-9]+ From ${nm} ")
+    message(FATAL_ERROR "I1206: 'From ${nm} (0)' has no hits and must be hidden:\n${sections}")
   endif()
 endforeach()
-foreach(id sndh keygenmusic)
-  if(NOT "${o}" MATCHES "search_sync [0-9]+ ${id} (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) clicks=0\n")
-    message(FATAL_ERROR "I1053b: no Sync button for the unsynced source ${id}:\n${o}")
-  endif()
-endforeach()
+if("${o}" MATCHES "search_sync ")
+  message(FATAL_ERROR "I1206: a hidden Not synced section must not draw a Sync button:\n${o}")
+endif()
 if("${o}" MATCHES "sync_ui active=1")
   message(FATAL_ERROR "I1053b: a sync started without a click (no auto-download):\n${o}")
 endif()
 if("${o}" MATCHES "search_failed")
   message(FATAL_ERROR "I1053b: an unsynced source must not raise search_failed:\n${o}")
-endif()
-
-# 3. click the sndh Sync button; step 4 presses Enter on the same row
-string(REGEX MATCH "search_sync [0-9]+ sndh (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) clicks=0\n" _b "${o}")
-math(EXPR bx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
-math(EXPR by "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
-file(READ "${WORK}/in.txt" typed)
-file(WRITE "${WORK}/click.txt" "${typed}move ${bx} ${by}\nclick ${bx} ${by}\nwait 600\n")
-dui_run(c ${common} --input "${WORK}/click.txt")
-if(NOT "${c}" MATCHES "search_sync [0-9]+ sndh [^\n]* clicks=1\n")
-  message(FATAL_ERROR "I1053b: the Sync click did not reach the sync branch (clicks=1 expected):\n${c}")
-endif()
-# The sync runs offline here (SELECTA_NET_ALLOW), so the fetch can fail inside the 600 ms wait and sync_ui drops its source again:
-# the card was shown once (shown=1) and the failure toast names the source, which is the durable proof of WHICH sync started.
-if(NOT "${c}" MATCHES "sync_ui [^\n]*source=sndh" AND NOT ("${c}" MATCHES "sync_ui [^\n]* shown=1 " AND "${c}" MATCHES "toast_text Cannot sync SNDH"))
-  message(FATAL_ERROR "I1053b: the Sync click must start the sndh sync (sync_ui source=sndh):\n${c}")
-endif()
-
-# The script's `exec VIEW_CURSOR` waits for the engine's answer (a bare run of `key down` lines races it), so the cursor is on the row
-# when Enter arrives. Row 38 is the Keygen Music Sync row of this seed (no From Local files section above it since I1009r) (clicks counts every Sync action, one per run).
-file(WRITE "${WORK}/enter.txt" "${typed}key down\nexec VIEW_CURSOR 38\nkey enter\nwait 600\n")
-dui_run(en ${common} --input "${WORK}/enter.txt")
-if(NOT "${en}" MATCHES "search_sync [0-9]+ keygenmusic [^\n]* clicks=1\n" OR NOT ("${en}" MATCHES "sync_ui [^\n]*source=keygenmusic" OR ("${en}" MATCHES "sync_ui [^\n]* shown=1 " AND "${en}" MATCHES "toast_text Cannot sync Keygen Music")) OR "${en}" MATCHES "row_plays=[1-9]")
-  message(FATAL_ERROR "I1053b: Enter on the Keygen Music Sync row must start that sync like the click (clicks=1, no song played):\n${en}")
 endif()
