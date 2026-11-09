@@ -1,6 +1,6 @@
 /* bbmp berotracker replayer (row I710b): a RENDER-kind adapter over bbmp's csrc/berotracker (third_party/bbmp_berotracker,
- * GPL-3.0-or-later, a clean-room replayer). The engine renders at 44100 Hz (it resamples to the host rate itself) and keeps its
- * state in one global, so open() validates and measures, and RP_START renders the whole song into memory. The engine's loader
+ * GPL-3.0-or-later, a clean-room replayer). The engine renders at 44100 Hz (it resamples to the host rate itself), frame by
+ * frame, with all state in one brt_song per open song: open() validates and measures, RP_RENDER renders on demand. The engine's loader
  * validates the file (BRTF signature, sizes), so a file that is not a BeRoTracker song fails there. */
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
@@ -11,18 +11,16 @@
 
 #include "brt_engine.h"
 
-enum { kChunk = 4096, kMaxFrames = 3600 * 192000 };
+enum { kChunk = 4096 };
 
 typedef struct bbbrt_state {
     const sel_host* host;
-    uint8_t* data;
-    size_t size;
+    brt_song* song;
     char title[256];
     long duration_ms;
-    int16_t* pcm;
-    uint64_t frames;
     uint64_t pos;
     uint32_t rate;
+    int started;
     sel_tag meta[5];
 } bbbrt_state;
 
@@ -44,9 +42,7 @@ static void rp_close(void* state) {
     bbbrt_state* s = (bbbrt_state*)state;
     if (s != NULL) {
         const sel_host* host = s->host;
-        brt_close();
-        free(s->pcm);
-        free(s->data);
+        brt_close(s->song);
         host->mem_free(host, s);
     }
 }
@@ -54,7 +50,6 @@ static void rp_close(void* state) {
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     bbbrt_state* s;
     brt_info* bi;
-    int ok;
     if (src->stream != NULL || src->data == NULL || src->size < 16u) {
         return NULL;
     }
@@ -69,22 +64,13 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     memset(s, 0, sizeof *s);
     s->host = host;
-    s->data = (uint8_t*)malloc(src->size);
-    if (s->data == NULL) {
+    /* The engine loads and validates the song (BRTF signature, sizes) and measures its length; it keeps its own parsed copy. */
+    s->song = brt_open(src->data, src->size, bi);
+    if (s->song == NULL) {
         free(bi);
         host->mem_free(host, s);
         return NULL;
     }
-    memcpy(s->data, src->data, src->size);
-    s->size = src->size;
-    ok = brt_open(s->data, s->size, bi);
-    if (!ok) {
-        free(bi);
-        free(s->data);
-        host->mem_free(host, s);
-        return NULL;
-    }
-    brt_close();
     memcpy(s->title, bi->title, sizeof s->title);
     s->duration_ms = bi->duration_ms;
     free(bi);
@@ -97,79 +83,63 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
 
 static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
     bbbrt_state* s = (bbbrt_state*)state;
-    brt_info* bi;
-    int16_t* native = NULL;
-    uint64_t n = 0, cap = 0;
-    int ok;
     (void)voices;
     if (rate < 8000u || rate > 192000u || subsong != 0u) {
         return 0;
     }
-    free(s->pcm);
-    s->pcm = NULL;
-    s->frames = s->pos = 0;
+    s->started = 0;
+    s->pos = 0;
     s->rate = rate;
-    bi = (brt_info*)calloc(1, sizeof *bi);
-    if (bi == NULL) {
+    if (!brt_start(s->song, rate)) {
         return 0;
     }
-    ok = brt_open(s->data, s->size, bi);
-    free(bi);
-    if (!ok || !brt_start(rate)) {
-        brt_close();
-        return 0;
-    }
-    for (;;) {
-        int16_t buf[kChunk * 2];
-        uint32_t got = brt_render(buf, kChunk);
-        if (got > 0u) {
-            if (n + got > cap) {
-                int16_t* grown;
-                cap = cap == 0u ? 1u << 20 : cap * 2u;
-                grown = (int16_t*)realloc(native, (size_t)cap * 4u);
-                if (grown == NULL) {
-                    ok = 0;
-                    break;
-                }
-                native = grown;
-            }
-            memcpy(native + n * 2u, buf, (size_t)got * 4u);
-            n += got;
-        }
-        if (got < kChunk || n >= (uint64_t)kMaxFrames) {
-            break;
-        }
-    }
-    brt_close();
-    if (!ok || n == 0u) {
-        free(native);
-        return 0;
-    }
-    s->pcm = native;
-    s->frames = n;
+    s->started = 1;
     return 1;
 }
 
+/* The engine renders frame by frame, so each call renders exactly what the host asks for: memory stays the engine's own state
+ * (the old whole-song buffer cost 176 KB per second of song, 317 MB for a 30 minute song). */
 static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
     bbbrt_state* s = (bbbrt_state*)state;
-    uint64_t left = s->pcm != NULL ? s->frames - s->pos : 0u;
-    uint32_t n = left < frames ? (uint32_t)left : frames;
-    if (n > 0u) {
-        memcpy(out, s->pcm + s->pos * 2u, (size_t)n * 4u);
-        s->pos += n;
+    uint32_t n;
+    if (!s->started) {
+        return 0;
     }
+    n = brt_render(s->song, out, frames);
+    s->pos += n;
     return n;
 }
 
+/* The mixer state is not invertible, so a seek restarts from the top when it goes backwards and renders (and discards) up to the
+ * target when it goes forwards. */
 static int rp_seek(void* state, uint32_t ms) {
     bbbrt_state* s = (bbbrt_state*)state;
-    if (s->pcm == NULL) {
+    uint64_t target;
+    int16_t* buf;
+    if (!s->started) {
         return 0;
     }
-    s->pos = (uint64_t)ms * s->rate / 1000u;
-    if (s->pos > s->frames) {
-        s->pos = s->frames;
+    target = (uint64_t)ms * s->rate / 1000u;
+    if (target < s->pos) {
+        if (!brt_start(s->song, s->rate)) {
+            s->started = 0;
+            return 0;
+        }
+        s->pos = 0;
     }
+    buf = (int16_t*)malloc((size_t)kChunk * 4u);
+    if (buf == NULL) {
+        return 0;
+    }
+    while (s->pos < target) {
+        uint64_t want = target - s->pos;
+        uint32_t got = brt_render(s->song, buf, want < kChunk ? (uint32_t)want : (uint32_t)kChunk);
+        s->pos += got;
+        if (got == 0u) {
+            break;
+        }
+    }
+    free(buf);
     return 1;
 }
 

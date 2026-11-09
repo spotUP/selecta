@@ -2693,6 +2693,18 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/berotracker-decode)
     set_tests_properties(berotracker-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "berotracker_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I710ba: all 19 Modland songs (length and energy each) and the incremental render (the first second of a long song is rendered
+    # without rendering the song), and the engine's per-song state (songs render interleaved with the same samples as alone).
+    set_tests_properties(berotracker-decode PROPERTIES TIMEOUT 3600)
+    enable_language(CXX)
+    add_executable(berotracker_engine m3/berotracker_engine.c "${PROJECT_SOURCE_DIR}/third_party/bbmp_berotracker/brt_engine.cpp")
+    target_include_directories(berotracker_engine PRIVATE "${PROJECT_SOURCE_DIR}/third_party/bbmp_berotracker")
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/third_party/bbmp_berotracker/brt_engine.cpp" PROPERTIES COMPILE_OPTIONS "-w;-ffp-contract=off")
+    set_target_properties(berotracker_engine PROPERTIES CXX_STANDARD 17 LINKER_LANGUAGE CXX)
+    add_test(NAME berotracker-engine
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/berotracker_engine.sh $<TARGET_FILE:berotracker_engine>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/berotracker-decode)
+    set_tests_properties(berotracker-engine PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "berotracker_engine_ok" SKIP_RETURN_CODE 77 TIMEOUT 300)
   endif()
 
   # I710u: Psycle songs (.psy) play through the render entry point (bbmp_psycle module, helper child process), GPL; two Alk
