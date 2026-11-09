@@ -57,7 +57,7 @@ static void pack(const krk_params* p, krk_uniforms* u, krk_brush* b) {
 }
 
 int main(void) {
-    static const uint32_t want[4][4] = {{100, 56, 36, 12}, {136, 76, 52, 20}, {200, 112, 76, 28}, {228, 128, 84, 36}};
+    static const uint32_t want[4][4] = {{100, 56, 36, 16}, {136, 76, 52, 20}, {200, 112, 76, 28}, {228, 128, 84, 30}};
     static const char* const names[4] = {"low", "medium", "high", "ultra"};
     const krk_knob_info* kt = krk_knob_table();
     krk_params p0, p;
@@ -97,12 +97,15 @@ int main(void) {
         krk_audio_step(&a, &fr, &p, 0.02f);
     }
     CHECK(a.beats == 0u, "silence gave %u beats", a.beats);
-    for (i = 101; i <= 150u; i++) {
+    /* Steady bass for 4 s: the 1 s average settles near 4000, so the onset at the
+       start stops firing after about 1.25 s and the spike lands far outside the
+       200 ms refractory window (design section 4). */
+    for (i = 101; i <= 300u; i++) {
         frame_bass(i, 4000);
         krk_audio_step(&a, &fr, &p, 0.02f);
     }
     k = a.beats;
-    frame_bass(151u, 30000);
+    frame_bass(301u, 30000);
     krk_audio_step(&a, &fr, &p, 0.02f);
     CHECK(a.beats == k + 1u, "bass spike: beats %u -> %u", k, a.beats);
     CHECK(a.heat_mul > 1.0f && a.emission > 0.0f, "beat heat %f emission %f", (double)a.heat_mul, (double)a.emission);

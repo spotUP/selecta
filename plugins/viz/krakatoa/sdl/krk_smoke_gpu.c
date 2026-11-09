@@ -97,8 +97,18 @@ krk_gpu* krk_gpu_create(const krk_grid* g, uint32_t out_w, uint32_t out_h) {
     k->g = *g;
     k->ow = out_w;
     k->oh = out_h;
+    /* SDL_CreateGPUDevice needs the video subsystem. The SDL window backend has it up already, but the mem backend
+       (tests, headless runs) never starts it, so the device failed there. Take a counted reference here and drop it
+       in krk_gpu_destroy, so the plugin works under any host backend. */
+    if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+        SDL_Log("krakatoa: video subsystem: %s", SDL_GetError());
+        free(k);
+        return NULL;
+    }
     k->dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_MSL, false, NULL);
     if (k->dev == NULL) {
+        SDL_Log("krakatoa: GPU device: %s", SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
         free(k);
         return NULL;
     }
@@ -263,6 +273,7 @@ void krk_gpu_destroy(krk_gpu* k) {
             SDL_ReleaseGPUTransferBuffer(k->dev, k->down);
         }
         SDL_DestroyGPUDevice(k->dev);
+        SDL_QuitSubSystem(SDL_INIT_VIDEO); /* the reference krk_gpu_create took */
     }
     free(k);
 }

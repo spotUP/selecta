@@ -7204,10 +7204,16 @@ static int32_t viz_switch_at(const desk* d, int32_t x, int32_t y) {
 }
 
 /* A click on a switch button runs the plugin's row of the action table (the line the View/Visualizer menu and its key
- * run); the action id equals the plugin id. */
+ * run); the action id equals the plugin id. I1052w: a plugin the shared action table has no row for (Krakatoa Smoke, any
+ * plugin found on the plugin path) sends the same pref line the rows send, so every button the switch draws picks its plugin. */
 static int viz_switch_click(desk* d, int32_t hit) {
-    const sel_uim_action* a = desk_action_by_id(d->viz_id[(uint32_t)hit % VIZ_MAX]);
-    if (a == NULL || !desk_send(d, a->line)) {
+    const char* id = d->viz_id[(uint32_t)hit % VIZ_MAX];
+    const sel_uim_action* a = desk_action_by_id(id);
+    char line[96];
+    if (a == NULL) {
+        (void)snprintf(line, sizeof line, "PREF_SET ui.desktop.viz %s", id);
+    }
+    if (!desk_send(d, a != NULL ? a->line : line)) {
         return 0;
     }
     d->viz_clicks++;
@@ -15540,14 +15546,36 @@ static int desk_replay_lines(desk* d, char* line) {
             opened |= desk_route_input(d, &ck);
             pointer_sent = d->sends != sent;
         } else if (sscanf(line, "viz %u", &n) == 1 && n < VIZ_MAX) { /* a click on the centre of visualizer switch button n (the page's, else the strip's) */
-            sel_gui_rect r = d->viz_btn[d->viz_btn[1][n].w > 0 ? 1 : 0][n];
+            /* I1052w: when the switch is the "< name >" control and n is not next to the selected plugin, button n is not
+             * drawn; click the chevron on the shorter way round instead and run this line again on the engine's answer,
+             * as a user steps the control, until n is drawn and gets its own click. */
+            uint32_t s = 0u, k = n;
+            sel_gui_rect r;
             sel_gui_input ck;
-            memset(&ck, 0, sizeof ck);
-            ck.kind = SEL_GUI_IN_CLICK;
-            ck.x = r.x + r.w / 2;
-            ck.y = r.y + r.h / 2;
-            opened |= desk_route_input(d, &ck);
+            for (k = 0; k < d->viz_n; k++) {
+                s |= d->viz_btn[1][k].w > 0 ? 1u : 0u;
+            }
+            k = n;
+            if (n < d->viz_n && d->viz_btn[s][n].w <= 0 && n != d->viz_sel) {
+                k = (n + d->viz_n - d->viz_sel) % d->viz_n <= d->viz_n / 2u ? (d->viz_sel + 1u) % d->viz_n : (d->viz_sel + d->viz_n - 1u) % d->viz_n;
+            }
+            r = d->viz_btn[s][k];
+            if (r.w > 0) { /* the selected plugin in the "< name >" control has no button: nothing to click */
+                memset(&ck, 0, sizeof ck);
+                ck.kind = SEL_GUI_IN_CLICK;
+                ck.x = r.x + r.w / 2;
+                ck.y = r.y + r.h / 2;
+                opened |= desk_route_input(d, &ck);
+            }
             pointer_sent = d->sends != sent;
+            if (k != n && pointer_sent && r.w > 0) { /* one step taken: this line again after the answer */
+                if (nl != NULL) {
+                    *nl = '\n';
+                }
+                d->input_at = line;
+                d->input_done = 0;
+                return 1;
+            }
         } else if (strncmp(line, "exec ", 5) == 0) { /* an engine line after the first page entry, so a test can set the source the page asked for */
             desk_send(d, line + 5);
             d->repaint = 1;
@@ -16503,6 +16531,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->host = a->host;
     d->find_plugin = a->find_plugin;
     viz_load(d);
+    viz_select(d, desk_pref(d, "ui.desktop.viz", "")); /* I1052w/I1230a: the stored pick; PREFS_CHANGED only reports later changes */
     d->output_id = a->output_id;
     dev_load(d);
     d->input_consumed = a->input_consumed;
