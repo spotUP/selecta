@@ -2879,6 +2879,16 @@ if(NOT SEL_AMIGA)
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
 
+    # I710aw: EdLib D01 (JCH header, version 1 song) plays through the render entry point (adplug d00 player); songs fetched by checksum, exit 77 = skip.
+    if(TARGET sel_module_adplug)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-edlib-d01-decode)
+      add_test(NAME adplug-edlib-d01-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/adplug_edlib_d01_decode.sh $<TARGET_FILE:selecta-cli>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-edlib-d01-decode)
+      set_tests_properties(adplug-edlib-d01-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_edlib_d01_decode_ok" SKIP_RETURN_CODE 77
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
+
     # I697: Megatracker plays through the render entry point (libxmp module); the format list is reported.
     if(TARGET sel_module_xmp)
       file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/xmp-decode)
