@@ -1100,6 +1100,9 @@ int main(int argc, char** argv)
     printf("text_libmode=%u text_scope=%u mode_keys=%u scope_keys=%u\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) >> 4 & 0xFu),
            (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) & 0xFu), (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) >> 8 & 0xFFu),
            (unsigned)(sel_tag_find(ust, SEL_UI_STAT_LIBMODE, 0) >> 16 & 0xFFu));
+    printf("text_menu opens=%u picks=%u answers=%u log=%s\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_MENU, 0) & 0xFFu),
+           (unsigned)(sel_tag_find(ust, SEL_UI_STAT_MENU, 0) >> 8 & 0xFFu), (unsigned)(sel_tag_find(ust, SEL_UI_STAT_MENU, 0) >> 16 & 0xFFu),
+           (const char*)sel_tag_find(ust, SEL_UI_STAT_MENU_LOG, (uintptr_t)""));
     printf("text_style=%u style_draws=%u\n", (unsigned)(sel_tag_find(ust, SEL_UI_STAT_STYLE, 0) & 0xFFu),
            (unsigned)(sel_tag_find(ust, SEL_UI_STAT_STYLE, 0) >> 8));
     {

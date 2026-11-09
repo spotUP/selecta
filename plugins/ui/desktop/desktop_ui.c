@@ -4898,7 +4898,7 @@ static uint32_t pl_hash(const sel_view_state* v) {
 }
 
 static const char* pl_button_label(uint32_t k) {
-    return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : "Play";
+    return sel_uim_plbtn_label(k);
 }
 
 /* ---- The playlist page (I633): the Playlists page shows one saved playlist as a Spotify-style page: cover, name, song count,

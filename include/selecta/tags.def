@@ -432,6 +432,10 @@ SEL_TAG(UI, STAT_SETTINGS,            0x50FB, INT)
 /* I1189: the text UI Shelf and Collection pages. Bits 0-7 Shelf pages opened, 8-15 Collection pages opened, 16-23 rows the page drew in
  * its latest frame, 24-27 page on screen now (0 none, 1 Shelf, 2 Collection). */
 SEL_TAG(UI, STAT_PAGES,               0x50FD, INT)
+/* I1190: the text UI song and playlist menu. Bits 0-7 times it opened, 8-15 items picked, 16-23 prompts (name, confirm) answered. */
+SEL_TAG(UI, STAT_MENU,                0x50FE, INT)
+/* I1190: the engine lines the menu sent, in order, '|' separated (the tail is kept). */
+SEL_TAG(UI, STAT_MENU_LOG,            0x50FF, STR)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
