@@ -851,6 +851,13 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-companion-decode)
   set_tests_properties(nuade-companion-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_companion_decode_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  # I710av: BP SoundMon 1.0 (mark BPSM) plays through the render entry point (nuade soundmon player); the song is fetched by checksum, exit 77 = skip.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-soundmon-decode)
+  add_test(NAME nuade-soundmon-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/nuade_soundmon_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-soundmon-decode)
+  set_tests_properties(nuade-soundmon-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_soundmon_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 endif()
 
 # T29: playlist codecs (Hippo .prg, M3U, PLS, XSPF), src/library/playlist.
