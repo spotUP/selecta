@@ -24,6 +24,7 @@
 #include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/route.h>
+#include <selecta/uimodel/viewcmds.h>
 #include <selecta/library_item.h>
 #include "spawn.h"
 #include "splash.h"
@@ -39,6 +40,11 @@
 #define TUI_MARKS 16u
 #define TUI_MARK_BYTES 256u
 #define TUI_VOLUME_STEP 5
+
+#define TUI_MENU_MAX 10u
+
+/* Menu items (I1190): the song menu in sel_uim_song_menu_label order, the playlist menu, and the playlist picker. */
+enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK };
 
 typedef struct tui {
     sel_engine* engine;
@@ -80,7 +86,7 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[26];
+    sel_tag stats[28];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -102,6 +108,12 @@ typedef struct tui {
     int pg;                                /* I1189: page on screen, 0 none, 1 Shelf, 2 Collection */
     uint32_t pg_shelf, pg_cur, pg_serial, pg_kind, pg_opens_shelf, pg_opens_coll, pg_rows;
     char pg_key[128], pg_title[96];
+    /* I1190: the song and playlist menu (overlay 4), its name prompt (cmd_mode 3) and confirm prompt (cmd_mode 4) */
+    uint32_t mn_n, mn_cur, mn_opens, mn_picks, mn_answers, mn_pending;
+    uint32_t mn_act[TUI_MENU_MAX], mn_pl[TUI_MENU_MAX]; /* item action; MN_PLPICK: playlist id (0 makes a new one) */
+    char mn_lab[TUI_MENU_MAX][64];
+    uint32_t mn_id, mn_folder, mn_parent, mn_qid; /* playlist or folder under the cursor; folder to create in; queue entry id */
+    char mn_title[96], mn_key[256], mn_log[192];
     int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
 
@@ -756,6 +768,184 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
     u->pg_rows = drawn;
 }
 
+/* ---- the song and playlist menu (I1190) ---- */
+
+static void tui_menu_add(tui* u, uint32_t act, const char* label, uint32_t pl) {
+    if (u->mn_n < TUI_MENU_MAX) {
+        u->mn_act[u->mn_n] = act;
+        u->mn_pl[u->mn_n] = pl;
+        snprintf(u->mn_lab[u->mn_n], sizeof u->mn_lab[0], "%s", label);
+        u->mn_n++;
+    }
+}
+
+/* Sends a line the menu chose and keeps it in the sentinel log. */
+static void tui_menu_send(tui* u, const char* line) {
+    size_t len = strlen(u->mn_log);
+    if (len + strlen(line) + 2u >= sizeof u->mn_log) {
+        u->mn_log[0] = '\0';
+        len = 0;
+    }
+    snprintf(u->mn_log + len, sizeof u->mn_log - len, "%s%s", len > 0 ? "|" : "", line);
+    tui_send(u, line);
+}
+
+/* Opens the menu for the row under the cursor: a song (queue, library, browse file) or, in the playlist tree, a playlist or
+ * folder plus New Folder and New Playlist. Labels come from the shared uimodel tables the desktop menus use. */
+static void tui_menu_open(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    const sel_view_row* row = NULL;
+    const char* key;
+    uint32_t k;
+    if (v == NULL) {
+        return;
+    }
+    if (v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n) {
+        row = &v->rows[v->cursor - v->window_start];
+    }
+    u->mn_n = 0;
+    u->mn_cur = 0;
+    u->mn_id = u->mn_folder = u->mn_parent = u->mn_qid = 0;
+    u->mn_key[0] = '\0';
+    if (v->source == SEL_VIEW_FOLDERS) {
+        snprintf(u->mn_title, sizeof u->mn_title, "%s", row != NULL && (row->kind == (uint32_t)SEL_ROW_PLAYLIST || row->kind == (uint32_t)SEL_ROW_FOLDER) ? row->text : "Playlists");
+        if (row != NULL && (row->kind == (uint32_t)SEL_ROW_PLAYLIST || row->kind == (uint32_t)SEL_ROW_FOLDER)) {
+            u->mn_id = row->id;
+            u->mn_folder = row->kind == (uint32_t)SEL_ROW_FOLDER;
+            u->mn_parent = u->mn_folder ? row->id : 0u;
+            for (k = 0; k < 2u; k++) {
+                uint32_t act = sel_uim_plmenu_action(u->mn_folder, k);
+                if (act != (uint32_t)SEL_UIM_PLACT_NONE) {
+                    tui_menu_add(u, act == (uint32_t)SEL_UIM_PLACT_RENAME ? MN_RENAME : MN_DELETE, sel_uim_plmenu_label(act), 0);
+                }
+            }
+        }
+        tui_menu_add(u, MN_NEWFOLDER, sel_uim_plbtn_label(0), 0);
+        tui_menu_add(u, MN_NEWPL, sel_uim_plbtn_label(1), 0);
+    } else if (row != NULL && row->kind != (uint32_t)SEL_ROW_NODE && row->kind != (uint32_t)SEL_ROW_DIR &&
+               (key = sel_engine_view_cursor_key(u->engine)) != NULL) {
+        int on_queue = v->source == SEL_VIEW_QUEUE;
+        snprintf(u->mn_key, sizeof u->mn_key, "%s", key);
+        snprintf(u->mn_title, sizeof u->mn_title, "%s", row->text != NULL ? row->text : key);
+        u->mn_qid = v->cursor_id;
+        for (k = 0; k < (uint32_t)SEL_UIM_SONG_MENU_ITEMS; k++) {
+            tui_menu_add(u, k, sel_uim_song_menu_label(k, on_queue), 0);
+        }
+        u->mn_pending = (uint32_t)on_queue;
+    } else {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "No song or playlist under the cursor");
+        return;
+    }
+    u->mn_opens++;
+    u->overlay = 4;
+}
+
+/* The playlists a song can join: New Playlist, then the saved ones (the desktop Add to Playlist submenu, read synchronously). */
+static void tui_menu_playlists(tui* u) {
+    sel_engine_library_item items[TUI_MENU_MAX - 1u];
+    uint32_t n = sel_engine_library_items(u->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0, items, TUI_MENU_MAX - 1u, NULL), i;
+    u->mn_n = 0;
+    u->mn_cur = 0;
+    tui_menu_add(u, MN_PLPICK, sel_uim_plbtn_label(1), 0);
+    for (i = 0; i < n; i++) {
+        tui_menu_add(u, MN_PLPICK, items[i].name, items[i].id);
+    }
+}
+
+/* A prompt answered: the name for Rename, New Folder, New Playlist. */
+static void tui_menu_name(tui* u, const char* name) {
+    char line[256];
+    u->mn_answers++;
+    if (u->mn_pending == (uint32_t)MN_RENAME) {
+        if (sel_uim_plrename_line(u->mn_id, name, line, sizeof line) > 0u) {
+            tui_menu_send(u, line);
+        }
+    } else if (sel_uim_plbtn_line(u->mn_pending == (uint32_t)MN_NEWFOLDER ? 0u : 1u, name, u->mn_parent, line, sizeof line) > 0u) {
+        tui_menu_send(u, line);
+    }
+    tui_send(u, "VIEW_SOURCE folders");
+}
+
+/* A confirm answered: y runs the delete / library removal, anything else cancels. */
+static void tui_menu_confirm(tui* u, uint32_t code) {
+    char line[320];
+    u->mn_answers++;
+    if (code != (uint32_t)'y' && code != (uint32_t)'Y') {
+        return;
+    }
+    if (u->mn_pending == (uint32_t)MN_DELETE) {
+        sel_uim_pldel_line(u->mn_folder, u->mn_id, line, sizeof line);
+        tui_menu_send(u, line);
+        tui_send(u, "VIEW_SOURCE folders");
+    } else {
+        snprintf(line, sizeof line, "LIBRARY_REMOVE \"%s\"", u->mn_key);
+        tui_menu_send(u, line);
+    }
+}
+
+static void tui_menu_pick(tui* u) {
+    uint32_t act = u->mn_act[u->mn_cur];
+    char line[320];
+    u->mn_picks++;
+    if (act == (uint32_t)MN_PLPICK) {
+        snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)u->mn_pl[u->mn_cur], u->mn_key);
+        tui_menu_send(u, line);
+        u->overlay = 0;
+        return;
+    }
+    u->overlay = 0;
+    if (act == (uint32_t)MN_PLAY) {
+        tui_menu_send(u, "VIEW_ACTIVATE");
+    } else if (act == (uint32_t)MN_NEXT || act == (uint32_t)MN_QUEUE) {
+        snprintf(line, sizeof line, "%s \"%s\"", act == (uint32_t)MN_NEXT ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", u->mn_key);
+        tui_menu_send(u, line);
+    } else if (act == (uint32_t)MN_ADDPL) {
+        tui_menu_playlists(u);
+        u->overlay = 4;
+    } else if (act == (uint32_t)MN_REMOVE && u->mn_pending == 1u) { /* on the queue: the entry leaves the queue */
+        snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)u->mn_qid);
+        tui_menu_send(u, line);
+    } else if (act == (uint32_t)MN_REMOVE || act == (uint32_t)MN_DELETE) {
+        u->mn_pending = act;
+        u->cmd_mode = 4;
+        if (act == (uint32_t)MN_REMOVE) {
+            sel_uim_remove_text(u->mn_title, u->mn_lab[0], sizeof u->mn_lab[0]);
+        } else {
+            sel_uim_pldel_text(u->mn_folder, u->mn_title, u->mn_lab[0], sizeof u->mn_lab[0]);
+        }
+    } else { /* Rename, New Folder, New Playlist: ask for the name */
+        u->mn_pending = act;
+        txt_cmdline_open(&u->cmd);
+        u->cmd_mode = 3;
+    }
+}
+
+static void tui_menu_key(tui* u, const txt_key* k) {
+    if (k->code == 27u || k->code == 127u) {
+        u->overlay = 0;
+    } else if (k->code == 13u) {
+        tui_menu_pick(u);
+    } else if (k->code == TXT_KEY_UP || k->code == (uint32_t)'k') {
+        u->mn_cur = u->mn_cur > 0u ? u->mn_cur - 1u : u->mn_n - 1u;
+    } else if (k->code == TXT_KEY_DOWN || k->code == (uint32_t)'j') {
+        u->mn_cur = u->mn_cur + 1u < u->mn_n ? u->mn_cur + 1u : 0u;
+    }
+}
+
+static void tui_menu_draw(tui* u) {
+    uint32_t w = u->grid.cols > 44u ? 44u : u->grid.cols, x0 = (u->grid.cols - w) / 2u, i;
+    txt_style n = tui_style(u, TXT_ROLE_NORMAL), d = tui_style(u, TXT_ROLE_DIM), sel = tui_style(u, TXT_ROLE_CURSOR);
+    for (i = 0; i < u->mn_n + 2u && 1u + i < u->grid.rows; i++) {
+        txt_grid_fill(&u->grid, x0, 1u + i, w, 1, ' ', n);
+    }
+    txt_grid_text(&u->grid, x0 + 1u, 1, u->mn_title, w - 2u, d);
+    for (i = 0; i < u->mn_n; i++) {
+        txt_style st = i == u->mn_cur ? sel : n;
+        txt_grid_fill(&u->grid, x0, 2u + i, w, 1, ' ', st);
+        txt_grid_text(&u->grid, x0 + 2u, 2u + i, u->mn_lab[i], w - 3u, st);
+    }
+}
+
 static int tui_local(tui* u, const char* name, const txt_key* k) {
     const sel_state* s = sel_engine_state(u->engine);
     char line[48];
@@ -858,6 +1048,8 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         txt_palette_open(&u->pal, &u->binds);
         u->palette_opens++;
         u->overlay = name[0] == 'p' ? 1 : 2;
+    } else if (strcmp(name, "menu") == 0) {
+        tui_menu_open(u);
     } else if (strcmp(name, "mark") == 0) {
         tui_mark(u);
     } else if (strcmp(name, "quit") == 0) {
@@ -869,8 +1061,21 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
 }
 
 static void tui_cmd_key(tui* u, const txt_key* k) {
-    txt_cmd_result r = txt_cmdline_key(&u->cmd, k->code, k->mods);
+    txt_cmd_result r;
+    if (u->cmd_mode == 4) { /* the confirm prompt takes one key */
+        u->cmd_mode = 0;
+        tui_menu_confirm(u, k->code);
+        return;
+    }
+    r = txt_cmdline_key(&u->cmd, k->code, k->mods);
     if (r == TXT_CMD_EDITING) {
+        return;
+    }
+    if (u->cmd_mode == 3) { /* the name prompt: Escape cancels */
+        u->cmd_mode = 0;
+        if (r == TXT_CMD_SUBMIT) {
+            tui_menu_name(u, txt_cmdline_text(&u->cmd));
+        }
         return;
     }
     if (u->cmd_mode == 2) { /* the search prompt: an empty line lists all songs */
@@ -896,6 +1101,10 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
     txt_pal_result r;
     if (u->overlay == 3) {
         tui_settings_key(u, k);
+        return;
+    }
+    if (u->overlay == 4) {
+        tui_menu_key(u, k);
         return;
     }
     r = txt_palette_key(&u->pal, k->code, k->mods);
@@ -1763,6 +1972,8 @@ static void tui_draw(tui* u) {
     }
     if (u->overlay == 3) {
         tui_settings(u);
+    } else if (u->overlay == 4) {
+        tui_menu_draw(u);
     } else if (u->overlay) {
         tui_overlay(u);
     }
@@ -1770,7 +1981,13 @@ static void tui_draw(tui* u) {
     if (u->cmd_mode || u->cmd.status[0] != '\0') {
         char line[TXT_CMD_LINE + TXT_CMD_STATUS + 8];
         if (u->cmd_mode) {
-            snprintf(line, sizeof line, "%c%s%s%s", u->cmd_mode == 2 ? '/' : ':', txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+            if (u->cmd_mode == 4) {
+                snprintf(line, sizeof line, "%s  y Yes  any other key No", u->mn_lab[0]);
+            } else if (u->cmd_mode == 3) {
+                snprintf(line, sizeof line, "%s name: %s", u->mn_pending == (uint32_t)MN_RENAME ? "Rename" : u->mn_pending == (uint32_t)MN_NEWFOLDER ? "New Folder" : "New Playlist", txt_cmdline_text(&u->cmd));
+            } else {
+                snprintf(line, sizeof line, "%c%s%s%s", u->cmd_mode == 2 ? '/' : ':', txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+            }
         } else {
             snprintf(line, sizeof line, "%s", u->cmd.status);
         }
@@ -1779,7 +1996,7 @@ static void tui_draw(tui* u) {
         return;
     }
     if (s->view != NULL && s->view->source == SEL_VIEW_FOLDERS) {
-        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, "Enter Play playlist  Up Down Move  Tab Browse  l Library  q Quit",
+        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, "Enter Play playlist  w Menu  Up Down Move  Tab Browse  l Library  q Quit",
                       u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
         return;
     }
@@ -2132,8 +2349,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[23].value = u->set_focus << 16 | u->set_opens << 8 | u->set_sets;
     u->stats[24].tag = SEL_UI_STAT_PAGES;
     u->stats[24].value = (u->pg_opens_shelf & 0xFFu) | (u->pg_opens_coll & 0xFFu) << 8 | (u->pg_rows & 0xFFu) << 16 | ((uint32_t)u->pg & 0xFu) << 24;
-    u->stats[25].tag = SEL_TAG_END;
-    u->stats[25].value = 0;
+    u->stats[25].tag = SEL_UI_STAT_MENU;
+    u->stats[25].value = (u->mn_opens & 0xFFu) | (u->mn_picks & 0xFFu) << 8 | (u->mn_answers & 0xFFu) << 16;
+    u->stats[26].tag = SEL_UI_STAT_MENU_LOG;
+    u->stats[26].value = (uintptr_t)u->mn_log;
+    u->stats[27].tag = SEL_TAG_END;
+    u->stats[27].value = 0;
     return u->stats;
 }
 

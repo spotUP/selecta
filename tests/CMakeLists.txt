@@ -4291,3 +4291,15 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_pages.cmake")
   set_tests_properties(text-ui-pages PROPERTIES LABELS m3)
 endif()
+
+# I1190: the text UI song menu and playlist menu (key w) over the uimodel label and line builders.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-menu
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu_b.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_menu"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu.cmake")
+  set_tests_properties(text-ui-menu PROPERTIES LABELS m3)
+endif()

@@ -15,6 +15,9 @@ extern "C" {
  * for a bad button. */
 uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, char* out, uint32_t cap);
 
+/* Label of the Playlists view button k: 0 New Folder, 1 New Playlist, 2 Play (NULL beyond). */
+const char* sel_uim_plbtn_label(uint32_t k);
+
 /* Playlist rename and delete (the opened playlist page's More menu, the row context menu). The rename line needs a non-empty
  * name (0 otherwise). `folder` selects FOLDER_DEL over PLAYLIST_DEL. Returns the line length, 0 on a bad argument. */
 uint32_t sel_uim_plrename_line(uint32_t id, const char* name, char* out, uint32_t cap);

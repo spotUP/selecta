@@ -17,6 +17,10 @@ uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, 
                         : done(snprintf(out, cap, "PLAYLIST_CREATE \"%s\" %u", name, (unsigned)folder), cap);
 }
 
+const char* sel_uim_plbtn_label(uint32_t k) {
+    return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : k == 2u ? "Play" : NULL;
+}
+
 uint32_t sel_uim_plrename_line(uint32_t id, const char* name, char* out, uint32_t cap) {
     return name == NULL || name[0] == '\0' ? 0u : done(snprintf(out, cap, "PLAYLIST_RENAME %u \"%s\"", (unsigned)id, name), cap);
 }
