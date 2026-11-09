@@ -74,8 +74,8 @@ if("${c2}" MATCHES "nav page=search")
 endif()
 
 # I1224: a source page carries the list tools (search field, sort) whether or not its rows are loaded yet.
-if(NOT "${c2}" MATCHES "collection_tools shown=1")
-  message(FATAL_ERROR "the source page must show the list tools (collection_tools shown=1):\n${c2}")
+if(NOT "${c2}" MATCHES "collection_tools shown=1 field=0\n")
+  message(FATAL_ERROR "the source page must show the list tools but no local search field (collection_tools shown=1 field=0):\n${c2}")
 endif()
 
 # The Your Library filter field holds the keyboard (magnifier click) when the user then clicks the top bar field.

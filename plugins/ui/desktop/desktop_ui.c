@@ -301,7 +301,6 @@ typedef struct desk {
     int col_cover;           /* 1 when col_color came from the first song's cover */
     int col_cover_wait;      /* I906c: the header cover is queued on the art worker; the header refreshes when it lands */
     int col_search;          /* 1 while the collection's search field has the keyboard */
-    uint32_t col_source_searches; /* I1229: clicks on a searchable source page's field that opened the Search page scoped to it */
     char col_q[64];
     size_t col_qlen;
     uint32_t add_id;         /* I652b: the playlist the Library page adds to (0 = the Library page is not in add mode) */
@@ -5321,6 +5320,12 @@ static const char* col_source_scope(const desk* d) {
     return d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? sel_uim_search_scope_of_source(d->src, d->src_n, d->col_key) : NULL;
 }
 
+/* I1229a: the local row filter field. A searchable source page has none: its catalogue is searched from the top bar (I1224),
+ * which opens the Search page scoped to the source; playlists and non-searchable sources keep the field as their row filter. */
+static int col_field_shown(const desk* d) {
+    return col_tools_shown(d) && col_source_scope(d) == NULL;
+}
+
 static sel_gui_rect col_sort_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect m = pls_more_rect(d, mn);
     return rect_of(m.x + m.w + lpx(d, QUEUE_BTN_GAP), m.y, m.w + lpx(d, 48), m.h);
@@ -6174,8 +6179,10 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     if (col_tools_shown(d)) { /* I678e: the sort button and the search field */
         sel_gui_rect fr = col_find_rect(d, mn);
         draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
-        sel_gui_round_rect(d->canvas, fr, rad, surf);
-        draw_text(d, rect_of(fr.x + lpx(d, 12), fr.y, fr.w - lpx(d, 24), fr.h), d->col_qlen > 0u ? d->col_q : "Search in this collection", 0, 13, d->col_qlen > 0u ? text : muted);
+        if (col_field_shown(d)) {
+            sel_gui_round_rect(d->canvas, fr, rad, surf);
+            draw_text(d, rect_of(fr.x + lpx(d, 12), fr.y, fr.w - lpx(d, 24), fr.h), d->col_qlen > 0u ? d->col_q : "Search in this collection", 0, 13, d->col_qlen > 0u ? text : muted);
+        }
         if (d->col_search) {
             const sel_gui_atlas* at = desk_font(d, 0, 13);
             int32_t tw = at != NULL ? sel_gui_text_width(at, d->col_q, d->col_qlen) : 0, ch = fr.h - lpx(d, 12), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
@@ -6447,16 +6454,7 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             col_changed(d);
             return 1;
         }
-        d->col_search = in_rect(col_find_rect(d, mn), ev->x, ev->y);
-        if (d->col_search && col_source_scope(d) != NULL) {
-            /* I1229: on a searchable source page the field is that source's search: the Search page opens scoped to the
-             * source (desk_page_apply derives the scope from this page), the field focused, so a query such as "jammer"
-             * reaches the catalogue search instead of filtering the few folder rows the page has loaded */
-            d->col_search = 0;
-            d->col_source_searches++;
-            desk_route(d, SEL_ROUTE_DOOR_SEARCH, 0u, 0u, "", "", "");
-            return 1;
-        }
+        d->col_search = col_field_shown(d) && in_rect(col_find_rect(d, mn), ev->x, ev->y);
         if (d->col_search) {
             d->pl_edit = 0;
             d->repaint = 1;
@@ -7856,7 +7854,6 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "pastes %u\n", (unsigned)d->pastes); /* I999 */
     o = dump_put(d, o, "online_filter filtered=%d queries=%u\n", d->scope_filtered, (unsigned)d->searches); /* I1224 */
-    o = dump_put(d, o, "col_source_search opens=%u\n", (unsigned)d->col_source_searches); /* I1229 */
     o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u saves=%u\n", d->scope[0] != '\0' ? d->scope : "-",
                  (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays, (unsigned)d->on_saves);
     {
@@ -8036,7 +8033,7 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
                          (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws,
                          (unsigned)cst.collection_views, (unsigned)cst.collection_orders, (unsigned)d->col_eshown);
-            o = dump_put(d, o, "collection_tools shown=%d\n", col_tools_shown(d)); /* I1224 */
+            o = dump_put(d, o, "collection_tools shown=%d field=%d\n", col_tools_shown(d), col_field_shown(d)); /* I1224, I1229a */
             if (d->col_kind != 0u) { /* I678f: the kind page's shelves, the Popular limit and the geometry a script clicks */
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
                 o = dump_put(d, o, "kindscroll scroll=%u max=%u listtop=%d moredrawn=%d,%d,%d,%d\n", (unsigned)d->pls_scroll, (unsigned)col_scroll_max(d, pmn),
