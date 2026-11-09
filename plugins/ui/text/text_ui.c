@@ -30,6 +30,7 @@
 #include "splash.h"
 #include "term.h"
 #include <selecta/uimodel/theme.h>
+#include <selecta/uimodel/viewcmds.h>
 
 #define TUI_POOL_BYTES 1024u
 #define TUI_DEFAULT_COLS 80u
@@ -40,6 +41,9 @@
 #define TUI_MARKS 16u
 #define TUI_MARK_BYTES 256u
 #define TUI_VOLUME_STEP 5
+#define TUI_NOTE_BYTES 128u
+
+enum { TUI_INFO_NONE = 0, TUI_INFO_NOWPLAYING = 1, TUI_INFO_SONGINFO = 2 };
 
 #define TUI_MENU_MAX 10u
 
@@ -72,6 +76,9 @@ typedef struct tui {
     const char* frame_dump_path; /* --frame-dump: raw frame bytes appended (row I218d2) */
     int dirty;
     int info;
+    int page;           /* 0 none, 1 Now Playing, 2 Song Information (I1191) */
+    char si_note[TUI_NOTE_BYTES]; /* the Song Information note field */
+    uint32_t si_actions, np_draws; /* I1191 sentinels */
     int splash_wanted;  /* no --exec was given: the start screen may show (row I355) */
     int splash_off;     /* a key or a song ended the start screen for good */
     int splash_shown;   /* the frame being drawn is the start screen */
@@ -86,7 +93,7 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[28];
+    sel_tag stats[30];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -1022,6 +1029,28 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         tui_remove_cursor_entry(u);
     } else if (strcmp(name, "info") == 0) {
         u->info = !u->info;
+    } else if (strcmp(name, "nowplaying") == 0 || strcmp(name, "songinfo") == 0) {
+        int want = name[0] == 'n' ? TUI_INFO_NOWPLAYING : TUI_INFO_SONGINFO;
+        u->page = u->page == want ? TUI_INFO_NONE : want;
+        u->pattern = 0;
+        u->viz = 0;
+    } else if (strcmp(name, "page_close") == 0) {
+        u->page = TUI_INFO_NONE;
+    } else if (strcmp(name, "si_wrong") == 0 || strcmp(name, "si_skip") == 0 || strcmp(name, "si_save") == 0) {
+        /* Mark Wrong, Skip Song, Save Note: the same lines the desktop and MUI buttons send (sel_uim_flag_line). */
+        if (u->page == TUI_INFO_SONGINFO) {
+            char fl[TUI_NOTE_BYTES + 32u];
+            uint32_t b = name[3] == 'w' ? 0u : name[3] == 's' && name[4] == 'k' ? 1u : 2u;
+            if (sel_uim_flag_line(b, u->si_note, fl, sizeof fl) > 0u) {
+                u->si_actions++;
+                tui_send(u, fl);
+            }
+        }
+    } else if (strcmp(name, "si_edit") == 0) {
+        if (u->page == TUI_INFO_SONGINFO) {
+            txt_cmdline_open(&u->cmd);
+            u->cmd_mode = 5;
+        }
     } else if (strcmp(name, "viz") == 0) {
         u->viz = (u->viz + 1) % 7;
         u->pattern = 0;
@@ -1069,6 +1098,20 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
     }
     r = txt_cmdline_key(&u->cmd, k->code, k->mods);
     if (r == TXT_CMD_EDITING) {
+        return;
+    }
+    if (u->cmd_mode == 5) { /* the note field: Enter keeps the text (quotes dropped, the verb quotes the note), Escape leaves it */
+        u->cmd_mode = 0;
+        if (r == TXT_CMD_SUBMIT) {
+            const char* t = txt_cmdline_text(&u->cmd);
+            uint32_t n = 0;
+            for (; *t != '\0' && n + 1u < TUI_NOTE_BYTES; t++) {
+                if (*t != '"' && (unsigned char)*t >= 32u) {
+                    u->si_note[n++] = *t;
+                }
+            }
+            u->si_note[n] = '\0';
+        }
         return;
     }
     if (u->cmd_mode == 3) { /* the name prompt: Escape cancels */
@@ -1147,6 +1190,9 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
 
 /* The binding context: the pattern and viz panels replace the list pane. */
 static uint32_t tui_bind_ctx(const tui* u) {
+    if (u->page != TUI_INFO_NONE) {
+        return TXT_CTX_PAGE;
+    }
     return (u->pattern || u->viz || u->layout == SEL_UIM_LAYOUT_MINI || u->layout == SEL_UIM_LAYOUT_VISUAL) ? TXT_CTX_PLAYER
                                                                                                           : TXT_CTX_LIST;
 }
@@ -1546,11 +1592,11 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
 
 
 /* Every META tag the replayer reported, in tags.def order. */
-static void tui_info(tui* u, const sel_state* s, uint32_t x) {
+static void tui_info(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
     const uintptr_t absent = (uintptr_t)-1;
-    uint32_t tag, y = 3;
+    uint32_t tag, y = top + 1u;
     uint32_t w = u->grid.cols - x - 1u;
-    txt_grid_text(&u->grid, x, 2, "Information", w, tui_style(u, TXT_ROLE_LABEL));
+    txt_grid_text(&u->grid, x, top, "Information", w, tui_style(u, TXT_ROLE_LABEL));
     for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL && y < u->grid.rows - 1u; tag++) {
         uintptr_t v = sel_tag_find(s->song.meta, tag, absent);
         sel_tag_type type = SEL_TT_INT;
@@ -1595,6 +1641,52 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x) {
             p = value + strlen(value) + 1;
         }
     }
+}
+
+/* Now Playing page (desktop PG_NOWPLAYING): the open song's title, artist and format, then the next songs of the queue. */
+static void tui_nowplaying_page(tui* u, const sel_state* s) {
+    char buf[300], format[SEL_FORMAT_LABEL_MAX];
+    const char* title = (const char*)sel_tag_find(s->song.meta, SEL_META_TITLE, 0);
+    const char* author = (const char*)sel_tag_find(s->song.meta, SEL_META_AUTHOR, 0);
+    uint32_t k, first, y = 7;
+    txt_style lab = tui_style(u, TXT_ROLE_LABEL);
+    u->np_draws++;
+    txt_grid_text(&u->grid, 1, 2, "Now Playing", u->grid.cols - 2u, lab);
+    if (s->song.path == NULL) {
+        txt_grid_text(&u->grid, 1, 4, sel_uim_state_text(SEL_UIM_SV_NOWPLAYING, SEL_UIM_ST_EMPTY), u->grid.cols - 2u,
+                      tui_style(u, TXT_ROLE_DIM));
+    } else {
+        sel_format_label((const char*)sel_tag_find(s->song.meta, SEL_META_FORMAT, 0), format, sizeof format);
+        txt_grid_text(&u->grid, 1, 4, title != NULL && title[0] ? title : "-", u->grid.cols - 2u, tui_style(u, TXT_ROLE_VALUE));
+        txt_grid_text(&u->grid, 1, 5, author != NULL ? author : "", u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
+        txt_grid_text(&u->grid, 1, 6, format, u->grid.cols - 2u, tui_style(u, TXT_ROLE_DIM));
+    }
+    y++;
+    txt_grid_text(&u->grid, 1, y++, "Next in Queue", u->grid.cols - 2u, lab);
+    for (k = 0; k < s->queue_count && s->queue[k].id != s->queue_playing; k++) {
+    }
+    for (first = ++k; k < s->queue_count && k - first < 8u && y + 1u < u->grid.rows; k++, y++) {
+        const char* path = s->queue_text + s->queue[k].path_offset;
+        const char* slash = strrchr(path, '/');
+        snprintf(buf, sizeof buf, "%s", slash != NULL ? slash + 1 : path);
+        txt_grid_text(&u->grid, 1, y, buf, u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
+    }
+}
+
+/* Song Information page (desktop draw_songinfo): the three buttons, the note field, then every tag of the open song. */
+static void tui_songinfo_page(tui* u, const sel_state* s) {
+    char buf[300];
+    uint32_t b, x = 1;
+    static const char* const keys[3] = {"w", "x", "Enter"};
+    txt_grid_text(&u->grid, 1, 2, "Song Information", u->grid.cols - 2u, tui_style(u, TXT_ROLE_LABEL));
+    for (b = 0; b < 3u; b++) {
+        snprintf(buf, sizeof buf, "%s %s", keys[b], sel_uim_flag_label(b));
+        txt_grid_text(&u->grid, x, 3, buf, u->grid.cols - x - 1u, tui_style(u, TXT_ROLE_VALUE));
+        x += (uint32_t)strlen(buf) + 3u;
+    }
+    snprintf(buf, sizeof buf, "e Note: %s", u->si_note[0] != '\0' ? u->si_note : "");
+    txt_grid_text(&u->grid, 1, 4, buf, u->grid.cols - 2u, tui_style(u, u->si_note[0] != '\0' ? TXT_ROLE_NORMAL : TXT_ROLE_DIM));
+    tui_info(u, s, 1u, 6u);
 }
 
 /* Palette and help overlay: query line, then verbs grouped by area (query empty)
@@ -1966,6 +2058,10 @@ static void tui_draw(tui* u) {
         tui_stats_pane(u, s, width);
     } else if (u->layout == SEL_UIM_LAYOUT_MINI) {
         ; /* the header alone */
+    } else if (u->page == TUI_INFO_NOWPLAYING) {
+        tui_nowplaying_page(u, s);
+    } else if (u->page == TUI_INFO_SONGINFO) {
+        tui_songinfo_page(u, s);
     } else if (u->pattern) {
         tui_pattern_panel(u, s, width);
     } else if (u->viz) {
@@ -1975,11 +2071,11 @@ static void tui_draw(tui* u) {
     } else {
         tui_pane(u, s, width);
     }
-    if (width < u->grid.cols) {
+    if (width < u->grid.cols && u->page == TUI_INFO_NONE) {
         for (y = 2; y + 1u < u->grid.rows; y++) {
             txt_grid_put(&u->grid, width, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
         }
-        tui_info(u, s, width + 2u);
+        tui_info(u, s, width + 2u, 2u);
     }
     if (u->overlay == 3) {
         tui_settings(u);
@@ -1994,6 +2090,8 @@ static void tui_draw(tui* u) {
         if (u->cmd_mode) {
             if (u->cmd_mode == 4) {
                 snprintf(line, sizeof line, "%s  y Yes  any other key No", u->mn_lab[0]);
+            } else if (u->cmd_mode == 5) {
+                snprintf(line, sizeof line, "Note: %s%s%s", txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
             } else if (u->cmd_mode == 3) {
                 snprintf(line, sizeof line, "%s name: %s", u->mn_pending == (uint32_t)MN_RENAME ? "Rename" : u->mn_pending == (uint32_t)MN_NEWFOLDER ? "New Folder" : "New Playlist", txt_cmdline_text(&u->cmd));
             } else {
@@ -2364,8 +2462,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[25].value = (u->mn_opens & 0xFFu) | (u->mn_picks & 0xFFu) << 8 | (u->mn_answers & 0xFFu) << 16;
     u->stats[26].tag = SEL_UI_STAT_MENU_LOG;
     u->stats[26].value = (uintptr_t)u->mn_log;
-    u->stats[27].tag = SEL_TAG_END;
-    u->stats[27].value = 0;
+    u->stats[27].tag = SEL_UI_STAT_SONGINFO_ACTIONS;
+    u->stats[27].value = u->si_actions;
+    u->stats[28].tag = SEL_UI_STAT_NOWPLAY_DRAWS;
+    u->stats[28].value = u->np_draws;
+    u->stats[29].tag = SEL_TAG_END;
+    u->stats[29].value = 0;
     return u->stats;
 }
 

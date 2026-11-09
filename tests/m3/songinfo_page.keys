@@ -1,0 +1,18 @@
+# I1191 text-ui-songinfo-page: I opens Song Information, e edits the note field (a, b, Enter), Enter saves the note,
+# w marks the song wrong with that note, x skips it, N opens Now Playing.
+wait 500
+I
+wait 200
+e
+a
+b
+Enter
+wait 100
+Enter
+wait 300
+w
+wait 300
+x
+wait 300
+N
+wait 300

@@ -88,12 +88,12 @@ int txt_key_parse(const char* name, uint32_t* code, uint32_t* mods) {
     return 0;
 }
 
-static const char* const k_ctx_prefix[] = {"", "list:", "player:"};
+static const char* const k_ctx_prefix[] = {"", "list:", "player:", "page:"};
 
 int txt_key_parse_ctx(const char* name, uint32_t* ctx, uint32_t* code, uint32_t* mods) {
     uint32_t c;
     *ctx = TXT_CTX_ANY;
-    for (c = TXT_CTX_LIST; c <= TXT_CTX_PLAYER; c++) {
+    for (c = TXT_CTX_LIST; c <= TXT_CTX_PAGE; c++) {
         size_t n = strlen(k_ctx_prefix[c]);
         if (strncmp(name, k_ctx_prefix[c], n) == 0) {
             *ctx = c;
@@ -180,6 +180,12 @@ static const struct {
     {"player:PageUp", "@subsong_prev"}, {"player:PageDown", "@subsong_next"},
     {"player:Home", "SEEK 0"},   {"player:Enter", "@play_pause"},
     {"player:Backspace", "@show_list"}, {"player:Escape", "@show_list"},
+    /* I1191: the Now Playing (N) and Song Information (I) pages. On Song Information w marks the song as sounding
+       wrong, x skips it, e edits the note and Enter saves it, as the desktop buttons do. */
+    {"I", "@songinfo"},        {"N", "@nowplaying"},
+    {"page:Escape", "@page_close"}, {"page:Backspace", "@page_close"},
+    {"page:w", "@si_wrong"},   {"page:x", "@si_skip"},
+    {"page:e", "@si_edit"},    {"page:Enter", "@si_save"},
 };
 
 static int find(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
@@ -327,7 +333,7 @@ const char* txt_bindings_lookup(const txt_bindings* b, uint32_t ctx, uint32_t co
 }
 
 static const char* row_name(const txt_bind* r, char* out, size_t cap) {
-    const char* pre = r->ctx <= TXT_CTX_PLAYER ? k_ctx_prefix[r->ctx] : "";
+    const char* pre = r->ctx <= TXT_CTX_PAGE ? k_ctx_prefix[r->ctx] : "";
     size_t n = strlen(pre);
     if (n >= cap || !txt_key_name(r->code, r->mods, out + n, cap - n)) {
         return NULL;

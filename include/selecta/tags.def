@@ -436,6 +436,9 @@ SEL_TAG(UI, STAT_PAGES,               0x50FD, INT)
 SEL_TAG(UI, STAT_MENU,                0x50FE, INT)
 /* I1190: the engine lines the menu sent, in order, '|' separated (the tail is kept). */
 SEL_TAG(UI, STAT_MENU_LOG,            0x50FF, STR)
+/* I1191 text UI sentinels: Song Information actions sent from the page (Mark Wrong, Skip Song, Save Note) and Now Playing page draws. */
+SEL_TAG(UI, STAT_SONGINFO_ACTIONS,    0x50FC, INT)
+SEL_TAG(UI, STAT_NOWPLAY_DRAWS,       0x5100, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

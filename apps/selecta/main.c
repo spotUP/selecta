@@ -1260,6 +1260,8 @@ int main(int argc, char** argv)
     printf("splash_frames=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_SPLASH_FRAMES, 0));
     printf("meta_panel panel_loads=%u meta_panel_rows=%u\n", (unsigned)est.panel_loads,
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_META_PANEL_ROWS, 0));
+    printf("text_pages songinfo_actions=%u nowplay_draws=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_SONGINFO_ACTIONS, 0),
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_NOWPLAY_DRAWS, 0));
     printf("view_reads panel_reads=%u art_reads=%u total_reads=%u text_reads=%u group_reads=%u\n", (unsigned)est.panel_reads, (unsigned)est.art_reads, (unsigned)est.total_reads, (unsigned)est.text_reads, (unsigned)est.group_reads); /* I906d, I936 sentinels */
 
     printf("play_reads play_meta_reads=%u vote_reads=%u\n", (unsigned)est.play_meta_reads, (unsigned)est.vote_reads); /* I906g sentinel */

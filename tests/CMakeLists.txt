@@ -2014,6 +2014,17 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_screen.cmake")
   set_tests_properties(metadata-panel PROPERTIES LABELS m3)
 
+  add_test(NAME text-ui-songinfo-page
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_empty.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_page.keys"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/songinfo_page"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_page.cmake")
+  set_tests_properties(text-ui-songinfo-page PROPERTIES LABELS m3)
+
   add_test(NAME song-key
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>"
       "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.sel"

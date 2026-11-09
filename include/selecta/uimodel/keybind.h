@@ -23,6 +23,7 @@ typedef enum txt_bind_ctx {
     TXT_CTX_ANY = 0,
     TXT_CTX_LIST = 1,   /* a list fills the main pane: browse, queue, library */
     TXT_CTX_PLAYER = 2, /* the pattern or viz panel fills the main pane */
+    TXT_CTX_PAGE = 3,   /* the Now Playing or Song Information page fills the main pane (I1191) */
 } txt_bind_ctx;
 
 typedef struct txt_bind {
