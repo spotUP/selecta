@@ -580,8 +580,91 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
     sqlite3_finalize(st);
 }
 
+/* I1231: the FTS5 MATCH text of a bare-words query, shared by the library search and the per-source catalogue search.
+ * Words longer than 3 letters keep their 3-letter prefix in the MATCH and go whole into lib->fts_long for sel_fts_prefix();
+ * one-letter words only go there. Sets *nterms (MATCH terms) and *nlong (bytes of lib->fts_long). */
+static void fts_match_build(sel_library* lib, const char* text, char* match, size_t cap, size_t* nterms_out, size_t* nlong_out) {
+    size_t nlong = 0, nterms = 0;
+    const char* p = text;
+    size_t o = 0;
+    lib->fts_long[0] = '\0';
+    while (*p != '\0' && o + 6 < cap) {
+        const char* w = p;
+        size_t len, keep;
+        if (*p == ' ') {
+            match[o++] = *p++;
+            continue;
+        }
+        while (*p != '\0' && *p != ' ') {
+            p++;
+        }
+        len = (size_t)(p - w);
+        if (len > cap - o - 6) {
+            len = cap - o - 6;
+        }
+        keep = len;
+        if (!word_is_ascii(w, len)) {
+            /* Non-ASCII: the folded tokens decide (I198d). One character after folding is a per-row check,
+             * as for one ASCII letter; longer than 3 searches the first 3 characters of the token. No token
+             * at all (symbols) drops the word. */
+            fts_words fw;
+            int k;
+            if (!fts_fold_word(lib->db, w, len, &fw)) {
+                fw.n = 0;
+            }
+            for (k = 0; k < fw.n; k++) {
+                int nc = utf8_chars(fw.w[k], fw.len[k]);
+                int kb = nc > 3 ? utf8_prefix_bytes(fw.w[k], fw.len[k], 3) : fw.len[k];
+                if ((nc == 1 || nc > 3) && nlong + (size_t)fw.len[k] + 1 < sizeof lib->fts_long) {
+                    memcpy(lib->fts_long + nlong, fw.w[k], (size_t)fw.len[k]);
+                    nlong += (size_t)fw.len[k];
+                    lib->fts_long[nlong++] = ' ';
+                    lib->fts_long[nlong] = '\0';
+                }
+                if (nc != 1 && o + (size_t)kb + 4 < cap) {
+                    match[o++] = '"';
+                    memcpy(match + o, fw.w[k], (size_t)kb);
+                    o += (size_t)kb;
+                    match[o++] = '"';
+                    match[o++] = '*';
+                    match[o++] = ' ';
+                    nterms++;
+                }
+            }
+            continue;
+        }
+        if (len == 1 && nlong + 2 < sizeof lib->fts_long) {
+            /* No prefix index covers one letter: FTS5 would merge every doclist of the letter in memory.
+             * The word leaves the MATCH and sel_fts_prefix() checks it against each row's tokens (I198c). */
+            memcpy(lib->fts_long + nlong, w, len);
+            nlong += len;
+            lib->fts_long[nlong++] = ' ';
+            lib->fts_long[nlong] = '\0';
+            continue;
+        }
+        if (len > 3 && memchr(w, '_', len) == NULL && nlong + len + 1 < sizeof lib->fts_long) {
+            /* the 3-letter prefix streams from the index; sel_fts_prefix checks the whole word */
+            keep = 3;
+            memcpy(lib->fts_long + nlong, w, len);
+            nlong += len;
+            lib->fts_long[nlong++] = ' ';
+            lib->fts_long[nlong] = '\0';
+        }
+        match[o++] = '"';
+        memcpy(match + o, w, keep);
+        o += keep;
+        match[o++] = '"';
+        match[o++] = '*';
+        nterms++;
+    }
+    match[o] = '\0';
+    *nterms_out = nterms;
+    *nlong_out = nlong;
+}
+
 void sel_library_search(sel_library* lib, sel_lib_job* job) {
     sel_library_test_slow("SELECTA_LIB_SEARCH_SLOW_MS"); /* I906g test knob: a search on a busy worker */
+    lib->search_runs++;
     char sql_idx[SEL_QUERY_SQL_MAX + 64]; /* the compiled query over the attached index */
     char match[SEL_QUERY_TEXT_MAX * 2];
     static const char CHECK[] = " AND sel_fts_prefix(:pfx, songs.name, songs.artist, songs.format, songs.path)";
@@ -595,79 +678,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
         return;
     }
     if (is_bare_words(job->text)) {
-        const char* p = job->text;
-        size_t o = 0;
-        lib->fts_long[0] = '\0';
-        while (*p != '\0' && o + 6 < sizeof match) {
-            const char* w = p;
-            size_t len, keep;
-            if (*p == ' ') {
-                match[o++] = *p++;
-                continue;
-            }
-            while (*p != '\0' && *p != ' ') {
-                p++;
-            }
-            len = (size_t)(p - w);
-            if (len > sizeof match - o - 6) {
-                len = sizeof match - o - 6;
-            }
-            keep = len;
-            if (!word_is_ascii(w, len)) {
-                /* Non-ASCII: the folded tokens decide (I198d). One character after folding is a per-row check,
-                 * as for one ASCII letter; longer than 3 searches the first 3 characters of the token. No token
-                 * at all (symbols) drops the word. */
-                fts_words fw;
-                int k;
-                if (!fts_fold_word(lib->db, w, len, &fw)) {
-                    fw.n = 0;
-                }
-                for (k = 0; k < fw.n; k++) {
-                    int nc = utf8_chars(fw.w[k], fw.len[k]);
-                    int kb = nc > 3 ? utf8_prefix_bytes(fw.w[k], fw.len[k], 3) : fw.len[k];
-                    if ((nc == 1 || nc > 3) && nlong + (size_t)fw.len[k] + 1 < sizeof lib->fts_long) {
-                        memcpy(lib->fts_long + nlong, fw.w[k], (size_t)fw.len[k]);
-                        nlong += (size_t)fw.len[k];
-                        lib->fts_long[nlong++] = ' ';
-                        lib->fts_long[nlong] = '\0';
-                    }
-                    if (nc != 1 && o + (size_t)kb + 4 < sizeof match) {
-                        match[o++] = '"';
-                        memcpy(match + o, fw.w[k], (size_t)kb);
-                        o += (size_t)kb;
-                        match[o++] = '"';
-                        match[o++] = '*';
-                        match[o++] = ' ';
-                        nterms++;
-                    }
-                }
-                continue;
-            }
-            if (len == 1 && nlong + 2 < sizeof lib->fts_long) {
-                /* No prefix index covers one letter: FTS5 would merge every doclist of the letter in memory.
-                 * The word leaves the MATCH and sel_fts_prefix() checks it against each row's tokens (I198c). */
-                memcpy(lib->fts_long + nlong, w, len);
-                nlong += len;
-                lib->fts_long[nlong++] = ' ';
-                lib->fts_long[nlong] = '\0';
-                continue;
-            }
-            if (len > 3 && memchr(w, '_', len) == NULL && nlong + len + 1 < sizeof lib->fts_long) {
-                /* the 3-letter prefix streams from the index; sel_fts_prefix checks the whole word */
-                keep = 3;
-                memcpy(lib->fts_long + nlong, w, len);
-                nlong += len;
-                lib->fts_long[nlong++] = ' ';
-                lib->fts_long[nlong] = '\0';
-            }
-            match[o++] = '"';
-            memcpy(match + o, w, keep);
-            o += keep;
-            match[o++] = '"';
-            match[o++] = '*';
-            nterms++;
-        }
-        match[o] = '\0';
+        fts_match_build(lib, job->text, match, sizeof match, &nterms, &nlong);
         if (nterms == 0 && nlong == 0) {
             /* every word tokenized to nothing: no row can match, and an empty MATCH is a syntax error */
             collect_meta(lib, job);
@@ -794,4 +805,122 @@ void sel_library_import(sel_library* lib, sel_lib_job* job) {
         return;
     }
     sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
+}
+
+/* I1231: one FTS5 query over the synced rows of several sources, grouped by source: up to job->scan_max hits per source,
+ * each source's in key order. The catalogue search of a fan-out used to run `source:=id (words)` once per source, which
+ * compiles to LIKE '%word%' over name, artist and path: a scan of every row of the library, per source, one after another
+ * on the worker (3.7 s cold for modland alone on a 650k-row library). This is the library search's own bare-words FTS arm,
+ * restricted to the sources and partitioned by source, in one statement.
+ * In: text = the query (bare words), text2 = the source ids separated by spaces (at most SEL_LIB_GROUP_SOURCES_MAX).
+ * Out: count records in `out`, each five NUL terminated fields: source, key, title, artist, format. error "not_fts" when
+ * the query is not bare words with an FTS term (the caller searches each source on its own then). */
+void sel_library_search_sources(sel_library* lib, sel_lib_job* job) {
+    static const char CHECK[] = " AND sel_fts_prefix(:pfx, songs.name, songs.artist, songs.format, songs.path)";
+    char match[SEL_QUERY_TEXT_MAX * 2];
+    char ids[SEL_LIB_GROUP_SOURCES_MAX][32];
+    char in[SEL_LIB_GROUP_SOURCES_MAX * 5 + 8];
+    char* arm;
+    char* sql;
+    const char* p;
+    sqlite3_stmt* st = NULL;
+    size_t nterms = 0, nlong = 0, o = 0;
+    unsigned nids = 0, i;
+    uint32_t used = 0;
+    int px, rc;
+
+    job->count = job->truncated = job->used_fts = 0;
+    job->error[0] = '\0';
+    lib->search_sources_runs++;
+    if (job->text == NULL || job->text2 == NULL || !is_bare_words(job->text)) {
+        set_error(job, "not_fts");
+        return;
+    }
+    fts_match_build(lib, job->text, match, sizeof match, &nterms, &nlong);
+    if (nterms == 0) {
+        set_error(job, "not_fts"); /* one-letter words only: a per-row scan, the per-source path caps it (I198e) */
+        return;
+    }
+    in[0] = '\0';
+    for (p = job->text2; *p != '\0' && nids < SEL_LIB_GROUP_SOURCES_MAX;) {
+        size_t n = strcspn(p, " ");
+        if (n > 0 && n < sizeof ids[0]) {
+            memcpy(ids[nids], p, n);
+            ids[nids][n] = '\0';
+            o += (size_t)snprintf(in + o, sizeof in - o, "%s?%u", nids > 0 ? "," : "", nids + 3u);
+            nids++;
+        }
+        p += n;
+        p += *p == ' ';
+    }
+    if (nids == 0) {
+        return;
+    }
+    job->used_fts = 1;
+    arm = sqlite3_mprintf("SELECT songs.source AS source, songs.key AS key, COALESCE(songs.name, '') AS name,"
+                          " COALESCE(songs.artist, '') AS artist, COALESCE(songs.format, '') AS format"
+                          " FROM main.song_fts JOIN main.songs AS songs ON songs.id = song_fts.rowid"
+                          " WHERE song_fts MATCH ?1%s AND songs.source IN (%s)%s",
+                          nlong > 0 ? CHECK : "", in, lib->hide_dups ? " AND songs.dup_of IS NULL" : "");
+    if (arm != NULL && lib->has_index) {
+        char* both = sqlite3_mprintf("%s UNION SELECT songs.source, songs.key, COALESCE(songs.name, ''), COALESCE(songs.artist, ''),"
+                                     " COALESCE(songs.format, '') FROM idx.song_fts JOIN idx.songs AS songs ON songs.id = song_fts.rowid"
+                                     " WHERE song_fts MATCH ?1%s AND songs.source IN (%s)",
+                                     arm, nlong > 0 ? CHECK : "", in);
+        sqlite3_free(arm);
+        arm = both;
+    }
+    sql = arm != NULL ? sqlite3_mprintf("SELECT source, key, name, artist, format FROM (SELECT q.*, ROW_NUMBER() OVER"
+                                        " (PARTITION BY q.source ORDER BY q.key) AS rn FROM (%s) AS q) WHERE rn <= ?2"
+                                        " ORDER BY source, key",
+                                        arm)
+                      : NULL;
+    sqlite3_free(arm);
+    if (sql == NULL) {
+        set_error(job, "out_of_memory");
+        return;
+    }
+    rc = sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL);
+    sqlite3_free(sql);
+    if (rc != SQLITE_OK) {
+        set_sql_error(job, lib->db);
+        return;
+    }
+    sqlite3_bind_text(st, 1, match, -1, SQLITE_STATIC);
+    sqlite3_bind_int64(st, 2, job->scan_max > 0 ? (sqlite3_int64)job->scan_max : (sqlite3_int64)1 << 30);
+    for (i = 0; i < nids; i++) {
+        sqlite3_bind_text(st, (int)i + 3, ids[i], -1, SQLITE_STATIC);
+    }
+    px = sqlite3_bind_parameter_index(st, ":pfx");
+    if (px > 0) {
+        sqlite3_bind_text(st, px, lib->fts_long, -1, SQLITE_STATIC);
+    }
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        uint32_t need = 0;
+        int c;
+        for (c = 0; c < 5; c++) {
+            need += (uint32_t)sqlite3_column_bytes(st, c) + 1u;
+        }
+        if (used + need > job->out_cap) {
+            job->truncated++;
+            continue;
+        }
+        for (c = 0; c < 5; c++) {
+            const unsigned char* t = sqlite3_column_text(st, c);
+            uint32_t n = (uint32_t)sqlite3_column_bytes(st, c);
+            if (n > 0 && t != NULL) memcpy(job->out + used, t, n);
+            used += n;
+            job->out[used++] = '\0';
+        }
+        job->count++;
+    }
+    if (rc != SQLITE_DONE) {
+        set_sql_error(job, lib->db);
+    }
+    sqlite3_finalize(st);
+}
+
+void sel_library_search_counts(const sel_library* lib, uint32_t* searches, uint32_t* grouped) {
+    if (searches != NULL) *searches = lib != NULL ? lib->search_runs : 0u;
+    if (grouped != NULL) *grouped = lib != NULL ? lib->search_sources_runs : 0u;
 }

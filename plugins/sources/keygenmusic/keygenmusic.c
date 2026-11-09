@@ -96,7 +96,7 @@ static int keygenmusic_search(const sel_host* host, const char* query, sel_searc
 static const sel_source g_keygenmusic = {
     "keygenmusic", "Keygen Music", "https://keygenmusic.tk/",
     "The music of keygens, cracks and trainers: tracker modules from release groups.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL, keygenmusic_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, keygenmusic_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_CATALOGUE_SEARCH, NULL, NULL,
     keygenmusic_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };

@@ -297,10 +297,13 @@ static void handle_request(sel_library* lib, const sel_message* req, sel_message
     lib->served++;
     if (req->id == SEL_LIB_REQ_STATS) {
         handle_stats(lib, reply);
-    } else if (req->id == SEL_LIB_REQ_SEARCH || req->id == SEL_LIB_REQ_SAVE_VIEW || req->id == SEL_LIB_REQ_IMPORT) {
+    } else if (req->id == SEL_LIB_REQ_SEARCH || req->id == SEL_LIB_REQ_SEARCH_SOURCES || req->id == SEL_LIB_REQ_SAVE_VIEW ||
+               req->id == SEL_LIB_REQ_IMPORT) {
         if (lib->job != NULL) {
             if (req->id == SEL_LIB_REQ_SEARCH) {
                 sel_library_search(lib, lib->job);
+            } else if (req->id == SEL_LIB_REQ_SEARCH_SOURCES) {
+                sel_library_search_sources(lib, lib->job);
             } else if (req->id == SEL_LIB_REQ_SAVE_VIEW) {
                 sel_library_save_view(lib, lib->job);
             } else {

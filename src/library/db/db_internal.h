@@ -65,6 +65,8 @@ struct sel_library {
     sel_spsc requests; /* caller -> worker */
     sel_spsc results;  /* worker -> caller */
     uint32_t served;   /* requests handled; written by the worker only */
+    uint32_t search_runs;         /* I1231: SEL_LIB_REQ_SEARCH requests run (sel_library_search) */
+    uint32_t search_sources_runs; /* I1231: grouped catalogue searches run (sel_library_search_sources), the test sentinel */
     uint32_t heap_allocs;
     uint32_t heap_bytes;
     char fts_long[SEL_QUERY_TEXT_MAX + 8]; /* long FTS words of the running search, space separated */
@@ -154,6 +156,7 @@ struct sel_library {
 void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* reply);
 void sel_user_rating_pending_refresh(sel_library* lib); /* I958: recounts lib->rating_pending_n */
 void sel_library_search(sel_library* lib, sel_lib_job* job);
+void sel_library_search_sources(sel_library* lib, sel_lib_job* job);
 void sel_library_save_view(sel_library* lib, sel_lib_job* job);
 void sel_library_import(sel_library* lib, sel_lib_job* job);
 int sel_library_register_regexp(sqlite3* db);

@@ -416,6 +416,83 @@ static void cat_progress(const sel_host* host, uint32_t done, uint32_t total) {
 #define CAT_SEARCH_KEY_BYTES 256u
 #define CAT_SEARCH_META_BYTES 512u
 
+/* I1231: the catalogue search of several sources in ONE library request (SEL_LIB_REQ_SEARCH_SOURCES): one FTS5 query over
+ * the synced rows, grouped by source, so a fan-out's catalogue sections fill at once instead of one LIKE scan of the whole
+ * library per source behind the call lock. rc[i] gets the hits delivered to outs[i], or SEL_CATALOGUE_NOT_SYNCED when that
+ * source has no rows yet. Returns 1 when it ran, 0 when the query needs each source's own search (not bare words with an
+ * FTS term: cat_search's compiled path), -1 on a failure. */
+static int cat_search_many(const sel_host* host, const char* const* source_ids, uint32_t n, const char* query,
+                           sel_search_sink* outs, int* rc) {
+    sel_sync_ctx* c = ctx_of(host);
+    sel_library* lib = c->scfg.lib;
+    sel_lib_job job;
+    char ids[SEL_LIB_GROUP_SOURCES_MAX * (SEL_SOURCE_ID_MAX + 1u) + 1u];
+    char* buf;
+    const char* r;
+    uint32_t i, cap, nq = 0;
+    size_t o = 0;
+    int ran = 1;
+
+    if (lib == NULL || source_ids == NULL || query == NULL || outs == NULL || rc == NULL || n == 0u ||
+        n > SEL_LIB_GROUP_SOURCES_MAX) {
+        return -1;
+    }
+    ids[0] = '\0';
+    for (i = 0; i < n; i++) {
+        const sel_source* src = sel_source_find(source_ids[i]);
+        rc[i] = 0;
+        if (src != NULL && (src->flags & SEL_SOURCE_SYNCS) != 0u && sel_library_source_songs(lib, source_ids[i]) <= 0) {
+            rc[i] = SEL_CATALOGUE_NOT_SYNCED; /* I1053b: nothing to search until the user syncs */
+            continue;
+        }
+        o += (size_t)snprintf(ids + o, sizeof ids - o, "%s%s", nq > 0 ? " " : "", source_ids[i]);
+        nq++;
+    }
+    if (nq == 0) {
+        return 1;
+    }
+    cap = nq * CAT_SEARCH_HITS * (CAT_SEARCH_KEY_BYTES + CAT_SEARCH_META_BYTES);
+    buf = host->mem_alloc(host, cap, SEL_MEM_FAST);
+    if (buf == NULL) {
+        return -1;
+    }
+    memset(&job, 0, sizeof job);
+    job.text = query;
+    job.text2 = ids;
+    job.now = (long long)time(NULL);
+    job.out = buf;
+    job.out_cap = cap;
+    job.scan_max = CAT_SEARCH_HITS;
+    if (!sel_library_run(lib, SEL_LIB_REQ_SEARCH_SOURCES, &job)) {
+        ran = -1;
+    } else if (strcmp(job.error, "not_fts") == 0) {
+        ran = 0;
+    } else if (job.error[0] != '\0') {
+        ran = -1;
+    } else {
+        /* records: source, key, title, artist, format; grouped by source */
+        for (i = 0, r = buf; i < job.count; i++) {
+            const char* src = r;
+            const char* key = src + strlen(src) + 1u;
+            const char* title = key + strlen(key) + 1u;
+            const char* artist = title + strlen(title) + 1u;
+            const char* format = artist + strlen(artist) + 1u;
+            size_t idlen = strlen(src);
+            const char* path = strncmp(key, src, idlen) == 0 && key[idlen] == ':' ? key + idlen + 1u : key;
+            uint32_t s;
+
+            r = format + strlen(format) + 1u;
+            for (s = 0; s < n && strcmp(source_ids[s], src) != 0; s++) {
+            }
+            if (s < n && rc[s] >= 0 && outs[s].row != NULL && outs[s].row(outs[s].ctx, path, title, artist, format)) {
+                rc[s]++;
+            }
+        }
+    }
+    host->mem_free(host, buf);
+    return ran;
+}
+
 static int cat_search(const sel_host* host, const char* source_id, const char* query, sel_search_sink* out) {
     sel_sync_ctx* c = ctx_of(host);
     sel_library* lib = c->scfg.lib;
@@ -432,6 +509,13 @@ static int cat_search(const sel_host* host, const char* source_id, const char* q
 
     if (lib == NULL || source_id == NULL || query == NULL || out == NULL || out->row == NULL) {
         return -1;
+    }
+    {
+        /* I1231: bare words take the grouped FTS query (one source); anything else compiles `source:=id (query)` below */
+        int one = 0, ran = cat_search_many(host, &source_id, 1u, query, out, &one);
+        if (ran != 0) {
+            return ran < 0 ? -1 : one;
+        }
     }
     src = sel_source_find(source_id);
     if (src != NULL && (src->flags & SEL_SOURCE_SYNCS) != 0u && sel_library_source_songs(lib, source_id) <= 0) {
@@ -482,7 +566,7 @@ static int cat_search(const sel_host* host, const char* source_id, const char* q
 
 static const sel_catalogue g_catalogue = {cat_begin,    cat_song,      cat_remove,   cat_move,  cat_commit,
                                           cat_abort,    cat_cache_dir, cat_list_dir, cat_now, cat_annotate,
-                                          cat_state_get, cat_state_set, cat_progress, cat_search};
+                                          cat_state_get, cat_state_set, cat_progress, cat_search, cat_search_many};
 
 static const sel_catalogue* host_catalogue(const sel_host* host) {
     return ctx_of(host)->scfg.lib != NULL ? &g_catalogue : NULL;

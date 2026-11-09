@@ -100,7 +100,7 @@ static int hippo_search(const sel_host* host, const char* query, sel_search_sink
 
 static const sel_source g_hippo = {
     "hippo", "HippoPlayer", "https://hippoplayer.se/", "Shared HippoPlayer playlists (.prg).", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL, hippo_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_PLAYLISTS_ONLY, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, hippo_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_PLAYLISTS_ONLY | SEL_SOURCE_CATALOGUE_SEARCH, NULL, NULL,
     hippo_search, /* search (I1053a: catalogue) */
     NULL, /* search_ready (I1037) */
 };

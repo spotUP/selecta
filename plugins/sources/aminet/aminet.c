@@ -5,6 +5,7 @@
 #include "aminet_net.h"
 #include "aminet_sync.h"
 
+#include <selecta/catalogue.h>
 #include <selecta/plugin.h>
 #include <selecta/source.h>
 #include "source/descriptor.h"
@@ -100,17 +101,22 @@ static int aminet_sync_host(const sel_host* host, const char* arg, int64_t now, 
     return ok;
 }
 
-/* SOURCE_SEARCH (I1024g): the site's search page; the rows are the sync's, so a hit and a synced row share a key. */
+/* SOURCE_SEARCH (I1024g): the synced rows first (I1231: one local FTS query, no network); the site's search page only while
+ * the catalogue is not synced. The rows are the sync's, so a hit and a synced row share a key. */
 static int aminet_search(const sel_host* host, const char* query, sel_search_sink* out) {
     const char* env = getenv("SELECTA_AMINET_SITE"); /* tests point it at the fixture */
+    int rc = sel_catalogue_search(host, "aminet", query, out);
 
+    if (rc != SEL_CATALOGUE_NOT_SYNCED) {
+        return rc;
+    }
     return sel_aminet_net_search(host, env != NULL && env[0] != '\0' ? env : "https://aminet.net", query, out);
 }
 
 static const sel_source g_aminet = {
     "aminet", "Aminet", "https://aminet.net/",
     "Amiga module archives from the Aminet mods directories; each LHA archive unpacks to a tracker module.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL, aminet_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, aminet_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_CATALOGUE_SEARCH, NULL, NULL,
     aminet_search, NULL, /* search (I1024g); search_ready NULL: no key needed (I1037) */
 };
 

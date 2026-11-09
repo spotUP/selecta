@@ -628,6 +628,8 @@ struct sel_engine {
         uint32_t n;
         int held;                            /* I1091: the last answer (n, hit) stays published while the same query re-runs (search_refresh) */
         uint32_t ms;                         /* I1044: wall time of this source's search */
+        uint32_t at_ms;                      /* I1231: fan-out start to this source's landing (its first hits and its end: a section lands whole) */
+        int solo;                            /* I1231: searched by its own hook, not the grouped catalogue query (not synced, or not FTS words) */
         sel_tag done_tags[4];                /* I1044: the search_done event points here; several sources can land in one pump */
         sel_search_hit hit[SEL_SEARCH_HITS_PER_SOURCE];
     } * search_bucket;
@@ -663,6 +665,7 @@ struct sel_engine {
     uint32_t sources_asked;        /* I1077c: a client sent SOURCES once; from then on the rows are republished when the library changes */
     uint32_t gen_publishes;        /* I1077c: sentinel, publishes of library_serial (sel_engine_library_publishes) */
     uint32_t search_worker_runs;   /* searches that ran on a thread other than the command thread */
+    uint32_t search_catalogue_groups; /* I1231: grouped catalogue jobs started (one library request each) */
 #if defined(SEL_LI_THREAD)
     pthread_t search_cmd_thread;
 #endif
@@ -8034,7 +8037,16 @@ struct sel_search_job {
     char id[SEL_SOURCE_ID_MAX];
     char query[SEL_SEARCH_QUERY_MAX];
     sel_search_hit* hit;
+    /* I1231: a grouped catalogue job searches nb sources in one library request; hit then holds nb * SEL_SEARCH_HITS_PER_SOURCE */
+    uint32_t nb;
+    uint32_t gb[SEL_LIB_GROUP_SOURCES_MAX];
+    char gid[SEL_LIB_GROUP_SOURCES_MAX][SEL_SOURCE_ID_MAX];
+    int grc[SEL_LIB_GROUP_SOURCES_MAX];
+    uint32_t gn[SEL_LIB_GROUP_SOURCES_MAX];
 };
+
+/* I1231: grc of a grouped bucket the catalogue could not search as FTS words: the bucket runs its own hook next. */
+#define SEARCH_GROUP_SOLO (-1000)
 
 static uint64_t search_now_ms(void) {
     struct timespec ts;
@@ -8056,6 +8068,68 @@ static int search_job_row(void* ctx, const char* path, const char* title, const 
     snprintf(h->artist, sizeof h->artist, "%s", artist);
     snprintf(h->format, sizeof h->format, "%s", format);
     return 1;
+}
+
+/* I1231: the sink of one source of a grouped job. */
+typedef struct {
+    struct sel_search_job* j;
+    uint32_t i;
+} search_group_sink;
+
+static int search_group_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
+    search_group_sink* g = ctx;
+    struct sel_search_job* j = g->j;
+    sel_search_hit* h;
+
+    if (j->gn[g->i] >= SEL_SEARCH_HITS_PER_SOURCE) {
+        return 0;
+    }
+    h = &j->hit[g->i * SEL_SEARCH_HITS_PER_SOURCE + j->gn[g->i]++];
+    snprintf(h->key, sizeof h->key, "%s:%s", j->gid[g->i], path);
+    snprintf(h->title, sizeof h->title, "%s", title);
+    snprintf(h->artist, sizeof h->artist, "%s", artist);
+    snprintf(h->format, sizeof h->format, "%s", format);
+    return 1;
+}
+
+static void* search_group_main(void* arg) {
+    struct sel_search_job* j = arg;
+    sel_host shost;
+    const sel_catalogue* cat;
+    sel_search_sink sink[SEL_LIB_GROUP_SOURCES_MAX];
+    search_group_sink gs[SEL_LIB_GROUP_SOURCES_MAX];
+    const char* ids[SEL_LIB_GROUP_SOURCES_MAX];
+    uint64_t t0 = search_now_ms();
+    uint32_t i;
+    int ran = -1;
+
+    sel_net_set_cancel(&j->cancel, 0u);
+    sel_sync_host_bind(&shost, j->e->host, &j->ctx);
+    for (i = 0; i < j->nb; i++) {
+        gs[i].j = j;
+        gs[i].i = i;
+        sink[i].ctx = &gs[i];
+        sink[i].row = search_group_row;
+        ids[i] = j->gid[i];
+        j->grc[i] = -1;
+    }
+    cat = shost.catalogue != NULL ? shost.catalogue(&shost) : NULL;
+    if (cat != NULL && cat->search_many != NULL) {
+        ran = cat->search_many(&shost, ids, j->nb, j->query, sink, j->grc);
+    } else {
+        ran = 0;
+    }
+    for (i = 0; i < j->nb; i++) {
+        if (ran == 0) {
+            j->grc[i] = SEARCH_GROUP_SOLO;
+        } else if (ran < 0) {
+            j->grc[i] = -1;
+        }
+    }
+    sel_sync_ctx_release(&j->ctx);
+    j->ms = (uint32_t)(search_now_ms() - t0);
+    __atomic_store_n(&j->done, 1, __ATOMIC_RELEASE);
+    return NULL;
 }
 
 static void* search_job_main(void* arg) {
@@ -8080,16 +8154,101 @@ static void search_job_free(sel_engine* e, struct sel_search_job* j) {
     e->host->mem_free(e->host, j);
 }
 
-/* Launches a thread for every queued bucket of the current query. */
+/* 1 when the running job (single or grouped) searches `id`. */
+static int search_job_has(const struct sel_search_job* j, const char* id) {
+    uint32_t i;
+
+    if (j->nb == 0u) {
+        return strcmp(j->id, id) == 0;
+    }
+    for (i = 0; i < j->nb; i++) {
+        if (strcmp(j->gid[i], id) == 0) return 1;
+    }
+    return 0;
+}
+
+/* I1231: every queued catalogue-search bucket of the query goes into ONE job, one grouped library request, so the synced sections
+ * fill at once instead of one LIKE scan of the whole library per source, one after another behind the library's call lock. */
+static void search_start_group(sel_engine* e) {
+    struct sel_search_job* j = NULL;
+    struct sel_search_job* r;
+    uint32_t b;
+
+    for (b = 0; b < e->search_buckets; b++) {
+        const sel_source* src;
+        if (e->search_bucket[b].state != SEARCH_QUEUED || e->search_bucket[b].solo) {
+            continue;
+        }
+        src = sel_source_find(e->search_bucket[b].id);
+        if (src == NULL || (src->flags & SEL_SOURCE_CATALOGUE_SEARCH) == 0u) {
+            continue;
+        }
+        for (r = e->search_jobs; r != NULL && !search_job_has(r, e->search_bucket[b].id); r = r->next) {
+        }
+        if (r != NULL) {
+            continue; /* its superseded search is collected first */
+        }
+        if (j == NULL) {
+            j = (struct sel_search_job*)e->host->mem_alloc(e->host, sizeof *j, SEL_MEM_FAST);
+            if (j == NULL) return; /* the buckets stay queued and run one by one */
+            memset(j, 0, sizeof *j);
+            j->hit = (sel_search_hit*)e->host->mem_alloc(e->host, SEL_LIB_GROUP_SOURCES_MAX * SEL_SEARCH_HITS_PER_SOURCE * sizeof *j->hit,
+                                                         SEL_MEM_FAST);
+            if (j->hit == NULL) {
+                e->host->mem_free(e->host, j);
+                return;
+            }
+        }
+        if (j->nb >= SEL_LIB_GROUP_SOURCES_MAX) {
+            break;
+        }
+        j->gb[j->nb] = b;
+        snprintf(j->gid[j->nb], sizeof j->gid[0], "%s", e->search_bucket[b].id);
+        j->nb++;
+    }
+    if (j == NULL) {
+        return;
+    }
+    j->e = e;
+    j->gen = e->search_gen;
+    snprintf(j->id, sizeof j->id, "%s", "(catalogue)");
+    snprintf(j->query, sizeof j->query, "%s", e->search_wait_query);
+    j->ctx.scfg.host = e->host;
+    j->ctx.scfg.lib = e->lib;
+    if (e->search_jobs == NULL) {
+        e->search_t0_ms = search_now_ms();
+    }
+    for (b = 0; b < j->nb; b++) {
+        e->search_bucket[j->gb[b]].state = SEARCH_RUNNING;
+        e->source_searches++;
+    }
+    if (pthread_create(&j->th, NULL, search_group_main, j) != 0) {
+        for (b = 0; b < j->nb; b++) {
+            e->search_bucket[j->gb[b]].state = SEARCH_QUEUED;
+            e->search_bucket[j->gb[b]].solo = 1;
+        }
+        search_job_free(e, j);
+        return;
+    }
+    e->search_catalogue_groups++;
+    e->search_worker_runs++;
+    j->started = 1;
+    j->next = e->search_jobs;
+    e->search_jobs = j;
+    e->search_running = 1;
+}
+
+/* Launches a thread for every queued bucket of the current query: the catalogue-search buckets as one grouped job, the rest one each. */
 static void search_start_next(sel_engine* e) {
     uint32_t b, live = 0;
     struct sel_search_job* j;
 
+    search_start_group(e);
     for (b = 0; b < e->search_buckets; b++) {
         if (e->search_bucket[b].state != SEARCH_QUEUED) {
             continue;
         }
-        for (j = e->search_jobs; j != NULL && strcmp(j->id, e->search_bucket[b].id) != 0; j = j->next) {
+        for (j = e->search_jobs; j != NULL && !search_job_has(j, e->search_bucket[b].id); j = j->next) {
         }
         if (j != NULL) {
             continue; /* a source runs one search at a time (its plugin reuses one cache file name): the superseded one is collected first */
@@ -8239,6 +8398,8 @@ static void search_bucket_set(sel_engine* e, const char* id) {
     e->search_bucket[b].state = SEARCH_QUEUED;
     e->search_bucket[b].n = 0;
     e->search_bucket[b].held = 0;
+    e->search_bucket[b].solo = 0;
+    e->search_bucket[b].at_ms = 0;
 }
 
 /* 1 when the `*` fan-out asks `src`. I1009r: the local source is the Library the UI searches next to the fan-out, so a From Local files
@@ -8323,43 +8484,64 @@ static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
 
 #if defined(SEL_LI_THREAD)
 /* The events of one finished search go out in the pump, copied into their bucket first (events point into the bucket). */
-static void search_land(sel_engine* e, struct sel_search_job* j) {
+static void search_land_bucket(sel_engine* e, uint32_t b, const char* id, int rc, uint32_t n, const sel_search_hit* hit, uint32_t ms) {
     sel_message r;
-    uint32_t i, b = j->b;
+    uint32_t i;
 
     e->search_serial++;
     e->search_bucket[b].held = 0; /* I1091: the new answer replaces the held one, whatever it is */
-    e->search_bucket[b].ms = j->ms;
-    if (j->rc == SEL_CATALOGUE_NOT_SYNCED) { /* I1053b: not a failure, no error event; the section offers the sync */
+    e->search_bucket[b].ms = ms;
+    e->search_bucket[b].at_ms = (uint32_t)(search_now_ms() - e->search_t0_ms);
+    if (rc == SEL_CATALOGUE_NOT_SYNCED) { /* I1053b: not a failure, no error event; the section offers the sync */
         e->search_bucket[b].n = 0u;
         e->search_bucket[b].state = SEARCH_NOT_SYNCED;
         return;
     }
-    if (j->rc < 0) {
+    if (rc < 0) {
         e->search_bucket[b].state = SEARCH_FAILED;
-        sel_engine_report_error(e, sel_source_find(j->id) == NULL ? "unknown_source" : "search_failed", e->search_bucket[b].id);
+        sel_engine_report_error(e, sel_source_find(id) == NULL ? "unknown_source" : "search_failed", e->search_bucket[b].id);
         return;
     }
-    for (i = 0; i < j->n; i++) {
-        e->search_bucket[b].hit[i] = j->hit[i];
+    for (i = 0; i < n; i++) {
+        e->search_bucket[b].hit[i] = hit[i];
         search_hit_tags(&e->search_bucket[b].hit[i], e->search_bucket[b].id);
         evt_init(&r, SEL_EVT_LIBRARY_RESULT);
         evt_tags(&r, e->search_bucket[b].hit[i].tags);
         emit(e, &r);
     }
-    e->search_bucket[b].n = j->n;
+    e->search_bucket[b].n = n;
     e->search_bucket[b].state = SEARCH_DONE;
     e->search_bucket[b].done_tags[0].tag = SEL_SRC_KEY;
     e->search_bucket[b].done_tags[0].value = (uintptr_t)e->search_bucket[b].id;
     e->search_bucket[b].done_tags[1].tag = SEL_SRC_KIND;
     e->search_bucket[b].done_tags[1].value = (uintptr_t) "search_done";
     e->search_bucket[b].done_tags[2].tag = SEL_SRC_COUNT;
-    e->search_bucket[b].done_tags[2].value = j->n;
+    e->search_bucket[b].done_tags[2].value = n;
     e->search_bucket[b].done_tags[3].tag = SEL_TAG_END;
     e->search_bucket[b].done_tags[3].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, e->search_bucket[b].done_tags);
     emit(e, &r);
+}
+
+/* Lands a finished job: its one bucket, or every bucket of a grouped catalogue job. A grouped bucket the catalogue could not
+ * search (not synced: aminet and zxart then fall back to their live site; not FTS words) is queued again for its own hook. */
+static void search_land(sel_engine* e, struct sel_search_job* j) {
+    uint32_t i;
+
+    if (j->nb == 0u) {
+        search_land_bucket(e, j->b, j->id, j->rc, j->n, j->hit, j->ms);
+        return;
+    }
+    for (i = 0; i < j->nb; i++) {
+        uint32_t b = j->gb[i];
+        if (j->grc[i] == SEARCH_GROUP_SOLO || j->grc[i] == SEL_CATALOGUE_NOT_SYNCED) {
+            e->search_bucket[b].state = SEARCH_QUEUED;
+            e->search_bucket[b].solo = 1;
+            continue;
+        }
+        search_land_bucket(e, b, j->gid[i], j->grc[i] < 0 ? -1 : 0, j->gn[i], j->hit + i * SEL_SEARCH_HITS_PER_SOURCE, j->ms);
+    }
 }
 
 /* Pump side of SOURCE_SEARCH: each section lands as its own source answers, in arrival order. */
@@ -11429,6 +11611,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->search_worker_runs = e->search_worker_runs;
     out->search_peak = e->search_peak;
     out->search_wall_ms = e->search_wall_ms;
+    out->search_catalogue_groups = e->search_catalogue_groups;
     out->search_src_n = 0;
     {
         uint32_t b;
@@ -11436,6 +11619,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
         for (b = 0; b < e->search_buckets && out->search_src_n < SEL_STATS_SEARCH_SRC; b++) {
             if (e->search_bucket[b].state == SEARCH_DONE || e->search_bucket[b].state == SEARCH_FAILED) {
                 out->search_src_id[out->search_src_n] = e->search_bucket[b].id;
+                out->search_src_at_ms[out->search_src_n] = e->search_bucket[b].at_ms;
+                out->search_src_hits[out->search_src_n] = e->search_bucket[b].n;
                 out->search_src_ms[out->search_src_n++] = e->search_bucket[b].ms;
             }
         }

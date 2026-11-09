@@ -75,6 +75,11 @@ typedef struct sel_catalogue {
      * source's. Returns the hits delivered, SEL_CATALOGUE_NOT_SYNCED (I1053b) when the source has no rows yet, -1 on a failure.
      * Needs no open batch; it runs through the library's serialised request path, so it is safe on the job thread. */
     int (*search)(const sel_host* host, const char* source_id, const char* query, sel_search_sink* out);
+    /* I1231: the same search over `n` sources in ONE library request: one FTS5 query over the synced rows, grouped by source.
+     * rc[i] = the hits delivered to outs[i], or SEL_CATALOGUE_NOT_SYNCED. Returns 1 when it ran, 0 when the query needs each
+     * source's own `search` (not bare words), -1 on a failure. Same thread rules as `search`. */
+    int (*search_many)(const sel_host* host, const char* const* source_ids, uint32_t n, const char* query, sel_search_sink* outs,
+                       int* rc);
 } sel_catalogue;
 
 #define SEL_CATALOGUE_NOT_SYNCED (-2)

@@ -56,4 +56,23 @@ execute_process(COMMAND "${CLI}" script "${WORK}/am-dead.sel" --db "${db}"
   OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
 need("unreachable site" "${o}${e}" "search_failed")
 
+# I1231: once the catalogue is synced the search reads the synced rows (one local FTS query) and asks no site: the sync runs
+# against the fixture, then the site is mapped to a closed port and the search still answers with the synced row.
+set(ENV{SELECTA_NET_MAP} "aminet.net=${fx},fixture.test=${fx}")
+set(ENV{SELECTA_MIRRORS_AMINET} "http://aminet.net/")
+execute_process(COMMAND "${CLI}" library sync --db "${db}" --now 1792756800 aminet http://aminet.net
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "I1231: aminet sync rc=${rc}\n${o}${e}")
+endif()
+set(ENV{SELECTA_NET_MAP} "aminet.net=http://127.0.0.1:9,fixture.test=${fx}")
+file(WRITE "${WORK}/am-local.sel" "SOURCE_SEARCH aminet anarchy\n@search_wait\n@source_search\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/am-local.sel" --db "${db}"
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
+set(raw "${o}${e}")
+if(raw MATCHES "search_failed")
+  message(FATAL_ERROR "I1231: the synced aminet search went to the (closed) site\n${raw}")
+endif()
+need("synced row from the local catalogue" "${raw}" "aminet:mods/4mat/AnarchyMenu10.lha")
+
 message(STATUS "aminet_search_ok")
