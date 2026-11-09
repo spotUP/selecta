@@ -146,7 +146,7 @@ typedef struct pls_meta_row {
 #define SEARCH_SCOPE_LIBRARY "@library" /* I1019f: the scope of the Library source chip (the library alone, no From sections) */
 struct desk;
 static int desk_scope_online(const struct desk* d);
-#define DESK_VIZ_MAX 4u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope */
+#define DESK_VIZ_MAX 5u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope; I1052: Krakatoa (Mac) */
 #define DESK_DEV_MAX 16u /* I1039: output devices the picker lists */
 #define DESK_COVER_CACHE 12 /* I845: distinct covers on one screen (queue, shelves, grid) */
 
@@ -661,6 +661,7 @@ typedef struct desk {
     const sel_tag* (*find_plugin)(uint32_t kind, const char* id); /* registry lookup the app hands over (DUI-P4-11) */
     sel_viz_render_fn viz_fn[DESK_VIZ_MAX]; /* the viz plugins found at open: scope, levels, spectrum, sid registers */
     const char* viz_id[DESK_VIZ_MAX];
+    sel_viz_stats_fn viz_stats[DESK_VIZ_MAX]; /* I1052: optional VIZ_STATS hook, NULL when the plugin has none */
     const char* viz_name[DESK_VIZ_MAX];
     uint32_t viz_n, viz_sel;     /* plugins found, index of the one the Now Playing strip and the visual layout draw */
     uint32_t* viz_px;            /* RGBA32 target the plugins render into */
@@ -6938,7 +6939,7 @@ static int32_t si_max_q16(desk* d) {
 enum { VIZ_NONE = 0, VIZ_STRIP = 1, VIZ_PAGE = 2, VIZ_VISUAL = 3 };
 
 static void viz_load(desk* d) {
-    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs"};
+    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs", "viz_krakatoa"};
     uint32_t i;
     d->viz_n = 0u;
     for (i = 0; d->find_plugin != NULL && i < VIZ_MAX; i++) {
@@ -6951,6 +6952,7 @@ static void viz_load(desk* d) {
         d->viz_fn[d->viz_n] = (sel_viz_render_fn)fn;
         d->viz_id[d->viz_n] = ids[i];
         d->viz_name[d->viz_n] = (const char*)sel_tag_find(hooks, SEL_VIZ_NAME, 0);
+        d->viz_stats[d->viz_n] = (sel_viz_stats_fn)sel_tag_find(hooks, SEL_VIZ_STATS, 0);
         d->viz_n++;
     }
 }
@@ -7212,10 +7214,16 @@ static int32_t viz_switch_at(const desk* d, int32_t x, int32_t y) {
 }
 
 /* A click on a switch button runs the plugin's row of the action table (the line the View/Visualizer menu and its key
- * run); the action id equals the plugin id. */
+ * run); the action id equals the plugin id. I1052w: a plugin the shared action table has no row for (Krakatoa Smoke, any
+ * plugin found on the plugin path) sends the same pref line the rows send, so every button the switch draws picks its plugin. */
 static int viz_switch_click(desk* d, int32_t hit) {
-    const sel_uim_action* a = desk_action_by_id(d->viz_id[(uint32_t)hit % VIZ_MAX]);
-    if (a == NULL || !desk_send(d, a->line)) {
+    const char* id = d->viz_id[(uint32_t)hit % VIZ_MAX];
+    const sel_uim_action* a = desk_action_by_id(id);
+    char line[96];
+    if (a == NULL) {
+        (void)snprintf(line, sizeof line, "PREF_SET ui.desktop.viz %s", id);
+    }
+    if (!desk_send(d, a != NULL ? a->line : line)) {
         return 0;
     }
     d->viz_clicks++;
@@ -7804,6 +7812,12 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
                           (unsigned)d->viz_n, (unsigned)d->uim.layout, (unsigned)d->viz_panes, (unsigned)d->viz_sigpath,
                           (unsigned)d->viz_prims, (unsigned)d->viz_visual_draws, d->np_viz.w > 0);
+    for (i = 0; i < d->viz_n; i++) { /* I1052: plugin counters through the optional VIZ_STATS hook */
+        char line[256];
+        if (d->viz_stats[i] != NULL && d->viz_stats[i](line, (uint32_t)sizeof line) > 0u) {
+            o = dump_put(d, o, "viz_stats %s %s\n", d->viz_id[i], line);
+        }
+    }
     o = dump_put(d, o, "viz_pen glyphs %u missing %u shapes %u\n", (unsigned)d->viz_text.glyphs, (unsigned)d->viz_text.missing,
                  (unsigned)d->viz_shapes);
     o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d np_viz %d %d %d %d\n",
@@ -15598,14 +15612,36 @@ static int desk_replay_lines(desk* d, char* line) {
             opened |= desk_route_input(d, &ck);
             pointer_sent = d->sends != sent;
         } else if (sscanf(line, "viz %u", &n) == 1 && n < VIZ_MAX) { /* a click on the centre of visualizer switch button n (the page's, else the strip's) */
-            sel_gui_rect r = d->viz_btn[d->viz_btn[1][n].w > 0 ? 1 : 0][n];
+            /* I1052w: when the switch is the "< name >" control and n is not next to the selected plugin, button n is not
+             * drawn; click the chevron on the shorter way round instead and run this line again on the engine's answer,
+             * as a user steps the control, until n is drawn and gets its own click. */
+            uint32_t s = 0u, k = n;
+            sel_gui_rect r;
             sel_gui_input ck;
-            memset(&ck, 0, sizeof ck);
-            ck.kind = SEL_GUI_IN_CLICK;
-            ck.x = r.x + r.w / 2;
-            ck.y = r.y + r.h / 2;
-            opened |= desk_route_input(d, &ck);
+            for (k = 0; k < d->viz_n; k++) {
+                s |= d->viz_btn[1][k].w > 0 ? 1u : 0u;
+            }
+            k = n;
+            if (n < d->viz_n && d->viz_btn[s][n].w <= 0 && n != d->viz_sel) {
+                k = (n + d->viz_n - d->viz_sel) % d->viz_n <= d->viz_n / 2u ? (d->viz_sel + 1u) % d->viz_n : (d->viz_sel + d->viz_n - 1u) % d->viz_n;
+            }
+            r = d->viz_btn[s][k];
+            if (r.w > 0) { /* the selected plugin in the "< name >" control has no button: nothing to click */
+                memset(&ck, 0, sizeof ck);
+                ck.kind = SEL_GUI_IN_CLICK;
+                ck.x = r.x + r.w / 2;
+                ck.y = r.y + r.h / 2;
+                opened |= desk_route_input(d, &ck);
+            }
             pointer_sent = d->sends != sent;
+            if (k != n && pointer_sent && r.w > 0) { /* one step taken: this line again after the answer */
+                if (nl != NULL) {
+                    *nl = '\n';
+                }
+                d->input_at = line;
+                d->input_done = 0;
+                return 1;
+            }
         } else if (strncmp(line, "exec ", 5) == 0) { /* an engine line after the first page entry, so a test can set the source the page asked for */
             desk_send(d, line + 5);
             d->repaint = 1;
@@ -16561,6 +16597,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->host = a->host;
     d->find_plugin = a->find_plugin;
     viz_load(d);
+    viz_select(d, desk_pref(d, "ui.desktop.viz", "")); /* I1052w/I1230a: the stored pick; PREFS_CHANGED only reports later changes */
     d->output_id = a->output_id;
     dev_load(d);
     d->input_consumed = a->input_consumed;
