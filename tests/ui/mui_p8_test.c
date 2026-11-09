@@ -667,6 +667,43 @@ static void test_pref_keys(void) {
     CHECK(sel_uim_sync_notnow_line(1, o, sizeof o) != 0u && pref_known(o), "not now: '%s'", o);
 }
 
+/* mui-p8-queue-scope-ui (I1176): the Queue scope Cycle in mui_ui.c is wired to the shared scope action. The Cycle entries are the
+ * desktop labels (sel_uim_scope_label), a pick goes through mui_scope_fire (SCOPE <name> + queue re-read), and the Cycle follows the
+ * engine's SEL_OPT_SCOPE through sel_uim_scope_index. The sentinel counts the real fire path. */
+static int src_count(const char* pattern) {
+    char path[512], cmd[1024], buf[64];
+    FILE* f;
+    int n = -1;
+    snprintf(path, sizeof path, "%s/plugins/ui/mui/mui_ui.c", MUI_SRC_ROOT);
+    snprintf(cmd, sizeof cmd, "grep -c -F '%s' %s", pattern, path);
+    f = popen(cmd, "r");
+    if (f != NULL) {
+        if (fgets(buf, sizeof buf, f) != NULL) {
+            n = atoi(buf);
+        }
+        pclose(f);
+    }
+    return n;
+}
+
+static void test_queue_scope_ui(void) {
+    static const char* const label[MUI_SCOPE_COUNT] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
+    static const char* const word[MUI_SCOPE_COUNT] = {"library", "album", "playlist"};
+    uint32_t i, base = mui_view_fires();
+    for (i = 0; i < MUI_SCOPE_COUNT; i++) {
+        fake_engine e;
+        char line[32];
+        CHECK(sel_uim_scope_label(i) != NULL && strcmp(sel_uim_scope_label(i), label[i]) == 0, "scope %u label", (unsigned)i);
+        snprintf(line, sizeof line, "SCOPE %s", word[i]);
+        memset(&e, 0, sizeof e);
+        CHECK(mui_scope_fire(i, fake_send, &e) == 2u && strcmp(e.lines[0], line) == 0, "scope %u action: '%s'", (unsigned)i, e.lines[0]);
+        CHECK(sel_uim_scope_index(word[i]) == i, "scope %u read back", (unsigned)i);
+    }
+    CHECK(mui_view_fires() - base == MUI_SCOPE_COUNT, "sentinel: %u fires", (unsigned)(mui_view_fires() - base));
+    CHECK(src_count("mui_scope_fire((uint32_t)act, mui_p8_send, s)") == 1, "CTL_SCOPE is not wired to mui_scope_fire in mui_ui.c");
+    CHECK(src_count("sel_uim_scope_index(st->options[SEL_OPT_SCOPE])") == 1, "the scope Cycle does not follow SEL_OPT_SCOPE");
+}
+
 /* mui-p8-library-pages (I1175): Files, History, Sources modes and the Sources page rows, switch and Sync, fed with real engine events */
 static sel_message src_event(const sel_tag* t) {
     sel_message m;
@@ -754,6 +791,8 @@ int main(int argc, char** argv) {
         test_voices_programs();
     } else if (strcmp(argv[1], "library-modes") == 0) {
         test_library_modes();
+    } else if (strcmp(argv[1], "queue-scope-ui") == 0) {
+        test_queue_scope_ui();
     } else if (strcmp(argv[1], "queue-scope") == 0) {
         test_queue_scope();
     } else if (strcmp(argv[1], "view-buttons") == 0) {
