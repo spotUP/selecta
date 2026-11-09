@@ -251,6 +251,16 @@ static void rp_mute(void* state, uint32_t channel, uint32_t muted) {
     sid_shim_mute(((sid_state*)state)->shim, channel / 4u, channel % 4u, muted);
 }
 
+/* Register feed (I1226): libsidplayfp's last-written register mirror of each chip (1 to 3, the tune's SID count), the
+ * same contract as the playsid adapter. The envelope levels stay 0: reSIDfp keeps its envelope counters private. */
+static uint32_t rp_viz_sid(void* state, uint8_t* regs, uint8_t* env, uint32_t max_chips) {
+    sid_state* s = (sid_state*)state;
+    uint32_t chips = sid_shim_chips(s->shim);
+    (void)env;
+    if (chips > max_chips) chips = max_chips;
+    return sid_shim_regs(s->shim, regs, chips);
+}
+
 static int rp_seek(void* state, uint32_t ms) {
     sid_state* s = (sid_state*)state;
     int16_t scratch[2u * SID_SKIP_FRAMES];
@@ -292,7 +302,7 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[14];
+static sel_tag g_hooks[15];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -317,7 +327,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_CFG_APPLIED, SEL_TAG_FN(rp_cfg_applied));
     set(&g_hooks[12], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
-    set(&g_hooks[13], SEL_TAG_END, 0);
+    set(&g_hooks[13], SEL_RP_VIZ_SID, SEL_TAG_FN(rp_viz_sid));
+    set(&g_hooks[14], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t)"sid");

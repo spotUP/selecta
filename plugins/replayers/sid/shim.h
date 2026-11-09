@@ -43,6 +43,9 @@ uint32_t sid_shim_chips(const sid_shim* s);
 /* Mutes (1) or unmutes (0) voice 0-2 of a chip, or voice 3 (its digi samples). The setting survives
  * a restart. */
 void sid_shim_mute(sid_shim* s, uint32_t chip, uint32_t voice, uint32_t muted);
+/* Last-written register mirror ($D400-$D418, 25 bytes per chip) of the first `chips` chips, from libsidplayfp's
+ * getSidStatus. Returns the chips filled (0 when emulation has not started). */
+uint32_t sid_shim_regs(sid_shim* s, uint8_t* regs, uint32_t chips);
 void sid_shim_close(sid_shim* s);
 
 #ifdef __cplusplus
