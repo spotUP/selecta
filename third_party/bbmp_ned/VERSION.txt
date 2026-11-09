@@ -1,0 +1,15 @@
+bbmp_ned (I1223c, old row I710o): ned_engine.cpp and engine.h from github.com/creep-ltx/bbmp csrc/retro, commit
+19d87098b3716156d80224d22dc49ca22884d1b7 (GPL-3.0-or-later, SPDX line in each file, COPYING). NerdTracker II songs (.ned, NES): the engine
+puts the tracker's replay routine, the song and the DPCM samples into an NSF image in memory and has Game Music Emu (selecta_gme) play it.
+
+ned_engine.cpp differs from upstream in one place: share_dir() (executable-relative share/ lookup through self_path.h) returns g_replay_dir,
+which bned_glue.cpp sets from the paths the host resolved for the two declared system files. Nothing else changed. engine.h is unchanged.
+
+The replay routine is NOT vendored, NOT in the repo, NOT in the pack (Johan 2026-11-06). It is Bananmos' "replay 22" (nt2-22.asm, ca65 port by
+Memblers), giftware: "free for any non-commercial usage" (NERDTRACKER2-TERMS.txt). Two I710ga system files, fetched from the hippoplayer.se
+mirror (sysfiles/nt2replay.bin, sysfiles/nt2replay.lbl) or built by the user. Build recipe = bbmp tools/build-retro.sh, ned part:
+  nedplay.zip https://www.nesdev.org/nt2/download/nedplay.zip sha256 84602a2164280c3a10b080c21fd43f3cac7b6e41e6a53e94faf859c596b4e76f
+  unzip nt2-22.asm DPCMCODE.INC; empty TEMP.DTT and temp.dmc; songs.asm = "ned1..ned17 = $FFFF"; the linker config blob.cfg of build-retro.sh;
+  ca65 -g nt2-22.asm -o nt2-22.o && ld65 -C blob.cfg -Ln nt2replay.lbl -o nt2replay.bin nt2-22.o   (cc65 2.19)
+  nt2replay.bin 3038 bytes sha256 8ac3e74346e8374bf9ad522bdae0a21cf1f248c254b563acf4ea363b63be0d21
+  nt2replay.lbl 3404 bytes sha256 daca7169d17c5390a01eeff155011dc68c6fa49692f5904b4b86f5c250b83fe7

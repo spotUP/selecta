@@ -430,6 +430,12 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_cybertracker)
 endif()
 
+# bbmp_ned (I1223c): NerdTracker II songs (.ned), bbmp csrc/retro ned engine (GPL 3 or later) over NT2's replay routine, which is two giftware
+# (non-commercial) system files fetched at use, never shipped. Behind the GPL-plugin gate. Host only (C++17 engine, no Amiga build).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/bbmp_ned)
+endif()
+
 # bbmp_shroom (I710aa): Mario Paint songs (.sho), bbmp csrc/retro shroom engine (GPL 3 or later) over the user's own Mariopants notes.wav (system
 # file, Nintendo data, never shipped), behind the GPL-plugin gate. Host only (C++17 engine, no Amiga build; follow-up I710aaa).
 if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

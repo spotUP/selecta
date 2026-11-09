@@ -4276,6 +4276,17 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 endif()
 
+# I1223c: NerdTracker II songs (.ned) play through the render entry point (bbmp_ned module, GPL-3.0 engine, GPL-plugin gate). The replay routine
+# is two system files the test assembles from nedplay.zip (needs cc65), songs fetched by checksum (tests/m3/fixtures/bbmp_ned.SOURCE), exit 77 = skip.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ned-decode)
+  add_test(NAME ned-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/ned_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ned-decode)
+  set_tests_properties(ned-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "ned_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+endif()
+
 # I710w: SGC and GBR songs play through the render entry point (bbmp_nez module, libnezplug, no GPL gate). Four songs fetched by checksum
 # (tests/m3/fixtures/bbmp_nez.SOURCE), exit 77 = skip. A file that is not an SGC/GBR song must not be claimed.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
