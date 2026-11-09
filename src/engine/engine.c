@@ -1489,6 +1489,7 @@ static void cmd_PREF_SET(sel_engine* e, const sel_message* m) {
     if (e->lib != NULL) {
         sel_library_set_sources_off(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
         sel_library_set_hide_duplicates(e->lib, e->prefs.value[SEL_PREF_LIBRARY_HIDE_DUPLICATES]);
+        sel_library_scrape_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_LIBRARY_SCRAPE_ARTWORK], "on") == 0);
     }
     emit_pref(e, sel_prefs_find(m->args[0].v.s));
 }
@@ -5287,6 +5288,7 @@ static void scan_collect(sel_engine* e) {
         sel_engine_report_error(e, "scan_failed", e->scan_root);
     } else {
         sel_library_hash_kick(e->lib); /* the new local songs get their md5 in the background (I184a) */
+        sel_library_scrape_kick(e->lib); /* covers for the new albums, off the UI thread (I1003a) */
         emit_library_path(e, e->scan_root, e->scan_stats.scanned_files);
     }
     scan_start_next(e);
@@ -10775,10 +10777,12 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         if (e->lib != NULL) {
             sel_library_set_sources_off(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
             sel_library_set_hide_duplicates(e->lib, e->prefs.value[SEL_PREF_LIBRARY_HIDE_DUPLICATES]);
+            sel_library_scrape_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_LIBRARY_SCRAPE_ARTWORK], "on") == 0);
         }
         sel_devilbox_set_config_dir(e->config_dir);
         sel_library_rating_push(e->lib); /* ratings left over from a run without the server (I173, I173c) */
         sel_library_hash_kick(e->lib);   /* local md5 for the duplicate redirect of OPEN (I184a) */
+        sel_library_scrape_kick(e->lib); /* albums still without a cover, once per start (I1003a) */
     }
     e->state.led_on = strcmp(e->prefs.value[SEL_PREF_OUTPUT_LED], "on") == 0;
     e->state.stereo_width = (uint32_t)strtoul(e->prefs.value[SEL_PREF_MIX_STEREO_WIDTH], NULL, 10);
@@ -11276,6 +11280,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     }
     if (e->lib != NULL && e->cur == SEL_SLOT_NONE) {
         (void)sel_library_hash_poll(e->lib); /* builds without threads hash one file per idle tick (I184a) */
+        (void)sel_library_scrape_poll(e->lib); /* builds without threads look up one album per idle tick (I1003a) */
     }
     if (e->cur != SEL_SLOT_NONE) {
         sel_slot* sl = &e->slot[e->cur];

@@ -17,7 +17,7 @@ static void* job_main(void* arg) {
     sel_net_set_cancel(&lib->job_quit, 0u); /* close ends a job stuck on a silent server within one poll slice (I173f) */
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
-        while (!lib->job_quit && !lib->job_rating && !lib->job_pin && !lib->job_vote && !lib->job_lyric && !lib->job_sysf && !lib->job_hash && !lib->job_task &&
+        while (!lib->job_quit && !lib->job_rating && !lib->job_pin && !lib->job_vote && !lib->job_lyric && !lib->job_sysf && !lib->job_hash && !lib->job_scrape && !lib->job_task &&
                !sel_fetch_job_pending(lib)) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
@@ -91,6 +91,15 @@ static void* job_main(void* arg) {
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }
+        if (lib->job_scrape && !sel_fetch_job_pending(lib)) {
+            /* I1003a: below the md5 pass, one album per turn */
+            lib->job_scrape = 0;
+            lib->job_scrape_busy = 1;
+            sel_scrape_job_run(lib);
+            lib->job_scrape_busy = 0;
+            pthread_cond_broadcast(&lib->job_wake);
+            continue;
+        }
         sel_fetch_job_run(lib);
     }
     pthread_mutex_unlock(&lib->job_lock);
@@ -117,7 +126,7 @@ void sel_job_wake(sel_library* lib) {
 void sel_job_wait(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
-        while (lib->job_task || lib->job_task_busy || lib->job_rating || lib->job_rating_busy || lib->job_pin || lib->job_pin_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || lib->job_sysf || lib->job_sysf_busy || lib->job_hash || lib->job_hash_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
+        while (lib->job_task || lib->job_task_busy || lib->job_rating || lib->job_rating_busy || lib->job_pin || lib->job_pin_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || lib->job_sysf || lib->job_sysf_busy || lib->job_hash || lib->job_hash_busy || lib->job_scrape || lib->job_scrape_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
         pthread_mutex_unlock(&lib->job_lock);

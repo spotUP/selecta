@@ -64,14 +64,15 @@ enum {
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
  * SEL_ART_STORE (I437, embedded cover found by the scan) finds or creates the albums row (`album`, `artist`, source local) and stores the
  * raw image bytes as its `kind` artwork row, replying 1 when stored. */
-enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */ };
+enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */,
+       SEL_ART_NEXT_MISSING /* I1003a: the first albums row after `album` with a name, an artist, no 'cover' artwork and no scrape_miss row newer than `len` (epoch seconds); data = "name\0artist\0"; reply = its id, 0 = none */ };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
     const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */
     int64_t album;     /* GET, PUT: albums.id */
     const char* kind;  /* GET, PUT: artwork.kind */
     uint8_t* data;     /* GET: out buffer; PUT: bytes to store */
-    uint32_t len;      /* PUT: byte count */
+    uint32_t len;      /* PUT: byte count; NEXT_MISSING: oldest scrape_miss (epoch seconds) that still blocks a retry */
     uint32_t cap;      /* GET: buffer size */
     const char* name;  /* STORE: album name */
     const char* artist;/* STORE: album artist, NULL = none */
@@ -559,6 +560,28 @@ uint32_t sel_library_pin_dropped(sel_library* lib);
  * builds without threads: each call hashes at most one file and returns 1 when it did, 0 when nothing is left; the
  * caller invokes it only while it is idle. With threads _poll does nothing and returns 0. */
 void sel_library_hash_kick(sel_library* lib);
+
+/* I1003a: online cover lookup for albums that have no cover (design 2026-11-09-artwork-scraper-design.md). _kick queues one
+ * pass over every album without a 'cover' artwork row and without a recent 'scrape_miss' row: MusicBrainz release search,
+ * Cover Art Archive front image, then the iTunes Search API. A hit is stored as the album's 'cover' row (the row the tiles
+ * and Now Playing already draw); a definite miss as a 'scrape_miss' row holding the epoch seconds, retried after
+ * SEL_ART_SCRAPE_RETRY_DAYS. Threads: the library job thread, one album per turn, never the UI thread. Without threads
+ * _poll does one album per call (1 = did one, 0 = nothing left); with threads _poll returns 0. Off when
+ * _set_enabled(0) or SELECTA_ART_SCRAPE=off; base URLs SELECTA_ART_MB_URL, SELECTA_ART_CAA_URL, SELECTA_ART_ITUNES_URL.
+ * _wait returns once the pass is done (the CLI and tests). A network failure ends the pass without recording a miss. */
+#define SEL_ART_SCRAPE_RETRY_DAYS 30
+typedef struct sel_scrape_stats {
+    uint32_t albums;    /* albums looked up */
+    uint32_t scraped;   /* covers stored (artwork_scraped) */
+    uint32_t misses;    /* definite misses recorded */
+    uint32_t errors;    /* passes ended by a network failure */
+    uint32_t requests;  /* HTTP requests sent (the sentinel) */
+} sel_scrape_stats;
+void sel_library_scrape_set_enabled(sel_library* lib, int on);
+void sel_library_scrape_kick(sel_library* lib);
+int sel_library_scrape_poll(sel_library* lib);
+void sel_library_scrape_wait(sel_library* lib);
+void sel_library_scrape_stats(sel_library* lib, sel_scrape_stats* out);
 /* I336: runs one long caller task (the engine's folder scan) on the library job thread; builds without threads run it
  * inline inside _start. _start: 1 = accepted, 0 = a task is running or its end is uncollected. _take: 1 once per
  * finished task. _cancelled: the task polls it between items. _cancel: stops a running task and waits for it. */
