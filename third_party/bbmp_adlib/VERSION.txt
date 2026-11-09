@@ -1,4 +1,4 @@
-bbmp_adlib (I710as): ppf_cr.cpp, sig_cr.cpp, lem_cr.cpp, mus_cr.cpp, cal_cr.cpp, vib_cr.cpp, common.h and sig_cr_tables.h from github.com/creep-ltx/bbmp csrc/adlib, commit
-19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX lines, COPYING). Clean-room Ad Lib replayers written by bbmp from format descriptions. Not taken: d01_cr.cpp (EdLib D01, row I710aw)
-and fmt_cr.cpp (FM Tracker, libopenmpt plays it). They run on AdPlug OPL (Nuked OPL3, third_party/adplug, LGPL). The helper main program bbmp-adlib.cpp is replaced by
+bbmp_adlib (I710as): ppf_cr.cpp, sig_cr.cpp, lem_cr.cpp, mus_cr.cpp, cal_cr.cpp, vib_cr.cpp, fmt_cr.cpp (FM Tracker, I1204a), common.h and sig_cr_tables.h from github.com/creep-ltx/bbmp csrc/adlib, commit
+19d87098b3716156d80224d22dc49ca22884d1b7, unchanged (GPL-3.0-or-later, SPDX lines, COPYING). Clean-room Ad Lib replayers written by bbmp from format descriptions. Not taken: d01_cr.cpp (EdLib D01, row I710aw) and
+edl_cr.cpp (EdLib Packed, row I1204b; AdPlug does not decode .edl). fmt_cr.cpp plays only Sagitta's FM Tracker (id "FMTRK" 1A ...); libopenmpt's Load_fmt is Davey Taylor's FM Tracker ("FMTracker\x01\x01"), a different format with the same extension. They run on AdPlug OPL (Nuked OPL3, third_party/adplug, LGPL). The helper main program bbmp-adlib.cpp is replaced by
 plugins/replayers/bbmp_adlib/shim.cpp (in-process capture instead of stdout, path reads replaced by the song in memory).

@@ -1,5 +1,5 @@
 #!/bin/sh
-# I710as: bbmp's Ad Lib helper formats (Pixel Painters .fmf/.ftf, SIG2 .sig, Lemmings .lem, First Samurai .mus, Shadowlands .cal, Vibrants .vib)
+# I710as: bbmp's Ad Lib helper formats (Pixel Painters .fmf/.ftf, SIG2 .sig, Lemmings .lem, First Samurai .mus, Shadowlands .cal, Vibrants .vib, Sagitta FM Tracker .fmt)
 # play through `selecta-cli render` as the RENDER-kind replayer bbmp_adlib (GPL-3.0-or-later bbmp csrc/adlib on AdPlug's Nuked OPL3).
 # Sentinel: the `replayer=bbmp_adlib` line of render. Negatives first (they need no song): for every extension, a file that is not laid out like the format
 # (zeros, a text pattern, a short file) must not be claimed. Then the positives from tests/m3/fixtures/bbmp_adlib.manifest, one song per line:
@@ -17,7 +17,7 @@ energy() { od -An -v -t d2 -j 44 "$1" | tr -s " " "\n" | awk '$1 != "" { s += $1
 rate=44100
 # The module loads through the user path and registers as a replayer (kind=1), even with no song to play.
 "$cli" plugins 2>/dev/null | grep -q '^bbmp_adlib kind=1 ' || fail "bbmp_adlib module not loaded (SELECTA_PLUGIN_PATH)"
-for ext in fmf ftf sig lem mus cal vib; do
+for ext in fmf ftf sig lem mus cal vib fmt; do
   head -c 8192 /dev/zero > "neg_zero.$ext"
   head -c 8192 /dev/zero | tr '\0' 'A' > "neg_text.$ext"
   head -c 5 /dev/zero > "neg_short.$ext"
@@ -29,6 +29,12 @@ for ext in fmf ftf sig lem mus cal vib; do
   done
 done
 rm -f fd_adlib.wav
+# Davey Taylor'"'"'s FM Tracker (also .fmt, libopenmpt Load_fmt, magic "FMTracker\001\001") is a different format: bbmp_adlib must leave it alone.
+{ printf 'FMTracker\001\001'; head -c 8192 /dev/zero; } > neg_openmpt_fmtracker.fmt
+rm -f fd_adlib.wav
+out=$("$cli" render neg_openmpt_fmtracker.fmt --output fd_adlib.wav --seconds 1 --rate "$rate" 2>/dev/null) || true
+[ "$(field "$out" replayer)" != "bbmp_adlib" ] || fail "bbmp_adlib claimed a libopenmpt-style FMTracker .fmt"
+rm -f neg_openmpt_fmtracker.fmt fd_adlib.wav
 echo "negatives ok"
 manifest="$here/fixtures/bbmp_adlib.manifest"
 songs=0

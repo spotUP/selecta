@@ -284,7 +284,7 @@ struct Entry {
 
 const Entry kEngines[] = {
     {"fmf", adlib::playPpfCr}, {"ftf", adlib::playPpfCr}, {"sig", adlib::playSigCr}, {"lem", adlib::playLemCr},
-    {"mus", adlib::playMusCr}, {"cal", adlib::playCalCr}, {"vib", adlib::playVibCr},
+    {"mus", adlib::playMusCr}, {"cal", adlib::playCalCr}, {"vib", adlib::playVibCr}, {"fmt", adlib::playFmtCr},
 };
 
 PlayFn engineFor(const char* name) {

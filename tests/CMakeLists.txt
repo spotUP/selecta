@@ -2297,7 +2297,7 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
-  # I710as: bbmp's Ad Lib helper formats (.fmf .ftf .sig .lem .mus .cal .vib) play through the render entry point (bbmp_adlib module, GPL-3.0). Negatives always run;
+  # I710as: bbmp's Ad Lib helper formats (.fmf .ftf .sig .lem .mus .cal .vib .fmt) play through the render entry point (bbmp_adlib module, GPL-3.0). Negatives always run;
   # the songs come from tests/m3/fixtures/bbmp_adlib.manifest (fetched by checksum), exit 77 = skip (no fixture listed).
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adlib-decode)
