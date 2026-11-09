@@ -254,7 +254,7 @@ static int library_clear(sqlite3* db, int64_t* rows) {
     if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM composers;DELETE FROM composer_spellings;DELETE FROM song_composers;"
                      "DELETE FROM files;DELETE FROM songs;UPDATE composer_unknown SET n = 0;"
                      "DELETE FROM playlist_entries;DELETE FROM playlists;DELETE FROM folders;DELETE FROM ratings;DELETE FROM notes;"
-                     "DELETE FROM liked;DELETE FROM kept;DELETE FROM cues;DELETE FROM flags;DELETE FROM stickers;DELETE FROM history;COMMIT;",
+                     "DELETE FROM liked;DELETE FROM kept;DELETE FROM cues;DELETE FROM flags;DELETE FROM stickers;DELETE FROM history;DELETE FROM search_cache;COMMIT;",
                      NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
         return SQLITE_ERROR;

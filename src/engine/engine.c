@@ -680,6 +680,8 @@ struct sel_engine {
     uint32_t gen_publishes;        /* I1077c: sentinel, publishes of library_serial (sel_engine_library_publishes) */
     uint32_t search_worker_runs;   /* searches that ran on a thread other than the command thread */
     uint32_t search_catalogue_groups; /* I1231: grouped catalogue jobs started (one library request each) */
+    uint32_t search_cache_hits;       /* I1231b: sections landed from the search result cache */
+    uint32_t search_cached_n;         /* I1231b, serial build: cached hits shown for search_cur while its task runs */
 #if defined(SEL_LI_THREAD)
     pthread_t search_cmd_thread;
 #endif
@@ -1502,6 +1504,9 @@ static void cmd_PREF_SET(sel_engine* e, const sel_message* m) {
     }
     if (e->lib != NULL) {
         sel_library_set_sources_off(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
+        if (e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF][0] != '\0') { /* I1231b: a switched-off source keeps no cached search */
+            (void)sel_library_search_cache_drop(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
+        }
         sel_library_set_hide_duplicates(e->lib, e->prefs.value[SEL_PREF_LIBRARY_HIDE_DUPLICATES]);
         sel_library_scrape_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_LIBRARY_SCRAPE_ARTWORK], "on") == 0);
     }
@@ -8073,6 +8078,100 @@ static void search_view_changed(sel_engine* e) {
     }
 }
 
+/* I1231b: live search result cache. A live source's answer is stored per (source, normalised query) in library.db (table
+ * search_cache, src/library/db/search_cache.c). The next identical query lands the stored hits at once as a held section, the network
+ * search runs behind it and its answer replaces them in place; a failed refresh reports the failure as before. Defaults (db.h): entries
+ * older than SEL_SEARCH_CACHE_TTL_S = 7 days are not served, at most SEL_SEARCH_CACHE_CAP = 500 entries, least recently used
+ * evicted. Synced catalogue sections (local FTS, a few ms) are not cached; a catalogue source that fell back to its live hook
+ * (not synced) is. */
+#define SEARCH_CACHE_BLOB_MAX \
+    (SEL_SEARCH_HITS_PER_SOURCE * (SEL_SEARCH_KEY_MAX + SEL_SEARCH_TEXT_MAX + SEL_SEARCH_ARTIST_MAX + SEL_SEARCH_FORMAT_MAX))
+
+static int search_cache_wanted(const sel_engine* e, uint32_t b) {
+    const sel_source* src = sel_source_find(e->search_bucket[b].id);
+
+    return e->lib != NULL && src != NULL && ((src->flags & SEL_SOURCE_CATALOGUE_SEARCH) == 0u || e->search_bucket[b].solo);
+}
+
+/* The stored hits of (id, query) into out[]: key, title, artist and format of each hit as NUL-terminated fields. */
+static uint32_t search_cache_load(const sel_host* host, sel_library* lib, const char* id, const char* query, sel_search_hit* out) {
+    char* buf = (char*)host->mem_alloc(host, SEARCH_CACHE_BLOB_MAX, SEL_MEM_FAST);
+    uint32_t len = 0, at = 0, n = 0;
+
+    if (buf == NULL) {
+        return 0;
+    }
+    if (sel_library_search_cache_get(lib, id, query, 0, buf, SEARCH_CACHE_BLOB_MAX, &len)) {
+        while (n < SEL_SEARCH_HITS_PER_SOURCE && at < len) {
+            const char* f[4];
+            unsigned k;
+
+            for (k = 0; k < 4u; k++) {
+                const char* z = (const char*)memchr(buf + at, 0, len - at);
+                if (z == NULL) break;
+                f[k] = buf + at;
+                at = (uint32_t)(z - buf) + 1u;
+            }
+            if (k < 4u) break;
+            snprintf(out[n].key, sizeof out[n].key, "%s", f[0]);
+            snprintf(out[n].title, sizeof out[n].title, "%s", f[1]);
+            snprintf(out[n].artist, sizeof out[n].artist, "%s", f[2]);
+            snprintf(out[n].format, sizeof out[n].format, "%s", f[3]);
+            n++;
+        }
+    }
+    host->mem_free(host, buf);
+    return n;
+}
+
+static void search_cache_store(const sel_host* host, sel_library* lib, const char* id, const char* query, const sel_search_hit* hit,
+                               uint32_t n) {
+    char* buf = (char*)host->mem_alloc(host, SEARCH_CACHE_BLOB_MAX, SEL_MEM_FAST);
+    uint32_t len = 0, i;
+
+    if (buf == NULL) {
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        const char* f[4];
+        unsigned k;
+
+        f[0] = hit[i].key;
+        f[1] = hit[i].title;
+        f[2] = hit[i].artist;
+        f[3] = hit[i].format;
+        for (k = 0; k < 4u; k++) {
+            size_t l = strlen(f[k]) + 1u;
+            memcpy(buf + len, f[k], l);
+            len += (uint32_t)l;
+        }
+    }
+    (void)sel_library_search_cache_put(lib, id, query, 0, buf, len);
+    host->mem_free(host, buf);
+}
+
+/* The cached hits of bucket b go out as a held section (I1091 held: shown while the network search still runs). */
+static void search_land_cached(sel_engine* e, uint32_t b, uint32_t n, const sel_search_hit* hit) {
+    struct sel_search_bucket* bk = &e->search_bucket[b];
+    sel_message r;
+    uint32_t i;
+
+    if (n == 0u) {
+        return;
+    }
+    e->search_serial++;
+    for (i = 0; i < n; i++) {
+        if (hit != bk->hit) bk->hit[i] = hit[i];
+        search_hit_tags(&bk->hit[i], bk->id);
+        evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+        evt_tags(&r, bk->hit[i].tags);
+        emit(e, &r);
+    }
+    bk->n = n;
+    bk->held = 1;
+    e->search_cache_hits++;
+}
+
 #if !defined(SEL_LI_THREAD)
 /* Starts the library task for bucket `b` of the current query. */
 static void search_start(sel_engine* e, uint32_t b) {
@@ -8090,6 +8189,12 @@ static void search_start(sel_engine* e, uint32_t b) {
     e->search_cmd_thread = pthread_self();
 #endif
     e->source_searches++;
+    e->search_cached_n = 0;
+    if (search_cache_wanted(e, b) && !e->search_bucket[b].held) { /* I1231b: the stored answer shows before the task runs */
+        e->search_cached_n = search_cache_load(e->host, e->lib, e->search_source, e->search_query, e->search_bucket[b].hit);
+        search_land_cached(e, b, e->search_cached_n, e->search_bucket[b].hit);
+        if (e->search_cached_n > 0u) search_view_changed(e);
+    }
     e->search_running = 1;
     if (!sel_library_task_start(e->lib, search_task, e)) {
         e->search_running = 0;
@@ -8127,6 +8232,11 @@ struct sel_search_job {
     char id[SEL_SOURCE_ID_MAX];
     char query[SEL_SEARCH_QUERY_MAX];
     sel_search_hit* hit;
+    /* I1231b: cache != 0 stores a good answer; chit (NULL = no lookup) gets the stored hits before the network search, then cached = 1 */
+    int cache, cached_landed;
+    volatile int cached;
+    uint32_t cn;
+    sel_search_hit* chit;
     /* I1231: a grouped catalogue job searches nb sources in one library request; hit then holds nb * SEL_SEARCH_HITS_PER_SOURCE */
     uint32_t nb;
     uint32_t gb[SEL_LIB_GROUP_SOURCES_MAX];
@@ -8232,7 +8342,20 @@ static void* search_job_main(void* arg) {
     sel_sync_host_bind(&shost, j->e->host, &j->ctx);
     sink.ctx = j;
     sink.row = search_job_row;
+    /* I1231b: the cache never makes a search wait. The library's call lock is held for a whole library job (I782), e.g. the FTS
+     * search of the same query; a busy lock skips the read (the network answer lands as before) or the write. */
+    if (j->chit != NULL) {
+        int was = sel_library_nowait(1);
+        j->cn = search_cache_load(j->e->host, j->e->lib, j->id, j->query, j->chit);
+        sel_library_nowait(was);
+        __atomic_store_n(&j->cached, 1, __ATOMIC_RELEASE);
+    }
     j->rc = sel_source_search(&shost, j->id, j->query, &sink);
+    if (j->cache && j->rc >= 0 && j->cancel == 0u) {
+        int was = sel_library_nowait(1);
+        search_cache_store(j->e->host, j->e->lib, j->id, j->query, j->hit, j->n);
+        sel_library_nowait(was);
+    }
     sel_sync_ctx_release(&j->ctx);
     j->ms = (uint32_t)(search_now_ms() - t0);
     __atomic_store_n(&j->done, 1, __ATOMIC_RELEASE);
@@ -8241,6 +8364,7 @@ static void* search_job_main(void* arg) {
 
 static void search_job_free(sel_engine* e, struct sel_search_job* j) {
     e->host->mem_free(e->host, j->hit);
+    if (j->chit != NULL) e->host->mem_free(e->host, j->chit);
     e->host->mem_free(e->host, j);
 }
 
@@ -8358,6 +8482,10 @@ static void search_start_next(sel_engine* e) {
         j->gen = e->search_gen;
         j->b = b;
         snprintf(j->id, sizeof j->id, "%s", e->search_bucket[b].id);
+        j->cache = search_cache_wanted(e, b);
+        if (j->cache && !e->search_bucket[b].held) {
+            j->chit = (sel_search_hit*)e->host->mem_alloc(e->host, SEL_SEARCH_HITS_PER_SOURCE * sizeof *j->chit, SEL_MEM_FAST);
+        }
         snprintf(j->query, sizeof j->query, "%s", e->search_wait_query);
         j->ctx.scfg.host = e->host;
         j->ctx.scfg.lib = e->lib;
@@ -8637,12 +8765,17 @@ static void search_land(sel_engine* e, struct sel_search_job* j) {
 /* Pump side of SOURCE_SEARCH: each section lands as its own source answers, in arrival order. */
 static void search_collect(sel_engine* e) {
     struct sel_search_job** pj = &e->search_jobs;
-    int landed = 0;
+    int landed = 0, cached = 0;
 
     while (*pj != NULL) {
         struct sel_search_job* j = *pj;
 
         if (!__atomic_load_n(&j->done, __ATOMIC_ACQUIRE)) {
+            if (j->chit != NULL && !j->cached_landed && j->gen == e->search_gen && __atomic_load_n(&j->cached, __ATOMIC_ACQUIRE)) {
+                j->cached_landed = 1; /* I1231b: the stored answer shows now; the network answer replaces it when it lands */
+                search_land_cached(e, j->b, j->cn, j->chit);
+                cached |= j->cn > 0u;
+            }
             pj = &j->next;
             continue;
         }
@@ -8659,6 +8792,9 @@ static void search_collect(sel_engine* e) {
     e->search_running = e->search_jobs != NULL;
     if (search_queued(e)) {
         search_start_next(e); /* a bucket held back behind its source's superseded search starts now */
+    }
+    if (cached && !landed) {
+        search_view_changed(e);
     }
     if (landed) {
         if (!e->search_running && !search_queued(e)) {
@@ -8695,6 +8831,9 @@ static void search_collect(sel_engine* e) {
         } else {
             /* The events point into the bucket, not the landing: the next source's task starts below and rewrites the landing while these
              * events still sit in the queue. A bucket is rewritten only by a later query's collect. */
+            if (search_cache_wanted(e, b)) {
+                search_cache_store(e->host, e->lib, e->search_source, e->search_query, e->search_hit, e->search_n);
+            }
             for (i = 0; i < e->search_n; i++) {
                 e->search_bucket[b].hit[i] = e->search_hit[i];
                 search_hit_tags(&e->search_bucket[b].hit[i], e->search_bucket[b].id);
@@ -11873,6 +12012,7 @@ static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
     out->search_peak = e->search_peak;
     out->search_wall_ms = e->search_wall_ms;
     out->search_catalogue_groups = e->search_catalogue_groups;
+    out->search_cache_hits = e->search_cache_hits;
     out->search_src_n = 0;
     {
         uint32_t b;

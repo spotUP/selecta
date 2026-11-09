@@ -35,7 +35,8 @@ enum {
     SEL_LIB_REQ_GENRE = 12,     /* payload: sel_genre_op*; genre_cache and songs.genre (I181) */
     SEL_LIB_REQ_ART = 13,       /* payload: sel_art_op*; albums and artwork rows (DUI-P2-4) */
     SEL_LIB_REQ_SRCSTATE = 14,  /* payload: sel_srcstate_op*; a source's sync state blob (I894a6) */
-    SEL_LIB_REQ_SEARCH_SOURCES = 15 /* I1231: one FTS query over several sources' rows, grouped by source (sel_lib_job) */
+    SEL_LIB_REQ_SEARCH_SOURCES = 15, /* I1231: one FTS query over several sources' rows, grouped by source (sel_lib_job) */
+    SEL_LIB_REQ_SEARCH_CACHE = 16    /* payload: sel_searchcache_op*; the live search result cache (I1231b) */
 };
 
 /* One genre_cache operation (SEL_LIB_REQ_GENRE). The reply is INT [0] 1 = done and found/stored, 0 = not found
@@ -207,6 +208,27 @@ typedef struct sel_srcstate_op {
     int set;
 } sel_srcstate_op;
 
+/* I1231b: live search result cache (table search_cache). One row per (source, normalised query) holding the hits as a blob.
+ * Defaults: an entry older than SEL_SEARCH_CACHE_TTL_S (7 days) is never served; at most SEL_SEARCH_CACHE_CAP (500) rows are kept,
+ * the least recently used go first on every PUT. A source's rows drop with its last source_songs row (source reset, trigger),
+ * on LIBRARY_CLEAR, and when the source is switched off (DROP with the sources_off csv). */
+#define SEL_SEARCH_CACHE_TTL_S (7 * 24 * 3600)
+#define SEL_SEARCH_CACHE_CAP 500u
+enum { SEL_SEARCH_CACHE_GET = 0, SEL_SEARCH_CACHE_PUT = 1, SEL_SEARCH_CACHE_DROP = 2 };
+/* GET copies up to `cap` bytes of a fresh entry into `data`, sets `len` and reply INT [0] = 1. PUT stores data/len and trims to
+ * `cap_rows` (0 = SEL_SEARCH_CACHE_CAP). DROP deletes every row of the sources in csv `source` (NULL = every row). `now` is unix
+ * seconds (0 = the clock). The query is normalised here (sel_library_search_cache_norm). Reply INT [1] = SQLite code. */
+typedef struct sel_searchcache_op {
+    int op;
+    const char* source;
+    const char* query;
+    int64_t now;
+    void* data;
+    uint32_t len;
+    uint32_t cap;
+    uint32_t cap_rows;
+} sel_searchcache_op;
+
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
  * sel_library_run and blocks until the worker answers, so the pointers stay valid. No allocation:
  * `out` is a caller buffer of NUL-terminated keys. */
@@ -308,7 +330,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 18
+#define SEL_LIB_SCHEMA_VERSION 19
 /* I625a8e: file name of the prebuilt empty database (tools/library_template_bake.c). sel_library_open copies it, from the directory
  * of the database path, when that database does not exist, instead of running the 65 DDL statements of SCHEMA_FINAL. */
 #define SEL_LIBTEMPLATE_NAME "library-template.db"
@@ -694,6 +716,12 @@ int sel_library_format_list(sel_library* lib, sel_format_list_fn fn, void* ctx);
 int sel_library_source_songs(sel_library* lib, const char* source);
 /* I1231 test sentinels: SEL_LIB_REQ_SEARCH and SEL_LIB_REQ_SEARCH_SOURCES requests the worker ran. */
 void sel_library_search_counts(const sel_library* lib, uint32_t* searches, uint32_t* grouped);
+/* I1231b: the search cache key of a query: ASCII lower case, trimmed, runs of white space as one space. */
+void sel_library_search_cache_norm(const char* query, char* out, size_t cap);
+/* I1231b: client side of SEL_LIB_REQ_SEARCH_CACHE. get: 1 and *len when a fresh entry was copied; put/drop: 1 on success. */
+int sel_library_search_cache_get(sel_library* lib, const char* source, const char* query, int64_t now, void* buf, uint32_t cap, uint32_t* len);
+int sel_library_search_cache_put(sel_library* lib, const char* source, const char* query, int64_t now, const void* data, uint32_t len);
+int sel_library_search_cache_drop(sel_library* lib, const char* sources_csv);
 /* I961c: last sync of source `source` (unix time, 0 never; the meta row "sync.<id>"). Both this and the song count read the writer-kept mirror
  * (srcmirror.c): a plain copy, never a worker request. */
 int64_t sel_library_source_synced(sel_library* lib, const char* source);

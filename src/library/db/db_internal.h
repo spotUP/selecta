@@ -109,6 +109,7 @@ struct sel_library {
     volatile unsigned in_pin;      /* I1077b: the writer is inside a pin batch */
     volatile unsigned touch_gen;   /* I1130a: of those, commits made by Recents touches (SEL_USER_LIBRARY_TOUCH: the opened table only) */
     volatile unsigned in_touch;    /* I1130a: the writer is inside a Recents touch */
+    volatile unsigned in_cache;    /* I1231b: the writer is inside a search cache op; its commits are not library changes */
     volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
     volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
     volatile unsigned rating_pending_n; /* I958: pending 'rating' pushes; the writer of pending_push keeps it, a UI read never asks the worker */
@@ -225,6 +226,7 @@ void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message
 void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply);
 void sel_library_meta(sel_library* lib, const sel_meta_op* op, sel_message* reply);
 void sel_library_srcstate(sel_library* lib, const sel_srcstate_op* op, sel_message* reply);
+void sel_library_search_cache(sel_library* lib, const sel_searchcache_op* op, sel_message* reply);
 void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply);
 
 /* art.c: SEL_LIB_REQ_ART. */

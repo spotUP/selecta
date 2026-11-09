@@ -292,10 +292,21 @@ static const char SCHEMA_V18[] =
     "CREATE INDEX IF NOT EXISTS songs_dup_of ON songs(dup_of) WHERE dup_of IS NOT NULL;"
     "CREATE TABLE IF NOT EXISTS dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;";
 
+/* I1231b: the live search result cache, one row per (source, normalised query); `at` is the unix time of the answer, `used` a
+ * use counter (least recently used goes first past the cap). A source's rows drop with its last source_songs row, like source_state. */
+static const char SCHEMA_V19[] =
+    "CREATE TABLE IF NOT EXISTS search_cache(source TEXT NOT NULL, query TEXT NOT NULL, at INTEGER NOT NULL, used INTEGER NOT NULL,"
+    " hits BLOB NOT NULL, PRIMARY KEY(source, query)) WITHOUT ROWID;"
+    "CREATE INDEX IF NOT EXISTS search_cache_used ON search_cache(used);"
+    "CREATE TRIGGER IF NOT EXISTS source_songs_search_cache_ad AFTER DELETE ON source_songs BEGIN "
+    "DELETE FROM search_cache WHERE source = old.source;"
+    "END;";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
+                                           SCHEMA_V19};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -460,6 +471,9 @@ static const char* const SCHEMA_FINAL[] = {
     "CREATE TRIGGER source_songs_state_ad AFTER DELETE ON source_songs BEGIN DELETE FROM source_state WHERE source = old.source;END;",
     "CREATE INDEX songs_dup_of ON songs(dup_of) WHERE dup_of IS NOT NULL;",
     "CREATE TABLE dup_pick(md5 TEXT PRIMARY KEY, key TEXT NOT NULL) WITHOUT ROWID;",
+    "CREATE TABLE search_cache(source TEXT NOT NULL, query TEXT NOT NULL, at INTEGER NOT NULL, used INTEGER NOT NULL, hits BLOB NOT NULL, PRIMARY KEY(source, query)) WITHOUT ROWID;",
+    "CREATE INDEX search_cache_used ON search_cache(used);",
+    "CREATE TRIGGER source_songs_search_cache_ad AFTER DELETE ON source_songs BEGIN DELETE FROM search_cache WHERE source = old.source;END;",
     /* seed: the v7 step counts songs without a composer, which is 0 on a fresh database */
     "INSERT INTO composer_unknown(n) VALUES(0)",
 };
