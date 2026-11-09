@@ -359,6 +359,13 @@ typedef struct sel_play_meta {
     char path[SEL_DEFERRED_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
     char cfg[256];
+    /* I1225: a remote key (hvsc:, modland:, ...) is fetched into the file cache by the same read, never on the pump:
+     * fetch_key is the key fetched (the best source when there is one), cached/files/fetch_rc/fetch_status/banks_missing
+     * are sel_library_fetch's answers that read_song takes in place of its own call. */
+    char fetch_key[SEL_BROWSE_PATH_MAX];
+    char cached[SEL_BROWSE_PATH_MAX];
+    uint32_t files;
+    int fetched, fetch_rc, fetch_status, banks_missing;
     int32_t cdb;
     char lengths[SEL_STICKER_VALUE_MAX]; /* I434f: the song's lengths_ms sticker, so the catalogue length needs no UI-thread round trip */
     int has_best, loud_ok, provisional, has_lengths, valid;
@@ -780,6 +787,7 @@ struct sel_engine {
     sel_play_meta pm[4], pm_job;
     char pm_want[SEL_DEFERRED_PATH_MAX];
     uint32_t pm_next, pm_wait, play_meta_reads;
+    char pm_rules[512]; /* I1225: companion rules for the read's remote fetch, built on the pump before the post */
     char rdp_path[SEL_DEFERRED_PATH_MAX], rdp_next_path[SEL_DEFERRED_PATH_MAX];
     char rdp_buf[1024];
     uint32_t rdp_rows;
@@ -870,6 +878,7 @@ struct sel_engine {
     char sf_wait_path[SEL_DEFERRED_PATH_MAX]; /* the requested song while sf_wait >= 0 */
     char sf_err[160];
     uint32_t sf_missing_reports, sf_fetches, sf_installed, sf_reopens;
+    uint32_t open_fetch_reads, open_fetch_ms_max, open_rp_ms_max, open_prepare_ms_max; /* I1225: wall ms of the open phases run on the pump thread */
     uint32_t route_direct;        /* routing of the song started last: 1 = voice_sink, 0 = mixer (sel_engine_voice_route) */
     /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
      * raises pat_req; the audio thread fills pat_res between render calls and sets pat_ack
@@ -2082,12 +2091,28 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             station = 1;
         }
     }
-    if (e->lib != NULL && sel_cache_is_remote(path)) {
-        /* Remote key: the file cache serves it (a hit when the prefetch got there first), I168. */
+    if (e->lib != NULL && sel_cache_is_remote(path) && pm != NULL && pm->fetched && strcmp(pm->fetch_key, path) == 0) {
+        /* I1225: the song-start read (play_meta_run) already fetched the file off the pump; take its answer. */
+        if (pm->fetch_rc <= 0) {
+            e->open_status = pm->fetch_status;
+            return NULL;
+        }
+        e->open_bank_missing = pm->banks_missing;
+        snprintf(cached, sizeof cached, "%s", pm->cached);
+        path = cached;
+        snprintf(file_path, SEL_BROWSE_PATH_MAX, "%s", cached);
+    } else if (e->lib != NULL && sel_cache_is_remote(path)) {
+        /* Remote key: the file cache serves it (a hit when the prefetch got there first), I168. Only a path no
+         * song-start read covered lands here (I1225); open_fetch_ms_max measures what it cost the pump. */
         char rules[512];
         uint32_t files = 0;
+        uint32_t t0 = e->host->clock_ms(e->host);
+        int fr;
         sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
-        if (sel_library_fetch(e->lib, path, rules, cached, sizeof cached, &files) <= 0) {
+        fr = sel_library_fetch(e->lib, path, rules, cached, sizeof cached, &files);
+        t0 = e->host->clock_ms(e->host) - t0;
+        if (t0 > e->open_fetch_ms_max) e->open_fetch_ms_max = t0;
+        if (fr <= 0) {
             e->open_status = sel_library_fetch_status(e->lib); /* I695b: the 404 of a file the mirror does not serve */
             return NULL;
         }
@@ -2881,7 +2906,12 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     src.path = file_path[0] != '\0' ? file_path : path; /* a remote key opens as its cached file, so sibling banks resolve (I1127b) */
     src.stream = live != NULL ? sel_live_source(live) : (fs != NULL ? sel_file_stream_source(fs) : NULL);
     memset(&sl->rp_info, 0, sizeof sl->rp_info);
-    sl->rp_state = open(&src, &e->rp_host, &sl->rp_info);
+    {
+        uint32_t t0 = e->host->clock_ms(e->host);
+        sl->rp_state = open(&src, &e->rp_host, &sl->rp_info);
+        t0 = e->host->clock_ms(e->host) - t0;
+        if (t0 > e->open_rp_ms_max) e->open_rp_ms_max = t0;
+    }
     if (sl->rp_state == NULL) {
         drop_song(e, data, live, fs);
         sel_engine_report_error(e, "open_failed", err_detail);
@@ -2963,6 +2993,21 @@ static void play_meta_run(sel_engine* e) {
     song_key(m->path, key, sizeof key);
     if (key[0] != '\0') m->loud_ok = sel_library_loudness_get_ex(e->lib, key, &m->cdb, &m->provisional) != 0;
     if (key[0] != '\0') m->has_lengths = sel_library_sticker_get(e->lib, key, "lengths_ms", m->lengths, sizeof m->lengths) != 0;
+    {
+        /* I1225: the remote download (whole file plus companions into the cache) runs here, on the read thread, so the
+         * pump never waits on the network for a song start. read_song takes the answer from the entry. */
+        const char* target = m->has_best ? m->best : m->path;
+        if (sel_cache_is_remote(target) && strlen(target) < sizeof m->fetch_key) {
+            snprintf(m->fetch_key, sizeof m->fetch_key, "%s", target);
+            m->fetch_rc = sel_library_fetch(e->lib, target, e->pm_rules, m->cached, sizeof m->cached, &m->files);
+            if (m->fetch_rc <= 0) {
+                m->fetch_status = sel_library_fetch_status(e->lib);
+            } else {
+                m->banks_missing = sel_library_fetch_banks_missing(e->lib);
+            }
+            m->fetched = 1;
+        }
+    }
     m->valid = 1;
 }
 
@@ -2971,6 +3016,7 @@ static int play_meta_ready(sel_engine* e, const char* path) {
     if (e->lib == NULL || play_meta_find(e, path) != NULL) return 1;
     if (lib_read_idle(&e->rd_play) && strlen(path) < sizeof e->pm_want) {
         snprintf(e->pm_want, sizeof e->pm_want, "%s", path);
+        sel_companion_rules(e->registry_count, e->registry_get, e->pm_rules, sizeof e->pm_rules);
         lib_read_post(e, &e->rd_play, play_meta_run);
     }
     return 0;
@@ -2980,6 +3026,7 @@ static void play_meta_publish(sel_engine* e) {
     e->pm[e->pm_next % SEL_PLAY_META_N] = e->pm_job;
     e->pm_next++;
     e->play_meta_reads++;
+    if (e->pm_job.fetched) e->open_fetch_reads++;
 }
 
 static void play_meta_drop(sel_engine* e, const char* path) {
@@ -3036,9 +3083,15 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
     if (kind == SEL_BEGIN_OPEN) {
         song_config_load(e, path);
     }
-    if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK || kind == SEL_BEGIN_OPEN ? seek_to : 0, detail, 0)) {
-        play_meta_drop(e, path);
-        return 0;
+    {
+        uint32_t t0 = e->host->clock_ms(e->host);
+        int ok = prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK || kind == SEL_BEGIN_OPEN ? seek_to : 0, detail, 0);
+        t0 = e->host->clock_ms(e->host) - t0;
+        if (t0 > e->open_prepare_ms_max) e->open_prepare_ms_max = t0;
+        if (!ok) {
+            play_meta_drop(e, path);
+            return 0;
+        }
     }
     play_meta_drop(e, path);
     e->cur = idx;
@@ -11711,6 +11764,10 @@ static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
     out->panel_loads = e->panel_loads;
     out->panel_reads = e->panel_reads;
     out->play_meta_reads = e->play_meta_reads;
+    out->open_fetch_ms_max = e->open_fetch_ms_max;
+    out->open_rp_ms_max = e->open_rp_ms_max;
+    out->open_prepare_ms_max = e->open_prepare_ms_max;
+    out->open_fetch_reads = e->open_fetch_reads;
     out->vote_reads = e->vote_reads;
     out->art_reads = e->art_reads;
     out->total_reads = e->total_reads;

@@ -555,6 +555,10 @@ typedef struct sel_engine_stats {
     uint32_t panel_reads;         /* panel reads that landed and were published (I906d sentinel) */
     uint32_t vote_reads;          /* view vote count reads that landed (I906g sentinel) */
     uint32_t play_meta_reads;     /* song-start reads (best source, config, loudness) that landed (I906g sentinel) */
+    uint32_t open_fetch_reads;    /* I1225: remote song files the song-start read fetched into the cache off the pump (sentinel) */
+    uint32_t open_fetch_ms_max;   /* I1225: longest remote-file fetch run on the pump thread inside an open, ms (0 after the fix on a cold cache) */
+    uint32_t open_rp_ms_max;      /* I1225: longest replayer open (RP_OPEN) on the pump thread, ms */
+    uint32_t open_prepare_ms_max; /* I1225: longest whole slot prepare (read, probe, open, start) on the pump thread, ms */
     uint32_t art_reads;           /* view artwork id batches that landed (I906d sentinel) */
     uint32_t group_reads;         /* queue group reads that landed (I906e sentinel) */
     uint32_t text_reads;          /* song text batches (title, group, metadata) read off the pump that landed (I906e sentinel) */
