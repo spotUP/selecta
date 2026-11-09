@@ -3,6 +3,7 @@
 #ifndef SELECTA_UIMODEL_VIEWCMDS_H
 #define SELECTA_UIMODEL_VIEWCMDS_H
 
+#include <selecta/engine.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -17,6 +18,10 @@ uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, 
 
 /* Label of the Playlists view button k: 0 New Folder, 1 New Playlist, 2 Play (NULL beyond). */
 const char* sel_uim_plbtn_label(uint32_t k);
+
+/* The folder a new folder or playlist goes into (Playlists page, folders source): the selected folder row, the folder above a
+ * selected playlist row (nearest earlier folder row of lesser depth), 0 (the root) when `sel` is -1 or out of range. */
+uint32_t sel_uim_pl_target_folder(const sel_view_row* rows, uint32_t row_n, int32_t sel);
 
 /* Playlist rename and delete (the opened playlist page's More menu, the row context menu). The rename line needs a non-empty
  * name (0 otherwise). `folder` selects FOLDER_DEL over PLAYLIST_DEL. Returns the line length, 0 on a bad argument. */

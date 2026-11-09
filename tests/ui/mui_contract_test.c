@@ -36,6 +36,7 @@
 #define MCC_CLASS MCC_DIR "/src/class"
 #include <selecta/uimodel/route.h>
 #include <selecta/uimodel/theme.h>
+#include <selecta/uimodel/viewcmds.h>
 
 extern const sel_tag* sel_plugin_entry_mui_test(uint32_t host_api);
 
@@ -2118,7 +2119,7 @@ static void test_aabtn_wired(const char* src) {
               fn_body(src, "static void mui_caption_set(", body, sizeof body) != NULL && strstr(body, "mui_aabtn_set_caption(") != NULL,
           "transport labels do not reach the class"); /* I1139 2872c942: the call goes through mui_caption_set (Latin-1 wrap), which ends in mui_aabtn_set_caption */
     total = MUI_BTN_COUNT + MUI_EXTRA_COUNT + SEL_UIM_DOOR_COUNT + MUI_TOOL_BTNS + crumbs;
-    CHECK(crumbs == 6u && total == 37u, "button families add up to %u (crumbs %u), design lists 37", total, crumbs);
+    CHECK(crumbs == 6u && total == 38u, "button families add up to %u (crumbs %u), design lists 38 (37 + New Folder, I1177)", total, crumbs);
 }
 
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
@@ -2334,7 +2335,7 @@ static void test_newplaylist(void) {
     const char* p;
     char tbl[600];
     unsigned n = 0, k;
-    CHECK(MUI_TOOL_BTNS == 12u, "toolbar has %u buttons, want 12", (unsigned)MUI_TOOL_BTNS);
+    CHECK(MUI_TOOL_BTNS == 13u, "toolbar has %u buttons, want 13", (unsigned)MUI_TOOL_BTNS);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
         if (strcmp(mui_tool_labels[i], "New Playlist") == 0) {
             at = i;
@@ -2367,6 +2368,52 @@ static void test_newplaylist(void) {
     g_sent = 0;
     CHECK(mui_viewbtn_fire(1, "", 0, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "PLAYLIST_CREATE \"New Playlist\" 0") == 0, "fire sent '%s'", g_sent_line);
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
+}
+
+/* I1177 mui-newfolder: New Folder is the toolbar button after New Playlist. Label, icon, id slot and the fire path are read from the
+ * structures that produce them (mui_tool_labels, g_tool_which, the P4_PFOLDER case); the verb is the desktop's FOLDER_ADD through the
+ * shared sel_uim_plbtn_line, and the target folder is the shared sel_uim_pl_target_folder the desktop's New Folder button also uses. */
+static void test_newfolder(void) {
+    const char* src = ui_source();
+    uint32_t i, at = MUI_TOOL_BTNS, fires = mui_view_fires();
+    const char* w;
+    const char* p;
+    sel_view_row rows[4];
+    memset(rows, 0, sizeof rows);
+    rows[0].kind = (uint32_t)SEL_ROW_FOLDER; rows[0].id = 7u; rows[0].depth = 0u;
+    rows[1].kind = (uint32_t)SEL_ROW_FOLDER; rows[1].id = 9u; rows[1].depth = 1u;
+    rows[2].kind = (uint32_t)SEL_ROW_PLAYLIST; rows[2].id = 11u; rows[2].depth = 2u;
+    rows[3].kind = (uint32_t)SEL_ROW_PLAYLIST; rows[3].id = 12u; rows[3].depth = 0u;
+    for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        if (strcmp(mui_tool_labels[i], "New Folder") == 0) {
+            at = i;
+        }
+    }
+    CHECK(at < MUI_TOOL_BTNS && strcmp(mui_tool_labels[at - 1u], "New Playlist") == 0, "New Folder is not the button after New Playlist");
+    CHECK(mui_icon_body(mui_icon_id("New Folder"), 18) != NULL, "New Folder has no icon");
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    w = strstr(src, "g_tool_which[MUI_TOOL_BTNS] = {");
+    CHECK(w != NULL, "g_tool_which missing");
+    if (w != NULL && at < MUI_TOOL_BTNS) {
+        p = strchr(w, '{') + 1;
+        for (i = 0; i < at && p != NULL; i++) {
+            p = strchr(p, ',');
+            p = p != NULL ? p + 1 : NULL;
+        }
+        CHECK(p != NULL && strncmp(p + strspn(p, " \n"), "P4_PFOLDER", 10) == 0, "id slot %u is not P4_PFOLDER", (unsigned)at);
+    }
+    CHECK(strstr(src, "case P4_PFOLDER:") != NULL && strstr(src, "mui_viewbtn_fire(0,") != NULL, "P4_PFOLDER does not fire mui_viewbtn_fire(0)");
+    CHECK(strstr(src, "\"pfolder\"") != NULL, "p4_name has no pfolder");
+    g_sent = 0;
+    CHECK(mui_viewbtn_fire(0, "", 9u, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "FOLDER_ADD \"New Folder\" 9") == 0, "fire sent '%s'", g_sent_line);
+    CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
+    CHECK(sel_uim_pl_target_folder(rows, 4u, 0) == 7u && sel_uim_pl_target_folder(rows, 4u, 1) == 9u, "a selected folder is not its own target");
+    CHECK(sel_uim_pl_target_folder(rows, 4u, 2) == 9u && sel_uim_pl_target_folder(rows, 4u, 3) == 0u, "a playlist's target is not the folder above it");
+    CHECK(sel_uim_pl_target_folder(rows, 4u, -1) == 0u && sel_uim_pl_target_folder(rows, 4u, 4) == 0u, "no selection is not the root");
+    CHECK(strstr(src, "mui_pl_target_folder(view)") != NULL && strstr(src, "sel_uim_pl_target_folder(view->rows") != NULL, "MUI does not use the shared target folder");
 }
 
 /* I670 mui-libfilter (design 2026-10-29 section 4): the sidebar library filter control. The press goes through mui_libfilter_press,
@@ -3702,6 +3749,7 @@ int main(int argc, char** argv) {
         test_libfilter();
     } else if (strcmp(argv[1], "newplaylist") == 0) {
         test_newplaylist();
+        test_newfolder();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
         test_aabtn_tokens();
     } else if (strcmp(argv[1], "subsong-bar") == 0) {

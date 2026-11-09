@@ -4869,19 +4869,7 @@ static int32_t pl_sel_row(const desk* d, const sel_view_state* v) {
 
 /* The folder a new item goes into: the selected folder, the folder above a selected playlist, 0 (the root) otherwise. */
 static uint32_t pl_target_folder(const desk* d, const sel_view_state* v) {
-    int32_t s = pl_sel_row(d, v), at;
-    if (s < 0) {
-        return 0u;
-    }
-    if (v->rows[s].kind == (uint32_t)SEL_ROW_FOLDER) {
-        return v->rows[s].id;
-    }
-    for (at = s - 1; at >= 0; at--) {
-        if (v->rows[at].kind == (uint32_t)SEL_ROW_FOLDER && v->rows[at].depth < v->rows[s].depth) {
-            return v->rows[at].id;
-        }
-    }
-    return 0u;
+    return v == NULL ? 0u : sel_uim_pl_target_folder(v->rows, v->row_n, pl_sel_row(d, v));
 }
 
 static uint32_t pl_hash(const sel_view_state* v) {

@@ -218,10 +218,9 @@ uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx) {
 #include <selecta/uimodel/viewcmds.h>
 
 /* MUI-P8-5 */
-static const char* const k_viewbtn[2] = {"New Folder", "New Playlist"};
 
 const char* mui_viewbtn_label(uint32_t i) {
-    return i < MUI_VIEWBTN_COUNT ? (i < 2u ? k_viewbtn[i] : sel_uim_flag_label(i - 2u)) : NULL;
+    return i < MUI_VIEWBTN_COUNT ? (i < 2u ? sel_uim_plbtn_label(i) : sel_uim_flag_label(i - 2u)) : NULL;
 }
 
 uint32_t mui_viewbtn_fire(uint32_t i, const char* text, uint32_t folder, mui_send_fn send, void* ctx) {

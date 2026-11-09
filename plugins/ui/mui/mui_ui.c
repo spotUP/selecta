@@ -86,6 +86,7 @@ static void mui_libs_close(void) {
 #include "mui_vizarea_class.h"
 #include "mui_listview_class.h"
 #include "mui_keys_class.h"
+#include <selecta/uimodel/viewcmds.h>
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
 
 /* The SDK's sfdc inline MUI_NewObject is a function-like macro; the SDK's ApplicationObject/End idiom nests object-like
@@ -113,10 +114,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_PFOLDER, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage", "pfolder"};
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -327,7 +328,7 @@ static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
 #ifdef SEL_MUI_NATIVE
 static uint32_t mui_now_ms(void);
 /* The tool button order is the label order of mui_tool_labels (map/mui_layout.c, tested on the host): this lists each button's id. */
-static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_HELP, P4_SETTINGS, P4_PNEW, P4_POPEN, P4_PRENAME, P4_PDELETE, P4_CLEARLIB};
+static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_HELP, P4_SETTINGS, P4_PNEW, P4_PFOLDER, P4_POPEN, P4_PRENAME, P4_PDELETE, P4_CLEARLIB};
 /* MUI-P2-3: the Menustrip built from the action table (mui_menu_build). MUI keeps the title and shortcut pointers, so the
  * rows and the one-character shortcut strings are static. A Menuitem trigger is a ReturnID (MENU_ID_BASE + row) that the
  * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
@@ -3035,6 +3036,14 @@ static void mui_pref_fire(mui_state* s, uint32_t i) {
     }
 }
 
+/* I1177: the folder a new folder or playlist goes into: the engine view's cursor row on the folders source, else the root. */
+static uint32_t mui_pl_target_folder(const sel_view_state* view) {
+    if (view == NULL || view->source != (uint32_t)SEL_VIEW_FOLDERS || view->cursor < view->window_start) {
+        return 0u;
+    }
+    return sel_uim_pl_target_folder(view->rows, view->row_n, (int32_t)(view->cursor - view->window_start));
+}
+
 static void mui_p4_fire(mui_state* s, uint32_t which) {
     char line[200], lines[3][160];
     const sel_view_state* view;
@@ -3150,8 +3159,15 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_PNEW:
         /* The name comes from the command field (as Rename does); empty gives the default "New Playlist" (mui_viewbtn_fire). */
         mui_str_utf8(s->str_cmd, text, sizeof text);
-        if (mui_viewbtn_fire(1, text, 0, mui_p8_send, s)) {
+        if (mui_viewbtn_fire(1, text, mui_pl_target_folder(view), mui_p8_send, s)) {
             mui_p4_note(s, which, "New Playlist");
+        }
+        break;
+    case P4_PFOLDER:
+        /* I1177: the desktop's New Folder (FOLDER_ADD), into the same target folder as New Playlist. */
+        mui_str_utf8(s->str_cmd, text, sizeof text);
+        if (mui_viewbtn_fire(0, text, mui_pl_target_folder(view), mui_p8_send, s)) {
+            mui_p4_note(s, which, "New Folder");
         }
         break;
     case P4_SETTINGS:

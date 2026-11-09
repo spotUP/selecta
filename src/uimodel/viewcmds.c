@@ -21,6 +21,22 @@ const char* sel_uim_plbtn_label(uint32_t k) {
     return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : k == 2u ? "Play" : NULL;
 }
 
+uint32_t sel_uim_pl_target_folder(const sel_view_row* rows, uint32_t row_n, int32_t sel) {
+    int32_t at;
+    if (rows == NULL || sel < 0 || (uint32_t)sel >= row_n) {
+        return 0u;
+    }
+    if (rows[sel].kind == (uint32_t)SEL_ROW_FOLDER) {
+        return rows[sel].id;
+    }
+    for (at = sel - 1; at >= 0; at--) {
+        if (rows[at].kind == (uint32_t)SEL_ROW_FOLDER && rows[at].depth < rows[sel].depth) {
+            return rows[at].id;
+        }
+    }
+    return 0u;
+}
+
 uint32_t sel_uim_plrename_line(uint32_t id, const char* name, char* out, uint32_t cap) {
     return name == NULL || name[0] == '\0' ? 0u : done(snprintf(out, cap, "PLAYLIST_RENAME %u \"%s\"", (unsigned)id, name), cap);
 }
