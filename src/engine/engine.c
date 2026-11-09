@@ -9554,7 +9554,11 @@ static void lib_reads_collect(sel_engine* e) {
         txt_publish(e);
     }
     txt_post(e);
-    if (__atomic_exchange_n(&e->pk_reload, 0, __ATOMIC_ACQ_REL) != 0) {
+    /* Only the pump clears pk_reload, so load + store needs no read-modify-write (68020 gcc has no inline exchange and
+     * no libatomic): a take that sets the flag after the load is covered by the reload below, one after the store by
+     * the next pump. */
+    if (__atomic_load_n(&e->pk_reload, __ATOMIC_ACQUIRE) != 0) {
+        __atomic_store_n(&e->pk_reload, 0, __ATOMIC_RELEASE);
         e->pk_reloads++;
         folders_reload_posted(e);
     }

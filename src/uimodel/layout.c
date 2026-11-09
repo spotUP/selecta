@@ -19,20 +19,20 @@ static const sel_uim_metrics k_metrics[SEL_UIM_TIER_COUNT] = {
 #define TEXT_WIDE_COLS 120u /* text: from here the sidebar is 26 and the detail 34 wide */
 #define TEXT_SIDE_WIDE 26u
 #define TEXT_DETAIL_WIDE 34u
-#define SIDEBAR_RAIL_LABELLED 160 /* I526 D1: the bitmap tier rail, mini8 labels beside the icon */
+#define SIDEBAR_RAIL_LABELLED 160u /* I526 D1: the bitmap tier rail, mini8 labels beside the icon */
 
 #define BAR_H k_metrics[SEL_UIM_TIER_DEFAULT].bar_h
 #define BAR_ONE_ROW_H k_metrics[SEL_UIM_TIER_DEFAULT].bar_one_row_h
-#define BANNER_H k_metrics[SEL_UIM_TIER_DEFAULT].banner_h
-#define SIDEBAR_WIDE k_metrics[SEL_UIM_TIER_DEFAULT].side_wide
-#define SIDEBAR_NARROW k_metrics[SEL_UIM_TIER_DEFAULT].side_narrow
-#define SIDEBAR_ICONS k_metrics[SEL_UIM_TIER_DEFAULT].side_icons
-#define SIDEBAR_EXPANDED_WIDE k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_wide /* I609: the widened Your Library sidebar, three-column layout */
-#define SIDEBAR_EXPANDED_NARROW k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_narrow /* two-column layout */
-#define SIDEBAR_EXPANDED_ICONS k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_icons /* the icon rail opens to a labelled sidebar */
-#define DETAIL_W k_metrics[SEL_UIM_TIER_DEFAULT].detail_w
-#define MAIN_MIN_W k_metrics[SEL_UIM_TIER_DEFAULT].main_min_w
-#define MAIN_MIN_H k_metrics[SEL_UIM_TIER_DEFAULT].main_min_h
+#define BANNER_H ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].banner_h)
+#define SIDEBAR_WIDE ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].side_wide)
+#define SIDEBAR_NARROW ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].side_narrow)
+#define SIDEBAR_ICONS ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].side_icons)
+#define SIDEBAR_EXPANDED_WIDE ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_wide) /* I609: the widened Your Library sidebar, three-column layout */
+#define SIDEBAR_EXPANDED_NARROW ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_narrow) /* two-column layout */
+#define SIDEBAR_EXPANDED_ICONS ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].side_exp_icons) /* the icon rail opens to a labelled sidebar */
+#define DETAIL_W ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].detail_w)
+#define MAIN_MIN_W ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].main_min_w)
+#define MAIN_MIN_H ((uint32_t)k_metrics[SEL_UIM_TIER_DEFAULT].main_min_h)
 
 const sel_uim_metrics* sel_uim_metrics_for(uint32_t tier) {
     return &k_metrics[tier < SEL_UIM_TIER_COUNT ? tier : SEL_UIM_TIER_DEFAULT];
