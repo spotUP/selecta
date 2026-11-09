@@ -8,6 +8,7 @@
 #include <selecta/catalogue.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define FORMAT_NAME "Hippo - Playlists"
@@ -76,7 +77,11 @@ static int hippo_sync_host(const sel_host* host, const char* arg, int64_t now, s
     memset(&st, 0, sizeof st);
     if (strncmp(arg, "http://", 7) == 0 || strncmp(arg, "https://", 8) == 0) {
         sel_hippo_net_stats nt;
+        const char* env = getenv("SELECTA_HIPPO_SITE"); /* tests point the home at the plain-http fixture (I1234) */
 
+        if (env != NULL && env[0] != '\0' && strcmp(arg, "https://hippoplayer.se/") == 0) {
+            arg = env;
+        }
         ok = sel_hippo_net_sync(host, arg, &st, &nt);
         sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
     } else {

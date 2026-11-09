@@ -1253,8 +1253,8 @@ int main(int argc, char** argv)
 
     printf("library_screen opens=%u searches=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_LIBRARY_OPENS, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_LIBRARY_SEARCHES, 0));
-    printf("folders_screen opens=%u rows_built=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_FOLDER_OPENS, 0),
-           (unsigned)est.folder_view_rows);
+    printf("folders_screen opens=%u rows_built=%u lists_syncs=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_FOLDER_OPENS, 0),
+           (unsigned)est.folder_view_rows, (unsigned)est.lists_syncs);
     printf("home_view home_rows=%u home_item_shelves=%u\n", (unsigned)est.home_rows, (unsigned)est.home_item_shelves);
     printf("stats_screen stats_queries=%u\n", (unsigned)est.stats_queries);
     printf("splash_frames=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_SPLASH_FRAMES, 0));

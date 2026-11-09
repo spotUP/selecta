@@ -443,6 +443,8 @@ struct sel_engine {
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t lib_reads_applied;                /* I829: posted library reads the pump applied */
     uint32_t hidden_read_drops;                /* I1091: Home/Folders answers collected while another source was shown, not written (sentinel) */
+    int lists_check;                           /* I1234: the Playlists view opened; the next folders answer decides which PLAYLISTS_ONLY sources sync */
+    uint32_t lists_syncs;                      /* I1234: syncs of PLAYLISTS_ONLY sources the Playlists view queued (sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
     uint32_t stream_adds;                      /* STREAM_ADD URLs saved (I725a) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
@@ -8905,21 +8907,61 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sync_request(e, m->args[0].v.s, m->args[1].v.s, now);
 }
 
+/* I1234: 1 when the folders tree text holds a top level folder called `name` ("F <id> <name>" with no indent). */
+static int tree_has_top_folder(const char* tree, const char* name) {
+    size_t nl = strlen(name);
+    const char* l = tree;
+
+    while (l != NULL && *l != '\0') {
+        const char* end = strchr(l, '\n');
+        size_t len = end != NULL ? (size_t)(end - l) : strlen(l);
+        const char* after;
+
+        if (len > 2u && l[0] == 'F' && l[1] == ' ') {
+            after = l + 2;
+            while (after < l + len && *after >= '0' && *after <= '9') after++;
+            if (after < l + len && *after == ' ' && (size_t)(l + len - (after + 1)) == nl && memcmp(after + 1, name, nl) == 0) {
+                return 1;
+            }
+        }
+        l = end != NULL ? end + 1 : NULL;
+    }
+    return 0;
+}
+
+/* 1 while a sync of `id` runs or waits in the queue, so a second open does not queue it twice. */
+static int sync_pending(const sel_engine* e, const char* id) {
+    uint32_t i;
+
+    if (e->sync_running && strcmp(e->sync_id, id) == 0) return 1;
+    for (i = 0; i < e->sync_next_n; i++) {
+        if (strcmp(e->sync_next[i].id, id) == 0) return 1;
+    }
+    return 0;
+}
+
 /* I1058: opening the Playlists view syncs every PLAYLISTS_ONLY source that is enabled and due, the way a Sync click on its old
- * Sources row did; its lists land in the tree as a read-only folder. */
+ * Sources row did; its lists land in the tree as a read-only folder named after the source (hippo_sync.c FOLDER_NAME).
+ * I1234: the sync time stands for that folder, so a source whose folder is missing from the tree is due whatever the time
+ * says (a library synced before I1058 holds a recent sync.hippo and no HippoPlayer folder). Runs when the folders answer
+ * of the view-open lands, so rd_fold_text is the tree as stored. library.sync_stale_days=0 (automatic syncs off) still
+ * syncs nothing. */
 static void lists_sync_row(void* ctx, const char* id, const char* name, const char* home, int remote) {
     sel_engine* e = ctx;
     const sel_source* src = sel_source_find(id);
     int64_t synced, snoozed;
+    uint32_t days = (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10);
+    int due;
 
-    (void)name;
-    if (src == NULL || (src->flags & SEL_SOURCE_PLAYLISTS_ONLY) == 0u || src->sync == NULL || !remote || e->lib == NULL ||
-        sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id)) {
+    if (days == 0u || src == NULL || (src->flags & SEL_SOURCE_PLAYLISTS_ONLY) == 0u || src->sync == NULL || !remote || e->lib == NULL ||
+        sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id) || sync_pending(e, id)) {
         return;
     }
     synced = sync_time_get(e, id);
     snoozed = sel_source_snooze_at(e->prefs.value[SEL_PREF_LIBRARY_SYNC_SNOOZED], id);
-    if (sel_source_sync_due(synced, snoozed, (int64_t)time(NULL), (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10))) {
+    due = sel_source_sync_due(synced, snoozed, (int64_t)time(NULL), days);
+    if (due || (name != NULL && !tree_has_top_folder(e->rd_fold_text, name))) {
+        e->lists_syncs++;
         sync_request(e, id, home != NULL ? home : "", (int64_t)time(NULL));
     }
 }
@@ -9547,7 +9589,7 @@ static void view_source_apply(sel_engine* e, const sel_message* m) {
             return;
         }
         lib_read_post(e, &e->rd_folders, folders_read_run);
-        lists_sync_due(e);
+        e->lists_check = 1; /* I1234: lists_sync_due runs on the answer, which carries the tree */
     } else if (strcmp(what, "queue") != 0 && strcmp(what, "browse") != 0) {
         sel_engine_report_error(e, "unsupported", "VIEW_SOURCE");
         return;
@@ -9745,6 +9787,10 @@ static void lib_reads_collect(sel_engine* e) {
     }
     if (lib_read_take(&e->rd_folders)) {
         e->lib_reads_applied++;
+        if (e->lists_check) { /* I1234: the view-open answer: due PLAYLISTS_ONLY sources and those whose folder is missing sync */
+            e->lists_check = 0;
+            lists_sync_due(e);
+        }
         if (e->view.pub.source == SEL_VIEW_FOLDERS) { /* I1091: the shared row store, see the Home landing; VIEW_SOURCE folders posts a fresh read */
             e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
             view_reread(e, SEL_VIEW_FOLDERS);
@@ -12103,6 +12149,7 @@ static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
     out->home_item_shelves = e->home_item_shelves;
     out->folder_view_rows = e->folder_view_rows;
     out->hidden_read_drops = e->hidden_read_drops;
+    out->lists_syncs = e->lists_syncs;
     out->panel_loads = e->panel_loads;
     out->panel_reads = e->panel_reads;
     out->play_meta_reads = e->play_meta_reads;
