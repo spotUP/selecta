@@ -75,3 +75,23 @@ run(e selecta-test.mod "${KEYS_E}")
 expect(e out_e "text_layout=3 layout_sets=1")
 expect(e scr_e "Scope")
 reject(e scr_e "Backspace Parent")
+
+# f (I1205): a real terminal cannot send Ctrl-4..Ctrl-8 as CSI-u. Terminal.app and xterm send the C0 bytes 0x1C 0x1D 0x1E
+# 0x1F for Ctrl-4..Ctrl-7 (and 0x7F, Backspace, for Ctrl-8, so Ctrl-V 0x16 is the text UI's key for SID registers). This run
+# feeds those raw bytes on stdin, the headless real input path, with no keys-file names.
+string(ASCII 28 b28)
+string(ASCII 29 b29)
+string(ASCII 30 b30)
+string(ASCII 31 b31)
+string(ASCII 22 b22)
+file(WRITE "${WORK}/raw_ctrl.bin" "${b28}${b29}${b30}${b31}${b22}")
+execute_process(
+  COMMAND "${SELECTA}" --output null --size 100x25 --start-dir "${songs}" --config-dir "${WORK}/cfg"
+          --exec "OPEN ${songs}/selecta-test.mod" --exec "PLAY"
+  INPUT_FILE "${WORK}/raw_ctrl.bin" WORKING_DIRECTORY "${songs}"
+  OUTPUT_VARIABLE out_f ERROR_VARIABLE err_f RESULT_VARIABLE rc_f)
+if(NOT rc_f EQUAL 0)
+  message(FATAL_ERROR "run f exited ${rc_f}\n${out_f}\n${err_f}")
+endif()
+expect(f out_f "log=PREF_SET ui.desktop.mode visual|PREF_SET ui.desktop.viz viz_scope|PREF_SET ui.desktop.viz viz_levels|PREF_SET ui.desktop.viz viz_spectrum|PREF_SET ui.desktop.viz viz_sidregs")
+expect(f out_f "layout_sets=5")

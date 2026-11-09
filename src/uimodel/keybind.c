@@ -160,6 +160,8 @@ static const struct {
     {"o", "@solo"},            {".", "PITCH +100"},
     {",", "PITCH -100"},       {"C-Right", "TEMPO +5"},
     {"C-Left", "TEMPO -5"},
+    /* I1205: a terminal sends Ctrl-8 as 0x7F (Backspace), so the shared table's C-8 never arrives; Ctrl-V does. */
+    {"C-v", "PREF_SET ui.desktop.viz viz_sidregs"},
     {"l", "@library"},          {"/", "@search"},
     {"f", "@folders"},         {"b", "@stats"},
     {"H", "@home"},          {"c", "@lib_mode"},
