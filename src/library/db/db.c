@@ -8,6 +8,8 @@
 #include <selecta/engine.h>
 #include <selecta/machine.h>
 
+#include "../../core/count.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -185,9 +187,10 @@ static int busy_wait(void* ctx, int count) {
 static int write_gen_hook(void* ctx) {
     sel_library* lib = (sel_library*)ctx;
 
-    lib->write_gen++;
-    if (lib->in_pin) lib->pin_gen++;
-    if (lib->in_touch) lib->touch_gen++;
+    /* I1082f: the engine thread polls these while the writer thread commits, so every access is atomic. */
+    SEL_ATOMIC_INC_REL(&lib->write_gen);
+    if (SEL_ATOMIC_LOAD_ACQ(&lib->in_pin)) SEL_ATOMIC_INC_REL(&lib->pin_gen);
+    if (SEL_ATOMIC_LOAD_ACQ(&lib->in_touch)) SEL_ATOMIC_INC_REL(&lib->touch_gen);
     return 0;
 }
 

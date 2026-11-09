@@ -6,6 +6,7 @@
 #include "db_internal.h"
 
 #include "../source.h"
+#include "../../core/count.h"
 
 #include <string.h>
 
@@ -49,15 +50,15 @@ static void pin_write(sel_library* lib, const sel_pin_slot* q, unsigned n) {
 }
 
 uint32_t sel_library_write_gen(sel_library* lib) {
-    return lib != NULL ? lib->write_gen : 0;
+    return lib != NULL ? SEL_ATOMIC_LOAD_ACQ(&lib->write_gen) : 0;
 }
 
 uint32_t sel_library_pin_gen(sel_library* lib) {
-    return lib != NULL ? lib->pin_gen : 0;
+    return lib != NULL ? SEL_ATOMIC_LOAD_ACQ(&lib->pin_gen) : 0;
 }
 
 uint32_t sel_library_touch_gen(sel_library* lib) {
-    return lib != NULL ? lib->touch_gen : 0;
+    return lib != NULL ? SEL_ATOMIC_LOAD_ACQ(&lib->touch_gen) : 0;
 }
 
 uint32_t sel_library_pin_rows(sel_library* lib) {
