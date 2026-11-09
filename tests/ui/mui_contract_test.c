@@ -1360,6 +1360,7 @@ static void test_sidebar_bullet_latin1(void) {
  * create card, with Browse Folders hidden through the uimodel. The sentinel mui_sidebar_builds() proves the model ran, and the
  * mui_ui.c sidebar group is checked to build from it. */
 static char* ui_source(void);
+static const char* fn_body(const char* src, const char* head, char* out, size_t cap);
 static void test_sidebar(void) {
     sel_engine_library_item it[3];
     mui_sidebar_in in;
@@ -1614,6 +1615,8 @@ static void test_songinfo(void) {
 }
 
 static void test_settings(void) {
+    char body[6000];
+    const char* src = ui_source();
     uint32_t i, n = sel_uim_pref_row_count_for(SEL_UIM_MACH_AMIGA); /* MPS-1c: host ROM rows are no prefs.def keys */
     char o[96];
     CHECK(n >= 6u, "rows %u", (unsigned)n);
@@ -1637,6 +1640,18 @@ static void test_settings(void) {
             CHECK(strcmp(o, "PREF_SET ui.desktop.overscan \"1\"") == 0, "overscan toggle line '%s'", o);
         }
     }
+    /* I1180 parity with the desktop Settings page (same shared rows). Exempt: ui.desktop.zoom is the desktop UI's pixel scale
+     * (it has no row on the desktop page either); MUI has no pixel zoom. Page versus window: the MUI keeps the window (P4-10). */
+    CHECK(src != NULL && fn_body(src, "static Object* mui_pref_gadget(", body, sizeof body) != NULL, "mui_pref_gadget body");
+    CHECK(strstr(body, "sel_uim_pref_choice_index(r->choices, cur)") != NULL && strstr(body, "strcmp(s->set_entry") == NULL,
+          "cycle rows find the active choice through the shared helper");
+    CHECK(strstr(body, "v > hi ? hi : v") != NULL, "slider value is clamped like the desktop page");
+    CHECK(src != NULL && fn_body(src, "static Object* mui_settings_with_about(", body, sizeof body) != NULL &&
+              strstr(body, "sel_uim_about_heading()") != NULL && strstr(body, "about.credit[i].licence") != NULL,
+          "the About heading and credits are built under the rows");
+    CHECK(src != NULL && fn_body(src, "static void mui_settings_open(", body, sizeof body) != NULL && strstr(body, "mui_settings_with_about(grid)") != NULL &&
+              strstr(body, "sel_uim_pref_row_at(i)") != NULL,
+          "the Settings window walks the shared rows and adds the About part");
     sel_uim_pref_line("mix.loudness", "off", o, sizeof o);
     CHECK(strcmp(o, "PREF_SET mix.loudness \"off\"") == 0, "line '%s'", o);
 }

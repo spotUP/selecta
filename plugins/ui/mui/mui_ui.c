@@ -19,6 +19,7 @@
 #include "map/mui_iconmap.h"
 #include "map/mui_icons.h"
 #include "map/mui_route.h"
+#include <selecta/uimodel/about.h>
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/pages.h>
@@ -3016,18 +3017,16 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
             *p++ = '\0';
         }
         s->set_entry[i][n] = NULL;
-        for (act = 0; act < n; act++) {
-            if (strcmp(s->set_entry[i][act], cur) == 0) {
-                break;
-            }
-        }
+        act = sel_uim_pref_choice_index(r->choices, cur); /* the desktop page and the text UI share this lookup (I1188) */
         o = mui_make_cycle(s->set_entry[i], act < n ? (LONG)act : 0, id);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
         o = mui_make_check(r->label, cur[0] == '1', id);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
         long lo = 0, hi = 100;
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
-        o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id, 0);
+        long v = cur[0] != '\0' ? strtol(cur, NULL, 10) : lo;
+        v = v < lo ? lo : (v > hi ? hi : v); /* the desktop page clamps a stored value the same way */
+        o = mui_make_slider(lo, hi, v, id, 0);
     } else {
         o = mui_make_string(id, 0, r->label);
         if (o != NULL) {
@@ -3038,6 +3037,35 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
         }
     }
     return o;
+}
+
+/* I1180: the About part the desktop Settings page draws under its rows (I706d): the heading, then one block per bundled module that
+ * credits its upstream (title, copyright, licence). The scan is host only, so on the Amiga the list is empty and only the heading
+ * shows, as on the desktop page. Returns the vertical group of the rows grid and the About group. */
+static Object* mui_settings_with_about(Object* grid) {
+    sel_uim_about about;
+    Object *col = MUI_NewObject((char*)MUIC_Group, TAG_DONE), *ab;
+    uint32_t i;
+    if (col == NULL) {
+        return NULL;
+    }
+    sel_uim_about_load(&about);
+    DoMethod(col, OM_ADDMEMBER, grid);
+    ab = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    if (ab == NULL) {
+        return col;
+    }
+    DoMethod(ab, OM_ADDMEMBER, mui_aatext(sel_uim_about_heading(), MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT, 0));
+    if (about.count > 0u) {
+        DoMethod(ab, OM_ADDMEMBER, mui_aatext(sel_uim_about_credits_heading(), MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT, 0));
+    }
+    for (i = 0; i < about.count; i++) {
+        DoMethod(ab, OM_ADDMEMBER, mui_aatext(about.credit[i].title, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(ab, OM_ADDMEMBER, mui_aatext(about.credit[i].copyright, MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(ab, OM_ADDMEMBER, mui_aatext(about.credit[i].licence, MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT, 0));
+    }
+    DoMethod(col, OM_ADDMEMBER, ab);
+    return col;
 }
 
 static void mui_settings_open(mui_state* s) {
@@ -3060,6 +3088,10 @@ static void mui_settings_open(mui_state* s) {
             s->set_ctl[i] = g;
             DoMethod(grid, OM_ADDMEMBER, mui_aatext(r->label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0));
             DoMethod(grid, OM_ADDMEMBER, g);
+        }
+        grid = mui_settings_with_about(grid);
+        if (grid == NULL) {
+            return;
         }
         s->set_win = mui_dialog_window("Selecta Settings", 0x53455453UL, grid);
         if (s->set_win == NULL) {
