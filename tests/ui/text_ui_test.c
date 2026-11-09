@@ -192,7 +192,7 @@ int main(int argc, char** argv) {
             row24 = last_row(dump);
             CHECK(row24 != NULL && strstr(row24, "sPACE t0 sTART!") != NULL, "splash: row 24 of the first frame is '%s'",
                   row24 != NULL ? row24 : "(none)");
-            CHECK(strstr(dump, "Subsong") == NULL, "splash: the player header shows on the first frame");
+            CHECK(strstr(dump, "[Browse]") == NULL, "splash: the top bar shows on the first frame");
             for (i = 0; r >= 0 && i < 40u; i++) {
                 r = h.wait(ui, TURN_MS);
                 read_dump(dump, sizeof dump);
@@ -201,7 +201,21 @@ int main(int argc, char** argv) {
                 }
             }
             CHECK(strstr(dump, "sPACE t0 sTART!") == NULL, "splash: still shown after Space");
-            CHECK(strstr(dump, "Subsong") != NULL, "splash: the header row did not return after Space");
+            CHECK(strstr(dump, "[Browse]") != NULL, "splash: the top bar did not return after Space");
+            /* I1222g: the player bar and the top bar are drawn from the shared uimodel (sel_uim_frame, sel_uim_layout_compute_text);
+             * the sentinels prove the draws ran, the dump shows the content. 24 rows is the one-row form: no status, no hint row. */
+            {
+                sel_ui_stats_fn stats = (sel_ui_stats_fn)sel_tag_find(tags, SEL_UI_STATS, 0);
+                const sel_tag* st = stats != NULL ? stats(ui) : NULL;
+                uintptr_t bar = st != NULL ? (uintptr_t)sel_tag_find(st, SEL_UI_STAT_PLAYER_BAR, 0) : 0u;
+                uintptr_t top = st != NULL ? (uintptr_t)sel_tag_find(st, SEL_UI_STAT_TOPBAR_DRAWS, 0) : 0u;
+                CHECK((bar & 0xFFFFu) > 0u && top > 0u, "player bar draws %u, top bar draws %u: the shared frame did not run",
+                      (unsigned)(bar & 0xFFFFu), (unsigned)top);
+                CHECK((bar >> 16) == 1u, "player bar has %u rows at 24 rows, want the one-row form", (unsigned)(bar >> 16));
+            }
+            CHECK(strstr(dump, "[Home]") != NULL && strstr(dump, "What do you want to play?") != NULL, "top bar labels missing");
+            CHECK(strstr(dump, "Volume") != NULL && strstr(dump, "--:--") != NULL, "player bar volume or clock missing");
+            CHECK(strstr(dump, "Up Down Move") == NULL && strstr(dump, "Quit") == NULL, "a hint row is still drawn");
             h.close(ui);
         }
         dump_path = NULL;

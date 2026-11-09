@@ -61,20 +61,20 @@ expect(b out_b "layout_sets=4 sid_frames=0")
 expect(b scr_b "SID registers")
 expect(b scr_b "No SID register feed")
 
-# c: Ctrl-3 Mini keeps only the header; Ctrl-1 Full brings the list back.
+# c: Ctrl-3 Mini keeps only the player bar (I1222g: the hint row is gone, the "Browse  songs" list heading stands for the list); Ctrl-1 Full brings the list back.
 run(c selecta-test.mod "${KEYS_C}")
 expect(c out_c "text_layout=2 layout_sets=1")
-reject(c scr_c "Backspace Parent")
+reject(c scr_c "Browse  songs")
 reject(c scr_c "Open")
 run(d selecta-test.mod "${KEYS_D}")
 expect(d out_d "text_layout=0 layout_sets=2")
-expect(d scr_d "Backspace Parent")
+expect(d scr_d "Browse  songs")
 
 # e: Ctrl-4 Visual shows the visualizer panel alone.
 run(e selecta-test.mod "${KEYS_E}")
 expect(e out_e "text_layout=3 layout_sets=1")
 expect(e scr_e "Scope")
-reject(e scr_e "Backspace Parent")
+reject(e scr_e "Browse  songs")
 
 # f (I1205): a real terminal cannot send Ctrl-4..Ctrl-8 as CSI-u. Terminal.app and xterm send the C0 bytes 0x1C 0x1D 0x1E
 # 0x1F for Ctrl-4..Ctrl-7 (and 0x7F, Backspace, for Ctrl-8, so Ctrl-V 0x16 is the text UI's key for SID registers). This run
