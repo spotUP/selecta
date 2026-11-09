@@ -95,3 +95,13 @@ if(NOT rc_f EQUAL 0)
 endif()
 expect(f out_f "log=PREF_SET ui.desktop.mode visual|PREF_SET ui.desktop.viz viz_scope|PREF_SET ui.desktop.viz viz_levels|PREF_SET ui.desktop.viz viz_spectrum|PREF_SET ui.desktop.viz viz_sidregs")
 expect(f out_f "layout_sets=5")
+
+# g (I1210): the palette row for the PREF_SET verb must not show Ctrl-V. C-v runs only "PREF_SET ui.desktop.viz viz_sidregs",
+# so a key label next to the whole verb names an action the key does not run. The palette (query PREF) is dumped; the verb row
+# is there (PREF_SET) and carries no C-v.
+run(g selecta-test.mod "${KEYS_G}")
+expect(g scr_g "PREF_SET")
+string(REGEX MATCHALL "[^\n]*PREF_SET[^\n]*" g_rows "${scr_g}")
+foreach(row IN LISTS g_rows)
+  reject(g row "C-v")
+endforeach()

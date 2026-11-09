@@ -338,19 +338,12 @@ static const char* row_name(const txt_bind* r, char* out, size_t cap) {
 
 const char* txt_bindings_key_for(const txt_bindings* b, const char* action, char* out, size_t cap) {
     uint32_t i;
-    size_t verb = strcspn(action, " \t");
-    int first_word = -1;
+    /* Only a binding that runs exactly this action names its key. A verb listed bare (the palette) never borrows the key of a
+       binding that carries arguments ("PREF_SET ui.desktop.viz viz_sidregs" runs one case of PREF_SET), I1210. */
     for (i = 0; i < b->count; i++) {
         if (strcmp(b->rows[i].action, action) == 0) {
             return row_name(&b->rows[i], out, cap);
         }
-        if (first_word < 0 && strncmp(b->rows[i].action, action, verb) == 0 &&
-            (b->rows[i].action[verb] == ' ' || b->rows[i].action[verb] == '\0')) {
-            first_word = (int)i;
-        }
-    }
-    if (first_word >= 0) {
-        return row_name(&b->rows[first_word], out, cap);
     }
     return NULL;
 }

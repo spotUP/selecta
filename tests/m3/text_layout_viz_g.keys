@@ -1,0 +1,8 @@
+# I1210: the palette query PREF lists the PREF_SET verb; Ctrl-V runs only "PREF_SET ui.desktop.viz viz_sidregs", so the row must show no key.
+wait 300
+Ctrl-P
+P
+R
+E
+F
+wait 300
