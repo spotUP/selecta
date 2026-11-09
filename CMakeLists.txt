@@ -44,6 +44,8 @@ include(cmake/selecta_defs.cmake)
 include(cmake/selecta_plugin.cmake)
 include(cmake/selecta_lint.cmake)
 include(cmake/selecta_desktop.cmake)
+include(cmake/player_set_check.cmake)
+sel_player_set_check()
 include(cmake/selecta_sdk.cmake)
 
 add_subdirectory(src)

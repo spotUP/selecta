@@ -77,6 +77,13 @@ add_test(NAME desktop-bake-check
   COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/desktop-bake-check.tmp"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/desktop_bake_check.cmake")
 
+# I1218b: a desktop dev configure without the GPL/KSS players stops (cmake/player_set_check.cmake), so the dev Selecta.app
+# cannot silently lose the sid/sndh/zxtune/kss replayers again ("No player for HVSC yet").
+add_test(NAME player-set-check
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/player-set-check.tmp"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/player_set_check.cmake")
+set_tests_properties(player-set-check PROPERTIES PASS_REGULAR_EXPRESSION "player-set-check: all cases passed")
+
 # I565: every "ui.*" pref a UI plugin reads is declared in prefs.def (ui.desktop.zoom was not, so prefs.conf could not set it).
 add_test(NAME ui-prefs-declared
   COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/ui_prefs_declared.cmake")
