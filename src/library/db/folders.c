@@ -338,6 +338,7 @@ static int song_briefs(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     sqlite3_stmt* st;
     const char* k;
     uint32_t used = 0;
+    sel_library_test_slow("SELECTA_LIB_BRIEFS_SLOW_MS"); /* I1198 test knob: the page's titles read on a busy worker, so library changes land while it is in flight */
     *rows = 0;
     if (op->value == NULL || op->out == NULL || op->out_cap < 2u) return SQLITE_MISUSE;
     op->out[0] = '\0';

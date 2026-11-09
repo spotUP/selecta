@@ -272,6 +272,7 @@ typedef struct desk {
     uint32_t link_hover;     /* I690b: 1 artist or 2 album link of a track row is underlined under the pointer, 0 none (dump line pllink) */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     sel_gui_rect col_more_drawn; /* I1065: where the last frame drew Show more (all zero when it did not) */
+    uint32_t pls_briefed; /* I1198: 1 once the briefs answer filled pls_title/pls_meta of the current song set */
     uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
     uint32_t local_icon_side, local_icon_head; /* I938: the icon the Local Files sidebar tile and the Local Files page header last drew (dump line localicon) */
@@ -4923,6 +4924,7 @@ static void pls_briefs_follow(desk* d) {
                 d->pls_meta[i].album_id = (uint32_t)strtoul(aid, NULL, 10);
                 r = aid + strlen(aid) + 1u;
             }
+            d->pls_briefed = 1u;
             d->pls_cols_ok = 0u;
             col_rebuild(d);
             col_cover_refresh(d);
@@ -4936,14 +4938,52 @@ static void pls_briefs_follow(desk* d) {
     }
 }
 
+/* I1198: the page's song set is its identity. A reload that reads the same songs in the same order (a touch-only library change: the Recents
+ * touch of the page open, a play count while a song plays) must not throw the resolved titles away nor invalidate the briefs read in flight:
+ * the carried model is the old one, byte for byte. */
+typedef struct pls_prev {
+    char* buf;
+    char (*title)[96];
+    pls_meta_row* meta;
+    uint32_t n, briefed, ver;
+} pls_prev;
+
+static size_t pls_buf_len(const char* buf) {
+    size_t len = 0;
+    const char* k;
+    for (k = buf; k != NULL && *k != '\0'; k += strlen(k) + 1u) {
+        len = (size_t)(k - buf) + strlen(k) + 1u;
+    }
+    return len;
+}
+
+static void pls_prev_free(pls_prev* pv) {
+    free(pv->buf);
+    free(pv->title);
+    free(pv->meta);
+    memset(pv, 0, sizeof *pv);
+}
+
 static void pls_reload_run(desk* d) {
     char* buf = (char*)malloc(2u);
     uint32_t n = 0, i;
     const char* k;
+    pls_prev pv;
+    pv.buf = d->pls_buf;
+    pv.title = d->pls_title;
+    pv.meta = d->pls_meta;
+    pv.n = d->pls_n;
+    pv.briefed = d->pls_briefed;
+    pv.ver = d->pls_ver;
+    d->pls_buf = NULL; /* pls_free would free them; they are kept until the new set is known */
+    d->pls_title = NULL;
+    d->pls_meta = NULL;
     d->pls_stale = 0u;
     d->pls_ver++;
+    d->pls_briefed = 0u;
     pls_free(d);
     if (buf == NULL) {
+        pls_prev_free(&pv);
         return;
     }
     { /* I678f, I994d4: every collection page, a playlist too: COLLECTION_OPEN made the page, the UI only reads state.collection */
@@ -4987,6 +5027,7 @@ static void pls_reload_run(desk* d) {
                 free(buf);
                 free(d->col_plays);
                 d->col_plays = NULL;
+                pls_prev_free(&pv);
                 return;
             }
             for (r = pg->rows, k = buf, len = 0, i = 0; i < ns && *r != '\0'; i++) {
@@ -5021,6 +5062,7 @@ static void pls_reload_run(desk* d) {
         d->pls_title = NULL;
         d->pls_meta = NULL;
         free(buf);
+        pls_prev_free(&pv);
         return;
     }
     d->pls_buf = buf;
@@ -5029,9 +5071,24 @@ static void pls_reload_run(desk* d) {
             d->pls_off[i] = (uint32_t)(k - buf);
             snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
         }
-        d->brf_want = n > 0u ? 1u : 0u;
+        if (n > 0u && pv.n == n && pls_buf_len(pv.buf) == pls_buf_len(buf) && memcmp(pv.buf, buf, pls_buf_len(buf)) == 0) {
+            if (pv.briefed) { /* the same songs, already resolved: keep titles and meta, no new read */
+                memcpy(d->pls_title, pv.title, (size_t)n * sizeof *d->pls_title);
+                memcpy(d->pls_meta, pv.meta, (size_t)n * sizeof *d->pls_meta);
+                d->pls_briefed = 1u;
+                d->brf_want = 0u;
+            } else if (d->brf_inflight && d->brf_ver == pv.ver) { /* the same songs, answer on its way (posted for this very set): it fits this model, so it belongs to this version */
+                d->brf_ver = d->pls_ver;
+                d->brf_want = 0u;
+            } else {
+                d->brf_want = 1u;
+            }
+        } else {
+            d->brf_want = n > 0u ? 1u : 0u;
+        }
         pls_briefs_want(d);
     }
+    pls_prev_free(&pv);
     d->pls_n = i;
     {   /* I691d (Q3): the page's cover is the majority family of its songs, like an album's */
         sel_platform_family_tally tally;
