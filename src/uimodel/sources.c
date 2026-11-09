@@ -76,6 +76,96 @@ uint32_t sel_uim_src_status(const sel_uim_src_row* r, int pending, int failed, i
     return n < 0 ? 0u : (uint32_t)n;
 }
 
+uint32_t sel_uim_offer_due(const sel_uim_src_row* r, uint32_t n) {
+    uint32_t i, c = 0;
+    for (i = 0; i < n; i++) {
+        c += r[i].due ? 1u : 0u;
+    }
+    return c;
+}
+
+int sel_uim_offer_wanted(const sel_uim_offer* o, int blocked, const sel_uim_src_row* r, uint32_t n) {
+    return !o->done && !blocked && sel_uim_offer_due(r, n) > 0u;
+}
+
+void sel_uim_offer_open(sel_uim_offer* o, const sel_uim_src_row* r, uint32_t n) {
+    uint32_t i;
+    o->n = 0;
+    for (i = 0; i < n && o->n < SEL_SOURCE_MAX; i++) {
+        if (r[i].due) {
+            snprintf(o->key[o->n++], sizeof o->key[0], "%s", r[i].key);
+        }
+    }
+    o->off = 0;
+    o->done = 1;
+}
+
+void sel_uim_offer_toggle(sel_uim_offer* o, uint32_t k) {
+    if (k < o->n) {
+        o->off ^= 1u << k;
+    }
+}
+
+int sel_uim_offer_ticked(const sel_uim_offer* o, uint32_t k) { return k < o->n && (o->off & (1u << k)) == 0u; }
+
+uint32_t sel_uim_offer_title(const sel_uim_offer* o, char* out, size_t cap) {
+    int n = snprintf(out, cap, "%u source%s not synced for a while", (unsigned)o->n, o->n == 1u ? "" : "s");
+    return n < 0 ? 0u : (uint32_t)n;
+}
+
+uint32_t sel_uim_offer_row_text(const sel_uim_src_row* r, int pending, int64_t now, char* out, size_t cap) {
+    char age[48];
+    int n;
+    if (pending) {
+        n = snprintf(out, cap, "%s, Syncing", r->name);
+    } else {
+        sel_uim_sync_age(r->synced, now, age, sizeof age);
+        n = snprintf(out, cap, "%s, %s", r->name, age);
+    }
+    return n < 0 ? 0u : (uint32_t)n;
+}
+
+void sel_uim_offer_masks(const sel_uim_offer* o, const sel_uim_src_row* r, uint32_t n, uint32_t* ticked, uint32_t* unticked) {
+    uint32_t k, i;
+    *ticked = 0;
+    *unticked = 0;
+    for (k = 0; k < o->n; k++) {
+        for (i = 0; i < n; i++) {
+            if (strcmp(r[i].key, o->key[k]) == 0) {
+                if (o->off & (1u << k)) {
+                    *unticked |= 1u << i;
+                } else {
+                    *ticked |= 1u << i;
+                }
+                break;
+            }
+        }
+    }
+}
+
+uint32_t sel_uim_offer_snooze_line(const sel_uim_src_row* r, uint32_t n, uint32_t unticked, int64_t now, char* out, uint32_t cap) {
+    char csv[440]; /* 16 sources of "key:days" must fit (the send ring slot is 512) */
+    size_t len = 0;
+    uint32_t k;
+    int w;
+    csv[0] = '\0';
+    for (k = 0; k < n; k++) {
+        int64_t days = (unticked & (1u << k)) ? now / 86400 : r[k].snooze / 86400;
+        char entry[48];
+        size_t el;
+        if (days <= 0) {
+            continue;
+        }
+        el = (size_t)snprintf(entry, sizeof entry, "%s%s:%lld", len > 0 ? "," : "", r[k].key, (long long)days);
+        if (len + el < sizeof csv) {
+            memcpy(csv + len, entry, el + 1u);
+            len += el;
+        }
+    }
+    w = snprintf(out, cap, "PREF_SET library.sync_snoozed \"%s\"", csv);
+    return w < 0 || (uint32_t)w >= cap ? 0u : (uint32_t)w;
+}
+
 static const char* const k_search_sources[SEL_UIM_SEARCH_SOURCES] = {"Library", "Web", "Demozoo"};
 
 const char* sel_uim_search_source_name(uint32_t i) { return i < SEL_UIM_SEARCH_SOURCES ? k_search_sources[i] : NULL; }

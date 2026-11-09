@@ -105,6 +105,9 @@ static void mui_report(mui_fail why, const char* detail);
 #define MUI_HELP_MAX 160 /* MUI-P4-14: most help rows shown (one per action table row) */
 #define MUI_STATS_MAX 24u /* rows of the Statistics window; the engine's stats buffer holds far fewer */
 #define CTL_STATS_MORE 0x280AL /* I1181: the Statistics window's More / Less button */
+#define CTL_OFFER_NOTNOW 0x280BL /* I1182: the first-start sync offer, Not now */
+#define CTL_OFFER_SYNC 0x280CL   /* its Sync button */
+#define CTL_OFFER_ROW 0x2900L    /* its per-source checks, CTL_OFFER_ROW + k */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
 /* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
@@ -212,6 +215,10 @@ typedef struct mui_state {
     Object* stats_lbl[MUI_STATS_MAX];
     Object* stats_val[MUI_STATS_MAX];
     mui_stats_panel stats_panel;
+    Object* offer_win;              /* I1182: the first-start sync offer, built when it opens */
+    Object* offer_row[SEL_SOURCE_MAX];
+    mui_offer_panel offer;
+    int offer_asked;                /* SOURCES was requested once for the offer */
     char help_buf[MUI_HELP_MAX][96];
     const char* help_ptr[MUI_HELP_MAX + 1];
     char status_buf[160];
@@ -545,6 +552,8 @@ static int mui_engine_line(mui_state* s, const char* line) {
 
 static void mui_stats_window(mui_state* s);
 static void mui_stats_sync(mui_state* s);
+static void mui_offer_window(mui_state* s);
+static int mui_route_send(void* ctx, const char* line);
 
 /* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
 static void mui_menu_fire(mui_state* s, uint32_t row) {
@@ -2574,6 +2583,7 @@ static void mui_refresh(mui_state* s) {
         mui_mode_apply(s, want);
     }
     mui_stats_sync(s); /* I1181 */
+    mui_offer_window(s); /* I1182 */
     if (mui_toast_tick(&s->toast, mui_now_ms())) { /* MUI-P4-11: the toast went away after 3 s (6 s for an error) */
         snprintf(s->status_buf, sizeof s->status_buf, "Ready");
         mui_text_set(s->status, s->status_buf);
@@ -2932,6 +2942,60 @@ static void mui_stats_window(mui_state* s) {
     }
     set(s->stats_win, MUIA_Window_Open, TRUE);
     mui_stats_sync(s);
+}
+
+/* I1182: the first-start sync offer window. Opens once per launch when the engine marks a source due (mui_offer_panel_follow), one
+ * check button per listed source, Not now and Sync. Built when it opens (once); the rows hold "[x] text" and follow the ticks. */
+static void mui_offer_window(mui_state* s) {
+    uint32_t k;
+    char txt[220], row[160];
+    if (!s->offer_asked) {
+        s->offer_asked = 1;
+        (void)mui_route_send(s, "SOURCES");
+        return;
+    }
+    if (s->offer_win == NULL && mui_offer_panel_follow(&s->offer, 0, &s->srcs)) {
+        Object *root = MUI_NewObject((char*)MUIC_Group, TAG_DONE), *bar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        if (root == NULL || bar == NULL) {
+            return;
+        }
+        mui_offer_panel_title(&s->offer, row, sizeof row);
+        DoMethod(root, OM_ADDMEMBER, mui_aatext_sized(row, row, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0));
+        for (k = 0; k < s->offer.o.n; k++) {
+            mui_offer_panel_row(&s->offer, &s->srcs, k, row, sizeof row);
+            snprintf(txt, sizeof txt, "[x] %s", row);
+            s->offer_row[k] = mui_make_button_i(txt, NULL, NULL, NULL, CTL_OFFER_ROW + (LONG)k, 0, 0, MUI_AA_ROLE_GHOST);
+            DoMethod(root, OM_ADDMEMBER, s->offer_row[k]);
+        }
+        DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Not now", "Not now", NULL, NULL, CTL_OFFER_NOTNOW, 0, 0, MUI_AA_ROLE_NORMAL));
+        DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Sync", "Sync", NULL, NULL, CTL_OFFER_SYNC, 0, 0, MUI_AA_ROLE_NORMAL));
+        DoMethod(root, OM_ADDMEMBER, bar);
+        s->offer_win = mui_dialog_window("Sync your sources", 0x53594E43UL, root);
+        if (s->offer_win == NULL) {
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->offer_win);
+        mui_close_on_request(s->offer_win);
+        set(s->offer_win, MUIA_Window_Open, TRUE);
+    }
+    if (s->offer_win == NULL) {
+        return;
+    }
+    if (s->offer.open) {
+        ULONG open = 0;
+        GetAttr(MUIA_Window_Open, s->offer_win, &open);
+        if (!open) { /* closed with its close gadget: the same as Not now */
+            (void)mui_offer_panel_not_now(&s->offer, &s->srcs, (int64_t)time(NULL), mui_route_send, s);
+            return;
+        }
+        for (k = 0; k < s->offer.o.n; k++) {
+            mui_offer_panel_row(&s->offer, &s->srcs, k, row, sizeof row);
+            snprintf(txt, sizeof txt, "[%c] %s", sel_uim_offer_ticked(&s->offer.o, k) ? 'x' : ' ', row);
+            mui_aabtn_set_caption(s->offer_row[k], txt);
+        }
+    } else {
+        set(s->offer_win, MUIA_Window_Open, FALSE);
+    }
 }
 
 /* MUI-P4-14: the Help window, one List row per action table row (mui_help_row). Built once, then only opened. */
@@ -3561,6 +3625,12 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id == CTL_STATS_MORE) {
         mui_stats_more(&s->stats_panel);
+    } else if (id == CTL_OFFER_NOTNOW) {
+        (void)mui_offer_panel_not_now(&s->offer, &s->srcs, (int64_t)time(NULL), mui_route_send, s);
+    } else if (id == CTL_OFFER_SYNC) {
+        (void)mui_offer_panel_sync(&s->offer, &s->srcs, (int64_t)time(NULL), mui_route_send, s);
+    } else if (id >= CTL_OFFER_ROW && id < CTL_OFFER_ROW + (LONG)SEL_SOURCE_MAX) {
+        mui_offer_panel_tick(&s->offer, (uint32_t)(id - CTL_OFFER_ROW));
     } else if (id == CTL_PAL_BTN) {
         mui_palette_show(s);
     } else if (id == CTL_PAL_LIST) {

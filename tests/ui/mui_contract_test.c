@@ -1687,6 +1687,109 @@ static void test_statistics_panel(void) {
     CHECK(mui_stats_builds() - base == 15u, "sentinel %u, want 15", (unsigned)(mui_stats_builds() - base));
 }
 
+/* mui-sync-offer (I1182): first start, the engine marks two of three sources due. The offer shows once with one check per due source,
+ * Sync sends the lines the desktop sends (LIBRARY_SYNC per ticked row, the snooze pref for an unticked one), Not now sends the shared
+ * notice line and the offer stays dismissed. Wired: mui_ui.c builds the window from these calls. */
+typedef struct offer_sink {
+    char line[12][240];
+    int n;
+} offer_sink;
+
+static int offer_send(void* ctx, const char* line) {
+    offer_sink* e = (offer_sink*)ctx;
+    if (e->n < 12) {
+        snprintf(e->line[e->n], sizeof e->line[0], "%s", line);
+    }
+    e->n++;
+    return 1;
+}
+
+static void offer_feed(mui_srcs* m, const char* key, const char* name, const char* path, int due) {
+    sel_tag t[8];
+    sel_message ev;
+    uint32_t i = 0;
+    memset(&ev, 0, sizeof ev);
+    t[i].tag = SEL_SRC_KEY, t[i++].value = (uintptr_t)key;
+    t[i].tag = SEL_SRC_KIND, t[i++].value = (uintptr_t) "remote";
+    t[i].tag = SEL_SRC_NAME, t[i++].value = (uintptr_t)name;
+    t[i].tag = SEL_SRC_PATH, t[i++].value = (uintptr_t)path;
+    t[i].tag = SEL_SRC_ENABLED, t[i++].value = 1;
+    t[i].tag = SEL_SRC_SYNCABLE, t[i++].value = 1;
+    t[i].tag = SEL_SRC_DUE, t[i++].value = (uintptr_t)due;
+    t[i].tag = SEL_TAG_END, t[i].value = 0;
+    ev.kind = SEL_MSG_EVT;
+    ev.id = SEL_EVT_LIBRARY_RESULT;
+    ev.argc = 1;
+    ev.args[0].type = SEL_ARG_TAGS;
+    ev.args[0].v.t = t;
+    CHECK(mui_srcs_event(m, &ev) == 1, "row %s not taken", key);
+}
+
+static void test_sync_offer(void) {
+    static mui_srcs m;
+    static mui_offer_panel p;
+    static char src[1 << 20];
+    offer_sink e;
+    char title[96], row[160], want[240];
+    const int64_t now = 1700000000;
+    FILE* f;
+    size_t n;
+    memset(&m, 0, sizeof m);
+    memset(&p, 0, sizeof p);
+    mui_srcs_asked(&m);
+    CHECK(!mui_offer_panel_follow(&p, 0, &m), "offer opened before any SOURCES row (the answer is still pending)");
+    offer_feed(&m, "modland", "Modland", "https://m", 1);
+    offer_feed(&m, "amp", "Amiga Music Preservation", "https://a", 0);
+    offer_feed(&m, "demozoo", "Demozoo", "https://d", 1);
+    CHECK(mui_offer_panel_follow(&p, 1, &m) == 0 && !p.open, "a blocking dialog did not hold the offer back");
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 1 && p.open && p.opens == 1u, "first start: the offer did not open");
+    CHECK(p.o.n == 2u, "one check per due source: %u", (unsigned)p.o.n);
+    mui_offer_panel_title(&p, title, sizeof title);
+    CHECK(strcmp(title, "2 sources not synced for a while") == 0, "title '%s'", title);
+    mui_offer_panel_row(&p, &m, 0, row, sizeof row);
+    CHECK(strstr(row, "Modland") != NULL && strstr(row, "never synced") != NULL, "row 0 '%s'", row);
+    mui_offer_panel_row(&p, &m, 1, row, sizeof row);
+    CHECK(strstr(row, "Demozoo") != NULL, "row 1 '%s'", row);
+    CHECK(sel_uim_offer_ticked(&p.o, 0) && sel_uim_offer_ticked(&p.o, 1), "every check starts ticked");
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 0, "the offer opened twice in one launch");
+    /* Sync with Demozoo unticked */
+    mui_offer_panel_tick(&p, 1);
+    CHECK(!sel_uim_offer_ticked(&p.o, 1), "tick did not flip");
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_panel_sync(&p, &m, now, offer_send, &e) == 3u && e.n == 3, "Sync sent %d lines", e.n);
+    sel_uim_sync_line("modland", "https://m", want, sizeof want);
+    CHECK(e.n > 0 && strcmp(e.line[0], want) == 0, "sync line '%s'", e.line[0]);
+      sel_uim_offer_snooze_line(m.it, m.n, 1u << 2, now, want, sizeof want);
+    CHECK(e.n > 1 && strcmp(e.line[1], want) == 0 && strstr(want, "demozoo:") != NULL, "snooze line '%s' want '%s'", e.line[1], want);
+    CHECK(e.n > 2 && strcmp(e.line[2], "SOURCES") == 0, "refresh after snooze");
+    CHECK(!p.open && p.syncs == 1u, "Sync closed the offer, one source synced: %u", (unsigned)p.syncs);
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 0, "the offer came back after Sync");
+    /* Not now on a fresh launch */
+    memset(&p, 0, sizeof p);
+    mui_srcs_asked(&m);
+    offer_feed(&m, "modland", "Modland", "https://m", 1);
+    offer_feed(&m, "amp", "Amiga Music Preservation", "https://a", 0);
+    offer_feed(&m, "demozoo", "Demozoo", "https://d", 1);
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 1, "second launch: offer did not open");
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_panel_not_now(&p, &m, now, offer_send, &e) == 2u && e.n == 2 && strcmp(e.line[1], "SOURCES") == 0, "Not now sent %d lines", e.n);
+    sel_uim_sync_notnow_line(now, want, sizeof want);
+    CHECK(strcmp(e.line[0], want) == 0, "not now line '%s'", e.line[0]);
+    CHECK(!p.open && p.later == 1u, "Not now did not dismiss");
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 0 && mui_offer_panel_sync(&p, &m, now, offer_send, &e) == 0u, "dismissed offer came back or still syncs");
+    f = fopen(MUI_UI_SOURCE, "rb");
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    src[n] = '\0';
+    fclose(f);
+    CHECK(strstr(src, "mui_offer_panel_follow(&s->offer") != NULL && strstr(src, "mui_offer_panel_sync(&s->offer") != NULL &&
+              strstr(src, "mui_offer_panel_not_now(&s->offer") != NULL && strstr(src, "mui_offer_panel_tick(&s->offer") != NULL,
+          "mui_ui.c does not drive the offer panel");
+}
+
 /* mui-drop (MUI-P5-6): the line a dropped file or drawer sends, the clipboard text and its IFF FTXT image. */
 static void test_drop(void) {
     char o[64];
@@ -3850,6 +3953,8 @@ int main(int argc, char** argv) {
         test_songinfo();
     } else if (strcmp(argv[1], "statistics") == 0) {
         test_statistics_panel();
+    } else if (strcmp(argv[1], "sync-offer") == 0) {
+        test_sync_offer();
     } else if (strcmp(argv[1], "settings") == 0) {
         test_settings();
     } else if (strcmp(argv[1], "dialogs") == 0) {

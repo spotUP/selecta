@@ -700,6 +700,22 @@ uint32_t mui_srcs_row(const mui_srcs* m, uint32_t i, char* out, size_t cap);
 uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx); /* lines sent, 0 for a row that is not there */
 uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);   /* 0 unless the row is a switched-on syncable remote */
 
+/* I1182: the first-start sync offer window, the desktop's nag dialog (nagdlg_*) on the shared sel_uim_offer model. It opens once per
+ * launch when the SOURCES rows hold a due source; one check per due source, all ticked; Sync sends what the desktop's Sync now sends
+ * (LIBRARY_SYNC per ticked row, then the snooze line and SOURCES when a row is unticked); Not now sends the notice time and SOURCES.
+ * Either button closes it for good. opens, syncs and later are the call-count sentinels. */
+typedef struct mui_offer_panel {
+    sel_uim_offer o;
+    int open;
+    uint32_t opens, syncs, later;
+} mui_offer_panel;
+int mui_offer_panel_follow(mui_offer_panel* p, int blocked, const mui_srcs* m); /* 1 when the offer opened on this call */
+uint32_t mui_offer_panel_title(const mui_offer_panel* p, char* out, size_t cap);
+uint32_t mui_offer_panel_row(const mui_offer_panel* p, const mui_srcs* m, uint32_t k, char* out, size_t cap);
+void mui_offer_panel_tick(mui_offer_panel* p, uint32_t k); /* flip the check of row k */
+uint32_t mui_offer_panel_sync(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx); /* lines sent */
+uint32_t mui_offer_panel_not_now(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx);
+
 /* MUI-P8-9: info line pieces. */
 int32_t mui_info_mode_key(char key);
 uint32_t mui_info_scroll_next(uint32_t offset, uint32_t text_len, int no_scroll);

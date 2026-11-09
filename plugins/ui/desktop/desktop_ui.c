@@ -614,14 +614,11 @@ typedef struct desk {
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slices B, C; I678i retired files, history, sources) */
     sel_uim_src_row src[SEL_SOURCE_MAX]; /* the SOURCES rows of the Sources tab (I265) */
     uint32_t src_n;          /* rows held in src */
-    uint32_t nag_off;        /* bit k set: the sync offer (I527) has dialog row k unchecked; all start checked */
+    sel_uim_offer nag;       /* the sync offer (I527, I602): the shared model of src/uimodel/sources.c (I1182), which lists its rows, their ticks and whether it was shown */
     uint32_t sync_pending;   /* bit i set: a LIBRARY_SYNC for source row i is queued or running; cleared by its outcome (I582) */
     uint32_t sync_failed;    /* bit i set: the last sync of source row i ended in ERROR sync_failed or sync_busy (I582) */
     uint32_t nag_syncs;      /* sources the offer's Sync button sent LIBRARY_SYNC for (the test's sentinel) */
     int nag_asked;           /* the launch SOURCES request was sent (I527) */
-    int nag_done;            /* the sync offer dialog was shown this launch: it opens once, on the first Library visit with a due source (I602) */
-    uint32_t nagdlg_n;       /* rows the sync offer dialog lists */
-    char nagdlg_key[SEL_SOURCE_MAX][24]; /* one per registry source (I921); their source keys (I789): src[] is rebuilt by every SOURCES answer, so an index would drift */
     uint32_t nagdlg_opens;   /* sentinel: sync offer dialogs opened */
     uint32_t nagdlg_draws;   /* sentinel: sync offer dialog paints (I789: opened is not shown) */
     uint32_t src_gen;        /* sentinel (I826): SOURCES rows that changed what the pages draw */
@@ -3179,9 +3176,9 @@ static void song_menu_draw(desk* d) {
 /* ---- The confirm dialog of the two library removals (DUI-P4-18): Remove from Library names the song, Clear Library names
  * the song count. Nothing is sent until Confirm; Cancel, Escape or a click outside close it. ---- */
 
-enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = SEL_SOURCE_MAX };
+enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32 };
 /* I921: the sync offer lists every due source the registry can hold (C99 compile-time check: a negative array size fails the build). */
-typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nagdlg_key) / sizeof(((desk*)0)->nagdlg_key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
+typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nag.key) / sizeof(((desk*)0)->nag.key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
 enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5, DLG_SYSFILE = 6 };
 
 static const char* path_base(const char* p);
@@ -3196,8 +3193,8 @@ static sel_gui_rect dlg_panel_rect(const desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t w = lpx(d, d->dlg_open == DLG_SYSFILE ? 580 : 440), h = lpx(d, 168);
     if (d->dlg_open == DLG_SYNC) { /* I602: a column of NAG_COL_ROWS source rows, another column beside it for each NAG_COL_ROWS more */
-        uint32_t rows = d->nagdlg_n < (uint32_t)NAG_COL_ROWS ? d->nagdlg_n : (uint32_t)NAG_COL_ROWS;
-        uint32_t cols = nagdlg_cols(d->nagdlg_n);
+        uint32_t rows = d->nag.n < (uint32_t)NAG_COL_ROWS ? d->nag.n : (uint32_t)NAG_COL_ROWS;
+        uint32_t cols = nagdlg_cols(d->nag.n);
         w = lpx(d, cols > 1u ? 40 + 260 * (int32_t)cols : 440);
         w = w < mn.w - 2 * lpx(d, 16) ? w : mn.w - 2 * lpx(d, 16);
         h = lpx(d, 20 + 28 + 12 + NAG_ROW_H * (int32_t)rows + 16 + 32 + 20);
@@ -3242,15 +3239,7 @@ static void draw_home(desk* d);
 /* The sync offer dialog (I602): title, a checkbox per due source (all ticked), and Never / Not now / Sync now on the bottom row,
  * right aligned. The rows are the sources due when it opened, so a SOURCES answer during the dialog does not move them. */
 static void nagdlg_open(desk* d) {
-    uint32_t i;
-    d->nagdlg_n = 0;
-    for (i = 0; i < d->src_n && d->nagdlg_n < NAG_MAX; i++) {
-        if (d->src[i].due) {
-            snprintf(d->nagdlg_key[d->nagdlg_n++], sizeof d->nagdlg_key[0], "%s", d->src[i].key);
-        }
-    }
-    d->nag_off = 0;
-    d->nag_done = 1;
+    sel_uim_offer_open(&d->nag, d->src, d->src_n);
     d->dlg_open = DLG_SYNC;
     d->dlg_opens++;
     d->nagdlg_opens++;
@@ -3262,7 +3251,7 @@ static void nagdlg_open(desk* d) {
 static int nagdlg_src(const desk* d, uint32_t k) {
     uint32_t i;
     for (i = 0; i < d->src_n; i++) {
-        if (strcmp(d->src[i].key, d->nagdlg_key[k]) == 0) {
+        if (strcmp(d->src[i].key, d->nag.key[k]) == 0) {
             return (int)i;
         }
     }
@@ -3278,7 +3267,7 @@ static sel_gui_rect nagdlg_button_rect(const desk* d, uint32_t i) {
 
 static sel_gui_rect nagdlg_row_rect(const desk* d, uint32_t k) {
     sel_gui_rect p = dlg_panel_rect(d);
-    int32_t m = lpx(d, 20), cw = (p.w - 2 * m) / (int32_t)nagdlg_cols(d->nagdlg_n);
+    int32_t m = lpx(d, 20), cw = (p.w - 2 * m) / (int32_t)nagdlg_cols(d->nag.n);
     return rect_of(p.x + m + (int32_t)(k / NAG_COL_ROWS) * cw, p.y + lpx(d, 20 + 28 + 12) + (int32_t)(k % NAG_COL_ROWS) * lpx(d, NAG_ROW_H), cw, lpx(d, NAG_ROW_H));
 }
 
@@ -3290,18 +3279,8 @@ static sel_gui_rect nagdlg_box_rect(const desk* d, sel_gui_rect row) {
 /* Sync now sends the ticked rows (the Sources page's message) and snoozes the unticked ones; Not now stores the global notice time;
  * Never switches the ticked sources off in library.sources_off, the setting the Sources tab toggles. */
 static void nagdlg_close(desk* d, int action) {
-    uint32_t k, ticked = 0, unticked = 0; /* src[] row masks, resolved by key now: the sends below only queue lines, no SOURCES answer lands inside this call */
-    for (k = 0; k < d->nagdlg_n; k++) {
-        int idx = nagdlg_src(d, k);
-        if (idx < 0) {
-            continue;
-        }
-        if (d->nag_off & (1u << k)) {
-            unticked |= 1u << idx;
-        } else {
-            ticked |= 1u << idx;
-        }
-    }
+    uint32_t k, ticked, unticked; /* src[] row masks, resolved by key now: the sends below only queue lines, no SOURCES answer lands inside this call */
+    sel_uim_offer_masks(&d->nag, d->src, d->src_n, &ticked, &unticked);
     d->dlg_open = DLG_NONE;
     if (action == 2) {
         for (k = 0; k < d->src_n; k++) {
@@ -3323,7 +3302,7 @@ static void nagdlg_close(desk* d, int action) {
         nag_dismiss(d);
         d->dlg_cancels++;
     }
-    d->nag_off = 0;
+    d->nag.off = 0;
     d->repaint = 1;
     draw_home(d);
 }
@@ -3334,15 +3313,15 @@ static void nagdlg_draw(desk* d, sel_gui_rect p) {
     int32_t m = lpx(d, 20), pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     char title[96];
     d->nagdlg_draws++;
-    snprintf(title, sizeof title, "%u source%s not synced for a while", (unsigned)d->nagdlg_n, d->nagdlg_n == 1u ? "" : "s");
+    sel_uim_offer_title(&d->nag, title, sizeof title);
     sel_gui_text_wrap(d->canvas, head, rect_of(p.x + m, p.y + m, p.w - 2 * m, head->line_height), title, tx, 1, &d->text);
-    for (k = 0; k < d->nagdlg_n; k++) {
+    for (k = 0; k < d->nag.n; k++) {
         int idx = nagdlg_src(d, k);
         sel_gui_rect row = nagdlg_row_rect(d, k), bx = nagdlg_box_rect(d, row);
-        int on = !(d->nag_off & (1u << k));
+        int on = sel_uim_offer_ticked(&d->nag, k);
         char line[96];
         if (idx < 0) { /* the source left the list since the dialog opened: still a row, no state to show */
-            snprintf(line, sizeof line, "%s", d->nagdlg_key[k]);
+            snprintf(line, sizeof line, "%s", d->nag.key[k]);
             draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.x + row.w - (bx.x + bx.w + pad), row.h), line, 0, 14, mu);
             continue;
         }
@@ -3350,13 +3329,7 @@ static void nagdlg_draw(desk* d, sel_gui_rect p) {
         if (on) {
             sel_gui_round_rect(d->canvas, rect_of(bx.x + bx.w / 4, bx.y + bx.h / 4, bx.w / 2, bx.h / 2), lpx(d, 2), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
         }
-        if (d->sync_pending & (1u << idx)) {
-            snprintf(line, sizeof line, "%s, Syncing", d->src[idx].name);
-        } else {
-            char age[48];
-            sel_uim_sync_age(d->src[idx].synced, (int64_t)time(NULL), age, sizeof age);
-            snprintf(line, sizeof line, "%s, %s", d->src[idx].name, age);
-        }
+        sel_uim_offer_row_text(&d->src[idx], (d->sync_pending & (1u << idx)) != 0u, (int64_t)time(NULL), line, sizeof line);
         draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.x + row.w - (bx.x + bx.w + pad), row.h), line, 0, 14, on ? tx : mu);
     }
     draw_button(d, nagdlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Never", 14, tx);
@@ -3375,9 +3348,9 @@ static int nagdlg_pointer(desk* d, const sel_gui_input* ev) {
             return 1;
         }
     }
-    for (k = 0; k < d->nagdlg_n; k++) {
+    for (k = 0; k < d->nag.n; k++) {
         if (in_rect(nagdlg_row_rect(d, k), ev->x, ev->y)) {
-            d->nag_off ^= 1u << k;
+            sel_uim_offer_toggle(&d->nag, k);
             d->repaint = 1;
             break;
         }
@@ -3974,14 +3947,6 @@ static int32_t lib_gap(desk* d) {
 
 /* Sync on launch (I527, I602): SOURCES rows the engine marked due are offered once per launch in a modal dialog (DLG_SYNC) on
  * the first visit to the Library page. The Library layout itself carries no banner: the list starts under the tabs. */
-
-static uint32_t nag_count(const desk* d) {
-    uint32_t i, n = 0;
-    for (i = 0; i < d->src_n; i++) {
-        n += d->src[i].due ? 1u : 0u;
-    }
-    return n;
-}
 
 static int lib_header_inline(desk* d);
 
@@ -7575,21 +7540,21 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "source %u %s|%s|%s|%d|%u\n", (unsigned)i, d->src[i].key, d->src[i].kind, d->src[i].name, d->src[i].enabled, (unsigned)d->src[i].count);
     }
     {
-        uint32_t k, n = d->nagdlg_n;
+        uint32_t k, n = d->nag.n;
         sel_gui_rect pm = panel_rect(d, "main");
-        o = dump_put(d, o, "nag %u syncs %u\n", (unsigned)(d->dlg_open == DLG_SYNC ? d->nagdlg_n : 0u), (unsigned)d->nag_syncs);
+        o = dump_put(d, o, "nag %u syncs %u\n", (unsigned)(d->dlg_open == DLG_SYNC ? d->nag.n : 0u), (unsigned)d->nag_syncs);
         if (d->dlg_open == DLG_PLDEL) { /* I647: the Delete confirm's buttons, for a script to click */
             sel_gui_rect cb = dlg_button_rect(d, 1u);
             o = dump_put(d, o, "dlgconfirm %d %d %d %d\n", (int)cb.x, (int)cb.y, (int)cb.w, (int)cb.h);
         }
-        o = dump_put(d, o, "nagdlg opens %u done %d\nnagdlg draws %u\nliststart %d\n", (unsigned)d->nagdlg_opens, d->nag_done, (unsigned)d->nagdlg_draws, (int)(pm.y + lib_list_y(d)));
+        o = dump_put(d, o, "nagdlg opens %u done %d\nnagdlg draws %u\nliststart %d\n", (unsigned)d->nagdlg_opens, d->nag.done, (unsigned)d->nagdlg_draws, (int)(pm.y + lib_list_y(d)));
         if (d->dlg_open == DLG_SYNC) {
             sel_gui_rect sy = nagdlg_button_rect(d, 2u), lt = nagdlg_button_rect(d, 1u), nv = nagdlg_button_rect(d, 0u), pn = dlg_panel_rect(d);
             o = dump_put(d, o, "nagpanel %d %d %d %d\nnagsync %d %d %d %d\nnaglater %d %d %d %d\nnagnever %d %d %d %d\n", (int)pn.x, (int)pn.y, (int)pn.w, (int)pn.h,
                          (int)sy.x, (int)sy.y, (int)sy.w, (int)sy.h, (int)lt.x, (int)lt.y, (int)lt.w, (int)lt.h, (int)nv.x, (int)nv.y, (int)nv.w, (int)nv.h);
             for (k = 0; k < n; k++) {
                 sel_gui_rect row = nagdlg_row_rect(d, k), bx = nagdlg_box_rect(d, row);
-                o = dump_put(d, o, "nagrow %u %s|%d %d %d %d %d\n", (unsigned)k, d->nagdlg_key[k], !(d->nag_off & (1u << k)), (int)bx.x, (int)bx.y, (int)bx.w, (int)bx.h);
+                o = dump_put(d, o, "nagrow %u %s|%d %d %d %d %d\n", (unsigned)k, d->nag.key[k], sel_uim_offer_ticked(&d->nag, k), (int)bx.x, (int)bx.y, (int)bx.w, (int)bx.h);
             }
         }
     }
@@ -9017,25 +8982,10 @@ static void sync_row_done(desk* d, int row, int failed) {
 /* Stores the per-source snooze (library.sync_snoozed, I582) of the banner rows left unticked at Sync: "id:days" for them and
  * for every source the engine already reported a snooze for, then asks SOURCES. The global notice stays untouched. */
 static void nag_snooze(desk* d, uint32_t unticked) {
-    char line[480], csv[440]; /* 16 sources of "key:days" must fit (desk_send ring slot is 512); 128 dropped the tail with 11 snoozed (I786a) */
-    size_t n = 0;
-    uint32_t k;
-    csv[0] = '\0';
-    for (k = 0; k < d->src_n; k++) {
-        int64_t days = (unticked & (1u << k)) ? (int64_t)time(NULL) / 86400 : d->src[k].snooze / 86400;
-        char entry[48];
-        size_t len;
-        if (days <= 0) {
-            continue;
-        }
-        len = (size_t)snprintf(entry, sizeof entry, "%s%s:%lld", n > 0 ? "," : "", d->src[k].key, (long long)days);
-        if (n + len < sizeof csv) {
-            memcpy(csv + n, entry, len + 1u);
-            n += len;
-        }
+    char line[480];
+    if (sel_uim_offer_snooze_line(d->src, d->src_n, unticked, (int64_t)time(NULL), line, sizeof line) != 0u) {
+        desk_send(d, line);
     }
-    snprintf(line, sizeof line, "PREF_SET library.sync_snoozed \"%s\"", csv);
-    desk_send(d, line);
     d->src_wait = 1;
     desk_send(d, "SOURCES");
 }
@@ -16896,8 +16846,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         d->src_wait = 1;
         desk_send(d, "SOURCES");
     }
-    if (!d->nag_done && !d->dlg_open && !d->src_wait && d->frames > 0u &&
-        nag_count(d) > 0u) { /* I786: the sync offer opens once per launch, on any page, as soon as a source is due */
+    if (sel_uim_offer_wanted(&d->nag, d->dlg_open || d->src_wait || d->frames == 0u, d->src, d->src_n)) { /* I786: the sync offer opens once per launch, on any page, as soon as a source is due */
         nagdlg_open(d);
     }
     if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */

@@ -119,3 +119,74 @@ uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx) {
     m->gen++;
     return mui_source_sync(&s[i], send, ctx);
 }
+
+/* I1182: the first-start sync offer. Mirrors desktop nagdlg_open / nagdlg_close; the decisions are the shared sel_uim_offer_*. */
+
+int mui_offer_panel_follow(mui_offer_panel* p, int blocked, const mui_srcs* m) {
+    if (!sel_uim_offer_wanted(&p->o, blocked || p->open || m->wait, m->it, m->n)) {
+        return 0;
+    }
+    sel_uim_offer_open(&p->o, m->it, m->n);
+    p->open = 1;
+    p->opens++;
+    return 1;
+}
+
+uint32_t mui_offer_panel_title(const mui_offer_panel* p, char* out, size_t cap) { return sel_uim_offer_title(&p->o, out, cap); }
+
+uint32_t mui_offer_panel_row(const mui_offer_panel* p, const mui_srcs* m, uint32_t k, char* out, size_t cap) {
+    uint32_t i;
+    if (k >= p->o.n) {
+        out[0] = '\0';
+        return 0;
+    }
+    for (i = 0; i < m->n; i++) {
+        if (strcmp(m->it[i].key, p->o.key[k]) == 0) {
+            return sel_uim_offer_row_text(&m->it[i], (m->pending & (1u << i)) != 0u, (int64_t)time(NULL), out, cap);
+        }
+    }
+    return (uint32_t)snprintf(out, cap, "%s", p->o.key[k]); /* the source left the list since the offer opened: still a row */
+}
+
+void mui_offer_panel_tick(mui_offer_panel* p, uint32_t k) { sel_uim_offer_toggle(&p->o, k); }
+
+uint32_t mui_offer_panel_sync(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx) {
+    sel_uim_source s[SEL_SOURCE_MAX];
+    uint32_t ticked, unticked, sent, i, send_mask = 0;
+    char line[480];
+    if (!p->open) {
+        return 0;
+    }
+    sel_uim_offer_masks(&p->o, m->it, m->n, &ticked, &unticked);
+    fill(m, s);
+    for (i = 0; i < m->n; i++) {
+        if ((ticked & (1u << i)) != 0u && (m->pending & (1u << i)) == 0u) {
+            send_mask |= 1u << i;
+            m->pending |= 1u << i;
+            m->failed &= ~(1u << i);
+            p->syncs++;
+        }
+    }
+    sent = mui_offer_sync(s, m->n, send_mask, send, ctx);
+    if (unticked != 0u) {
+        sent += sel_uim_offer_snooze_line(m->it, m->n, unticked, now, line, sizeof line) != 0u && send != NULL && send(ctx, line) != 0;
+        m->wait = 1;
+        sent += send != NULL && send(ctx, "SOURCES") != 0;
+    }
+    p->open = 0;
+    m->gen++;
+    return sent;
+}
+
+uint32_t mui_offer_panel_not_now(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx) {
+    uint32_t sent;
+    if (!p->open) {
+        return 0;
+    }
+    p->open = 0;
+    p->later++;
+    m->wait = 1;
+    sent = mui_offer_not_now(now, send, ctx);
+    m->gen++;
+    return sent;
+}
