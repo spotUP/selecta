@@ -34,8 +34,8 @@ set(ENV{SELECTA_CCMIXTER_BASE} "http://cc.test")
 # 1. Sync (the Sources page Sync button sends the web site home).
 execute_process(COMMAND "${CLI}" library sync --db "${DB}" --now 2000 --dump ccmixter "http://ccmixter.org/"
   OUTPUT_VARIABLE so ERROR_VARIABLE se RESULT_VARIABLE src TIMEOUT 40)
-if(NOT src EQUAL 0 OR NOT so MATCHES "listing_rows=2" OR NOT so MATCHES "skipped_rows=2" OR NOT so MATCHES "net_requests=1")
-  message(FATAL_ERROR "I725g: want 2 rows, 2 skipped, 1 request (rc=${src})\n${so}${se}")
+if(NOT src EQUAL 0 OR NOT so MATCHES "listing_rows=3" OR NOT so MATCHES "skipped_rows=2" OR NOT so MATCHES "net_requests=1")
+  message(FATAL_ERROR "I725g: want 3 rows, 2 skipped, 1 request (rc=${src})\n${so}${se}")
 endif()
 if(NOT so MATCHES "ccmixter_row=101/artist_one/Alpha-Mix\\|ccMixter - CC BY-NC 4.0\\|artist_one\\|"
    OR NOT so MATCHES "102/artist_two/Beta-Mix\\|ccMixter - CC NC-SAMPLING\\+ 1.0")
@@ -100,4 +100,16 @@ file(GLOB_RECURSE left "${CCACHE}/*")
 if(left)
   message(FATAL_ERROR "I725g: files left in the cache dir: ${left}")
 endif()
+# 3c. I1072d: the same 403, but the song is a SYNCED library row (upload 105 is in the db, source ccmixter), played by the key the
+# library lists it under. The failure names the source here too; the library read adds nothing between the click and the resolve.
+file(WRITE "${WORK}/cc403lib.sel" "OPEN ccmixter:105/artist_five/Blocked-Mix\n@stream_source\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/cc403lib.sel" --db "${DB}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 40)
+set(all "${o}${e}")
+if(NOT all MATCHES "STREAMSOURCE resolves=[1-9]")
+  message(FATAL_ERROR "I1072d: the synced row was not resolved through the source (sentinel)\n${all}")
+endif()
+if(NOT all MATCHES "ERROR open_failed .http_status=403 ccMixter blocks downloads of this song")
+  message(FATAL_ERROR "I1072d: synced library row: want 'ccMixter blocks downloads of this song', got\n${all}")
+endif()
+
 message(STATUS "ccmixter_ok")
