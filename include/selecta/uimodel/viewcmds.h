@@ -33,6 +33,20 @@ enum { SEL_UIM_PLACT_NONE = 0, SEL_UIM_PLACT_RENAME = 1, SEL_UIM_PLACT_DELETE = 
 uint32_t sel_uim_plmenu_action(uint32_t folder, uint32_t k);
 const char* sel_uim_plmenu_label(uint32_t action);
 
+/* I1179: the row context menu, one rule for both UIs (C1, C2 of the I799 review). A row is one of the SEL_UIM_CTXK_* kinds; the mask names
+ * what its menu offers: bits 0..4 are the song items (sel_uim_song_menu_label, item 4 reads Remove from Queue on a queue entry), bit 5
+ * Remove from Playlist (a playlist page's song row), bits 6 and 7 the playlist items Rename and Delete (sel_uim_plmenu_action). */
+enum { SEL_UIM_CTXK_NONE = 0, SEL_UIM_CTXK_SONG, SEL_UIM_CTXK_QUEUE, SEL_UIM_CTXK_PLSONG, SEL_UIM_CTXK_PLAYLIST, SEL_UIM_CTXK_FOLDER };
+#define SEL_UIM_CTX_PLREMOVE (1u << 5)
+#define SEL_UIM_CTX_RENAME (1u << 6)
+#define SEL_UIM_CTX_DELETE (1u << 7)
+uint32_t sel_uim_ctx_mask(uint32_t kind);
+/* Items on the song menu of a song row: the five song items, plus Remove from Playlist when the row is a playlist page's. */
+uint32_t sel_uim_song_menu_n(int in_playlist);
+/* Remove from Playlist: the label and the PLAYLIST_REMOVE_SONG line (playlist id, entry position). 0 when playlist_id is 0. */
+const char* sel_uim_plremove_label(void);
+uint32_t sel_uim_plremove_line(uint32_t playlist_id, uint32_t index, char* out, uint32_t cap);
+
 /* The question of the Delete confirm dialog. */
 uint32_t sel_uim_pldel_text(uint32_t folder, const char* name, char* out, uint32_t cap);
 

@@ -23,6 +23,7 @@
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/theme.h>
+#include <selecta/uimodel/viewcmds.h>
 #include <selecta/tags.h>
 #include <selecta/library_item.h>
 
@@ -362,18 +363,62 @@ static void mui_song_menu_items(Object* parent, uint32_t which) {
     }
 }
 
+/* I1179 (I799 C1, C2): the Listview's context strip. The five song items (item 4 reads Remove from Queue on a queue entry), then the
+ * playlist items Rename and Delete (sel_uim_plmenu_label), firing the P4_PRENAME and P4_PDELETE handlers the tool buttons use. The strip
+ * is built once; mui_ctx_sync enables what the cursor row offers (sel_uim_ctx_mask) and swaps item 4's title. Remove from Playlist
+ * (SEL_UIM_CTX_PLREMOVE) has no row to act on: the MUI lists no playlist's songs (a playlist row plays on activate), so the item is
+ * exempt until a playlist page exists; its line and label are the shared sel_uim_plremove_* the desktop uses. */
+#define CTL_P4_BASE_CTX 0x2300L /* same value as CTL_P4_BASE below */
+static Object* g_ctx_pl[2];
 static Object* mui_song_context_menu(void) {
     Object* strip = MUI_NewObject((char*)MUIC_Menustrip, TAG_DONE);
     Object* menu = MUI_NewObject((char*)MUIC_Menu, MUIA_Menu_Title, (ULONG) "Song", TAG_DONE);
+    uint32_t k;
     if (strip == NULL || menu == NULL) {
         return NULL;
     }
     DoMethod(strip, OM_ADDMEMBER, menu);
     mui_song_menu_items(menu, 1u);
+    for (k = 0; k < 2u; k++) {
+        uint32_t act = sel_uim_plmenu_action(0u, k);
+        Object* it = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)sel_uim_plmenu_label(act), MUIA_Menuitem_Enabled,
+                                   (ULONG)FALSE, TAG_DONE);
+        g_ctx_pl[k] = it;
+        if (it != NULL) {
+            DoMethod(menu, OM_ADDMEMBER, it);
+            DoMethod(it, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID,
+                     (ULONG)(CTL_P4_BASE_CTX + (LONG)(act == SEL_UIM_PLACT_RENAME ? P4_PRENAME : P4_PDELETE)));
+        }
+    }
     return strip;
 }
 
 static int mui_screen_compact(void); /* I949c, defined with the screen helpers; the View menu needs it (I960d) */
+/* I1179: the cursor row decides which context items work. Called after every list refresh. */
+static void mui_ctx_sync(const sel_view_state* view) {
+    uint32_t kind = SEL_UIM_CTXK_NONE, mask, i, w;
+    if (view != NULL && view->cursor >= view->window_start && view->cursor - view->window_start < view->row_n) {
+        kind = mui_ctx_kind((uint32_t)view->rows[view->cursor - view->window_start].kind);
+    }
+    mask = sel_uim_ctx_mask(kind);
+    for (w = 0; w < 2u; w++) {
+        for (i = 0; i < SEL_UIM_SONG_MENU_ITEMS; i++) {
+            if (g_sm_item[w][i] != NULL) {
+                SetAttrs(g_sm_item[w][i], MUIA_Menuitem_Enabled, (ULONG)(((mask >> i) & 1u) ? TRUE : FALSE), TAG_DONE);
+                if (i == 4u) {
+                    SetAttrs(g_sm_item[w][i], MUIA_Menuitem_Title, (ULONG)sel_uim_song_menu_label(4u, kind == SEL_UIM_CTXK_QUEUE), TAG_DONE);
+                }
+            }
+        }
+    }
+    for (i = 0; i < 2u; i++) {
+        if (g_ctx_pl[i] != NULL) {
+            SetAttrs(g_ctx_pl[i], MUIA_Menuitem_Enabled,
+                     (ULONG)((mask & (i == 0u ? SEL_UIM_CTX_RENAME : SEL_UIM_CTX_DELETE)) ? TRUE : FALSE), TAG_DONE);
+        }
+    }
+}
+
 static Object* menu_child(Object* parent, ULONG cls_is_menu, const char* title, Object** cache_key, const char** names, Object** objs,
                           uint32_t* count, const char* want) {
     uint32_t i;
@@ -2689,6 +2734,7 @@ static void mui_refresh(mui_state* s) {
             mui_main_cols_push(s); /* I1079d: a column empty for the whole list drops out */
             s->list_active_set = active;
             SetAttrs(s->list, UPA_List_Count, (ULONG)n, UPA_List_Playing, (ULONG)playing, UPA_List_Active, (ULONG)(active < 0 ? -1L : (long)active), TAG_DONE);
+            mui_ctx_sync(v); /* I1179: the context menu follows the cursor row */
         }
         /* The sentinel the exit stats print (ui_list): which back end, style and column set the List runs, and how often its display hook ran. */
         {

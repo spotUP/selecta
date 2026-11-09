@@ -477,6 +477,9 @@ uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, ch
  * LIBRARY_REMOVE. Returns the line length, 0 when the item has no line. */
 uint32_t mui_song_menu_line(uint32_t item, const char* path, uint32_t qid, uint32_t playlist_id, int on_queue, char* out, size_t cap);
 const char* mui_song_menu_follow(uint32_t item);
+/* I1179: a view row kind (sel_row_kind) to the context-menu kind (SEL_UIM_CTXK_*): files are songs, queue entries queue, playlists
+ * playlist; every other row, folders included (the MUI has no folder delete), none. */
+uint32_t mui_ctx_kind(uint32_t row_kind);
 /* MUI-P4-7 likes and ratings: the Cycle entry index 0..5 (0 is None) to its line, and the heart. */
 void mui_rating_line(uint32_t cycle_index, char* out, size_t cap);
 const char* mui_like_line(void);

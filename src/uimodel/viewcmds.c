@@ -56,6 +56,32 @@ const char* sel_uim_plmenu_label(uint32_t action) {
     return action == SEL_UIM_PLACT_RENAME ? "Rename" : action == SEL_UIM_PLACT_DELETE ? "Delete" : NULL;
 }
 
+uint32_t sel_uim_ctx_mask(uint32_t kind) {
+    switch (kind) {
+    case SEL_UIM_CTXK_SONG:
+    case SEL_UIM_CTXK_QUEUE:
+        return 0x1Fu;
+    case SEL_UIM_CTXK_PLSONG:
+        return 0x1Fu | SEL_UIM_CTX_PLREMOVE;
+    case SEL_UIM_CTXK_PLAYLIST:
+        return SEL_UIM_CTX_RENAME | SEL_UIM_CTX_DELETE;
+    case SEL_UIM_CTXK_FOLDER:
+        return SEL_UIM_CTX_DELETE; /* a folder has no rename verb (sel_uim_plmenu_action) */
+    default:
+        return 0u;
+    }
+}
+
+uint32_t sel_uim_song_menu_n(int in_playlist) {
+    return 5u + (in_playlist ? 1u : 0u);
+}
+
+const char* sel_uim_plremove_label(void) { return "Remove from Playlist"; }
+
+uint32_t sel_uim_plremove_line(uint32_t playlist_id, uint32_t index, char* out, uint32_t cap) {
+    return playlist_id == 0u ? 0u : done(snprintf(out, cap, "PLAYLIST_REMOVE_SONG %u %u", (unsigned)playlist_id, (unsigned)index), cap);
+}
+
 uint32_t sel_uim_pldel_text(uint32_t folder, const char* name, char* out, uint32_t cap) {
     return done(snprintf(out, cap, "Delete %s \"%s\"? This cannot be undone.", folder ? "folder" : "playlist", name != NULL ? name : ""), cap);
 }

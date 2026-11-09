@@ -1546,6 +1546,42 @@ static void test_song_menu(void) {
     }
 }
 
+/* I1179 (I799 C1, C2): the Listview context menu follows the cursor row. Read from the structures that produce it: the shared mask,
+ * the row-kind map, the plmenu actions, and the source that builds and syncs the strip. */
+static void test_ctxmenu(void) {
+    const char* src = ui_source();
+    char o[64];
+    uint32_t pop = 0, m, k;
+    CHECK(mui_ctx_kind(SEL_ROW_FILE) == SEL_UIM_CTXK_SONG && mui_ctx_kind(SEL_ROW_QUEUE) == SEL_UIM_CTXK_QUEUE &&
+              mui_ctx_kind(SEL_ROW_PLAYLIST) == SEL_UIM_CTXK_PLAYLIST && mui_ctx_kind(SEL_ROW_FOLDER) == SEL_UIM_CTXK_NONE &&
+              mui_ctx_kind(SEL_ROW_HEADING) == SEL_UIM_CTXK_NONE,
+          "row kind map");
+    /* a song or queue row offers the five song items, a playlist row Rename and Delete only, a heading nothing */
+    CHECK(sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_QUEUE)) == 0x1Fu && sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_FILE)) == 0x1Fu, "song mask");
+    CHECK(sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_PLAYLIST)) == (SEL_UIM_CTX_RENAME | SEL_UIM_CTX_DELETE), "playlist mask");
+    CHECK(sel_uim_ctx_mask(mui_ctx_kind(SEL_ROW_HEADING)) == 0u, "heading mask");
+    /* the song menu size is the popcount of the song bits of the mask (plus Remove from Playlist on a playlist page's song) */
+    m = sel_uim_ctx_mask(SEL_UIM_CTXK_PLSONG);
+    for (k = 0; k < 6u; k++) {
+        pop += (m >> k) & 1u;
+    }
+    CHECK(pop == sel_uim_song_menu_n(1) && sel_uim_song_menu_n(0) == 5u, "menu size %u", (unsigned)pop);
+    /* item 4 swaps on the queue; Remove from Playlist has its shared label and line */
+    CHECK(strcmp(sel_uim_song_menu_label(4, 1), "Remove from Queue") == 0 && strcmp(sel_uim_song_menu_label(4, 0), "Remove from Library") == 0,
+          "item 4 swap");
+    CHECK(strcmp(sel_uim_plremove_label(), "Remove from Playlist") == 0 && sel_uim_plremove_line(7, 2, o, sizeof o) > 0 &&
+              strstr(o, "PLAYLIST_REMOVE_SONG") == o && sel_uim_plremove_line(0, 2, o, sizeof o) == 0,
+          "playlist remove line '%s'", o);
+    /* the playlist items are the desktop's plmenu actions */
+    CHECK(sel_uim_plmenu_action(0, 0) == SEL_UIM_PLACT_RENAME && sel_uim_plmenu_action(0, 1) == SEL_UIM_PLACT_DELETE, "plmenu actions");
+    /* wiring: the strip carries the two playlist items on the P4 handlers, and the list refresh syncs it from the shared mask */
+    CHECK(src != NULL && strstr(src, "sel_uim_plmenu_label(act)") != NULL && strstr(src, "act == SEL_UIM_PLACT_RENAME ? P4_PRENAME : P4_PDELETE") != NULL,
+          "strip has Rename and Delete");
+    CHECK(src != NULL && strstr(src, "sel_uim_ctx_mask(kind)") != NULL && strstr(src, "mui_ctx_sync(v);") != NULL &&
+              strstr(src, "sel_uim_song_menu_label(4u, kind == SEL_UIM_CTXK_QUEUE)") != NULL,
+          "strip synced from the cursor row");
+}
+
 static void test_like_rating(void) {
     char o[32];
     uint32_t i;
@@ -3756,6 +3792,8 @@ int main(int argc, char** argv) {
         test_queue();
     } else if (strcmp(argv[1], "playlists") == 0) {
         test_playlists();
+    } else if (strcmp(argv[1], "ctxmenu") == 0) {
+        test_ctxmenu();
     } else if (strcmp(argv[1], "song-menu") == 0) {
         test_song_menu();
     } else if (strcmp(argv[1], "like-rating") == 0) {

@@ -4,6 +4,7 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/viewcmds.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -164,6 +165,13 @@ uint32_t mui_song_menu_line(uint32_t item, const char* path, uint32_t qid, uint3
 
 const char* mui_song_menu_follow(uint32_t item) {
     return item == 0u ? "PLAY" : NULL;
+}
+
+uint32_t mui_ctx_kind(uint32_t row_kind) {
+    return row_kind == (uint32_t)SEL_ROW_FILE      ? SEL_UIM_CTXK_SONG
+           : row_kind == (uint32_t)SEL_ROW_QUEUE   ? SEL_UIM_CTXK_QUEUE
+           : row_kind == (uint32_t)SEL_ROW_PLAYLIST ? SEL_UIM_CTXK_PLAYLIST
+                                                    : SEL_UIM_CTXK_NONE;
 }
 
 /* MUI-P4-5: playlist row actions. Open activates the row the list cursor is on (the list click sets VIEW_CURSOR first). */

@@ -2816,12 +2816,12 @@ static int shelf_nav_click(desk* d, int32_t x, int32_t y) {
  * everywhere else (DUI-P4-18). */
 
 static int song_menu_count(const desk* d) {
-    return SONG_MENU_ITEMS + (d->sm_ref.pl_id != 0u ? 1 : 0); /* I633: a playlist row adds Remove from Playlist */
+    return (int)sel_uim_song_menu_n(d->sm_ref.pl_id != 0u); /* I633: a playlist row adds Remove from Playlist (I1179: the count is shared with the MUI) */
 }
 
 static const char* song_menu_label(const desk* d, int32_t k) {
     if (k == SONG_MENU_ITEMS) {
-        return "Remove from Playlist";
+        return sel_uim_plremove_label();
     }
     if (k == 4 && d->sm_ref.online) {
         return "Save to Library";
@@ -3629,7 +3629,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 desk_toast(d, text);
             } else if (k == SONG_MENU_ITEMS) { /* I633: the playlist page's own item */
                 char line[48];
-                snprintf(line, sizeof line, "PLAYLIST_REMOVE_SONG %u %u", (unsigned)d->sm_ref.pl_id, (unsigned)d->sm_ref.pl_index);
+                sel_uim_plremove_line(d->sm_ref.pl_id, d->sm_ref.pl_index, line, sizeof line);
                 desk_send(d, line);
                 d->pls_stale = 1u; /* the engine applies the command on its next pump: the page reads the list again then */
                 d->side_stale = 1u;
