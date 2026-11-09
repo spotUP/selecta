@@ -6,7 +6,8 @@
 # committed. Exit 77 = skipped (no network).
 # Asserts per song: replayer=adplug, WAV not silent (D01_ENERGY_MIN raises the floor, for red proofs), rendered_frames bound to the
 # measured length (D01_MIN_SECONDS replaces the floor, for red proofs).
-# Measured: gorgeous.d01 3877020 frames (87.9 s), crooner.d01 3414222 frames (77.4 s) at 44100 Hz; bounds +-1 s.
+# Measured: gorgeous.d01 3877020 frames (87.9 s), crooner.d01 3414222 frames (77.4 s), the alibi.d01 subsong 1 8230950 frames (186.6 s)
+# at 44100 Hz; bounds +-1 s. the alibi.d01 has 2 subsongs: subsong 0 is a 3150-frame stub (energy 973421), the music is subsong 1.
 # Negative cases: gorgeous.d01 with the JCH magic broken, and a zero file, are not played.
 # usage: adplug_edlib_d01_decode.sh <selecta-cli>
 set -u
@@ -19,9 +20,10 @@ rate=44100
 base="https://modland.com/pub/modules/Ad%20Lib/EdLib%20D01/JCH"
 gor=$("$here/fetch_fixture.sh" "$base/gorgeous.d01" 0dc77187df97d6429cf89dc4113623ba94d7ebe7cdd42c5f4d35f45548c4bf36 gorgeous.d01) || exit $?
 cro=$("$here/fetch_fixture.sh" "$base/crooner.d01" 9766270ed6f889f8cf9a99fe9b4d4e39b02a3f5924a7a185f447cd7b1b54a269 crooner.d01) || exit $?
-check() { # file min-seconds max-seconds
+ali=$("$here/fetch_fixture.sh" "$base/the%20alibi.d01" 2979e3a5a2476100bcd00ac9a1fc7cb48b553484a5f05f56f3e21d0fafb4108e the_alibi.d01) || exit $?
+check() { # file min-seconds max-seconds [subsong]
     rm -f fd_d01.wav
-    out=$("$cli" render "$1" --output fd_d01.wav --seconds 600 --rate "$rate" 2>/dev/null) || fail "render failed: $1"
+    out=$("$cli" render "$1" --output fd_d01.wav --seconds 600 --rate "$rate" ${4:+--subsong "$4"} 2>/dev/null) || fail "render failed: $1"
     [ "$(field "$out" replayer)" = "adplug" ] || fail "$1: replayer=$(field "$out" replayer), want adplug"
     got=$(field "$out" rendered_frames)
     min=${D01_MIN_SECONDS:-$2}
@@ -34,6 +36,7 @@ check() { # file min-seconds max-seconds
 }
 check "$gor" 87 89
 check "$cro" 77 79
+check "$ali" 186 188 1
 cp "$gor" badmagic.d01
 printf 'XCH' | dd of=badmagic.d01 bs=1 seek=0 conv=notrunc 2>/dev/null
 out=$("$cli" render badmagic.d01 --output fd_d01.wav --seconds 5 --rate "$rate" 2>/dev/null) || true
