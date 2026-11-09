@@ -1085,6 +1085,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(catalogue_length_render_test PRIVATE selecta_core selecta_library)
   add_test(NAME engine-catalogue-length-render COMMAND catalogue_length_render_test)
   set_tests_properties(engine-catalogue-length-render PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "catalogue_length_render_ok")
+  # I1196: the catalogue song count touches a bounded number of pages (no COUNT over songs on the single library worker).
+  add_executable(library_total_cost_test engine/library_total_cost_test.c)
+  target_include_directories(library_total_cost_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_total_cost_test PRIVATE selecta_core selecta_library)
+  add_test(NAME engine-library-total-cost COMMAND library_total_cost_test)
+  set_tests_properties(engine-library-total-cost PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "library_total_cost_ok")
   add_executable(hw_prepare_test engine/hw_prepare_test.c)
   target_link_libraries(hw_prepare_test PRIVATE selecta_core)
   # I732: the native kplayer adapter's tracker hooks, through the engine's own lookup (host stub for the 68k call).
