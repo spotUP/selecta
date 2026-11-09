@@ -1182,6 +1182,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_libfilter_flow_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-libfilter-flow COMMAND uim_libfilter_flow_test)
   set_tests_properties(uim-libfilter-flow PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_libfilter_flow_ok")
+  # I1222e: the shared sidebar stack (brand, doors, library header, chips, tools, list).
+  add_executable(uim_sidestack_test uimodel/sidestack_test.c)
+  target_link_libraries(uim_sidestack_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-sidestack COMMAND uim_sidestack_test)
+  set_tests_properties(uim-sidestack PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_sidestack_ok")
   # I1222c: the text tier's layout in cells (SEL_UIM_TIER_TEXT, no hints region).
   add_executable(uim_layout_text_test uimodel/layout_text_test.c)
   target_link_libraries(uim_layout_text_test PRIVATE selecta_uimodel selecta_core)
