@@ -44,6 +44,7 @@ int mui_viz_fit(mui_viz* v, uint32_t w, uint32_t h) {
     v->surf.pixels = v->pixels;
     v->surf.palette = v->palette;
     v->surf.pix_aspect_q8 = (uint32_t)mui_aa_screen_aspect(); /* I950: the viz plugin corrects its glyphs for tall pixels */
+    v->surf.pen = NULL; /* I1230: no host pen on MUI, the plugin draws its own glyphs */
     return 1;
 }
 
