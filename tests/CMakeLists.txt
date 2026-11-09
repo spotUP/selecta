@@ -2582,6 +2582,13 @@ if(NOT SEL_AMIGA)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)
     set_tests_properties(sid-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_decode_ok"
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    # I1226: the sid module answers SEL_RP_VIZ_SID (sid_chips >= 1, registers change across viz blocks) through the engine.
+    add_executable(sid_viz_test engine/sid_viz_test.c)
+    target_link_libraries(sid_viz_test PRIVATE selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+    add_dependencies(sid_viz_test sel_module_sid)
+    add_test(NAME sid-viz-regs COMMAND sid_viz_test ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_sweep.sid)
+    set_tests_properties(sid-viz-regs PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "sid_viz_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-mute)
     add_test(NAME sid-mute
       COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_mute.sh $<TARGET_FILE:selecta-cli>

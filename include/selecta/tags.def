@@ -81,7 +81,7 @@ SEL_TAG(RP, HW_LENGTH,         0x1021, PTR)
 
 /* VIZ_VOICES (I434g): optional, HW kind. Fills up to three voices of the scope feed (sel_rp_viz_voices_fn). */
 SEL_TAG(RP, VIZ_VOICES,        0x1022, PTR)
-/* VIZ_SID (I434j): optional, HW kind. SID register mirror for the register scope (sel_rp_viz_sid_fn). */
+/* VIZ_SID (I434j): optional, HW or RENDER kind (I1226). SID register mirror for the register scope (sel_rp_viz_sid_fn). */
 SEL_TAG(RP, VIZ_SID,           0x1023, PTR)
 /* CFG_APPLIED (MPS-1): optional. Returns how many starts of the open song applied the replayer's configuration
  * (sel_rp_cfg_applied_fn); a test sentinel published as sel_engine_stats.rp_cfg_applied. */

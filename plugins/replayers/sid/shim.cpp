@@ -122,6 +122,21 @@ uint32_t sid_shim_render(sid_shim* s, int16_t* out, uint32_t frames) {
 
 uint32_t sid_shim_cfg_applied(const sid_shim* s) { return s->cfg_applied; }
 
+uint32_t sid_shim_regs(sid_shim* s, uint8_t* regs, uint32_t chips) {
+    uint32_t k = 0;
+    uint8_t st[32];
+    if (s->cfg_applied == 0) {
+        return 0;
+    }
+    for (; k < chips; k++) {
+        if (!s->engine.getSidStatus(k, st)) {
+            break;
+        }
+        std::memcpy(regs + k * 25u, st, 25u);
+    }
+    return k;
+}
+
 uint32_t sid_shim_chips(const sid_shim* s) { return s->tune->getInfo()->sidChips(); }
 
 void sid_shim_mute(sid_shim* s, uint32_t chip, uint32_t voice, uint32_t muted) {

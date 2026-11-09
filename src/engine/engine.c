@@ -2831,7 +2831,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_seekable = (sel_rp_seekable_fn)sel_tag_find(hooks, SEL_RP_SEEKABLE, 0);
     sl->rp_cfg_applied = (sel_rp_cfg_applied_fn)sel_tag_find(hooks, SEL_RP_CFG_APPLIED, 0);
     sl->rp_hw_length = sl->hw ? (sel_rp_hw_length_fn)sel_tag_find(hooks, SEL_RP_HW_LENGTH, 0) : NULL;
-    sl->rp_viz_sid = sl->hw ? (sel_rp_viz_sid_fn)sel_tag_find(hooks, SEL_RP_VIZ_SID, 0) : NULL;
+    sl->rp_viz_sid = (sel_rp_viz_sid_fn)sel_tag_find(hooks, SEL_RP_VIZ_SID, 0); /* HW and RENDER kinds alike (I1226) */
     sl->rp_viz_voices = sl->hw ? (sel_rp_viz_voices_fn)sel_tag_find(hooks, SEL_RP_VIZ_VOICES, 0) : NULL;
     sl->applied_pause = 0;
     if (kind != SEL_RP_KIND_VOICE) {
@@ -11566,7 +11566,7 @@ static void viz_close(sel_engine* e, sel_slot* sl) {
         count = hw_count;
     }
     f->voice_count = count;
-    if (sl != NULL && sl->hw && sl->rp_viz_sid != NULL && e->state.play == SEL_PLAYING) {
+    if (sl != NULL && sl->rp_viz_sid != NULL && e->state.play == SEL_PLAYING) {
         /* Register mirror (I434j): independent of the wave feed, classic mode has registers but no wave. */
         uint8_t regs[SEL_VIZ_SID_CHIPS][SEL_VIZ_SID_REGS];
         uint8_t env[SEL_VIZ_SID_CHIPS][3];
