@@ -28,7 +28,12 @@ for name in "raining stars.ahx" "ahx.raining stars"; do
 done
 # Not an AHX song: a text file named .ahx is not claimed by hively.
 printf 'this is not an AHX song, only text with the extension\n' > fd_hvl/notahx.ahx
-out=$("$cli" render fd_hvl/notahx.ahx --output fd_hvl_bad.wav --seconds 5 --rate "$rate" 2>/dev/null)
+out=$("$cli" render fd_hvl/notahx.ahx --output fd_hvl_bad.wav --seconds 5 --rate "$rate" 2>&1)
 [ "$(field "$out" replayer)" != "hively" ] || fail "a text file named .ahx was claimed by hively"
+# I1252: a song with the THX magic but a header the replayer refuses (4095 positions) fails to open without printing; the vendored hvl_ParseTune prints "Invalid file." on a failed probe; the adapter checks the magic first, so no stdout noise.
+printf 'THX\000\000\000\017\377' > fd_hvl/corrupt.ahx
+dd if=/dev/zero bs=1 count=4000 >> fd_hvl/corrupt.ahx 2>/dev/null
+out=$("$cli" render fd_hvl/corrupt.ahx --output fd_hvl_bad.wav --seconds 5 --rate "$rate" 2>&1)
+case "$out" in *"Invalid file"*) fail "failed probe printed Invalid file. to stdout" ;; esac
 rm -rf fd_hvl fd_hvl.wav fd_hvl_bad.wav
 echo "hively_decode_ok frames=$got energy=$e"

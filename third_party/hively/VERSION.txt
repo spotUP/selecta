@@ -1,5 +1,5 @@
 HivelyTracker replayer (hvl_replay.c, hvl_tables.c, plus headers) by Pete Gordon, BSD 3-Clause (LICENSE). Plays AHX (THX)
 and Hively (HVL) songs. Upstream: HivelyTracker by Pete Gordon (pete-gordon/hivelytracker), directory Replayer_MacOS, files
-unchanged, taken 2026-11-10 from the DEViLBOX checkout's third-party/hivelytracker-master.
+unchanged except one block after the includes in hvl_replay.c that compiles the printf diagnostics out (I1252), taken 2026-11-10 from the DEViLBOX checkout's third-party/hivelytracker-master.
 The replayer has no bounds checks against the file length; the adapter copies every song into a buffer padded with zeros
 (HVL_PAD) so a header that claims more data than the file holds reads zeros, not foreign memory.
