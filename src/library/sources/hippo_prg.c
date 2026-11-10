@@ -2,6 +2,7 @@
 #include "hippo_prg.h"
 
 #include "../playlist/playlist.h"
+#include "../song_key.h"
 
 #include <string.h>
 
@@ -52,6 +53,7 @@ size_t sel_hippo_prg_keys(const sel_host* host, const char* bytes, size_t len, c
     sel_playlist pl;
     sel_pl_entry* entries;
     char* text;
+    char norm[SEL_SONG_KEY_MAX];
     uint32_t n = 1u, text_cap, k;
     size_t i, used = 0;
 
@@ -78,7 +80,12 @@ size_t sel_hippo_prg_keys(const sel_host* host, const char* bytes, size_t len, c
                 if (entries[k].kind != SEL_PL_SONG) {
                     continue;
                 }
+                /* I1300: a raw URL of a known host is stored as its source key. */
                 key = sel_playlist_str(&pl, entries[k].key);
+                if (!sel_song_key_of_url(key, norm, sizeof norm)) {
+                    continue;
+                }
+                key = norm;
                 kl = strlen(key);
                 if (used + kl + 2u > cap) {
                     break;

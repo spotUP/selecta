@@ -140,28 +140,15 @@ static int tag_edit(sqlite3* db, const char* key, const char* field, const char*
  * The mapping reads the key only; no sticker is copied. */
 void sel_stil_owner_key(const char* key, char* out, size_t cap) {
     static const char modland[] = "modland:pub/modules/HVSC/";
-    static const char url[] = "http://hvsc.c64.org/download/C64Music/";
-    size_t n = 0;
+    char norm[SEL_SONG_KEY_MAX];
 
     if (cap == 0) return;
-    if (strncmp(key, modland, sizeof modland - 1u) == 0) {
-        snprintf(out, cap, "hvsc:%s", key + sizeof modland - 1u);
-    } else if (strncmp(key, url, sizeof url - 1u) == 0) {
-        const char* p = key + sizeof url - 1u;
-
-        n = (size_t)snprintf(out, cap, "hvsc:");
-        while (*p != '\0' && n + 1u < cap) {
-            unsigned v;
-            if (p[0] == '%' && p[1] != '\0' && p[2] != '\0' && sscanf((char[]){p[1], p[2], 0}, "%2x", &v) == 1) {
-                out[n++] = (char)v;
-                p += 3;
-            } else {
-                out[n++] = *p++;
-            }
-        }
-        out[n] = '\0';
+    /* I1300: the URL form is mapped by the one URL-to-key function (sel_song_key_of_url); a URL it does not know stays as it is. */
+    if (!sel_song_key_of_url(key, norm, sizeof norm)) snprintf(norm, sizeof norm, "%s", key);
+    if (strncmp(norm, modland, sizeof modland - 1u) == 0) {
+        snprintf(out, cap, "hvsc:%s", norm + sizeof modland - 1u);
     } else {
-        snprintf(out, cap, "%s", key);
+        snprintf(out, cap, "%s", norm);
     }
 }
 
