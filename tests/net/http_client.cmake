@@ -107,6 +107,15 @@ endif()
 # 8b. A caller User-Agent replaces the default (I725p).
 fetch(ua "" http://fixture.test/uapath --user-agent "TestAgent/9 (+mailto:x@example.test)")
 
+# 8c. I1299: the request line carries the path percent-encoded. A raw space goes out as %20 (an unescaped space made the
+# server answer 400); a path that already holds a valid %20 goes out unchanged, never as %2520.
+fetch(sp spaced.bin "http://fixture.test/mod dir/a b.bin")
+expect("spaced path status" "${sp_http_status}" 200)
+expect_body("spaced path" spaced.bin)
+fetch(esc escaped.bin "http://fixture.test/mod%20dir/a%20b.bin")
+expect("escaped path status" "${esc_http_status}" 200)
+expect_body("escaped path" escaped.bin)
+
 # 9. The fixture's request log shows what the client sent (a stale cache would not).
 fetch(log log.json http://fixture.test/__fixture/log)
 file(READ "${out_dir}/log.json" logjson)
@@ -134,6 +143,15 @@ foreach(i RANGE ${last})
     endif()
   endif()
 endforeach()
+set(n_enc 0)
+foreach(i RANGE ${last})
+  string(JSON p GET "${logjson}" ${i} path)
+  if(p MATCHES "^/mod")
+    expect("encoded request path" "${p}" "/mod%20dir/a%20b.bin")
+    math(EXPR n_enc "${n_enc} + 1")
+  endif()
+endforeach()
+expect("requests of the spaced and escaped paths" "${n_enc}" 2)
 foreach(want "PUT /put 21" "POST /post 21" "DELETE /delete 0" "GET /hop3 0" "GET /r6 0")
   if(NOT seen MATCHES "${want};")
     message(FATAL_ERROR "T68 request log lacks '${want}': ${seen}")

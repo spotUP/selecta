@@ -82,4 +82,13 @@ typedef int (*sel_http_sink)(void* ctx, const void* data, size_t len);
 sel_http_err sel_http_request(const sel_http_req* req, sel_http_sink sink, void* ctx, sel_http_res* res);
 const char* sel_http_err_name(sel_http_err e);
 
+/* The one percent-encoder of URL paths (http.c); callers: the request line (SEL_URL_ESC_TARGET) and the mirror
+ * path join (SEL_URL_ESC_NAME). Returns 0 when <out> (capacity <cap>) is too small. Unreserved characters and '/'
+ * stay. SEL_URL_ESC_NAME: input is a raw file name path, every other byte (including '%') is encoded.
+ * SEL_URL_ESC_TARGET: input is already a URL target; reserved characters (!$&'()*+,;=:@?#) and valid %XX escapes
+ * stay as they are (never double-encoded), only bytes that may not appear in a request line (space, control,
+ * non-ASCII and the like) are encoded. */
+typedef enum sel_url_esc_mode { SEL_URL_ESC_NAME = 0, SEL_URL_ESC_TARGET = 1 } sel_url_esc_mode;
+int sel_url_escape(const char* in, char* out, size_t cap, sel_url_esc_mode mode);
+
 #endif

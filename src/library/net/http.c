@@ -6,6 +6,7 @@
 #include "net.h"
 #include "tls.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -388,15 +389,42 @@ static int parse_head(char* h, resp_head* r) {
     return !first;
 }
 
+int sel_url_escape(const char* in, char* out, size_t cap, sel_url_esc_mode mode) {
+    size_t n = 0;
+    for (; *in != '\0'; in++) {
+        unsigned char c = (unsigned char)*in;
+        int plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' || c == '-' ||
+                    c == '_' || c == '.' || c == '~';
+        if (mode == SEL_URL_ESC_TARGET && !plain) {
+            plain = strchr("!$&'()*+,;=:@?#", c) != NULL ||
+                    (c == '%' && in[1] != '\0' && isxdigit((unsigned char)in[1]) && isxdigit((unsigned char)in[2]));
+        }
+        if (n + 4 > cap) {
+            return 0;
+        }
+        if (plain) {
+            out[n++] = (char)c;
+        } else {
+            n += (size_t)snprintf(out + n, 4, "%%%02X", c);
+        }
+    }
+    out[n] = '\0';
+    return 1;
+}
+
 static int build_request(char* out, size_t cap, const sel_http_req* req, const char* method, const url_parts* u, int with_body) {
     size_t n = 0;
     int w;
     unsigned def = u->tls ? 443u : 80u;
     const char* const* hp;
+    char target[URL_CAP * 3 + 1]; /* every byte of u->path may grow to %XX */
+    if (!sel_url_escape(u->path, target, sizeof target, SEL_URL_ESC_TARGET)) {
+        return -1;
+    }
     if (u->port == def) {
-        w = snprintf(out, cap, "%s %s HTTP/1.1\r\nHost: %s\r\n", method, u->path, u->host);
+        w = snprintf(out, cap, "%s %s HTTP/1.1\r\nHost: %s\r\n", method, target, u->host);
     } else {
-        w = snprintf(out, cap, "%s %s HTTP/1.1\r\nHost: %s:%u\r\n", method, u->path, u->host, u->port);
+        w = snprintf(out, cap, "%s %s HTTP/1.1\r\nHost: %s:%u\r\n", method, target, u->host, u->port);
     }
     if (w < 0 || (size_t)w >= cap) {
         return -1;
