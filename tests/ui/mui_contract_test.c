@@ -3114,7 +3114,9 @@ static void test_cycle_initial(void) {
     fclose(f);
     src[n] = 0;
     /* I735 (4983dade): the P4_VIZPICK handler runs on a user pick, long after OM_NEW, and keeps every picker on the plugin the engine runs.
-     * It is the only place that may set UPA_Cycle_Active; any other set() is a startup-time set of a cycle. */
+     * It is the only place that may set UPA_Cycle_Active, with one exception: I1176 (4c609ac9) makes the Queue scope Cycle follow
+     * SEL_OPT_SCOPE (the engine option is the truth) in mui_pages_sync, guarded by scope_seen so a follow never re-fires. Any other set() is a
+     * startup-time set of a cycle. */
     vp = strstr(src, "case P4_VIZPICK:");
     vend = vp != NULL ? strstr(vp, "\n    case P4_") : NULL;
     if (vend == NULL && vp != NULL) {
@@ -3126,7 +3128,7 @@ static void test_cycle_initial(void) {
         size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
         char buf[512];
         snprintf(buf, sizeof buf, "%.*s", (int)(len < sizeof buf - 1 ? len : sizeof buf - 1), line);
-        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "UPA_Cycle_Active") != NULL && !(vp != NULL && line > vp && line < vend)), "mui_ui.c sets UPA_Cycle_Active after OM_NEW: %s", buf);
+        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "UPA_Cycle_Active") != NULL && strstr(buf, "s->cyc_scope") == NULL && !(vp != NULL && line > vp && line < vend)), "mui_ui.c sets UPA_Cycle_Active after OM_NEW: %s", buf);
         line = end != NULL ? end + 1 : NULL;
     }
     CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");

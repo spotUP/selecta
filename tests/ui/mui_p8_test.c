@@ -252,8 +252,9 @@ static void test_window_keys(void) {
     }
     CHECK(action == expect, "%u action rows, mui_keys_build has %u handler keys", (unsigned)action, (unsigned)expect);
     /* 28 at I1171; I1184 added M-1..M-5 (repeat off/all/one, shuffle on/off) to the shared action table: 33;
-       I1186 keyed the six VIEW_STYLE rows (M-6..M-0, M-c): 39. */
-    CHECK(action == 39u, "%u action rows, want 39", (unsigned)action);
+       I1186 keyed the six VIEW_STYLE rows (M-6..M-0, M-c): 39; I1249 efe09613 added the Krakatoa Smoke visualizer
+       row (C-9) to the shared action table: 40. */
+    CHECK(action == 40u, "%u action rows, want 40", (unsigned)action);
     CHECK(door == 4u && pane == 2u, "%u door rows, %u pane rows, want 4 and 2", (unsigned)door, (unsigned)pane);
     CHECK(mui_key_hits() - hits0 >= action + door + pane, "hit sentinel %u", (unsigned)(mui_key_hits() - hits0));
     CHECK(fired > 0u, "no row found by its own key");
