@@ -36,7 +36,6 @@
 #define TUI_DEFAULT_COLS 80u
 #define TUI_DEFAULT_ROWS 24u
 #define TUI_INFO_COLS 30u
-#define TUI_CHROME_ROWS 4u /* two header lines, pane title, status line */
 #define TUI_SEEK_MS 5000
 #define TUI_MARKS 16u
 #define TUI_MARK_BYTES 256u
@@ -93,7 +92,11 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[30];
+    sel_tag stats[32];
+    sel_uim uim;        /* I1222g: the shared frame the player bar is drawn from */
+    uint32_t pv_y0;     /* I1222g: grid row of the main region's first row; page row 2 maps there (pages keep their old row numbers until I1222i) */
+    uint32_t pv_rows;   /* I1222g: rows of the main region; page rows 2 .. pv_rows + 2 are drawn, the rest clipped */
+    uint32_t player_draws, player_rows, topbar_draws;
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -138,8 +141,59 @@ static void tui_sendf(tui* u, const char* fmt, const char* a) {
     tui_send(u, line);
 }
 
+/* I1222g: page drawing through a row offset. Page row 2 is the main region's first row; rows above it or past its last row are clipped.
+ * No pointer is shifted: the offset is added to the row index only. */
+static int tui_prow(const tui* u, uint32_t row, uint32_t* grow) {
+    if (row < 2u || row - 2u > u->pv_rows) {
+        return 0;
+    }
+    *grow = u->pv_y0 + (row - 2u);
+    return 1;
+}
+
+static void tui_pput(tui* u, uint32_t col, uint32_t row, uint32_t cp, txt_style style) {
+    uint32_t g;
+    if (tui_prow(u, row, &g)) {
+        txt_grid_put(&u->grid, col, g, cp, style);
+    }
+}
+
+static uint32_t tui_ptext(tui* u, uint32_t col, uint32_t row, const char* utf8, uint32_t maxcols, txt_style style) {
+    uint32_t g;
+    return tui_prow(u, row, &g) ? txt_grid_text(&u->grid, col, g, utf8, maxcols, style) : 0u;
+}
+
+static void tui_pfill(tui* u, uint32_t col, uint32_t row, uint32_t w, uint32_t h, uint32_t cp, txt_style style) {
+    uint32_t i, g;
+    for (i = 0; i < h; i++) {
+        if (tui_prow(u, row + i, &g)) {
+            txt_grid_fill(&u->grid, col, g, w, 1u, cp, style);
+        }
+    }
+}
+
+/* I1222g: the screen's regions come from the shared text layout (sel_uim_layout_compute_text), never from numbers here. */
+static const sel_uim_region* tui_region(const sel_uim_layout* l, const char* name) {
+    uint32_t i;
+    for (i = 0; i < l->count; i++) {
+        if (strcmp(l->regions[i].name, name) == 0) {
+            return &l->regions[i];
+        }
+    }
+    return NULL;
+}
+
+static void tui_layout(const tui* u, sel_uim_layout* l) {
+    (void)sel_uim_layout_compute_text(l, u->grid.cols, u->grid.rows, 0, 1);
+}
+
+/* rows the pages can list: the main region minus its title row (its last row is the command line's when that is open) */
 static uint32_t tui_main_rows(const tui* u) {
-    return u->grid.rows > TUI_CHROME_ROWS ? u->grid.rows - TUI_CHROME_ROWS : 1u;
+    sel_uim_layout l;
+    const sel_uim_region* m;
+    tui_layout(u, &l);
+    m = tui_region(&l, "main");
+    return m != NULL && m->h > 1u ? m->h - 1u : 1u;
 }
 
 static void tui_send_window(tui* u) {
@@ -735,17 +789,17 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
     if (u->pg == TUI_PAGE_SHELF) {
         sel_uim_shelf sh;
         if (s->view == NULL || !tui_page_shelf(u, s->view, &sh)) {
-            txt_grid_text(&u->grid, 1, 2, "Shelf", width - 1u, label);
+            tui_ptext(u, 1, 2, "Shelf", width - 1u, label);
             return;
         }
         snprintf(buf, sizeof buf, "%s  Show all  %u rows", s->view->rows[sh.head].text, (unsigned)sh.rows);
-        txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+        tui_ptext(u, 1, 2, buf, width - 1u, label);
         for (i = 0; i < sh.rows && i < rows; i++) {
             const sel_view_row* r = &s->view->rows[sh.first + i];
             txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
             snprintf(buf, sizeof buf, " %s%s%s", r->text, r->artist != NULL && r->artist[0] ? "  - " : "", r->artist != NULL ? r->artist : "");
-            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
-            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+            tui_pfill(u, 0, 3u + i, width, 1, ' ', st);
+            tui_ptext(u, 1, 3u + i, buf, width - 1u, st);
             drawn++;
         }
     } else {
@@ -756,7 +810,7 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
             size_t at = strlen(buf);
             snprintf(buf + at, sizeof buf - at, "  - %s", pg->sub);
         }
-        txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+        tui_ptext(u, 1, 2, buf, width - 1u, label);
         n = ready ? tui_page_count(u, s) : 0u;
         for (i = 0; i < n && i < rows; i++) {
             txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
@@ -764,12 +818,12 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
                 break;
             }
             buf[0] = ' ';
-            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
-            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+            tui_pfill(u, 0, 3u + i, width, 1, ' ', st);
+            tui_ptext(u, 1, 3u + i, buf, width - 1u, st);
             drawn++;
         }
         if (!ready) {
-            txt_grid_text(&u->grid, 1, 3, "Loading", width - 1u, tui_style(u, TXT_ROLE_DIM));
+            tui_ptext(u, 1, 3, "Loading", width - 1u, tui_style(u, TXT_ROLE_DIM));
         }
     }
     u->pg_rows = drawn;
@@ -1438,26 +1492,77 @@ static txt_style tui_style(const tui* u, txt_role r) {
 
 
 
-static void tui_header(tui* u, const sel_state* s) {
-    char buf[256], pos[16], dur[16];
-    const char* title = (const char*)sel_tag_find(s->song.meta, SEL_META_TITLE, 0);
-    const char* author = (const char*)sel_tag_find(s->song.meta, SEL_META_AUTHOR, 0);
-    char format[SEL_FORMAT_LABEL_MAX];
-    txt_style hs = tui_style(u, TXT_ROLE_HEADER);
-    sel_format_label((const char*)sel_tag_find(s->song.meta, SEL_META_FORMAT, 0), format, sizeof format); /* I819 */
-    txt_grid_fill(&u->grid, 0, 0, u->grid.cols, 1, ' ', hs);
-    snprintf(buf, sizeof buf, "%s  %s  %s", sel_uim_play_word(s->play), title != NULL && title[0] ? title : "-",
-             author != NULL ? author : "");
-    txt_grid_text(&u->grid, 1, 0, buf, u->grid.cols - 1u, hs);
-    sel_uim_clock(pos, sizeof pos, s->song.position_ms, s->song.path != NULL);
-    sel_uim_clock(dur, sizeof dur, s->song.duration_ms, s->song.duration_ms != 0);
-    snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d%s%s%s", format[0] ? format : "-",
-             (unsigned)(s->song.path != NULL ? s->song.subsong + 1u : 0u), (unsigned)s->song.subsong_count, pos, dur,
-             (int)s->volume, strcmp(s->options[SEL_OPT_RANDOM], "on") == 0 ? "  Shuffle" : "", /* I1184: shown only when on */
-             strcmp(s->options[SEL_OPT_REPEAT], "off") != 0 ? "  Repeat " : "",
-             strcmp(s->options[SEL_OPT_REPEAT], "off") != 0 ? s->options[SEL_OPT_REPEAT] : "");
-    sel_uim_stage_status(buf, sizeof buf, s);
-    txt_grid_text(&u->grid, 1, 1, buf, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
+/* I1222g: the player bar, drawn from the shared sel_uim_frame (the desktop bar's content). Two rows: title - artist, transport glyphs
+ * with shuffle / repeat / subsong, volume; clock, seek bar, length, status. One row: title - artist, play glyph, clock / length, volume. */
+static void tui_bar_text(tui* u, uint32_t y, const char* text, uint32_t x, uint32_t w, txt_style st) {
+    if (x < u->grid.cols) {
+        txt_grid_text(&u->grid, x, y, text, w, st);
+    }
+}
+
+static void tui_player_bar(tui* u, uint32_t y, uint32_t rows) {
+    const sel_uim_frame* f = &u->uim.frame;
+    uint32_t cols = u->grid.cols, bw, fill, i, vx;
+    char buf[256], vol[24], mid[96];
+    txt_style hs = tui_style(u, TXT_ROLE_HEADER), nm = tui_style(u, TXT_ROLE_NORMAL), dim = tui_style(u, TXT_ROLE_DIM);
+    snprintf(vol, sizeof vol, "Volume %d", (int)f->volume);
+    vx = cols > (uint32_t)strlen(vol) + 1u ? cols - (uint32_t)strlen(vol) - 1u : 0u;
+    txt_grid_fill(&u->grid, 0, y, cols, rows, ' ', nm);
+    snprintf(buf, sizeof buf, "%s%s%s", f->title[0] ? f->title : "-", f->artist[0] ? " - " : "", f->artist);
+    snprintf(mid, sizeof mid, "%s %s %s", f->can_prev ? "|<" : "  ", f->play == SEL_PLAYING ? "||" : " >", f->can_next ? ">|" : "  ");
+    if (rows == 1u) {
+        txt_grid_fill(&u->grid, 0, y, cols, 1, ' ', hs);
+        /* The state flags (shuffle, repeat, subsong) stay visible in the one-row form: they sit between the title and the clock. */
+        char ind[64];
+        uint32_t il, tw = cols > 44u ? cols - 44u : 1u;
+        snprintf(ind, sizeof ind, "%s%s", f->random_on ? "Shuffle  " : "",
+                 f->repeat_mode != 0u ? (f->repeat_mode == 2u ? "Repeat one  " : "Repeat all  ") : "");
+        if (f->subsong_count > 1u) {
+            char sub[24];
+            snprintf(sub, sizeof sub, "%u/%u  ", (unsigned)f->subsong, (unsigned)f->subsong_count);
+            strncat(ind, sub, sizeof ind - strlen(ind) - 1u);
+        }
+        il = (uint32_t)strlen(ind);
+        if (il != 0u && tw > il + 8u) {
+            tw -= il;
+            tui_bar_text(u, y, ind, 1u + tw + 1u, il, hs);
+        }
+        tui_bar_text(u, y, buf, 1, tw, hs);
+        snprintf(buf, sizeof buf, "%s  %s / %s", f->play == SEL_PLAYING ? ">" : "||", f->clock, f->length[0] ? f->length : "-:--");
+        tui_bar_text(u, y, buf, cols > 42u ? cols - 42u : 0u, 24, hs);
+        tui_bar_text(u, y, vol, vx, 12, hs);
+        return;
+    }
+    txt_grid_fill(&u->grid, 0, y, cols, 1, ' ', hs);
+    tui_bar_text(u, y, buf, 1, cols / 3u, hs);
+    snprintf(buf, sizeof buf, "%s%s%s", mid, f->random_on ? "  Shuffle" : "",
+             f->repeat_mode != 0u ? (f->repeat_mode == 2u ? "  Repeat one" : "  Repeat all") : "");
+    if (f->subsong_count > 1u) {
+        char sub[24];
+        snprintf(sub, sizeof sub, "  %u/%u", (unsigned)f->subsong, (unsigned)f->subsong_count);
+        strncat(buf, sub, sizeof buf - strlen(buf) - 1u);
+    }
+    tui_bar_text(u, y, buf, cols / 3u + 1u, cols / 3u, hs);
+    tui_bar_text(u, y, vol, vx, 12, hs);
+    /* row 2: clock, seek bar, length, status */
+    txt_grid_fill(&u->grid, 0, y + 1u, cols, 1, ' ', nm);
+    tui_bar_text(u, y + 1u, f->clock, 1, 8, nm);
+    bw = cols > 40u ? cols / 3u : 8u;
+    fill = (uint32_t)(((uint64_t)f->progress_q16 * bw) >> 16);
+    for (i = 0; i < bw && 8u + i < cols; i++) {
+        txt_grid_put(&u->grid, 8u + i, y + 1u, i < fill ? 0x2588u : 0x2500u, f->no_seek ? dim : nm);
+    }
+    tui_bar_text(u, y + 1u, f->length[0] ? f->length : "-:--", 9u + bw, 8, nm);
+    tui_bar_text(u, y + 1u, f->status, 18u + bw, cols > 19u + bw ? cols - 19u - bw : 1u, dim);
+}
+
+/* I1222g: the top bar row, the desktop's labels as text: [Home], the search field with its hint, [Browse]. */
+static void tui_topbar(tui* u, uint32_t y) {
+    char hint[96], line[160];
+    txt_grid_fill(&u->grid, 0, y, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_HEADER));
+    sel_uim_search_hint(1, NULL, 0, hint, sizeof hint);
+    snprintf(line, sizeof line, "[Home]  [%s]  [Browse]", hint);
+    txt_grid_text(&u->grid, 1, y, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_HEADER));
 }
 
 
@@ -1480,8 +1585,8 @@ static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
             txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : playing ? TXT_ROLE_PLAYING : TXT_ROLE_FILE);
             uint32_t x = 1u + (i % cols) * TUI_GRID_CELL, y = 3u + i / cols;
             snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
-            txt_grid_fill(&u->grid, x, y, TUI_GRID_CELL - 1u, 1, ' ', st);
-            txt_grid_text(&u->grid, x, y, buf, TUI_GRID_CELL - 2u, st);
+            tui_pfill(u, x, y, TUI_GRID_CELL - 1u, 1, ' ', st);
+            tui_ptext(u, x, y, buf, TUI_GRID_CELL - 2u, st);
         }
     } else if (v->style == SEL_VIEW_STYLE_COVERFLOW) {
         uint32_t mid = rows / 2u, d;
@@ -1501,8 +1606,8 @@ static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
             } else {
                 snprintf(buf, sizeof buf, "%*s%s", (int)(2u * dist > 8u ? 8u : 2u * dist), "", r->text);
             }
-            txt_grid_fill(&u->grid, 0, 3u + d, width, 1, ' ', st);
-            txt_grid_text(&u->grid, 1, 3u + d, buf, width - 1u, st);
+            tui_pfill(u, 0, 3u + d, width, 1, ' ', st);
+            tui_ptext(u, 1, 3u + d, buf, width - 1u, st);
         }
     } else {
         for (i = 0; i < v->row_n && i < rows; i++) {
@@ -1511,8 +1616,8 @@ static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
             int playing = r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
             txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : playing ? TXT_ROLE_PLAYING : TXT_ROLE_FILE);
             snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
-            txt_grid_fill(&u->grid, 0, 3u + i, width, 1, ' ', st);
-            txt_grid_text(&u->grid, 1, 3u + i, buf, width - 1u, st);
+            tui_pfill(u, 0, 3u + i, width, 1, ' ', st);
+            tui_ptext(u, 1, 3u + i, buf, width - 1u, st);
         }
     }
     u->style_drawn = v->style;
@@ -1545,15 +1650,15 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         size_t at = strlen(buf);
         snprintf(buf + at, sizeof buf - at, "  %s", sel_uim_scope_label(sel_uim_scope_index(s->options[SEL_OPT_SCOPE])));
     }
-    txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
+    tui_ptext(u, 1, 2, buf, width - 1u, title);
     if (v->source == SEL_VIEW_HOME && v->row_count == 0) {
-        txt_grid_text(&u->grid, 1, 3, "Nothing played yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
+        tui_ptext(u, 1, 3, "Nothing played yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
     }
     if (v->source == SEL_VIEW_FOLDERS && v->row_count == 0) {
-        txt_grid_text(&u->grid, 1, 3, "No playlist folders yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
+        tui_ptext(u, 1, 3, "No playlist folders yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
     }
     if (u->lib_screen && v->source == SEL_VIEW_QUERY && v->row_count == 0) {
-        txt_grid_text(&u->grid, 1, 3,
+        tui_ptext(u, 1, 3,
                       u->lib_empty_query ? "Library is empty: scan a folder with :LIBRARY_SCAN <folder>"
                                          : "No songs match the search",
                       width - 1u, tui_style(u, TXT_ROLE_DIM));
@@ -1585,8 +1690,8 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
             snprintf(buf, sizeof buf, "%*s%c %s%s", (int)(2u * r->depth), "", playing ? '>' : ' ', r->text,
                      r->kind == SEL_ROW_DIR && strcmp(r->text, "..") != 0 ? "/" : "");
         }
-        txt_grid_fill(&u->grid, 0, y, width, 1, ' ', st);
-        txt_grid_text(&u->grid, 1, y, buf, width - 1u, st);
+        tui_pfill(u, 0, y, width, 1, ' ', st);
+        tui_ptext(u, 1, y, buf, width - 1u, st);
     }
 }
 
@@ -1596,7 +1701,7 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
     const uintptr_t absent = (uintptr_t)-1;
     uint32_t tag, y = top + 1u;
     uint32_t w = u->grid.cols - x - 1u;
-    txt_grid_text(&u->grid, x, top, "Information", w, tui_style(u, TXT_ROLE_LABEL));
+    tui_ptext(u, x, top, "Information", w, tui_style(u, TXT_ROLE_LABEL));
     for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL && y < u->grid.rows - 1u; tag++) {
         uintptr_t v = sel_tag_find(s->song.meta, tag, absent);
         sel_tag_type type = SEL_TT_INT;
@@ -1616,8 +1721,8 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
             snprintf(val, sizeof val, "%lu", (unsigned long)v);
         }
         sel_uim_tag_label(tag, label, sizeof label);
-        txt_grid_text(&u->grid, x, y, label, w, tui_style(u, TXT_ROLE_LABEL));
-        txt_grid_text(&u->grid, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
+        tui_ptext(u, x, y, label, w, tui_style(u, TXT_ROLE_LABEL));
+        tui_ptext(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
         y++;
     }
     /* I185: the catalogue rows the engine took from the library (label and value pairs); absent data has no row. */
@@ -1634,8 +1739,8 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
                     val[i] = ' ';
                 }
             }
-            txt_grid_text(&u->grid, x, y, p, w, tui_style(u, TXT_ROLE_LABEL));
-            txt_grid_text(&u->grid, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
+            tui_ptext(u, x, y, p, w, tui_style(u, TXT_ROLE_LABEL));
+            tui_ptext(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
             y++;
             u->meta_panel_rows++;
             p = value + strlen(value) + 1;
@@ -1651,25 +1756,25 @@ static void tui_nowplaying_page(tui* u, const sel_state* s) {
     uint32_t k, first, y = 7;
     txt_style lab = tui_style(u, TXT_ROLE_LABEL);
     u->np_draws++;
-    txt_grid_text(&u->grid, 1, 2, "Now Playing", u->grid.cols - 2u, lab);
+    tui_ptext(u, 1, 2, "Now Playing", u->grid.cols - 2u, lab);
     if (s->song.path == NULL) {
-        txt_grid_text(&u->grid, 1, 4, sel_uim_state_text(SEL_UIM_SV_NOWPLAYING, SEL_UIM_ST_EMPTY), u->grid.cols - 2u,
+        tui_ptext(u, 1, 4, sel_uim_state_text(SEL_UIM_SV_NOWPLAYING, SEL_UIM_ST_EMPTY), u->grid.cols - 2u,
                       tui_style(u, TXT_ROLE_DIM));
     } else {
         sel_format_label((const char*)sel_tag_find(s->song.meta, SEL_META_FORMAT, 0), format, sizeof format);
-        txt_grid_text(&u->grid, 1, 4, title != NULL && title[0] ? title : "-", u->grid.cols - 2u, tui_style(u, TXT_ROLE_VALUE));
-        txt_grid_text(&u->grid, 1, 5, author != NULL ? author : "", u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
-        txt_grid_text(&u->grid, 1, 6, format, u->grid.cols - 2u, tui_style(u, TXT_ROLE_DIM));
+        tui_ptext(u, 1, 4, title != NULL && title[0] ? title : "-", u->grid.cols - 2u, tui_style(u, TXT_ROLE_VALUE));
+        tui_ptext(u, 1, 5, author != NULL ? author : "", u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
+        tui_ptext(u, 1, 6, format, u->grid.cols - 2u, tui_style(u, TXT_ROLE_DIM));
     }
     y++;
-    txt_grid_text(&u->grid, 1, y++, "Next in Queue", u->grid.cols - 2u, lab);
+    tui_ptext(u, 1, y++, "Next in Queue", u->grid.cols - 2u, lab);
     for (k = 0; k < s->queue_count && s->queue[k].id != s->queue_playing; k++) {
     }
     for (first = ++k; k < s->queue_count && k - first < 8u && y + 1u < u->grid.rows; k++, y++) {
         const char* path = s->queue_text + s->queue[k].path_offset;
         const char* slash = strrchr(path, '/');
         snprintf(buf, sizeof buf, "%s", slash != NULL ? slash + 1 : path);
-        txt_grid_text(&u->grid, 1, y, buf, u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
+        tui_ptext(u, 1, y, buf, u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
     }
 }
 
@@ -1678,14 +1783,14 @@ static void tui_songinfo_page(tui* u, const sel_state* s) {
     char buf[300];
     uint32_t b, x = 1;
     static const char* const keys[3] = {"w", "x", "Enter"};
-    txt_grid_text(&u->grid, 1, 2, "Song Information", u->grid.cols - 2u, tui_style(u, TXT_ROLE_LABEL));
+    tui_ptext(u, 1, 2, "Song Information", u->grid.cols - 2u, tui_style(u, TXT_ROLE_LABEL));
     for (b = 0; b < 3u; b++) {
         snprintf(buf, sizeof buf, "%s %s", keys[b], sel_uim_flag_label(b));
-        txt_grid_text(&u->grid, x, 3, buf, u->grid.cols - x - 1u, tui_style(u, TXT_ROLE_VALUE));
+        tui_ptext(u, x, 3, buf, u->grid.cols - x - 1u, tui_style(u, TXT_ROLE_VALUE));
         x += (uint32_t)strlen(buf) + 3u;
     }
     snprintf(buf, sizeof buf, "e Note: %s", u->si_note[0] != '\0' ? u->si_note : "");
-    txt_grid_text(&u->grid, 1, 4, buf, u->grid.cols - 2u, tui_style(u, u->si_note[0] != '\0' ? TXT_ROLE_NORMAL : TXT_ROLE_DIM));
+    tui_ptext(u, 1, 4, buf, u->grid.cols - 2u, tui_style(u, u->si_note[0] != '\0' ? TXT_ROLE_NORMAL : TXT_ROLE_DIM));
     tui_info(u, s, 1u, 6u);
 }
 
@@ -1803,7 +1908,7 @@ static void tui_phase_panel(tui* u, const sel_state* s, uint32_t width) {
     char buf[32];
     int32_t pct;
     if (!s->mixed_path) {
-        txt_grid_text(&u->grid, 1, 3, "unsupported_path", width - 1u, dim);
+        tui_ptext(u, 1, 3, "unsupported_path", width - 1u, dim);
         return;
     }
     memset(cell, 0, sizeof cell);
@@ -1815,12 +1920,12 @@ static void tui_phase_panel(tui* u, const sel_state* s, uint32_t width) {
     }
     for (y = 0; y < ph; y++) {
         for (x = 0; x < pw; x++) {
-            txt_grid_put(&u->grid, 2u + x, 3u + y, cell[y][x] ? 0x2800u + cell[y][x] : ' ', norm);
+            tui_pput(u, 2u + x, 3u + y, cell[y][x] ? 0x2800u + cell[y][x] : ' ', norm);
         }
     }
     pct = (int32_t)f->correlation * 100 / 32768;
     snprintf(buf, sizeof buf, "Correlation %d%%", (int)pct);
-    txt_grid_text(&u->grid, 2, 3u + ph, buf, width - 2u, dim);
+    tui_ptext(u, 2, 3u + ph, buf, width - 2u, dim);
 }
 
 
@@ -1836,7 +1941,7 @@ static void tui_sid_panel(tui* u, const sel_state* s, uint32_t width) {
     uint32_t rows = tui_main_rows(u), k, v, y = 3;
     char buf[96];
     if (chips == 0u) {
-        txt_grid_text(&u->grid, 1, 3, "No SID register feed for this song", width - 1u, dim);
+        tui_ptext(u, 1, 3, "No SID register feed for this song", width - 1u, dim);
         return;
     }
     u->sid_frames++;
@@ -1844,7 +1949,7 @@ static void tui_sid_panel(tui* u, const sel_state* s, uint32_t width) {
         const sel_viz_sid_chip* c = &f->sid[k];
         uint32_t cutoff = ((uint32_t)c->reg[0x16] << 3) | ((uint32_t)c->reg[0x15] & 7u);
         snprintf(buf, sizeof buf, "Chip %u", (unsigned)(k + 1u));
-        txt_grid_text(&u->grid, 1, y++, buf, width - 1u, label);
+        tui_ptext(u, 1, y++, buf, width - 1u, label);
         for (v = 0; v < 3u; v++) {
             const uint8_t* r = &c->reg[7u * v];
             uint32_t ctl = r[4];
@@ -1854,12 +1959,12 @@ static void tui_sid_panel(tui* u, const sel_state* s, uint32_t width) {
                      (ctl & 16u) ? "Tri " : "", (ctl & 32u) ? "Saw " : "", (ctl & 64u) ? "Pul " : "",
                      (ctl & 128u) ? "Noi " : "", (ctl & 2u) ? "Sync " : "", (ctl & 4u) ? "Ring " : "",
                      (ctl & 8u) ? "Test " : "", (unsigned)c->env[v], ((c->reg[0x17] >> v) & 1u) ? " Flt" : "");
-            txt_grid_text(&u->grid, 1, y++, buf, width - 1u, norm);
+            tui_ptext(u, 1, y++, buf, width - 1u, norm);
         }
         snprintf(buf, sizeof buf, "Filter %04u Reso %2u %s%s%s Volume %2u", (unsigned)cutoff,
                  (unsigned)(c->reg[0x17] >> 4), (c->reg[0x18] & 16u) ? "LP " : "", (c->reg[0x18] & 32u) ? "BP " : "",
                  (c->reg[0x18] & 64u) ? "HP" : "", (unsigned)(c->reg[0x18] & 15u));
-        txt_grid_text(&u->grid, 1, y++, buf, width - 1u, dim);
+        tui_ptext(u, 1, y++, buf, width - 1u, dim);
     }
 }
 
@@ -1870,24 +1975,24 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
     txt_style dim = tui_style(u, TXT_ROLE_DIM);
     uint32_t rows = tui_main_rows(u), i, x;
     char buf[32];
-    txt_grid_text(&u->grid, 1, 2, k_viz_title[u->viz], width - 1u, label);
+    tui_ptext(u, 1, 2, k_viz_title[u->viz], width - 1u, label);
     if (f == NULL || f->seq == 0) {
-        txt_grid_text(&u->grid, 1, 3, "No visualisation data", width - 1u, dim);
+        tui_ptext(u, 1, 3, "No visualisation data", width - 1u, dim);
         return;
     }
     if (u->viz == 3) { /* spectrum: one block column pair per band */
         uint32_t height = rows > 3u ? rows - 2u : 1u;
         uint32_t b, h;
         if (!f->spectrum_valid) {
-            txt_grid_text(&u->grid, 1, 3, "No spectrum available", width - 1u, dim);
+            tui_ptext(u, 1, 3, "No spectrum available", width - 1u, dim);
             return;
         }
         for (b = 0; b < SEL_VIZ_BANDS && 2u + 3u * b + 2u < width; b++) {
             uint32_t fill = ((uint32_t)(f->band[b] > 0 ? f->band[b] : 0) * height) >> 14;
             fill = fill > height ? height : fill;
             for (h = 0; h < fill; h++) {
-                txt_grid_put(&u->grid, 2u + 3u * b, 2u + height - h, 0x2588u, norm);
-                txt_grid_put(&u->grid, 3u + 3u * b, 2u + height - h, 0x2588u, norm);
+                tui_pput(u, 2u + 3u * b, 2u + height - h, 0x2588u, norm);
+                tui_pput(u, 3u + 3u * b, 2u + height - h, 0x2588u, norm);
             }
         }
         return;
@@ -1901,7 +2006,7 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
         return;
     }
     if (f->voice_count == 0) {
-        txt_grid_text(&u->grid, 1, 3, "No per voice data for this player", width - 1u, dim);
+        tui_ptext(u, 1, 3, "No per voice data for this player", width - 1u, dim);
         return;
     }
     u->viz_frames++;
@@ -1909,22 +2014,22 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
         uint32_t y = 3u + i;
         int muted = (int)((s->mute_mask >> i) & 1u);
         snprintf(buf, sizeof buf, "Voice %2u", (unsigned)(i + 1u));
-        txt_grid_text(&u->grid, 1, y, buf, 9, label);
+        tui_ptext(u, 1, y, buf, 9, label);
         if (u->viz == 1) {
             uint32_t on = ((uint32_t)(f->vu[i] > 0 ? f->vu[i] : 0) * 24u) >> 15;
             for (x = 0; x < 24u; x++) {
-                txt_grid_put(&u->grid, 11u + x, y, x < on ? '#' : ' ', norm);
+                tui_pput(u, 11u + x, y, x < on ? '#' : ' ', norm);
             }
-            txt_grid_put(&u->grid, 10, y, '[', dim);
-            txt_grid_put(&u->grid, 35, y, ']', dim);
+            tui_pput(u, 10, y, '[', dim);
+            tui_pput(u, 35, y, ']', dim);
             if (muted) {
-                txt_grid_text(&u->grid, 37, y, "Muted", width > 37u ? width - 37u : 1u, dim);
+                tui_ptext(u, 37, y, "Muted", width > 37u ? width - 37u : 1u, dim);
             }
         } else if (u->viz == 4) { /* note dots: one dot per sounding voice, column = pitch over 96 semitones */
             u->dot_rows++;
             if (f->pitch_q8[i] != 0 && !muted) {
                 uint32_t span = width > 13u ? width - 13u : 1u;
-                txt_grid_put(&u->grid, 11u + sel_uim_semitone(f->pitch_q8[i]) * span / 96u, y, 0x25CFu,
+                tui_pput(u, 11u + sel_uim_semitone(f->pitch_q8[i]) * span / 96u, y, 0x25CFu,
                              f->note_on[i] ? norm : dim);
             }
         } else { /* scope: peak magnitude of each 4 sample span as a block glyph */
@@ -1936,7 +2041,7 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
                     uint32_t m = (uint32_t)(v < 0 ? -v : v);
                     peak = m > peak ? m : peak;
                 }
-                txt_grid_put(&u->grid, 11u + x, y, muted ? ' ' : sel_uim_level_glyph(peak > 32767u ? 32767u : peak), norm);
+                tui_pput(u, 11u + x, y, muted ? ' ' : sel_uim_level_glyph(peak > 32767u ? 32767u : peak), norm);
             }
         }
     }
@@ -1953,13 +2058,13 @@ static void tui_pattern_panel(tui* u, const sel_state* s, uint32_t width) {
     char buf[96];
     uint32_t r, c, cols_fit = width > 6u ? (width - 5u) / TUI_CELL_COLS : 0;
     if (v == NULL || !v->valid) {
-        txt_grid_text(&u->grid, 1, 2, "Pattern", width - 1u, label);
-        txt_grid_text(&u->grid, 1, 3, "No pattern data", width - 1u, dim);
+        tui_ptext(u, 1, 2, "Pattern", width - 1u, label);
+        tui_ptext(u, 1, 3, "No pattern data", width - 1u, dim);
         return;
     }
     snprintf(buf, sizeof buf, "Pattern  order %u of %u  pattern %u  rows %u", (unsigned)(v->order + 1u),
              (unsigned)v->info.orders, (unsigned)s->song.pattern_pos.pattern, (unsigned)v->info.rows);
-    txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+    tui_ptext(u, 1, 2, buf, width - 1u, label);
     for (r = 0; r < v->row_n && 3u + r + 1u < u->grid.rows; r++) {
         uint32_t row = v->row_lo + r, y = 3u + r;
         int at = v->order == s->song.pattern_pos.order && row == s->song.pattern_pos.row;
@@ -1968,16 +2073,16 @@ static void tui_pattern_panel(tui* u, const sel_state* s, uint32_t width) {
             break;
         }
         u->pattern_rows++;
-        txt_grid_fill(&u->grid, 0, y, width, 1, ' ', st);
+        tui_pfill(u, 0, y, width, 1, ' ', st);
         snprintf(buf, sizeof buf, "%02X", (unsigned)row);
-        txt_grid_text(&u->grid, 1, y, buf, 3, at ? st : dim);
+        tui_ptext(u, 1, y, buf, 3, at ? st : dim);
         for (c = 0; c < v->channels && c < cols_fit; c++) {
             const sel_rp_cell* cell = &v->cell[r][c];
             char note[4], ins[4], vol[4], fx[8];
             sel_uim_cell_fields(cell, note, ins, vol, fx);
             snprintf(buf, sizeof buf, "%s %s %s %s", note, ins, vol, fx);
-            txt_grid_put(&u->grid, 4u + c * TUI_CELL_COLS, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
-            txt_grid_text(&u->grid, 5u + c * TUI_CELL_COLS, y, buf, TUI_CELL_COLS - 1u, st);
+            tui_pput(u, 4u + c * TUI_CELL_COLS, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
+            tui_ptext(u, 5u + c * TUI_CELL_COLS, y, buf, TUI_CELL_COLS - 1u, st);
         }
     }
 }
@@ -2007,15 +2112,15 @@ static void tui_pattern_ask(tui* u) {
 static void tui_stats_pane(tui* u, const sel_state* s, uint32_t width) {
     const char* p = s->stats;
     uint32_t y = 3;
-    txt_grid_text(&u->grid, 1, 2, "Statistics", width - 1u, tui_style(u, TXT_ROLE_LABEL));
+    tui_ptext(u, 1, 2, "Statistics", width - 1u, tui_style(u, TXT_ROLE_LABEL));
     if (*p == '\0') {
-        txt_grid_text(&u->grid, 1, 3, "No statistics available", width - 1u, tui_style(u, TXT_ROLE_DIM));
+        tui_ptext(u, 1, 3, "No statistics available", width - 1u, tui_style(u, TXT_ROLE_DIM));
         return;
     }
     while (*p != '\0' && y < u->grid.rows - 1u) {
         const char* value = p + strlen(p) + 1;
-        txt_grid_text(&u->grid, 1, y, p, 22u, tui_style(u, TXT_ROLE_LABEL));
-        txt_grid_text(&u->grid, 24, y, value, width > 25u ? width - 25u : 1u, tui_style(u, TXT_ROLE_VALUE));
+        tui_ptext(u, 1, y, p, 22u, tui_style(u, TXT_ROLE_LABEL));
+        tui_ptext(u, 24, y, value, width > 25u ? width - 25u : 1u, tui_style(u, TXT_ROLE_VALUE));
         y++;
         p = value + strlen(value) + 1;
     }
@@ -2039,10 +2144,9 @@ static void tui_splash_draw(tui* u) {
 
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
-    uint32_t width = u->info && u->layout == SEL_UIM_LAYOUT_FULL && u->grid.cols > TUI_INFO_COLS + 20u
-                         ? u->grid.cols - TUI_INFO_COLS
-                         : u->grid.cols;
-    uint32_t y;
+    sel_uim_layout lay;
+    const sel_uim_region *mr, *pr;
+    uint32_t width, y, my = 0, mh = 0;
     if (s->song.path != NULL) {
         u->splash_off = 1;
     }
@@ -2053,11 +2157,23 @@ static void tui_draw(tui* u) {
         return;
     }
     txt_grid_clear(&u->grid, tui_style(u, TXT_ROLE_NORMAL));
-    tui_header(u, s);
-    if (s->stats != NULL) {
+    (void)sel_uim_update(&u->uim, s);
+    tui_layout(u, &lay);
+    mr = u->layout == SEL_UIM_LAYOUT_MINI ? NULL : tui_region(&lay, "main");
+    pr = tui_region(&lay, "player");
+    if (mr != NULL) {
+        my = (uint32_t)mr->y;
+        mh = mr->h;
+        /* the page view: its row 2 is the main region's first row; the pages keep their row numbers (I1222i makes them region-relative) */
+        u->pv_y0 = my;
+        u->pv_rows = mh;
+    }
+    width = u->info && u->layout == SEL_UIM_LAYOUT_FULL && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS
+                                                                                              : u->grid.cols;
+    if (mr == NULL) {
+        ; /* the player bar alone */
+    } else if (s->stats != NULL) {
         tui_stats_pane(u, s, width);
-    } else if (u->layout == SEL_UIM_LAYOUT_MINI) {
-        ; /* the header alone */
     } else if (u->page == TUI_INFO_NOWPLAYING) {
         tui_nowplaying_page(u, s);
     } else if (u->page == TUI_INFO_SONGINFO) {
@@ -2071,9 +2187,9 @@ static void tui_draw(tui* u) {
     } else {
         tui_pane(u, s, width);
     }
-    if (width < u->grid.cols && u->page == TUI_INFO_NONE) {
-        for (y = 2; y + 1u < u->grid.rows; y++) {
-            txt_grid_put(&u->grid, width, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
+    if (mr != NULL && width < u->grid.cols && u->page == TUI_INFO_NONE) {
+        for (y = 2; y < mh + 2u; y++) {
+            tui_pput(u, width, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
         }
         tui_info(u, s, width + 2u, 2u);
     }
@@ -2084,9 +2200,19 @@ static void tui_draw(tui* u) {
     } else if (u->overlay) {
         tui_overlay(u);
     }
-    txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_DIM));
-    if (u->cmd_mode || u->cmd.status[0] != '\0') {
+    if (lay.topbar.h != 0u) {
+        tui_topbar(u, (uint32_t)lay.topbar.y);
+        u->topbar_draws++;
+    }
+    if (pr != NULL) {
+        tui_player_bar(u, (uint32_t)pr->y, pr->h);
+        u->player_draws++;
+        u->player_rows = pr->h;
+    }
+    /* I1222g: no hint row. The command line and the status text open on demand over the bottom row of the main region. */
+    if (mr != NULL && (u->cmd_mode || u->cmd.status[0] != '\0')) {
         char line[TXT_CMD_LINE + TXT_CMD_STATUS + 8];
+        uint32_t ly = my + mh - 1u;
         if (u->cmd_mode) {
             if (u->cmd_mode == 4) {
                 snprintf(line, sizeof line, "%s  y Yes  any other key No", u->mn_lab[0]);
@@ -2100,30 +2226,9 @@ static void tui_draw(tui* u) {
         } else {
             snprintf(line, sizeof line, "%s", u->cmd.status);
         }
-        txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_NORMAL));
-        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
-        return;
+        txt_grid_fill(&u->grid, 0, ly, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_NORMAL));
+        txt_grid_text(&u->grid, 1, ly, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
     }
-    if (s->view != NULL && s->view->source == SEL_VIEW_FOLDERS) {
-        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, "Enter Play playlist  w Menu  Up Down Move  Tab Browse  l Library  q Quit",
-                      u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
-        return;
-    }
-    if (u->lib_screen && s->view != NULL && s->view->source == SEL_VIEW_QUERY) {
-        txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
-                      "Enter Play  a Add to queue  / Search  v View style  g Group  Tab Browse  L Library  Quit",
-                      u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
-        return;
-    }
-    if (tui_bind_ctx(u) == TXT_CTX_PLAYER) {
-        txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
-                      "Left Right Seek  Up Down Volume  Page Up Page Down Subsong  Enter Pause  Escape List  Quit",
-                      u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
-        return;
-    }
-    txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
-                  "Up Down Move  Enter Open  Backspace Parent  Tab Queue  Space Pause  Left Right Page  Alt+Left Alt+Right Seek  Info  Quit",
-                  u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
 }
 
 static size_t tui_utf8(uint32_t cp, char* o) {
@@ -2330,6 +2435,7 @@ static void* tui_open(const sel_ui_open_args* a) {
         tui_close(u);
         return NULL;
     }
+    sel_uim_init(&u->uim);
     u->grid.latin1 = txt_term_latin1();
     /* --console-frames 1 gives a host run the Amiga console's frames, so tests can compare byte streams (row I218e). */
     u->grid.console = txt_term_amiga_console || tui_opt(a, "--console-frames") != NULL;
@@ -2466,8 +2572,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[27].value = u->si_actions;
     u->stats[28].tag = SEL_UI_STAT_NOWPLAY_DRAWS;
     u->stats[28].value = u->np_draws;
-    u->stats[29].tag = SEL_TAG_END;
-    u->stats[29].value = 0;
+    u->stats[29].tag = SEL_UI_STAT_PLAYER_BAR;
+    u->stats[29].value = (u->player_draws & 0xFFFFu) | (u->player_rows << 16);
+    u->stats[30].tag = SEL_UI_STAT_TOPBAR_DRAWS;
+    u->stats[30].value = u->topbar_draws;
+    u->stats[31].tag = SEL_TAG_END;
+    u->stats[31].value = 0;
     return u->stats;
 }
 
