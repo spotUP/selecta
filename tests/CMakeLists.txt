@@ -1429,7 +1429,7 @@ if(NOT SEL_AMIGA)
   # I1052b: the Amiga tier of viz_krakatoa (KRK_BACKEND_FX) driven through the plugin entry and VIZ_FRAME hook.
   add_executable(krk_fx_plugin_test viz/krk_fx_plugin_test.c "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/krakatoa.c"
                  "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_core.c"
-                 "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_lava_fx.c")
+                 "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_lava_fx.c" "${PROJECT_SOURCE_DIR}/src/core/tag.c")
   target_compile_definitions(krk_fx_plugin_test PRIVATE KRK_BACKEND_FX)
   target_include_directories(krk_fx_plugin_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa")
   target_link_libraries(krk_fx_plugin_test PRIVATE m)
