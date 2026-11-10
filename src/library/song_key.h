@@ -15,6 +15,10 @@
  * Idempotent. Every writer and reader of history, loudness, stickers, votes, ratings, liked, kept, cues, notes and
  * flags goes through this. 0 when it does not fit. */
 int sel_song_key_of(const char* ref, char* out, size_t n);
+/* I1300: a raw URL of a known host (ftp.modland.com, hvsc.c64.org; http, https or ftp; percent-escaped path decoded once) becomes the source
+ * key of the same song (`modland:pub/modules/...`, `hvsc:...`); an unknown host, a key or a path is copied unchanged. Applied where
+ * playlist entries get their key (Hippo .prg sync, PLAYLIST_IMPORT). 0 when it does not fit. */
+int sel_song_key_of_url(const char* ref, char* out, size_t n);
 /* Splits a key into source id and path (also declared in source.h). 0 when it has no source. */
 int sel_song_key_split(const char* key, char* source, size_t source_n, char* path, size_t path_n);
 

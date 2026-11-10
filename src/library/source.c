@@ -138,6 +138,82 @@ int sel_song_key(const char* source, const char* path, char* out, size_t n) {
     return 1;
 }
 
+/* I1300: a raw URL of a known host is the same song as its source key. Hosts and the key each one maps to (key shapes read from the
+ * plugins: modland keys are `modland:pub/modules/<...>` (modland_sync.c full_path), hvsc keys are `hvsc:<path under C64Music>`
+ * (plugins/sources/hvsc/hvsc.c)):
+ *   http(s)|ftp://ftp.modland.com/pub/modules/<p>        -> modland:pub/modules/<p>
+ *   http(s)://hvsc.c64.org/download/C64Music/<p>         -> hvsc:<p>
+ * The path is percent-decoded once. Anything else (unknown host, a key, a local path) is copied unchanged. 0 when it does not fit. */
+static size_t url_host_prefix(const char* ref, const char** rest, const char** key_prefix) {
+    static const struct { const char* url; const char* key; } map[] = {
+        {"http://ftp.modland.com/", "modland:"},
+        {"https://ftp.modland.com/", "modland:"},
+        {"ftp://ftp.modland.com/", "modland:"},
+        {"http://hvsc.c64.org/download/C64Music/", "hvsc:"},
+        {"https://hvsc.c64.org/download/C64Music/", "hvsc:"},
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof map / sizeof map[0]; i++) {
+        size_t n = strlen(map[i].url);
+        size_t j;
+
+        for (j = 0; j < n; j++) {
+            char c = ref[j];
+            if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+            char m = map[i].url[j];
+            if (m >= 'A' && m <= 'Z') m = (char)(m - 'A' + 'a');
+            if (c != m) break;
+        }
+        if (j == n) {
+            *rest = ref + n;
+            *key_prefix = map[i].key;
+            return n;
+        }
+    }
+    return 0;
+}
+
+int sel_song_key_of_url(const char* ref, char* out, size_t n) {
+    const char* p;
+    const char* kp;
+    size_t w;
+
+    if (ref == NULL || out == NULL || n == 0) {
+        return 0;
+    }
+    if (url_host_prefix(ref, &p, &kp) == 0 || (strcmp(kp, "modland:") == 0 && strncmp(p, "pub/modules/", 12) != 0)) {
+        size_t len = strlen(ref);
+        if (len + 1u > n) {
+            return 0;
+        }
+        memcpy(out, ref, len + 1u);
+        return 1;
+    }
+    w = strlen(kp);
+    if (w + 1u > n) {
+        return 0;
+    }
+    memcpy(out, kp, w);
+    while (*p != '\0') {
+        unsigned v;
+        char c = *p;
+
+        if (p[0] == '%' && p[1] != '\0' && p[2] != '\0' && sscanf((char[]){p[1], p[2], 0}, "%2x", &v) == 1) {
+            c = (char)v;
+            p += 3;
+        } else {
+            p++;
+        }
+        if (w + 2u > n) {
+            return 0;
+        }
+        out[w++] = c;
+    }
+    out[w] = '\0';
+    return 1;
+}
+
 int sel_song_key_of(const char* ref, char* out, size_t n) {
     char id[SEL_SOURCE_ID_MAX + 1];
     const char* colon;

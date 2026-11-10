@@ -7222,6 +7222,11 @@ static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
             }
             fclose(probe);
         }
+        {
+            char norm[SEL_SONG_KEY_MAX];
+            /* I1300: a raw URL of a known host is stored as its source key. */
+            if (sel_song_key_of_url(full, norm, sizeof norm)) memcpy(full, norm, strlen(norm) + 1u);
+        }
         len = strlen(full) + 1u;
         if (used + len + 1u > cap) {
             char* grown;
