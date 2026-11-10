@@ -2445,6 +2445,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I1242i: nuade formats with a second file (jpn, mcr, pap, pn, sdr, sjs, tpu) play from an ONLINE modland key: the nuade
+  # SEL_RP_COMPANIONS rules bring the companion into an empty cache. Songs are fetched at test time, exit 77 = skip (no network).
+  if(TARGET sel_plugin_nuade)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-online-companions)
+    add_test(NAME nuade-online-companions
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/nuade_online_companions.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-online-companions)
+    set_tests_properties(nuade-online-companions PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_online_companions_ok"
+      SKIP_RETURN_CODE 77 TIMEOUT 600 ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710am: SCC-Musixx songs (.sng) play through the render entry point (bbmp_smx module, GPL-3.0 engine on emu2212). Songs are fetched by checksum, exit 77 = skip.
   # Other .sng formats (GoatTracker-style, zero file, cut-off song) must not be claimed.
   if(SELECTA_GPL_PLUGINS)

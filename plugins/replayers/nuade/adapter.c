@@ -599,8 +599,18 @@ static unsigned rp_content_companions(const char* name, const uint8_t* data, siz
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
 static sel_tag g_hooks[23];
-/* SEL_RP_COMPANIONS (I166): TFMX keeps its samples in a second file. */
-static const char g_companions[] = "mdat.*>smpl.*;*.tfx>*.sam";
+/* SEL_RP_COMPANIONS (I166, I1242i): TFMX keeps its samples in a second file; so do Jason Page (smp.*), Mark Cooksey Old
+ * (mcs.*), Pierre Adane Packer (smp.* or smp.set), PokeyNoise (pn.*.info), Synth Dream (smp.* or smp.set), Scott Johnston
+ * (smp.*) and Dirk Bialluch (smp.*). Names follow each player's own file lookup in third_party/nuade/players. */
+static const char g_companions[] =
+    "mdat.*>smpl.*;*.tfx>*.sam;"
+    "jpn.*>smp.*;jpnd.*>jpns.*;*.jpn>*.smp;*.jpnd>*.jpns;"
+    "mcr.*>mcs.*;"
+    "pap.*>smp.*;*.pap>smp.set;"
+    "pn.*>pn.*.info;"
+    "sdr.*>smp.*;sdr.*>smp.set;"
+    "sjs.*>smp.*;"
+    "tpu.*>smp.*";
 static sel_tag g_config[2]; /* SEL_RP_CONFIG list: one entry per option, value = the host config key */
 static sel_tag g_desc[5];
 /* Built by the registry walk at entry: every usable player's id, and the
