@@ -13,7 +13,7 @@
  *    removes it. A snare is not counted as a kick.
  * 8. Band normalisation floor (I1052x): near-silent noise stays below 0.1 instead of being scaled to full.
  * 9. Pref string: ui.krakatoa.smoke "name=value,..." sets knobs, skips bad entries, clamps.
- * 10. Palettes: 5 named ramps, all with ember and tail, the five hot[0] colours distinct; the palette knob changes
+ * 10. Palettes: 5 named ramps (reference hex values), all with ember and tail, the five hot[0] colours distinct; the palette knob changes
  *    the packed hot ramp. */
 #include <math.h>
 #include <stdio.h>
@@ -256,6 +256,18 @@ int main(void) {
         }
         CHECK(strcmp(krk_palette_get(2u)->name, "Magma") == 0 && krk_palette_get(99u) == krk_palette_get(0u),
               "palette order and fallback");
+        /* Reference index.html PALETTES (lines 275-281) through its toLin, (c/255)^2.2: Aurora hot[0] #d6ff3c,
+         * Ash smoke #a4acbc, Magma bg[1] #1a0605. */
+        {
+            const float* got[3] = {krk_palette_get(0u)->hot[0], krk_palette_get(4u)->smoke, krk_palette_get(2u)->bg[1]};
+            const uint32_t ref_hex[3] = {0xd6ff3cu, 0xa4acbcu, 0x1a0605u};
+            for (uint32_t ri = 0; ri < 3u; ri++)
+                for (uint32_t ci = 0; ci < 3u; ci++) {
+                    const float lin = powf((float)((ref_hex[ri] >> (16u - 8u * ci)) & 255u) / 255.0f, 2.2f);
+                    CHECK(fabsf(got[ri][ci] - lin) < 1e-3f, "reference colour %u channel %u: %f, want %f", ri, ci,
+                          (double)got[ri][ci], (double)lin);
+                }
+        }
         CHECK(krk_rgb_hex((const float[3]){1.0f, 0.0f, 0.5f}) == 0xFF00BCu, "sRGB hex %06X",
               krk_rgb_hex((const float[3]){1.0f, 0.0f, 0.5f}));
     }
