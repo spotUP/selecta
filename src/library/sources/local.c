@@ -14,6 +14,7 @@
 
 #include <selecta/catalogue.h>
 #include <selecta/plugin.h>
+#include <selecta/registry.h>
 #include <selecta/replayer.h>
 #include <stdio.h>
 #include <string.h>
@@ -206,7 +207,7 @@ static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const s
     sel_song_source src;
     void* state;
 
-    hooks = find_replayer(s, data, size, probe_path);
+    hooks = sel_plugin_resolve(find_replayer(s, data, size, probe_path)); /* I427e: load an on-demand module */
     if (hooks == NULL) {
         s->stats->skipped_files++;
         return 0;

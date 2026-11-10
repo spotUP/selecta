@@ -25,6 +25,10 @@ SEL_TAG(PLUGIN, KIND,          0x0100, INT)
 SEL_TAG(PLUGIN, ID,            0x0101, STR)
 SEL_TAG(PLUGIN, VERSION,       0x0102, INT)
 SEL_TAG(PLUGIN, TAGS,          0x0103, LIST)
+/* PLUGIN_MODULE (I427e): the descriptor is a manifest. TAGS holds only the static facts and the probe; the
+ * real hooks live in the named module file (an Amiga LoadSeg hunk file), loaded on first open through
+ * sel_plugin_resolve. */
+SEL_TAG(PLUGIN, MODULE,        0x0104, STR)
 
 SEL_TAG(RP, NAME,              0x1000, STR)
 SEL_TAG(RP, VERSION,           0x1001, INT)
