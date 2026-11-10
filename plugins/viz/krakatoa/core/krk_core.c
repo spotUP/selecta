@@ -2,6 +2,7 @@
 #include "krk_core.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* ---- Quality ---- */
@@ -57,7 +58,15 @@ static const krk_knob_info k_knobs[KRK_K_COUNT] = {
     {"light", 1.0f, 0.0f, 3.0f},       {"shadows", 1.0f, 0.0f, 3.0f},  {"bloom", 0.9f, 0.0f, 2.0f},
     {"coolTime", 0.5f, 0.15f, 2.0f},   {"lift", 1.0f, 0.0f, 3.0f},     {"palette", 0.0f, 0.0f, 4.0f},
     {"cursorLight", 1.0f, 0.0f, 1.0f}, {"auto", 1.0f, 0.0f, 1.0f},     {"paused", 0.0f, 0.0f, 1.0f},
+    {"smoke", 0.55f, 0.0f, 1.5f},      {"particles", 1.0f, 0.0f, 3.0f}, {"showSmoke", 1.0f, 0.0f, 1.0f},
+    {"showParticles", 1.0f, 0.0f, 1.0f}, {"kickBurst", 1.0f, 0.0f, 3.0f}, {"kickPump", 1.0f, 0.0f, 3.0f},
+    {"snareFlash", 1.0f, 0.0f, 3.0f},  {"bassDrive", 1.0f, 0.0f, 3.0f}, {"highSwirl", 1.0f, 0.0f, 3.0f},
 };
+
+static int knob_is_bool(krk_knob k) {
+    return k == KRK_K_CURSORLIGHT || k == KRK_K_AUTO || k == KRK_K_PAUSED || k == KRK_K_SHOWSMOKE ||
+           k == KRK_K_SHOWPARTICLES;
+}
 
 const krk_knob_info* krk_knob_table(void) {
     return k_knobs;
@@ -89,29 +98,72 @@ void krk_params_set(krk_params* p, krk_knob k, float value) {
     value = value < in->lo ? in->lo : value > in->hi ? in->hi : value;
     if (k == KRK_K_PALETTE) {
         value = floorf(value + 0.5f);
-    } else if (k == KRK_K_CURSORLIGHT || k == KRK_K_AUTO || k == KRK_K_PAUSED) {
+    } else if (knob_is_bool(k)) {
         value = value >= 0.5f ? 1.0f : 0.0f;
     }
     p->v[k] = value;
+}
+
+uint32_t krk_params_parse(krk_params* p, const char* list) {
+    char name[32];
+    uint32_t set = 0u;
+    while (list != NULL && *list != '\0') {
+        const char* eq = strchr(list, '=');
+        const char* end = strchr(list, ',');
+        size_t n;
+        if (end == NULL) {
+            end = list + strlen(list);
+        }
+        if (eq != NULL && eq < end && (n = (size_t)(eq - list)) > 0u && n < sizeof name) {
+            char* stop;
+            float v;
+            int k;
+            memcpy(name, list, n);
+            name[n] = '\0';
+            v = strtof(eq + 1, &stop);
+            k = krk_knob_find(name);
+            if (k >= 0 && stop != eq + 1 && stop == end) {
+                krk_params_set(p, (krk_knob)k, v);
+                set++;
+            }
+        }
+        list = *end == ',' ? end + 1 : end;
+    }
+    return set;
 }
 
 /* ---- Palettes (design 1.3). The reference hex values are not available (design 1.3 names the lines but not the values);
  * these ramps follow the names and are to be replaced 1:1 once the reference file is at hand. ---- */
 static const krk_palette k_pal[KRK_PALETTES] = {
     {"Aurora", {{0.10f, 0.95f, 0.60f}, {0.20f, 0.70f, 1.00f}, {0.60f, 0.35f, 1.00f}, {0.95f, 0.95f, 1.00f}},
-     {0.05f, 0.25f, 0.30f}, {0.85f, 1.00f, 0.95f}, {{0.01f, 0.02f, 0.05f}, {0.02f, 0.06f, 0.10f}}, {0.55f, 0.70f, 0.75f}},
+     {0.05f, 0.25f, 0.30f}, {0.85f, 1.00f, 0.95f}, {{0.01f, 0.02f, 0.05f}, {0.02f, 0.06f, 0.10f}}, {0.70f, 1.00f, 0.85f},
+     {0.55f, 0.70f, 0.75f}, {0.10f, 0.45f, 0.55f}},
     {"Nebula", {{0.90f, 0.30f, 0.90f}, {0.45f, 0.30f, 1.00f}, {1.00f, 0.55f, 0.75f}, {1.00f, 0.95f, 1.00f}},
-     {0.15f, 0.08f, 0.30f}, {1.00f, 0.90f, 1.00f}, {{0.02f, 0.01f, 0.05f}, {0.06f, 0.02f, 0.10f}}, {0.60f, 0.55f, 0.75f}},
+     {0.15f, 0.08f, 0.30f}, {1.00f, 0.90f, 1.00f}, {{0.02f, 0.01f, 0.05f}, {0.06f, 0.02f, 0.10f}}, {1.00f, 0.80f, 1.00f},
+     {0.60f, 0.55f, 0.75f}, {0.35f, 0.15f, 0.60f}},
     {"Magma", {{1.00f, 0.25f, 0.02f}, {1.00f, 0.55f, 0.05f}, {1.00f, 0.85f, 0.30f}, {1.00f, 1.00f, 0.85f}},
-     {0.25f, 0.06f, 0.03f}, {1.00f, 0.92f, 0.80f}, {{0.03f, 0.01f, 0.01f}, {0.08f, 0.03f, 0.02f}}, {0.45f, 0.40f, 0.38f}},
+     {0.25f, 0.06f, 0.03f}, {1.00f, 0.92f, 0.80f}, {{0.03f, 0.01f, 0.01f}, {0.08f, 0.03f, 0.02f}}, {1.00f, 0.95f, 0.60f},
+     {0.45f, 0.40f, 0.38f}, {0.60f, 0.12f, 0.02f}},
     {"Spectrum", {{1.00f, 0.15f, 0.20f}, {1.00f, 0.85f, 0.10f}, {0.10f, 0.90f, 0.40f}, {0.20f, 0.50f, 1.00f}},
-     {0.10f, 0.10f, 0.20f}, {1.00f, 1.00f, 1.00f}, {{0.02f, 0.02f, 0.03f}, {0.05f, 0.05f, 0.08f}}, {0.65f, 0.65f, 0.70f}},
+     {0.10f, 0.10f, 0.20f}, {1.00f, 1.00f, 1.00f}, {{0.02f, 0.02f, 0.03f}, {0.05f, 0.05f, 0.08f}}, {1.00f, 1.00f, 0.90f},
+     {0.65f, 0.65f, 0.70f}, {0.40f, 0.20f, 0.70f}},
     {"Ash", {{0.90f, 0.55f, 0.30f}, {0.80f, 0.75f, 0.70f}, {0.95f, 0.92f, 0.88f}, {1.00f, 1.00f, 1.00f}},
-     {0.12f, 0.12f, 0.12f}, {1.00f, 0.97f, 0.92f}, {{0.03f, 0.03f, 0.03f}, {0.08f, 0.08f, 0.08f}}, {0.55f, 0.55f, 0.55f}},
+     {0.12f, 0.12f, 0.12f}, {1.00f, 0.97f, 0.92f}, {{0.03f, 0.03f, 0.03f}, {0.08f, 0.08f, 0.08f}}, {1.00f, 0.85f, 0.60f},
+     {0.55f, 0.55f, 0.55f}, {0.35f, 0.33f, 0.30f}},
 };
 
 const krk_palette* krk_palette_get(uint32_t index) {
     return &k_pal[index < KRK_PALETTES ? index : 0u];
+}
+
+static uint32_t srgb8(float v) {
+    v = v <= 0.0f ? 0.0f : v >= 1.0f ? 1.0f : v;
+    v = v <= 0.0031308f ? 12.92f * v : 1.055f * powf(v, 1.0f / 2.4f) - 0.055f;
+    return (uint32_t)(v * 255.0f + 0.5f);
+}
+
+uint32_t krk_rgb_hex(const float c[3]) {
+    return (srgb8(c[0]) << 16) | (srgb8(c[1]) << 8) | srgb8(c[2]);
 }
 
 /* ---- Audio mapper (design section 4) ---- */
@@ -120,6 +172,7 @@ void krk_audio_init(krk_audio* a) {
     a->peak = 1e-3f;
     a->since_beat = 10.0f;
     a->heat_mul = 1.0f;
+    a->turb_mul = 1.0f;
 }
 
 static float frame_rms(const sel_viz_frame* f) {
@@ -144,32 +197,81 @@ static float band_mean(const sel_viz_frame* f, uint32_t from, uint32_t to) {
     return s / (float)(to - from + 1u);
 }
 
+/* Per-band normalisation (I1052x): a peak follower with instant attack and a 4 s decay, divided out with a floor so
+ * quiet passages and silence do not blow noise up to full scale. */
+#define KRK_BAND_FLOOR 0.04f
+
+static float band_norm(float raw, float* pk, float dt) {
+    *pk *= expf(-dt / 4.0f);
+    if (raw > *pk) {
+        *pk = raw;
+    }
+    raw /= *pk > KRK_BAND_FLOOR ? *pk : KRK_BAND_FLOOR;
+    return raw > 1.0f ? 1.0f : raw;
+}
+
+static float clamp01(float v) {
+    return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+}
+
+/* I1246: the reaction lands on the frame the spectrum shows the hit. Onsets fire on the first frame a band rises above
+ * its 0.5 s average (no smoothing on attack); every envelope starts at full strength on that frame and only the release
+ * is shaped. Kick (bands 0-3, 43-140 Hz) = smoke burst + speaker-cone pump; snare (bands 8-11, 1-3.2 kHz, a separate
+ * detector) = light flash; bass level = base flow; highs = swirl and turbulence. */
 void krk_audio_step(krk_audio* a, const sel_viz_frame* f, const krk_params* p, float dt) {
     int live = f != NULL && f->seq != 0u;
+    int spec = live && f->spectrum_valid;
     float rms = live ? frame_rms(f) : 0.0f;
     float k = rms > a->env ? 1.0f - expf(-dt / 0.010f) : 1.0f - expf(-dt / 0.300f);
-    float b, s;
+    float avg_k = 1.0f - expf(-dt / 0.5f);
+    float kb = p->v[KRK_K_KICKBURST], kp = p->v[KRK_K_KICKPUMP], sf = p->v[KRK_K_SNAREFLASH];
+    float bd = p->v[KRK_K_BASSDRIVE], hs = p->v[KRK_K_HIGHSWIRL];
+    float t, burst, br, mr, rb, rm;
     a->env += (rms - a->env) * k;
     a->peak *= expf(-dt / 4.0f);
     if (a->env > a->peak) {
         a->peak = a->env;
     }
     a->L = a->peak > 1e-4f ? a->env / a->peak : 0.0f;
-    a->B = live && f->spectrum_valid ? band_mean(f, 0u, 3u) : 0.0f;
-    a->H = live && f->spectrum_valid ? band_mean(f, 12u, 15u) : 0.0f;
-    b = a->B;
+    br = spec ? band_mean(f, 0u, 3u) : 0.0f;
+    mr = spec ? band_mean(f, 8u, 11u) : 0.0f;
+    a->B = band_norm(br, &a->bpk, dt);
+    a->M = band_norm(mr, &a->mpk, dt);
+    a->H = spec ? band_norm(band_mean(f, 12u, 15u), &a->hpk, dt) : 0.0f;
     a->since_beat += dt;
-    if (a->bass_avg > 1e-3f && b > 1.4f * a->bass_avg && a->since_beat >= 0.200f) {
-        s = (b - a->bass_avg) / a->bass_avg;
-        a->beat_s = s < 0.0f ? 0.0f : s > 1.0f ? 1.0f : s;
+    a->since_snare += dt;
+    /* Onsets run on the raw band against its own 0.5 s average (scale free, so the peak normalisation cannot flatten
+     * the hit). Rise = jump over the previous frame relative to the average. */
+    rb = (br - a->b_prev) / (a->bass_avg > KRK_BAND_FLOOR ? a->bass_avg : KRK_BAND_FLOOR);
+    rm = (mr - a->m_prev) / (a->mid_avg > KRK_BAND_FLOOR ? a->mid_avg : KRK_BAND_FLOOR);
+    /* kick: bass rises, sits 1.3 x above its average and above 0.35 of its peak; 150 ms refractory */
+    if (rb > 0.0f && br > 1.3f * a->bass_avg && a->B > 0.35f && br > 0.5f * KRK_BAND_FLOOR && a->since_beat >= 0.150f) {
+        a->beat_s = clamp01((br - a->bass_avg) / (a->bass_avg > KRK_BAND_FLOOR ? a->bass_avg : KRK_BAND_FLOOR));
         a->since_beat = 0.0f;
         a->beats++;
     }
-    a->bass_avg += (b - a->bass_avg) * (1.0f - expf(-dt / 1.0f));
-    a->force = p->v[KRK_K_FORCE] * (0.5f + a->L);
-    a->swirl = p->v[KRK_K_SWIRL] * (0.5f + a->H);
-    a->emission = p->v[KRK_K_EMISSION] * (0.3f + 1.2f * a->B) + 3.0f * a->beat_s * expf(-a->since_beat / 0.12f);
-    a->heat_mul = a->since_beat < 0.120f ? 1.0f + 2.0f * a->beat_s : 1.0f;
+    /* snare: the same rule on the mid band, separate from the kick: the mid rise must beat the bass rise, so a kick's
+     * overtones in the mids do not flash */
+    if (rm > 0.0f && rm > rb && mr > 1.3f * a->mid_avg && a->M > 0.35f && mr > 0.5f * KRK_BAND_FLOOR &&
+        a->since_snare >= 0.120f) {
+        a->snare_s = clamp01((mr - a->mid_avg) / (a->mid_avg > KRK_BAND_FLOOR ? a->mid_avg : KRK_BAND_FLOOR));
+        a->since_snare = 0.0f;
+        a->snares++;
+    }
+    a->bass_avg += (br - a->bass_avg) * avg_k;
+    a->mid_avg += (mr - a->mid_avg) * avg_k;
+    a->b_prev = br;
+    a->m_prev = mr;
+    t = a->since_beat;
+    burst = a->beat_s * expf(-t / 0.12f);
+    /* speaker cone: out on the hit (full on frame 0), then pulled back below rest, settling over ~0.5 s */
+    a->pump = kp * a->beat_s * (expf(-t / 0.09f) - 0.45f * (expf(-t / 0.30f) - expf(-t / 0.06f)));
+    a->force = p->v[KRK_K_FORCE] * (0.4f + 0.9f * bd * a->B + 0.3f * a->L);
+    a->swirl = p->v[KRK_K_SWIRL] * (0.5f + 1.2f * hs * a->H);
+    a->turb_mul = 1.0f + hs * a->H;
+    a->emission = p->v[KRK_K_EMISSION] * (0.3f + 1.2f * bd * a->B) + 4.0f * kb * burst;
+    a->heat_mul = t < 0.120f ? 1.0f + 2.0f * kb * a->beat_s : 1.0f;
+    a->flash = sf * a->snare_s * expf(-a->since_snare / 0.09f);
 }
 
 /* ---- Autopilot ---- */
@@ -178,7 +280,8 @@ void krk_brush_at(krk_brush* b, float t, const krk_grid* g, const krk_params* p,
     float force = a != NULL ? a->force : p->v[KRK_K_FORCE];
     float kv = 0.7f * force * Y, cap = 1.5f * Y, sp;
     uint32_t i;
-    b->radius = p->v[KRK_K_BRUSH] * Y * 4.0f;
+    /* the emitter breathes with the kick pump (I1246) */
+    b->radius = p->v[KRK_K_BRUSH] * Y * 4.0f * (1.0f + 0.5f * (a != NULL ? a->pump : 0.0f));
     b->pos[2] = Z * 0.5f; /* emitters at Z/2 */
     if (p->v[KRK_K_AUTO] >= 0.5f) {
         /* lower-screen wander: on for 5.6 s of every 7 s */
@@ -236,8 +339,9 @@ void krk_uniforms_build(krk_uniforms* u, const krk_grid* g, const krk_params* p,
     u->rates[3] = 0.6f;
     u->forces[0] = a->swirl * 0.002f * Y;
     u->forces[1] = 0.9f * p->v[KRK_K_LIFT] * Y;
-    u->forces[2] = 0.3f * p->v[KRK_K_TURBULENCE] * Y;
-    u->forces[3] = 0.5f * a->force * Y;
+    u->forces[2] = 0.3f * p->v[KRK_K_TURBULENCE] * a->turb_mul * Y;
+    /* uPush is the radial push out of the emitter (krk_smoke.comp); the kick pump drives it out and back (I1246) */
+    u->forces[3] = 0.5f * a->force * Y * (1.0f + 4.0f * a->pump);
     u->decay[0] = expf(-dt / (2.2f * life));
     u->decay[1] = expf(-dt / cool);
     u->decay[2] = expf(-0.15f * dt);
@@ -252,11 +356,11 @@ void krk_uniforms_build(krk_uniforms* u, const krk_grid* g, const krk_params* p,
         u->lightp[1] = 0.85f * Y;
         u->lightp[2] = 0.28f * Z;
     }
-    u->lightp[3] = 1.6f * p->v[KRK_K_LIGHT];
+    u->lightp[3] = 1.6f * p->v[KRK_K_LIGHT] * (1.0f + 2.5f * a->flash);
     u->rend[0] = KRK_V_EXT;
     u->rend[1] = 27.0f * p->v[KRK_K_SHADOWS];
     u->rend[2] = KRK_EMIS;
-    u->rend[3] = 0.16f * p->v[KRK_K_BLOOM];
+    u->rend[3] = 0.16f * p->v[KRK_K_BLOOM] * (1.0f + 3.0f * a->flash);
     u->view[0] = (float)out_w;
     u->view[1] = (float)out_h;
     u->view[2] = KRK_V_CAM;
