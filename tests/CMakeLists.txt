@@ -1426,6 +1426,15 @@ if(NOT SEL_AMIGA)
   target_link_libraries(krk_lava_test PRIVATE m)
   add_test(NAME krk-lava COMMAND krk_lava_test)
   set_tests_properties(krk-lava PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "krk_lava_ok")
+  # I1052b: the Amiga tier of viz_krakatoa (KRK_BACKEND_FX) driven through the plugin entry and VIZ_FRAME hook.
+  add_executable(krk_fx_plugin_test viz/krk_fx_plugin_test.c "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/krakatoa.c"
+                 "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_core.c"
+                 "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_lava_fx.c")
+  target_compile_definitions(krk_fx_plugin_test PRIVATE KRK_BACKEND_FX)
+  target_include_directories(krk_fx_plugin_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa")
+  target_link_libraries(krk_fx_plugin_test PRIVATE m)
+  add_test(NAME krk-fx-plugin COMMAND krk_fx_plugin_test)
+  set_tests_properties(krk-fx-plugin PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "krk_fx_plugin_ok")
   # I1246a/b: onset-to-visible latency and kick displacement on the GPU image, through the real viz tap.
   # Measurement tool, not a registered test yet: the kick pump is not visible
   # on the GPU image (I1246a open), so a pass/fail gate would fail. Run by hand:
