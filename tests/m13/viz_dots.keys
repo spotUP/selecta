@@ -1,5 +1,8 @@
 # I104d note dots: play selecta-test.mod (nuade, four voices), press v four times
 # (levels, scope, spectrum, note dots), quit.
+# Home is the default page: Tab (switch_view) opens Browse, then Down Enter enters songs, Down Enter plays.
+Tab
+wait 300
 Down
 Enter
 Down
