@@ -27,6 +27,11 @@ sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}"
 get_property(_sel_expect_plugins GLOBAL PROPERTY SEL_PLUGINS)
 get_property(_sel_expect_modules GLOBAL PROPERTY SEL_BUILTIN_MODULES)
 list(APPEND _sel_expect_plugins ${_sel_expect_modules})
+# I1242b: the CLI also loads the standalone modules from <exe dir>/plugins (apps/selecta-cli/CMakeLists.txt); SEL_CLI_MODULES is
+# exactly the list it copies there (built-ins plus standalone, set before test fixture modules exist), so the new ones count.
+get_property(_sel_cli_modules GLOBAL PROPERTY SEL_CLI_MODULES)
+list(REMOVE_ITEM _sel_cli_modules ${_sel_expect_modules})
+list(APPEND _sel_expect_plugins ${_sel_cli_modules})
 list(LENGTH _sel_expect_plugins SEL_EXPECT_PLUGINS)
 math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
@@ -35,6 +40,14 @@ sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGI
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SEL_ARCH)
 sel_cli_test(abi-host-layout "abi" "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_host.${SEL_ARCH}.txt")
 sel_cli_test(abi-voices-layout "abi voices" "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_voices.${SEL_ARCH}.txt")
+
+# I1242b: the CLI started with no SELECTA_PLUGIN_PATH finds the built-in and standalone modules in <exe dir>/plugins.
+if(SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND NOT SEL_AMIGA AND TARGET sel_module_xmp)
+  list(LENGTH _sel_expect_modules _cdp_builtin)
+  add_test(NAME cli-default-plugin-path
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DBUILTIN=${_cdp_builtin}" -DPLUGIN=xmp
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_default_plugins.cmake")
+endif()
 
 # T3: the engine runs a script through the real dispatch and emits the
 # expected events, including batch deferral, unknown and unimplemented verbs.
