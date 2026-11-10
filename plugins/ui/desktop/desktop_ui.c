@@ -1304,6 +1304,7 @@ static sel_gui_rect draw_panel(desk* d, const char* name) {
 static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap);
 static void draw_home(desk* d);
 static int32_t search_max_q16(desk* d);
+static int32_t search_scroll_q16(desk* d);
 static void draw_topbar(desk* d);
 static void select_sync(desk* d);
 static int select_key(desk* d, const sel_gui_input* ev);
@@ -9683,7 +9684,7 @@ static void online_draw_results(desk* d, sel_gui_rect mn, int32_t y) {
     for (k = 0; k < d->on_n; k++) {
         d->on_row[k].drawn = 0;
     }
-    y -= lpx_q16(d, d->search_q16); /* the hits scroll inside the body under the chips */
+    y -= lpx_q16(d, search_scroll_q16(d)); /* the hits scroll inside the body under the chips */
     if (d->on_state == 1u && d->on_n == 0u) {
         draw_empty_state(d, mn, y, "Searching");
         return;
@@ -9996,6 +9997,13 @@ static int32_t search_max_q16(desk* d) {
     int32_t over = search_content_h(d) + lpx(d, 16) - (mn.y + mn.h - search_body_y(d, mn));
     return over > 0 ? px_to_logical_ceil(d, over) << 16 : 0;
 }
+
+/* The offset the results are drawn and hit at: the stored one, held inside the current overflow. The stored offset (search_q16) is the user's
+ * place; a frame whose content is shorter than it was does not move it. */
+static int32_t search_scroll_q16(desk* d) {
+    int32_t max_q16 = search_max_q16(d);
+    return d->search_q16 > max_q16 ? max_q16 : d->search_q16;
+}
 /* I1231: the searching spinner: eight dots on a ring, the lead dot in the accent, the rest in the muted text colour, turning
  * with the UI clock. Every frame it draws asks for the next one. */
 static void draw_search_spinner(desk* d, int32_t cx, int32_t cy, int32_t r) {
@@ -10059,7 +10067,7 @@ static void draw_search(desk* d) {
             d->search_q16 = d->search_restore_q16;
             d->search_restore = 0;
         }
-        if (d->search_q16 > max_q16) { /* fewer results or a resize can shorten the overflow */
+        if (d->search_q16 > max_q16 && !desk_search_out(d)) { /* fewer results or a resize can shorten the overflow; while a source still reads Searching the view is not settled (its section is hidden until it answers, I1206a), so the place is kept and only the frame is held inside */
             d->search_q16 = max_q16;
         }
     }
@@ -10134,7 +10142,7 @@ static void draw_search(desk* d) {
         int32_t top = y, bottom = mn.y + mn.h, rh = lpx(d, SEARCH_ROW_H);
         int show = 0, hid = 0;
         char src[72] = "Library"; /* I1020: the source name the rows under the current heading carry as their badge */
-        y -= lpx_q16(d, d->search_q16); /* the groups scroll inside the body under the chips; rows outside it are skipped */
+        y -= lpx_q16(d, search_scroll_q16(d)); /* the groups scroll inside the body under the chips; rows outside it are skipped */
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
             const char* t = r->text != NULL ? r->text : "";
