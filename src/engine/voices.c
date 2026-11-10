@@ -8,6 +8,14 @@ static sel_mixer_voice* voice_at(const sel_voices* api, uint32_t voice) {
     return voice < m->voice_count ? &m->voices[voice] : NULL;
 }
 
+/* A mutating call starts a new observation period for event_frame (nuade voice_at);
+ * is_playing and get_state only read. */
+static sel_mixer_voice* voice_at_call(const sel_voices* api, uint32_t voice) {
+    sel_mixer_voice* v = voice_at(api, voice);
+    if (v != NULL) v->has_event = 0;
+    return v;
+}
+
 static void start(sel_mixer_voice* v, const sel_sample* s, uint32_t start_frame) {
     v->current = *s;
     v->has_queued = 0;
@@ -18,12 +26,12 @@ static void start(sel_mixer_voice* v, const sel_sample* s, uint32_t start_frame)
 }
 
 static void v_play(const sel_voices* api, uint32_t voice, const sel_sample* s, uint32_t start_frame) {
-    sel_mixer_voice* v = voice_at(api, voice);
+    sel_mixer_voice* v = voice_at_call(api, voice);
     if (v != NULL && s != NULL) start(v, s, start_frame);
 }
 
 static void v_queue(const sel_voices* api, uint32_t voice, const sel_sample* s) {
-    sel_mixer_voice* v = voice_at(api, voice);
+    sel_mixer_voice* v = voice_at_call(api, voice);
     if (v == NULL || s == NULL) return;
     if (v->playing) {
         v->queued = *s;
@@ -34,7 +42,7 @@ static void v_queue(const sel_voices* api, uint32_t voice, const sel_sample* s) 
 }
 
 static void v_stop(const sel_voices* api, uint32_t voice) {
-    sel_mixer_voice* v = voice_at(api, voice);
+    sel_mixer_voice* v = voice_at_call(api, voice);
     if (v != NULL) {
         v->playing = 0;
         v->has_queued = 0;
@@ -42,14 +50,14 @@ static void v_stop(const sel_voices* api, uint32_t voice) {
 }
 
 static void v_set_pitch_hz(const sel_voices* api, uint32_t voice, uint32_t hz_q8) {
-    sel_mixer_voice* v = voice_at(api, voice);
+    sel_mixer_voice* v = voice_at_call(api, voice);
     if (v == NULL || hz_q8 == 0) return;
     v->pitch_q8 = hz_q8;
     v->step = sel_mixer_hz_step(hz_q8, ((sel_mixer*)api->ctx)->rate);
 }
 
 static void v_set_period(const sel_voices* api, uint32_t voice, uint32_t period) {
-    sel_mixer_voice* v = voice_at(api, voice);
+    sel_mixer_voice* v = voice_at_call(api, voice);
     uint32_t rate = ((sel_mixer*)api->ctx)->rate;
     if (v == NULL || period == 0) return;
     v->step = sel_mixer_period_step(period, rate);
@@ -58,12 +66,12 @@ static void v_set_period(const sel_voices* api, uint32_t voice, uint32_t period)
 }
 
 static void v_set_volume(const sel_voices* api, uint32_t voice, uint32_t volume_q16) {
-    sel_mixer_voice* v = voice_at(api, voice);
+    sel_mixer_voice* v = voice_at_call(api, voice);
     if (v != NULL) v->volume_q16 = volume_q16 > 65536u ? 65536u : volume_q16;
 }
 
 static void v_set_pan(const sel_voices* api, uint32_t voice, int32_t pan) {
-    sel_mixer_voice* v = voice_at(api, voice);
+    sel_mixer_voice* v = voice_at_call(api, voice);
     if (v != NULL) v->pan = pan < -32768 ? -32768 : (pan > 32767 ? 32767 : pan);
 }
 
@@ -85,6 +93,9 @@ static void v_get_state(const sel_voices* api, uint32_t voice, sel_voice_state* 
     out->pitch_q8 = 0;
     out->volume_q16 = 0;
     out->pan = 0;
+    out->wraps = 0;
+    out->event_frame = 0;
+    out->frame = 0;
     if (v == NULL) return;
     out->playing = v->playing;
     out->sample = v->playing ? &v->current : NULL;
@@ -92,6 +103,9 @@ static void v_get_state(const sel_voices* api, uint32_t voice, sel_voice_state* 
     out->pitch_q8 = v->pitch_q8;
     out->volume_q16 = v->volume_q16;
     out->pan = v->pan;
+    out->wraps = v->wraps;
+    out->event_frame = v->has_event ? v->event_frame : 0;
+    out->frame = ((const sel_mixer*)api->ctx)->frame;
 }
 
 const sel_voices* sel_mixer_voices(sel_mixer* m) {

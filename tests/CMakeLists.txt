@@ -431,7 +431,7 @@ endif()
 # the row that implements it.
 add_executable(mixer_test mixer/mixer_test.c)
 target_link_libraries(mixer_test PRIVATE selecta_core)
-add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc default clip loop)
+add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc default clip loop wraps)
 
 # T53 unit part: LED -3 dB point on a swept sine, width identities, Paula bypass.
 add_executable(stage_test mixer/stage_test.c)
@@ -1006,6 +1006,13 @@ if(NOT SEL_AMIGA)
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/nuade_soundmon_decode.sh $<TARGET_FILE:selecta-cli>
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-soundmon-decode)
   set_tests_properties(nuade-soundmon-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_soundmon_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  # I1242d1: Ben Daglish SID (.bds) renders non-silent through the render entry point; the voices shim must carry the mixer's wraps to the driver.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-bds-voices)
+  add_test(NAME nuade-bds-voices
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/nuade_bds_voices.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/nuade-bds-voices)
+  set_tests_properties(nuade-bds-voices PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "nuade_bds_voices_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 endif()
 

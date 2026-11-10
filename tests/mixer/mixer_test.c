@@ -315,6 +315,64 @@ static void test_default(void) {
     CHECK(sel_mixer_default_resampler(none) == SEL_MIX_RESAMPLE_LINEAR, "unknown machine -> linear");
 }
 
+/* I1242d1: wraps, event_frame and frame mirror nuade_mixer.c. Loop 2..4 of a 4 frame sample at one frame per
+ * output frame: the wrap is settled when the position reaches 4 (output frames 4, 6, 8, 10). */
+static void test_wraps(void) {
+    static const int16_t a[4] = {400, 800, 1200, 1600};
+    static const int16_t q[3] = {2000, 2400, 2800};
+    int16_t out[16];
+    sel_mixer m;
+    sel_sample l, t;
+    const sel_voices* v;
+    sel_voice_state st;
+    memset(&l, 0, sizeof l);
+    memset(&t, 0, sizeof t);
+    l.data = a;
+    l.format = SEL_SAMPLE_S16;
+    l.length = 4;
+    l.loop_start = 2;
+    l.loop_length = 2;
+    t.data = q;
+    t.format = SEL_SAMPLE_S16;
+    t.length = 3;
+    setup(&m, 1, SEL_MIX_RESAMPLE_NONE);
+    v = sel_mixer_voices(&m);
+    unit_voice(&m, 0, VEC_RATE * 256u);
+    v->play(v, 0, &l, 0);
+    v->get_state(v, 0, &st);
+    CHECK(st.wraps == 0 && st.event_frame == 0 && st.frame == 0, "fresh voice: %u %u %u", (unsigned)st.wraps,
+          (unsigned)st.event_frame, (unsigned)st.frame);
+    sel_mixer_mix(&m, out, 8);
+    v->get_state(v, 0, &st);
+    CHECK(st.wraps == 2, "2 wraps after 8 frames, got %u", (unsigned)st.wraps);
+    CHECK(st.event_frame == 4, "first wrap at frame 4, got %u", (unsigned)st.event_frame);
+    CHECK(st.frame == 8, "frame 8, got %u", (unsigned)st.frame);
+    v->get_state(v, 0, &st);
+    CHECK(st.event_frame == 4, "get_state does not clear the event");
+    v->set_volume(v, 0, 65536u);
+    v->get_state(v, 0, &st);
+    CHECK(st.event_frame == 0 && st.wraps == 2, "a voice call starts a new observation period");
+    sel_mixer_mix(&m, out, 4);
+    v->get_state(v, 0, &st);
+    CHECK(st.wraps == 4 && st.event_frame == 8 && st.frame == 12, "wraps %u event %u frame %u", (unsigned)st.wraps,
+          (unsigned)st.event_frame, (unsigned)st.frame);
+    sel_mixer_advance(&m, 4);
+    v->get_state(v, 0, &st);
+    CHECK(st.frame == 16 && st.wraps == 6, "advance counts frames and wraps: %u %u", (unsigned)st.frame,
+          (unsigned)st.wraps);
+    /* a switch to the queued sample counts as a wrap, the one-shot end as an event only */
+    setup(&m, 1, SEL_MIX_RESAMPLE_NONE);
+    v = sel_mixer_voices(&m);
+    unit_voice(&m, 0, VEC_RATE * 256u);
+    l.loop_length = 0;
+    v->play(v, 0, &l, 0);
+    v->queue(v, 0, &t);
+    sel_mixer_mix(&m, out, 10);
+    v->get_state(v, 0, &st);
+    CHECK(st.wraps == 1 && st.event_frame == 4, "switch: wraps %u event %u", (unsigned)st.wraps, (unsigned)st.event_frame);
+    CHECK(st.playing == 0, "the one-shot ended at frame 7 without a further wrap");
+}
+
 int main(int argc, char** argv) {
     if (wanted(argc, argv, "period")) test_period();
     if (wanted(argc, argv, "none")) test_none();
@@ -324,6 +382,7 @@ int main(int argc, char** argv) {
     if (wanted(argc, argv, "default")) test_default();
     if (wanted(argc, argv, "clip")) test_clip();
     if (wanted(argc, argv, "loop")) test_loop();
+    if (wanted(argc, argv, "wraps")) test_wraps();
     printf("mixer_test failures=%d\n", failures);
     return failures == 0 ? 0 : 1;
 }

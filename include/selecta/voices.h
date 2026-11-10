@@ -27,6 +27,13 @@ typedef struct sel_voice_state {
     uint32_t pitch_q8;        /* Hz, 24.8 */
     uint32_t volume_q16;      /* 0..65536 */
     int32_t pan;              /* -32768..32767 */
+    /* Appended (I1242d1), mirrors NuadeVoiceState. The host fills the whole struct, so a caller
+     * passes a sel_voice_state built from this header. A backend that cannot observe loop wraps
+     * (Paula hardware plays by DMA) reports 0 in all three. */
+    uint32_t wraps;       /* loop wraps and switches to a queued sample since the voice was created */
+    uint64_t event_frame; /* output frame of the first wrap, switch or end since the last play/queue/stop/set_*
+                           * call on this voice; 0 when none */
+    uint64_t frame;       /* output frames mixed or advanced since the mixer started */
 } sel_voice_state;
 
 typedef struct sel_voices sel_voices;
