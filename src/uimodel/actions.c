@@ -187,6 +187,10 @@ void sel_uim_sysfile_text(const char* label, const char* reason, char* out, size
     snprintf(out, cap, "%s is needed to play this song. %s Pick the file from disk, or retry the download.", label != NULL ? label : "A system file", why);
 }
 
+const char* sel_uim_tip_viz_close(void) {
+    return "Close Visualizer";
+}
+
 const char* sel_uim_tip_np_panel(int hidden) {
     return hidden ? "Show Now Playing Panel" : "Hide Now Playing Panel";
 }

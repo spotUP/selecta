@@ -686,6 +686,11 @@ typedef struct desk {
     uint32_t viz_panes;          /* panes the last Visualizer page drew */
     uint32_t viz_sigpath;        /* signal path texts drawn */
     uint32_t viz_visual_draws;   /* visual layout frames drawn */
+    int viz_close_on;            /* I1248: the visual layout's close button is shown (the pointer moved over the visualizer lately) */
+    int viz_close_hot;           /* 1 while the pointer is on the close button */
+    uint32_t viz_close_until;    /* UI clock when the idle pointer hides the close button */
+    sel_gui_rect viz_close_rect; /* where draw_visual put the button last */
+    uint32_t viz_close_paints;   /* close buttons painted (sentinel) */
     uint32_t viz_song_ms;        /* song position at the newest frame drawn */
     int viz_page;                /* --view viz: the main region shows the Visualizer page */
     sel_gui_rect np_viz;         /* the strip Now Playing gave the visualizer, w 0 = none */
@@ -7248,6 +7253,24 @@ static void viz_sigpath_draw(desk* d, sel_gui_rect r) {
     d->viz_sigpath++;
 }
 
+enum { TIP_DELAY_MS = 600, TIP_BTN = 32, TIP_H = 24, VIZ_CLOSE_IDLE_MS = 2500 /* I1248: the idle pointer hides the close button */ };
+/* I1248: the close button in the upper right corner of the visual layout. Its rectangle is always recorded (the hit test and the
+ * tooltip box read it); it is painted only while the pointer has moved over the visualizer lately. Same round icon button as the
+ * other icon buttons: a surface-raised disc that takes the surface-hover token under the pointer, the lucide x inside. */
+static void viz_close_draw(desk* d, sel_gui_rect all) {
+    int32_t sz = lpx(d, TIP_BTN), mg = lpx(d, HOME_MARGIN) / 2;
+    sel_gui_rect r = rect_of(all.x + all.w - mg - sz, all.y + mg, sz, sz);
+    d->viz_close_rect = r;
+    if (!d->viz_close_on) {
+        return;
+    }
+    sel_gui_round_rect(d->canvas, r, r.h / 2,
+                       ARGB(d->theme.token[d->viz_close_hot ? SEL_GUI_TOKEN_SURFACE_HOVER : SEL_GUI_TOKEN_SURFACE_RAISED]));
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(r.x + r.w / 4, r.y + r.h / 4, r.w / 2, r.h / 2), r.w / 2,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    d->viz_close_paints++;
+}
+
 /* The visual layout: the whole canvas, the visualizer above the signal path. */
 static void draw_visual(desk* d) {
     int32_t mg = lpx(d, HOME_MARGIN), th = lpx(d, 24);
@@ -7255,6 +7278,7 @@ static void draw_visual(desk* d) {
     sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     viz_draw_area(d, rect_of(mg, mg, all.w - 2 * mg, all.h - 3 * mg - th), d->viz_sel);
     viz_sigpath_draw(d, rect_of(mg, all.h - mg - th, all.w - 2 * mg, th));
+    viz_close_draw(d, all);
     sel_gui_dirty_add(d->canvas, all);
     d->viz_visual_draws++;
 }
@@ -7711,7 +7735,7 @@ static const char* lib_kind_name(uint32_t kind) {
 }
 
 /* I244: the action-bound controls besides the transport row (see desk_ctl_rect). */
-enum { CTL_VIZ_N = 2 * DESK_VIZ_MAX, CTL_LIKE = CTL_VIZ_N, CTL_NP_ADD = CTL_VIZ_N + 1, CTL_NP_PANEL = CTL_VIZ_N + 2, CTL_COUNT = CTL_VIZ_N + 3 }; /* I619: the add button and the panel toggle */
+enum { CTL_VIZ_N = 2 * DESK_VIZ_MAX, CTL_LIKE = CTL_VIZ_N, CTL_NP_ADD = CTL_VIZ_N + 1, CTL_NP_PANEL = CTL_VIZ_N + 2, CTL_VIZ_CLOSE = CTL_VIZ_N + 3, CTL_COUNT = CTL_VIZ_N + 4 }; /* I619: the add button and the panel toggle; I1248: the visual layout's close button */
 #define TIP_CTL_BASE ((int32_t)(TRANSPORT_COUNT + DOOR_COUNT + LIB_STYLES))
 static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c); /* defined with the tooltip tracker */
 static const char* desk_ctl_action(const desk* d, uint32_t c);
@@ -7924,6 +7948,9 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
                           (unsigned)d->viz_n, (unsigned)d->uim.layout, (unsigned)d->viz_panes, (unsigned)d->viz_sigpath,
                           (unsigned)d->viz_prims, (unsigned)d->viz_visual_draws, d->np_viz.w > 0);
+    o = dump_put(d, o, "viz_close shown %d hot %d paints %u rect %d %d %d %d\n", d->viz_close_on, d->viz_close_hot,
+                 (unsigned)d->viz_close_paints, (int)d->viz_close_rect.x, (int)d->viz_close_rect.y, (int)d->viz_close_rect.w,
+                 (int)d->viz_close_rect.h);
     for (i = 0; i < d->viz_n; i++) { /* I1052: plugin counters through the optional VIZ_STATS hook */
         char line[256];
         if (d->viz_stats[i] != NULL && d->viz_stats[i](line, (uint32_t)sizeof line) > 0u) {
@@ -11355,7 +11382,6 @@ static int desk_should_draw(const desk* d, int animated) {
 /* ---- Tooltips (DUI-P3-6): a pointer resting 600 ms on a transport button shows the action's tooltip, with its key in
  * brackets; moving off or clicking hides it. The buttons are the actions named here, in this order, centred in the
  * player region ("play" sits where the placeholder play box is drawn). ---- */
-enum { TIP_DELAY_MS = 600, TIP_BTN = 32, TIP_H = 24 };
 /* The transport row, left to right (DUI-P4-1): previous subsong, shuffle, previous, play or pause, next, repeat, next
  * subsong. The play slot sits in the middle where the placeholder box was drawn. */
 
@@ -12975,6 +13001,9 @@ static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c) {
     if (c == (uint32_t)CTL_NP_PANEL) {
         return np_toggle_rect(d);
     }
+    if (c == (uint32_t)CTL_VIZ_CLOSE) {
+        return d->uim.layout == SEL_UIM_LAYOUT_VISUAL && d->viz_close_on ? d->viz_close_rect : rect_of(0, 0, 0, 0);
+    }
     return c % VIZ_MAX < d->viz_n ? d->viz_btn[c / VIZ_MAX][c % VIZ_MAX] : rect_of(0, 0, 0, 0);
 }
 
@@ -12984,6 +13013,9 @@ static const char* desk_ctl_action(const desk* d, uint32_t c) {
     }
     if (c == (uint32_t)CTL_NP_PANEL) {
         return "np_panel";
+    }
+    if (c == (uint32_t)CTL_VIZ_CLOSE) {
+        return "layout_full";
     }
     return c == (uint32_t)CTL_LIKE ? "like" : d->viz_id[c % VIZ_MAX];
 }
@@ -13014,8 +13046,14 @@ static uint32_t desk_tip_targets(const desk* d) {
 
 /* The pointer moved to canvas (x, y), or clicked (x < 0): a tooltip that is up goes away when the button changes;
  * the delay restarts at the new button. Returns 1 when the picture changed. */
+static int desk_tip_set(desk* d, int32_t btn);
 static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
-    int32_t btn = x < 0 ? 0 : desk_button_at(d, x, y);
+    int32_t btn;
+    if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) { /* I1248: only the close button is on screen; the full layout's controls are not */
+        btn = x >= 0 && desk_ctl_at(d, x, y) == (int32_t)CTL_VIZ_CLOSE + 1 ? TIP_CTL_BASE + (int32_t)CTL_VIZ_CLOSE + 1 : 0;
+        return desk_tip_set(d, btn);
+    }
+    btn = x < 0 ? 0 : desk_button_at(d, x, y);
     if (btn == 0 && x >= 0 && region_rect(d, "sidebar").w <= lpx(d, 120)) { /* the icon-only rail has no labels: its doors get the tooltip */
         int32_t door = sidebar_door_at(d, x, y);
         btn = door < 0 ? 0 : (int32_t)TRANSPORT_COUNT + 1 + door;
@@ -13035,6 +13073,12 @@ static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
         int32_t c = desk_ctl_at(d, x, y);
         btn = c > 0 ? TIP_CTL_BASE + c : 0;
     }
+    return desk_tip_set(d, btn);
+}
+
+/* The tooltip tracker's last step: the button under the pointer is btn (0 = none). A tooltip that is up goes away when the
+ * button changes; the delay restarts at the new button. */
+static int desk_tip_set(desk* d, int32_t btn) {
     int hide = d->tip_shown > 0 && btn != d->tip_shown;
     if (btn != d->tip_btn) {
         d->tip_btn = btn;
@@ -13074,6 +13118,8 @@ static void desk_tip_tick(desk* d) {
             snprintf(d->tip_text, sizeof d->tip_text, "%s", sel_uim_tip_like(d->np_liked));
         } else if (c == (uint32_t)CTL_NP_PANEL) {
             snprintf(d->tip_text, sizeof d->tip_text, "%s", sel_uim_tip_np_panel(d->detail_hidden));
+        } else if (c == (uint32_t)CTL_VIZ_CLOSE) { /* I1248 */
+            snprintf(d->tip_text, sizeof d->tip_text, "%s", sel_uim_tip_viz_close());
         } else {
             a = desk_action_by_id(desk_ctl_action(d, c));
             if (a == NULL) {
@@ -13182,6 +13228,10 @@ static int hover_main_painted(const desk* d) {
  * the test clock (desk_advance) and the live loop, so a timer cannot be ticked in one and forgotten in the other. */
 static uint32_t desk_timers_wait(const desk* d) {
     uint32_t w = desk_tip_wait(d), s = desk_search_wait(d);
+    if (d->viz_close_on && d->viz_close_until > d->now_ms) { /* I1248: the idle pointer hides the close button */
+        uint32_t c = d->viz_close_until - d->now_ms;
+        w = w == 0u || c < w ? c : w;
+    }
     if (s > 0u && (w == 0u || s < w)) {
         w = s;
     }
@@ -13194,9 +13244,17 @@ static uint32_t desk_timers_wait(const desk* d) {
 
 /* Runs every timer that is due at the current UI clock. Returns 1 when the toast changed and the picture needs a frame. */
 static int desk_timers_tick(desk* d) {
+    int hid = 0;
     desk_tip_tick(d);
     desk_search_tick(d);
-    return desk_toast_tick(d);
+    if (d->viz_close_on && d->now_ms >= d->viz_close_until) { /* I1248 */
+        d->viz_close_on = 0;
+        d->viz_close_hot = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        hid = 1;
+    }
+    return desk_toast_tick(d) | hid;
 }
 
 /* I668: one step of the sidebar width tween, run after the clock moved (test clock and live loop alike): lays the window out
@@ -15019,6 +15077,40 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
     return 1;
 }
 
+/* I1248: a pointer event in the visual layout. A move shows the close button for VIZ_CLOSE_IDLE_MS; the button lights under the
+ * pointer and carries the tooltip; a primary click on it runs the layout_full action line (what C-1 runs). Returns 1 when the
+ * picture changed. */
+static int desk_viz_close_pointer(desk* d, const sel_gui_input* ev) {
+    int hot = d->viz_close_on && in_rect(d->viz_close_rect, ev->x, ev->y);
+    int changed = 0;
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && hot) {
+        const sel_uim_action* a = desk_action_by_id("layout_full");
+        if (a != NULL && desk_send(d, a->line)) {
+            d->clicks++;
+            d->actions_fired++;
+            d->viz_close_on = 0;
+            d->viz_close_hot = 0;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
+        return 0;
+    }
+    if (ev->kind != SEL_GUI_IN_MOVE) {
+        return 0;
+    }
+    hot = in_rect(d->viz_close_rect, ev->x, ev->y);
+    d->viz_close_until = d->now_ms + VIZ_CLOSE_IDLE_MS;
+    if (!d->viz_close_on || hot != d->viz_close_hot) {
+        d->viz_close_on = 1;
+        d->viz_close_hot = hot;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        changed = 1;
+    }
+    return desk_tip_pointer(d, ev->x, ev->y) | changed;
+}
+
 /* A pointer event: the view handles it, and the tooltip tracker follows the transport buttons (DUI-P3-6). */
 static int desk_pointer(desk* d, const sel_gui_input* ev) {
     int tip;
@@ -15031,7 +15123,7 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
             d->ptr_x = ev->x;
             d->ptr_y = ev->y;
         }
-        return 0;
+        return desk_viz_close_pointer(d, ev);
     }
     if (ev->kind == SEL_GUI_IN_MOVE) {
         d->ptr_x = ev->x;
