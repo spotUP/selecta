@@ -45,11 +45,13 @@ set(common --keys "${WORK}/wait.keys" --exec "QUEUE_ADD ${SONGS}/selecta-test.mo
 dui_run(text --ui text --screen-dump "${WORK}/text.screen" ${common})
 dui_run(desk --ui desktop --backend mem --stats ${common})
 file(READ "${WORK}/text.screen" screen)
-if(NOT screen MATCHES "Subsong 1/1  ([0-9][0-9]:[0-9][0-9]) / [^\n]*(LED Filter On)")
-  message(FATAL_ERROR "the text UI header lacks the clock and stage strings:\n${screen}")
+# I1222g: the text UI player bar is one row at 80x24 (title, play word, clock / length, volume); the stage status only shows on the
+# two-row bar, so the text UI is checked for the clock and the desktop status carries the stage settings from the shared frame.
+if(NOT screen MATCHES ">  ([0-9][0-9]:[0-9][0-9]) / [^\n]*Volume 100")
+  message(FATAL_ERROR "the text UI player bar lacks the clock:\n${screen}")
 endif()
 set(text_clock "${CMAKE_MATCH_1}")
-set(stage "${CMAKE_MATCH_2}")  # the 80 column dump cuts the line after the first stage setting
+set(stage "LED Filter On")
 if(NOT desk MATCHES "desktop_ui closed [^\n]* clock=([^ \n]+) status=([^\n]*)\n")
   message(FATAL_ERROR "the desktop UI printed no status:\n${desk}")
 endif()

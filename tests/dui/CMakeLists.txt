@@ -122,7 +122,7 @@ if(NOT SEL_AMIGA)
       set(tlabel sync-banner)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
-    elseif(tname STREQUAL "dui-aga-native-text" OR tname STREQUAL "dui-list-key-frames" OR tname STREQUAL "dui-list-keys-playlists" OR tname STREQUAL "dui-idle-turns" OR tname STREQUAL "dui-library-scroll" OR tname STREQUAL "dui-library-scroll-drag" OR tname STREQUAL "dui-sources-counters" OR tname STREQUAL "dui-sync-offer-keys" OR tname STREQUAL "dui-quit-dialog") # I526 I525 I541 I549 I546: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
+    elseif(tname STREQUAL "dui-aga-native-text" OR tname STREQUAL "dui-list-key-frames" OR tname STREQUAL "dui-list-keys-playlists" OR tname STREQUAL "dui-idle-turns" OR tname STREQUAL "dui-library-scroll" OR tname STREQUAL "dui-library-scroll-drag" OR tname STREQUAL "dui-sources-counters" OR tname STREQUAL "dui-sync-offer-keys" OR tname STREQUAL "dui-quit-dialog" OR tname STREQUAL "dui-search-spinner" OR tname STREQUAL "dui-source-page-search" OR tname STREQUAL "dui-viz-close" OR tname STREQUAL "dui-viz-falloff-live" OR tname STREQUAL "dui-viz-hover-behind" OR tname STREQUAL "dui-viz-tip-flicker") # I1305e I526 I525 I541 I549 I546: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
       string(REPLACE "dui-" "" tlabel "${tname}")
     elseif(tname STREQUAL "dui-view-exec-order") # I398: --view enters its page before --exec runs; ledger row, not a plan item
       set(tlabel view-exec-order)

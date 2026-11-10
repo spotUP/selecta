@@ -3438,7 +3438,7 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32 AND SELECTA_UI_DESKTOP)
   add_test(NAME dui-open-async
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
       "-DPLUGINS=${SEL_SYSFILE_PROBE_DIR}" -P "${SEL_NET_DIR}/open_async.cmake")
-  set_tests_properties(dui-open-async PROPERTIES LABELS "m3;dui" FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+  set_tests_properties(dui-open-async PROPERTIES LABELS "m3;open-async" FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 120 PASS_REGULAR_EXPRESSION "open_async_ok")
 endif()
 
