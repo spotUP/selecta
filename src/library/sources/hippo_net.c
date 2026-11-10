@@ -119,6 +119,41 @@ static void base_load(const char* dir, char* out, size_t cap) {
     }
 }
 
+/* The two list index files (JSON feed, TSV feed) fetched into `dir`; `base` is the server root without a trailing '/'.
+ * Returns 1 when at least one was fetched and accepted. Shared by the sync and the lazy open (a cache cleared after the
+ * sync leaves the playlists in the library but no index to name their .prg files). */
+static int fetch_index(const sel_host* host, const sel_net* net_svc, const char* dir, const char* base, size_t n,
+                       sel_hippo_net_stats* net) {
+    char json[PATH_BYTES];
+    char tsv[PATH_BYTES];
+    char url[URL_BYTES];
+    unsigned long got = 0;
+    int have_json, have_tsv;
+
+    if (snprintf(json, sizeof json, "%s/%s", dir, SEL_HIPPO_LIST_JSON) >= (int)sizeof json ||
+        snprintf(tsv, sizeof tsv, "%s/%s", dir, SEL_HIPPO_LIST_TSV) >= (int)sizeof tsv) {
+        return 0;
+    }
+    snprintf(url, sizeof url, "%.*s/" SEL_HIPPO_API_PATH, (int)n, base);
+    have_json = net_svc->get_file_checked(host, url, json, json_ok, &net->http_requests, &got) == 200;
+    net->json_bytes = have_json ? (uint32_t)got : 0u;
+    snprintf(url, sizeof url, "%.*s/" SEL_HIPPO_TSV_PATH, (int)n, base);
+    have_tsv = net_svc->get_file_checked(host, url, tsv, tsv_ok, &net->http_requests, &got) == 200;
+    net->tsv_bytes = have_tsv ? (uint32_t)got : 0u;
+    return have_json || have_tsv;
+}
+
+static int file_exists(const char* dir, const char* name) {
+    char path[PATH_BYTES];
+    FILE* in;
+
+    if (snprintf(path, sizeof path, "%s/%s", dir, name) >= (int)sizeof path || (in = fopen(path, "rb")) == NULL) {
+        return 0;
+    }
+    fclose(in);
+    return 1;
+}
+
 int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id) {
     sel_sync_ctx ctx;
     sel_host host;
@@ -150,6 +185,17 @@ int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id)
     memset(&f, 0, sizeof f);
     f.title = title;
     sel_hippo_each_file(&host, dir, find_title, &f);
+    if (!f.found && !file_exists(dir, SEL_HIPPO_LIST_JSON) && !file_exists(dir, SEL_HIPPO_LIST_TSV)) {
+        /* No index at all: the cache was cleared after the sync. Fetch it again from the saved server, then look once more. */
+        char server[URL_BYTES - 256u];
+        sel_hippo_net_stats ns;
+
+        memset(&ns, 0, sizeof ns);
+        base_load(dir, server, sizeof server);
+        if (fetch_index(&host, net_svc, dir, server, strlen(server), &ns)) {
+            sel_hippo_each_file(&host, dir, find_title, &f);
+        }
+    }
     if (!f.found) {
         return 0; /* a playlist the user made in that folder: nothing to fetch */
     }
@@ -199,12 +245,7 @@ int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_st
     const sel_net* net_svc = host->net != NULL ? host->net(host) : NULL;
     const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
     char dir[PATH_BYTES - 64u];
-    char json[PATH_BYTES];
-    char tsv[PATH_BYTES];
-    char url[URL_BYTES];
-    unsigned long got = 0;
     size_t n = strlen(base);
-    int have_json, have_tsv;
 
     memset(net, 0, sizeof *net);
     memset(stats, 0, sizeof *stats);
@@ -214,18 +255,10 @@ int sel_hippo_net_sync(const sel_host* host, const char* base, sel_hippo_sync_st
     if (n == 0 || n >= URL_BYTES - 64u) {
         return 0;
     }
-    if (net_svc == NULL || cat == NULL || !cat->cache_dir(host, "hippo", dir, sizeof dir) ||
-        snprintf(json, sizeof json, "%s/%s", dir, SEL_HIPPO_LIST_JSON) >= (int)sizeof json ||
-        snprintf(tsv, sizeof tsv, "%s/%s", dir, SEL_HIPPO_LIST_TSV) >= (int)sizeof tsv) {
+    if (net_svc == NULL || cat == NULL || !cat->cache_dir(host, "hippo", dir, sizeof dir)) {
         return 0;
     }
-    snprintf(url, sizeof url, "%.*s/" SEL_HIPPO_API_PATH, (int)n, base);
-    have_json = net_svc->get_file_checked(host, url, json, json_ok, &net->http_requests, &got) == 200;
-    net->json_bytes = have_json ? (uint32_t)got : 0u;
-    snprintf(url, sizeof url, "%.*s/" SEL_HIPPO_TSV_PATH, (int)n, base);
-    have_tsv = net_svc->get_file_checked(host, url, tsv, tsv_ok, &net->http_requests, &got) == 200;
-    net->tsv_bytes = have_tsv ? (uint32_t)got : 0u;
-    if (!have_json && !have_tsv) {
+    if (!fetch_index(host, net_svc, dir, base, n, net)) {
         return 0;
     }
     base_save(dir, base, n);
