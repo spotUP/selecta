@@ -14265,6 +14265,15 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (d->dlg_open) { /* the confirm dialog owns the keyboard */
         return dlg_key(d, ev);
     }
+    if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL && ev->code == 27u && ev->mods == 0u) {
+        /* Johan 2026-11-10: "i still cant exit the fullscreen effect". Escape leaves the visual layout through the Full Layout
+         * action (C-1); before, it fell through to the quit question (I623), drawn under the visualizer and so invisible. */
+        const sel_uim_action* a = desk_action_by_id("layout_full");
+        if (a != NULL && desk_send(d, a->line)) {
+            d->actions_fired++;
+        }
+        return 1;
+    }
     if (d->stats_open && ev->code == 27u) { /* Escape collapses the Library statistics panel (I455) */
         lib_stats_toggle(d, 0);
         return 1;
