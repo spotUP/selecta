@@ -84,6 +84,8 @@ static const sel_uim_action k_actions[] = {
      "View/Visualizer/Spectrum", "C-7", "PREF_SET ui.desktop.viz viz_spectrum"},
     {"viz_sidregs", "SID PatternScope Visualizer", "Draw the SID chip registers of the playing tune", "cpu",
      "View/Visualizer/SID PatternScope", "C-8", "PREF_SET ui.desktop.viz viz_sidregs"},
+    {"viz_krakatoa", "Krakatoa Smoke Visualizer", "Draw the song as simulated smoke", "wind",
+     "View/Visualizer/Krakatoa Smoke", "C-9", "PREF_SET ui.desktop.viz viz_krakatoa"},
     {"ui_text", "Switch to Text Interface", "Hand the session to the text interface", "terminal",
      "View/Switch to Text Interface", "C-t", "UI_SWITCH text"},
     {"ui_desktop", "Switch to Desktop Interface", "Hand the session to the desktop interface", "monitor",
