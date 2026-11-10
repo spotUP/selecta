@@ -22,7 +22,7 @@ Default-path finding: with no env var the CLI loaded only 39 built-in modules (b
 | ext | claimed by | sample | detail |
 |---|---|---|---|
 | ay | bbmp_ay,gme | <scratch>/dl/ay/ay.pt3 | rc=1 error no_replayer /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
-| ct | bbmp_cybertracker | ~/Code/DEViLBOX/public/data/songs/iff-smus/Red Leopard/instruments/Ct.lead1.instr | rc=1 error no_replayer /Users/spot/Code/DEViLBOX/public/data/songs/iff-smus/Red Leopar |
+| ct | RENDERS with system file (I1242g rerun) | Modland Cybertracker C64 CyberBrain/china.ct | replayer=bbmp_cybertracker, rendered_frames=264600, peak 25610 with cybertracker101.d64 (sha256 000ccb71...c8f8c148 matches the declared one, fetched from the plugin-declared hippoplayer.se URL). ~/.config/selecta does NOT hold the file, so with that dir alone the render still fails system_file_missing: setup, not a replayer bug |
 | dsm | openmpt | <scratch>/dl/dsm/dsm.pdx | rc=1 error no_replayer /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
 | jpn | nuade | <scratch>/dl/jpn/jpn.road | rc=1 error no_replayer /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
 | md | nuade | third_party/furnace/extern/SAASound/README.MD | rc=1 error no_replayer /Users/spot/Code/MusicPlayer/third_party/furnace/extern/SAASoun |
@@ -40,13 +40,13 @@ Default-path finding: with no env var the CLI loaded only 39 built-in modules (b
 |---|---|---|---|
 | adl | adplug | ~/Code/DEViLBOX/public/data/songs/Ad Lib/ADL/Paul Mudra/eob2 - crimson1.adl | rc=1 error open_failed /Users/spot/Code/DEViLBOX/public/data/songs/Ad Lib/ADL/Paul Mud |
 | mcr | nuade | <scratch>/dl/mcr/mcr.aquablast | rc=1 error open_failed /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
-| ned | bbmp_ned | ~/.cache/selecta/files/modland/pub/modules/NerdTracker 2/Memblers/nudrom1.ned | rc=1 error open_failed /Users/spot/.cache/selecta/files/modland/pub/modules/NerdTracke |
+| ned | RENDERS (I1242g rerun) | Modland NerdTracker 2 Memblers/gradius.ned, --config-dir with nt2replay.bin/.lbl | replayer=bbmp_ned, rendered_frames=264600, peak 23023; earlier BAD SAMPLE verdict was the missing --config-dir |
 | pap | nuade | ~/Code/DEViLBOX/public/data/songs/formats/Ivanhoe_ivanhoe - hiscore.pap | rc=1 error open_failed /Users/spot/Code/DEViLBOX/public/data/songs/formats/Ivanhoe_iva |
 | pn | nuade | <scratch>/dl/pn/pn.tetris | rc=1 error open_failed /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
 | sdr | nuade | <scratch>/dl/sdr/sdr.nobuddiesland 1 | rc=1 error open_failed /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
-| sho | bbmp_shroom | tests/m3/fixtures/.cache/netke.sho | rc=1 error open_failed tests/m3/fixtures/.cache/netke.sho |
+| sho | BLOCKED on user file (I1242g rerun) | Modland Shroom Andy Lee/untitled.sho | with --config-dir: system_file_missing bbmp_shroom:mariopants-notes.wav; not in ~/.config/selecta, user-supplied Nintendo data, no download URL (hippoplayer.se 404). Not renderable without Johan supplying notes.wav |
 | sjs | nuade | <scratch>/dl/sjs/sjs.jb | rc=1 error open_failed /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
-| spm | stonetracker | ~/Code/DEViLBOX/public/data/songs/stonetracker/hypnosphere.spm | rc=1 error open_failed /Users/spot/Code/DEViLBOX/public/data/songs/stonetracker/hypnos |
+| spm | BLOCKED on user file (I1242g rerun) | Modland Stonetracker Bosco/teinteremix22.spm + .sps | with --config-dir: system_file_missing stonetracker:StonePlayer_Hard.bin; not in ~/.config/selecta, not downloadable (hippoplayer.se 404; inside Aminet stonefree2.lha, SCMk unpack is a follow-up). Not renderable without the file |
 | tpu | nuade | <scratch>/dl/tpu/tpu.timelock title | rc=1 error open_failed /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/ed7142ab-f |
 
 ### silent output: replayer opened the file, 6 s of all-zero samples (6)
@@ -656,3 +656,5 @@ Table: every FAIL/HANG and every Modland extension whose online verdict differs 
 | aminet | mad | FAIL |  | 1 | open failed after fetch (companion missing or bad sample) | mods/smpl/Mad.lha error open_failed aminet:mods/smpl/Mad.lha |
 
 Run finished (all jobs done). The fetch cache and WAVs were deleted; the TSV stays in the session scratchpad oa/verdicts.tsv.
+
+I1242g rerun (2026-11-10): selecta-cli from build/host with --config-dir: ned and ct render non-silent; sho and spm stay blocked on user-supplied system files absent from ~/.config/selecta. Audit renders go through tools/format_audit_render.sh, which always passes --config-dir (AUDIT_CONFIG_DIR, default ~/.config/selecta); self-check tests/m3/format_audit_render_selftest.sh.
