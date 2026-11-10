@@ -404,6 +404,7 @@ typedef struct desk {
     uint32_t search_follows; /* sentinel (I1161): keyboard moves that ran the Search list scroll-follow */
     int32_t side_cur;        /* I1183: the sidebar stop's keyboard cursor: shown doors in slot order, then the Your Library rows; -1 = none */
     uint32_t side_cur_draws; /* frames that drew the cursor (sentinel) */
+    uint32_t list_nav_calls; /* I1275: list keys the shared list_nav step took, for every desktop list (sentinel) */
     uint32_t route_main, route_player, route_sidebar, route_detail; /* sentinels (I1164): arrow and Enter keys routed by the focused stop */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
@@ -1328,6 +1329,8 @@ static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
 static int32_t side_lib_at(const desk* d, int32_t x, int32_t y);
 static int32_t side_cur_count(const desk* d); /* I1183 */
+enum { LIST_NAV_NONE = -2 };
+static int32_t list_nav(desk* d, uint32_t code, int32_t cur, int32_t n, int32_t page);
 static sel_gui_rect side_cur_rect(const desk* d, int32_t p);
 static int32_t side_lib_max_q16(const desk* d);
 static void side_lib_reload(desk* d);
@@ -6304,7 +6307,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         if (e != NULL) {
             e->ref.ctx_pos = pos;
         }
-        fill = list_row_fill(d, r, d->col_kind != 0u && (int32_t)pos == d->col_focus); /* I678f2, I690b: focus, hover, or both */
+        fill = list_row_fill(d, r, (int32_t)pos == d->col_focus); /* I678f2, I690b: focus, hover, or both */
         if (fill != 0u) {
             sel_gui_round_rect(d->canvas, r, rad, fill);
         }
@@ -7969,10 +7972,11 @@ static const char* library_dump_build(desk* d) {
                          strcmp(st->song.path, st->queue_text + st->queue[d->order[d->row_focus]].path_offset) == 0);
         {
             const sel_view_state* pv = pl_view(st);
-            int32_t row = d->queue_page ? d->q_focus : d->pl_page && d->pls_id != 0u && d->col_kind != 0u ? d->col_focus : d->pl_page ? pl_sel_row(d, pv) : d->page == SEL_UIM_PG_FOLDERS && lib_ui_list(d, st) && !lib_grid_on(st) ? d->lib_focus
+            int32_t row = d->queue_page ? d->q_focus : d->pl_page && d->pls_id != 0u ? d->col_focus : d->pl_page ? pl_sel_row(d, pv) : d->page == SEL_UIM_PG_FOLDERS && lib_ui_list(d, st) && !lib_grid_on(st) ? d->lib_focus
                           : d->kb_list && st->view != NULL ? (int32_t)st->view->cursor : -1;
             o = dump_put(d, o, "list_focus page %d row %d activates %u plays %u song=%s\n", (int)d->page, (int)row, (unsigned)d->kb_activates, (unsigned)d->row_plays,
                          st->song.path != NULL ? path_base(st->song.path) : "-");
+        o = dump_put(d, o, "list_nav calls=%u\n", (unsigned)d->list_nav_calls); /* I1275 sentinel: keys the one shared list step took */
         }
         o = dump_put(d, o, "rail %d %d %d %d\n", (int)rl.x, (int)rl.y, (int)rl.w, (int)rl.h);
     }
@@ -13609,7 +13613,7 @@ static void side_cur_follow(desk* d, uint32_t i) {
     d->side_y_q16 = d->side_y_q16 < 0 ? 0 : (d->side_y_q16 > max ? max : d->side_y_q16);
 }
 
-/* I1183: Up/Down/Home/End move the sidebar cursor, Enter opens its row through the click handlers. */
+/* I1183, I1275: Up/Down/Page Up/Page Down/Home/End (the shared list_nav) move the sidebar cursor, Enter opens its row through the click handlers. */
 static void side_cur_key(desk* d, uint32_t code) {
     int32_t n = side_cur_count(d), nd = (int32_t)desk_door_slot(d, DOOR_COUNT), p = d->side_cur;
     if (n <= 0) {
@@ -13625,14 +13629,13 @@ static void side_cur_key(desk* d, uint32_t code) {
         }
         return;
     }
-    if (code == TXT_KEY_DOWN) {
-        p = p < 0 ? 0 : (p + 1 < n ? p + 1 : p);
-    } else if (code == TXT_KEY_UP) {
-        p = p < 0 ? 0 : (p > 0 ? p - 1 : 0);
-    } else if (code == TXT_KEY_HOME) {
-        p = 0;
-    } else if (code == TXT_KEY_END) {
-        p = n - 1;
+    {
+        sel_gui_rect v = side_lib_view_rect(d);
+        int32_t rows = v.h / side_lib_row_h(d), to = list_nav(d, code, p, n, rows > 1 ? rows - 1 : 1);
+        if (to == LIST_NAV_NONE) {
+            return;
+        }
+        p = to;
     }
     d->side_cur = p;
     if (p >= nd) {
@@ -13649,7 +13652,7 @@ static void side_cur_key(desk* d, uint32_t code) {
 static int desk_focus_route(desk* d, const sel_gui_input* ev) {
     int32_t f = d->focus;
     int arrow = ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT;
-    int home_end = ev->code == TXT_KEY_HOME || ev->code == TXT_KEY_END;
+    int home_end = ev->code == TXT_KEY_HOME || ev->code == TXT_KEY_END || ev->code == TXT_KEY_PAGE_UP || ev->code == TXT_KEY_PAGE_DOWN;
     if (ev->mods != 0u || (!arrow && ev->code != 13u && !(home_end && f >= 0 && f == region_stop(d, "sidebar")))) {
         return 0;
     }
@@ -14175,10 +14178,9 @@ static int desk_zoom_key(desk* d, const sel_gui_input* ev) {
 }
 
 /* Shared focus movement of the desktop lists (DUI-P3-3, I423, I498). */
-enum { LIST_NAV_NONE = -2 };
 /* The focus row after a list key: Down, Up, Page Down, Page Up, Home, End, clamped to 0..n-1. With no focus row
  * (cur < 0) the first Down lands on row 0 and the first Up stays on it (I505). LIST_NAV_NONE when the key is not a list key. */
-static int32_t list_nav(uint32_t code, int32_t cur, int32_t n, int32_t page) {
+static int32_t list_nav(desk* d, uint32_t code, int32_t cur, int32_t n, int32_t page) {
     int32_t to = cur < 0 ? -1 : cur;
     if (code == TXT_KEY_DOWN) {
         to += 1;
@@ -14195,6 +14197,7 @@ static int32_t list_nav(uint32_t code, int32_t cur, int32_t n, int32_t page) {
     } else {
         return LIST_NAV_NONE;
     }
+    d->list_nav_calls++;
     return to < 0 ? 0 : (to > n - 1 ? n - 1 : to);
 }
 
@@ -14230,7 +14233,7 @@ static int songs_list_key(desk* d, const sel_gui_input* ev) {
         songs_play_row(d, d->row_focus);
         return 1;
     }
-    to = list_nav(ev->code, d->row_focus, (int32_t)d->order_n, page);
+    to = list_nav(d, ev->code, d->row_focus, (int32_t)d->order_n, page);
     if (to == LIST_NAV_NONE) {
         return 0;
     }
@@ -14262,7 +14265,7 @@ static int queue_list_key(desk* d, const sel_gui_input* ev) {
         desk_play_context(d, (uint32_t)SEL_UIM_LIST_QUEUE, 0u, st->queue_version, (uint32_t)d->q_focus, "");
         return 1;
     }
-    to = list_nav(ev->code, d->q_focus, n, page);
+    to = list_nav(d, ev->code, d->q_focus, n, page);
     if (to == LIST_NAV_NONE) {
         return 0;
     }
@@ -14315,7 +14318,7 @@ static int lib_ui_key(desk* d, const sel_gui_input* ev) {
         desk_composer_open(d, p, lib_next(p)); /* I678f: Enter opens the composer's collection page */
         return 1;
     }
-    to = list_nav(ev->code, d->lib_focus, n, view_h / LIB_ROW_H > 1 ? view_h / LIB_ROW_H - 1 : 1);
+    to = list_nav(d, ev->code, d->lib_focus, n, view_h / LIB_ROW_H > 1 ? view_h / LIB_ROW_H - 1 : 1);
     if (to == LIST_NAV_NONE) {
         return 0;
     }
@@ -14343,7 +14346,14 @@ static int pl_list_key(desk* d, const sel_gui_input* ev) {
         d->kb_activates++;
         return pl_button_click(d, v, 2u);
     }
-    to = list_nav(ev->code, sel, (int32_t)v->row_n, 5);
+    {
+        sel_gui_rect mn = region_rect(d, "main");
+        int32_t vis = 0;
+        while (pl_row_visible(d, mn, (uint32_t)vis)) {
+            vis++;
+        }
+        to = list_nav(d, ev->code, sel, (int32_t)v->row_n, vis > 1 ? vis - 1 : 1);
+    }
     if (to == LIST_NAV_NONE) {
         return 0;
     }
@@ -14360,7 +14370,7 @@ static int pl_list_key(desk* d, const sel_gui_input* ev) {
 static int col_list_key(desk* d, const sel_gui_input* ev) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t n = (int32_t)col_song_rows(d), to, vis = 0;
-    if (ev->mods != 0u || d->col_kind == 0u || d->pls_id == 0u || d->dlg_open || d->col_search || n == 0) {
+    if (ev->mods != 0u || d->pls_id == 0u || d->pl_edit || d->dlg_open || d->col_search || n == 0) {
         return 0;
     }
     vis = (int32_t)col_vis_slots(d, mn);
@@ -14371,7 +14381,7 @@ static int col_list_key(desk* d, const sel_gui_input* ev) {
         d->kb_activates++;
         return pls_play_pos(d, (uint32_t)d->col_focus);
     }
-    to = list_nav(ev->code, d->col_focus, n, vis > 1 ? vis - 1 : 1);
+    to = list_nav(d, ev->code, d->col_focus, n, vis > 1 ? vis - 1 : 1);
     if (to == LIST_NAV_NONE) {
         return 0;
     }
@@ -15881,6 +15891,9 @@ static int desk_replay_lines(desk* d, char* line) {
             opened |= desk_key(d, &ev);
             /* a grid or cover flow move sent VIEW_CURSOR: the engine answers on the next pump, so resume the script then */
             pointer_sent = d->sends != sent && (lib_grid_on(sel_engine_state(d->engine)) || (d->page == SEL_UIM_PG_HOME && home_shelf_mode(sel_engine_state(d->engine)))); /* I617: a Home row move too */
+            if (!pointer_sent && d->sends != sent && d->pls_stale && d->pls_id != 0u) { /* I1275: Enter opened a playlist page: the engine builds it on the next pump, the keys after it need its rows */
+                pointer_sent = 1;
+            }
         } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_WAIT) {
             desk_advance(d, ev.ms);
             pointer_sent = d->sends != sent; /* a timer that fired in the wait (the search debounce) sent a line: resume on its answer */
