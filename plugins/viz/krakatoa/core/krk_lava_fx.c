@@ -478,30 +478,42 @@ static void ramp_fill(uint32_t rgb[256], const ramp_stop* st, int32_t n) {
     }
 }
 
-void krk_fx_palette(krk_fx_mode mode, const krk_params* p, uint32_t rgb[256]) {
-    const krk_palette* pal = krk_palette_get((uint32_t)p->v[KRK_K_PALETTE]);
+/* The ramp from two palettes: `fire` gives the hot stops (hot, ember), `body` the cool ones (bg, smoke, key). Equal
+ * palettes give the plain ramp; the crossfade passes the leading fire blend and the lagging body blend (krk_palfx_colors). */
+static void fx_palette_from(krk_fx_mode mode, const krk_palette* fire, const krk_palette* body, uint32_t rgb[256]) {
     if (mode == KRK_FX_LAVA) {
         ramp_stop st[8];
-        st[0].at = 0, st[0].c = pal->bg[0];
-        st[1].at = 23, st[1].c = pal->bg[1];
-        st[2].at = 80, st[2].c = pal->smoke;
-        st[3].at = 140, st[3].c = pal->hot[0];
-        st[4].at = 180, st[4].c = pal->hot[1];
-        st[5].at = 215, st[5].c = pal->hot[2];
-        st[6].at = 240, st[6].c = pal->hot[3];
-        st[7].at = 255, st[7].c = pal->ember;
+        st[0].at = 0, st[0].c = body->bg[0];
+        st[1].at = 23, st[1].c = body->bg[1];
+        st[2].at = 80, st[2].c = body->smoke;
+        st[3].at = 140, st[3].c = fire->hot[0];
+        st[4].at = 180, st[4].c = fire->hot[1];
+        st[5].at = 215, st[5].c = fire->hot[2];
+        st[6].at = 240, st[6].c = fire->hot[3];
+        st[7].at = 255, st[7].c = fire->ember;
         ramp_fill(rgb, st, 8);
     } else {
         float dim[3];
         ramp_stop st[5];
-        dim[0] = pal->smoke[0] * 0.3f;
-        dim[1] = pal->smoke[1] * 0.3f;
-        dim[2] = pal->smoke[2] * 0.3f;
-        st[0].at = 0, st[0].c = pal->bg[0];
-        st[1].at = 23, st[1].c = pal->bg[1];
+        dim[0] = body->smoke[0] * 0.3f;
+        dim[1] = body->smoke[1] * 0.3f;
+        dim[2] = body->smoke[2] * 0.3f;
+        st[0].at = 0, st[0].c = body->bg[0];
+        st[1].at = 23, st[1].c = body->bg[1];
         st[2].at = 90, st[2].c = dim;
-        st[3].at = 180, st[3].c = pal->smoke;
-        st[4].at = 255, st[4].c = pal->key;
+        st[3].at = 180, st[3].c = body->smoke;
+        st[4].at = 255, st[4].c = body->key;
         ramp_fill(rgb, st, 5);
     }
+}
+
+void krk_fx_palette(krk_fx_mode mode, const krk_params* p, uint32_t rgb[256]) {
+    const krk_palette* pal = krk_palette_get((uint32_t)p->v[KRK_K_PALETTE]);
+    fx_palette_from(mode, pal, pal, rgb);
+}
+
+void krk_fx_palette_fx(krk_fx_mode mode, const krk_palfx* fx, uint32_t rgb[256]) {
+    krk_palette fire, body;
+    krk_palfx_colors(fx, &fire, &body);
+    fx_palette_from(mode, &fire, &body, rgb);
 }

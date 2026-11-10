@@ -430,8 +430,9 @@ static void test_knobs(void) {
         }
         if (k == (int)KRK_K_AUTOPALETTE || k == (int)KRK_K_FADE || k == (int)KRK_K_PALINTERVAL) {
             /* exemption (I1052d): these drive the palette scheduler in krk_core (proven in krk_core_test block 11);
-             * the fx core only takes the resulting palette through krk_fx_palette. Feeding the scheduler's blended
-             * palette into the Amiga ramp is part of the I1052b AGA output row. */
+             * the fx core only takes the resulting palette through krk_fx_palette_fx. The indices do not change; the
+             * scheduler's blended ramp reaching the pixels is proven by krk_fx_plugin_test (I1052b: key 3 crossfade
+             * changes the drawn colours, then settles on the krk_fx_palette ramp). */
             continue;
         }
         if (k == (int)KRK_K_PALETTE) { /* the palette moves the baked ramp, not the indices */

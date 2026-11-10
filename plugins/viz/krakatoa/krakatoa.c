@@ -14,11 +14,25 @@
 #include <selecta/viz.h>
 
 #include "core/krk_core.h"
+#ifdef KRK_BACKEND_FX
+/* I1052b: the 68k tier. The fixed-point Lava core (core/krk_lava_fx.c) replaces the GPU host; the picture is a 160x128
+ * palette-index image whose 256-colour ramp is rebaked every frame from the palette scheduler's blend, then expanded to
+ * the surface (nearest) so the 3 s palette crossfade shows on the Amiga canvas too. */
+#include "core/krk_lava_fx.h"
+typedef struct krk_gpu krk_gpu; /* unused on this tier */
+#else
 #include "sdl/krk_smoke_gpu.h"
+#endif
 
 static struct {
     krk_gpu* gpu;
     int gpu_failed;
+#ifdef KRK_BACKEND_FX
+    krk_fx* sim;          /* the fixed-point simulation, allocated on the first frame */
+    uint8_t idx[KRK_FX_OW * KRK_FX_OH];
+    uint32_t ramp[256];   /* 0xRRGGBB, rebaked every frame from the scheduler's blend */
+    uint32_t sim_frames, ramp_bakes;
+#endif
     krk_quality q;
     krk_grid g;
     krk_params p;
@@ -84,6 +98,58 @@ static int viz_key(uint32_t code) {
     return 0;
 }
 
+#ifdef KRK_BACKEND_FX
+static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c) {
+    krk_fx_in in;
+    float dt;
+    uint32_t d, x, y;
+    (void)c;
+    if (s == NULL || s->fmt != SEL_PIX_RGBA32 || s->w < 2u || s->h < 2u) {
+        return 0;
+    }
+    krk_start();
+    if (K.sim == NULL) {
+        K.sim = (krk_fx*)malloc(sizeof *K.sim);
+        if (K.sim == NULL) {
+            return 0;
+        }
+        krk_fx_init(K.sim);
+        K.g = krk_fx_grid();
+    }
+    K.sw = s->w;
+    K.sh = s->h;
+    if (K.p.v[KRK_K_PAUSED] < 0.5f) {
+        d = f != NULL ? f->seq - K.last_seq : 0u;
+        dt = d == 0u || d > 5u ? 1.0f / 25.0f : (float)d / (float)SEL_VIZ_BLOCKS_PER_SECOND;
+        K.last_seq = f != NULL ? f->seq : 0u;
+        K.t += dt;
+        krk_audio_step(&K.a, f, &K.p, dt);
+        K.order_ok = K.host != NULL && K.host->position != NULL && K.host->position(K.host->user, &K.order_buf);
+        if (krk_palfx_step(&K.fx, &K.p, &K.a, K.order_ok ? &K.order_buf : NULL, dt)) {
+            krk_pref_save();
+        }
+        K.palfx_steps++;
+        krk_fx_inputs(&in, KRK_FX_LAVA, &K.p, &K.a, K.t, dt, K.sim_frames);
+        krk_fx_step(K.sim, &in);
+        krk_fx_render(K.sim, &in, K.idx);
+        K.sim_frames++;
+        K.steps++;
+        K.jacobi_total += (uint32_t)in.jacobi;
+    } else if (K.sim_frames == 0u) {
+        return 0;
+    }
+    krk_fx_palette_fx(KRK_FX_LAVA, &K.fx, K.ramp);
+    K.ramp_bakes++;
+    for (y = 0; y < s->h; y++) {
+        uint32_t* row = (uint32_t*)(void*)((uint8_t*)s->pixels + (size_t)y * s->pitch);
+        const uint8_t* src = K.idx + (size_t)(y * KRK_FX_OH / s->h) * KRK_FX_OW;
+        for (x = 0; x < s->w; x++) {
+            row[x] = 0xFF000000u | K.ramp[src[x * KRK_FX_OW / s->w]];
+        }
+    }
+    return 1;
+}
+#else
 static void krk_reset(uint32_t sw, uint32_t sh) {
     krk_gpu_destroy(K.gpu);
     K.gpu = NULL;
@@ -146,7 +212,13 @@ static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_col
     }
     return 1;
 }
+#endif /* KRK_BACKEND_FX */
 
+#ifdef KRK_BACKEND_FX
+#define KRK_STAT_GPU (K.sim != NULL ? 2 : 0) /* 2: the fixed-point tier is running */
+#else
+#define KRK_STAT_GPU (K.gpu != NULL ? 1 : 0)
+#endif
 static uint32_t stats(char* out, uint32_t cap) {
     int n;
     if (out == NULL || cap == 0u) {
@@ -155,7 +227,7 @@ static uint32_t stats(char* out, uint32_t cap) {
     n = snprintf(out, cap, "krakatoa grid %ux%ux%u jacobi %u steps %u jacobi_total %u beats %u surface %ux%u quality %s gpu %d palette %u changes %u cues %u keys %u palfx_steps %u",
                  (unsigned)K.g.x, (unsigned)K.g.y, (unsigned)K.g.z, (unsigned)K.g.jacobi, (unsigned)K.steps,
                  (unsigned)K.jacobi_total, (unsigned)K.a.beats, (unsigned)K.sw, (unsigned)K.sh,
-                 krk_quality_name(K.q == KRK_Q_COUNT ? KRK_Q_DEFAULT : K.q), K.gpu != NULL ? 1 : 0, (unsigned)K.fx.to, (unsigned)K.fx.changes, (unsigned)K.fx.cues, (unsigned)K.keys,
+                 krk_quality_name(K.q == KRK_Q_COUNT ? KRK_Q_DEFAULT : K.q), KRK_STAT_GPU, (unsigned)K.fx.to, (unsigned)K.fx.changes, (unsigned)K.fx.cues, (unsigned)K.keys,
                  (unsigned)K.palfx_steps);
     return n < 0 ? 0u : (uint32_t)n < cap ? (uint32_t)n : cap - 1u;
 }

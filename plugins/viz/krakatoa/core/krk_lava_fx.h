@@ -90,5 +90,8 @@ void krk_fx_render(krk_fx* s, const krk_fx_in* in, uint8_t* out);
 
 /* Bakes the 256-colour ramp for the palette knob; rgb[i] = 0xRRGGBB. Uses krk_palette_get and krk_rgb_hex. */
 void krk_fx_palette(krk_fx_mode mode, const krk_params* p, uint32_t rgb[256]);
+/* The same ramp from the palette scheduler's state (I1052d): hot stops follow the leading fire blend, cool stops the
+ * lagging body blend, so the 3 s crossfade shows on the 8-bit output when the plugin rewrites the ramp each frame. */
+void krk_fx_palette_fx(krk_fx_mode mode, const krk_palfx* fx, uint32_t rgb[256]);
 
 #endif /* KRK_LAVA_FX_H */
