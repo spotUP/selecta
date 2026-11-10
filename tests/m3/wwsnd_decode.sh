@@ -4,6 +4,8 @@
 # (tests/m3/fixtures/bbmp_wwsnd.SOURCE). Exit 77 = skipped (no network). Sentinel: the `replayer=bbmp_wwsnd` line of render.
 # Asserts per song: the plugin ran, the WAV is not silent (WWSND_ENERGY_MIN raises the floor, for red proofs) and the
 # rendered frames match the song length the engine measures (WWSND_MIN_SECONDS, when set, replaces the floor, for red proofs).
+# Also (I1242c): a Westwood ADL (AdLib) song has the same track and offset tables (1000 at offset 120) but is not PC speaker code: the registry probe
+# must give it to adplug (replayer=adplug, not silent), not to bbmp_wwsnd.
 # Also: a file that is not a Westwood SND song is not claimed, and a song cut off inside its tables is not played.
 # usage: wwsnd_decode.sh <selecta-cli>
 set -u
@@ -34,6 +36,16 @@ s3=$(fetch "$M/Paul%20Mudra/eob2%20-%20azure.snd" 60b4319349b2d607502fecb1809b22
 check "$s1" 8 9
 check "$s2" 1 2
 check "$s3" 1 2
+# I1242c: a real Westwood ADL song (Dune II; subsong 2 is the first with sound) has 1000 at offset 120 like a SND song; it must probe to adplug and render.
+s4=$(fetch "https://modland.com/pub/modules/Ad%20Lib/ADL/Frank%20Klepacki/dune%20ii%20-%2000.adl" 674965c1a896617cca3d7cca5b69c7b9a2c93ced66db8f1f8df798f44aeb64e4 dune2_00.adl) || exit $?
+[ "$(od -An -v -t u2 -j 120 -N 2 "$s4" | tr -d ' ')" = 1000 ] || fail "$s4: not the 1000-at-120 ADL the test needs"
+rm -f fd_wwsnd.wav
+out=$("$cli" render "$s4" --output fd_wwsnd.wav --seconds 3 --rate "$rate" --subsong 2 2>/dev/null) || fail "render failed: $s4"
+[ "$(field "$out" replayer)" = "adplug" ] || fail "$s4: replayer=$(field "$out" replayer), want adplug (bbmp_wwsnd must refuse AdLib files)"
+e=$(energy fd_wwsnd.wav)
+[ "$e" -gt 1000000 ] || fail "$s4: silent output (energy $e)"
+echo "$s4 replayer=adplug energy=$e"
+rm -f fd_wwsnd.wav
 # A file that is not a Westwood SND song is not claimed.
 head -c 20000 /dev/zero | tr '\0' 'A' > notww
 out=$("$cli" render notww --output fd_wwsnd.wav --seconds 1 --rate "$rate" 2>/dev/null) || true
