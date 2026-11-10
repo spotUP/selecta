@@ -43,6 +43,17 @@ typedef enum krk_knob {
     KRK_K_CURSORLIGHT,
     KRK_K_AUTO,
     KRK_K_PAUSED,
+    /* Lava-only knobs (design 1.4): stored and clamped here; Lava itself is KRK-P0-4, so they move no Smoke output yet. */
+    KRK_K_SMOKE,
+    KRK_K_PARTICLES,
+    KRK_K_SHOWSMOKE,
+    KRK_K_SHOWPARTICLES,
+    /* I1246 music reactions, 0 = off, 1 = default strength, up to 3. */
+    KRK_K_KICKBURST, /* kick: smoke burst (emission and heat) */
+    KRK_K_KICKPUMP,  /* kick: speaker-cone pressure pulse from the emitter (push out, then relax) */
+    KRK_K_SNAREFLASH, /* snare: light and bloom flash */
+    KRK_K_BASSDRIVE, /* bass level: base flow force and emission */
+    KRK_K_HIGHSWIRL, /* highs: swirl and turbulence */
     KRK_K_COUNT
 } krk_knob;
 
@@ -62,6 +73,13 @@ typedef struct krk_params {
 void krk_params_default(krk_params* p);
 /* Sets knob k to value clamped to its range (palette rounds to 0..4, booleans to 0/1). */
 void krk_params_set(krk_params* p, krk_knob k, float value);
+/* Applies a per-effect pref string "name=value,name=value" (the pref ui.krakatoa.smoke; it replaces the reference's
+ * localStorage FX_KEYS). Unknown names and bad numbers are skipped. Returns the number of knobs set. */
+uint32_t krk_params_parse(krk_params* p, const char* list);
+
+/* Pref keys (include/selecta/prefs.def). */
+#define KRK_PREF_PALETTE "ui.krakatoa.palette"
+#define KRK_PREF_SMOKE "ui.krakatoa.smoke"
 
 /* ---- Palettes (design 1.3): Aurora, Nebula, Magma, Spectrum, Ash. Linear RGB 0..1. ---- */
 typedef struct krk_palette {
@@ -70,25 +88,38 @@ typedef struct krk_palette {
     float cool[3];
     float key[3];
     float bg[2][3];
+    float ember[3]; /* Lava: hottest particle core (KRK-P0-4) */
     float smoke[3];
+    float tail[3]; /* Lava: particle trail (KRK-P0-4) */
 } krk_palette;
 
 #define KRK_PALETTES 5u
 const krk_palette* krk_palette_get(uint32_t index);
+/* 0xRRGGBB of a linear colour after the sRGB curve, for --stats and tests. */
+uint32_t krk_rgb_hex(const float c[3]);
 
 /* ---- Audio mapper (design section 4). ---- */
 typedef struct krk_audio {
     /* state */
     float env;      /* RMS envelope, attack 10 ms, release 300 ms */
     float peak;     /* peak follower, decays over 4 s */
-    float bass_avg; /* 1 s average of B */
+    float bpk, mpk, hpk; /* per-band peak followers: instant attack, 4 s decay, floored (I1052x) */
+    float bass_avg; /* 0.5 s average of the raw bass band (onset reference) */
+    float mid_avg;  /* 0.5 s average of the raw mid band */
+    float b_prev, m_prev; /* raw bands of the previous step */
     float since_beat;
-    float beat_s;   /* strength of the last beat */
-    uint32_t beats; /* count of beats detected (sentinel) */
+    float beat_s;   /* strength of the last kick */
+    float since_snare;
+    float snare_s;  /* strength of the last snare */
+    uint32_t beats; /* kicks detected (sentinel) */
+    uint32_t snares; /* snares detected (sentinel) */
     /* outputs, the inputs of one smoke step */
-    float L, B, H;
+    float L, B, M, H; /* level, bass, mid (snare band), highs: 0..1 after normalisation */
     float force, swirl, emission;
-    float heat_mul; /* temperature injection multiplier: 1 + 2 s for 120 ms after a beat */
+    float heat_mul;  /* temperature injection multiplier after a kick */
+    float pump;      /* speaker cone: > 0 push out from the emitter, < 0 relax back; 0 at rest */
+    float flash;     /* snare light flash 0..1 */
+    float turb_mul;  /* highs on turbulence */
 } krk_audio;
 
 void krk_audio_init(krk_audio* a);

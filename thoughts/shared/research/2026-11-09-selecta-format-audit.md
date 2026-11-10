@@ -500,3 +500,159 @@ Counts (28): BUG 3 (adl, bds, gray) + 1 gap (st) + 1 unverified remote-companion
 Counts check: rows above give BUG 4 incl. st, BAD SAMPLE 17 (dsr kss mptm md ss dsm med jpn pap mcr pn sdr sjs tpu ned tiny ay), NO GOOD SAMPLE 8 rows (ct sho spm sm1 sm2 soc mp2 and ct) = 7 extensions listed as 8 names with sm1/sm2; total 4 + 17 + 7 = 28 extensions.
 
 Unverified open issue: plugins/replayers/nuade/adapter.c:603 `g_companions = "mdat.*>smpl.*;*.tfx>*.sam"` and the rp_content_companions hook (548-600, IFF SMUS only) mean a remote Modland key of jpn, tpu, sdr, sjs, mcr, pn or pap would not fetch its smp.*/mcs.*/pn.*.info/smp.set companion. Not tested through a remote key.
+
+## I1242h online audit
+
+Question (Johan): did the audit load the songs from their online sources? The first audit did not; this one does.
+
+Method: `selecta-cli render "<source key>" --output <wav> --seconds 6 --resample linear --config-dir <copy of ~/.config/selecta> --db <empty throwaway db>`, `SELECTA_CACHE_DIR` = a fresh empty dir, `SELECTA_PLUGIN_PATH` = build/sdl/modules. The CLI CAN play a source key, but only when a library is open (engine.c:2120 fetches via sel_library_fetch only when `e->lib != NULL`); `--db` opens one, without `--db` a key is not fetched (no fetch, no companion rules). So the fetch, cache and companion-rule path (sel_companion_rules) was exercised for real, sequential, 0.4 s between songs. Per extension up to 3 songs spread across the Modland catalogue (library db copy), stop at the first that plays; PLAY = WAV peak above 0. Then the same for every other source that carries a claimed extension (hvsc, asma, sndh, zxart, aminet, keygenmusic; hippo and modulespl carried none of the 392 extensions as song keys). Resumable TSV (source, ext, tries, key, verdict, replayer, detail, seconds): `<scratch>/oa/verdicts.tsv`, driver `<scratch>/oa/bin/run.py` (skips recorded rows). Not part of the tree; summary below is the record.
+
+Counts, Modland (392 extensions): PLAY 275, FAIL 36, HANG 3, NO SAMPLE 78 (no song with that extension or prefix in the catalogue). Local audit: PLAY 296, FAIL 28, NO SAMPLE 68. Other sources (99 ext/source pairs): PLAY 89, FAIL 10.
+
+Cause classes of the online FAILs and HANGs:
+- companion missing (fetch got the song, not its smp.*/mcs.*/info/smp.set companions): jpn, mcr, pap, pn, sdr, sjs, tpu. Root cause: nuade declares only `mdat.*>smpl.*;*.tfx>*.sam` plus a content hook for SMUS (plugins/replayers/nuade/adapter.c:603, :698), so the cache never fetches these companions. Confirmed in the cache dir: only `jpn.*` fetched, no `smp.*` beside it. New fix row.
+- system file missing (setup, same as local): ct, sho, spm.
+- replayer: no replayer claims the file online either (ast, ay, bds, max, med, mp2, mp3, psf, sm1, sm2 and zxart m mc psm sct sj stp); several are the known I1242a bad-sample/bug cases, not fetch problems.
+- open failed after fetch (adl = I1242c probe bug; others need a per-case look: adsc dat dum ksm miniqsf minisnsf mus osp rol sci sdata, asma trc, zxart tfm, aminet mad).
+- hang (40 s timeout): see the table.
+
+Table: every FAIL/HANG and every Modland extension whose online verdict differs from the local audit (local column empty for non-Modland sources; NO SAMPLE rows equal to the local verdict are left out).
+
+| source | ext | online | local audit | tries | cause | key / detail |
+|---|---|---|---|---|---|---|
+| modland | a2t | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | adl | FAIL | FAIL | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/Ad Lib/ADL/Paul Mudra/eob2 - crimson1.adl error open_failed modland:pub/modules/Ad Lib/ADL/P |
+| modland | adsc | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/Audio Sculpture/_unknown/turtle-title.adsc error open_failed modland:pub/modules/Audio Sculpt |
+| modland | ast | FAIL | PLAY | 3 | replayer: none claims the file | pub/modules/All Sound Tracker/Feilei/tiny opl3 demo.ast error no_replayer modland:pub/modules/All Sound Tr |
+| modland | ay | FAIL | FAIL | 1 | replayer: none claims the file | pub/modules/Spectrum/Pro Tracker 3/Klim/ay.pt3 error no_replayer modland:pub/modules/Spectrum/Pro |
+| modland | bds | FAIL | FAIL | 3 | replayer: none claims the file | es/IFF-SMUS/Scott T. Etherton/Mindroll/Instruments/bds.instr error no_replayer modland:pub/modules/IFF-SMUS/Sco |
+| modland | bfc | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | bp2 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | chp | NO SAMPLE | PLAY | 0 |  |   |
+| modland | cin | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | coc | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | ct | FAIL | FAIL | 3 | system file missing (setup) | pub/modules/Cybertracker C64/Pater Pi/wolfentanz.ct error system_file_missing bbmp_cybertracker:cybert |
+| modland | dat | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | odules/Paul Robotham/Paul Robotham/Space 1889/space 1889.dat error open_failed modland:pub/modules/Paul Robotha |
+| modland | dl_deli | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | dlm1 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | dmu2 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | dsm | PLAY | FAIL | 1 | render silent or other | d Interface Kit RIFF/Karsten Koch/flying tigers - tiger1.dsm peak=28570 |
+| modland | dsr | PLAY | FAIL | 1 | render silent or other | pub/modules/Desire/Kev Bruce/powerdrive 1.dsr peak=17221 |
+| modland | dum | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/Infogrames/_unknown/gobliiins32.dum error open_failed modland:pub/modules/Infogrames/_ |
+| modland | dwold | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | dzp | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | fc13 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | fc3 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | fc4 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | flac | NO SAMPLE | PLAY | 0 |  |   |
+| modland | fur | NO SAMPLE | PLAY | 0 |  |   |
+| modland | gm | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | got | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | gray | PLAY | FAIL | 3 | render silent or other | pub/modules/Impulsetracker/Silicon/gray.it peak=6536 |
+| modland | ha2 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | hsp | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | hsq | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | is10 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | j2b | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | jcb | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | jcbo | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | jpn | FAIL | FAIL | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/Jason Page/Jason Page/jpn.virocop-11 error open_failed modland:pub/modules/Jason Page/J |
+| modland | jpnd | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | jpold | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | ksm | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | n's AdLib Music/Ken Silverman/ken's labyrinth - labsng28.ksm error open_failed modland:pub/modules/Ad Lib/Ken's |
+| modland | kss | PLAY | FAIL | 1 | render silent or other | pub/modules/KSS/Soundwave/equinoxe7.kss peak=8265 |
+| modland | max | FAIL | PLAY | 3 | replayer: none claims the file | pub/modules/Maximum Effect/Old  Tramp/MAX.AlloAllo level5 error no_replayer modland:pub/modules/Maximum Effe |
+| modland | mcmd_org | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mcr | FAIL | FAIL | 2 | open failed after fetch (companion missing or bad sample) | s/Mark Cooksey Old/Mark Cooksey/mcr.mike reads comp pop quiz error open_failed modland:pub/modules/Mark Cooksey |
+| modland | md | PLAY | FAIL | 1 | render silent or other | pub/modules/Mike Davies/Mike Davies/die hard ii.md peak=16180 |
+| modland | mdi | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mdy | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | med | FAIL | FAIL | 3 | replayer: none claims the file | pub/modules/Music Editor/_unknown/whomp!.med error no_replayer modland:pub/modules/Music Editor |
+| modland | mg | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mii | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | miniqsf | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | Capcom Q-Sound Format/_unknown/The Punisher/punish10.miniqsf error open_failed modland:pub/modules/Capcom Q-Sou |
+| modland | minisnsf | FAIL | NOSAMPLE | 3 | open failed after fetch (companion missing or bad sample) | mat/Robert Prince/Wolfenstein 3D/wolfenstein3d-0003.minisnsf error open_failed modland:pub/modules/Super Ninten |
+| modland | mkf | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mkii | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mkiio | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mmcmp | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mod_adsc4 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mon_old | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mp2 | FAIL | FAIL | 1 | replayer: none claims the file | tra64 Sound Format/Yasunori Mitsuda/Mario Party 2/mp2.usflib error no_replayer modland:pub/modules/Ultra64 Soun |
+| modland | mp3 | FAIL | PLAY | 1 | replayer: none claims the file | tra64 Sound Format/Ichiro Shimakura/Mario Party 3/mp3.usflib error no_replayer modland:pub/modules/Ultra64 Soun |
+| modland | mptm | PLAY | FAIL | 1 | render silent or other | pub/modules/OpenMPT MPTM/Kleeder/neighbourhood cool guy.mptm peak=17922 |
+| modland | msc | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mth | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mug2 | NO SAMPLE | PLAY | 0 |  |   |
+| modland | mus | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/Stereo Sidplayer/DC/rush 2112-discovery.mus error open_failed modland:pub/modules/Stereo Sidpl |
+| modland | mw | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | mz | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | ned | PLAY | FAIL | 1 | render silent or other | pub/modules/NerdTracker 2/Datschge/trance.ned peak=7199 |
+| modland | nsfe | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | nst | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | ogg | NO SAMPLE | PLAY | 0 |  |   |
+| modland | osp | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | les/Synth Pack/Karsten Obarski/Dyter-07/dyter07 ongame04.osp error open_failed modland:pub/modules/Synth Pack/K |
+| modland | oxm | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | pap | FAIL | FAIL | 3 | open failed after fetch (companion missing or bad sample) | e Adane Packer/Pierre-Eric Loriaux/Pang/pang - ingame 12.pap error open_failed modland:pub/modules/Pierre Adane |
+| modland | pn | FAIL | FAIL | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/PokeyNoise/Rob Hubbard/pn.jetsetwilly error open_failed modland:pub/modules/PokeyNoise/R |
+| modland | powt | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | ppm | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | psf | FAIL | PLAY | 3 | replayer: none claims the file | ation Sound Format/_unknown/Summon Night/summonknight-10.psf error no_replayer modland:pub/modules/Playstation  |
+| modland | psid | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | pt36 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | qc | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | qsf | NO SAMPLE | PLAY | 0 |  |   |
+| modland | rac | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | rix | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | rjp | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | rkb | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | rol | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/Ad Lib/Visual Composer/_unknown/rain.rol error open_failed modland:pub/modules/Ad Lib/Visua |
+| modland | s-c | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | s7g | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | sc68 | FAIL | PLAY | 3 | render silent or other | pub/modules/SC68/_unknown/guitar fever.sc68 rc=0 |
+| modland | sci | FAIL | PLAY | 3 | open failed after fetch (companion missing or bad sample) | d Lib/Sierra/Mark Seibert/Conquest Of Camelot/cc1 march2.sci error open_failed modland:pub/modules/Ad Lib/Sierr |
+| modland | sct | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | sd1 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | sdata | FAIL | PLAY | 2 | open failed after fetch (companion missing or bad sample) | pub/modules/MusicMaker V8 Old/_unknown/moveback.sdata error open_failed modland:pub/modules/MusicMaker V |
+| modland | sdr | FAIL | FAIL | 3 | open failed after fetch (companion missing or bad sample) | modules/Synth Dream/Laurens Tummers/sdr.nobuddiesland game 1 error open_failed modland:pub/modules/Synth Dream/ |
+| modland | sho | FAIL | FAIL | 3 | system file missing (setup) | pub/modules/Shroom/Ryan Novak/untitled.sho error system_file_missing bbmp_shroom:mariopants-n |
+| modland | sid1 | NO SAMPLE | PLAY | 0 |  |   |
+| modland | sj | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | sjs | FAIL | FAIL | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/SoundPlayer/Scott Johnston/sjs.tune1 error open_failed modland:pub/modules/SoundPlayer/ |
+| modland | sm1 | FAIL | FAIL | 3 | replayer: none claims the file | pub/modules/FAC SoundTracker/Robosoft/VOYAGE.SM1 error no_replayer modland:pub/modules/FAC SoundTra |
+| modland | sm2 | FAIL | FAIL | 3 | replayer: none claims the file |  SoundTracker/Roderik Muit/Quasar disk magazines/DRUMKIT.SM2 error no_replayer modland:pub/modules/FAC SoundTra |
+| modland | smus | HANG | PLAY | 3 | hang (40 s timeout) | pub/modules/IFF-SMUS/_unknown/Stay Home/stay home.alt.smus rc=124 |
+| modland | snsf | NO SAMPLE | PLAY | 0 |  |   |
+| modland | snx | NO SAMPLE | PLAY | 0 |  |   |
+| modland | soc | FAIL | FAIL | 3 | replayer: none claims the file | /modules/Hippel ST COSO/Jochen Hippel/stormlord original.soc error no_replayer modland:pub/modules/Hippel ST CO |
+| modland | sop | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | spm | FAIL | FAIL | 3 | system file missing (setup) | b/modules/Stonetracker/Jerome Angelot/stone or not stone.spm error system_file_missing stonetracker:StonePlayer |
+| modland | ss | HANG | FAIL | 3 | hang (40 s timeout) | b/modules/IFF-SMUS/_unknown/Sleepy/Instruments/HeavyMetal.ss rc=124 |
+| modland | st | HANG | FAIL | 3 | hang (40 s timeout) | pub/modules/Slight Atari Player/Andy (other)/st.sap rc=124 |
+| modland | st26 | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | stk | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | stp | FAIL | PLAY | 3 | replayer: none claims the file | /Sound Tracker Pro/_unknown/blackraven2-final-demo movie.stp error no_replayer modland:pub/modules/Spectrum/Sou |
+| modland | stx | NO SAMPLE | PLAY | 0 |  |   |
+| modland | tfm | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | tiny | FAIL | FAIL | 3 | render silent or other | pub/modules/Protracker/Zalt/tiny.mod rc=0 |
+| modland | tmk | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | tpu | FAIL | FAIL | 3 | open failed after fetch (companion missing or bad sample) | pub/modules/Dirk Bialluch/Dirk Bialluch/tpu.timelock title error open_failed modland:pub/modules/Dirk Bialluc |
+| modland | trc | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | tro | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | umx | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | unic | NO SAMPLE | PLAY | 0 |  |   |
+| modland | wlf | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | xpk | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| modland | zm | NO SAMPLE | NOSAMPLE | 0 |  |   |
+| asma | smus | FAIL |  | 1 | render silent or other | Composers/Liebich_Tomasz/Smus.sap rc=0 |
+| asma | trc | FAIL |  | 1 | open failed after fetch (companion missing or bad sample) | Composers/Golewski_Filip/TRC.sap error open_failed asma:Composers/Golewski_Filip/TR |
+| zxart | m | FAIL |  | 3 | replayer: none claims the file | 58344/Mutant_-_SymMut_(1999).m error no_replayer zxart:58344/Mutant_-_SymMut_(199 |
+| zxart | mc | FAIL |  | 2 | replayer: none claims the file | 75541/Mc.Floyd_-_X-RAY_3_(1997).pt2 error no_replayer zxart:75541/Mc.Floyd_-_X-RAY_3_( |
+| zxart | psm | FAIL |  | 3 | replayer: none claims the file | 79487/Scratcher_-_Trashe_coming_soon_(1996).psm error no_replayer zxart:79487/Scratcher_-_Trashe_c |
+| zxart | sct | FAIL |  | 1 | replayer: none claims the file | 417423/Gasman_-_dreamcatcher_(2008)_(Forever_9,_3).sct error no_replayer zxart:417423/Gasman_-_dreamcatch |
+| zxart | sj | FAIL |  | 3 | replayer: none claims the file | 80172/SJ.Lex_-_NEDOPIS.pt3 error no_replayer zxart:80172/SJ.Lex_-_NEDOPIS.pt3 |
+| zxart | stp | FAIL |  | 3 | replayer: none claims the file | 82137/Voxon_-_Blackpon.stp error no_replayer zxart:82137/Voxon_-_Blackpon.stp |
+| zxart | tfm | FAIL |  | 1 | open failed after fetch (companion missing or bad sample) | usmann_-_Minimoog_r10_(2013)_(ZX_AAA_Demo_Compo_2013,_3).tfm error open_failed zxart:57609/Husmann_-_Minimoog_r |
+| aminet | mad | FAIL |  | 1 | open failed after fetch (companion missing or bad sample) | mods/smpl/Mad.lha error open_failed aminet:mods/smpl/Mad.lha |
+
+Run finished (all jobs done). The fetch cache and WAVs were deleted; the TSV stays in the session scratchpad oa/verdicts.tsv.
