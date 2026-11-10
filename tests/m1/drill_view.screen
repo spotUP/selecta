@@ -1,6 +1,5 @@
- Stopped  -
- -  Subsong 0/0  --:-- / --:--  Volume 100
- Queue by folder  Drilldown > /tmp/selecta-tree-view/root/a
+ [Home]  [What do you want to play?]  [Browse]
+ Queue by folder  Drilldown > /tmp/selecta-tree-view/root/a  Scope: Library
    selecta-test-mk.mod
 
 
@@ -21,4 +20,5 @@
 
 
 
- Up Down Move  Enter Open  Backspace Parent  Tab Queue  Space Pause  Left Right
+
+ -                                    ||  --:-- / -:--               Volume 100

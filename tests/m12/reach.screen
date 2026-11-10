@@ -1,6 +1,5 @@
- Stopped  -
- -  Subsong 0/0  --:-- / --:--  Volume 100
- Queue by folder  Tree
+ [Home]  [What do you want to play?]  [Browse]
+ Queue by folder  Tree  Scope: Library
  [-] tests/m12/a (2)
      one.mod - Protracker (mod)
      two.mod - Protracker (mod)
@@ -21,4 +20,5 @@
 
 
 
- Up Down Move  Enter Open  Backspace Parent  Tab Queue  Space Pause  Left Right
+
+ -                                    ||  --:-- / -:--               Volume 100
