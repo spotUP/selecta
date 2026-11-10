@@ -2860,6 +2860,17 @@ if(NOT SEL_AMIGA)
   set_tests_properties(hively-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "hively_decode_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
+  # I1242e: real Sawteeth songs (SWTD binary and SWTT text, fetched by checksum, exit 77 = skip) play through the render entry point (sawteeth module, host only).
+  # Other .st files (soundtracker-style, zero file, header only, cut off) must not be played as sawteeth.
+  if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sawteeth-decode)
+    add_test(NAME sawteeth-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sawteeth_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sawteeth-decode)
+    set_tests_properties(sawteeth-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sawteeth_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I708a: a real Klystrack song (fetched by checksum, exit 77 = skip) plays through the render entry point (klystron module).
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/klystron-decode)
   add_test(NAME klystron-decode

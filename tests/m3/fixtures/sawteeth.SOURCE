@@ -1,0 +1,7 @@
+Sawteeth test songs for tests/m3/sawteeth_decode.sh (sawteeth module, I1242e). Never committed: fetched by sha256 into the
+git-ignored tests/m3/fixtures/.cache. Pinned to upstream commit 9fe13fe32d9b5a65fe50a96605f6c2f69e440e34 of pulkomandy/Sawteeth.
+The songs ship in the upstream repository (songs/); no separate licence is stated for them.
+https://raw.githubusercontent.com/pulkomandy/Sawteeth/9fe13fe32d9b5a65fe50a96605f6c2f69e440e34/songs/Spruce/64k.st  f11f5d41754f18e37ef73f306f3482e98d4076dbbc6b5925b9e6318020110ef2  (SWTD binary)
+https://raw.githubusercontent.com/pulkomandy/Sawteeth/9fe13fe32d9b5a65fe50a96605f6c2f69e440e34/songs/Spruce/glimmer.st  01e23763b0b6ff707c2d02b1b1b2866b4a5e8fb6e9eb15ca8b7f8ae8c00928d0  (SWTD binary)
+https://raw.githubusercontent.com/pulkomandy/Sawteeth/9fe13fe32d9b5a65fe50a96605f6c2f69e440e34/songs/Spruce/woi.st  77a6b849adec6e8461921c15aae914ad7bf48c5f3fbffb310153643641836a4c  (SWTT text)
+Engine licence: MIT, Copyright 2001 Jonas Norberg (third_party/sawteeth/LICENSE).
