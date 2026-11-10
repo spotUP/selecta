@@ -502,6 +502,12 @@ if(NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/hively)
 endif()
 
+# sawteeth (I1242e): Sawteeth songs (.st, SWTD binary and SWTT text), Jonas Norberg's original player library (MIT, unchanged) under Selecta's own glue. MIT module, no GPL gate.
+# Host only (C++ engine, no Amiga C++ plugin build yet; float throughout, so a later Amiga build is FPU tier; exemption in row I1242e).
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/sawteeth)
+endif()
+
 # bbmp_nez (I710w): SGC and Game Boy GBR songs, libnezplug (Unlicense / MIT-0, plain C) plus our own adapter. Core module, no GPL gate.
 # Host only for now; the Amiga build is tried in row I710w.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)

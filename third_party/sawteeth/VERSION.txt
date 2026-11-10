@@ -1,0 +1,7 @@
+sawteeth (I1242e): Sawteeth song player by Jonas Norberg, from https://github.com/pulkomandy/Sawteeth
+commit 9fe13fe32d9b5a65fe50a96605f6c2f69e440e34, directories lib/source (7 .cpp) and lib/headers (9 .h), copied unchanged
+(byte for byte; no local changes). Licence: MIT, "Copyright 2001, Jonas Norberg" in every file header, text in LICENSE.
+Not vendored: the BeOS/Haiku editor (Source/ of the upstream repo), binaries, songs, sounds.
+Formats: SWTD (binary) and SWTT (text) Sawteeth songs, file versions up to 1200 (.st). Fixed 44100 Hz output, 50 Hz tick
+(882 samples), 32-bit float throughout (libm only), so the Amiga needs an FPU. The loader prints diagnostics to stderr.
+The glue (plugins/replayers/sawteeth/shim.cpp, adapter.c) is Selecta's own.
