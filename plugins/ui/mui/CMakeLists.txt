@@ -12,6 +12,10 @@ target_include_directories(mui_map PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/map" PRIV
 sel_add_plugin(mui_ui 5 mui_ui.c)
 target_include_directories(sel_plugin_mui_ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/map")
 target_link_libraries(sel_plugin_mui_ui PUBLIC mui_map)
+# I1305c: the sdk-isolation compile of mui_ui.c clears every include directory, but mui_map.h includes "mui_aa.h" (a class package
+# header under plugins/shared, an allowed root); give that compile the package roots sel_mcc_static exports (src/map, src, include).
+target_include_directories(sel_sdkcheck_mui_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared/mcc/include" "${PROJECT_SOURCE_DIR}/plugins/shared/mcc/src"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/mcc/src/map" "${PROJECT_SOURCE_DIR}/plugins/shared/mcc/src/class" "${CMAKE_CURRENT_SOURCE_DIR}/map")
 if(SEL_AMIGA)
   # libmui.a (toolchain) holds the out-of-line varargs MUI_NewObject the ApplicationObject/End idiom needs (I508).
   target_link_libraries(sel_plugin_mui_ui PUBLIC mui)
