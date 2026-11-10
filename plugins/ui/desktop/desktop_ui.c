@@ -666,6 +666,9 @@ typedef struct desk {
     const sel_tag* (*find_plugin)(uint32_t kind, const char* id); /* registry lookup the app hands over (DUI-P4-11) */
     sel_viz_render_fn viz_fn[DESK_VIZ_MAX]; /* the viz plugins found at open: scope, levels, spectrum, sid registers */
     const char* viz_id[DESK_VIZ_MAX];
+    uint32_t viz_keys; /* I1052d: keys the visual layout handed to the viz plugin that used them */
+    sel_viz_key_fn viz_key[DESK_VIZ_MAX]; /* I1052d: optional VIZ_KEY hook (palette keys), NULL when the plugin has none */
+    sel_viz_host viz_host;                /* I1052d: the services VIZ_OPEN hands every plugin */
     sel_viz_stats_fn viz_stats[DESK_VIZ_MAX]; /* I1052: optional VIZ_STATS hook, NULL when the plugin has none */
     const char* viz_name[DESK_VIZ_MAX];
     uint32_t viz_n, viz_sel;     /* plugins found, index of the one the Now Playing strip and the visual layout draw */
@@ -7018,6 +7021,27 @@ static int32_t si_max_q16(desk* d) {
 #define VIZ_MAX DESK_VIZ_MAX
 enum { VIZ_NONE = 0, VIZ_STRIP = 1, VIZ_PAGE = 2, VIZ_VISUAL = 3 };
 
+static const char* viz_host_pref_get(void* user, const char* key, const char* def) {
+    return desk_pref((const desk*)user, key, def);
+}
+
+static void viz_host_pref_set(void* user, const char* key, const char* value) {
+    char line[160];
+    (void)snprintf(line, sizeof line, "PREF_SET %s %s", key, value);
+    (void)desk_send((desk*)user, line);
+}
+
+/* A tracker format reports its pattern order; a pattern boundary is an order change (the Krakatoa auto palette cue). */
+static int viz_host_position(void* user, uint32_t* order) {
+    const desk* d = (const desk*)user;
+    sel_rp_tracker_info info;
+    if (!sel_engine_tracker_info(d->engine, 0u, &info)) {
+        return 0;
+    }
+    *order = sel_engine_state(d->engine)->song.pattern_pos.order;
+    return 1;
+}
+
 static void viz_load(desk* d) {
     static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs", "viz_krakatoa"};
     uint32_t i;
@@ -7033,6 +7057,14 @@ static void viz_load(desk* d) {
         d->viz_id[d->viz_n] = ids[i];
         d->viz_name[d->viz_n] = (const char*)sel_tag_find(hooks, SEL_VIZ_NAME, 0);
         d->viz_stats[d->viz_n] = (sel_viz_stats_fn)sel_tag_find(hooks, SEL_VIZ_STATS, 0);
+        d->viz_key[d->viz_n] = (sel_viz_key_fn)sel_tag_find(hooks, SEL_VIZ_KEY, 0);
+        if (sel_tag_find(hooks, SEL_VIZ_OPEN, 0) != 0) {
+            d->viz_host.user = d;
+            d->viz_host.pref_get = viz_host_pref_get;
+            d->viz_host.pref_set = viz_host_pref_set;
+            d->viz_host.position = viz_host_position;
+            ((sel_viz_open_fn)sel_tag_find(hooks, SEL_VIZ_OPEN, 0))(&d->viz_host);
+        }
         d->viz_n++;
     }
 }
@@ -14275,6 +14307,11 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->focus != (int32_t)d->layout.count) { /* Escape with nothing open asks whether to quit (I623) */
         dlg_open_quit(d);
         draw_home(d);
+        return 1;
+    }
+    if (ev->mods == 0u && d->viz_n > 0u && d->viz_key[d->viz_sel] != NULL && viz_visible(d) == VIZ_VISUAL && d->focus != (int32_t)d->layout.count &&
+        d->viz_key[d->viz_sel](ev->code)) { /* I1052d: the visual layout hands 1-5 and A to the viz plugin (Krakatoa palettes) */
+        d->viz_keys++;
         return 1;
     }
     if (ev->code == 9u && (ev->mods & ~TXT_MOD_SHIFT) == 0u) {

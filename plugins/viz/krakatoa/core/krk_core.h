@@ -54,6 +54,10 @@ typedef enum krk_knob {
     KRK_K_SNAREFLASH, /* snare: light and bloom flash */
     KRK_K_BASSDRIVE, /* bass level: base flow force and emission */
     KRK_K_HIGHSWIRL, /* highs: swirl and turbulence */
+    /* I1052d palette transitions (design 1.3): auto cycle on/off, crossfade length, minimum gap between auto cues. */
+    KRK_K_AUTOPALETTE, /* 1: a phrase change moves to the next palette (pref ui.krakatoa.autoPalette) */
+    KRK_K_FADE,        /* crossfade seconds; 0 switches at once */
+    KRK_K_PALINTERVAL, /* seconds between two auto cues at least */
     KRK_K_COUNT
 } krk_knob;
 
@@ -80,6 +84,7 @@ uint32_t krk_params_parse(krk_params* p, const char* list);
 /* Pref keys (include/selecta/prefs.def). */
 #define KRK_PREF_PALETTE "ui.krakatoa.palette"
 #define KRK_PREF_SMOKE "ui.krakatoa.smoke"
+#define KRK_PREF_AUTOPALETTE "ui.krakatoa.autoPalette"
 
 /* ---- Palettes (design 1.3): Aurora, Nebula, Magma, Spectrum, Ash. Linear RGB 0..1. ---- */
 typedef struct krk_palette {
@@ -98,8 +103,40 @@ const krk_palette* krk_palette_get(uint32_t index);
 /* 0xRRGGBB of a linear colour after the sRGB curve, for --stats and tests. */
 uint32_t krk_rgb_hex(const float c[3]);
 
+/* Linear blend of two palettes: every colour of `out` is a + (b - a) * t (t clamped to 0..1; out->name is b's at t > 0.5,
+ * else a's). `out` may not alias a or b. */
+void krk_palette_blend(krk_palette* out, const krk_palette* a, const krk_palette* b, float t);
+
+typedef struct krk_audio krk_audio;
+
+/* ---- Palette transitions (I1052d, design 1.3): the displayed palette moves from `from` to `to` over KRK_K_FADE seconds.
+ * The fire ramp (hot, ember, tail: what fresh emission is drawn with) leads the blend and the smoke body (cool, key, bg,
+ * smoke: what old, cooled smoke is drawn with) lags it, so new emission shows the new colours first and old smoke
+ * drifts out in the old. Selected by keys 1-5 or by the auto cue. ---- */
+typedef struct krk_palfx {
+    uint32_t from, to;
+    float t;         /* 0..1 along the crossfade; 1 = settled on `to` */
+    float since_cue; /* seconds since the last auto cue */
+    float age;       /* seconds stepped (no energy cue in the first 2 s) */
+    float e_slow;    /* slow energy average for the jump cue */
+    uint32_t order, order_seen; /* last tracker order, 1 once seen */
+    uint32_t changes; /* palette changes started (sentinel) */
+    uint32_t cues;    /* auto cues fired (sentinel) */
+} krk_palfx;
+
+void krk_palfx_init(krk_palfx* fx, uint32_t palette, const krk_params* p);
+/* Starts a crossfade to palette `index` (0..4) from what is displayed now; the same palette as the target is a no-op.
+ * Returns 1 when a change started. Fade 0 settles at once. */
+int krk_palfx_select(krk_palfx* fx, uint32_t index, const krk_params* p);
+/* One step of dt seconds: advances the crossfade and, with autoPalette on, fires the auto cue: a tracker order change
+ * (pos non-NULL: the engine play position, a pattern boundary) or, without a position, an energy jump of the mapper's
+ * envelope; at most one per KRK_K_PALINTERVAL seconds. Returns 1 when the cue fired this step. */
+int krk_palfx_step(krk_palfx* fx, const krk_params* p, const krk_audio* a, const uint32_t* order, float dt);
+/* Fire ramp and smoke body palettes at the current blend. */
+void krk_palfx_colors(const krk_palfx* fx, krk_palette* fire, krk_palette* body);
+
 /* ---- Audio mapper (design section 4). ---- */
-typedef struct krk_audio {
+struct krk_audio {
     /* state */
     float env;      /* RMS envelope, attack 10 ms, release 300 ms */
     float peak;     /* peak follower, decays over 4 s */
@@ -120,7 +157,7 @@ typedef struct krk_audio {
     float pump;      /* speaker cone: > 0 push out from the emitter, < 0 relax back; 0 at rest */
     float flash;     /* snare light flash 0..1 */
     float turb_mul;  /* highs on turbulence */
-} krk_audio;
+};
 
 void krk_audio_init(krk_audio* a);
 /* One mapper step of dt seconds for frame f (NULL or seq 0: silence) under knobs p. */
@@ -166,5 +203,8 @@ typedef struct krk_uniforms {
 
 void krk_uniforms_build(krk_uniforms* u, const krk_grid* g, const krk_params* p, const krk_audio* a, const krk_brush* b,
                         float dt, float t, uint32_t out_w, uint32_t out_h, uint32_t frame);
+
+/* Overrides the colour fields of `u` (built by krk_uniforms_build) with the crossfading palette. */
+void krk_uniforms_palette(krk_uniforms* u, const krk_palfx* fx);
 
 #endif /* KRK_CORE_H */
