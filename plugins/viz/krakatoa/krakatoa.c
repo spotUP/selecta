@@ -1,7 +1,8 @@
 /* Krakatoa Smoke visualizer (I559 / I1052, design thoughts/shared/research/2026-10-27-krakatoa-port-design.md, modern
  * tier: C host + compute shaders on the SDL3 GPU API). The music drives the brush: krk_audio_step turns each viz frame
  * into force, swirl, emission and beat heat; krk_brush_at moves the autopilot brush; krk_uniforms_build packs one step;
- * krk_gpu_step simulates and ray marches at half the surface size, and this file scales the image 2x2 into the surface.
+ * krk_gpu_step simulates and ray marches at half the surface size and returns a full-size image (its final pass
+ * upscales, tone maps and dithers per surface pixel); this file copies it row by row into the surface.
  *
  * Quality comes from SELECTA_KRK_QUALITY (low, medium, high, ultra; default high) until the ui.krakatoa.quality pref
  * lands (KRK-P0-2). Knobs run at their design defaults until the same pref row wires them. */
@@ -45,8 +46,8 @@ static void krk_reset(uint32_t sw, uint32_t sh) {
         K.gpu_failed = 1;
         return;
     }
-    K.img = (uint32_t*)malloc((size_t)K.ow * K.oh * 4u);
-    K.gpu = K.img != NULL ? krk_gpu_create(&K.g, K.ow, K.oh) : NULL;
+    K.img = (uint32_t*)malloc((size_t)sw * sh * 4u);
+    K.gpu = K.img != NULL ? krk_gpu_create(&K.g, sw, sh) : NULL;
     K.gpu_failed = K.gpu == NULL;
 }
 
@@ -54,7 +55,7 @@ static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_col
     krk_uniforms u;
     krk_brush b;
     float dt;
-    uint32_t d, x, y, n;
+    uint32_t d, y, n;
     (void)c;
     if (s == NULL || s->fmt != SEL_PIX_RGBA32 || s->w < 2u || s->h < 2u) {
         return 0;
@@ -86,11 +87,7 @@ static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_col
         K.jacobi_total += n;
     }
     for (y = 0; y < s->h; y++) {
-        uint32_t* row = (uint32_t*)(void*)((uint8_t*)s->pixels + (size_t)y * s->pitch);
-        const uint32_t* src = K.img + (size_t)(y / 2u < K.oh ? y / 2u : K.oh - 1u) * K.ow;
-        for (x = 0; x < s->w; x++) {
-            row[x] = src[x / 2u < K.ow ? x / 2u : K.ow - 1u];
-        }
+        memcpy((uint8_t*)s->pixels + (size_t)y * s->pitch, K.img + (size_t)y * s->w, (size_t)s->w * 4u);
     }
     return 1;
 }

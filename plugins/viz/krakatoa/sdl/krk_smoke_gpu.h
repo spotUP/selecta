@@ -1,7 +1,8 @@
 /* Krakatoa Smoke on the SDL3 GPU API (I1052, design section 2, modern tier). The header stays free of SDL so the
  * plugin sources keep SDK isolation; krk_smoke_gpu.c is built as its own library (plugins/viz/krakatoa/CMakeLists.txt).
- * One step = advect, curl, force, divergence, `jacobi` pressure iterations, gradient subtract, ray march, then a readback
- * of the out_w x out_h image as 0xAARRGGBB. */
+ * One step = advect, curl, force, divergence, `jacobi` pressure iterations, gradient subtract, ray march at half the
+ * output size (u->view[0..1] must be out_w / 2, out_h / 2), a final pass per output pixel (bilinear upscale, bloom, tone
+ * map, vignette, dither), then a readback of the out_w x out_h image as 0xAARRGGBB. */
 #ifndef KRK_SMOKE_GPU_H
 #define KRK_SMOKE_GPU_H
 

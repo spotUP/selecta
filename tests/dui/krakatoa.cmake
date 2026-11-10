@@ -5,6 +5,10 @@
 #   steps > 0 (sentinel: krk_gpu_step ran and returned its Jacobi dispatch count), gpu 1,
 #   quality high (SELECTA_KRK_QUALITY=high): Y 112, Z 76, X = round(112 * w / h / 4) * 4 (capped at 3 Y) of the surface,
 #   jacobi 28 per step and jacobi_total = 28 * steps (every step dispatched all 28 Jacobi iterations).
+# I1245 (dot grid): the --frame-dump of the same run has no 2x2 pixel replication in the viz area. The final pass
+# (bloom, tone map, vignette, dither) must run per surface pixel; when it ran at the half-size march resolution and
+# the host scaled 2x2 nearest-neighbour, every pixel equalled its neighbour at one x parity (fraction 1.0, measured).
+# Per-pixel dither keeps both parities near 0.17; the test fails above 0.6.
 if(NOT KRK_BUILT)
   message(STATUS "SELECTA_SKIP: viz_krakatoa not built (needs APPLE, -DSELECTA_UI_DESKTOP=ON, glslangValidator and spirv-cross)")
   return()
@@ -17,7 +21,7 @@ file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\nui.desktop.viz=v
 file(WRITE "${WORK}/in.txt" "wait 100\nkey ctrl+4\nwait 150\n")
 set(ENV{SELECTA_KRK_QUALITY} high)
 dui_run(o --db "${WORK}/k.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
-  --exec "OPEN ${HERE}/../m3/lyrics/ambient.mod" --ticks 12 --input "${WORK}/in.txt")
+  --exec "OPEN ${HERE}/../m3/lyrics/ambient.mod" --ticks 12 --input "${WORK}/in.txt" --frame-dump "${WORK}/f.ppm")
 
 if(NOT "${o}" MATCHES "viz frames [0-9]+ song_ms [0-9]+ plugin ([a-z_]+) plugins ([0-9]+)")
   message(FATAL_ERROR "no viz sentinel in:\n${o}")
@@ -61,5 +65,38 @@ endif()
 math(EXPR want_j "28 * ${steps}")
 if(NOT jtot EQUAL want_j)
   message(FATAL_ERROR "jacobi_total ${jtot} over ${steps} steps, want ${want_j}: ${line}")
+endif()
+
+# I1245: equal-neighbour fraction per x parity over rows 300, 350 and 400, x 200..999 of the 1280x800 canvas dump
+# (inside the viz rect). PPM P6: the pixels are the last 1280 * 800 * 3 bytes, after the text header.
+file(SIZE "${WORK}/f.ppm" fsize)
+math(EXPR pix0 "${fsize} - 1280 * 800 * 3")
+set(eq0 0)
+set(eq1 0)
+set(tot 0)
+foreach(row 300 350 400)
+  math(EXPR off "${pix0} + (${row} * 1280 + 200) * 3")
+  file(READ "${WORK}/f.ppm" hex OFFSET ${off} LIMIT 2400 HEX)
+  string(LENGTH "${hex}" hl)
+  if(NOT hl EQUAL 4800)
+    message(FATAL_ERROR "frame dump ${WORK}/f.ppm too short at row ${row}")
+  endif()
+  foreach(i RANGE 0 797) # 399 pairs per parity
+    math(EXPR a "${i} * 6")
+    math(EXPR b "${a} + 6")
+    string(SUBSTRING "${hex}" ${a} 6 pa)
+    string(SUBSTRING "${hex}" ${b} 6 pb)
+    if(pa STREQUAL pb)
+      math(EXPR par "${i} % 2")
+      math(EXPR eq${par} "${eq${par}} + 1")
+    endif()
+  endforeach()
+  math(EXPR tot "${tot} + 399")
+endforeach()
+math(EXPR f0 "${eq0} * 100 / ${tot}")
+math(EXPR f1 "${eq1} * 100 / ${tot}")
+set(line "${line} equal_neighbour_pct ${f0}/${f1}")
+if(f0 GREATER 60 OR f1 GREATER 60)
+  message(FATAL_ERROR "Krakatoa image is scaled 2x2 (dot grid, I1245): equal-neighbour percent per x parity ${f0}/${f1}, want <= 60: ${line}")
 endif()
 message(STATUS "viz-krakatoa-reach ok: ${line}")

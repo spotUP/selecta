@@ -1,17 +1,17 @@
 #version 450
 // Krakatoa Smoke kernels (I1052, design sections 1.4 and 2). One source, compiled once per pass with -DKRK_PASS_<NAME>:
-// ADVECT, CURL, FORCE, DIV, JACOBI, GRAD, MARCH. Bindings are unique across sets so the MSL output (spirv-cross
+// ADVECT, CURL, FORCE, DIV, JACOBI, GRAD, MARCH, FINAL. Bindings are unique across sets so the MSL output (spirv-cross
 // --msl-decoration-binding) matches SDL_GPU's Metal order: [[buffer(0)]] uniforms, then the read-only storage buffers,
 // then the read-write storage buffers. The uniform block mirrors krk_uniforms in sdl/krk_smoke_gpu.c.
 
-#ifdef KRK_PASS_MARCH
+#if defined(KRK_PASS_MARCH) || defined(KRK_PASS_FINAL)
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 #else
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 #endif
 
 layout(std140, set = 2, binding = 0) uniform KrkU {
-    ivec4 dim;    // grid X, Y, Z; w: Jacobi iteration index
+    ivec4 dim;    // grid X, Y, Z; w: Jacobi iteration index. FINAL pass only: x, y = output (surface) size
     vec4 tm;      // dt, time, 1/Y, unused
     vec4 bp;      // brush position (grid units), radius
     vec4 bv;      // brush velocity (cells/s), active
@@ -20,7 +20,7 @@ layout(std140, set = 2, binding = 0) uniform KrkU {
     vec4 decay;   // density, temperature, velocity, freshness multipliers for this step
     vec4 lightp;  // light position (grid units), intensity (light x 1.6)
     vec4 rend;    // V_EXT, uExtL, uEmis, uBloomInt
-    vec4 view;    // output width, height, V_CAM, frame counter
+    vec4 view;    // march width, height (half the output), V_CAM, frame counter
     vec4 hot[4];  // palette fire ramp
     vec4 cool;    // palette shadow tint
     vec4 keyc;    // palette key light colour
@@ -200,11 +200,11 @@ void main() {
 }
 
 #elif defined(KRK_PASS_MARCH)
-// Pass 7: ray march (Beer-Lambert V_EXT, one cell per step, at most 400 steps), emission from temperature (uEmis),
-// shadow sweep toward the light (uExtL), palette, bloom (threshold 0.75, knee 0.6, uBloomInt), vignette 0.38 and
-// dither /96. Writes 0xAARRGGBB per output pixel.
+// Pass 7: ray march at half the output size (Beer-Lambert V_EXT, one cell per step, at most 400 steps), emission from
+// temperature (uEmis), shadow sweep toward the light (uExtL), palette, background gradient. Writes linear HDR colour;
+// the FINAL pass does bloom, tone map, vignette and dither per output pixel.
 layout(std430, set = 0, binding = 1) readonly buffer Sca { vec4 sca[]; };
-layout(std430, set = 1, binding = 2) buffer Out { uint px[]; };
+layout(std430, set = 1, binding = 2) buffer Hdr { vec4 hdr[]; };
 
 vec3 fire(float t) {
     t = clamp(t, 0.0, 3.0);
@@ -258,14 +258,49 @@ void main() {
             }
         }
     }
-    vec3 col = acc + T * mix(u.bg[0].rgb, u.bg[1].rgb, 1.0 - uv.y);
+    hdr[g.x + g.y * ov.x] = vec4(acc + T * mix(u.bg[0].rgb, u.bg[1].rgb, 1.0 - uv.y), 1.0);
+}
+
+#elif defined(KRK_PASS_FINAL)
+// Pass 8, per output (surface) pixel, as the reference's swapchain pass (design table row L19): bilinear sample of the
+// half-size march image, bloom (threshold 0.75, knee 0.6, uBloomInt), tone map, vignette 0.38 and dither /96. Writes
+// 0xAARRGGBB. Before I1245 these steps ran at march size and the host scaled the result 2x2 nearest-neighbour, so
+// every dither sample and colour step became a 2x2 block (4x4 on Retina): a visible dot grid in dark smoke.
+layout(std430, set = 0, binding = 1) readonly buffer Hdr { vec4 hdr[]; };
+layout(std430, set = 1, binding = 2) buffer Out { uint px[]; };
+
+// Dither noise: PCG integer hash (Jarzynski & Olano 2020) of pixel x, y and frame, exact uint math.
+uint krk_pcg(uint v) {
+    uint s = v * 747796405u + 2891336453u;
+    uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+
+vec3 krk_hdr_at(ivec2 c, ivec2 mv) {
+    c = clamp(c, ivec2(0), mv - 1);
+    return hdr[c.x + c.y * mv.x].rgb;
+}
+
+void main() {
+    ivec2 g = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 ov = u.dim.xy;
+    ivec2 mv = ivec2(u.view.xy);
+    if (g.x >= ov.x || g.y >= ov.y) {
+        return;
+    }
+    vec2 uv = (vec2(g) + 0.5) / vec2(ov);
+    vec2 mp = uv * vec2(mv) - 0.5;
+    ivec2 m0 = ivec2(floor(mp));
+    vec2 f = mp - vec2(m0);
+    vec3 col = mix(mix(krk_hdr_at(m0, mv), krk_hdr_at(m0 + ivec2(1, 0), mv), f.x),
+                   mix(krk_hdr_at(m0 + ivec2(0, 1), mv), krk_hdr_at(m0 + ivec2(1, 1), mv), f.x), f.y);
     float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
     float x = clamp(lum - 0.75 + 0.6, 0.0, 1.2);
     float soft = x * x / 2.4;
     col += col * (max(soft, lum - 0.75) / max(lum, 1e-4)) * u.rend.w;
     col = vec3(1.0) - exp(-col);
     col *= 1.0 - 0.38 * smoothstep(0.45, 1.25, length((uv - 0.5) * 2.0));
-    float h = fract(sin(dot(vec2(g) + u.view.w, vec2(12.9898, 78.233))) * 43758.5453);
+    float h = float(krk_pcg(uint(g.x) + krk_pcg(uint(g.y) + krk_pcg(uint(u.view.w)))) >> 8u) * (1.0 / 16777216.0);
     col = clamp(col + (h - 0.5) / 96.0, 0.0, 1.0);
     uvec3 c8 = uvec3(col * 255.0 + 0.5);
     px[g.x + g.y * ov.x] = 0xFF000000u | (c8.r << 16) | (c8.g << 8) | c8.b;

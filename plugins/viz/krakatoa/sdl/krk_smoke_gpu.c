@@ -10,7 +10,7 @@
 
 #include "krk_shaders_msl.h"
 
-enum { P_ADVECT, P_CURL, P_FORCE, P_DIV, P_JACOBI, P_GRAD, P_MARCH, P_COUNT };
+enum { P_ADVECT, P_CURL, P_FORCE, P_DIV, P_JACOBI, P_GRAD, P_MARCH, P_FINAL, P_COUNT };
 
 static const struct {
     const unsigned char* code;
@@ -20,16 +20,17 @@ static const struct {
     {krk_msl_advect, sizeof krk_msl_advect, 2, 2, 4, 4, 4}, {krk_msl_curl, sizeof krk_msl_curl, 1, 1, 4, 4, 4},
     {krk_msl_force, sizeof krk_msl_force, 2, 1, 4, 4, 4},   {krk_msl_div, sizeof krk_msl_div, 1, 1, 4, 4, 4},
     {krk_msl_jacobi, sizeof krk_msl_jacobi, 2, 1, 4, 4, 4}, {krk_msl_grad, sizeof krk_msl_grad, 1, 1, 4, 4, 4},
-    {krk_msl_march, sizeof krk_msl_march, 1, 1, 8, 8, 1},
+    {krk_msl_march, sizeof krk_msl_march, 1, 1, 8, 8, 1},   {krk_msl_final, sizeof krk_msl_final, 1, 1, 8, 8, 1},
 };
 
 struct krk_gpu {
     SDL_GPUDevice* dev;
     SDL_GPUComputePipeline* pipe[P_COUNT];
-    SDL_GPUBuffer *vel[2], *sca[2], *curl, *div, *p[2], *out;
+    SDL_GPUBuffer *vel[2], *sca[2], *curl, *div, *p[2], *hdr, *out;
     SDL_GPUTransferBuffer* down;
     krk_grid g;
-    uint32_t ow, oh;
+    uint32_t ow, oh; /* output (surface) size: the FINAL pass */
+    uint32_t mw, mh; /* march size, half the output: the MARCH pass and the hdr buffer */
     int cur, pcur;
 };
 
@@ -87,7 +88,7 @@ krk_gpu* krk_gpu_create(const krk_grid* g, uint32_t out_w, uint32_t out_h) {
     SDL_GPUTransferBufferCreateInfo ti;
     SDL_GPUBuffer* all[10];
     uint32_t sizes[10];
-    if (n == 0u || out_w == 0u || out_h == 0u) {
+    if (n == 0u || out_w < 2u || out_h < 2u) {
         return NULL;
     }
     k = (krk_gpu*)calloc(1, sizeof *k);
@@ -97,6 +98,8 @@ krk_gpu* krk_gpu_create(const krk_grid* g, uint32_t out_w, uint32_t out_h) {
     k->g = *g;
     k->ow = out_w;
     k->oh = out_h;
+    k->mw = out_w / 2u;
+    k->mh = out_h / 2u;
     /* SDL_CreateGPUDevice needs the video subsystem. The SDL window backend has it up already, but the mem backend
        (tests, headless runs) never starts it, so the device failed there. Take a counted reference here and drop it
        in krk_gpu_destroy, so the plugin works under any host backend. */
@@ -141,8 +144,9 @@ krk_gpu* krk_gpu_create(const krk_grid* g, uint32_t out_w, uint32_t out_h) {
     all[6] = k->p[0] = mk_buf(k->dev, n * 4u);
     all[7] = k->p[1] = mk_buf(k->dev, n * 4u);
     all[8] = k->out = mk_buf(k->dev, outsz);
-    for (i = 0; i < 9u; i++) {
-        sizes[i] = i < 5u ? n * 16u : i < 8u ? n * 4u : outsz;
+    all[9] = k->hdr = mk_buf(k->dev, k->mw * k->mh * 16u);
+    for (i = 0; i < 10u; i++) {
+        sizes[i] = i < 5u ? n * 16u : i < 8u ? n * 4u : i == 8u ? outsz : k->mw * k->mh * 16u;
         if (all[i] == NULL) {
             krk_gpu_destroy(k);
             return NULL;
@@ -173,6 +177,10 @@ static void run(SDL_GPUCommandBuffer* cmd, krk_gpu* k, int pass, SDL_GPUBuffer* 
     SDL_BindGPUComputeStorageBuffers(cp, 0, ro, k_pass[pass].ro);
     SDL_PushGPUComputeUniformData(cmd, 0, u, (Uint32)sizeof *u);
     if (pass == P_MARCH) {
+        gx = (k->mw + 7u) / 8u;
+        gy = (k->mh + 7u) / 8u;
+        gz = 1u;
+    } else if (pass == P_FINAL) {
         gx = (k->ow + 7u) / 8u;
         gy = (k->oh + 7u) / 8u;
         gz = 1u;
@@ -218,7 +226,11 @@ uint32_t krk_gpu_step(krk_gpu* k, const krk_uniforms* uin, uint32_t jacobi, uint
     }
     u.dim[3] = 0;
     run(cmd, k, P_GRAD, &k->p[pc], &k->vel[c], &u);
-    run(cmd, k, P_MARCH, &k->sca[c], &k->out, &u);
+    run(cmd, k, P_MARCH, &k->sca[c], &k->hdr, &u);
+    /* FINAL reads dim.xy as the output size (shader comment on KrkU.dim); view.xy stays the march size. */
+    u.dim[0] = (int32_t)k->ow;
+    u.dim[1] = (int32_t)k->oh;
+    run(cmd, k, P_FINAL, &k->hdr, &k->out, &u);
     copy = SDL_BeginGPUCopyPass(cmd);
     {
         SDL_GPUBufferRegion src = {k->out, 0, outsz};
@@ -245,7 +257,7 @@ uint32_t krk_gpu_step(krk_gpu* k, const krk_uniforms* uin, uint32_t jacobi, uint
 
 void krk_gpu_destroy(krk_gpu* k) {
     uint32_t i;
-    SDL_GPUBuffer* bufs[9];
+    SDL_GPUBuffer* bufs[10];
     if (k == NULL) {
         return;
     }
@@ -259,7 +271,8 @@ void krk_gpu_destroy(krk_gpu* k) {
         bufs[6] = k->p[0];
         bufs[7] = k->p[1];
         bufs[8] = k->out;
-        for (i = 0; i < 9u; i++) {
+        bufs[9] = k->hdr;
+        for (i = 0; i < 10u; i++) {
             if (bufs[i] != NULL) {
                 SDL_ReleaseGPUBuffer(k->dev, bufs[i]);
             }
