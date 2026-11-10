@@ -23,3 +23,18 @@ execute_process(COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${
 if(rc EQUAL 0 AND NOT e MATCHES "MODE")
   message(FATAL_ERROR "MODE=bogus must be rejected:\n${o}\n${e}")
 endif()
+# I1250: the stored pref applies at start. prefs.conf holds ui.desktop.mode; PREFS_CHANGED only reports later changes, so the
+# desktop reads the stored value when it opens (as it does for ui.desktop.viz). Invariant: the layout at start is the stored mode.
+foreach(spec "visual:3" "mini:2" "window:1")
+  string(REPLACE ":" ";" parts "${spec}")
+  list(GET parts 0 stored_mode)
+  list(GET parts 1 want_layout)
+  file(REMOVE_RECURSE "${WORK}")
+  file(MAKE_DIRECTORY "${WORK}/cfg")
+  file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\nui.desktop.mode = ${stored_mode}\n")
+  dui_run(stored --ui desktop --backend mem --stats)
+  dui_stat(layout "${stored}" desktop uim_layout)
+  if(NOT layout EQUAL want_layout)
+    message(FATAL_ERROR "prefs.conf ui.desktop.mode=${stored_mode} must start in layout ${want_layout}, got ${layout}")
+  endif()
+endforeach()
