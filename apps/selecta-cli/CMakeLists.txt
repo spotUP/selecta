@@ -2,6 +2,31 @@ add_executable(selecta-cli main.c abi.c plugins.c play_null.c machine.c render.c
   ../common/integration_host.c ../common/catalogue.c)
 target_include_directories(selecta-cli PRIVATE ../common)
 target_link_libraries(selecta-cli PRIVATE selecta_registry_cli)
+
+# I1242b: the CLI carries its modules in <exe dir>/plugins, the folder sel_app_plugin_dir (src/core/config_dir.c) gives the loader for a
+# program that is not a macOS bundle, so a CLI run from the build tree or from wherever it is installed finds every built-in and
+# standalone module with no SELECTA_PLUGIN_PATH. Same module list and data folders as the app bundle (apps/selecta/CMakeLists.txt).
+if(NOT SEL_AMIGA AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
+  sel_bundled_modules(_sel_cli_mods _sel_cli_left_out)
+  set(_sel_cli_plugins_dir "$<TARGET_FILE_DIR:selecta-cli>/plugins")
+  add_custom_target(selecta_cli_modules
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_sel_cli_plugins_dir}"
+    VERBATIM)
+  foreach(_m IN LISTS _sel_cli_mods)
+    add_custom_command(TARGET selecta_cli_modules POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${_m}>" "${_sel_cli_plugins_dir}/"
+      VERBATIM)
+    get_target_property(_sel_data_dir ${_m} SEL_MODULE_DATA_DIR)
+    if(_sel_data_dir)
+      get_filename_component(_sel_data_name "${_sel_data_dir}" NAME)
+      add_custom_command(TARGET selecta_cli_modules POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${_sel_data_dir}" "${_sel_cli_plugins_dir}/${_sel_data_name}"
+        VERBATIM)
+    endif()
+  endforeach()
+  add_dependencies(selecta_cli_modules ${_sel_cli_mods})
+  add_dependencies(selecta-cli selecta_cli_modules)
+endif()
 if(SEL_AMIGA)
   target_compile_definitions(selecta-cli PRIVATE SEL_NO_ANALYSE)
 endif()

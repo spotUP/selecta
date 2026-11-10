@@ -1,0 +1,20 @@
+# I1242b: selecta-cli started with no SELECTA_PLUGIN_PATH finds its modules beside the executable (<exe dir>/plugins, the rule the
+# app bundle uses). Inputs: CLI, BUILTIN (count of built-in modules, from SEL_BUILTIN_MODULES), PLUGIN (a standalone module id that
+# must be listed). Fails with the loader counts when the run loaded only the built-ins.
+unset(ENV{SELECTA_PLUGIN_PATH})
+unset(ENV{SELECTA_BUILTIN_MODULES_DIR})
+execute_process(COMMAND "${CLI}" plugins --stats OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "selecta-cli plugins --stats exited ${rc}\n${err}")
+endif()
+string(REGEX MATCH "registry_total=([0-9]+)" _ "${out}")
+set(total "${CMAKE_MATCH_1}")
+string(REGEX MATCH "dyn_loaded=([0-9]+)" _ "${out}")
+set(dyn "${CMAKE_MATCH_1}")
+if(NOT total GREATER BUILTIN OR NOT dyn GREATER 0)
+  message(FATAL_ERROR "no SELECTA_PLUGIN_PATH: registry_total=${total} dyn_loaded=${dyn}, want registry_total > ${BUILTIN} and dyn_loaded > 0\n${out}")
+endif()
+if(NOT out MATCHES "(^|\n)${PLUGIN} kind=")
+  message(FATAL_ERROR "module '${PLUGIN}' not listed with SELECTA_PLUGIN_PATH unset\n${out}")
+endif()
+message(STATUS "registry_total=${total} dyn_loaded=${dyn}")

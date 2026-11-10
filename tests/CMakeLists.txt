@@ -36,6 +36,14 @@ string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SEL_ARCH)
 sel_cli_test(abi-host-layout "abi" "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_host.${SEL_ARCH}.txt")
 sel_cli_test(abi-voices-layout "abi voices" "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_voices.${SEL_ARCH}.txt")
 
+# I1242b: the CLI started with no SELECTA_PLUGIN_PATH finds the built-in and standalone modules in <exe dir>/plugins.
+if(SELECTA_PLUGIN_LINK STREQUAL "MODULE" AND NOT SEL_AMIGA AND TARGET sel_module_xmp)
+  list(LENGTH _sel_expect_modules _cdp_builtin)
+  add_test(NAME cli-default-plugin-path
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DBUILTIN=${_cdp_builtin}" -DPLUGIN=xmp
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_default_plugins.cmake")
+endif()
+
 # T3: the engine runs a script through the real dispatch and emits the
 # expected events, including batch deferral, unknown and unimplemented verbs.
 sel_cli_test(m0-script "script ${CMAKE_CURRENT_SOURCE_DIR}/m0/basic.sel"
