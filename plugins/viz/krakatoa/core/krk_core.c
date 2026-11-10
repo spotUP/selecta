@@ -61,11 +61,12 @@ static const krk_knob_info k_knobs[KRK_K_COUNT] = {
     {"smoke", 0.55f, 0.0f, 1.5f},      {"particles", 1.0f, 0.0f, 3.0f}, {"showSmoke", 1.0f, 0.0f, 1.0f},
     {"showParticles", 1.0f, 0.0f, 1.0f}, {"kickBurst", 1.0f, 0.0f, 3.0f}, {"kickPump", 1.0f, 0.0f, 3.0f},
     {"snareFlash", 1.0f, 0.0f, 3.0f},  {"bassDrive", 1.0f, 0.0f, 3.0f}, {"highSwirl", 1.0f, 0.0f, 3.0f},
+    {"autoPalette", 1.0f, 0.0f, 1.0f}, {"fade", 3.0f, 0.0f, 10.0f},  {"paletteInterval", 30.0f, 5.0f, 300.0f},
 };
 
 static int knob_is_bool(krk_knob k) {
     return k == KRK_K_CURSORLIGHT || k == KRK_K_AUTO || k == KRK_K_PAUSED || k == KRK_K_SHOWSMOKE ||
-           k == KRK_K_SHOWPARTICLES;
+           k == KRK_K_SHOWPARTICLES || k == KRK_K_AUTOPALETTE;
 }
 
 const krk_knob_info* krk_knob_table(void) {
@@ -373,4 +374,108 @@ void krk_uniforms_build(krk_uniforms* u, const krk_grid* g, const krk_params* p,
     set3(u->bg[0], pal->bg[0], 1.0f);
     set3(u->bg[1], pal->bg[1], 1.0f);
     set3(u->smoke, pal->smoke, 1.0f);
+}
+
+/* ---- Palette transitions (I1052d) ---- */
+static float lerpf(float a, float b, float t) {
+    return a * (1.0f - t) + b * t; /* exact at t = 0 and 1 */
+}
+
+static void blend3(float out[3], const float a[3], const float b[3], float t) {
+    uint32_t i;
+    for (i = 0; i < 3u; i++) {
+        out[i] = lerpf(a[i], b[i], t);
+    }
+}
+
+void krk_palette_blend(krk_palette* out, const krk_palette* a, const krk_palette* b, float t) {
+    uint32_t i;
+    t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+    out->name = t > 0.5f ? b->name : a->name;
+    for (i = 0; i < 4u; i++) {
+        blend3(out->hot[i], a->hot[i], b->hot[i], t);
+    }
+    blend3(out->cool, a->cool, b->cool, t);
+    blend3(out->key, a->key, b->key, t);
+    blend3(out->bg[0], a->bg[0], b->bg[0], t);
+    blend3(out->bg[1], a->bg[1], b->bg[1], t);
+    blend3(out->ember, a->ember, b->ember, t);
+    blend3(out->smoke, a->smoke, b->smoke, t);
+    blend3(out->tail, a->tail, b->tail, t);
+}
+
+void krk_palfx_init(krk_palfx* fx, uint32_t palette, const krk_params* p) {
+    memset(fx, 0, sizeof *fx);
+    fx->from = fx->to = palette < KRK_PALETTES ? palette : 0u;
+    fx->t = 1.0f;
+    fx->since_cue = p->v[KRK_K_PALINTERVAL]; /* the first phrase change may cue at once */
+}
+
+int krk_palfx_select(krk_palfx* fx, uint32_t index, const krk_params* p) {
+    if (index >= KRK_PALETTES || index == fx->to) { /* unknown, or settled on / already heading to it */
+        return 0;
+    }
+    /* a change in mid-fade restarts from the side that is more visible now */
+    fx->from = fx->t >= 0.5f ? fx->to : fx->from;
+    fx->to = index;
+    fx->t = p->v[KRK_K_FADE] <= 0.0f ? 1.0f : 0.0f;
+    if (fx->t >= 1.0f) {
+        fx->from = index;
+    }
+    fx->changes++;
+    return 1;
+}
+
+int krk_palfx_step(krk_palfx* fx, const krk_params* p, const krk_audio* a, const uint32_t* order, float dt) {
+    int cue = 0;
+    float env = a != NULL ? a->env : 0.0f;
+    if (fx->age <= 0.0f) {
+        fx->e_slow = env; /* the average starts at the first level, so a song start is no jump */
+    }
+    fx->age += dt;
+    if (fx->t < 1.0f) {
+        fx->t += p->v[KRK_K_FADE] > 0.0f ? dt / p->v[KRK_K_FADE] : 1.0f;
+        if (fx->t >= 1.0f) {
+            fx->t = 1.0f;
+            fx->from = fx->to;
+        }
+    }
+    fx->since_cue += dt;
+    if (order != NULL) {
+        cue = fx->order_seen != 0u && *order != fx->order; /* a pattern boundary */
+        fx->order = *order;
+        fx->order_seen = 1u;
+    } else {
+        cue = fx->age > 2.0f && fx->e_slow > 0.02f && env > fx->e_slow * 1.8f + 0.05f; /* a big energy jump */
+    }
+    fx->e_slow += (env - fx->e_slow) * (dt < 4.0f ? dt / 4.0f : 1.0f);
+    if (cue && p->v[KRK_K_AUTOPALETTE] >= 0.5f && fx->since_cue >= p->v[KRK_K_PALINTERVAL]) {
+        fx->since_cue = 0.0f;
+        fx->cues++;
+        krk_palfx_select(fx, (fx->to + 1u) % KRK_PALETTES, p);
+        return 1;
+    }
+    return 0;
+}
+
+void krk_palfx_colors(const krk_palfx* fx, krk_palette* fire, krk_palette* body) {
+    const krk_palette* a = krk_palette_get(fx->from);
+    const krk_palette* b = krk_palette_get(fx->to);
+    float lead = 1.0f - (1.0f - fx->t) * (1.0f - fx->t), lag = fx->t * fx->t;
+    krk_palette_blend(fire, a, b, lead);
+    krk_palette_blend(body, a, b, lag);
+}
+
+void krk_uniforms_palette(krk_uniforms* u, const krk_palfx* fx) {
+    krk_palette fire, body;
+    uint32_t i;
+    krk_palfx_colors(fx, &fire, &body);
+    for (i = 0; i < 4u; i++) {
+        set3(u->hot[i], fire.hot[i], 1.0f);
+    }
+    set3(u->cool, body.cool, 1.0f);
+    set3(u->keyc, body.key, 1.0f);
+    set3(u->bg[0], body.bg[0], 1.0f);
+    set3(u->bg[1], body.bg[1], 1.0f);
+    set3(u->smoke, body.smoke, 1.0f);
 }

@@ -18,7 +18,7 @@ include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}/cfg")
 file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\nui.desktop.viz=viz_krakatoa\n")
-file(WRITE "${WORK}/in.txt" "wait 100\nkey ctrl+4\nwait 150\n")
+file(WRITE "${WORK}/in.txt" "wait 100\nkey ctrl+4\nsleep 300\nkey 3\nwait 20\nkey 2\nwait 20\n")
 set(ENV{SELECTA_KRK_QUALITY} high)
 dui_run(o --db "${WORK}/k.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
   --exec "OPEN ${HERE}/../m3/lyrics/ambient.mod" --ticks 12 --input "${WORK}/in.txt" --frame-dump "${WORK}/f.ppm")
@@ -45,6 +45,22 @@ string(REGEX MATCH "quality ([a-z]+) gpu ([01])" _m "${o}") # CMake keeps only n
 set(quality ${CMAKE_MATCH_1})
 set(gpu ${CMAKE_MATCH_2})
 set(line "grid ${gx}x${gy}x${gz} jacobi ${jac} steps ${steps} jacobi_total ${jtot} beats ${beats} surface ${sw}x${sh} quality ${quality} gpu ${gpu}")
+
+# I1052d: keys 3 then 2 pick Magma then Nebula; every frame ran the palette fade step (the auto path) through the real
+# plugin open/frame/key hooks, and the host handed the plugin its pref services (open ran: the pref default autoPalette 1).
+if(NOT "${o}" MATCHES "gpu [01] palette ([0-9]) changes ([0-9]+) cues ([0-9]+) keys ([0-9]+) palfx_steps ([0-9]+)")
+  message(FATAL_ERROR "no palette sentinels in the viz_stats line:\n${o}")
+endif()
+set(pal ${CMAKE_MATCH_1})
+set(pchanges ${CMAKE_MATCH_2})
+set(pkeys ${CMAKE_MATCH_4})
+set(psteps ${CMAKE_MATCH_5})
+if(NOT pal EQUAL 1 OR NOT pchanges EQUAL 2 OR NOT pkeys EQUAL 2)
+  message(FATAL_ERROR "keys 3 and 2 want palette 1 after 2 changes and 2 keys, got palette ${pal} changes ${pchanges} keys ${pkeys}")
+endif()
+if(NOT psteps EQUAL steps)
+  message(FATAL_ERROR "palette step ran ${psteps} times over ${steps} smoke steps: the auto path is not on every frame")
+endif()
 
 if(NOT gpu EQUAL 1)
   message(FATAL_ERROR "the SDL GPU device or pipelines did not come up: ${line}")

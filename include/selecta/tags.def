@@ -154,9 +154,10 @@ SEL_TAG(DSP, PARAM,            0x3004, PTR)
 /* Visualizer plugin rows (design doc section 8). The built-in text UI panels
  * read the snapshot frame (sel_state.viz) directly and need none of these. */
 SEL_TAG(VIZ, NAME,             0x4000, STR)
-SEL_TAG(VIZ, OPEN,             0x4001, PTR)
+SEL_TAG(VIZ, OPEN,             0x4001, PTR) /* optional sel_viz_open_fn: the host services (prefs, tracker position), once before the first frame */
 SEL_TAG(VIZ, FRAME,            0x4002, PTR)
 SEL_TAG(VIZ, CLOSE,            0x4003, PTR)
+SEL_TAG(VIZ, KEY,              0x4005, PTR) /* optional sel_viz_key_fn: a plain key while the visual layout shows the viz */
 SEL_TAG(VIZ, STATS,            0x4004, PTR) /* optional sel_viz_stats_fn: one line of counters for --stats */
 
 SEL_TAG(UI, NAME,              0x5000, STR)

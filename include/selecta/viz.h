@@ -181,6 +181,20 @@ typedef uint32_t (*sel_viz_render_fn)(const sel_viz_frame* f, sel_surface* s, co
  * host's --stats dump and returns its length. */
 typedef uint32_t (*sel_viz_stats_fn)(char* out, uint32_t cap);
 
+/* Optional VIZ_OPEN hook (I1052d): the host hands the plugin its services once, before the first frame. The struct
+ * outlives the plugin. pref_get returns the stored value or `def`; pref_set persists one pref. position returns 1 and
+ * fills *order while the playing format is a tracker (the pattern order, a pattern boundary is an order change), else 0. */
+typedef struct sel_viz_host {
+    void* user;
+    const char* (*pref_get)(void* user, const char* key, const char* def);
+    void (*pref_set)(void* user, const char* key, const char* value);
+    int (*position)(void* user, uint32_t* order);
+} sel_viz_host;
+typedef void (*sel_viz_open_fn)(const sel_viz_host* host);
+/* Optional VIZ_KEY hook: the visual layout forwards a plain character key (mods 0) while the viz owns the screen.
+ * Returns 1 when the plugin used the key. */
+typedef int (*sel_viz_key_fn)(uint32_t code);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_VIZ_H */
