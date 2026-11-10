@@ -133,6 +133,38 @@ static int tag_edit(sqlite3* db, const char* key, const char* field, const char*
     return exec_text3(db, sql, key, value, NULL);
 }
 
+/* I1276: the key that owns the STIL notes of a song. STIL stickers are stored only on `hvsc:<path>` (path relative to the HVSC root);
+ * the same file also lives as `modland:pub/modules/HVSC/<path>` (the Modland mirror of HVSC) and as a playlist URL
+ * `http://hvsc.c64.org/download/C64Music/<path>` (percent-encoded). All three share the HVSC path, which is the exact identity: md5 is empty on
+ * Modland rows until they are hashed and a URL key has no songs row at all, so dup_of cannot link them. Any other key owns itself.
+ * The mapping reads the key only; no sticker is copied. */
+void sel_stil_owner_key(const char* key, char* out, size_t cap) {
+    static const char modland[] = "modland:pub/modules/HVSC/";
+    static const char url[] = "http://hvsc.c64.org/download/C64Music/";
+    size_t n = 0;
+
+    if (cap == 0) return;
+    if (strncmp(key, modland, sizeof modland - 1u) == 0) {
+        snprintf(out, cap, "hvsc:%s", key + sizeof modland - 1u);
+    } else if (strncmp(key, url, sizeof url - 1u) == 0) {
+        const char* p = key + sizeof url - 1u;
+
+        n = (size_t)snprintf(out, cap, "hvsc:");
+        while (*p != '\0' && n + 1u < cap) {
+            unsigned v;
+            if (p[0] == '%' && p[1] != '\0' && p[2] != '\0' && sscanf((char[]){p[1], p[2], 0}, "%2x", &v) == 1) {
+                out[n++] = (char)v;
+                p += 3;
+            } else {
+                out[n++] = *p++;
+            }
+        }
+        out[n] = '\0';
+    } else {
+        snprintf(out, cap, "%s", key);
+    }
+}
+
 /* I185: appends one "label\0value\0" pair to a panel list unless the value is absent, empty or "0"; the list
  * always ends in an empty label. Returns 1 when a row was added. */
 static int panel_put(char* out, uint32_t cap, uint32_t* used, const char* label, const char* value) {
@@ -758,9 +790,9 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         rows = 0;
         rc = sqlite3_prepare_v2(
             lib->db,
-            "SELECT (SELECT value FROM stickers WHERE key = ?1 AND name = 'stil.comment'),"
-            " (SELECT value FROM stickers WHERE key = ?1 AND name = 'stil.title'),"
-            " (SELECT value FROM stickers WHERE key = ?1 AND name = 'stil.artist')," /* I434f: the original tune's title and composer */
+            "SELECT (SELECT value FROM stickers WHERE key = ?2 AND name = 'stil.comment'),"
+            " (SELECT value FROM stickers WHERE key = ?2 AND name = 'stil.title'),"
+            " (SELECT value FROM stickers WHERE key = ?2 AND name = 'stil.artist')," /* I434f: the original tune's title and composer */
             " (SELECT group_concat(display, ', ') FROM (SELECT display FROM song_composers WHERE song_key = ?1"
             "  ORDER BY display)),"
             " s.album, s.year, s.genre, (SELECT rating FROM ratings WHERE key = ?1),"
@@ -769,7 +801,10 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             " FROM (SELECT ?1 AS k) q LEFT JOIN songs s ON s.key = q.k",
             -1, &st, NULL);
         if (rc == SQLITE_OK) {
+            char stil_key[1100];
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sel_stil_owner_key(op->key, stil_key, sizeof stil_key);
+            sqlite3_bind_text(st, 2, stil_key, -1, SQLITE_STATIC);
             if (sqlite3_step(st) == SQLITE_ROW) {
                 int c;
                 for (c = 0; c < 10; c++) {
