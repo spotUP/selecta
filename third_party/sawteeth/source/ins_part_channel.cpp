@@ -90,9 +90,9 @@ Ins::~Ins(){
 
 void Ins::Free(){
 	if (name)	free(name); 
-	if (steps)	delete steps;
-	if (amp) 	delete amp;
-	if (filter) delete filter;
+	if (steps)	delete[] steps;
+	if (amp) 	delete[] amp;
+	if (filter) delete[] filter;
 };
 
 
