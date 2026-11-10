@@ -161,6 +161,7 @@ int main(int argc, char** argv) {
         CHECK(pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && pg->songs > 0u);
         CHECK(log_count(logp, ".prg") == prg0 + 1u);
         CHECK(sel_library_playlist_keys(lib, id, keys, sizeof keys, &n) == SEL_FOLDER_OK && n == (pg != NULL ? pg->songs : 0u));
+        CHECK(n == 2u); /* I1266e: the fixture prg holds two visible songs, each its own entry */
         reloads = reads_now(e);
         CHECK(reloads >= base + 2u); /* the page read and the folder reload it posted */
         printf("hippo_lazy_open: page songs %u keys %u\n", (unsigned)(pg != NULL ? pg->songs : 0u), (unsigned)n);
@@ -180,7 +181,7 @@ int main(int argc, char** argv) {
         taken = (uint32_t)sel_engine_playlist_keys_take(e, &got_id, keys, sizeof keys, &n, &ok);
         if (!taken) usleep(2000);
     }
-    CHECK(taken == 1u && got_id == id && ok == 1 && n > 0u);
+    CHECK(taken == 1u && got_id == id && ok == 1 && n == 2u); /* I1266e: one entry per song, not the whole prg as one key */
     CHECK(log_count(logp, ".prg") == prg0 + 1u);
     CHECK(pump_reads(e, base, 1) >= 1u); /* I1058e: the take posted a folders reload */
     if (g_snap) {

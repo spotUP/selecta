@@ -167,7 +167,7 @@ int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id)
     uint32_t requests = 0;
     title_find f;
     char* keys;
-    const char* k;
+    char* k;
     int rc = -1;
 
     if (!sel_hippo_playlist_title(lib, base, id, title, sizeof title)) {
@@ -217,12 +217,25 @@ int sel_hippo_open_playlist(sel_library* lib, const sel_host* base, uint32_t id)
             (void)sel_hippo_file_keys(base, path, keys, OPEN_KEYS_BYTES);
         }
     }
-    for (k = keys; *k != '\0'; k += strlen(k) + 1u) {
-        rc = 1;
-        if (sel_library_playlist_add_song(lib, id, k) != SEL_FOLDER_OK) {
-            rc = -1;
+    /* I1266e: sel_hippo_file_keys writes one key per line ('\n' after each), not NUL separated strings. Reading the buffer
+     * as a string list stored the whole text as one key and then ran past the terminator. */
+    for (k = keys; *k != '\0';) {
+        char* nl = strchr(k, '\n');
+
+        if (nl != NULL) {
+            *nl = '\0';
+        }
+        if (*k != '\0') {
+            rc = 1;
+            if (sel_library_playlist_add_song(lib, id, k) != SEL_FOLDER_OK) {
+                rc = -1;
+                break;
+            }
+        }
+        if (nl == NULL) {
             break;
         }
+        k = nl + 1;
     }
     base->mem_free(base, keys);
     return rc;

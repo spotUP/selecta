@@ -75,7 +75,10 @@ uint32_t sel_uim_np_lines(const sel_uim* m, const sel_state* st, sel_uim_np_line
         const char* p = st->panel;
         while (*p != '\0' && pairs < SEL_UIM_NP_PAIRS_MAX) {
             const char* v = p + strlen(p) + 1;
-            add(out, max, &n, SEL_UIM_NP_PAIR, p, v);
+            l = add(out, max, &n, SEL_UIM_NP_PAIR, p, v);
+            if (l != NULL) {
+                l->ref = v; /* I1274: the whole value (val keeps 255 bytes), valid as long as the state */
+            }
             pairs++;
             p = v + strlen(v) + 1;
         }

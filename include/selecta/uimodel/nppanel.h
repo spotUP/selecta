@@ -20,7 +20,7 @@ typedef enum {
     SEL_UIM_NP_TITLE,       /* val: the title */
     SEL_UIM_NP_ARTIST,      /* val: the artist; absent when the song has none */
     SEL_UIM_NP_LIKE,        /* liked (0/1) and rating (0..5) */
-    SEL_UIM_NP_PAIR,        /* key: label, val: value (the catalogue rows of the open song, in panel order) */
+    SEL_UIM_NP_PAIR,        /* key: label, val: value cut to 255 bytes, ref: the whole value (catalogue rows of the open song, in panel order) */
     SEL_UIM_NP_NOTE,        /* val: the note under the pairs; key: the action label ("Get File...") or empty */
     SEL_UIM_NP_LYRIC,       /* key: "previous", "current" or "next"; val: the synced lyric line (may be empty) */
     SEL_UIM_NP_MESSAGE,     /* ref: the tracker song message (several lines, '\n' apart), owned by the state */
@@ -32,7 +32,7 @@ typedef struct {
     sel_uim_np_kind kind;
     char key[32];
     char val[256];
-    const char* ref; /* SEL_UIM_NP_MESSAGE: text too long for val, valid as long as the state it was built from */
+    const char* ref; /* SEL_UIM_NP_MESSAGE, SEL_UIM_NP_PAIR: text too long for val, valid as long as the state it was built from */
     int32_t liked, rating;
 } sel_uim_np_line;
 
