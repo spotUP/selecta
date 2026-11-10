@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Reuse object files across build trees and worktrees when ccache is installed
+# (each agent worktree otherwise does a full rebuild). Set before project() so
+# the launcher applies to every enabled language, toolchain files included.
+find_program(SELECTA_CCACHE ccache)
+if(SELECTA_CCACHE AND NOT DEFINED CMAKE_C_COMPILER_LAUNCHER)
+  set(CMAKE_C_COMPILER_LAUNCHER "${SELECTA_CCACHE}" CACHE STRING "C compiler launcher")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${SELECTA_CCACHE}" CACHE STRING "C++ compiler launcher")
+endif()
 project(selecta VERSION 0.0.1 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 99)
