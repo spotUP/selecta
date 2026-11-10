@@ -94,4 +94,8 @@ void krk_fx_palette(krk_fx_mode mode, const krk_params* p, uint32_t rgb[256]);
  * lagging body blend, so the 3 s crossfade shows on the 8-bit output when the plugin rewrites the ramp each frame. */
 void krk_fx_palette_fx(krk_fx_mode mode, const krk_palfx* fx, uint32_t rgb[256]);
 
+/* Nearest-neighbour scale of the KRK_FX_OW x KRK_FX_OH index image to a w x h RGBA32 surface (pitch in bytes), alpha
+ * opaque. Same mapping as x * KRK_FX_OW / w and y * KRK_FX_OH / h, with no divide or multiply per pixel. */
+void krk_fx_blit(const uint8_t* idx, const uint32_t* ramp, uint32_t* pixels, uint32_t pitch, uint32_t w, uint32_t h);
+
 #endif /* KRK_LAVA_FX_H */

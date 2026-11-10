@@ -483,7 +483,137 @@ static void test_smoke2d(void) {
     free(a);
 }
 
+/* ---- golden equivalence (I1253): integer-only inputs, so the hashes are the same on every host and on 68k. The
+ * constants were captured from the straightforward C core before the hot loops were rewritten; any rewrite of
+ * krk_lava_fx.c must reproduce every output pixel and every field value of that core. ---- */
+/* Hashes of 300 frames per mode from the plain per-cell core before the I1253 speed rewrite. The fixed-point core
+ * must stay bit-exact: a change here is a change of the picture, never a side effect of an optimisation. */
+#ifndef GOLDEN_LAVA
+#define GOLDEN_LAVA 0x2b2beac4u
+#define GOLDEN_SMOKE2D 0x86d6a18fu
+#endif
+
+static int32_t gtri(uint32_t t, int32_t lo, int32_t hi) { /* triangle wave, period 256 */
+    int32_t ph = (int32_t)(t & 255u), a = ph < 128 ? ph : 255 - ph;
+    return lo + ((hi - lo) * a) / 127;
+}
+
+static void golden_in(krk_fx_in* in, krk_fx_mode mode, uint32_t f, uint32_t* lcg) {
+    uint32_t cfg = (f >> 5) & 7u, r;
+    *lcg = *lcg * 1664525u + 1013904223u;
+    r = *lcg >> 8;
+    memset(in, 0, sizeof *in);
+    in->mode = (int32_t)mode;
+    in->bx = gtri(f * 3u, -200, (int32_t)(W << 8) + 200);
+    in->by = gtri(f * 5u + 40u, -200, (int32_t)(H << 8) + 200);
+    in->bx = in->bx < 0 ? 0 : (in->bx > (int32_t)((W - 1) << 8) ? (int32_t)((W - 1) << 8) : in->bx);
+    in->by = in->by < 0 ? 0 : (in->by > (int32_t)((H - 1) << 8) ? (int32_t)((H - 1) << 8) : in->by);
+    in->brad = gtri(f * 2u, 256, 2600);
+    in->bvx = gtri(f * 7u, -1024, 1024);
+    in->bvy = gtri(f * 11u + 9u, -1024, 1024);
+    in->brush_on = (f % 23u) < 19u;
+    in->emis = gtri(f * 4u, 0, 65535);
+    in->heat = gtri(f * 6u + 100u, 0, 65535);
+    in->push = (f % 12u) == 0u ? gtri(f, -2000, 2000) : (int32_t)(r & 127u) - 64;
+    in->lift = gtri(f + 30u, 0, 255);
+    in->turb = cfg == 5u ? 0 : gtri(f * 2u + 77u, 0, 255);
+    in->conf = cfg == 6u ? 0 : gtri(f * 3u + 5u, 0, 400);
+    in->dec_smoke = 65535 - (int32_t)(r & 2047u);
+    in->dec_heat = 65535 - (int32_t)((r >> 4) & 4095u);
+    in->dec_vel = 65535 - (int32_t)((r >> 8) & 1023u);
+    in->jacobi = cfg == 3u ? 6 : (cfg == 4u ? 5 : 8);
+    in->life_frames = gtri(f, 4, 250);
+    in->show_particles = mode == KRK_FX_LAVA && cfg != 2u;
+    in->show_smoke = mode != KRK_FX_LAVA || cfg != 1u;
+    in->nparticles = mode == KRK_FX_LAVA ? (cfg == 7u ? (int32_t)KRK_FX_MAXP : (cfg == 0u ? 700 : 3000)) : 0;
+    in->spawn_x = in->bx << 10;
+    in->spawn_y = in->by << 10;
+    in->smoke_gain = mode == KRK_FX_LAVA ? gtri(f * 2u, 0, 600) : 384;
+    in->light_gain = gtri(f * 3u + 60u, 0, 1023);
+    in->shadow_k = gtri(f * 5u, 0, 255);
+    in->bloom_gain = gtri(f * 9u, 0, 2047);
+    in->ldx = (int32_t)((f >> 4) % 3u) - 1;
+    in->ldy = (int32_t)((f >> 6) % 3u) - 1;
+    if (in->ldx == 0 && in->ldy == 0) {
+        in->ldy = 1;
+    }
+    in->noise_t = (int32_t)f;
+    in->frame = f;
+}
+
+static uint32_t golden_run(krk_fx_mode mode, uint32_t frames) {
+    krk_fx* s = (krk_fx*)malloc(sizeof(krk_fx));
+    uint8_t* out = (uint8_t*)malloc(KRK_FX_OW * KRK_FX_OH);
+    krk_fx_in in;
+    uint32_t h = 2166136261u, lcg = 99u, f, i;
+    krk_fx_init(s);
+    for (f = 0; f < frames; f++) {
+        golden_in(&in, mode, f, &lcg);
+        krk_fx_step(s, &in);
+        krk_fx_render(s, &in, out);
+        for (i = 0; i < KRK_FX_OW * KRK_FX_OH; i++) {
+            h = (h ^ out[i]) * 16777619u;
+        }
+    }
+    for (i = 0; i < N; i++) {
+        h = (h ^ (uint16_t)s->u[i]) * 16777619u;
+        h = (h ^ (uint16_t)s->v[i]) * 16777619u;
+        h = (h ^ (uint16_t)s->p[i]) * 16777619u;
+        h = (h ^ s->heat[i]) * 16777619u;
+        h = (h ^ s->smoke[i]) * 16777619u;
+    }
+    h = (h ^ s->particles_plotted) * 16777619u;
+    h = (h ^ s->jacobi_iters) * 16777619u;
+    free(out);
+    free(s);
+    return h;
+}
+
+static void test_golden(void) {
+    uint32_t hl = golden_run(KRK_FX_LAVA, 300), hs = golden_run(KRK_FX_SMOKE2D, 300);
+    printf("golden: Lava %08x, Smoke 2D %08x\n", hl, hs);
+    CHECK(hl == GOLDEN_LAVA, "Lava output differs from the reference core: %08x", hl);
+    CHECK(hs == GOLDEN_SMOKE2D, "Smoke 2D output differs from the reference core: %08x", hs);
+}
+
+/* I1253: the divide-free scaler maps exactly like x * OW / w, y * OH / h, for up- and downscales and odd sizes. */
+static int test_blit(void) {
+    static const uint32_t sizes[][2] = {{160, 128}, {320, 256}, {317, 201}, {640, 512}, {97, 61}, {2, 2}, {1280, 3}};
+    static uint8_t idx[KRK_FX_OW * KRK_FX_OH];
+    static uint32_t out[1280 * 512 + 8];
+    uint32_t ramp[256], i, n, x, y;
+    for (i = 0; i < 256u; i++) {
+        ramp[i] = i * 0x010203u & 0xFFFFFFu;
+    }
+    for (i = 0; i < KRK_FX_OW * KRK_FX_OH; i++) {
+        idx[i] = (uint8_t)(i * 37u + (i >> 5));
+    }
+    for (n = 0; n < sizeof sizes / sizeof sizes[0]; n++) {
+        uint32_t w = sizes[n][0], h = sizes[n][1], pitch = (w + 1u) * 4u;
+        memset(out, 0x5A, sizeof out);
+        krk_fx_blit(idx, ramp, out, pitch, w, h);
+        for (y = 0; y < h; y++) {
+            for (x = 0; x < w; x++) {
+                uint32_t want = 0xFF000000u | ramp[idx[(y * KRK_FX_OH / h) * KRK_FX_OW + x * KRK_FX_OW / w]];
+                if (out[y * (w + 1u) + x] != want) {
+                    fprintf(stderr, "blit %ux%u: pixel %u,%u differs\n", (unsigned)w, (unsigned)h, (unsigned)x, (unsigned)y);
+                    return 1;
+                }
+            }
+            if (out[y * (w + 1u) + w] != 0x5A5A5A5Au) {
+                fprintf(stderr, "blit %ux%u: wrote past row %u\n", (unsigned)w, (unsigned)h, (unsigned)y);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 int main(void) {
+    if (test_blit()) {
+        return 1;
+    }
+    test_golden();
     test_basic();
     test_float_reference();
     test_kick();

@@ -102,7 +102,7 @@ static int viz_key(uint32_t code) {
 static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c) {
     krk_fx_in in;
     float dt;
-    uint32_t d, x, y;
+    uint32_t d;
     (void)c;
     if (s == NULL || s->fmt != SEL_PIX_RGBA32 || s->w < 2u || s->h < 2u) {
         return 0;
@@ -140,13 +140,7 @@ static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_col
     }
     krk_fx_palette_fx(KRK_FX_LAVA, &K.fx, K.ramp);
     K.ramp_bakes++;
-    for (y = 0; y < s->h; y++) {
-        uint32_t* row = (uint32_t*)(void*)((uint8_t*)s->pixels + (size_t)y * s->pitch);
-        const uint8_t* src = K.idx + (size_t)(y * KRK_FX_OH / s->h) * KRK_FX_OW;
-        for (x = 0; x < s->w; x++) {
-            row[x] = 0xFF000000u | K.ramp[src[x * KRK_FX_OW / s->w]];
-        }
-    }
+    krk_fx_blit(K.idx, K.ramp, (uint32_t*)s->pixels, s->pitch, s->w, s->h);
     return 1;
 }
 #else
