@@ -130,13 +130,17 @@ static sel_viz_frame* shown_frame(sel_viz_tap* t) {
 }
 
 int sel_viz_acquire(sel_viz_tap* t) {
-    uint32_t old;
+    uint32_t old, newest;
     sel_viz_frame* shown;
+    int got = 0;
     if (!(t->middle & 4u)) return 0;
     old = swap_middle(&t->middle, t->read_idx);
     t->read_idx = old & 3u;
     if (t->delay == 0) return 1;
-    /* Delayed: queue the new frame; the oldest one is shown once more than `delay` blocks are held. */
+    /* Delayed: queue the new frame and show the newest queued one at least `delay` BLOCKS old, by sequence. Counting
+     * acquires instead (one per UI frame) held `delay` UI frames: below 50 fps the picture lagged the speakers by
+     * delay x the frame interval, e.g. 10 blocks at 25 fps = 400 ms instead of 200 (I1246b). */
+    newest = t->frames[t->read_idx].seq;
     shown = &t->queue[t->delay + 1u];
     if (t->q_count == t->delay + 1u) { /* full: drop the oldest */
         t->q_head = (t->q_head + 1u) % (t->delay + 1u);
@@ -144,11 +148,13 @@ int sel_viz_acquire(sel_viz_tap* t) {
     }
     t->queue[(t->q_head + t->q_count) % (t->delay + 1u)] = t->frames[t->read_idx];
     t->q_count++;
-    if (t->q_count <= t->delay) return 0;
-    *shown = t->queue[t->q_head];
-    t->q_head = (t->q_head + 1u) % (t->delay + 1u);
-    t->q_count--;
-    return 1;
+    while (t->q_count > 0u && t->queue[t->q_head].seq + t->delay <= newest) {
+        *shown = t->queue[t->q_head];
+        t->q_head = (t->q_head + 1u) % (t->delay + 1u);
+        t->q_count--;
+        got = 1;
+    }
+    return got;
 }
 
 const sel_viz_frame* sel_viz_current(const sel_viz_tap* t) {

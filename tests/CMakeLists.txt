@@ -1419,6 +1419,15 @@ if(NOT SEL_AMIGA)
   target_link_libraries(krk_core_test PRIVATE m)
   add_test(NAME krk-core COMMAND krk_core_test)
   set_tests_properties(krk-core PROPERTIES TIMEOUT 30 PASS_REGULAR_EXPRESSION "krk_core_ok")
+  # I1246a/b: onset-to-visible latency and kick displacement on the GPU image, through the real viz tap.
+  # Measurement tool, not a registered test yet: the kick pump is not visible
+  # on the GPU image (I1246a open), so a pass/fail gate would fail. Run by hand:
+  #   krk_latency_test synth   or   krk_latency_test wav <file.wav>
+  if(TARGET selecta_krk_gpu)
+    add_executable(krk_latency_test viz/krk_latency_test.c)
+    target_include_directories(krk_latency_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa")
+    target_link_libraries(krk_latency_test PRIVATE selecta_core selecta_krk_gpu m)
+  endif()
 endif()
 if(NOT SEL_AMIGA)
   add_test(NAME viz-taps
