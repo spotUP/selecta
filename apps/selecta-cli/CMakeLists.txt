@@ -8,6 +8,8 @@ target_link_libraries(selecta-cli PRIVATE selecta_registry_cli)
 # standalone module with no SELECTA_PLUGIN_PATH. Same module list and data folders as the app bundle (apps/selecta/CMakeLists.txt).
 if(NOT SEL_AMIGA AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
   sel_bundled_modules(_sel_cli_mods _sel_cli_left_out)
+  # The list the CLI really carries, for tests/CMakeLists.txt (registry-tags counts it; later-added test fixtures are not in it).
+  set_property(GLOBAL PROPERTY SEL_CLI_MODULES ${_sel_cli_mods})
   set(_sel_cli_plugins_dir "$<TARGET_FILE_DIR:selecta-cli>/plugins")
   add_custom_target(selecta_cli_modules
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_sel_cli_plugins_dir}"

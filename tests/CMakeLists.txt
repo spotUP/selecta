@@ -27,6 +27,11 @@ sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}"
 get_property(_sel_expect_plugins GLOBAL PROPERTY SEL_PLUGINS)
 get_property(_sel_expect_modules GLOBAL PROPERTY SEL_BUILTIN_MODULES)
 list(APPEND _sel_expect_plugins ${_sel_expect_modules})
+# I1242b: the CLI also loads the standalone modules from <exe dir>/plugins (apps/selecta-cli/CMakeLists.txt); SEL_CLI_MODULES is
+# exactly the list it copies there (built-ins plus standalone, set before test fixture modules exist), so the new ones count.
+get_property(_sel_cli_modules GLOBAL PROPERTY SEL_CLI_MODULES)
+list(REMOVE_ITEM _sel_cli_modules ${_sel_expect_modules})
+list(APPEND _sel_expect_plugins ${_sel_cli_modules})
 list(LENGTH _sel_expect_plugins SEL_EXPECT_PLUGINS)
 math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
