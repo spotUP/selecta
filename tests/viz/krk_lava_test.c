@@ -428,6 +428,12 @@ static void test_knobs(void) {
         if (k == (int)KRK_K_PAUSED) { /* exemption: the plugin skips krk_fx_step while paused (krakatoa.c), never reaches the core */
             continue;
         }
+        if (k == (int)KRK_K_AUTOPALETTE || k == (int)KRK_K_FADE || k == (int)KRK_K_PALINTERVAL) {
+            /* exemption (I1052d): these drive the palette scheduler in krk_core (proven in krk_core_test block 11);
+             * the fx core only takes the resulting palette through krk_fx_palette. Feeding the scheduler's blended
+             * palette into the Amiga ramp is part of the I1052b AGA output row. */
+            continue;
+        }
         if (k == (int)KRK_K_PALETTE) { /* the palette moves the baked ramp, not the indices */
             uint32_t r0[256], r1[256];
             krk_params_set(&p, (krk_knob)k, 2.0f);
