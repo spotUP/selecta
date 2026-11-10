@@ -48,6 +48,12 @@ foreach(viz scope levels spectrum sidregs)
 endforeach()
 # Krakatoa Smoke (I1052): GPU compute through SDL3, so only with the SDL desktop UI; Metal shaders only (APPLE) until
 # the SPIR-V binding layout lands (KRK-P4-5).
+# Krakatoa fixed-point core (I1052b, KRK-P0-4): portable C, no GPU, no shader tools. Built on its own for the Amiga
+# cross build so the 68k size and warnings are checked before the AGA/RTG output rows (c2p, asm twins) land.
+if(SEL_AMIGA)
+  add_library(krk_fx_core STATIC viz/krakatoa/core/krk_core.c viz/krakatoa/core/krk_lava_fx.c)
+  target_include_directories(krk_fx_core PUBLIC "${PROJECT_SOURCE_DIR}/include" viz/krakatoa)
+endif()
 set(SEL_HAVE_KRAKATOA OFF CACHE INTERNAL "viz_krakatoa is built")
 if(APPLE AND SELECTA_UI_DESKTOP)
   add_subdirectory(viz/krakatoa)
