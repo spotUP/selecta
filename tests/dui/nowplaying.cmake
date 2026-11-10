@@ -227,3 +227,66 @@ endif()
 if(NOT CMAKE_MATCH_2 EQUAL 0)
   message(FATAL_ERROR "${CMAKE_MATCH_2} text draws used a size outside the type scale and painted nothing")
 endif()
+
+# 6. I1274: the whole STIL entry of a SID song shows in the right panel. The HVSC importer stores the note as the sticker
+#    stil.comment (a COMMENT of many continuation lines, joined with spaces, well over 256 bytes) and the title and author as
+#    stil.title / stil.artist. The panel wraps each value into its column and grows the row (`nowplaying pair lines N`): the
+#    note alone needs at least 6 lines, one word-less run is longer than the panel is wide, and the lines of the three rows add up.
+#    Before the fix a value was one 16 px row, cut with an ellipsis (and the 1024 byte engine buffer dropped a long note whole).
+file(REMOVE_RECURSE "${WORK}/sid" "${WORK}/stil.db" "${WORK}/cfg")
+file(MAKE_DIRECTORY "${WORK}/sid")
+file(COPY_FILE "${HERE}/../m3/fixtures/sid_basic.sid" "${WORK}/sid/stil.sid")
+file(WRITE "${WORK}/stil.txt" "wait 300\n")
+dui_run(os0 --db "${WORK}/stil.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "LIBRARY_SCAN ${WORK}/sid" --input "${WORK}/stil.txt")
+set(stil_note "")
+foreach(i RANGE 1 14)
+  string(APPEND stil_note "Line${i} of the STIL comment tells the story of this tune and how it was made in nineteen eighty five. ")
+endforeach()
+string(APPEND stil_note "Unbroken_run_longer_than_the_whole_right_panel_is_wide_so_that_the_wrapper_has_to_break_inside_a_word_to_show_all_of_it")
+string(LENGTH "${stil_note}" stil_len)
+if(stil_len LESS 1400)
+  message(FATAL_ERROR "the STIL fixture note is ${stil_len} bytes, want over 1400 (more than the old 1024 byte panel buffer)")
+endif()
+string(REPLACE "'" "''" stil_sql_note "${stil_note}")
+file(WRITE "${WORK}/stil.sql"
+  "INSERT INTO stickers(key, name, value) SELECT key, 'stil.comment', '${stil_sql_note}' FROM songs WHERE path LIKE '%stil.sid';\n"
+  "INSERT INTO stickers(key, name, value) SELECT key, 'stil.title', 'Commando (main tune)' FROM songs WHERE path LIKE '%stil.sid';\n"
+  "SELECT count(*) FROM stickers WHERE name LIKE 'stil.%';\n")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${WORK}/stil.db" INPUT_FILE "${WORK}/stil.sql"
+  RESULT_VARIABLE src ERROR_VARIABLE serr OUTPUT_VARIABLE sout)
+if(NOT src EQUAL 0)
+  message(FATAL_ERROR "seeding the STIL stickers failed: ${serr}")
+endif()
+if(NOT "${sout}" MATCHES "^2")
+  message(FATAL_ERROR "the scan did not index stil.sid (stickers seeded: ${sout}) in ${WORK}/stil.db")
+endif()
+dui_run(os --db "${WORK}/stil.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "OPEN ${WORK}/sid/stil.sid" --input "${WORK}/stil.txt")
+if(NOT "${os}" MATCHES "nowplaying pair lines ([0-9]+) view ([0-9]+) ([0-9]+) ([0-9]+) max ([0-9]+) scroll ([0-9]+)")
+  message(FATAL_ERROR "no pair-lines sentinel in:\n${os}")
+endif()
+set(stil_lines "${CMAKE_MATCH_1}")
+set(stil_max "${CMAKE_MATCH_5}")
+math(EXPR stil_px "${CMAKE_MATCH_2} + 20")
+math(EXPR stil_py "${CMAKE_MATCH_3} + 10")
+if(NOT "${os}" MATCHES "nowplaying draws ([0-9]+) pairs ([0-9]+)")
+  message(FATAL_ERROR "no nowplaying sentinel in:\n${os}")
+endif()
+if(CMAKE_MATCH_2 LESS 2)
+  message(FATAL_ERROR "the panel drew ${CMAKE_MATCH_2} pairs, want the STIL note and the STIL title (2): the long note was dropped")
+endif()
+# the note is 14 sentences of ~100 characters in a 320 px panel: far more than 6 lines; the title is one more
+if(stil_lines LESS 7)
+  message(FATAL_ERROR "the STIL entry laid out ${stil_lines} lines in the Now Playing panel, want at least 7 (the note alone is over 6)")
+endif()
+# the note is taller than the panel: the block is clipped to a view and scrolls under the wheel (max > 0); one wheel notch moves it
+if(stil_max LESS 1)
+  message(FATAL_ERROR "the STIL block is not taller than its view (max ${stil_max}); the scroll case tests nothing in:\n${os}")
+endif()
+file(WRITE "${WORK}/stil2.txt" "move ${stil_px} ${stil_py}\nwheel 0 -3\nwait 100\n")
+dui_run(os2 --db "${WORK}/stil.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "OPEN ${WORK}/sid/stil.sid" --input "${WORK}/stil2.txt")
+if(NOT "${os2}" MATCHES "nowplaying pair lines [0-9]+ view [0-9]+ [0-9]+ [0-9]+ max [0-9]+ scroll ([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the wheel over the STIL block did not scroll it in:\n${os2}")
+endif()

@@ -196,6 +196,9 @@
 #define SEL_RING_SWAP 1u
 #define SEL_RING_RETURN 2u
 #define SEL_DEFERRED_PATH_MAX 1024u
+/* I1274: the catalogue rows of the song panel. A STIL entry alone is up to 2048 bytes in the importer (STIL_POOL), so the old 1024 dropped
+ * a long STIL note whole (panel_put adds no row that does not fit). */
+#define SEL_PANEL_BYTES 4096u
 #define SEL_ARCHIVE_MEMBER_NAME_MAX 128u
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
@@ -476,7 +479,7 @@ struct sel_engine {
     char composer_filter[64];                  /* I611: COMPOSERS_VIEW text filter on the composer rows (empty: all) */
     uint32_t composer_sort, composer_views;    /* I611: COMPOSERS_VIEW sort (SEL_UIM_LSORT_*) and how many COMPOSERS_VIEW commands ran (sentinel) */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
-    char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
+    char panel[SEL_PANEL_BYTES];               /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t songs_counted_at;                 /* DUI-P4-18: library_changes + 1 when state.library_songs was counted */
     uint32_t library_changes;                  /* I348, I1077c: library_serial; moves in lib_gen_poll only, once per published batch of commits */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
@@ -801,7 +804,7 @@ struct sel_engine {
     uint32_t pm_next, pm_wait, play_meta_reads;
     char pm_rules[512]; /* I1225: companion rules for the read's remote fetch, built on the pump before the post */
     char rdp_path[SEL_DEFERRED_PATH_MAX], rdp_next_path[SEL_DEFERRED_PATH_MAX];
-    char rdp_buf[1024];
+    char rdp_buf[SEL_PANEL_BYTES];
     uint32_t rdp_rows;
     const void *rdp_state, *rdp_next_state;
     uint32_t panel_reads;                      /* panel reads that landed and were published (I906d sentinel) */

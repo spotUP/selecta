@@ -357,6 +357,9 @@ typedef struct desk {
     int drop_playing;        /* 1 after a dropped file was sent as OPEN: an open_failed error then toasts */
     int32_t np_key_end;      /* right edge of the Now Playing label column; the values start np_val_x (I447) */
     int32_t np_val_x;
+    sel_gui_rect np_pair_view; /* I1274: the clipped view of the Now Playing metadata pairs (wheel target) */
+    int32_t np_pair_y_q16, np_pair_max_q16; /* I1274: scroll of that block and its maximum, in Q16 pixels */
+    uint32_t np_pair_lines;  /* I1274 sentinel: text lines the metadata pairs of the last Now Playing draw laid out */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
     uint32_t font_misses;    /* text draws whose size is not in g_sizes, so nothing was drawn (I361) */
@@ -7929,9 +7932,9 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "stats_more %d %d %d %d open=%d\nstats_panel draws=%u rows=%u rect %d %d %d %d\n", (int)mr.x, (int)mr.y, (int)mr.w, (int)mr.h,
                      d->stats_open, (unsigned)d->stats_panel_draws, (unsigned)d->stats_panel_rows, (int)pr.x, (int)pr.y, (int)pr.w, (int)pr.h);
     }
-    o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nnowplaying note=\"%s\" drawn=%u\nlyrics line %d at %u\nmessage lines %u\n",
+    o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nnowplaying note=\"%s\" drawn=%u\nlyrics line %d at %u\nmessage lines %u\nnowplaying pair lines %u view %d %d %d max %d scroll %d\n",
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
-                          (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, sel_uim_np_note(&st->song) != NULL ? sel_uim_np_note(&st->song) : "", (unsigned)d->np_notes, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
+                          (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, sel_uim_np_note(&st->song) != NULL ? sel_uim_np_note(&st->song) : "", (unsigned)d->np_notes, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines, (unsigned)d->np_pair_lines, (int)d->np_pair_view.x, (int)d->np_pair_view.y, (int)d->np_pair_view.h, (int)(d->np_pair_max_q16 >> 16), (int)(d->np_pair_y_q16 >> 16));
     o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
@@ -12614,6 +12617,7 @@ static void draw_player_left(desk* d) {
  * artwork, the artwork, title and artist, the catalogue pairs the engine reports for the song (the text UI's information
  * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
 #define NP_MESSAGE_LINES 6
+#define NP_TAIL_H 120 /* I1274: logical pixels kept under the metadata pairs for the lyrics and the queue */
 static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
     const uint32_t* px = (const uint32_t*)d->canvas->pixels;
     uint32_t r = 0, g = 0, b = 0, n = 0;
@@ -12771,6 +12775,9 @@ static void draw_nowplaying(desk* d) {
     }
     /* Metadata pairs. */
     d->np_rows = 0;
+    d->np_pair_lines = 0;
+    d->np_pair_max_q16 = 0;
+    d->np_pair_view = rect_of(0, 0, 0, 0);
     d->np_msg_lines = 0;
     d->np_key_end = 0;
     d->np_val_x = 0;
@@ -12788,13 +12795,50 @@ static void draw_nowplaying(desk* d) {
         kw = kw < kmax ? kw : kmax;
         d->np_key_end = pn.x + sp + kw;
         d->np_val_x = d->np_key_end + sp;
-        for (k = 0; k < ln; k++) {
-            if (L[k].kind == SEL_UIM_NP_PAIR) {
-                draw_text(d, rect_of(pn.x + sp, y, kw, lpx(d, 16)), L[k].key, 0, 11, muted);
-                draw_text(d, rect_of(d->np_val_x, y, pn.x + sp + side - d->np_val_x, lpx(d, 16)), L[k].val, 0, 12, text);
-                y += lpx(d, 16);
-                d->np_rows++;
+        {
+            /* I1274: a value wraps into the value column and its row grows to its lines (a STIL note is many lines). The block
+             * of pairs has a view of the panel height minus the tail kept for lyrics and queue; a block taller than the view
+             * scrolls under the wheel (np_pair_y_q16) instead of being cut. */
+            const sel_gui_atlas* vat = desk_font(d, 0, 12);
+            int32_t vw = pn.x + sp + side - d->np_val_x, y0 = y, total = 0, view, off;
+            int32_t lh = vat != NULL ? vat->line_height : lpx(d, 16);
+            for (k = 0; k < ln; k++) {
+                if (L[k].kind == SEL_UIM_NP_PAIR) {
+                    const char* v = L[k].ref != NULL ? L[k].ref : L[k].val;
+                    int32_t lines = vat != NULL ? sel_gui_text_wrap(NULL, vat, rect_of(0, 0, vw, 0), v, 0u, 1 << 20, NULL) : 1;
+                    total += lines > 1 ? lines * lh : lpx(d, 16);
+                }
             }
+            view = dt.y + dt.h - y0 - lpx(d, NP_TAIL_H);
+            view = view < lpx(d, 16) ? lpx(d, 16) : view;
+            d->np_pair_view = rect_of(pn.x, y0, side + 2 * sp, view < total ? view : total);
+            d->np_pair_max_q16 = total > view ? (total - view) << 16 : 0;
+            d->np_pair_y_q16 = d->np_pair_y_q16 > d->np_pair_max_q16 ? d->np_pair_max_q16 : d->np_pair_y_q16;
+            off = d->np_pair_y_q16 >> 16;
+            if (d->canvas != NULL) {
+                sel_gui_clip_push(d->canvas, d->np_pair_view);
+            }
+            for (k = 0; k < ln; k++) {
+                if (L[k].kind == SEL_UIM_NP_PAIR) {
+                    const char* v = L[k].ref != NULL ? L[k].ref : L[k].val;
+                    int32_t lines = vat != NULL ? sel_gui_text_wrap(NULL, vat, rect_of(0, 0, vw, 0), v, 0u, 1 << 20, NULL) : 1;
+                    draw_text(d, rect_of(pn.x + sp, y - off, kw, lpx(d, 16)), L[k].key, 0, 11, muted);
+                    if (lines > 1 && vat != NULL) {
+                        sel_gui_text_wrap(d->canvas, vat, rect_of(d->np_val_x, y - off, vw, lines * lh), v, text, lines, &d->text);
+                        y += lines * lh;
+                        d->np_pair_lines += (uint32_t)lines;
+                    } else {
+                        draw_text(d, rect_of(d->np_val_x, y - off, vw, lpx(d, 16)), v, 0, 12, text);
+                        y += lpx(d, 16);
+                        d->np_pair_lines++;
+                    }
+                    d->np_rows++;
+                }
+            }
+            if (d->canvas != NULL) {
+                sel_gui_clip_pop(d->canvas);
+            }
+            y = y0 + (view < total ? view : total);
         }
     }
     {
@@ -15182,6 +15226,13 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (ev->kind == SEL_GUI_IN_WHEEL) {
+        if (d->np_pair_max_q16 > 0 && in_rect(d->np_pair_view, d->ptr_x, d->ptr_y)) { /* I1274: a Now Playing metadata block taller than its view scrolls */
+            int64_t v = (int64_t)d->np_pair_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            d->np_pair_y_q16 = v < 0 ? 0 : (v > d->np_pair_max_q16 ? d->np_pair_max_q16 : (int32_t)v);
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
         if (side_lib_max_q16(d) > 0 && in_rect(side_lib_view_rect(d), d->ptr_x, d->ptr_y)) { /* I608: a sidebar list longer than its view scrolls under the pointer */
             int32_t max_q16 = side_lib_max_q16(d);
             int64_t v = (int64_t)d->side_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
