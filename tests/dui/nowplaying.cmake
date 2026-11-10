@@ -267,6 +267,7 @@ if(NOT "${os}" MATCHES "nowplaying pair lines ([0-9]+) view ([0-9]+) ([0-9]+) ([
   message(FATAL_ERROR "no pair-lines sentinel in:\n${os}")
 endif()
 set(stil_lines "${CMAKE_MATCH_1}")
+set(stil_view_h "${CMAKE_MATCH_4}")
 set(stil_max "${CMAKE_MATCH_5}")
 math(EXPR stil_px "${CMAKE_MATCH_2} + 20")
 math(EXPR stil_py "${CMAKE_MATCH_3} + 10")
@@ -283,6 +284,28 @@ endif()
 # the note is taller than the panel: the block is clipped to a view and scrolls under the wheel (max > 0); one wheel notch moves it
 if(stil_max LESS 1)
   message(FATAL_ERROR "the STIL block is not taller than its view (max ${stil_max}); the scroll case tests nothing in:\n${os}")
+endif()
+# I1277 (Johan: "ok now i see it.. but it sucks... 1 row and how should the user know to scrollwheel there.."): on the
+# 1280x800 window the cover and the visualizer leave under 200 px, and the 120 px tail pushed the view to its 16 px floor:
+# one row. A scrolling block keeps several lines (at least 6 of 12 px text, 84 px) and draws a scrollbar that says it scrolls.
+if(stil_view_h LESS 84)
+  message(FATAL_ERROR "the scrolling STIL block is ${stil_view_h} px high on a 1280x800 window, want at least 84 (6 lines); it showed one 16 px row in:\n${os}")
+endif()
+if(NOT "${os}" MATCHES "nowplaying bar draws ([0-9]+) handle ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)" OR CMAKE_MATCH_1 LESS 1 OR CMAKE_MATCH_5 LESS 1)
+  message(FATAL_ERROR "the scrolling STIL block drew no scrollbar (nothing says it scrolls) in:\n${os}")
+endif()
+math(EXPR stil_bar_x "${CMAKE_MATCH_2} + 2")
+math(EXPR stil_bar_below "${CMAKE_MATCH_3} + ${CMAKE_MATCH_5} + 20")
+set(stil_handle_y "${CMAKE_MATCH_3}")
+# a click on the track under the handle moves the block one view and the handle with it
+file(WRITE "${WORK}/stil3.txt" "wait 300\nclick ${stil_bar_x} ${stil_bar_below}\nwait 100\n")
+dui_run(os3 --db "${WORK}/stil.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "OPEN ${WORK}/sid/stil.sid" --input "${WORK}/stil3.txt")
+if(NOT "${os3}" MATCHES "nowplaying pair lines [0-9]+ view [0-9]+ [0-9]+ [0-9]+ max [0-9]+ scroll ([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "a click on the STIL scrollbar track did not scroll the block in:\n${os3}")
+endif()
+if(NOT "${os3}" MATCHES "nowplaying bar draws [0-9]+ handle [0-9]+ ([0-9]+) " OR NOT CMAKE_MATCH_1 GREATER stil_handle_y)
+  message(FATAL_ERROR "the STIL scrollbar handle did not move down with the block (was at y ${stil_handle_y}) in:\n${os3}")
 endif()
 file(WRITE "${WORK}/stil2.txt" "move ${stil_px} ${stil_py}\nwheel 0 -3\nwait 100\n")
 dui_run(os2 --db "${WORK}/stil.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
