@@ -3016,6 +3016,17 @@ if(NOT SEL_AMIGA)
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
 
+    # I1264: Music Editor MED2/MED3/MED4 songs play through the render entry point (libxmp module).
+    if(TARGET sel_module_xmp)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/xmp-med-decode)
+      add_test(NAME xmp-med-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/xmp_med_decode.sh $<TARGET_FILE:selecta-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/xmp-med-decode)
+      set_tests_properties(xmp-med-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xmp_med_decode_ok"
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
+
     # I430: Furnace/DefleMask/FamiTracker/TFM modules play through the render entry point (furnace module). The fixture is
     # one 32-row pattern at speed 6, 60 Hz: 192 ticks = 3.2 s, the expected length the script checks within 1%.
     if(TARGET sel_module_furnace)

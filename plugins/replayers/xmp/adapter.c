@@ -1,6 +1,6 @@
 /* libxmp replayer (design doc "Format coverage rule", row I697): a RENDER-kind adapter over libxmp, the engine bbmp
  * uses for its xmp backend. Claims only the tracker formats that neither libopenmpt nor UADE/nuade play: Liquid Tracker,
- * Megatracker, Archimedes Tracker, Coconizer and Fuchs Tracker. The render stops when the order list ends; loops are
+ * Megatracker, Archimedes Tracker, Coconizer, Fuchs Tracker and the early Music Editor songs MED2, MED3 and MED4. The render stops when the order list ends; loops are
  * not followed. */
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
@@ -13,7 +13,7 @@
 
 #define XMP_TEXT 128u
 #define XMP_CHUNK_FRAMES 256u
-#define XMP_EXTENSIONS "liq,mgt,musx,coc,fuchs"
+#define XMP_EXTENSIONS "liq,mgt,musx,coc,fuchs,med"
 
 typedef struct xmp_state {
     const sel_host* host;
@@ -24,9 +24,17 @@ typedef struct xmp_state {
     sel_tag meta[4];
 } xmp_state;
 
+/* True when the libxmp type ends in the given Music Editor loader name ("MED 2.10 MED4"). The later OctaMED MMD0-3 loaders
+ * report other names ("MMD0" ...) and stay with their own replayers. */
+static int type_ends_with(const char* type, const char* tail) {
+    size_t n = strlen(type), t = strlen(tail);
+    return n >= t && strcmp(type + n - t, tail) == 0;
+}
+
 /* The loaders this plugin stands for, named as libxmp reports them. */
 static int claimed_type(const char* type) {
-    return strstr(type, "Liquid") != NULL || strstr(type, "Megatracker") != NULL ||
+    return type_ends_with(type, " MED2") || type_ends_with(type, " MED3") || type_ends_with(type, " MED4") ||
+           strstr(type, "Liquid") != NULL || strstr(type, "Megatracker") != NULL ||
            strstr(type, "Archimedes") != NULL || strstr(type, "Coconizer") != NULL || strstr(type, "Fuchs") != NULL;
 }
 
