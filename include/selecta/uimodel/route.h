@@ -52,7 +52,7 @@ const char* sel_route_page_name(uint32_t page);
 const char* sel_route_kind_name(uint32_t kind);
 
 #define SEL_ROUTE_HIST_MAX 32u
-#define SEL_ROUTE_KEY_MAX 96u
+#define SEL_ROUTE_KEY_MAX 192u /* I1286: holds a drill level key (source, path, skip) */
 
 typedef struct sel_route_entry {
     uint32_t page;

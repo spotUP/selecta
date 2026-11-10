@@ -404,6 +404,7 @@ typedef struct desk {
     uint32_t search_follows; /* sentinel (I1161): keyboard moves that ran the Search list scroll-follow */
     int32_t side_cur;        /* I1183: the sidebar stop's keyboard cursor: shown doors in slot order, then the Your Library rows; -1 = none */
     uint32_t side_cur_draws; /* frames that drew the cursor (sentinel) */
+    uint32_t drill_pushes;   /* I1286: history entries the drill levels of a source page pushed (sentinel) */
     uint32_t list_nav_calls; /* I1275: list keys the shared list_nav step took, for every desktop list (sentinel) */
     uint32_t route_main, route_player, route_sidebar, route_detail; /* sentinels (I1164): arrow and Enter keys routed by the focused stop */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
@@ -709,6 +710,7 @@ typedef struct desk {
 static int desk_resize(desk* d, int32_t w, int32_t h);
 static int desk_set_scale(desk* d, int32_t scale_q16);
 static void desk_relayout(desk* d);
+static void desk_rt_push(desk* d, const sel_route_entry* to); /* I1286: drl_open_q pushes a drill level */
 static void side_wide_toggle(desk* d);
 enum { SIDE_HDR_PLUS = 1, SIDE_HDR_WIDE = 2, SIDE_HDR_COUNT = 2 }; /* I609: Your Library header controls */
 static sel_gui_rect side_hdr_rect(const desk* d, uint32_t which);
@@ -5628,6 +5630,16 @@ static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q) 
         n = strlen(key);
         snprintf(key + n, sizeof key - n, "\x1d%s", q);
     }
+    if (!d->pg_walk && q[0] == '\0') { /* I1286: a drill level is a page of the history (Back and Forward walk it); the find text is not part of it */
+        sel_route_entry e;
+        memset(&e, 0, sizeof e);
+        e.page = (uint32_t)SEL_ROUTE_PAGE_COLLECTION;
+        e.kind = (uint32_t)SEL_LIB_ITEM_SOURCE;
+        snprintf(e.key, sizeof e.key, "%s", key);
+        snprintf(e.name, sizeof e.name, "%s", d->pls_name);
+        desk_rt_push(d, &e);
+        d->drill_pushes++;
+    }
     snprintf(d->drl_q, sizeof d->drl_q, "%s", q);
     d->col_open_serial = pg != NULL ? pg->serial : 0u;
     d->col_ready = 0;
@@ -8436,6 +8448,7 @@ static const char* library_dump_build(desk* d) {
         }
         o = dump_put(d, o, "route route_calls=%u cur=%s n=%u pos=%u scroll=%u artist_rect %d %d %d %d\n", (unsigned)d->rh.calls, cur, (unsigned)d->rh.n,
                      (unsigned)d->rh.pos, (unsigned)d->pls_scroll, (int)d->col_artist.x, (int)d->col_artist.y, (int)d->col_artist.w, (int)d->col_artist.h);
+        o = dump_put(d, o, "drillpush pushes=%u\n", (unsigned)d->drill_pushes); /* I1286 sentinel: history entries the drill levels pushed */
     }
     if (o + 1800u < sizeof d->library_dump) { /* the sidebar library list (I608): counters and the rectangle of each drawn row */
         uint32_t k;
@@ -11244,6 +11257,17 @@ static void desk_route_enter(desk* d, const sel_route_entry* e, int restore) {
     }
     if (e->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
         pls_open(d, e->id, e->name);
+    } else if (e->kind == (uint32_t)SEL_LIB_ITEM_SOURCE && e->key[strcspn(e->key, "\x1f\x1e")] != '\0') {
+        /* I1286: a drill level of a source page: the source key, then the level (path and skip) drl_open_q composed */
+        char base[SEL_ROUTE_KEY_MAX];
+        size_t bn = strcspn(e->key, "\x1f\x1e");
+        const char* rest = e->key + bn;
+        const char* skip = strchr(rest, '\x1e');
+        char path[SEL_ROUTE_KEY_MAX];
+        snprintf(base, sizeof base, "%.*s", (int)bn, e->key);
+        snprintf(path, sizeof path, "%.*s", (int)(skip != NULL ? (size_t)(skip - rest) : strlen(rest)) - (rest[0] == '\x1f' ? 1 : 0), rest + (rest[0] == '\x1f' ? 1 : 0));
+        col_kind_open(d, e->kind, base, e->name, e->sub, restore);
+        drl_open(d, path, skip != NULL ? (uint32_t)strtoul(skip + 1, NULL, 10) : 0u);
     } else if (e->kind != 0u || e->key[0] != '\0' || e->name[0] != '\0') {
         col_kind_open(d, e->kind, e->key, e->name, e->sub, restore);
     }
