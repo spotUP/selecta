@@ -3547,6 +3547,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(dup_rank_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-dup-rank COMMAND dup_rank_test)
   set_tests_properties(library-dup-rank PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "dup_rank_ok")
+  # I1276: the song panel reads STIL through the HVSC identity (modland-HVSC copy, hvsc.c64.org URL key) without copying stickers.
+  add_executable(stil_owner_test library/stil_owner_test.c)
+  target_include_directories(stil_owner_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(stil_owner_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-stil-owner COMMAND stil_owner_test)
+  set_tests_properties(library-stil-owner PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "stil_owner_ok")
   # I1094c: library.hide_duplicates hides dup_of copies from the search arms (bare words and queries), copies:/duplicate: show them.
   add_executable(hide_dups_test library/hide_dups_test.c)
   target_include_directories(hide_dups_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)

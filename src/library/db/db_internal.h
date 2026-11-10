@@ -202,6 +202,8 @@ unsigned long sel_db_majority_scans(void);
  * sel_dup_regroup recomputes one md5 (index seek on songs_md5). Both run inside the writer's open transaction. Counters are test sentinels. */
 int sel_dup_regroup(sqlite3* db, const char* md5);
 int sel_dup_rebuild(sqlite3* db);
+/* I1276: the `hvsc:` key owning the STIL stickers of a modland-HVSC or hvsc.c64.org URL key; any other key maps to itself. */
+void sel_stil_owner_key(const char* key, char* out, size_t cap);
 /* I1094b: the single-row writers' two halves. sel_dup_md5_of reads the md5 of song `key` ("" when no row or none) BEFORE the write;
  * sel_dup_after regroups that old md5 and the md5 `key` has AFTER the write (a delete leaves no row: only the old group moves). */
 void sel_dup_md5_of(sqlite3* db, const char* key, char out[33]);
