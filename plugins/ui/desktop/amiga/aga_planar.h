@@ -56,6 +56,11 @@ size_t desk_aga_chip_bytes(int32_t w, int32_t h);
  * BPLCON3 with the pen's bank and LOCT clear, the high nibbles, BPLCON3 with LOCT set, the low nibbles. out[i][0] is the
  * custom chip register offset, out[i][1] the value. */
 void desk_aga_copper_regs(uint32_t pen, uint32_t rgb, uint32_t out[4][2]);
+/* I1260: scales an index image (w x h, pitch w, w a multiple of 2) to 2w x out_h for the effect screen. Out row 2y is
+ * source row y0 + y with the mean of each pixel pair between them; out row 2y + 1 is the mean of the rows around it.
+ * out_h / 2 < h shows the centre rows; rows past the image repeat the last one. The means are index means: valid for a
+ * palette that is one continuous ramp. out is 4-byte aligned. */
+void desk_aga_index_scale2(const uint8_t* src, uint32_t w, uint32_t h, uint8_t* out, uint32_t out_h);
 void desk_aga_rgb32_table(const uint32_t* rgb, uint32_t first, uint32_t n, uint32_t* out);
 
 /* I441: 1 when a graphics.library display mode ID belongs to the native chipset (the monitors graphics knows: default,

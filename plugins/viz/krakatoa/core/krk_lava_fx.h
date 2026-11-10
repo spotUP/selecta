@@ -49,6 +49,21 @@ typedef struct krk_fx_in {
     uint32_t frame;
 } krk_fx_in;
 
+/* Stage timers (I1260): the frame split the 68060 budget of design 3.2 is checked against. The core adds the ticks of
+ * krk_fx.clock (any free-running 32-bit counter; NULL: timers off, no cost) spent in each stage to stage_ticks. */
+enum {
+    KRK_FX_T_FORCES = 0, /* splat, forces, vorticity */
+    KRK_FX_T_PROJECT,    /* divergence, Jacobi, gradient */
+    KRK_FX_T_ADVECT,     /* velocity, heat, smoke */
+    KRK_FX_T_PARTICLES,
+    KRK_FX_T_DENSITY,
+    KRK_FX_T_BLUR,
+    KRK_FX_T_LIGHT,
+    KRK_FX_T_BLOOM,
+    KRK_FX_T_COMPOSITE,
+    KRK_FX_T_COUNT
+};
+
 typedef struct krk_particle {
     int32_t x, y;  /* 16.16 pixels */
     uint16_t age;  /* 8.8 s */
@@ -70,6 +85,9 @@ typedef struct krk_fx {
     uint32_t cursor, rng;
     /* sentinels (design 5) */
     uint32_t frames, jacobi_iters, particles_plotted;
+    /* stage timers: set clock after krk_fx_init (which clears it) */
+    uint32_t (*clock)(void);
+    uint32_t stage_ticks[KRK_FX_T_COUNT];
 } krk_fx;
 
 void krk_fx_init(krk_fx* s);

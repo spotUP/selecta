@@ -65,23 +65,41 @@ struct desk_aga {
     struct UCopList* ucl;
     sel_gui_copper_change cop[AGA_COPPER_MAX];
     uint32_t cop_n, cop_installs, cop_logged;
+    /* I1260: the effect screen */
+    struct Screen* fx_screen;
+    struct BitMap fx_bm[2];
+    UBYTE* fx_buf[2];
+    struct ScreenBuffer* fx_sb[2];
+    struct MsgPort* fx_port;
+    uint8_t* fx_chunky; /* fast RAM, AGA_FX_W x fx_h */
+    int32_t fx_h;
+    int fx_safe, fx_back, fx_failed, fx_pal_set;
+    uint32_t fx_palette[256];
+    uint32_t fx_c2p_kind, fx_presents, fx_opens, fx_scale_ms, fx_c2p_ms; /* stage sums on the 20 ms DOS clock: only the mean over many frames says anything */
 };
+
+static void fx_close(desk_aga* b); /* I1260: desk_aga_close and desk_aga_present close the effect screen */
+
+/* Rows y .. y + h of a chunky image w wide into the same rows of 8 contiguous planes of bplsize bytes each. */
+static void c2p_rows(uint32_t kind, const uint8_t* chunky, UBYTE* planes, int32_t w, uint32_t bplsize, int32_t y, int32_t h) {
+    if (kind == DESK_AGA_C2P_KALMS_040) {
+        /* Kalms: rows y .. y + h of the chunky buffer into the same rows of the planes (scroffsy = y). */
+        c2p1x1_8_c5_040_init(w, h, y, (int)bplsize);
+        c2p1x1_8_c5_040((void*)(chunky + (size_t)y * (size_t)w), planes);
+    } else if (kind == DESK_AGA_C2P_KALMS_030) {
+        /* I574: the 030 routine patches its own code with the sizes; flush the caches before running it. */
+        c2p1x1_8_c5_030_smcinit(w, h, y, (int)bplsize);
+        CacheClearU();
+        c2p1x1_8_c5_030((void*)(chunky + (size_t)y * (size_t)w), planes);
+    } else {
+        desk_aga_c2p_ref(chunky, w, y, h, planes, bplsize);
+    }
+}
 
 static void c2p_bands(desk_aga* b, const uint8_t* chunky, const desk_aga_band* band, uint32_t n) {
     uint32_t i, bplsize = (uint32_t)(b->w / 8) * (uint32_t)b->h;
     for (i = 0; i < n; i++) {
-        if (b->c2p_kind == DESK_AGA_C2P_KALMS_040) {
-            /* Kalms: rows y .. y + h of the chunky buffer into the same rows of the planes (scroffsy = y). */
-            c2p1x1_8_c5_040_init(b->w, band[i].h, band[i].y, (int)bplsize);
-            c2p1x1_8_c5_040((void*)(chunky + (size_t)band[i].y * (size_t)b->w), b->buf[b->back]);
-        } else if (b->c2p_kind == DESK_AGA_C2P_KALMS_030) {
-            /* I574: the 030 routine patches its own code with the sizes; flush the caches before running it. */
-            c2p1x1_8_c5_030_smcinit(b->w, band[i].h, band[i].y, (int)bplsize);
-            CacheClearU();
-            c2p1x1_8_c5_030((void*)(chunky + (size_t)band[i].y * (size_t)b->w), b->buf[b->back]);
-        } else {
-            desk_aga_c2p_ref(chunky, b->w, band[i].y, band[i].h, b->buf[b->back], bplsize);
-        }
+        c2p_rows(b->c2p_kind, chunky, b->buf[b->back], b->w, bplsize, band[i].y, band[i].h);
         b->c2p_calls++;
         b->upload_pixels += (uint32_t)band[i].h * (uint32_t)b->w;
     }
@@ -256,6 +274,14 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
 void desk_aga_close(desk_aga* b) {
     int i;
     if (b == NULL) return;
+    if (b->fx_presents > 0u) { /* I1260: the sentinel and stage times of the effect screen */
+        printf("aga_direct opens=%lu presents=%lu c2p_kind=%lu scale_us=%lu c2p_us=%lu\n", (unsigned long)b->fx_opens,
+               (unsigned long)b->fx_presents, (unsigned long)b->fx_c2p_kind,
+               (unsigned long)(b->fx_scale_ms * 1000u / b->fx_presents),
+               (unsigned long)(b->fx_c2p_ms * 1000u / b->fx_presents));
+        fflush(stdout);
+    }
+    if (b->screen != NULL) fx_close(b);
     if (b->treq != NULL) {
         CloseDevice((struct IORequest*)b->treq);
         DeleteIORequest((struct IORequest*)b->treq);
@@ -342,10 +368,116 @@ static void copper_install(desk_aga* b, const sel_gui_copper_change* ch, uint32_
     b->cop_installs++;
 }
 
+/* ---- I1260: the effect screen ---- */
+#define AGA_FX_W 320
+
+static void fx_close(desk_aga* b) {
+    int i;
+    if (b->fx_screen != NULL && !b->fx_safe && b->fx_port != NULL) {
+        while (GetMsg(b->fx_port) == NULL) WaitPort(b->fx_port);
+    }
+    b->fx_safe = 1;
+    for (i = 1; i >= 0; i--) {
+        if (b->fx_sb[i] != NULL) FreeScreenBuffer(b->fx_screen, b->fx_sb[i]);
+        b->fx_sb[i] = NULL;
+    }
+    if (b->fx_port != NULL) DeleteMsgPort(b->fx_port);
+    b->fx_port = NULL;
+    if (b->fx_screen != NULL) CloseScreen(b->fx_screen);
+    b->fx_screen = NULL;
+    for (i = 0; i < 2; i++) {
+        if (b->fx_buf[i] != NULL) FreeMem(b->fx_buf[i], (ULONG)desk_aga_buffer_bytes(AGA_FX_W, b->fx_h));
+        b->fx_buf[i] = NULL;
+    }
+    if (b->fx_chunky != NULL) FreeVec(b->fx_chunky);
+    b->fx_chunky = NULL;
+}
+
+static int fx_open(desk_aga* b) {
+    ULONG mode = GetVPModeID(&b->screen->ViewPort) & ~(ULONG)(HIRES_KEY | LORESLACE_KEY);
+    size_t bytes;
+    int i, p;
+    b->fx_h = (GfxBase->DisplayFlags & NTSC) ? 200 : 256;
+    bytes = desk_aga_buffer_bytes(AGA_FX_W, b->fx_h);
+    if (AvailMem(MEMF_CHIP | MEMF_LARGEST) < bytes || AvailMem(MEMF_CHIP) < 2u * bytes) {
+        fprintf(stderr, "aga: effect screen: not enough chip RAM, the viz stays on the desk screen\n");
+        return 0;
+    }
+    b->fx_chunky = (uint8_t*)AllocVec((ULONG)AGA_FX_W * (ULONG)b->fx_h, MEMF_ANY);
+    for (i = 0; i < 2; i++) {
+        b->fx_buf[i] = (UBYTE*)AllocMem((ULONG)bytes, MEMF_CHIP | MEMF_CLEAR);
+        if (b->fx_buf[i] == NULL) break;
+        InitBitMap(&b->fx_bm[i], 8, AGA_FX_W, (LONG)b->fx_h);
+        for (p = 0; p < 8; p++) b->fx_bm[i].Planes[p] = (PLANEPTR)(b->fx_buf[i] + (size_t)p * (bytes / 8u));
+    }
+    if (b->fx_chunky != NULL && b->fx_buf[0] != NULL && b->fx_buf[1] != NULL) {
+        /* No border blank: the border shows colour 0, the effect's own background. */
+        struct TagItem st[] = {{SA_Width, AGA_FX_W}, {SA_Height, (ULONG)b->fx_h}, {SA_Depth, 8},
+                               {SA_DisplayID, mode}, {SA_BitMap, (ULONG)&b->fx_bm[0]}, {SA_Quiet, TRUE},
+                               {SA_ShowTitle, FALSE}, {SA_Type, CUSTOMSCREEN}, {SA_Exclusive, TRUE},
+                               {SA_Title, (ULONG) "Selecta visualizer"}, {TAG_DONE, 0}};
+        b->fx_screen = OpenScreenTagList(NULL, st);
+    }
+    if (b->fx_screen != NULL) {
+        b->fx_sb[0] = AllocScreenBuffer(b->fx_screen, &b->fx_bm[0], 0);
+        b->fx_sb[1] = AllocScreenBuffer(b->fx_screen, &b->fx_bm[1], 0);
+        b->fx_port = CreateMsgPort();
+    }
+    if (b->fx_screen == NULL || b->fx_sb[0] == NULL || b->fx_sb[1] == NULL || b->fx_port == NULL) {
+        fprintf(stderr, "aga: effect screen: open failed (mode %08lx), the viz stays on the desk screen\n", (unsigned long)mode);
+        fx_close(b);
+        return 0;
+    }
+    for (i = 0; i < 2; i++) b->fx_sb[i]->sb_DBufInfo->dbi_SafeMessage.mn_ReplyPort = b->fx_port;
+    b->fx_safe = 1;
+    b->fx_back = 1;
+    b->fx_pal_set = 0;
+    b->fx_c2p_kind = desk_aga_c2p_pick(SysBase->AttnFlags, (uint32_t)(AGA_FX_W / 8) * (uint32_t)b->fx_h);
+    b->fx_opens++;
+    ActivateWindow(b->window); /* keys and clicks stay with the desk window */
+    return 1;
+}
+
+int desk_aga_direct_show(desk_aga* b, const uint8_t* idx, uint32_t w, uint32_t h, const uint32_t* rgb) {
+    uint32_t t0, t1;
+    if (b == NULL || b->fx_failed || idx == NULL || rgb == NULL || w != AGA_FX_W / 2u || h < 2u) return 0;
+    if (b->fx_screen == NULL && !fx_open(b)) {
+        b->fx_failed = 1;
+        return 0;
+    }
+    t0 = desk_aga_ticks();
+    if (!b->fx_pal_set || memcmp(rgb, b->fx_palette, sizeof b->fx_palette) != 0) {
+        memcpy(b->fx_palette, rgb, sizeof b->fx_palette);
+        desk_aga_rgb32_table(b->fx_palette, 0, 256, b->rgb32);
+        LoadRGB32(&b->fx_screen->ViewPort, (ULONG*)b->rgb32);
+        b->fx_pal_set = 1;
+    }
+    desk_aga_index_scale2(idx, w, h, b->fx_chunky, (uint32_t)b->fx_h);
+    t1 = desk_aga_ticks();
+    b->fx_scale_ms += t1 - t0;
+    if (!b->fx_safe) {
+        while (GetMsg(b->fx_port) == NULL) WaitPort(b->fx_port);
+        b->fx_safe = 1;
+    }
+    t0 = desk_aga_ticks();
+    c2p_rows(b->fx_c2p_kind, b->fx_chunky, b->fx_buf[b->fx_back], AGA_FX_W, (uint32_t)(AGA_FX_W / 8) * (uint32_t)b->fx_h, 0, b->fx_h);
+    b->fx_c2p_ms += desk_aga_ticks() - t0;
+    while (!ChangeScreenBuffer(b->fx_screen, b->fx_sb[b->fx_back])) WaitTOF();
+    b->fx_safe = 0;
+    b->fx_back ^= 1;
+    b->fx_presents++;
+    return 1;
+}
+
+uint32_t desk_aga_direct_presents(const desk_aga* b) { return b->fx_presents; }
+uint32_t desk_aga_direct_opens(const desk_aga* b) { return b->fx_opens; }
+
 void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
     desk_aga_band now[DESK_AGA_BANDS_MAX], todo[DESK_AGA_BANDS_MAX];
     uint32_t n, nt;
+    int fx_was_up = b->fx_screen != NULL;
     if (c->format != SEL_GUI_INDEX8 || c->w != b->w || c->h != b->h) return;
+    if (fx_was_up) b->fresh = 2; /* I1260: the desk buffers are stale behind the effect screen: convert both whole */
     if (c->colours != b->colours || memcmp(c->palette, b->palette, sizeof b->palette) != 0) {
         memcpy(b->palette, c->palette, sizeof b->palette);
         b->colours = c->colours;
@@ -381,6 +513,7 @@ void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
     b->back ^= 1;
     if (b->fresh > 0) b->fresh--;
     b->presents++;
+    if (fx_was_up) fx_close(b); /* the desk picture is up to date: uncover it */
 }
 
 int desk_aga_poll(desk_aga* b, uint32_t timeout_ms) {

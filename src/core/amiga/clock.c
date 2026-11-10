@@ -94,6 +94,21 @@ void sel_clock_entropy_sample(void) {
     }
 }
 
+uint32_t sel_clock_eclock(uint32_t* hz) {
+    struct EClockVal ev;
+    if (!g_tried) {
+        clock_open();
+    }
+    if (hz != NULL) {
+        *hz = g_eclock_hz;
+    }
+    if (!g_eclock_hz) {
+        return 0;
+    }
+    ReadEClock(&ev);
+    return (uint32_t)ev.ev_lo;
+}
+
 uint32_t sel_host_clock_ms(const sel_host* h) {
     (void)h;
     if (!g_tried) {

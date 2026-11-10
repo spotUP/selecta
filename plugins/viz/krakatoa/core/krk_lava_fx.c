@@ -437,15 +437,30 @@ static void particles(krk_fx* s, const krk_fx_in* in) {
     s->particles_plotted += plotted;
 }
 
+/* Stage timer lap: charges the ticks since t0 to stage `id` and restarts t0. Unsigned wrap is correct for one lap. */
+#define KRK_LAP(s, t0, id)                          \
+    do {                                            \
+        if ((s)->clock != NULL) {                   \
+            uint32_t lap_now = (s)->clock();        \
+            (s)->stage_ticks[id] += lap_now - (t0); \
+            (t0) = lap_now;                         \
+        }                                           \
+    } while (0)
+
 void krk_fx_step(krk_fx* s, const krk_fx_in* in) {
+    uint32_t t0 = s->clock != NULL ? s->clock() : 0u;
     splat(s, in);
     forces(s, in);
     vorticity(s, in);
+    KRK_LAP(s, t0, KRK_FX_T_FORCES);
     project(s, in->jacobi);
     s->jacobi_iters += (uint32_t)in->jacobi;
+    KRK_LAP(s, t0, KRK_FX_T_PROJECT);
     advect_velocity(s, in);
     advect_scalars(s, in);
+    KRK_LAP(s, t0, KRK_FX_T_ADVECT);
     particles(s, in);
+    KRK_LAP(s, t0, KRK_FX_T_PARTICLES);
     s->frames++;
 }
 
@@ -652,14 +667,20 @@ static void composite(const krk_fx* s, const krk_fx_in* in, uint8_t* out) {
 }
 
 void krk_fx_render(krk_fx* s, const krk_fx_in* in, uint8_t* out) {
+    uint32_t t0 = s->clock != NULL ? s->clock() : 0u;
     density(s, in);
+    KRK_LAP(s, t0, KRK_FX_T_DENSITY);
     blur_h(s->dtmp, s->dens);
     blur_v(s->dens, s->dtmp);
     blur_h(s->dtmp, s->dens);
     blur_v(s->dens, s->dtmp);
+    KRK_LAP(s, t0, KRK_FX_T_BLUR);
     light_sweep(s, in);
+    KRK_LAP(s, t0, KRK_FX_T_LIGHT);
     bloom(s);
+    KRK_LAP(s, t0, KRK_FX_T_BLOOM);
     composite(s, in, out);
+    KRK_LAP(s, t0, KRK_FX_T_COMPOSITE);
 }
 
 /* ---- palette ramp ---- */

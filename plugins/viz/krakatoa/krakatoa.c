@@ -19,6 +19,9 @@
  * palette-index image whose 256-colour ramp is rebaked every frame from the palette scheduler's blend, then expanded to
  * the surface (nearest) so the 3 s palette crossfade shows on the Amiga canvas too. */
 #include "core/krk_lava_fx.h"
+#if defined(__amigaos__)
+#include "selecta/machine.h" /* sel_clock_eclock */
+#endif
 typedef struct krk_gpu krk_gpu; /* unused on this tier */
 #else
 #include "sdl/krk_smoke_gpu.h"
@@ -32,6 +35,8 @@ static struct {
     uint8_t idx[KRK_FX_OW * KRK_FX_OH];
     uint32_t ramp[256];   /* 0xRRGGBB, rebaked every frame from the scheduler's blend */
     uint32_t sim_frames, ramp_bakes;
+    /* I1260 stage timers: clock rate (0: off), ticks spent outside the core (inputs, palette bake, output) */
+    uint32_t tick_hz, t_inputs, t_palette, t_output;
 #endif
     krk_quality q;
     krk_grid g;
@@ -99,14 +104,27 @@ static int viz_key(uint32_t code) {
 }
 
 #ifdef KRK_BACKEND_FX
-static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c) {
+/* I1260 stage timers. The clock is a free-running 32-bit tick counter and its rate; NULL: no timing (host builds, where
+ * the test installs a fake one). On Amiga it is the E clock of src/core/amiga/clock.c (about 709 kHz, 1.4 us a tick). */
+uint32_t (*krk_stage_clock)(uint32_t* hz);
+static uint32_t krk_ticks(void) {
+    return krk_stage_clock(NULL);
+}
+#define KRK_PLUG_LAP(t0, field)             \
+    do {                                    \
+        if (K.tick_hz != 0u) {              \
+            uint32_t lap_now = krk_ticks(); \
+            K.field += lap_now - (t0);      \
+            (t0) = lap_now;                 \
+        }                                   \
+    } while (0)
+
+/* One frame into K.idx (the index image) and K.ramp (its 256 colours); 0 when there is no picture yet. *t0 is the lap
+ * clock for the caller's output stage. Shared by the RGBA32 surface path and the VIZ_INDEXED hook. */
+static int krk_frame(const sel_viz_frame* f, uint32_t* t0) {
     krk_fx_in in;
     float dt;
     uint32_t d;
-    (void)c;
-    if (s == NULL || s->fmt != SEL_PIX_RGBA32 || s->w < 2u || s->h < 2u) {
-        return 0;
-    }
     krk_start();
     if (K.sim == NULL) {
         K.sim = (krk_fx*)malloc(sizeof *K.sim);
@@ -115,9 +133,19 @@ static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_col
         }
         krk_fx_init(K.sim);
         K.g = krk_fx_grid();
+#if defined(__amigaos__)
+        if (krk_stage_clock == NULL) {
+            krk_stage_clock = sel_clock_eclock;
+        }
+#endif
+        if (krk_stage_clock != NULL) {
+            (void)krk_stage_clock(&K.tick_hz);
+            if (K.tick_hz != 0u) {
+                K.sim->clock = krk_ticks;
+            }
+        }
     }
-    K.sw = s->w;
-    K.sh = s->h;
+    *t0 = K.tick_hz != 0u ? krk_ticks() : 0u;
     if (K.p.v[KRK_K_PAUSED] < 0.5f) {
         d = f != NULL ? f->seq - K.last_seq : 0u;
         dt = d == 0u || d > 5u ? 1.0f / 25.0f : (float)d / (float)SEL_VIZ_BLOCKS_PER_SECOND;
@@ -130,8 +158,10 @@ static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_col
         }
         K.palfx_steps++;
         krk_fx_inputs(&in, KRK_FX_LAVA, &K.p, &K.a, K.t, dt, K.sim_frames);
+        KRK_PLUG_LAP(*t0, t_inputs);
         krk_fx_step(K.sim, &in);
         krk_fx_render(K.sim, &in, K.idx);
+        *t0 = K.tick_hz != 0u ? krk_ticks() : 0u;
         K.sim_frames++;
         K.steps++;
         K.jacobi_total += (uint32_t)in.jacobi;
@@ -140,7 +170,36 @@ static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_col
     }
     krk_fx_palette_fx(KRK_FX_LAVA, &K.fx, K.ramp);
     K.ramp_bakes++;
+    KRK_PLUG_LAP(*t0, t_palette);
+    return 1;
+}
+
+static uint32_t render(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c) {
+    uint32_t t0 = 0u;
+    (void)c;
+    if (s == NULL || s->fmt != SEL_PIX_RGBA32 || s->w < 2u || s->h < 2u) {
+        return 0;
+    }
+    if (!krk_frame(f, &t0)) {
+        return 0;
+    }
+    K.sw = s->w;
+    K.sh = s->h;
     krk_fx_blit(K.idx, K.ramp, (uint32_t*)s->pixels, s->pitch, s->w, s->h);
+    KRK_PLUG_LAP(t0, t_output);
+    return 1;
+}
+
+/* VIZ_INDEXED (I1260): the same frame without the blit; the host shows K.idx through K.ramp on its own screen. */
+static uint32_t indexed(const sel_viz_frame* f, sel_viz_indexed* out) {
+    uint32_t t0 = 0u;
+    if (out == NULL || !krk_frame(f, &t0)) {
+        return 0;
+    }
+    out->idx = K.idx;
+    out->w = KRK_FX_OW;
+    out->h = KRK_FX_OH;
+    out->rgb = K.ramp;
     return 1;
 }
 #else
@@ -223,11 +282,34 @@ static uint32_t stats(char* out, uint32_t cap) {
                  (unsigned)K.jacobi_total, (unsigned)K.a.beats, (unsigned)K.sw, (unsigned)K.sh,
                  krk_quality_name(K.q == KRK_Q_COUNT ? KRK_Q_DEFAULT : K.q), KRK_STAT_GPU, (unsigned)K.fx.to, (unsigned)K.fx.changes, (unsigned)K.fx.cues, (unsigned)K.keys,
                  (unsigned)K.palfx_steps);
+#ifdef KRK_BACKEND_FX
+    if (n > 0 && (uint32_t)n < cap && K.sim != NULL && K.tick_hz >= 1000u && K.sim_frames != 0u) {
+        /* I1260: average microseconds per frame of each stage. ticks / frames, then * 1000 / kHz: 32-bit throughout. */
+        static const char* const names[KRK_FX_T_COUNT + 3] = {"forces", "project", "advect", "particles", "density", "blur",
+                                                              "light", "bloom", "composite", "inputs", "palette", "output"};
+        const uint32_t khz = K.tick_hz / 1000u;
+        uint32_t i, sum = 0, us;
+        int m = snprintf(out + n, cap - (uint32_t)n, " stage_us");
+        n += m > 0 ? m : 0;
+        for (i = 0; i < KRK_FX_T_COUNT + 3u && (uint32_t)n < cap; i++) {
+            const uint32_t ticks = i < KRK_FX_T_COUNT ? K.sim->stage_ticks[i]
+                                   : i == KRK_FX_T_COUNT ? K.t_inputs : i == KRK_FX_T_COUNT + 1u ? K.t_palette : K.t_output;
+            us = (ticks / K.sim_frames) * 1000u / khz;
+            sum += us;
+            m = snprintf(out + n, cap - (uint32_t)n, " %s %u", names[i], (unsigned)us);
+            n += m > 0 ? m : 0;
+        }
+        if ((uint32_t)n < cap) {
+            m = snprintf(out + n, cap - (uint32_t)n, " total %u", (unsigned)sum);
+            n += m > 0 ? m : 0;
+        }
+    }
+#endif
     return n < 0 ? 0u : (uint32_t)n < cap ? (uint32_t)n : cap - 1u;
 }
 
 /* No VIZ_CLOSE hook: the host never calls one yet (KRK-P0-1 session hook); the device lives until exit. */
-static sel_tag k_hooks[6];
+static sel_tag k_hooks[7];
 static sel_tag k_desc[5];
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
@@ -245,8 +327,15 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     k_hooks[3].value = SEL_TAG_FN(viz_open);
     k_hooks[4].tag = SEL_VIZ_KEY;
     k_hooks[4].value = SEL_TAG_FN(viz_key);
+#ifdef KRK_BACKEND_FX
+    k_hooks[5].tag = SEL_VIZ_INDEXED;
+    k_hooks[5].value = SEL_TAG_FN(indexed);
+    k_hooks[6].tag = SEL_TAG_END;
+    k_hooks[6].value = 0;
+#else
     k_hooks[5].tag = SEL_TAG_END;
     k_hooks[5].value = 0;
+#endif
     k_desc[0].tag = SEL_PLUGIN_KIND;
     k_desc[0].value = SEL_PLUGIN_KIND_VIZ;
     k_desc[1].tag = SEL_PLUGIN_ID;

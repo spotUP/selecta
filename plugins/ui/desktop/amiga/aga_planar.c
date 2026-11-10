@@ -156,6 +156,36 @@ void desk_aga_rgb32_table(const uint32_t* rgb, uint32_t first, uint32_t n, uint3
     out[1 + n * 3] = 0;
 }
 
+void desk_aga_index_scale2(const uint8_t* src, uint32_t w, uint32_t h, uint8_t* out, uint32_t out_h) {
+    uint32_t rows = out_h / 2u < h ? out_h / 2u : h, y0 = (h - rows) / 2u, ow = w * 2u, x, y;
+    for (y = 0; y < rows; y++) { /* even rows: the source row, each gap filled with the mean of its neighbours */
+        const uint8_t* s = src + (size_t)(y0 + y) * w;
+        uint8_t* o = out + (size_t)(y * 2u) * ow;
+        uint32_t a = s[0];
+        for (x = 1; x < w; x++) {
+            uint32_t b = s[x];
+            o[0] = (uint8_t)a;
+            o[1] = (uint8_t)((a + b + 1u) >> 1);
+            o += 2;
+            a = b;
+        }
+        o[0] = (uint8_t)a;
+        o[1] = (uint8_t)a;
+    }
+    for (y = 0; y < rows; y++) { /* odd rows: the mean of the rows above and below, four pixels a step */
+        const uint32_t* up = (const uint32_t*)(const void*)(out + (size_t)(y * 2u) * ow);
+        const uint32_t* dn = y + 1u < rows ? (const uint32_t*)(const void*)(out + (size_t)(y * 2u + 2u) * ow) : up;
+        uint32_t* o = (uint32_t*)(void*)(out + (size_t)(y * 2u + 1u) * ow);
+        for (x = 0; x < ow / 4u; x++) {
+            uint32_t p = up[x], q = dn[x];
+            o[x] = (p | q) - (((p ^ q) >> 1) & 0x7F7F7F7Fu); /* per byte (p + q + 1) / 2 */
+        }
+    }
+    for (y = rows * 2u; y < out_h; y++) {
+        memcpy(out + (size_t)y * ow, out + (size_t)(rows * 2u - 1u) * ow, ow);
+    }
+}
+
 void desk_aga_copper_regs(uint32_t pen, uint32_t rgb, uint32_t out[4][2]) {
     uint32_t r = (rgb >> 16) & 255u, g = (rgb >> 8) & 255u, b = rgb & 255u;
     uint32_t bplcon3 = DESK_AGA_BPLCON3 | ((pen >> 5) << 13), reg = 0x180u + 2u * (pen & 31u);

@@ -105,6 +105,27 @@ static void test_bands(void) {
     CHECK(n == 2 && now[0].y == 0 && now[0].h == 4 && now[1].y == 50 && now[1].h == 25);
 }
 
+/* I1260: the 2x index scaler of the effect screen. */
+static void test_index_scale2(void) {
+    static const uint8_t src[3 * 4] = {0, 10, 20, 31, 100, 110, 121, 131, 200, 210, 220, 230};
+    uint32_t out32[8 * 8 / 4];
+    uint8_t* o = (uint8_t*)out32;
+    memset(out32, 0xEE, sizeof out32);
+    desk_aga_index_scale2(src, 4, 3, o, 8);
+    /* row 0: the source row with the rounded-up means between, the last pixel repeated */
+    CHECK(o[0] == 0 && o[1] == 5 && o[2] == 10 && o[3] == 15 && o[4] == 20 && o[5] == 26 && o[6] == 31 && o[7] == 31);
+    /* row 1: the mean of rows 0 and 2 (source rows 0 and 1) */
+    CHECK(o[8] == 50 && o[8 + 2] == 60 && o[8 + 4] == 71 && o[8 + 6] == 81);
+    CHECK(o[16] == 100 && o[16 + 6] == 131);
+    CHECK(o[32] == 200 && o[32 + 7] == 230);
+    CHECK(o[40] == 200 && o[40 + 6] == 230); /* row 5: no row below, the row above again */
+    CHECK(o[48] == 200 && o[56 + 6] == 230); /* rows 6 and 7: past the image, the last row repeated */
+    /* out_h / 2 < h: the centre rows (here source row 1 only) */
+    memset(out32, 0xEE, sizeof out32);
+    desk_aga_index_scale2(src, 4, 3, o, 2);
+    CHECK(o[0] == 100 && o[6] == 131 && o[8] == 100 && o[8 + 6] == 131 && o[16] == 0xEE);
+}
+
 static void test_budget_and_palette(void) {
     CHECK(desk_aga_buffer_bytes(640, 512) == 327680u);
     CHECK(desk_aga_chip_bytes(640, 512) == 655360u); /* 640 KB, M4 plan 4.3 */
@@ -275,6 +296,7 @@ int main(void) {
     test_round_trip_and_bands();
     test_bands();
     test_budget_and_palette();
+    test_index_scale2();
     if (fails) {
         fprintf(stderr, "aga_planar_unit: %d failures\n", fails);
         return 1;
