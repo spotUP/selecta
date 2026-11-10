@@ -16971,6 +16971,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->art = art_open(a->art);
     sel_gui_timeline_init(&d->tl);
     sel_uim_init(&d->uim);
+    (void)sel_uim_set_layout(&d->uim, desk_pref(d, "ui.desktop.mode", "full")); /* I1250: the stored mode; PREFS_CHANGED only reports later changes */
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->pl_page || d->songs) { /* the folders source holds the saved playlists: the page lists them, the songs view drops onto them */
         desk_send(d, "VIEW_SOURCE folders");
