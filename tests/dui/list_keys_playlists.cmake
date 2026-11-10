@@ -1,5 +1,5 @@
 # dui-list-keys-playlists (I1275): every desktop list takes the same keys. Johan, Mac: "wtf list needs to have global key navigation..
-# the playlists are not key navigatable". -DSELECTA -DSONGS -DWORK
+# the playlists are not key navigatable". -DSELECTA -DSONGS -DWORK -DSDL_BUILT
 #   Violated invariant: one list key handler (list_nav: Up, Down, Page Up, Page Down, Home, End) serves every list, and Enter opens or plays
 #   the focus row. The sidebar playlist list kept its own copy without the page keys, and the song list of an opened playlist page
 #   (col_kind 0) took no list keys at all (col_list_key returned for every page that is not a collection kind).
@@ -146,29 +146,31 @@ if("${f1_focus}" STREQUAL "0")
 endif()
 # 5. The same through the real live loop (timed key events), the keys landing while the page is still loading (40 ms after Enter):
 #    each key must act once the rows are there, none dropped. Before the fix the first Down landed on the page with no rows and was lost.
-set(ENV{SELECTA_SDL_TEST_LIVE} 1)
-set(ENV{SELECTA_SOCKET} "${WORK}/lk.sock")
-set(down k40000051)
-set(timed "k09@1500 k4000004A@1700")
-foreach(t RANGE 1900 3100 200)
-  string(APPEND timed " ${down}@${t}")
-endforeach()
-string(APPEND timed " k0D@3300 ${down}@3320 ${down}@3340 ${down}@3360 q@6000")
-file(REMOVE_RECURSE "${WORK}/cfg")
-file(MAKE_DIRECTORY "${WORK}/cfg")
-file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
-set(ENV{SELECTA_SDL_TEST_TIMED} "${timed}")
-execute_process(COMMAND "${SELECTA}" --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view home --canvas 1280x800 --clock fixed --stats
-  OUTPUT_VARIABLE lo ERROR_VARIABLE le RESULT_VARIABLE lrc)
-if(NOT lrc EQUAL 0)
-  message(FATAL_ERROR "live run exited ${lrc}\n${le}")
-endif()
-lk_nav(ln "${lo}")
-lk_expect("live: Down x3 pressed while the page loads reach row 2, none dropped" "${ln_row}" 2)
-if(NOT "${lo}" MATCHES "list_nav calls=[0-9]+ held=([0-9]+)")
-  message(FATAL_ERROR "no held= sentinel in:\n${lo}")
-endif()
-if(CMAKE_MATCH_1 LESS 1)
-  message(FATAL_ERROR "live: no key was held for the loading page (held=${CMAKE_MATCH_1}): the test did not hit the load window")
+if(SDL_BUILT) # step 5 needs the sdl backend; a build without the desktop UI (build/host) skips it, as queue.cmake does
+  set(ENV{SELECTA_SDL_TEST_LIVE} 1)
+  set(ENV{SELECTA_SOCKET} "${WORK}/lk.sock")
+  set(down k40000051)
+  set(timed "k09@1500 k4000004A@1700")
+  foreach(t RANGE 1900 3100 200)
+    string(APPEND timed " ${down}@${t}")
+  endforeach()
+  string(APPEND timed " k0D@3300 ${down}@3320 ${down}@3340 ${down}@3360 q@6000")
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(MAKE_DIRECTORY "${WORK}/cfg")
+  file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
+  set(ENV{SELECTA_SDL_TEST_TIMED} "${timed}")
+  execute_process(COMMAND "${SELECTA}" --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view home --canvas 1280x800 --clock fixed --stats
+    OUTPUT_VARIABLE lo ERROR_VARIABLE le RESULT_VARIABLE lrc)
+  if(NOT lrc EQUAL 0)
+    message(FATAL_ERROR "live run exited ${lrc}\n${le}")
+  endif()
+  lk_nav(ln "${lo}")
+  lk_expect("live: Down x3 pressed while the page loads reach row 2, none dropped" "${ln_row}" 2)
+  if(NOT "${lo}" MATCHES "list_nav calls=[0-9]+ held=([0-9]+)")
+    message(FATAL_ERROR "no held= sentinel in:\n${lo}")
+  endif()
+  if(CMAKE_MATCH_1 LESS 1)
+    message(FATAL_ERROR "live: no key was held for the loading page (held=${CMAKE_MATCH_1}): the test did not hit the load window")
+  endif()
 endif()
 message(STATUS "list-keys-playlists: sidebar cursor end=${se_cur} pageup=${su_cur}; playlist page rows ${p1n_row}/${p2n_row}/${p3n_row}/${p4n_row}, enter song ${p5n_song}")
