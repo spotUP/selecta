@@ -3364,6 +3364,12 @@ if(NOT SEL_AMIGA)
       -P "${SEL_NET_DIR}/hippo_lazy_open.cmake")
   set_tests_properties(hippo-lazy-open-index-cleared PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture
     RESOURCE_LOCK net-fixture TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_lazy_open_ok")
+  # I1266: the middle-column page open (COLLECTION_OPEN playlist) fills an unfetched list, index cleared as well.
+  add_test(NAME hippo-lazy-open-page
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DTEST=$<TARGET_FILE:hippo_lazy_open_test>" "-DWORK=${SEL_NET_WORK}" -DCLEAR_INDEX=1
+      -DMODE=page -P "${SEL_NET_DIR}/hippo_lazy_open.cmake")
+  set_tests_properties(hippo-lazy-open-page PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture
+    RESOURCE_LOCK net-fixture TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_lazy_open_ok")
 endif()
 
 # Row I710ga3: system-file download loop and job kind over the net fixture.

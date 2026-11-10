@@ -8,6 +8,7 @@
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/machine.h>
+#include <selecta/protocol.h>
 #include <selecta/registry.h>
 #include <sqlite3.h>
 #include <stdio.h>
@@ -142,6 +143,33 @@ int main(int argc, char** argv) {
     db_leave(lib);
     CHECK(id != 0u);
     CHECK(sel_library_playlist_keys(lib, id, keys, sizeof keys, &n) == SEL_FOLDER_OK && n == 0u); /* listed, not filled */
+
+    if (argc > 3 && strcmp(argv[3], "page") == 0) {
+        /* I1266: the middle-column page (COLLECTION_OPEN, kind playlist) fills an unfetched list itself and lists every song. */
+        sel_message m;
+        char line[96];
+        const sel_collection_page* pg;
+        uint32_t reloads;
+
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"%u\"", (unsigned)SEL_LIB_ITEM_PLAYLIST, (unsigned)id);
+        CHECK(sel_codec_decode(line, SEL_MSG_CMD, &m, pool, sizeof pool) == SEL_CODEC_OK);
+        base = reads_now(e);
+        sel_engine_send(e, &m);
+        sel_engine_pump_reads(e, sink, NULL, 60000u);
+        settle(e);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && pg->songs > 0u);
+        CHECK(log_count(logp, ".prg") == prg0 + 1u);
+        CHECK(sel_library_playlist_keys(lib, id, keys, sizeof keys, &n) == SEL_FOLDER_OK && n == (pg != NULL ? pg->songs : 0u));
+        reloads = reads_now(e);
+        CHECK(reloads >= base + 2u); /* the page read and the folder reload it posted */
+        printf("hippo_lazy_open: page songs %u keys %u\n", (unsigned)(pg != NULL ? pg->songs : 0u), (unsigned)n);
+        sel_engine_destroy(e);
+        sel_library_close(lib);
+        if (g_fail != 0) return 1;
+        printf("hippo_lazy_open_ok\n");
+        return 0;
+    }
 
     /* 1+2. The posted read fills the list on its worker thread: one prg request, then the pump reloads the folder rows. */
     base = reads_now(e);

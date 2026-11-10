@@ -721,6 +721,7 @@ struct sel_engine {
     int pk_state;
     uint32_t pk_reloads; /* I1082e sentinel: reloads the pump posted for a UI-thread take */
     int pk_reload; /* I1082e: set by a UI-thread take in snapshot mode; the pump posts the folder reload (atomic) */
+    int rdc_filled; /* I1266: the page build filled an unfetched Hippo list; coll_publish posts the folder reload */
     int pk_filled; /* I1058e: the worker fetched an unfetched Hippo list; the pump reloads the folder rows when it takes the answer */
     uint32_t pk_id, pk_n;
     char* pk_out;
@@ -7728,6 +7729,14 @@ static void coll_build_run(sel_engine* e) {
         return;
     }
     if (!e->rdc_page) return;
+    if (kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST && e->lib != NULL) {
+        /* I1266: an unfetched HippoPlayer list is filled here on the worker (never on the pump, I829) before its songs are read:
+         * the page used to list only what the PLAYLIST_PLAY and keys paths had already fetched. */
+        char* end = NULL;
+        unsigned long pid = strtoul(key, &end, 10);
+
+        if (end != key && *end == '\0' && sel_hippo_ensure_playlist(e->lib, (uint32_t)pid) > 0) e->rdc_filled = 1;
+    }
     memset(&b, 0, sizeof b);
     b.rows.host = e->host;
     b.meta.host = e->host;
@@ -7818,6 +7827,10 @@ static void coll_publish(sel_engine* e) {
         return;
     }
     if (!e->rdc_page) return;
+    if (e->rdc_filled) { /* I1266: a HippoPlayer list was just filled, so the tree count is stale; posted, never read here (I829) */
+        e->rdc_filled = 0;
+        folders_reload_posted(e);
+    }
     e->coll = e->rdc_pg;
     e->coll.serial = ++e->coll_serial;
     composer_release(e->host, &e->coll_rows);
