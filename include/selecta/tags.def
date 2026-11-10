@@ -158,6 +158,7 @@ SEL_TAG(VIZ, OPEN,             0x4001, PTR) /* optional sel_viz_open_fn: the hos
 SEL_TAG(VIZ, FRAME,            0x4002, PTR)
 SEL_TAG(VIZ, CLOSE,            0x4003, PTR)
 SEL_TAG(VIZ, KEY,              0x4005, PTR) /* optional sel_viz_key_fn: a plain key while the visual layout shows the viz */
+SEL_TAG(VIZ, INDEXED,          0x4006, PTR) /* optional sel_viz_indexed_fn (I1260): the frame as the plugin's own index image and 256 colours */
 SEL_TAG(VIZ, STATS,            0x4004, PTR) /* optional sel_viz_stats_fn: one line of counters for --stats */
 
 SEL_TAG(UI, NAME,              0x5000, STR)

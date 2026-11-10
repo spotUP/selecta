@@ -670,6 +670,7 @@ typedef struct desk {
     sel_viz_key_fn viz_key[DESK_VIZ_MAX]; /* I1052d: optional VIZ_KEY hook (palette keys), NULL when the plugin has none */
     sel_viz_host viz_host;                /* I1052d: the services VIZ_OPEN hands every plugin */
     sel_viz_stats_fn viz_stats[DESK_VIZ_MAX]; /* I1052: optional VIZ_STATS hook, NULL when the plugin has none */
+    sel_viz_indexed_fn viz_indexed[DESK_VIZ_MAX]; /* I1260: optional VIZ_INDEXED hook; the AGA backend shows it on the effect screen */
     const char* viz_name[DESK_VIZ_MAX];
     uint32_t viz_n, viz_sel;     /* plugins found, index of the one the Now Playing strip and the visual layout draw */
     uint32_t* viz_px;            /* RGBA32 target the plugins render into */
@@ -7063,6 +7064,7 @@ static void viz_load(desk* d) {
         d->viz_name[d->viz_n] = (const char*)sel_tag_find(hooks, SEL_VIZ_NAME, 0);
         d->viz_stats[d->viz_n] = (sel_viz_stats_fn)sel_tag_find(hooks, SEL_VIZ_STATS, 0);
         d->viz_key[d->viz_n] = (sel_viz_key_fn)sel_tag_find(hooks, SEL_VIZ_KEY, 0);
+        d->viz_indexed[d->viz_n] = (sel_viz_indexed_fn)sel_tag_find(hooks, SEL_VIZ_INDEXED, 0);
         if (sel_tag_find(hooks, SEL_VIZ_OPEN, 0) != 0) {
             d->viz_host.user = d;
             d->viz_host.pref_get = viz_host_pref_get;
@@ -7399,6 +7401,29 @@ static void draw_vizpage(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
+#if defined(SELECTA_DESKTOP_AGA)
+/* I1260 (design 2026-10-27-krakatoa-port-design.md 3.4): in the visual layout on AGA a plugin with a VIZ_INDEXED hook is
+ * shown on the backend's effect screen: its own index image through its own 256 colours, no RGBA32 surface, no desk
+ * canvas, no desk palette. Returns 0 when the frame has to go the desk way: no hook, no picture, the effect screen cannot
+ * open, or something that draws in front of the visualizer is up (a dialog, the song menu, a toast, a tooltip). The
+ * next desk present closes the effect screen. The close button and the signal path are not on the effect screen. */
+static int viz_direct_frame(desk* d, const sel_state* st) {
+    sel_viz_indexed out;
+    uint32_t idx = d->viz_sel < d->viz_n ? d->viz_sel : 0u;
+    if (d->sdl == NULL || d->viz_n == 0u || d->viz_indexed[idx] == NULL || d->dlg_open || d->sm_open || d->toast_on ||
+        d->tip_shown > 0) {
+        return 0;
+    }
+    memset(&out, 0, sizeof out);
+    if (!d->viz_indexed[idx](st->viz, &out) || !desk_aga_direct_show(d->sdl, out.idx, out.w, out.h, out.rgb)) {
+        return 0;
+    }
+    d->viz_prims = 1u;
+    d->viz_visual_draws++;
+    return 1;
+}
+#endif
+
 /* One draw per new engine frame while a visualizer is on screen. Returns 1 when a frame was drawn. */
 static int viz_tick(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -7418,6 +7443,11 @@ static int viz_tick(desk* d) {
     d->viz_falloff_runs = st->viz->falloff_runs;
     d->viz_song_ms = st->song.position_ms != 0u ? st->song.position_ms : st->viz->seq * 20u;
     if (where == VIZ_VISUAL) {
+#if defined(SELECTA_DESKTOP_AGA)
+        if (viz_direct_frame(d, st)) {
+            return 1; /* shown on the effect screen: nothing drawn on the desk canvas, nothing to flush */
+        }
+#endif
         draw_visual(d);
     } else if (where == VIZ_PAGE) {
         viz_panes_draw(d);
@@ -7952,7 +7982,7 @@ static const char* library_dump_build(desk* d) {
                  (unsigned)d->viz_close_paints, (int)d->viz_close_rect.x, (int)d->viz_close_rect.y, (int)d->viz_close_rect.w,
                  (int)d->viz_close_rect.h);
     for (i = 0; i < d->viz_n; i++) { /* I1052: plugin counters through the optional VIZ_STATS hook */
-        char line[256];
+        char line[512]; /* I1260: Krakatoa adds its stage timers */
         if (d->viz_stats[i] != NULL && d->viz_stats[i](line, (uint32_t)sizeof line) > 0u) {
             o = dump_put(d, o, "viz_stats %s %s\n", d->viz_id[i], line);
         }

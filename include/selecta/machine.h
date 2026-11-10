@@ -52,6 +52,12 @@ int sel_machine_tier_by_name(const char* name);
 /* Where host->clock_ms gets its time: "eclock" (Amiga timer.device), "datestamp" (Amiga without
  * timer.device, e.g. vamos) or "monotonic" (desktop). Opens the Amiga timer on first use. */
 const char* sel_clock_source(void);
+#if defined(__amigaos__)
+/* The raw E clock for short interval timing (I1260 stage timers): the low 32 bits of ReadEClock, a free-running counter
+ * that wraps about every 100 minutes. *hz (when not NULL) gets its rate, 0 when timer.device is not open (vamos); the
+ * return value is then 0 too. Differences of two reads are exact across one wrap. */
+uint32_t sel_clock_eclock(uint32_t* hz);
+#endif
 
 #if defined(__amigaos__)
 /* Size in bytes and ahir_Version of the request the AHI probe opens ahi.device with (test sentinel,

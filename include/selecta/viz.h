@@ -195,6 +195,17 @@ typedef void (*sel_viz_open_fn)(const sel_viz_host* host);
  * Returns 1 when the plugin used the key. */
 typedef int (*sel_viz_key_fn)(uint32_t code);
 
+/* Optional VIZ_INDEXED hook (I1260): a host that has a 256-colour display of its own for the viz (the AGA effect
+ * screen) asks for the frame as the plugin's native index image and its palette, with no RGBA32 round trip. The hook
+ * advances the plugin one frame exactly as VIZ_FRAME does (the host calls one or the other per frame) and returns 1
+ * with *out filled, 0 when there is no picture. idx and rgb stay valid until the next call into the plugin. */
+typedef struct sel_viz_indexed {
+    const uint8_t* idx;  /* w * h palette indices, rows top down, pitch w */
+    uint32_t w, h;
+    const uint32_t* rgb; /* 256 x 0xRRGGBB, one continuous ramp: the mean of two indices is the colour between them */
+} sel_viz_indexed;
+typedef uint32_t (*sel_viz_indexed_fn)(const sel_viz_frame* f, sel_viz_indexed* out);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_VIZ_H */

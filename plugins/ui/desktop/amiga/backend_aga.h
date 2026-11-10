@@ -47,6 +47,16 @@ uint32_t desk_aga_presents(const desk_aga* b);
 uint32_t desk_aga_c2p_calls(const desk_aga* b);
 uint32_t desk_aga_c2p_kind(const desk_aga* b);
 size_t desk_aga_chip_held(const desk_aga* b);
+/* The effect screen (I1260, design thoughts/shared/research/2026-10-27-krakatoa-port-design.md 3.4): shows a viz plugin's
+ * own index image (w = 160, h rows) through its own 256 colours (0xRRGGBB, one continuous ramp) on a second screen,
+ * 320 pixels wide, 8 bitplanes, double buffered, opened in front of the desk screen at the first call. The image is
+ * scaled 2x with the in-between pixels interpolated in index space, then converted whole: no desk canvas, no RGBA32,
+ * no dirty bands. Returns 0 (nothing shown) when the screen cannot open; the caller then draws the desk way. The next
+ * desk_aga_present closes the effect screen again. Keys stay with the desk window. */
+int desk_aga_direct_show(desk_aga* b, const uint8_t* idx, uint32_t w, uint32_t h, const uint32_t* rgb);
+/* Effect screen frames shown / times it opened (sentinels); desk_aga_close prints them with the stage times. */
+uint32_t desk_aga_direct_presents(const desk_aga* b);
+uint32_t desk_aga_direct_opens(const desk_aga* b);
 /* Waits up to timeout_ms for window input, a timer or Ctrl-C (0 = poll). Returns DESK_AGA_QUIT on Ctrl-C,
  * DESK_AGA_ACTIVITY when input was queued, else DESK_AGA_NONE. The IDCMP translation is the shared amiga/input.c. */
 int desk_aga_poll(desk_aga* b, uint32_t timeout_ms);
