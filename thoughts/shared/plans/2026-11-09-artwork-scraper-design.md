@@ -80,3 +80,40 @@ sends nothing, and `SELECTA_ART_SCRAPE=off` stores nothing and sends nothing (re
 Embed the cover into the music file; AmiSSL on Amiga (I899g) and a real Amiga check; a UI toggle for `library.scrape_artwork`;
 the no-thread poll blocks the idle tick during an HTTP call (needs a split request or a helper task); iTunes pacing beyond one
 album per turn; showing scrape progress.
+
+## Demozoo slide show (I1303)
+
+Research: `thoughts/shared/research/2026-11-10-demozoo-api.md`. Decisions by Johan, 2026-11-10, through the question tool:
+
+- **D-DZ-1 Lookup route: nightly dump processed on hippoplayer.se.** The Demozoo API has no search endpoint and no "featured in" field, and needs an account key since 2026-11-01. A server job reads `https://data.demozoo.org/demozoo-export.sql.gz` (about 203 MB) and builds a small song-to-production table. Selecta asks hippoplayer.se, never Demozoo, for the mapping. No key in the app, no per-song Demozoo request.
+- **D-DZ-2 Images: fetched from media.demozoo.org by the app, cached locally.** Nothing is mirrored or redistributed by hippoplayer.se. Demozoo states no licence or hotlink terms; this is the accepted risk. Same cache, miss handling, size cap and User-Agent as the phase 1 scraper above.
+- **D-DZ-3 Video: stills slide show plus a "Watch demo" link.** Demozoo videos are YouTube links, not files. The screenshots cycle as the cover; a button opens the link in the system browser. No embedded playback. Amiga and text UIs: stills only (text UI: the link as text).
+
+### Server table (hippoplayer.se)
+
+One row per music entry that has at least one production with a screenshot:
+
+| Field | Content |
+|---|---|
+| `match_key` | Normalised Modland path from the entry's download link (`pub/modules/...`, percent-decoded, lower case), or empty |
+| `title`, `author` | Fallback match, both lower case |
+| `music_id`, `production_id`, `production_title`, `production_type`, `year` | Demozoo identifiers and display fields |
+| `screenshots` | List of `original_url` with width and height, in Demozoo order |
+| `video_url` | First YouTube external link, or empty |
+
+Match order: exact Modland path, then exact title plus author. No fuzzy match in v1. Several productions for one song: the earliest release first. The same table serves the "Used in" list of I1301.
+
+Endpoint shape follows the existing hippoplayer.se contract (`~/Code/hippoplayer.se`, read before I1303b): one request per song key, small JSON answer, cacheable, answer for "no match" is cached as a miss.
+
+### Client
+
+- Lookup runs on the scraper thread when a song without album art starts. Request carries the source key only; no personal data.
+- Result and images go into the art cache; a miss is stored with the phase 1 retry rule.
+- Slide show: Now Playing cover slot cycles the screenshots, one every 6 s with the existing crossfade; order as served; one screenshot means a still. Pauses with playback.
+- Knobs: `art.demozoo` on/off (default on), `art.slideshow_seconds` (default 6). Both must move output (reachability).
+- Images are served at device-pixel size (I1302 lands first or together).
+- Amiga: same lookup over the Amiga TLS path above; images scaled to the cover slot; exempt from crossfade if the tier cannot afford it (row names it).
+
+### Unverified
+
+Live JSON field names of the dump tables, how many Modland songs match, and whether media.demozoo.org refuses hotlinked requests. I1303a measures all three before the server job is written.
