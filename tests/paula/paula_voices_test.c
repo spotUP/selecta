@@ -140,6 +140,11 @@ int main(void) {
     v->set_volume(v, 0, 32768u);
     CHECK(last_val(SEL_PAULA_AUD_VOL) == 32u, "VOL 32768>>10 is 32, got %u", (unsigned)last_val(SEL_PAULA_AUD_VOL));
 
+    /* Paula plays by DMA: no loop is observable in software, so the wrap fields stay 0 (voices.h) */
+    memset(&st, 0xFF, sizeof st);
+    v->get_state(v, 0, &st);
+    CHECK(st.wraps == 0 && st.event_frame == 0 && st.frame == 0, "Paula wrap fields are 0");
+
     v->stop(v, 0);
     CHECK(!v->is_playing(v, 0), "still playing after stop");
     CHECK(R.frees == 1, "frees %d", R.frees);

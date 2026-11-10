@@ -4,6 +4,8 @@
  * the Amiga build gets a fixed-point adapter in Phase 5 (D-M2-1). */
 #include "shim.h"
 
+#include <string.h>
+
 static uint32_t to_q8(double hz) {
     double v = hz * 256.0 + 0.5;
     if (!(hz > 0.0)) {
@@ -83,6 +85,7 @@ bool nuade_voice_is_playing(const NuadeVoices* v, uint32_t voice) {
 
 void nuade_voice_get_state(const NuadeVoices* v, uint32_t voice, NuadeVoiceState* st) {
     sel_voice_state s;
+    memset(&s, 0, sizeof s);
     st->playing = false;
     st->sample = NULL;
     st->position = 0.0;
@@ -100,6 +103,9 @@ void nuade_voice_get_state(const NuadeVoices* v, uint32_t voice, NuadeVoiceState
     st->pitch_hz = (double)s.pitch_q8 / 256.0;
     st->volume = (float)s.volume_q16 / 65536.0f;
     st->pan = (float)s.pan / 32768.0f;
+    st->wraps = s.wraps;
+    st->event_frame = s.event_frame;
+    st->frame = s.frame;
 }
 
 bool nuade_voice_muted(const NuadeVoices* v, uint32_t track) {

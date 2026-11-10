@@ -34,6 +34,9 @@ typedef struct sel_mixer_voice {
     int32_t pan;
     int32_t viz_peak; /* largest |mixed sample| since the engine last read it, Q15 */
     uint32_t viz_kick; /* a sample started since the engine last read it */
+    uint32_t wraps;    /* loop wraps and queued-sample switches (nuade NuadeVoice.wraps) */
+    uint64_t event_frame; /* output frame of the first wrap, switch or end since the last API call on this voice */
+    uint32_t has_event;
 } sel_mixer_voice;
 
 typedef struct sel_mixer {
@@ -45,6 +48,7 @@ typedef struct sel_mixer {
     uint32_t mute_mask;     /* bit k set: voice k advances but adds nothing and taps silence */
     uint32_t voice_ops;     /* calls through the voices API */
     uint32_t mixed_frames;  /* frames produced by sel_mixer_mix */
+    uint64_t frame;         /* frames moved by sel_mixer_mix and sel_mixer_advance (nuade mixer->frame) */
     sel_mixer_voice voices[SEL_MIXER_MAX_VOICES];
     /* Visualisation tap: the last SEL_MIXER_SCOPE mixed frames per voice (post-volume, pre-pan). */
     uint32_t viz_head;

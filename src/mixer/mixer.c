@@ -43,19 +43,31 @@ static uint32_t sample_end(const sel_sample* s) {
     return s->loop_length != 0 ? s->loop_start + s->loop_length : s->length;
 }
 
+static void note_event(sel_mixer_voice* v, uint64_t frame) {
+    if (!v->has_event) {
+        v->has_event = 1;
+        v->event_frame = frame;
+    }
+}
+
 /* Moves the position back inside the sample: wraps a loop, moves on to the
  * queued sample or ends the voice. Returns 0 when the voice is idle after. */
-static int settle(sel_mixer_voice* v) {
+static int settle(sel_mixer_voice* v, uint64_t frame) {
     while (v->position >= sample_end(&v->current)) {
         uint32_t end = sample_end(&v->current);
         if (v->has_queued) {
             v->current = v->queued;
             v->has_queued = 0;
             v->position -= end;
+            v->wraps++;
+            note_event(v, frame);
         } else if (v->current.loop_length != 0) {
             while (v->position >= end) v->position -= v->current.loop_length;
+            v->wraps++;
+            note_event(v, frame);
         } else {
             v->playing = 0;
+            note_event(v, frame);
             return 0;
         }
     }
@@ -91,7 +103,7 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
             for (i = 0; i < n && v->playing; i++) {
                 int32_t s, mono;
                 uint32_t phase;
-                if (!settle(v)) break;
+                if (!settle(v, m->frame + done + i)) break;
                 if (muted) {
                     /* a muted voice keeps its clock so unmuting rejoins the song in time */
                     phase = v->frac + pitched(m, v);
@@ -122,6 +134,7 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
         done += n;
     }
     m->viz_head += frames;
+    m->frame += frames;
 }
 
 void sel_mixer_advance(sel_mixer* m, uint32_t frames) {
@@ -132,10 +145,11 @@ void sel_mixer_advance(sel_mixer* m, uint32_t frames) {
         /* the same position arithmetic as sel_mixer_mix, without resampling */
         for (i = 0; i < frames && v->playing; i++) {
             uint32_t phase;
-            if (!settle(v)) break;
+            if (!settle(v, m->frame + i)) break;
             phase = v->frac + pitched(m, v);
             v->position += phase >> 16;
             v->frac = phase & 0xFFFFu;
         }
     }
+    m->frame += frames;
 }
