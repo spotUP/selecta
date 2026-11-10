@@ -5,6 +5,11 @@
  * A hit sends the ReturnID the matching menu item or button already sends, so mui_io_new_input -> mui_control_fire stays
  * the single dispatch. Down from the Search string moves the active object to the results list (mui_focus_route).
  * Static state (one window): BOOPSI cl_InstSize is a UWORD. */
+/* The keymap base is renamed: libnix opens a library at program start when its base symbol is referenced or defined
+ * (KeymapBase pulled libnix's keymap auto-open into selecta-cli, I427e3; I339 regression). This class opens and
+ * closes keymap.library itself with the window, as backend_rtg.c does for its bases (eaea4ea). */
+#define KeymapBase sel_mui_KeymapBase
+
 #include "mui_keys_class.h"
 
 #include "map/mui_map.h"
