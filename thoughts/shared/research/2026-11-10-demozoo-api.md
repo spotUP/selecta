@@ -78,3 +78,36 @@ No page or API count stated. Not crawled. The dump would give both counts in one
 - Any written terms on screenshot reuse (none found in api_keys.html, FAQ, README, robots.txt; the "screenshots" article linked from the FAQ was not opened).
 - Video: only YouTube watch links found; no direct video file field.
 - Counts of music entries, featured-in rate, Modland link rate.
+
+## Dump measurements (I1303a)
+
+Source: https://data.demozoo.org/demozoo-export.sql.gz, 202,910,918 bytes, LastModified 2026-11-10T02:38Z, PostgreSQL pg_dump (COPY blocks, 266 tables). Streamed with gunzip -c, never unpacked. Measured 2026-11-10.
+
+Tables and columns (from COPY headers):
+- `public.productions_production (id, title, notes, release_date_date, release_date_precision, created_at, updated_at, supertype, has_bonafide_edits, demozoo0_id, data_source, scene_org_id, unparsed_byline, include_notes_in_search, sortable_title, has_screenshot, search_document, search_title, locked, hide_from_search_engines)`; supertype values: music 136,689, production 190,461, graphics 64,516, empty 14.
+- `public.productions_soundtracklink (id, production_id, soundtrack_id, "position", data_source)`: production_id = the host (demo), soundtrack_id = the music entry. One table gives the exact song-to-production mapping. data_source e.g. `janeway`.
+- `public.productions_productionlink (id, link_class, parameter, production_id, is_download_link, description, demozoo0_id, file_for_screenshot, is_unresolved_for_screenshotting, thumbnail_url, thumbnail_width, thumbnail_height, embed_data_last_fetch_time, embed_data_last_error_time, video_width, video_height, has_bad_image, source)`: one table for downloads AND external links. Modland = link_class `ModlandFile`, parameter is a path starting `/pub/modules/...` (percent-encoded, no host), is_download_link t. YouTube = `YoutubeVideo`, parameter = video id. Other classes seen: CsdbMusic 6,761 rows, DeepSIDTrack 323, NectarineSong 5,947, ModarchiveModule 3,979, AmpModule 16,932, SoundcloudTrack 2,077, BaseUrl 119,580 (6 carry a modland.com URL).
+- `public.productions_screenshot (id, production_id, original_url, original_width, original_height, thumbnail_url, thumbnail_width, thumbnail_height, standard_url, standard_width, standard_height, source_download_id, data_source, janeway_id, janeway_suffix)`.
+- Author naming: `public.productions_production_author_nicks (id, production_id, nick_id)`, `public.productions_production_author_affiliation_nicks (id, production_id, nick_id)`, `public.demoscene_nick (id, releaser_id, name, abbreviation, differentiator)`, `public.demoscene_releaser (id, name, is_group, ...)`, `public.demoscene_nickvariant (id, nick_id, name, search_title)`. Also `public.productions_credit (id, production_id, nick_id, role, category, ...)`.
+
+Counts (one pass; sets by id):
+- music productions: 136,689
+- music with a Modland link (class ModlandFile or modland.com URL): 50,233 (ModlandFile class alone 50,227; any production with one: 50,321)
+- music that is a soundtrack of >= 1 production: 58,126; hosting productions: 48,189 distinct, of which 45,957 have a screenshot
+- music that is a soundtrack of >= 1 production having a screenshot: 55,020
+- music with a YouTube link: 3,708 (all productions: 36,329)
+- music with Modland link AND soundtrack of any production: 32,961
+- music with Modland link AND featured in a production with screenshot (the slide-show set): 31,028
+- music with Modland, soundtrack and YouTube: not measured; Modland + YouTube (any): 803
+- HVSC/SID: no HVSC link class. Classes `CsdbMusic` (6,755 music rows, parameter = CSDb music id) and `DeepSIDTrack` (316 music rows) exist. 9,322 music `ModlandFile` rows matched a loose "hvsc/sid" test in the script; what they are (HVSC mirror paths vs. other) is UNVERIFIED.
+
+Check 258347 / 24870: both present as expected.
+- 258347 "april in paris fix", supertype music, has_screenshot f; ModlandFile `/pub/modules/Protracker/Skope/april%20in%20paris%20fix.mod` (download t); also KestraBitworldRelease 52059; author_nicks row (434717, 258347, nick 3384).
+- 24870 "April in Paris", has_screenshot t; soundtracklink row (51933, production 24870, soundtrack 258347, pos 1, janeway); 14 screenshots, e.g. `https://media.demozoo.org/screens/o/85/cb/1c69.7936.png` 640x512 and `.../6b/11/eba5.jw26928h.png` 360x284; YoutubeVideo nN1LBz8TygM and cjJHZV2EhXg; author nick 475.
+- Note: the song's own production has no screenshot (f); the picture comes only through the soundtrack link.
+
+Image fetch (one request, UA `Selecta/0.1 ( https://hippoplayer.se )`, no Referer): HTTP/2 200, image/png, 8,524 bytes, server AmazonS3 behind CloudFront, `x-cache: Miss from cloudfront`, last-modified 2013-02-08, etag present. No Cache-Control, no Access-Control-Allow-Origin header returned (request sent without Origin, so CORS for browsers is UNVERIFIED; irrelevant for a native fetch). Image deleted.
+
+Licence / terms: none found. data.demozoo.org index is an S3 ListBucketResult XML with a single key (the dump); /README, /README.txt, /README.md, /LICENSE return 404; first 3 MB of the dump has no licence comment. Terms of use remain unverified (check demozoo.org pages by hand; not crawled here).
+
+Unverified: the HVSC meaning of ModlandFile rows above; CORS; licence; whether `supertype=music` includes non-tracker music (yes, includes streamed/other formats; only Modland-linked rows are tracker files).
