@@ -254,6 +254,8 @@ void sel_uim_layout_compute_tier_expand(sel_uim_layout* l, uint32_t width, uint3
  * Hide / Show Now Playing button. */
 const char* sel_uim_tip_like(int liked);
 const char* sel_uim_tip_np_panel(int hidden);
+/* I1248: the tooltip of the close button in the visual layout. */
+const char* sel_uim_tip_viz_close(void);
 /* I1127c: the note line of the Now Playing panels ("Sample bank not found" when a companion bank of the open remote song was on no mirror), NULL: none. */
 const char* sel_uim_np_note(const sel_song_state* song);
 /* I710ga6: the button on the note line ("Get File...") while the open song waits for a system file that could not be fetched, else NULL. */
