@@ -31,6 +31,21 @@ extern char replayerPtkName[20];
 Uint32 STDCALL Mixer(Uint8* Buffer, Uint32 Len);
 int Alloc_Patterns_Pool(void);
 
+#include <replay/include/endianness.h>
+#if defined(__BIG_ENDIAN__)
+// ProTrekkr's support/endianness.cpp, not part of the vendored replayer: the byte swaps its loader uses on a big-endian CPU (Amiga, I427e1).
+Uint64 __Swap_64(Uint64 v) {
+  return (Uint64)__Swap_32((int)(v & 0xffffffffu)) << 32 | (Uint32)__Swap_32((int)(v >> 32));
+}
+int __Swap_32(int v) {
+  const Uint32 u = (Uint32)v;
+  return (int)(u >> 24 | (u >> 8 & 0xff00u) | (u << 8 & 0xff0000u) | u << 24);
+}
+short __Swap_16(short v) {
+  const Uint16 u = (Uint16)v;
+  return (short)(Uint16)(u >> 8 | u << 8);
+}
+#endif
 void Set_Default_Channels_Polyphony(void) {
   for (int i = 0; i < MAX_TRACKS; i++) Channels_Polyphony[i] = DEFAULT_POLYPHONY;
 }
@@ -79,7 +94,7 @@ static bool unpacks(const uint8_t* data, size_t size, char version) {
   const size_t start = sized ? 13 : 9;
   if (size <= start + 8) return false;
   uint32_t expected = 0;
-  if (sized) std::memcpy(&expected, data + 9, 4);
+  if (sized) expected = (uint32_t)data[9] | (uint32_t)data[10] << 8 | (uint32_t)data[11] << 16 | (uint32_t)data[12] << 24; // little-endian in the file
   if (sized && (expected < 1024 || expected > kMostUnpacked)) return false;
   z_stream z;
   std::memset(&z, 0, sizeof z);

@@ -11,6 +11,9 @@ set(BBPK_ENGINE ${BBPK_DIR}/editors/patterns_blocks.cpp ${BBPK_DIR}/files/303s.c
 set(BBPK_DEFS __STAND_ALONE__ __WINAMP__ __REPLAYER__ __MP3_CODEC__ __GSM_CODEC__ __AT3_CODEC__)
 set_source_files_properties(${BBPK_DIR}/replay/wavpack.cpp PROPERTIES COMPILE_DEFINITIONS __GCC__)
 if(SEL_AMIGA)
+  # ProTrekkr's files are little-endian; its Swap_16/32/64 (replay/include/endianness.h) only swap with __BIG_ENDIAN__, which
+  # m68k-amigaos-gcc does not predefine (it has __BYTE_ORDER__ only). Without it every multi-byte field loads byte-swapped (I427e1).
+  list(APPEND BBPK_DEFS __BIG_ENDIAN__)
   add_library(bbmp_ptk_engine STATIC ${BBPK_ENGINE})
   target_include_directories(bbmp_ptk_engine PRIVATE "${BBPK_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/ptk_win" "${CMAKE_CURRENT_SOURCE_DIR}/ptk_zlib"
     "${PROJECT_SOURCE_DIR}/third_party/miniz")

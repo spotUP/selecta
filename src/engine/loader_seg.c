@@ -92,7 +92,7 @@ static const sel_tag* load_module(seg_module* m, const char* id, const char* fil
     desc = ((sel_plugin_entry_fn)hdr[5])(1u);
     hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
     real_id = desc != NULL ? (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0) : NULL;
-    if (hooks == NULL || real_id == NULL || strcmp(real_id, id) != 0) {
+    if (hooks == NULL || real_id == NULL || id == NULL || strcmp(real_id, id) != 0) {
         ((seg_fini_fn)hdr[4])();
         UnLoadSeg(seg);
         sel_registry_note_rejected(file, "module descriptor does not match its manifest");
