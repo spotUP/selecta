@@ -1,6 +1,6 @@
 /* bbmp Westwood SND replayer (row I710aj): a RENDER-kind adapter over bbmp's csrc/retro/wwsnd_engine.cpp (third_party/bbmp_wwsnd, GPL-3.0-or-later),
  * Westwood PC speaker files (.snd: Eye of the Beholder 1 and 2, Legend of Kyrandia): one square wave voice of byte code. The probe wants a track table
- * of 120 bytes followed by an offset table whose first entry (its own size) is 300, 500, 600 or 1000; the engine's other checks decide at open.
+ * of 120 bytes followed by an offset table whose first entry (its own size) is 300, 500, 600 or 1000, and the engine must accept the file (PC speaker byte code; the AdLib .adl files share the tables).
  * No companion files. Each program the track table names is a subsong; the track is rendered whole at RP_START. */
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
@@ -36,12 +36,24 @@ typedef struct bbww_state {
 
 static int rp_probe(const uint8_t* data, size_t size, const char* name) {
     unsigned table;
+    struct wwsong* song;
     (void)name;
     if (size < BBWW_SMALLEST) {
         return SEL_PROBE_NO;
     }
     table = (unsigned)data[120] | ((unsigned)data[121] << 8);
-    return (table == 300u || table == 500u || table == 600u || table == 1000u) ? SEL_PROBE_YES : SEL_PROBE_NO;
+    if (table != 300u && table != 500u && table != 600u && table != 1000u) {
+        return SEL_PROBE_NO;
+    }
+    /* The AdLib .adl files of the same games have the same track table and offset table (1000 included), so the tables alone do not tell the
+     * two formats apart: only the programs do (PC speaker byte code to its end, versus AdLib data). The engine checks that at open, so the
+     * probe asks it: a file it refuses is not ours and goes to the next replayer (adplug). */
+    song = wwsong_open(data, (uint32_t)size, 0u, 44100u);
+    if (song == NULL) {
+        return SEL_PROBE_NO;
+    }
+    wwsong_close(song);
+    return SEL_PROBE_YES;
 }
 
 static void rp_close(void* state) {

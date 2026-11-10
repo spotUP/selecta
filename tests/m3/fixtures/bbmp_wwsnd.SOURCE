@@ -4,3 +4,5 @@ https://modland.com/pub/modules/Westwood%20SND/Frank%20Klepacki/legend%20of%20ky
 https://modland.com/pub/modules/Westwood%20SND/Paul%20Mudra/eob%20-%20intro.snd  ddd4af77101a409fe7b570dbae762a64ab53872a4e0c988041303694d6526117
 https://modland.com/pub/modules/Westwood%20SND/Paul%20Mudra/eob2%20-%20azure.snd  60b4319349b2d607502fecb1809b22d0fc7205495c23683c70fecb968e93ba72
 Engine licence: GPL-3.0-or-later (bbmp csrc/retro/wwsnd_engine.cpp, third_party/bbmp_wwsnd).
+I1242c negative case (a Westwood ADL song must not be claimed by bbmp_wwsnd; adplug plays it), same cache, same rule:
+https://modland.com/pub/modules/Ad%20Lib/ADL/Frank%20Klepacki/dune%20ii%20-%2000.adl  674965c1a896617cca3d7cca5b69c7b9a2c93ced66db8f1f8df798f44aeb64e4
