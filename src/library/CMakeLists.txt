@@ -30,7 +30,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/th
 target_sources(selecta_library PRIVATE db/amiga_vfs.c db/appdir.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/search_cache.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/srcmirror.c db/items.c db/similar.c db/duplicates.c db/art_scrape.c db/testgen.c db/test_slow.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 # The test knobs and stream_open.c call usleep and popen, net/backoff.c calls nanosleep with struct timespec, and net/devilbox.c calls fchmod; -std=c99 hides all of them on glibc (I990b, I787 items.c, I1130b, CI run 42250330619 backoff.c, CI run 42254434695 devilbox.c); _DEFAULT_SOURCE restores them, ignored on macOS.
-set_source_files_properties(db/test_slow.c db/items.c stream_open.c net/backoff.c net/devilbox.c PROPERTIES COMPILE_DEFINITIONS _DEFAULT_SOURCE)
+set_source_files_properties(db/test_slow.c db/items.c stream_open.c net/backoff.c net/devilbox.c sources/sync_net.c PROPERTIES COMPILE_DEFINITIONS _DEFAULT_SOURCE)
 target_link_libraries(selecta_library PUBLIC selecta_sqlite selecta_platform) # I691c2: the platform family table lives in selecta_platform, never in the GUI
 if(SEL_AMIGA)
   target_compile_definitions(selecta_library PRIVATE SEL_LIBRARY_NO_THREAD)

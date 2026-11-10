@@ -57,8 +57,9 @@ endif()
 
 # Fixed-point mixer and resamplers (no float, no allocation).
 # The SINC table is generated at build time by a host tool (float and libm
-# live only there); the Amiga cross build runs the host compiler for it.
-if(SEL_AMIGA)
+# live only there); the Amiga and Emscripten cross builds run the host compiler for it (I694a: the emcc output is a .wasm/.js
+# pair that cannot run as a build step).
+if(SEL_AMIGA OR EMSCRIPTEN)
   find_program(SEL_HOST_CC NAMES cc clang gcc REQUIRED)
 else()
   set(SEL_HOST_CC "${CMAKE_C_COMPILER}")

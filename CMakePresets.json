@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "web",
+      "displayName": "Web (Emscripten, I694a spike)",
+      "description": "WebAssembly build: SDL3 through the Emscripten port, canvas output, pthreads with the main program proxied to a worker. Output in build/web. Needs emcc (brew install emscripten).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/web",
+      "toolchainFile": "/opt/homebrew/opt/emscripten/libexec/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SELECTA_UI_DESKTOP": "ON",
+        "SELECTA_GPL_PLUGINS": "OFF",
+        "SEL_BUILD_TESTS": "OFF",
+        "CMAKE_C_FLAGS": "-pthread -sUSE_SDL=3",
+        "CMAKE_CXX_FLAGS": "-pthread -sUSE_SDL=3",
+        "CMAKE_EXE_LINKER_FLAGS": "-pthread -sUSE_SDL=3 -sPROXY_TO_PTHREAD -sOFFSCREENCANVAS_SUPPORT -sALLOW_MEMORY_GROWTH -sFETCH -sPTHREAD_POOL_SIZE=4"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "web", "configurePreset": "web", "jobs": 2 }
+  ]
+}
