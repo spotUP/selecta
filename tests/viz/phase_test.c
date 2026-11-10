@@ -181,6 +181,28 @@ static void test_delay(void) {
     sel_viz_tap_free(&t);
 }
 
+/* I1246b: the delay is in audio blocks, not UI frames. A UI at 25 fps acquires every second block; with a delay of 5
+ * blocks the shown frame must be 5 (at most 6, the frame granularity) blocks behind the newest, never 10. */
+static void test_delay_slow_ui(void) {
+    static sel_viz_tap t;
+    static int16_t buf[882u * 2u];
+    uint32_t b, lag = 0;
+    sel_viz_tap_init(&t);
+    CHECK(sel_viz_set_delay(&t, 5u) == 5u, "delay not set");
+    for (b = 0; b < 40u; b++) {
+        (void)sel_viz_block_left(&t, 44100u);
+        if (sel_viz_pcm_push(&t, buf, 882u)) {
+            sel_viz_begin(&t, 44100u);
+            sel_viz_publish(&t);
+        }
+        if ((b & 1u) && sel_viz_acquire(&t)) sel_viz_analyse(&t, 0);
+    }
+    lag = t.frames[t.read_idx].seq - sel_viz_current(&t)->seq;
+    CHECK(sel_viz_current(&t)->seq != 0u && lag >= 5u && lag <= 6u, "slow UI: shown %u blocks behind, want 5..6",
+          (unsigned)lag);
+    sel_viz_tap_free(&t);
+}
+
 int main(int argc, char** argv) {
     int i;
     for (i = 1; i < argc; i++) {
@@ -188,7 +210,10 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "vu") == 0) test_vu();
         else if (strcmp(argv[i], "sidglow") == 0) test_sid_glow();
         else if (strcmp(argv[i], "spectrum") == 0) test_spectrum();
-        else if (strcmp(argv[i], "delay") == 0) test_delay();
+        else if (strcmp(argv[i], "delay") == 0) {
+            test_delay();
+            test_delay_slow_ui();
+        }
         else {
             printf("unknown mode %s\n", argv[i]);
             return 2;
