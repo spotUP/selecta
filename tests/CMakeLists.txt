@@ -2832,6 +2832,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(organya-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "organya_decode_ok"
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
+  # I1242j: a real AHX song (fetched by checksum, exit 77 = skip) plays through the render entry point (hively module), by suffix and by Modland prefix name.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/hively-decode)
+  add_test(NAME hively-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/hively_decode.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/hively-decode)
+  set_tests_properties(hively-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "hively_decode_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+
   # I708a: a real Klystrack song (fetched by checksum, exit 77 = skip) plays through the render entry point (klystron module).
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/klystron-decode)
   add_test(NAME klystron-decode

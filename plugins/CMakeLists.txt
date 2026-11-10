@@ -497,6 +497,11 @@ if(NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/organya)
 endif()
 
+# hively (I1242j): AHX / THX and Hively (.hvl) songs via the HivelyTracker replayer (BSD 3-Clause), MIT module on the host, static soft-float plugin on the Amiga.
+if(NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/hively)
+endif()
+
 # bbmp_nez (I710w): SGC and Game Boy GBR songs, libnezplug (Unlicense / MIT-0, plain C) plus our own adapter. Core module, no GPL gate.
 # Host only for now; the Amiga build is tried in row I710w.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
