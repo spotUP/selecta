@@ -1,0 +1,77 @@
+# dui-viz-hover-behind (I1247): a pointer move over the visual layout paints nothing of the full layout behind it. -DSELECTA -DSONGS -DWORK -DSDL_BUILT
+# Johan 2026-11-10 (Mac): "when the visualizers are fullscreen i can still hover the ui behind and it flickers into view".
+# The visual layout fills the canvas with the visualizer, but the pointer path (hover, tooltip and click hit-tests) still
+# worked on the full layout's controls: a move over where a control of the full layout sits painted its hover state over
+# the visualizer until the next visualizer frame covered it again (the flicker).
+# A full-layout live run (the real loop, silent: --output null) gives one control per region (`hover_ctl`: sidebar door,
+# Home tile, transport button, Now Playing control). Per control, a full-layout run moving onto its centre proves the probe
+# (hover_paints > 0 for at least one); a visual-layout run, entered with the same PREF_SET the Visual Layout action (C-4)
+# runs, must paint nothing (hover_paints = 0) and its final frame must equal a visual-layout run with no pointer move.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+include("${HERE}/ppm.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+dui_require_sdl()
+set(ENV{SDL_VIDEODRIVER} dummy)
+set(ENV{SELECTA_SDL_TEST_LIVE} 1)
+function(live_run outvar mode timed ppm)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(MAKE_DIRECTORY "${WORK}/cfg")
+  # The mode pref in prefs.conf does not switch the layout at start; PREF_SET does.
+  file(WRITE "${WORK}/cfg/prefs.conf" "ui.desktop.viz = viz_spectrum\nui.desktop.mode = full\n")
+  set(ENV{SELECTA_SDL_TEST_TIMED} "${timed}")
+  execute_process(
+    COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${WORK}/cfg" --ui desktop --backend sdl --view home
+            --canvas 1280x800 --stats --frame-dump "${ppm}" --exec "QUEUE_ADD ${SONGS}/selecta-test.mod"
+            --exec "PREF_SET ui.desktop.mode ${mode}"
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+  endif()
+  set(${outvar} "${out}" PARENT_SCOPE)
+endfunction()
+function(paints out var)
+  if(NOT out MATCHES "hover_box [-0-9 ]+ fill=[0-9a-f]+ token=[0-9a-f]+ paints=([0-9]+)")
+    message(FATAL_ERROR "no hover_box line in:\n${out}")
+  endif()
+  set(${var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+
+live_run(full full "q@900" "${WORK}/full.ppm")
+string(REGEX MATCH "hover_ctl [^\n]*" ctl_line "${full}")
+if(ctl_line STREQUAL "")
+  message(FATAL_ERROR "no hover_ctl line in:\n${full}")
+endif()
+live_run(rest visual "q@1600" "${WORK}/rest.ppm")
+if(NOT rest MATCHES "layout 3 ")
+  message(FATAL_ERROR "the rest run is not in the visual layout (layout 3):\n${rest}")
+endif()
+ppm_load("${WORK}/rest.ppm" resthex w)
+set(rect "(-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)")
+set(probed 0)
+foreach(n sidebar main player detail)
+  if(NOT ctl_line MATCHES " ${n} ${rect}( |$)")
+    message(FATAL_ERROR "no '${n}' rectangle in '${ctl_line}'")
+  endif()
+  math(EXPR px "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+  math(EXPR py "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  live_run(fm full "m${px},${py}@700 q@1600" "${WORK}/${n}-full.ppm")
+  paints("${fm}" fp)
+  if(fp GREATER 0)
+    math(EXPR probed "${probed} + 1")
+  endif()
+  live_run(vm visual "m${px},${py}@700 q@1600" "${WORK}/${n}.ppm")
+  paints("${vm}" vp)
+  if(NOT vp EQUAL 0)
+    message(FATAL_ERROR "${n}: a move onto (${px},${py}) over the visual layout painted the hidden control ${vp} times: the full layout showed through")
+  endif()
+  ppm_load("${WORK}/${n}.ppm" movedhex mw)
+  if(NOT movedhex STREQUAL resthex)
+    message(FATAL_ERROR "${n}: a move onto (${px},${py}) over the visual layout changed the frame")
+  endif()
+  message(STATUS "${n}: full layout paints=${fp}, visual layout paints=0, frame unchanged")
+endforeach()
+if(probed EQUAL 0)
+  message(FATAL_ERROR "no control painted a hover in the full layout: the probe is broken")
+endif()

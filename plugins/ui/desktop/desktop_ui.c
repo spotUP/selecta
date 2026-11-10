@@ -13121,6 +13121,9 @@ static int hover_region_of(const desk* d, sel_gui_rect box) {
  * shadow of the last pass (the menu darkens at each item the pointer crosses). So every region under the panel is repainted first. */
 static unsigned hover_region_mask(const desk* d, sel_gui_rect box) {
     int r = hover_region_of(d, box);
+    if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) { /* the visualizer covers the canvas: no region of the full layout is on screen */
+        return 0u;
+    }
     if (box.w > 0 && d->sm_open) {
         sel_gui_rect first = song_menu_item_rect(d, 0), panel = rect_of(first.x, first.y, first.w, first.h * song_menu_n(d));
         if (rect_inside(box, panel)) {
@@ -13168,6 +13171,9 @@ static void hover_repaint(desk* d) {
 /* True when a running tween repaints the main region: a hovered control or tile in it, one the pointer left, or the view or
  * list cross-fade. A fade confined to another region leaves the main region (and its dirty rectangle) alone. */
 static int hover_main_painted(const desk* d) {
+    if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) { /* the main region is not on screen */
+        return 0;
+    }
     return d->hover_tile > 0 || ((hover_region_mask(d, d->hover_box) | hover_region_mask(d, d->hover_prev)) & (1u << HR_MAIN)) != 0u ||
            sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536) < 65536 || nav_animating(d);
 }
@@ -15008,6 +15014,16 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
 static int desk_pointer(desk* d, const sel_gui_input* ev) {
     int tip;
     int hover = 0;
+    if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) {
+        /* I1247: the visualizer fills the canvas. The hover, tooltip and click hit-tests below all work on the full layout's
+         * controls and regions, which are not on screen: a move over where a Home tile or sidebar door would be painted that
+         * control over the visualizer (the UI behind flickered into view) and a click could press it. */
+        if (ev->kind == SEL_GUI_IN_MOVE) {
+            d->ptr_x = ev->x;
+            d->ptr_y = ev->y;
+        }
+        return 0;
+    }
     if (ev->kind == SEL_GUI_IN_MOVE) {
         d->ptr_x = ev->x;
         d->ptr_y = ev->y;
