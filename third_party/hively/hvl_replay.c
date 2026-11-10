@@ -18,6 +18,12 @@
 #include "hvl_replay.h"
 #include "hvl_tables.h"
 
+/* Selecta: the replayer reports a refused song with printf (stdout belongs to the host program), so the messages are
+ * compiled out unless HVL_VERBOSE is defined (I1252, see VERSION.txt). */
+#ifndef HVL_VERBOSE
+#define printf(...) ((void)0)
+#endif
+
 
 /*
 ** Waves
