@@ -290,6 +290,7 @@ typedef struct desk {
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     sel_gui_rect col_more_drawn; /* I1065: where the last frame drew Show more (all zero when it did not) */
     uint32_t pls_briefed; /* I1198: 1 once the briefs answer filled pls_title/pls_meta of the current song set */
+    uint32_t held_keys[16], held_n, held_replayed; /* I1290: list keys that arrived while the opened page had no rows yet, replayed when it has; keys replayed */
     uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
     uint32_t local_icon_side, local_icon_head; /* I938: the icon the Local Files sidebar tile and the Local Files page header last drew (dump line localicon) */
@@ -5060,6 +5061,9 @@ static void pls_prev_free(pls_prev* pv) {
     memset(pv, 0, sizeof *pv);
 }
 
+static int col_list_key(desk* d, const sel_gui_input* ev);
+static int list_nav_key(uint32_t code);
+
 static void pls_reload_run(desk* d) {
     char* buf = (char*)malloc(2u);
     uint32_t n = 0, i;
@@ -5200,6 +5204,19 @@ static void pls_reload_run(desk* d) {
     if (d->pls_scroll >= d->pls_vn) {
         d->pls_scroll = 0u;
     }
+    if (d->col_ready && d->held_n > 0u) { /* I1290: the keys pressed while the page loaded act now, in order, on the rows that are here */
+        uint32_t hk, hn = d->held_n;
+        uint32_t held[16];
+        memcpy(held, d->held_keys, sizeof held);
+        d->held_n = 0u;
+        for (hk = 0; hk < hn; hk++) {
+            sel_gui_input hev;
+            memset(&hev, 0, sizeof hev);
+            hev.kind = SEL_GUI_IN_KEY;
+            hev.code = held[hk];
+            d->held_replayed += (uint32_t)col_list_key(d, &hev);
+        }
+    }
 }
 
 /* ---- I678e: the collection page (design doc 7): one page for a playlist now, an album, artist or composer later. The search
@@ -5283,6 +5300,7 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
     d->drl_q[0] = '\0';
     d->col_search = 0;
     d->col_ready = 0;
+    d->held_n = 0u;
     if (id != COL_KIND_ID) { /* I994d4: a playlist is an engine collection page, key = its id (design 11.6); col_kind_open sets its own after this */
         const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
         char open[48];
@@ -5517,6 +5535,7 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
     pls_open(d, COL_KIND_ID, name);
     d->col_kind = col_ui_kind(kind);
     d->col_ready = 0;
+    d->held_n = 0u;
     d->col_popular = 5u;
     memset(d->col_shelf_n, 0, sizeof d->col_shelf_n);
     snprintf(d->col_key, sizeof d->col_key, "%s", key != NULL ? key : "");
@@ -5643,6 +5662,7 @@ static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q) 
     snprintf(d->drl_q, sizeof d->drl_q, "%s", q);
     d->col_open_serial = pg != NULL ? pg->serial : 0u;
     d->col_ready = 0;
+    d->held_n = 0u;
     d->pls_scroll = 0u;
     d->drl_skip = skip;
     if (q[0] == '\0') {
@@ -7988,7 +8008,7 @@ static const char* library_dump_build(desk* d) {
                           : d->kb_list && st->view != NULL ? (int32_t)st->view->cursor : -1;
             o = dump_put(d, o, "list_focus page %d row %d activates %u plays %u song=%s\n", (int)d->page, (int)row, (unsigned)d->kb_activates, (unsigned)d->row_plays,
                          st->song.path != NULL ? path_base(st->song.path) : "-");
-        o = dump_put(d, o, "list_nav calls=%u\n", (unsigned)d->list_nav_calls); /* I1275 sentinel: keys the one shared list step took */
+        o = dump_put(d, o, "list_nav calls=%u held=%u\n", (unsigned)d->list_nav_calls, (unsigned)d->held_replayed); /* I1275 sentinel: keys the one shared list step took */
         }
         o = dump_put(d, o, "rail %d %d %d %d\n", (int)rl.x, (int)rl.y, (int)rl.w, (int)rl.h);
     }
@@ -13649,6 +13669,7 @@ static void side_cur_key(desk* d, uint32_t code) {
                 sidebar_door_open(d, side_cur_door(d, p));
             } else {
                 side_row_open(d, (uint32_t)(p - nd));
+                d->focus = region_stop(d, "main"); /* I1290: the opened page takes the list keys at once, no Tab (the page open dropped the stop) */
             }
         }
         return;
@@ -14225,6 +14246,11 @@ static int32_t list_nav(desk* d, uint32_t code, int32_t cur, int32_t n, int32_t 
     return to < 0 ? 0 : (to > n - 1 ? n - 1 : to);
 }
 
+/* 1 when code is one of the keys list_nav steps on (it counts no call). */
+static int list_nav_key(uint32_t code) {
+    return code == TXT_KEY_DOWN || code == TXT_KEY_UP || code == TXT_KEY_PAGE_DOWN || code == TXT_KEY_PAGE_UP || code == TXT_KEY_HOME || code == TXT_KEY_END;
+}
+
 /* The scroll offset (Q16 logical pixels) that brings the row at top..top+h inside a view of view_h pixels. */
 static int32_t list_scroll_into(int32_t q16, int32_t top, int32_t h, int32_t view_h) {
     if (top < q16 >> 16) {
@@ -14394,7 +14420,14 @@ static int pl_list_key(desk* d, const sel_gui_input* ev) {
 static int col_list_key(desk* d, const sel_gui_input* ev) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t n = (int32_t)col_song_rows(d), to, vis = 0;
-    if (ev->mods != 0u || d->pls_id == 0u || d->pl_edit || d->dlg_open || d->col_search || n == 0) {
+    if (ev->mods != 0u || d->pls_id == 0u || d->pl_edit || d->dlg_open || d->col_search) {
+        return 0;
+    }
+    if (!d->col_ready && (ev->code == 13u || list_nav_key(ev->code)) && d->held_n < 16u) { /* I1290: the page has no rows yet: the key waits for them instead of being dropped */
+        d->held_keys[d->held_n++] = ev->code;
+        return 1;
+    }
+    if (n == 0) {
         return 0;
     }
     vis = (int32_t)col_vis_slots(d, mn);
