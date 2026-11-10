@@ -1,6 +1,7 @@
 # I427a: three bad modules (no entry symbol, entry answers NULL for the host API, duplicate plugin id of a
 # built-in) are each skipped, counted in dyn_rejected and logged with path and reason; none is listed.
 # Variables: CLI REJECT
+set(ENV{SELECTA_NO_APP_PLUGINS} 1) # I1305d: only the module under test, not the CLI plugins folder (I1242b)
 set(ENV{SELECTA_PLUGIN_PATH} "${REJECT}")
 execute_process(COMMAND "${CLI}" plugins --stats OUTPUT_VARIABLE list ERROR_VARIABLE log RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)

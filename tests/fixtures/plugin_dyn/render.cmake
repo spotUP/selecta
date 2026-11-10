@@ -3,6 +3,7 @@
 # replayer=dyntone) and the output (SHA-256 of the WAV, computed by an independent python script from the ramp
 # formula: left (3 n mod 2000) - 1000, right the negative, 22050 frames at 44100 Hz, then silence padded to the 2 s of --seconds; verified byte for byte in python).
 # Variables: CLI GOOD SONG OUT
+set(ENV{SELECTA_NO_APP_PLUGINS} 1) # I1305d: only the module under test, not the CLI plugins folder (I1242b)
 set(ENV{SELECTA_PLUGIN_PATH} "${GOOD}")
 execute_process(COMMAND "${CLI}" plugins --stats OUTPUT_VARIABLE list ERROR_VARIABLE lerr RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)

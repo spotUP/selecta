@@ -1,7 +1,7 @@
 /* POSIX plugin module loader (design 2026-10-30-plugin-loader-sdk D1, D3, D4). A module is a shared library named
  * sel_*.dylib (macOS) or sel_*.so that exports sel_plugin_entry (include/selecta/plugin.h). Search path, first hit
  * per file name wins: $SELECTA_PLUGIN_PATH (colon list), the app plugin folder (Contents/PlugIns inside a macOS
- * bundle, else <exe dir>/plugins), the user plugin folder (<config dir>/plugins). The Windows LoadLibrary variant
+ * bundle, else <exe dir>/plugins; SELECTA_NO_APP_PLUGINS=1 skips it, I1305d), the user plugin folder (<config dir>/plugins). The Windows LoadLibrary variant
  * lands with the Windows port. */
 #include <selecta/engine.h>
 #include <selecta/registry.h>
@@ -182,7 +182,10 @@ void sel_loader_scan(void) {
         }
         env = e != NULL ? e + 1 : NULL;
     }
-    if (sel_app_plugin_dir(dir, sizeof dir)) {
+    /* I1305d: SELECTA_NO_APP_PLUGINS=1 leaves the app plugin folder out of this general scan (the built-in set above still loads
+     * from it), so a test that names its own module set in $SELECTA_PLUGIN_PATH is not joined by the CLI's full bundled folder (I1242b). */
+    const char* no_app = getenv("SELECTA_NO_APP_PLUGINS");
+    if ((no_app == NULL || no_app[0] != '1') && sel_app_plugin_dir(dir, sizeof dir)) {
         scan_dir(dir);
     }
     if (sel_config_dir(dir, sizeof dir - 16u)) {

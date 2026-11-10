@@ -3,6 +3,7 @@
 # a500 > a1200 >= a1200-fpu >= a060; the listed set per tier equals the golden list (pinned from the first
 # green run; an empty or absent golden is red). Inputs: MODE CLI [VAMOS AMIGA_CLI] GOLDEN_DIR
 include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
+set(ENV{SELECTA_NO_APP_PLUGINS} 1) # I1305d: the golden counts the built-in set only, not the CLI plugins folder (I1242b)
 foreach(tier a500 a1200 a1200-fpu a060)
   m2_run_ok(T49 out plugins --machine ${tier} --stats)
   m2_need_key(T49 "${out}" filtered "registry machine filter (--machine ${tier})")

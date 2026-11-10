@@ -24,6 +24,7 @@ for dir in $(printf '%s' "${SELECTA_PLUGIN_PATH:-}" | tr ':' ' '); do
 done
 SELECTA_PLUGIN_PATH="$PWD/$iso"
 export SELECTA_PLUGIN_PATH
+export SELECTA_NO_APP_PLUGINS=1 # I1305d: only the isolated sunvox module, not the CLI plugins folder (I1242b)
 rate=44100
 for f in "$@"; do
     rm -f fd_sv.wav

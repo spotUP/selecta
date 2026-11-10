@@ -13,6 +13,7 @@ mods=$2
 song=$3
 field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }
 fail() { echo "FAIL: $*"; exit 1; }
+export SELECTA_NO_APP_PLUGINS=1 # I1305d: only the named modules, not the CLI plugins folder (I1242b)
 rate=44100
 rm -rf pg_only pg_both pg_none
 mkdir pg_only pg_both pg_none
