@@ -3765,6 +3765,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(cache_slice_test PRIVATE selecta_core)
   add_test(NAME cache-slice COMMAND cache_slice_test)
   set_tests_properties(cache-slice PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_slice_ok")
+  # I1242f: the nuade companion name rules (seven families, one non-companion family), where the rule table lives.
+  add_executable(nuade_companion_rules_test m3/nuade_companion_rules_test.c)
+  target_include_directories(nuade_companion_rules_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(nuade_companion_rules_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME nuade-companion-rules COMMAND nuade_companion_rules_test)
+  set_tests_properties(nuade-companion-rules PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "nuade_companion_rules_ok")
   # I1127b: content companions. U1/U2 sanitiser + trim exemption (unit); the reachability test fetches a remote .eup
   # through the library cache and asserts the banks arrived (net-fixture).
   add_executable(content_companions_test m3/content_companions_test.c)
