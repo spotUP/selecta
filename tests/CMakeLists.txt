@@ -1419,6 +1419,13 @@ if(NOT SEL_AMIGA)
   target_link_libraries(krk_core_test PRIVATE m)
   add_test(NAME krk-core COMMAND krk_core_test)
   set_tests_properties(krk-core PROPERTIES TIMEOUT 30 PASS_REGULAR_EXPRESSION "krk_core_ok")
+  # I1052b: fixed-point Lava / Smoke 2D core (KRK-P0-4/5), the same C the Amiga build compiles.
+  add_executable(krk_lava_test viz/krk_lava_test.c "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_core.c"
+                 "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa/core/krk_lava_fx.c")
+  target_include_directories(krk_lava_test PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/viz/krakatoa")
+  target_link_libraries(krk_lava_test PRIVATE m)
+  add_test(NAME krk-lava COMMAND krk_lava_test)
+  set_tests_properties(krk-lava PROPERTIES TIMEOUT 120 PASS_REGULAR_EXPRESSION "krk_lava_ok")
   # I1246a/b: onset-to-visible latency and kick displacement on the GPU image, through the real viz tap.
   # Measurement tool, not a registered test yet: the kick pump is not visible
   # on the GPU image (I1246a open), so a pass/fail gate would fail. Run by hand:
