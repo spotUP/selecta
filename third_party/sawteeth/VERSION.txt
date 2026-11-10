@@ -1,7 +1,13 @@
 sawteeth (I1242e): Sawteeth song player by Jonas Norberg, from https://github.com/pulkomandy/Sawteeth
-commit 9fe13fe32d9b5a65fe50a96605f6c2f69e440e34, directories lib/source (7 .cpp) and lib/headers (9 .h), copied unchanged
-(byte for byte; no local changes). Licence: MIT, "Copyright 2001, Jonas Norberg" in every file header, text in LICENSE.
+commit 9fe13fe32d9b5a65fe50a96605f6c2f69e440e34, directories lib/source (7 .cpp) and lib/headers (9 .h), copied, with the local patches listed below
+(AddressSanitizer alloc-dealloc-mismatch fixes, I1293; no behaviour change, render hash identical). Licence: MIT, "Copyright 2001, Jonas Norberg" in every file header, text in LICENSE.
 Not vendored: the BeOS/Haiku editor (Source/ of the upstream repo), binaries, songs, sounds.
 Formats: SWTD (binary) and SWTT (text) Sawteeth songs, file versions up to 1200 (.st). Fixed 44100 Hz output, 50 Hz tick
 (882 samples), 32-bit float throughout (libm only), so the Amiga needs an FPU. The loader prints diagnostics to stderr.
 The glue (plugins/replayers/sawteeth/shim.cpp, adapter.c) is Selecta's own.
+Local patches (I1293, found by AddressSanitizer, one line each):
+- source/song.cpp: stSong::~stSong frees the new[] stereobuffer with delete[] instead of delete.
+- source/song.cpp (two places, binary and text loader): the dummy instrument ins[0] filter, amp and steps are allocated with new[]() instead of calloc, because Ins::Free() releases them with delete[].
+- source/ins_part_channel.cpp: Ins::Free() releases steps, amp and filter (all new[]) with delete[] instead of delete.
+- source/player.cpp: Player::~Player releases the new[] buffer with delete[] instead of delete.
+Not changed (editor-only path, never reached by playback): song.cpp copy-part code allocates Part::name with new char[] while Part frees it with free().

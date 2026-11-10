@@ -25,7 +25,7 @@ Player::Player(stSong *s, Channel *chn)
 Player::~Player()
 {
 	delete ip;
-	delete buffer;
+	delete[] buffer;
 }
 
 void Player::JumpPos(uint8 seqpos, uint8 steppos, uint8 pal)

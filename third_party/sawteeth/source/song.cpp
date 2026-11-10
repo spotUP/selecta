@@ -211,8 +211,8 @@ void stSong::Init()
 	ins[0].name = strdup("");
 	ins[0].filterpoints	= 1;
 	ins[0].amppoints	= 1;
-	ins[0].filter		= (TimeLev*) CALLOC( 1 , sizeof(TimeLev));
-	ins[0].amp			= (TimeLev*) CALLOC( 1 , sizeof(TimeLev));
+	ins[0].filter		= new TimeLev[1]();
+	ins[0].amp			= new TimeLev[1]();
 
 	ins[0].filtermode = 0;
 	ins[0].clipmode = 0;
@@ -231,7 +231,7 @@ void stSong::Init()
 	ins[0].len = 1;
 	ins[0].loop = 0;
 	
-	ins[0].steps = (InsStep*) CALLOC(1 , sizeof(InsStep));
+	ins[0].steps = new InsStep[1]();
 // end of dummy ins allocation
 
 
@@ -568,8 +568,8 @@ void stSong::Init()
 	ins[0].name = strdup("");
 	ins[0].filterpoints	= 1;
 	ins[0].amppoints	= 1;
-	ins[0].filter		= (TimeLev*) CALLOC( 1 , sizeof(TimeLev));
-	ins[0].amp			= (TimeLev*) CALLOC( 1 , sizeof(TimeLev));
+	ins[0].filter		= new TimeLev[1]();
+	ins[0].amp			= new TimeLev[1]();
 
 	ins[0].filtermode = 0;
 	ins[0].clipmode = 0;
@@ -588,7 +588,7 @@ void stSong::Init()
 	ins[0].len = 1;
 	ins[0].loop = false;
 	
-	ins[0].steps = (InsStep*) CALLOC(1 , sizeof(InsStep));
+	ins[0].steps = new InsStep[1]();
 // end of dummy ins allocation
 	
 
@@ -719,7 +719,7 @@ void stSong::Init()
 
 /*_EXPORT*/ stSong::~stSong()
 {
-	if (0 != stereobuffer) delete stereobuffer;
+	if (0 != stereobuffer) delete[] stereobuffer;
 
 	free( N2F );
 	free( R2F );
