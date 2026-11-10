@@ -99,3 +99,11 @@ if(NOT o3 MATCHES "CANCEL net_cancels=1")
   message(FATAL_ERROR "I195a: the cancel path did not run (want net_cancels=1)\n${o3}")
 endif()
 message(STATUS "stream_url_ok")
+
+# I1299: the engine opens a URL whose path holds a space (a modland file name): the request line carries it as %20 and the
+# fixture serves the song (an unescaped space was answered 400 and the open failed). The same song as the plain URL above.
+file(WRITE "${WORK}/t94-space.sel" "OPEN http://fixture.test/mod dir/stream.mod\nPLAY\n@render 4410\n@stream_stats\n")
+run_script(r2 "${WORK}/t94-space.sel")
+if(NOT r2 MATCHES "STREAM stream_reads=[0-9]+ stream_bytes=${want_bytes}")
+  message(FATAL_ERROR "T94 url: OPEN of a path with a space did not stream the song (want ${want_bytes} bytes)\n${r2}")
+endif()

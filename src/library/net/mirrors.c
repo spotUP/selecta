@@ -211,26 +211,6 @@ static int on_body(void* c, const void* data, size_t len) {
     return a->sink(a->ctx, data, len);
 }
 
-/* Percent-encode everything but unreserved characters and '/'. */
-static int encode_path(const char* path, char* out, size_t cap) {
-    size_t n = 0;
-    for (; *path != '\0'; path++) {
-        unsigned char c = (unsigned char)*path;
-        int plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' ||
-                    c == '-' || c == '_' || c == '.' || c == '~';
-        if (n + 4 > cap) {
-            return 0;
-        }
-        if (plain) {
-            out[n++] = (char)c;
-        } else {
-            n += (size_t)snprintf(out + n, 4, "%%%02X", c);
-        }
-    }
-    out[n] = '\0';
-    return 1;
-}
-
 static int try_one(const char* url, attempt* a, const sel_mirror_opts* o) {
     if (strncmp(url, "ftp://", 6) == 0) {
         sel_ftp_res fr;
@@ -287,7 +267,7 @@ int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror
         }
         path = hosted;
     }
-    if (s->count == 0 || !encode_path(path, enc, sizeof enc)) {
+    if (s->count == 0 || !sel_url_escape(path, enc, sizeof enc, SEL_URL_ESC_NAME)) {
         return 0;
     }
     sel_mirrors_rank(s, res->order);
