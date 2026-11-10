@@ -66,10 +66,31 @@ add_custom_target(sdk-isolation
   COMMENT "Every plugin compiles with include/ as its only project include path")
 
 function(sel_add_plugin name kind)
-  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE;STATIC" "" "THIRD_PARTY_INCLUDES")
+  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE;STATIC" "AMIGA_MANIFEST" "THIRD_PARTY_INCLUDES")
   set(sources ${SELP_UNPARSED_ARGUMENTS})
   if(NOT sources)
     message(FATAL_ERROR "sel_add_plugin(${name}): no sources")
+  endif()
+  set(sdk_sources ${sources})
+
+  # Amiga on-demand module (I427e, plugin-loader-sdk D8): the plugin becomes a LoadSeg hunk file
+  # Players/sel_<name> (target sel_seg_<name>; link the plugin's own libraries to it), and sel_plugin_<name>
+  # shrinks to the manifest unit (AMIGA_MANIFEST: static tags + probe, compiled with SEL_PLUGIN_MANIFEST) that the
+  # registry links. The module links no selecta_core (D6): it reaches the host through the sel_host table only.
+  set(seg_manifest OFF)
+  if(SEL_AMIGA AND SELP_AMIGA_MANIFEST)
+    set(seg sel_seg_${name})
+    add_executable(${seg} "${PROJECT_SOURCE_DIR}/src/engine/seg_crt.c" ${sources})
+    target_include_directories(${seg} PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/shared"
+      "${CMAKE_CURRENT_SOURCE_DIR}" ${SELP_THIRD_PARTY_INCLUDES})
+    target_compile_definitions(${seg} PRIVATE SEL_PLUGIN_KIND_BUILD=${kind})
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/src/engine/seg_crt.c" TARGET_DIRECTORY ${seg}
+      PROPERTIES COMPILE_OPTIONS "-fno-toplevel-reorder")
+    target_link_options(${seg} PRIVATE -nostartfiles) # seg_crt.c is the startup and sits at offset 0
+    set_target_properties(${seg} PROPERTIES OUTPUT_NAME "sel_${name}" RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Players")
+    set_property(GLOBAL APPEND PROPERTY SEL_SEG_MODULES ${seg})
+    set(sources ${SELP_AMIGA_MANIFEST})
+    set(seg_manifest ON)
   endif()
 
   set(link_module OFF)
@@ -126,9 +147,12 @@ function(sel_add_plugin name kind)
     target_compile_definitions(sel_plugin_${name} PRIVATE
       SEL_PLUGIN_ENTRY=sel_plugin_entry_${name}
       SEL_PLUGIN_KIND_BUILD=${kind})
+    if(seg_manifest)
+      target_compile_definitions(sel_plugin_${name} PRIVATE SEL_PLUGIN_MANIFEST)
+    endif()
   endif()
 
-  add_library(sel_sdkcheck_${name} OBJECT EXCLUDE_FROM_ALL ${sources})
+  add_library(sel_sdkcheck_${name} OBJECT EXCLUDE_FROM_ALL ${sdk_sources})
   set_target_properties(sel_sdkcheck_${name} PROPERTIES INCLUDE_DIRECTORIES "")
   target_include_directories(sel_sdkcheck_${name} PRIVATE "${PROJECT_SOURCE_DIR}/include")
   target_compile_definitions(sel_sdkcheck_${name} PRIVATE

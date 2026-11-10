@@ -1,6 +1,7 @@
 // bbmp_ptk shim (row I710q): C entry points over ProTrekkr's own replay routine (third_party/bbmp_ptk, BSD 2-clause, from rePlayer 0.22.14).
 // Written for Selecta against ProTrekkr's public replay API; bbmp's GPL wrapper (csrc/synth/ptk_engine.cpp) is not used. The replayer keeps
 // its state in globals, so one song is open at a time (the adapter serialises with its own use of ptks_*).
+#include "probe.h"
 #include <include/version.h>
 #include <replay/include/replay.h>
 #include <files/include/files.h>
@@ -124,12 +125,6 @@ static bool plausible_song() {
 static bool g_open, g_ended;
 
 extern "C" {
-
-int ptks_probe(const uint8_t* d, size_t n) {
-  if (n < 64 || (std::memcmp(d, "PROTREK", 7) != 0 && std::memcmp(d, "TWNNSNG", 7) != 0)) return 0;
-  const char v = (char)d[7];
-  return (v >= '1' && v <= '9') || (v >= 'A' && v <= 'V');
-}
 
 // 1 on success. title gets the song name; *ntk is 1 for a NoiseTrekker song (format versions 1 and 2).
 int ptks_open(const uint8_t* data, size_t size, char* title, size_t title_size, int* ntk) {

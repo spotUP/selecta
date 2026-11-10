@@ -20,6 +20,7 @@
 #include <selecta/machine.h>
 
 #include <selecta/plugin.h>
+#include <selecta/registry.h>
 #include <selecta/ranges.h>
 #include <selecta/replayer.h>
 #include <selecta/tags.h>
@@ -2869,6 +2870,12 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     if (hooks == NULL) {
         drop_song(e, data, live, fs);
         sel_engine_report_error(e, "no_replayer", err_detail);
+        return 0;
+    }
+    hooks = sel_plugin_resolve(hooks); /* I427e: a manifest plugin's module loads here, before any hook lookup */
+    if (hooks == NULL) {
+        drop_song(e, data, live, fs);
+        sel_engine_report_error(e, "replayer_load_failed", err_detail);
         return 0;
     }
     kind = sel_tag_find(hooks, SEL_RP_KIND, 0);

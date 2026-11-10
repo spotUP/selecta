@@ -2,6 +2,8 @@
  * *.ptk) through ProTrekkr's own replay routine (third_party/bbmp_ptk, BSD 2-clause, taken from rePlayer 0.22.14), the engine bbmp uses for
  * them. shim.cpp wraps the replayer (global state, one song at a time); open renders the whole song once at the replayer's fixed 44100 Hz
  * (the song ends when the replayer says so, capped at kMaxSeconds), and RP_START hands it out, resampled linearly to the host rate. */
+#include "probe.h"
+
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
@@ -9,7 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-int ptks_probe(const uint8_t* d, size_t n);
 int ptks_open(const uint8_t* data, size_t size, char* title, size_t title_size, int* ntk);
 int ptks_render(float* out, int frames);
 void ptks_close(void);
@@ -29,25 +30,6 @@ typedef struct bbpk_state {
     const char* type;
     sel_tag meta[6];
 } bbpk_state;
-
-static int ext_is_ptk(const char* name) {
-    size_t nl = name != NULL ? strlen(name) : 0u;
-    return nl >= 4u && name[nl - 4u] == '.' && (name[nl - 3u] | 0x20) == 'p' && (name[nl - 2u] | 0x20) == 't' &&
-           (name[nl - 1u] | 0x20) == 'k';
-}
-
-static int ext_is_ntk(const char* name) {
-    size_t nl = name != NULL ? strlen(name) : 0u;
-    return nl >= 4u && name[nl - 4u] == '.' && (name[nl - 3u] | 0x20) == 'n' && (name[nl - 2u] | 0x20) == 't' &&
-           (name[nl - 1u] | 0x20) == 'k';
-}
-
-static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    if (!ptks_probe(data, size)) {
-        return SEL_PROBE_NO;
-    }
-    return ext_is_ptk(name) || ext_is_ntk(name) ? SEL_PROBE_YES : SEL_PROBE_UNSURE;
-}
 
 static int16_t clip16(float v) {
     v *= 32767.0f;
@@ -199,29 +181,22 @@ static const sel_tag* rp_metadata(void* state) {
 static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
 
-static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
-    t->tag = tag;
-    t->value = value;
-}
+#define set bbpk_set_tag
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "bbmp_ptk");
-    set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
-    set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "ntk,ptk");
-    set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
-    set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
-    set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
-    set(&g_hooks[7], SEL_RP_START, SEL_TAG_FN(rp_start));
-    set(&g_hooks[8], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
-    set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
-    set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[11], SEL_RP_PRIORITY, 10);
-    set(&g_hooks[12], SEL_RP_NEEDS_FLOAT, 1); /* float mixer: hidden on a machine without an FPU */
-    set(&g_hooks[13], SEL_TAG_END, 0);
+    {
+        size_t n = bbpk_static_hooks(g_hooks); /* probe.c: shared with the Amiga manifest (I427e) */
+        set(&g_hooks[n++], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
+        set(&g_hooks[n++], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
+        set(&g_hooks[n++], SEL_RP_START, SEL_TAG_FN(rp_start));
+        set(&g_hooks[n++], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
+        set(&g_hooks[n++], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
+        set(&g_hooks[n++], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
+        set(&g_hooks[n], SEL_TAG_END, 0);
+    }
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "bbmp_ptk");

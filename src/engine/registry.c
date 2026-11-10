@@ -27,6 +27,10 @@ static uint32_t g_count;
 static uint32_t g_cap;
 static sel_registry_stats g_stats;
 
+void sel_registry_note_module_load(void) {
+    g_stats.module_loads++;
+}
+
 /* Dynamic entries (plugin loader, I427a): added by a loader before init, walked after the static array. */
 static struct dyn_entry {
     sel_plugin_entry_fn fn;

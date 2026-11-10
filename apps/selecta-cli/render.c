@@ -388,6 +388,8 @@ int sel_cli_render(int argc, char** argv) {
         printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
                (unsigned)stats.mixed_frames);
     }
+    /* I427e: on-demand module loads (Amiga LoadSeg players); stderr so stdout counter lines stay byte-equal. */
+    fprintf(stderr, "module_loads=%u\n", (unsigned)sel_registry_get_stats()->module_loads);
     if (script != NULL) {
         const sel_state* st = sel_engine_state(e);
         printf("mute_mask=0x%08x\n", (unsigned)st->mute_mask);

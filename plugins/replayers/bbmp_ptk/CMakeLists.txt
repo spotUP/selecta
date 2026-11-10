@@ -17,16 +17,17 @@ if(SEL_AMIGA)
   target_compile_options(bbmp_ptk_engine PRIVATE -w -fvisibility=hidden)
   target_compile_definitions(bbmp_ptk_engine PRIVATE ${BBPK_DEFS})
   set_target_properties(bbmp_ptk_engine PROPERTIES CXX_STANDARD 17)
-  sel_add_plugin(bbmp_ptk 1 adapter.c shim.cpp
+  # I427e: an on-demand LoadSeg module (Players/sel_bbmp_ptk); the registry links only probe.c as the manifest.
+  sel_add_plugin(bbmp_ptk 1 adapter.c shim.cpp probe.c AMIGA_MANIFEST probe.c
     THIRD_PARTY_INCLUDES "${BBPK_DIR};${CMAKE_CURRENT_SOURCE_DIR}/ptk_win;${CMAKE_CURRENT_SOURCE_DIR}/ptk_zlib;${PROJECT_SOURCE_DIR}/third_party/miniz")
-  target_compile_options(sel_plugin_bbmp_ptk PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-w>)
-  target_compile_definitions(sel_plugin_bbmp_ptk PRIVATE ${BBPK_DEFS})
-  set_target_properties(sel_plugin_bbmp_ptk PROPERTIES CXX_STANDARD 17)
-  # The executables link with the C driver: libstdc++ is named here. miniz comes from selecta_archive.
-  target_link_libraries(sel_plugin_bbmp_ptk PUBLIC bbmp_ptk_engine selecta_archive stdc++)
+  target_compile_options(sel_seg_bbmp_ptk PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-w>)
+  target_compile_definitions(sel_seg_bbmp_ptk PRIVATE ${BBPK_DEFS})
+  set_target_properties(sel_seg_bbmp_ptk PROPERTIES CXX_STANDARD 17)
+  # The module links with the C driver: libstdc++ is named here. miniz comes from selecta_archive.
+  target_link_libraries(sel_seg_bbmp_ptk PRIVATE bbmp_ptk_engine selecta_archive stdc++)
 else()
   find_package(ZLIB REQUIRED)
-  sel_add_plugin(bbmp_ptk 1 MODULE adapter.c shim.cpp ${BBPK_ENGINE}
+  sel_add_plugin(bbmp_ptk 1 MODULE adapter.c shim.cpp probe.c ${BBPK_ENGINE}
     THIRD_PARTY_INCLUDES "${BBPK_DIR};${CMAKE_CURRENT_SOURCE_DIR}/ptk_win;${ZLIB_INCLUDE_DIRS}")
   target_compile_options(sel_module_bbmp_ptk PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-w>)
   target_compile_definitions(sel_module_bbmp_ptk PRIVATE ${BBPK_DEFS})

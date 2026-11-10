@@ -27,6 +27,7 @@ typedef struct sel_registry_stats {
     uint32_t dyn_rejected;       /* dynamic modules skipped: no entry symbol, NULL entry, bad descriptor, duplicate id */
     uint32_t builtin_loaded;     /* built-in modules accepted (SELECTA_PLUGIN_LINK=MODULE, I427f); not counted in dyn_loaded */
     uint32_t builtin_missing;    /* built-in modules this build expects but the loader could not load */
+    uint32_t module_loads;       /* manifest plugins whose module was loaded on demand (Amiga LoadSeg, I427e) */
 } sel_registry_stats;
 
 /* Calls every entry once; keeps the plugins the machine can run (a sel_machine tag list, NULL =
@@ -49,6 +50,17 @@ const char* sel_registry_builtin_missing_name(uint32_t index);
 void sel_registry_note_rejected(const char* path, const char* reason);
 /* Where plugin `index` (as sel_registry_get) came from: "static" or the module path; NULL out of range. */
 const char* sel_registry_origin(uint32_t index);
+/* Counts one on-demand module load (loader_seg.c, I427e). */
+void sel_registry_note_module_load(void);
+
+/* On-demand plugin modules (I427e). A manifest descriptor (SEL_PLUGIN_MODULE) carries only static tags and
+ * the probe; before any other hook is looked up, callers pass the hooks they picked through
+ * sel_plugin_resolve, which returns the real hooks (loading the module once), the same pointer for a plain
+ * plugin, or NULL when the module cannot be loaded. The registry's loader installs the resolver; with none
+ * installed hooks come back unchanged. Lives in selecta_core so the engine and the library can call it. */
+typedef const sel_tag* (*sel_plugin_resolve_fn)(const sel_tag* hooks);
+void sel_plugin_set_resolver(sel_plugin_resolve_fn fn);
+const sel_tag* sel_plugin_resolve(const sel_tag* hooks);
 /* sel_registry_init_machine(host, NULL). */
 uint32_t sel_registry_init(const sel_host* host);
 const sel_registry_stats* sel_registry_get_stats(void);
