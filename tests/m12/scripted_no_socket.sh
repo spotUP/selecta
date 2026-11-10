@@ -2,8 +2,9 @@
 # I575: a scripted run (--console-frames, --output null) never depends on whether another Selecta holds the default
 # control socket (the user's running Selecta.app). Usage: scripted_no_socket.sh <selecta> <workdir>
 # A listener holds the default socket path (XDG_RUNTIME_DIR/selecta.sock, short dir: sun_path is 104). Then:
-#  - a run with no scripted marker (--exec QUIT, real output) must still say "already running" and exit 1, which
-#    proves the listener really blocks a normal launch (the guard is live);
+#  - a run with no scripted marker (--exec QUIT, real output) must see the held socket: since I1162b (c0977bb2) it prints
+#    the "another instance owns" notice and exits 0 instead of "already running" / exit 1, which proves the listener
+#    really blocks a normal launch (the guard is live);
 #  - a --console-frames run and an --output null run, both fed keys on stdin, must finish with exit 0.
 SELECTA=$1
 WORK=$2
@@ -44,13 +45,13 @@ fail() {
 
 "$SELECTA" --size 80x25 --start-dir "" --db plain.db --exec QUIT < q.keys > out.txt 2>&1
 rc=$?
-[ $rc -eq 1 ] || fail "unmarked run exited $rc, expected 1 (already running)"
-grep -q "already running" out.txt || fail "unmarked run did not report already running"
+[ $rc -eq 0 ] || fail "unmarked run exited $rc, expected 0 (I1162b: runs on without the socket)"
+grep -q "another instance owns" out.txt || fail "unmarked run did not report that another instance owns the socket"
 
 "$SELECTA" --output null --size 80x25 --start-dir "" --console-frames 1 --db console.db < q.keys > out.txt 2>&1
 rc=$?
 [ $rc -eq 0 ] || fail "--console-frames run exited $rc with the socket held"
-grep -q "already running" out.txt && fail "--console-frames run hit the held socket"
+grep -q "another instance owns" out.txt && fail "--console-frames run hit the held socket"
 
 "$SELECTA" --output null --size 80x25 --start-dir "" --db null.db < q.keys > out.txt 2>&1
 rc=$?

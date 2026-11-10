@@ -12,6 +12,9 @@ trap 'rm -rf "$root"' EXIT
 mkdir -p "$root/sub"
 cp "$modA" "$root/one.mod"
 cp "$modB" "$root/sub/two.mod"
+# I1094c (92721901): search hides duplicate copies by default, so the two scanned files must differ in content
+# (identical md5 would collapse into one hit). A trailing byte keeps the module loadable.
+printf 'x' >> "$root/sub/two.mod"
 printf 'not a module\n' > "$root/readme.txt"
 # I301: files that are not songs but look plausible to a loose probe. None may become a row.
 #  - hunk.exe: an Amiga hunk executable (HUNK_HEADER 0x3F3, hunk table, HUNK_CODE). The old Sound Factory
