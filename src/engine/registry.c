@@ -157,8 +157,9 @@ static int fits(const sel_tag* d, const sel_tag* machine) {
         g_stats.hidden_needs_fpu++;
         ok = 0;
     }
-    if (memory > sel_tag_find(machine, SEL_MACHINE_CHIP_RAM, 0) +
-                     sel_tag_find(machine, SEL_MACHINE_FAST_RAM, 0)) {
+    /* I1313: SEL_RP_MEMORY is the player's own peak (module hunk plus allocations); it must fit in the RAM free
+     * after Selecta has started, not the installed total. */
+    if (memory > sel_tag_find(machine, SEL_MACHINE_FREE_RAM, 0)) {
         g_stats.hidden_memory++;
         ok = 0;
     }

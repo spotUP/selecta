@@ -304,7 +304,7 @@ static void rp_hw_release(void* state) {
     stop((kp_state*)state);
 }
 
-static sel_tag g_hooks[19];
+static sel_tag g_hooks[20];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -334,7 +334,11 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[15], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[16], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
     set(&g_hooks[17], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
-    set(&g_hooks[18], SEL_TAG_END, 0);
+    /* I1313: RAM peak 16986 B (module hunk plus allocations) rendering polly_classic.mod (14730 B module), measured 2026-11-11 by allocation sites (vamos has no CIA resource for this Paula player): state + work + module
+     * (tools/player_ram.py). Declared = peak +25%, rounded up to 64 KB; the registry hides the player
+     * when this is above the RAM free after Selecta has started. */
+    set(&g_hooks[18], SEL_RP_MEMORY, 65536);
+    set(&g_hooks[19], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "kplayer");

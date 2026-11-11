@@ -25,6 +25,24 @@ m2_run_ok(T49 out plugins --machine a500 --stats)
 m2_check(T49 "${out}" "hidden_memory>=1")
 m2_run_ok(T49 out plugins --machine a1200-fpu --stats)
 m2_check(T49 "${out}" "filtered==0,slow_needs_float==0,hidden_needs_fpu==0")
+# I1313: the real machine probe (--machine probe) under vamos. SEL_MACHINE_FREE_RAM is AvailMem(MEMF_ANY) after
+# Selecta has started; a player whose measured SEL_RP_MEMORY peak is above it is hidden (hidden_memory). At the
+# 16 MB baseline nuade (the largest Amiga player) is listed; at SMALL_RAM_KB it is not.
+if(MODE STREQUAL "vamos")
+  m2_run_ok(T49 out plugins --machine probe --stats)
+  m2_check(T49 "${out}" "hidden_memory==0")
+  if(NOT out MATCHES "(^|\n)nuade[ \t]")
+    message(FATAL_ERROR "RED[T49]: nuade not listed at -m ${SEL_VAMOS_RAM_KB}:\n${out}")
+  endif()
+  set(ram_16mb ${SEL_VAMOS_RAM_KB})
+  set(SEL_VAMOS_RAM_KB 6144) # free RAM after start falls below nuade's SEL_RP_MEMORY
+  m2_run_ok(T49 out plugins --machine probe --stats)
+  set(SEL_VAMOS_RAM_KB ${ram_16mb})
+  m2_check(T49 "${out}" "hidden_memory>=1")
+  if(out MATCHES "(^|\n)nuade[ \t]")
+    message(FATAL_ERROR "RED[T49]: nuade listed with too little free RAM (vamos -m 6144):\n${out}")
+  endif()
+endif()
 # Priority owner: one owner per format, from the registry the filter feeds.
 m2_run_ok(T49 out plugins --owner actionamics)
 if(NOT out MATCHES "owner=nuade")

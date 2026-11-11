@@ -4,7 +4,7 @@
 
 #include <string.h>
 
-#define SEL_MACHINE_TAGS 12u /* eleven rows plus SEL_TAG_END */
+#define SEL_MACHINE_TAGS 13u /* twelve rows plus SEL_TAG_END */
 #define SEL_SPEED_CHUNK 20000u
 #define SEL_SPEED_MIN_MS 100u
 
@@ -32,7 +32,7 @@ static uint32_t measure_cpu_speed(const sel_host* host) {
 }
 
 const sel_tag* sel_machine_probe(const sel_host* host) {
-    sel_machine_raw raw = {SEL_CPU_UNKNOWN, 0, 0, 0, SEL_TIER_TEXT, NULL, NULL};
+    sel_machine_raw raw = {SEL_CPU_UNKNOWN, 0, 0, 0, 0, SEL_TIER_TEXT, NULL, NULL};
     uint32_t speed;
     uint32_t n = 0;
 
@@ -61,6 +61,7 @@ const sel_tag* sel_machine_probe(const sel_host* host) {
     PUT(SEL_MACHINE_NET, "unknown");
     PUT(SEL_MACHINE_DISK, "unknown");
     PUT(SEL_MACHINE_TIER, raw.tier);
+    PUT(SEL_MACHINE_FREE_RAM, raw.free_ram);
 #undef PUT
     g_machine[n].tag = SEL_TAG_END;
     g_machine[n].value = 0;
@@ -97,8 +98,11 @@ const sel_tag* sel_machine_fake(const char* name) {
         fake[3].value = g_fakes[i].fast;
         fake[4].tag = SEL_MACHINE_TIER;
         fake[4].value = SEL_TIER_TEXT;
-        fake[5].tag = SEL_TAG_END;
-        fake[5].value = 0;
+        /* A fake machine has nothing running yet: all of its RAM is free (I1313). */
+        fake[5].tag = SEL_MACHINE_FREE_RAM;
+        fake[5].value = g_fakes[i].chip + g_fakes[i].fast;
+        fake[6].tag = SEL_TAG_END;
+        fake[6].value = 0;
         return fake;
     }
     return NULL;

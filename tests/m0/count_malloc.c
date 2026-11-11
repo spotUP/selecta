@@ -4,11 +4,16 @@
  * stderr, then reports both counts on stderr through write(2):
  *   SEL_ALLOC_BEFORE=<calls before the freeze>   proves the shim counts
  *   SEL_ALLOC_COUNT=<calls inside the window>    must be 0
+ *   SEL_ALLOC_PEAK_BYTES=<most live heap bytes before the thaw>   (I1313,
+ *     malloc_size of every live block; tools/player_ram.py takes a host
+ *     player's RAM peak from it for players vamos cannot run; with
+ *     SEL_ALLOC_PEAK_AT_EXIT set it also prints at process exit)
  * The window ends before the CLI prints its result line, because the
  * first printf allocates the stdout buffer. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc/malloc.h>
 #include <unistd.h>
 
 #define DYLD_INTERPOSE(replacement, replacee)                                                      \
@@ -21,6 +26,23 @@
 static volatile unsigned long g_before;
 static volatile unsigned long g_window;
 static volatile int g_frozen;
+static size_t g_live;
+static size_t g_peak;
+
+static void grew(void* p) {
+    if (p != NULL) {
+        g_live += malloc_size(p);
+        if (g_live > g_peak) {
+            g_peak = g_live;
+        }
+    }
+}
+
+static void shrank(void* p) {
+    if (p != NULL) {
+        g_live -= malloc_size(p);
+    }
+}
 
 static void count(void) {
     if (g_frozen) {
@@ -31,18 +53,33 @@ static void count(void) {
 }
 
 static void* my_malloc(size_t n) {
+    void* p;
     count();
-    return malloc(n);
+    p = malloc(n);
+    grew(p);
+    return p;
 }
 
 static void* my_calloc(size_t a, size_t b) {
+    void* p;
     count();
-    return calloc(a, b);
+    p = calloc(a, b);
+    grew(p);
+    return p;
 }
 
 static void* my_realloc(void* p, size_t n) {
+    void* q;
     count();
-    return realloc(p, n);
+    shrank(p);
+    q = realloc(p, n);
+    grew(q != NULL ? q : (n != 0 ? p : NULL));
+    return q;
+}
+
+static void my_free(void* p) {
+    shrank(p);
+    free(p);
 }
 
 static void put_count(const char* label, unsigned long v) {
@@ -71,6 +108,14 @@ static void marker(const void* s, size_t n) {
         g_frozen = 0;
         put_count("SEL_ALLOC_BEFORE=", g_before);
         put_count("SEL_ALLOC_COUNT=", g_window);
+        put_count("SEL_ALLOC_PEAK_BYTES=", (unsigned long)g_peak);
+    }
+}
+
+/* Runs without the markers (tools/player_ram.py render) report the peak at exit (I1313). */
+__attribute__((destructor)) static void report_peak(void) {
+    if (getenv("SEL_ALLOC_PEAK_AT_EXIT") != NULL) {
+        put_count("SEL_ALLOC_PEAK_BYTES=", (unsigned long)g_peak);
     }
 }
 
@@ -91,5 +136,6 @@ static size_t my_fwrite(const void* p, size_t size, size_t n, FILE* f) {
 DYLD_INTERPOSE(my_malloc, malloc);
 DYLD_INTERPOSE(my_calloc, calloc);
 DYLD_INTERPOSE(my_realloc, realloc);
+DYLD_INTERPOSE(my_free, free);
 DYLD_INTERPOSE(my_fputs, fputs);
 DYLD_INTERPOSE(my_fwrite, fwrite);

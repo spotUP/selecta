@@ -22,7 +22,7 @@ typedef struct sel_registry_stats {
     uint32_t hidden_min_cpu;     /* SEL_RP_MIN_CPU above the machine CPU */
     uint32_t slow_needs_float;   /* SEL_RP_NEEDS_FLOAT without an FPU: kept, ranked below non-float players (I1316) */
     uint32_t hidden_needs_fpu;   /* SEL_RP_NEEDS_FPU (68881 code) without an FPU (I1316) */
-    uint32_t hidden_memory;      /* SEL_RP_MEMORY above chip plus fast RAM */
+    uint32_t hidden_memory;      /* SEL_RP_MEMORY above SEL_MACHINE_FREE_RAM (I1313) */
     uint32_t hidden_chip;        /* SEL_OUT_MEM_CHIP above chip RAM */
     uint32_t dyn_loaded;         /* dynamic modules accepted (I427a) */
     uint32_t dyn_rejected;       /* dynamic modules skipped: no entry symbol, NULL entry, bad descriptor, duplicate id */

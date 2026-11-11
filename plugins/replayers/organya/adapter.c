@@ -295,7 +295,7 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[14];
+static sel_tag g_hooks[15];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -320,7 +320,11 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_PRIORITY, 10);
     set(&g_hooks[12], SEL_RP_NEEDS_FLOAT, 1);
-    set(&g_hooks[13], SEL_TAG_END, 0);
+    /* I1313: RAM peak 932052 B (module hunk plus allocations) rendering org_test.org, measured 2026-11-11 by vamos -l mem_alloc:info, render peak minus a no-player baseline
+     * (tools/player_ram.py). Declared = peak +25%, rounded up to 64 KB; the registry hides the player
+     * when this is above the RAM free after Selecta has started. */
+    set(&g_hooks[13], SEL_RP_MEMORY, 1179648);
+    set(&g_hooks[14], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "organya");

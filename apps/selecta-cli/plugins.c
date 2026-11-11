@@ -56,9 +56,12 @@ int sel_cli_plugins(int argc, char** argv) {
 
     for (a = 0; a < argc; a++) {
         if (strcmp(argv[a], "--machine") == 0 && a + 1 < argc) {
-            machine = sel_machine_fake(argv[++a]);
+            ++a;
+            /* "probe": the machine this runs on, as render/play see it (I1313: real SEL_MACHINE_FREE_RAM) */
+            machine = strcmp(argv[a], "probe") == 0 ? sel_cli_probed_machine(sel_host_default())
+                                                    : sel_machine_fake(argv[a]);
             if (machine == NULL) {
-                fprintf(stderr, "unknown machine %s (a500, a1200, a1200-fpu, a060)\n", argv[a]);
+                fprintf(stderr, "unknown machine %s (a500, a1200, a1200-fpu, a060, probe)\n", argv[a]);
                 return 1;
             }
         } else if (strcmp(argv[a], "--stats") == 0) {

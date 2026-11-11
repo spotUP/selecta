@@ -31,11 +31,15 @@ size_t kt_static_hooks(sel_tag* t) {
     kt_set_tag(&t[4], SEL_RP_PROBE, SEL_TAG_FN(kt_probe));
     kt_set_tag(&t[5], SEL_RP_PRIORITY, 10);
     kt_set_tag(&t[6], SEL_RP_NEEDS_FLOAT, 1); /* the engine uses float: hidden on a machine without an FPU */
-    return 7u;
+    /* I1313: RAM peak 1353628 B (module hunk plus allocations) rendering ringmod.kt, measured 2026-11-11 by vamos -l mem_alloc:info, render peak minus a no-player baseline
+     * (tools/player_ram.py). Declared = peak +25%, rounded up to 64 KB; the registry hides the player
+     * when this is above the RAM free after Selecta has started. */
+    kt_set_tag(&t[7], SEL_RP_MEMORY, 1703936);
+    return 8u;
 }
 
 #ifdef SEL_PLUGIN_MANIFEST
-static sel_tag g_hooks[8];
+static sel_tag g_hooks[9];
 static sel_tag g_desc[6];
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
