@@ -95,10 +95,10 @@ static int library_browse(int argc, char** argv) {
     }
     memset(&sink, 0, sizeof sink);
     memset(&cfg, 0, sizeof cfg);
-    sel_registry_init(sel_host_default());
+    sel_cli_registry_init(sel_host_default());
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
-    cfg.machine = sel_machine_probe(sel_host_default());
+    cfg.machine = sel_cli_probed_machine(sel_host_default());
     e = sel_engine_create(sel_host_default(), &cfg);
     if (e == NULL) {
         fputs("selecta-cli: engine allocation failed\n", stderr);
@@ -503,7 +503,7 @@ static int library_rescan(int argc, char** argv) {
         fputs("usage: selecta-cli library rescan [--db <path>] <dir>...\n", stderr);
         return 2;
     }
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
     if (lib == NULL) {
         puts("db_open=0");
@@ -623,7 +623,7 @@ static int library_scan(int argc, char** argv) {
     }
     memset(&sink, 0, sizeof sink);
     memset(&cfg, 0, sizeof cfg);
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = machine != NULL ? machine : sel_machine_probe(host);
@@ -871,7 +871,7 @@ static int library_sync(int argc, char** argv) {
     }
     memset(&sink, 0, sizeof sink);
     memset(&cfg, 0, sizeof cfg);
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(host);
@@ -1137,7 +1137,7 @@ int sel_cli_wrong(int argc, char** argv) {
         fputs("usage: selecta-cli wrong [--db <path>] [--export <sounds-wrong.txt>] [<song> [<note>]]\n", stderr);
         return 2;
     }
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
     if (lib == NULL) {
         puts("db_open=0");
@@ -1183,7 +1183,7 @@ int sel_cli_userdata(int argc, char** argv) {
               "[--tag <song> <field> <value>] [--wrong <song> <note>]\n", stderr);
         return 2;
     }
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     lib = catalogue != NULL ? sel_cli_open_catalogue_at(catalogue, db_path)
                             : sel_library_open(host, sel_machine_probe(host), 0, db_path);
     if (lib == NULL) {

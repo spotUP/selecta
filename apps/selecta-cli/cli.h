@@ -87,6 +87,12 @@ typedef struct sel_cli_output {
 } sel_cli_output;
 
 uint32_t sel_cli_engine_pull(void* ctx, int16_t* stereo, uint32_t frames);
+/* I1316: the machine this CLI runs on, probed once per process (sel_machine_probe costs ~100 ms). */
+const sel_tag* sel_cli_probed_machine(const sel_host* host);
+/* I1316: registry init for every command that opens songs. Passes the probed machine, as the GUI does
+ * (apps/selecta/main.c), so the machine filter hides what this machine cannot run: a -m68881 player
+ * (SEL_RP_NEEDS_FPU) never loads on a machine without an FPU. */
+uint32_t sel_cli_registry_init(const sel_host* host);
 /* Looks up output plugin `id`; prints a message prefixed with `who` and returns 0 on failure. */
 int sel_cli_find_output(const char* who, const char* id, sel_cli_output* o);
 /* Creates an engine, sets the mix, opens `song` and starts playing; NULL (message printed) on failure. */

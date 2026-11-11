@@ -65,7 +65,7 @@ static sel_engine* open_engine(const sel_host* host, const char* db_path, sel_li
     sel_engine* e;
 
     memset(&cfg, 0, sizeof cfg);
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(host);

@@ -69,7 +69,7 @@ int sel_cli_play(int argc, char** argv) {
         return 2;
     }
 
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     if (!sel_cli_find_output("play", id, &o) || o.stats == NULL) {
         return 1;
     }

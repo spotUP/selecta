@@ -660,10 +660,10 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             cfg.library = lib;
         }
     }
-    sel_registry_init(sel_host_default());
+    sel_cli_registry_init(sel_host_default());
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
-    cfg.machine = sel_machine_probe(sel_host_default());
+    cfg.machine = sel_cli_probed_machine(sel_host_default());
     e = sel_engine_create(host, &cfg);
     if (e == NULL) {
         fclose(f);

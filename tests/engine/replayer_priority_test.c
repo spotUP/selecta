@@ -3,9 +3,12 @@
  * (kplayer, 10). The highest priority wins among the YES answers, else among the UNSURE ones; ties keep registration
  * order (as sel_registry_format_owner does).
  * Driven through the engine (QUEUE_ADD, PLAY, pump) with a registry the test controls: seven fake RENDER replayers
- * whose RP_START counts which one the engine opened. The start counter of the winner is the sentinel. */
+ * whose RP_START counts which one the engine opened. The start counter of the winner is the sentinel.
+ * I1316: on a machine without an FPU a SEL_RP_NEEDS_FLOAT replayer (soft-float, slow) loses to any replayer without
+ * the tag, whatever the priorities; with an FPU, or with no machine (desktop), priority decides as before. */
 #include <selecta/engine.h>
 #include <selecta/host.h>
+#include <selecta/machine.h>
 #include <selecta/plugin.h>
 #include <selecta/protocol.h>
 #include <selecta/replayer.h>
@@ -26,7 +29,7 @@ static int g_fail;
     } while (0)
 
 static int g_state;
-static uint32_t g_starts[7];
+static uint32_t g_starts[9];
 
 static int ends_with(const char* name, const char* ext) {
     size_t n = strlen(name), x = strlen(ext);
@@ -51,8 +54,8 @@ static uint32_t fake_render(void* state, int16_t* out, uint32_t frames) {
     return frames;
 }
 
-/* One fake: index, priority, extension it answers YES to, extension it answers UNSURE to. */
-#define FAKE(n, pri, yes_ext, unsure_ext)                                            \
+/* One fake: index, priority, extension it answers YES to, extension it answers UNSURE to, SEL_RP_NEEDS_FLOAT. */
+#define FAKE(n, pri, yes_ext, unsure_ext, flt)                                            \
     static int probe##n(const uint8_t* d, size_t s, const char* name) {              \
         (void)d;                                                                     \
         (void)s;                                                                     \
@@ -74,6 +77,7 @@ static uint32_t fake_render(void* state, int16_t* out, uint32_t frames) {
     }                                                                                \
     static sel_tag hooks##n[] = {{SEL_RP_KIND, SEL_RP_KIND_RENDER},                  \
                                  {SEL_RP_PRIORITY, (pri)},                           \
+                                 {SEL_RP_NEEDS_FLOAT, (flt)},                        \
                                  {SEL_RP_PROBE, SEL_TAG_FN(probe##n)},               \
                                  {SEL_RP_OPEN, SEL_TAG_FN(fake_open)},               \
                                  {SEL_RP_CLOSE, SEL_TAG_FN(fake_close)},             \
@@ -87,27 +91,33 @@ static uint32_t fake_render(void* state, int16_t* out, uint32_t frames) {
 
 /* .pri: 0 (priority 0) and 1 (priority 10) both YES -> 1 wins although registered later.
  * .tie: 2 and 3 (both priority 5) both YES -> 2, the first registered.
- * .uns: 4 (priority 0) and 5 (priority 3) both UNSURE, 6 (priority 9) NO -> 5. */
-FAKE(0, 0, ".pri", ".none");
-FAKE(1, 10, ".pri", ".none");
-FAKE(2, 5, ".tie", ".none");
-FAKE(3, 5, ".tie", ".none");
-FAKE(4, 0, ".none", ".uns");
-FAKE(5, 3, ".none", ".uns");
-FAKE(6, 9, ".none", ".none");
+ * .uns: 4 (priority 0) and 5 (priority 3) both UNSURE, 6 (priority 9) NO -> 5.
+ * .flt: 7 (priority 10, NEEDS_FLOAT) and 8 (priority 1) both YES -> 8 without an FPU, 7 with one or on a desktop. */
+FAKE(0, 0, ".pri", ".none", 0);
+FAKE(1, 10, ".pri", ".none", 0);
+FAKE(2, 5, ".tie", ".none", 0);
+FAKE(3, 5, ".tie", ".none", 0);
+FAKE(4, 0, ".none", ".uns", 0);
+FAKE(5, 3, ".none", ".uns", 0);
+FAKE(6, 9, ".none", ".none", 0);
+FAKE(7, 10, ".flt", ".none", 1);
+FAKE(8, 1, ".flt", ".none", 0);
 
-static sel_tag* const g_desc[7] = {desc0, desc1, desc2, desc3, desc4, desc5, desc6};
+static sel_tag* const g_desc[9] = {desc0, desc1, desc2, desc3, desc4, desc5, desc6, desc7, desc8};
+
+static const sel_tag g_no_fpu[] = {{SEL_MACHINE_CPU, SEL_CPU_68020}, {SEL_TAG_END, 0}};
+static const sel_tag g_with_fpu[] = {{SEL_MACHINE_CPU, SEL_CPU_68020}, {SEL_MACHINE_FPU, 1}, {SEL_TAG_END, 0}};
 
 static uint32_t reg_count(void) {
-    return 7u;
+    return 9u;
 }
 
 static const sel_tag* reg_get(uint32_t i) {
-    return i < 7u ? g_desc[i] : NULL;
+    return i < 9u ? g_desc[i] : NULL;
 }
 
-/* Opens `name` in a fresh engine and returns the index of the fake that started, or -1. */
-static int winner(const char* dir, const char* name) {
+/* Opens `name` in a fresh engine on `machine` (NULL: desktop) and returns the index of the fake that started, or -1. */
+static int winner(const char* dir, const char* name, const sel_tag* machine) {
     sel_engine_config cfg;
     sel_engine* eng;
     sel_message m;
@@ -125,6 +135,7 @@ static int winner(const char* dir, const char* name) {
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = reg_count;
     cfg.registry_get = reg_get;
+    cfg.machine = machine;
     eng = sel_engine_create(sel_host_default(), &cfg);
     CHECK(eng != NULL);
     memset(g_starts, 0, sizeof g_starts);
@@ -136,7 +147,7 @@ static int winner(const char* dir, const char* name) {
     for (t = 0; t < 5u; t++) {
         sel_engine_pump(eng, NULL, NULL);
     }
-    for (i = 0; i < 7u; i++) {
+    for (i = 0; i < 9u; i++) {
         if (g_starts[i] != 0u) {
             w = (int)i;
             hits++;
@@ -150,9 +161,13 @@ static int winner(const char* dir, const char* name) {
 int main(void) {
     char dir[] = "/tmp/selecta_rp_priority_XXXXXX";
     CHECK(mkdtemp(dir) != NULL);
-    CHECK(winner(dir, "a.pri") == 1); /* later, higher priority wins over the earlier YES */
-    CHECK(winner(dir, "a.tie") == 2); /* tie keeps registration order */
-    CHECK(winner(dir, "a.uns") == 5); /* no YES: the highest-priority UNSURE */
+    CHECK(winner(dir, "a.pri", NULL) == 1); /* later, higher priority wins over the earlier YES */
+    CHECK(winner(dir, "a.tie", NULL) == 2); /* tie keeps registration order */
+    CHECK(winner(dir, "a.uns", NULL) == 5); /* no YES: the highest-priority UNSURE */
+    CHECK(winner(dir, "a.flt", g_no_fpu) == 8); /* I1316: no FPU, the non-float replayer beats priority 10 */
+    CHECK(winner(dir, "a.flt", g_with_fpu) == 7); /* FPU: priority decides */
+    CHECK(winner(dir, "a.flt", NULL) == 7); /* desktop: priority decides */
+    CHECK(winner(dir, "a.pri", g_no_fpu) == 1); /* no float tag on either: priority still decides */
     if (g_fail == 0) {
         printf("replayer_priority: ok\n");
     }

@@ -41,7 +41,7 @@ int sel_cli_play_null(int argc, char** argv) {
         }
     }
 
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     desc = sel_registry_find(SEL_PLUGIN_KIND_OUTPUT, "null");
     hooks = desc ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
     if (hooks == NULL) {

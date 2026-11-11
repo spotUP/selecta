@@ -876,6 +876,7 @@ struct sel_engine {
     sel_engine_output_switch_fn out_switch; /* the app's output swap (I532); NULL: the output never changes */
     void* out_switch_ctx;
     const char* audio_list;       /* the machine's SEL_MACHINE_AUDIO list ("paula,ahi"); NULL: unknown */
+    int has_fpu;                  /* sel_machine_has_fpu of the config machine: the song pick ranks NEEDS_FLOAT lower without */
     char home_output[SEL_OUTPUT_NAME_MAX]; /* the voice-only output swapped out for a PCM sink; "" when none */
     uint32_t voice_max;           /* most voices voice_sink plays (SEL_OUT_VOICE_MAX); 0: no limit */
     sel_engine_handover_fn handover; /* app hook that closes and reopens the output (I219), or NULL */
@@ -2238,13 +2239,13 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     return read_whole_file(e, path, size);
 }
 
-/* The replayer hook list that claims the data: the highest SEL_RP_PRIORITY among the YES answers, else among the
- * UNSURE ones; ties keep registration order (as sel_registry_format_owner does). */
+/* The replayer hook list that claims the data: the best by sel_replayer_outranks among the YES answers, else among
+ * the UNSURE ones (on a machine without an FPU, players without SEL_RP_NEEDS_FLOAT first, then SEL_RP_PRIORITY);
+ * ties keep registration order (as sel_registry_format_owner does). */
 static const sel_tag* find_replayer(const sel_engine* e, const uint8_t* data, size_t size,
                                     const char* path) {
     const sel_tag* best = NULL;
     const sel_tag* best_yes = NULL;
-    intptr_t best_pri = 0, best_yes_pri = 0;
     uint32_t i, n;
     if (e->registry_count == NULL || e->registry_get == NULL) {
         return NULL;
@@ -2260,16 +2261,12 @@ static const sel_tag* find_replayer(const sel_engine* e, const uint8_t* data, si
         hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
         r = sel_plugin_probe(&hooks, data, size, path);
         if (r == SEL_PROBE_YES) {
-            intptr_t pri = (intptr_t)sel_tag_find(hooks, SEL_RP_PRIORITY, 0);
-            if (best_yes == NULL || pri > best_yes_pri) {
+            if (sel_replayer_outranks(hooks, best_yes, e->has_fpu)) {
                 best_yes = hooks;
-                best_yes_pri = pri;
             }
         } else if (r == SEL_PROBE_UNSURE) {
-            intptr_t pri = (intptr_t)sel_tag_find(hooks, SEL_RP_PRIORITY, 0);
-            if (best == NULL || pri > best_pri) {
+            if (sel_replayer_outranks(hooks, best, e->has_fpu)) {
                 best = hooks;
-                best_pri = pri;
             }
         }
     }
@@ -11329,6 +11326,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     sel_engine_set_stage(e, e->state.led_on, e->state.stereo_width);
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, "null");
     e->audio_list = cfg != NULL ? (const char*)sel_tag_find(cfg->machine, SEL_MACHINE_AUDIO, 0) : NULL;
+    e->has_fpu = sel_machine_has_fpu(cfg != NULL ? cfg->machine : NULL);
     e->cur = SEL_SLOT_NONE;
     e->audio_slot = SEL_SLOT_NONE;
     e->act = SEL_SLOT_NONE;

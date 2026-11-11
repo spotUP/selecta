@@ -226,12 +226,12 @@ int sel_cli_render(int argc, char** argv) {
     host.config_get = render_config;
     host.ctx = &ctx;
 
-    sel_registry_init(&host);
+    sel_cli_registry_init(&host);
     if (!sel_cli_find_output("render", out_id != NULL ? out_id : "wav", &o)) {
         return 1;
     }
     if (rate == 0) {
-        rate = sel_registry_output_rate(o.hooks, sel_machine_probe(&host));
+        rate = sel_registry_output_rate(o.hooks, sel_cli_probed_machine(&host));
     }
     out = NULL;
     if (out_id != NULL) {

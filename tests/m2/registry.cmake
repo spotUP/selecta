@@ -15,15 +15,16 @@ endforeach()
 if(f_a500 LESS f_a1200 OR f_a1200 LESS f_a1200-fpu OR f_a1200-fpu LESS f_a060)
   message(FATAL_ERROR "RED[T49]: filtered counts not ordered a500>=a1200>=a1200-fpu>=a060: ${f_a500} ${f_a1200} ${f_a1200-fpu} ${f_a060}")
 endif()
-# 68000 hides SEL_RP_MIN_CPU=68020 plugins, no-FPU hides SEL_RP_NEEDS_FLOAT plugins.
+# 68000 hides SEL_RP_MIN_CPU=68020 plugins; no-FPU hides SEL_RP_NEEDS_FPU (68881 code) plugins and keeps the
+# soft-float SEL_RP_NEEDS_FLOAT ones, counted in slow_needs_float (I1316).
 m2_run_ok(T49 out plugins --machine a500 --stats)
 m2_check(T49 "${out}" "hidden_min_cpu>=1")
 m2_run_ok(T49 out plugins --machine a1200 --stats)
-m2_check(T49 "${out}" "hidden_needs_float>=1,hidden_min_cpu==0")
+m2_check(T49 "${out}" "slow_needs_float>=1,hidden_min_cpu==0,hidden_needs_fpu>=1") # I1316: stb_vorbis, minimp3
 m2_run_ok(T49 out plugins --machine a500 --stats)
 m2_check(T49 "${out}" "hidden_memory>=1")
 m2_run_ok(T49 out plugins --machine a1200-fpu --stats)
-m2_check(T49 "${out}" "filtered==0,hidden_needs_float==0")
+m2_check(T49 "${out}" "filtered==0,slow_needs_float==0,hidden_needs_fpu==0")
 # Priority owner: one owner per format, from the registry the filter feeds.
 m2_run_ok(T49 out plugins --owner actionamics)
 if(NOT out MATCHES "owner=nuade")

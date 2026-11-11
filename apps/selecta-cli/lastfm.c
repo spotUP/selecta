@@ -112,10 +112,10 @@ int sel_cli_lastfm(int argc, char** argv) {
     }
     (void)sel_config_mkdir(config);
     memset(&cfg, 0, sizeof cfg);
-    sel_registry_init(sel_host_default());
+    sel_cli_registry_init(sel_host_default());
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
-    cfg.machine = sel_machine_probe(sel_host_default());
+    cfg.machine = sel_cli_probed_machine(sel_host_default());
     cfg.config_dir = config;
     e = sel_engine_create(sel_host_default(), &cfg);
     if (e == NULL) {

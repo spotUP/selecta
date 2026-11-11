@@ -40,11 +40,12 @@ size_t vorbis_static_hooks(sel_tag* t) {
     vorbis_set_tag(&t[5], SEL_RP_MIN_CPU, 68020);
     vorbis_set_tag(&t[6], SEL_RP_NEEDS_FLOAT, 1); /* 68881 objects: hidden on a machine without an FPU */
     vorbis_set_tag(&t[7], SEL_RP_STREAMING, 1);
-    return 8u;
+    vorbis_set_tag(&t[8], SEL_RP_NEEDS_FPU, 1); /* I1316: built with -m68881, crashes without an FPU */
+    return 9u;
 }
 
 #ifdef SEL_PLUGIN_MANIFEST
-static sel_tag g_hooks[9];
+static sel_tag g_hooks[10];
 static sel_tag g_desc[6];
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

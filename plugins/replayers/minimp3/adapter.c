@@ -409,7 +409,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
     }
-    size_t n = mp3_static_hooks(g_hooks); /* NAME..PROBE, MIN_CPU, NEEDS_FLOAT, STREAMING (probe.c) */
+    size_t n = mp3_static_hooks(g_hooks); /* NAME..PROBE, MIN_CPU, NEEDS_FLOAT, STREAMING, NEEDS_FPU (probe.c) */
     set(&g_hooks[n++], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
     set(&g_hooks[n++], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
     set(&g_hooks[n++], SEL_RP_START, SEL_TAG_FN(rp_start));

@@ -18,6 +18,18 @@ uint32_t sel_cli_engine_pull(void* ctx, int16_t* stereo, uint32_t frames) {
     return sel_engine_render((sel_engine*)ctx, stereo, frames);
 }
 
+const sel_tag* sel_cli_probed_machine(const sel_host* host) {
+    static const sel_tag* machine;
+    if (machine == NULL) {
+        machine = sel_machine_probe(host);
+    }
+    return machine;
+}
+
+uint32_t sel_cli_registry_init(const sel_host* host) {
+    return sel_registry_init_machine(host, sel_cli_probed_machine(host));
+}
+
 int sel_cli_find_output(const char* who, const char* id, sel_cli_output* o) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_OUTPUT, id);
     const sel_tag* hooks = desc ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
@@ -91,7 +103,7 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
-    cfg.machine = sel_machine_probe(host);
+    cfg.machine = sel_cli_probed_machine(host);
     cfg.config_dir = g_config_dir;
     if (g_rp_song != NULL || g_loud_db != NULL || g_loud_have_gain) {
         /* The per-song override (I170) and the stored loudness gain (I189) live in the library DB: --db names a

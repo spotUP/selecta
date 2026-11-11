@@ -3,6 +3,7 @@
  * Amiga loader (src/engine/loader_seg.c) installs the resolver at registry init. */
 #include "../engine/claims.h"
 
+#include <selecta/machine.h>
 #include <selecta/registry.h>
 #include <selecta/replayer.h>
 
@@ -16,6 +17,28 @@ void sel_plugin_set_resolver(sel_plugin_resolve_fn fn) {
 
 const sel_tag* sel_plugin_resolve(const sel_tag* hooks) {
     return g_resolver != NULL && hooks != NULL ? g_resolver(hooks) : hooks;
+}
+
+int sel_replayer_outranks(const sel_tag* cand, const sel_tag* best, int has_fpu) {
+    int cand_slow, best_slow;
+    intptr_t cand_pri, best_pri;
+    if (best == NULL) {
+        return 1;
+    }
+    /* Without an FPU a SEL_RP_NEEDS_FLOAT player runs on soft-float: it stays usable but any player without the tag
+     * goes first, whatever the priorities (Johan 2026-11-11, I1316). */
+    cand_slow = !has_fpu && sel_tag_find(cand, SEL_RP_NEEDS_FLOAT, 0) != 0;
+    best_slow = !has_fpu && sel_tag_find(best, SEL_RP_NEEDS_FLOAT, 0) != 0;
+    if (cand_slow != best_slow) {
+        return best_slow;
+    }
+    cand_pri = (intptr_t)sel_tag_find(cand, SEL_RP_PRIORITY, 0);
+    best_pri = (intptr_t)sel_tag_find(best, SEL_RP_PRIORITY, 0);
+    return cand_pri > best_pri; /* ties: the earlier one stays */
+}
+
+int sel_machine_has_fpu(const sel_tag* machine) {
+    return machine == NULL || sel_tag_find(machine, SEL_MACHINE_FPU, 0) != 0;
 }
 
 int sel_plugin_probe(const sel_tag** hooks, const uint8_t* data, size_t size, const char* path) {

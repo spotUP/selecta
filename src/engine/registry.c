@@ -26,6 +26,7 @@ static const char** g_origin;
 static uint32_t g_count;
 static uint32_t g_cap;
 static sel_registry_stats g_stats;
+static int g_has_fpu = 1; /* the init machine's, for sel_registry_format_owner */
 
 void sel_registry_note_module_load(void) {
     g_stats.module_loads++;
@@ -137,6 +138,7 @@ static int fits(const sel_tag* d, const sel_tag* machine) {
     const sel_tag* hooks = (const sel_tag*)sel_tag_find(d, SEL_PLUGIN_TAGS, 0);
     uintptr_t min_cpu = hooks ? sel_tag_find(hooks, SEL_RP_MIN_CPU, 0) : 0;
     uintptr_t floats = hooks ? sel_tag_find(hooks, SEL_RP_NEEDS_FLOAT, 0) : 0;
+    uintptr_t fpu_code = hooks ? sel_tag_find(hooks, SEL_RP_NEEDS_FPU, 0) : 0;
     uintptr_t memory = hooks ? sel_tag_find(hooks, SEL_RP_MEMORY, 0) : 0;
     uintptr_t chip = hooks ? sel_tag_find(hooks, SEL_OUT_MEM_CHIP, 0) : 0;
     int ok = 1;
@@ -149,7 +151,10 @@ static int fits(const sel_tag* d, const sel_tag* machine) {
         ok = 0;
     }
     if (floats && !sel_tag_find(machine, SEL_MACHINE_FPU, 0)) {
-        g_stats.hidden_needs_float++;
+        g_stats.slow_needs_float++; /* soft-float: kept, ranked lower by sel_replayer_outranks (I1316) */
+    }
+    if (fpu_code && !sel_tag_find(machine, SEL_MACHINE_FPU, 0)) { /* I1316: 68881 code crashes without an FPU */
+        g_stats.hidden_needs_fpu++;
         ok = 0;
     }
     if (memory > sel_tag_find(machine, SEL_MACHINE_CHIP_RAM, 0) +
@@ -203,6 +208,7 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
     const char** seen;
     uint32_t seen_n = 0;
     g_host = host;
+    g_has_fpu = sel_machine_has_fpu(machine);
 #ifdef SEL_HAVE_LOADER
     if (!g_scanned) {
         g_scanned = 1;
@@ -289,19 +295,17 @@ static int list_has(const char* list, const char* id) {
 
 const sel_tag* sel_registry_format_owner(const char* format) {
     const sel_tag* best = NULL;
-    intptr_t best_pri = 0;
+    const sel_tag* best_hooks = NULL;
     uint32_t i;
     for (i = 0; i < g_count; i++) {
         const sel_tag* hooks = (const sel_tag*)sel_tag_find(g_desc[i], SEL_PLUGIN_TAGS, 0);
         const char* formats = hooks ? (const char*)sel_tag_find(hooks, SEL_RP_FORMATS, 0) : NULL;
-        intptr_t pri;
         if (!formats || !list_has(formats, format)) {
             continue;
         }
-        pri = (intptr_t)sel_tag_find(hooks, SEL_RP_PRIORITY, 0);
-        if (!best || pri > best_pri) { /* ties: first registered wins */
+        if (sel_replayer_outranks(hooks, best_hooks, g_has_fpu)) {
             best = g_desc[i];
-            best_pri = pri;
+            best_hooks = hooks;
         }
     }
     return best;

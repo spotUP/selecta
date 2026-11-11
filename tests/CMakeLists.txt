@@ -1639,6 +1639,8 @@ if(NOT SEL_AMIGA)
   # T49 registry machine filter, desktop and vamos.
   sel_m2_test(registry-machine-filter registry desktop)
   sel_m2_test(registry-machine-filter registry vamos)
+  # I1316: render of an .ogg under vamos (68020, no FPU) is a clean no_replayer refusal, not a CPU exception.
+  sel_m2_test(ogg-render-no-fpu fpu_refusal vamos "-DMOD=${CMAKE_CURRENT_SOURCE_DIR}/m3/stream/sine.ogg")
   # I222: the real probe plus the registry pick the machine's output (vamos: paula).
   sel_m2_test(default-output run desktop -DTAG=I222 "-DARGS1=machine" "-DCHECKS1=default_output~^(coreaudio|null)$")
   sel_m2_test(default-output run vamos -DTAG=I222 "-DARGS1=machine" "-DCHECKS1=default_output==paula")

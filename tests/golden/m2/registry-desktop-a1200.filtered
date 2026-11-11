@@ -1,1 +1,3 @@
-4
+2
+# I1316: a1200 (no FPU) hides only the 2 SEL_RP_NEEDS_FPU (68881) plugins, minimp3 and stb_vorbis; the 4
+# SEL_RP_NEEDS_FLOAT plugins stay listed and rank below non-float players (slow_needs_float=4).

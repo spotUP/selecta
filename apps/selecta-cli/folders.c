@@ -114,7 +114,7 @@ int sel_cli_library_export_folder(int argc, char** argv) {
         fputs("usage: selecta-cli library export-folder --db <path> --dir <dir> [--folder <id>] [--name <playlist name>] [--count] [--format m3u|m3u8|pls|xspf|prg]\n", stderr);
         return 2;
     }
-    sel_registry_init(host);
+    sel_cli_registry_init(host);
     lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
     if (lib == NULL) {
         puts("db_open=0");

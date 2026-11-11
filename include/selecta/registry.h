@@ -20,7 +20,8 @@ typedef struct sel_registry_stats {
     uint32_t total;              /* plugins that answered */
     uint32_t filtered;           /* removed by the machine filter */
     uint32_t hidden_min_cpu;     /* SEL_RP_MIN_CPU above the machine CPU */
-    uint32_t hidden_needs_float; /* SEL_RP_NEEDS_FLOAT without an FPU */
+    uint32_t slow_needs_float;   /* SEL_RP_NEEDS_FLOAT without an FPU: kept, ranked below non-float players (I1316) */
+    uint32_t hidden_needs_fpu;   /* SEL_RP_NEEDS_FPU (68881 code) without an FPU (I1316) */
     uint32_t hidden_memory;      /* SEL_RP_MEMORY above chip plus fast RAM */
     uint32_t hidden_chip;        /* SEL_OUT_MEM_CHIP above chip RAM */
     uint32_t dyn_loaded;         /* dynamic modules accepted (I427a) */
@@ -65,10 +66,16 @@ const sel_tag* sel_plugin_resolve(const sel_tag* hooks);
  * carries no probe (it lives in the module, I427e4) is resolved first when its SEL_RP_EXTENSIONS claim the name in
  * path; *hooks then becomes the module's real hooks. */
 int sel_plugin_probe(const sel_tag** hooks, const uint8_t* data, size_t size, const char* path);
+/* 1 when replayer hooks `cand` beat `best` (NULL: always) in a pick: on a machine without an FPU a hooks list without
+ * SEL_RP_NEEDS_FLOAT beats one with it, then the higher SEL_RP_PRIORITY wins; ties keep `best`. The one ranking rule
+ * of the engine's song pick and sel_registry_format_owner (I1316). */
+int sel_replayer_outranks(const sel_tag* cand, const sel_tag* best, int has_fpu);
+/* 1 when `machine` has an FPU or is NULL (no probe: a desktop). */
+int sel_machine_has_fpu(const sel_tag* machine);
 /* sel_registry_init_machine(host, NULL). */
 uint32_t sel_registry_init(const sel_host* host);
 const sel_registry_stats* sel_registry_get_stats(void);
-/* Plugin with the highest SEL_RP_PRIORITY among those listing `format` in SEL_RP_FORMATS (ties:
+/* Best plugin among those listing `format` in SEL_RP_FORMATS by sel_replayer_outranks on the init machine (ties:
  * first registered); NULL when none. */
 const sel_tag* sel_registry_format_owner(const char* format);
 uint32_t sel_registry_count(void);

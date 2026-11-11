@@ -1,3 +1,4 @@
-9
-# a1200 (no FPU) hides 9: the 7 SEL_RP_NEEDS_FLOAT plugins of I1130d (e2495f9f) plus bbmp_ptk (e852f25c)
-# and hively (ea6eed5a), both SEL_RP_NEEDS_FLOAT. I1305j.
+2
+# I1316: a1200 (no FPU) hides only the 2 SEL_RP_NEEDS_FPU (68881) plugins, minimp3 and stb_vorbis. The 9
+# SEL_RP_NEEDS_FLOAT plugins (I1130d e2495f9f set, bbmp_ptk e852f25c, hively ea6eed5a) stay listed and rank below
+# non-float players (slow_needs_float=9). Was 9 before I1316 (I1305j).
