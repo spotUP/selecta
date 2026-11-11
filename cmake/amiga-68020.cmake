@@ -29,6 +29,13 @@ set(CMAKE_C_FLAGS_INIT "-m68020 -mcrt=nix20 -fomit-frame-pointer")
 # larger (3.02 MB vs 2.08 MB code) and crashes in LIBRARY_SCAN under vamos (I1319). Not FORCE: -D still overrides.
 set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "Amiga Release C flags (-O2, see I1319)")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "Amiga Release C++ flags (-O2, see I1319)")
+# A build dir configured before this fix cached the broken pair, and a non-FORCE set leaves it alone (C++ stayed at -O3
+# in build/amiga). Repair exactly that legacy value; any other value is a deliberate -D and is kept.
+foreach(lang C CXX)
+  if(CMAKE_${lang}_FLAGS_RELEASE STREQUAL "-O2 -DNDEBUG -O3 -DNDEBUG")
+    set(CMAKE_${lang}_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "Amiga Release ${lang} flags (-O2, see I1319)" FORCE)
+  endif()
+endforeach()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Release default, Debug for build/amiga-dbg)" FORCE)
 endif()
