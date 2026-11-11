@@ -1156,7 +1156,8 @@ if(NOT SEL_AMIGA)
   add_executable(hw_prepare_test engine/hw_prepare_test.c)
   target_link_libraries(hw_prepare_test PRIVATE selecta_core)
   # I732: the native kplayer adapter's tracker hooks, through the engine's own lookup (host stub for the 68k call).
-  add_executable(kplayer_tracker_test engine/kplayer_tracker_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
+  add_executable(kplayer_tracker_test engine/kplayer_tracker_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c
+    ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/probe.c)
   target_include_directories(kplayer_tracker_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer)
   target_link_libraries(kplayer_tracker_test PRIVATE selecta_core)
   add_test(NAME engine-kplayer-tracker-cells COMMAND kplayer_tracker_test "${SEL_MKMOD}")

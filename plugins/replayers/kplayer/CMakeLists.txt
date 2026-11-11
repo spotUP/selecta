@@ -2,6 +2,9 @@
 # The replayer is 68000 assembly built the way HippoPlayer builds it (vasm -m68000 -no-opt -Fbin); the flat
 # binary goes into a generated C array that the adapter jumps into. The output is byte-identical to HippoPlayer's
 # `kpl`. asm-include/ supplies two NDK include names the bebbo NDK lacks.
+# An on-demand LoadSeg module (I427e4, the bbmp_ptk pattern): Players/sel_kplayer holds the adapter, modwalk.c and the
+# replayer blob; the registry links only probe.c as the manifest (magic probe "M.K."/"M!K!"/"FLT4", no replayer code in
+# any Amiga executable).
 find_program(SEL_VASM vasmm68k_mot HINTS /opt/homebrew/bin /usr/local/bin NO_CMAKE_FIND_ROOT_PATH)
 if(NOT SEL_VASM)
   message(WARNING "vasmm68k_mot not found: the kplayer replayer (ProTracker .mod on Amiga) is not built")
@@ -21,4 +24,4 @@ add_custom_command(OUTPUT "${KPL_C}"
   COMMAND "${CMAKE_COMMAND}" -DIN="${KPL_BIN}" -DOUT="${KPL_C}" -P "${CMAKE_CURRENT_SOURCE_DIR}/bin2c.cmake"
   DEPENDS "${KPL_BIN}" "${CMAKE_CURRENT_SOURCE_DIR}/bin2c.cmake"
   COMMENT "Embedding KPlayer v33")
-sel_add_plugin(kplayer 1 adapter.c modwalk.c "${KPL_C}")
+sel_add_plugin(kplayer 1 adapter.c modwalk.c probe.c "${KPL_C}" AMIGA_MANIFEST probe.c)

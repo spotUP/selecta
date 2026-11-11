@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "modwalk.h"
+#include "probe.h"
 
 extern uint8_t sel_kpl_code[];
 extern const uint32_t sel_kpl_size;
@@ -41,8 +42,7 @@ enum {
     KP_CIA_AT = 44,
     KP_CIATALO = 0x400, /* hardware/cia.i: timer A low byte, relative to the CIA base in k_cia */
     KP_CIATBLO = 0x600, /* timer B low byte; the high byte of either is 0x100 above */
-    KP_ORDERS_AT = 952, /* the 128-byte order table of a 31-sample module */
-    KP_MAGIC_AT = 1080
+    KP_ORDERS_AT = 952 /* the 128-byte order table of a 31-sample module; the magic at 1080 is probe.c's */
 };
 
 typedef struct kp_state {
@@ -86,20 +86,6 @@ static int32_t kp_call(uint32_t entry, uint32_t d0, uint32_t d1, uint32_t d2, vo
 #endif
 }
 
-static int has_magic(const uint8_t* data, size_t size) {
-    const uint8_t* m;
-    if (data == NULL || size < KP_MAGIC_AT + 4u) {
-        return 0;
-    }
-    m = data + KP_MAGIC_AT;
-    return memcmp(m, "M.K.", 4) == 0 || memcmp(m, "M!K!", 4) == 0 || memcmp(m, "FLT4", 4) == 0;
-}
-
-static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    (void)name;
-    return has_magic(data, size) ? SEL_PROBE_YES : SEL_PROBE_NO;
-}
-
 static void stop(kp_state* s) {
     if (s->playing && g_owner == s) {
         kp_call(KP_END, 0, 0, 0, NULL, NULL);
@@ -110,7 +96,7 @@ static void stop(kp_state* s) {
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     kp_state* s;
-    if (src == NULL || !has_magic(src->data, src->size)) {
+    if (src == NULL || !kp_has_magic(src->data, src->size)) {
         return NULL;
     }
     s = (kp_state*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
@@ -316,25 +302,21 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u || sel_kpl_size < 32u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "kplayer");
-    set(&g_hooks[1], SEL_RP_VERSION, 0x00210000);
-    set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_HW);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "mod");
-    set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
-    set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
-    set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
-    set(&g_hooks[7], SEL_RP_START, SEL_TAG_FN(rp_start));
-    set(&g_hooks[8], SEL_RP_HW_PAUSE, SEL_TAG_FN(rp_hw_pause));
-    set(&g_hooks[9], SEL_RP_HW_RELEASE, SEL_TAG_FN(rp_hw_release));
-    set(&g_hooks[10], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
-    set(&g_hooks[11], SEL_RP_MIN_CPU, 68000);
-    set(&g_hooks[12], SEL_RP_PRIORITY, 10); /* the native player outranks nuade for M.K. on Amiga */
-    set(&g_hooks[13], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
-    set(&g_hooks[14], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
-    set(&g_hooks[15], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[16], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
-    set(&g_hooks[17], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
-    set(&g_hooks[18], SEL_TAG_END, 0);
+    {
+        size_t n = kp_static_hooks(g_hooks); /* probe.c: shared with the Amiga manifest (I427e4) */
+        set(&g_hooks[n++], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
+        set(&g_hooks[n++], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
+        set(&g_hooks[n++], SEL_RP_START, SEL_TAG_FN(rp_start));
+        set(&g_hooks[n++], SEL_RP_HW_PAUSE, SEL_TAG_FN(rp_hw_pause));
+        set(&g_hooks[n++], SEL_RP_HW_RELEASE, SEL_TAG_FN(rp_hw_release));
+        set(&g_hooks[n++], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
+        set(&g_hooks[n++], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
+        set(&g_hooks[n++], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
+        set(&g_hooks[n++], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
+        set(&g_hooks[n++], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
+        set(&g_hooks[n++], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
+        set(&g_hooks[n], SEL_TAG_END, 0);
+    }
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "kplayer");

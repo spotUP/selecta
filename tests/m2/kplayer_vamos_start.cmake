@@ -31,7 +31,9 @@ execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -l exec:info -- "${AMIG
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "RED[I219c]: Selecta under vamos exited ${rc}\n${err}")
 endif()
-m2_check(I219c "${out}" "hw_handovers==1,hw_starts==0,replayer==none")
+# I427e4: kplayer is a LoadSeg module on the Amiga (Players/sel_kplayer); module_loads==1 proves the open loaded it.
+# Without PROGDIR:Players/sel_kplayer the open fails and there is no handover.
+m2_check(I219c "${out}" "hw_handovers==1,hw_starts==0,replayer==none,module_loads==1")
 if(NOT err MATCHES "OpenResource\\(ciab\\.resource\\) ignored")
   message(FATAL_ERROR "RED[I219c]: vamos did not trace the ciab.resource refusal; the cause changed.\n${err}")
 endif()
