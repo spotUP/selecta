@@ -441,6 +441,7 @@ struct sel_engine {
     char ui_switch[16];      /* id named by the last UI_SWITCH, "" none: the shell owns the UIs and takes it (I238) */
     uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
+    uint32_t meta_fills;     /* I1314a: song rows whose empty title/author/length the playing song's player filled */
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
     uint32_t analyse_jobs, analyse_speed, analyse_gated; /* I187 sentinels: jobs stored, x real time, R128 (not fallback) */
     int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
@@ -2576,6 +2577,45 @@ static void leveler_writeback(sel_engine* e, sel_slot* sl) {
     }
 }
 
+static void wq_meta_fill_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_song_meta_fill(lib, op->s[0], op->s[1], op->s[2], (int32_t)op->n1);
+}
+
+static void wq_meta_fill_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc == 2) { /* the row changed: titles shown from the text cache and the Now Playing panel read it again */
+        e->meta_fills++;
+        txt_changed(e);
+        panel_reload(e);
+    }
+}
+
+/* I1314a: a scan that described a song by its signature (SEL_RP_SCAN_META) left title, author and length empty; once the song is open its
+ * player's metadata fills them. Queued like the history row; the library writes only the fields of the row that are still empty, and
+ * the commit moves library_serial, so every view re-reads. */
+static void meta_fill_writeback(sel_engine* e, sel_slot* sl) {
+    const sel_tag* meta;
+    const char* title;
+    const char* author;
+    int32_t dur;
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+    sel_wq_op* op;
+
+    if (e->lib == NULL || sl->path == NULL) return;
+    meta = slot_meta(sl);
+    if (meta == NULL) return;
+    title = (const char*)sel_tag_find(meta, SEL_META_TITLE, 0);
+    author = (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0);
+    dur = (int32_t)sel_tag_find(meta, SEL_META_DURATION_MS, 0);
+    if ((title == NULL || title[0] == '\0') && (author == NULL || author[0] == '\0') && dur <= 0) return;
+    song_key(sl->path, key, sizeof key);
+    if (key[0] == '\0') return;
+    op = wq_new(e, wq_meta_fill_run, wq_meta_fill_done, key, title != NULL ? title : "", author != NULL ? author : "");
+    if (op != NULL) {
+        op->n1 = dur > 0 ? dur : 0;
+        wq_submit(e);
+    }
+}
+
 /* Audio thread: the loudness reference gain of this render call, 16.16 (I189b). The DSP chain and the mix stage
  * between the mix and the limiter work in place on 16-bit samples, so a boost cannot travel through them. Instead the
  * slots are mixed at their gain relative to the largest gain of the songs that can sound in this call (at most
@@ -3141,6 +3181,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         evt_init(&ev, SEL_EVT_SONG_OPENED);
         evt_tags(&ev, slot_meta(&e->slot[idx]));
         emit(e, &ev);
+        meta_fill_writeback(e, &e->slot[idx]);
         if (seek_to > 0) { /* a share link with t=<ms> opens at that position (I180) */
             evt_init(&ev, SEL_EVT_SEEKED);
             evt_uint(&ev, e->slot[idx].song_frames);
@@ -3896,6 +3937,7 @@ static void commit_next(sel_engine* e) {
     evt_init(&ev, SEL_EVT_SONG_OPENED);
     evt_tags(&ev, slot_meta(sl));
     emit(e, &ev);
+    meta_fill_writeback(e, sl);
     emit_position(e, sl);
 }
 
@@ -12204,6 +12246,7 @@ static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
         out->hash_files = out->hash_chunks = out->hash_tick_max = 0;
     }
     out->history_writes = e->history_writes;
+    out->meta_fills = e->meta_fills;
     out->scrobble_due = e->scrobble_due;
     out->sample_plays = e->sample_plays;
     out->sample_frames = e->sample_frames;

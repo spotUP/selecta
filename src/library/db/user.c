@@ -887,6 +887,31 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
             sqlite3_finalize(st);
         }
+    } else if (op->op == SEL_USER_META_FILL) {
+        /* I1314a: a field is written only while the row's value is NULL, "" (text) or <= 0 (length). The scan stores the file name
+         * as the title of a song it could not describe (src/library/sources/local.c, sel_browse_basename), so a name equal to the
+         * path's last component (after '/' or ':') also counts as empty. The WHERE clause leaves a full row untouched, so a song
+         * played again changes nothing. */
+#define META_FILL_NAME_EMPTY                                                                                                   \
+    "(COALESCE(name, '') = '' OR name = substr(path, length(rtrim(path, replace(replace(path, '/', ''), ':', ''))) + 1))"
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db,
+                                "UPDATE songs SET name = CASE WHEN " META_FILL_NAME_EMPTY " AND ?2 IS NOT NULL THEN ?2 ELSE name END,"
+                                " artist = CASE WHEN COALESCE(artist, '') = '' AND ?3 IS NOT NULL THEN ?3 ELSE artist END,"
+                                " duration_ms = CASE WHEN COALESCE(duration_ms, 0) <= 0 AND ?4 IS NOT NULL THEN ?4 ELSE duration_ms END"
+                                " WHERE key = ?1 AND ((" META_FILL_NAME_EMPTY " AND ?2 IS NOT NULL) OR (COALESCE(artist, '') = '' AND ?3 IS NOT NULL)"
+                                " OR (COALESCE(duration_ms, 0) <= 0 AND ?4 IS NOT NULL))",
+                                -1, &st, NULL);
+#undef META_FILL_NAME_EMPTY
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            if (op->name != NULL && op->name[0] != '\0') sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
+            if (op->value != NULL && op->value[0] != '\0') sqlite3_bind_text(st, 3, op->value, -1, SQLITE_STATIC);
+            if (op->duration_ms > 0) sqlite3_bind_int64(st, 4, op->duration_ms);
+            rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+            found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
+            sqlite3_finalize(st);
+        }
     } else if (op->op == SEL_USER_LOUDNESS_GET) {
         sqlite3_stmt* st = NULL;
         rc = sqlite3_prepare_v2(lib->db, "SELECT loudness_gain, loudness_prov FROM songs WHERE key = ?1", -1, &st, NULL);

@@ -1005,6 +1005,17 @@ int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int s
     return user_call(lib, &op) > 0;
 }
 
+int sel_library_song_meta_fill(sel_library* lib, const char* key, const char* title, const char* author, int32_t duration_ms) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_META_FILL;
+    op.key = key;
+    op.name = title;
+    op.value = author;
+    op.duration_ms = duration_ms;
+    return user_call(lib, &op);
+}
+
 int sel_library_like(sel_library* lib, const char* key, int64_t at) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

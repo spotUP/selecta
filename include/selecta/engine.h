@@ -544,6 +544,7 @@ typedef struct sel_engine_stats {
     uint32_t sample_plays;        /* SAMPLE_PLAY commands taken (DUI-P4-12 sentinel) */
     uint32_t sample_frames;       /* frames of audition samples the audio thread mixed (DUI-P4-12) */
     uint32_t history_writes;      /* history rows the engine wrote on song end or skip (T78 sentinel) */
+    uint32_t meta_fills;          /* I1314a: song rows whose empty title/author/length were filled from the player at play time */
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */
     uint32_t analyse_jobs;        /* ANALYSE jobs that stored a gain (I187 sentinel, T89) */
     uint32_t analyse_speed;       /* last ANALYSE job: audio seconds rendered per CPU second (x real time) */

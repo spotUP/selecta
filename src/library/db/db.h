@@ -163,7 +163,9 @@ enum {
     SEL_USER_LIKE_DONE,    /* I306: the push of the key's like is over: drops its pending row */
     SEL_USER_LIKE_QUEUE,   /* I306: queues the pending_push "like" row of the key (value = "token mkey r"), replacing an older one */
     SEL_USER_KEPT_GET,     /* I829b: reply [0] = 2 when the key is kept or liked (the cache trim's protect test) */
-    SEL_USER_TOP_PLAYED    /* I829b: at = max keys; out = the most played unskipped keys (most first), each NUL terminated, then "\0"; reply [2] = keys */
+    SEL_USER_TOP_PLAYED,   /* I829b: at = max keys; out = the most played unskipped keys (most first), each NUL terminated, then "\0"; reply [2] = keys */
+    SEL_USER_META_FILL     /* I1314a: name = title, value = author, duration_ms = length (0 = unknown) the player reported at play time; fills
+                            * only the EMPTY name, artist and duration_ms of the songs row, never one with a value; reply [0] = 2 when the row changed */
 };
 /* Where a rating came from (sel_user_op.to of SEL_USER_RATING_SET). */
 enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };
@@ -386,6 +388,10 @@ struct sel_cache_trim_result;
 unsigned sel_library_cache_trim(sel_library* lib, uint32_t budget, struct sel_cache_trim_result* out);
 /* User data (I170): 1 on success. A finished play or a skip goes to `history`; like and keep to their tables. */
 int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int skipped);
+/* I1314a: fills the empty title (name), author (artist) and duration_ms of the song's row from what its player reported when it
+ * played (a scan that described the song by signature left them empty). Fields with a value stay. 2 = the row changed, 1 = nothing to
+ * fill, 0 = failed. NULL, "" or 0 skips a field. */
+int sel_library_song_meta_fill(sel_library* lib, const char* key, const char* title, const char* author, int32_t duration_ms);
 int sel_library_like(sel_library* lib, const char* key, int64_t at);
 /* I306: takes the like back (1 on success, also when the song was not liked). sel_library_liked: 1 when `key` is liked. */
 int sel_library_unlike(sel_library* lib, const char* key, int64_t at);
