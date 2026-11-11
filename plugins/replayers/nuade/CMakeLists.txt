@@ -50,7 +50,7 @@ else()
   sel_add_plugin(nuade 1 ${SEL_NUADE_PLUGIN_SOURCES}
     THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
   # Writes manifest_lists.h for the Amiga manifest; test nuade-manifest-lists checks the committed copy.
-  add_executable(nuade_manifest_lists manifest_lists_gen.c lists.c)
+  add_executable(nuade_manifest_lists manifest_lists_gen.c lists.c signatures.c)
   target_link_libraries(nuade_manifest_lists PRIVATE selecta_nuade)
 endif()
 

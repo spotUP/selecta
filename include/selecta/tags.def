@@ -108,6 +108,11 @@ SEL_TAG(RP, SYSFILE_SIZE,     0x102C, INT)  /* exact byte size, 0 = any; cheap p
  * A hard need: the registry always hides the plugin when the probed machine has no FPU. NEEDS_FLOAT is the
  * speed rank (soft-float code that runs, slowly; ranked lower, never hidden); a plugin built with -m68881 carries both. */
 SEL_TAG(RP, NEEDS_FPU,        0x102D, INT)
+/* I1314: SCAN_META, optional manifest hook (sel_rp_scan_meta_fn): the library scan's metadata for a file the
+ * manifest's own probe claimed as YES, without loading or opening the module. Returns SEL_META_* tags (the same
+ * list RP_METADATA gives) or NULL = "cannot say without the module", and the scan then resolves and opens as before.
+ * Strings may live in `buf`; the list stays valid until the next call. */
+SEL_TAG(RP, SCAN_META,        0x102E, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

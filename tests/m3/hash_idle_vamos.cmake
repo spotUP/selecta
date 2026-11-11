@@ -3,6 +3,10 @@
 # file is bigger than SEL_HASH_CHUNK (16384 bytes), so the pass must read it across several idle ticks with no
 # tick reading more than one chunk. The desktop `library duplicates` then reads the stored values: the two equal
 # big files form one group under the md5 CMake computes.
+# I1314: the three files are FORM MODL modules, a sure nuade signature (protracker4 row in
+# plugins/replayers/nuade/signatures.c), so the Amiga scan fills their rows from the manifest's SEL_RP_SCAN_META:
+# scan_meta_cheap==3 and module_loads==0 (Players/sel_nuade, 1.4 MB, never LoadSeg'd). Before I1314 the scan loaded
+# and opened nuade for each: scan_meta_cheap==0, module_loads==1.
 # Inputs: MODE=vamos, CLI, VAMOS, AMIGA_CLI, MOD, WORK. Included helpers: tests/m2/lib.cmake.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/../m2/lib.cmake")
@@ -26,7 +30,7 @@ if(NOT big_size EQUAL 50000)
   message(FATAL_ERROR "RED[I184b]: big module is ${big_size} bytes, want 50000")
 endif()
 
-file(WRITE "${WORK}/hash.sel" "LIBRARY_SCAN work:songs\n@hash_stats\n@idle 40\n@hash_stats\n@dup_stats\n")
+file(WRITE "${WORK}/hash.sel" "LIBRARY_SCAN work:songs\n@hash_stats\n@idle 40\n@hash_stats\n@dup_stats\n@scan_stats\n")
 set(VAMOS_VOLUMES -V "work:${WORK}")
 m2_exec(out rc script work:hash.sel --db work:lib.db)
 if(NOT rc EQUAL 0)
@@ -55,9 +59,20 @@ if(NOT out MATCHES "DUP redirects=0 ")
   message(FATAL_ERROR "RED[I184b]: the script opened a song\n${out}")
 endif()
 
+string(REGEX MATCH "SCAN scanned_files=[0-9]+ skipped_files=[0-9]+ scan_meta_cheap=[0-9]+ module_loads=[0-9]+" scan "${out}")
+if(scan STREQUAL "")
+  message(FATAL_ERROR "RED[I1314]: no SCAN line\n${out}")
+endif()
+m2_get("${scan}" scan_meta_cheap cheap)
+m2_get("${scan}" module_loads loads)
+if(NOT cheap EQUAL 3 OR NOT loads EQUAL 0)
+  message(FATAL_ERROR "RED[I1314]: scan_meta_cheap=${cheap} (want 3), module_loads=${loads} (want 0): the scan loaded "
+                      "the nuade module for songs its manifest names by signature\n${scan}")
+endif()
+
 set(MODE desktop)
 m2_exec(d_out d_rc library duplicates --db "${WORK}/lib.db")
 if(NOT d_rc EQUAL 0 OR NOT d_out MATCHES "dupes=1" OR NOT d_out MATCHES "${big_md5}")
   message(FATAL_ERROR "RED[I184b]: stored md5 does not group the big copies under ${big_md5} rc=${d_rc}\n${d_out}")
 endif()
-message("hash_idle_vamos_ok files=${files} chunks=${chunks} tick_max=${tick_max}")
+message("hash_idle_vamos_ok files=${files} chunks=${chunks} tick_max=${tick_max} scan_meta_cheap=${cheap} module_loads=${loads}")

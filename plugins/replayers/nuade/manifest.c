@@ -110,7 +110,42 @@ static int rp_manifest_probe(const uint8_t* data, size_t size, const char* name)
     return level == 2 ? SEL_PROBE_YES : level == 1 ? SEL_PROBE_UNSURE : SEL_PROBE_NO;
 }
 
-static sel_tag g_hooks[14];
+/* I1314 scan metadata: a sure signature hit names the player, so the scan row needs no module load or open. Title and
+ * author stay empty and variant players show their base name until the song is opened (Johan, 2026-11-11). An
+ * Unsure claim, or a player not in the generated name table, returns NULL: the scan opens the song as before. */
+static const sel_tag* rp_scan_meta(const uint8_t* data, size_t size, const char* path, char* buf, size_t buf_n) {
+    static sel_tag meta[2];
+    const char* id = sel_nuade_sig_match(data, size);
+    const char* p = SEL_NUADE_MANIFEST_SIG_NAMES;
+    size_t id_n;
+    (void)path;
+    if (id == NULL || buf_n == 0u) {
+        return NULL;
+    }
+    id_n = strlen(id);
+    while (*p != '\0') {
+        const char* eq = strchr(p, '=');
+        const char* end = strchr(p, ';');
+        if (eq == NULL || end == NULL) {
+            return NULL;
+        }
+        if ((size_t)(eq - p) == id_n && memcmp(p, id, id_n) == 0) {
+            size_t n = (size_t)(end - eq - 1);
+            if (n >= buf_n) {
+                n = buf_n - 1u;
+            }
+            memcpy(buf, eq + 1, n);
+            buf[n] = '\0';
+            sel_nuade_set_tag(&meta[0], SEL_META_FORMAT, (uintptr_t)buf);
+            sel_nuade_set_tag(&meta[1], SEL_TAG_END, 0);
+            return meta;
+        }
+        p = end + 1;
+    }
+    return NULL;
+}
+
+static sel_tag g_hooks[15];
 static sel_tag g_desc[6];
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
@@ -119,6 +154,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
         return NULL;
     }
     sel_nuade_set_tag(&g_hooks[n++], SEL_RP_PROBE, SEL_TAG_FN(rp_manifest_probe));
+    sel_nuade_set_tag(&g_hooks[n++], SEL_RP_SCAN_META, SEL_TAG_FN(rp_scan_meta));
     sel_nuade_set_tag(&g_hooks[n], SEL_TAG_END, 0);
     sel_nuade_set_tag(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     sel_nuade_set_tag(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "nuade");

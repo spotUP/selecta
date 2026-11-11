@@ -78,6 +78,10 @@ typedef int (*sel_rp_start_fn)(void* state, uint32_t subsong, uint32_t rate, con
 typedef void (*sel_rp_tick_fn)(void* state, sel_tick_result* out);                  /* RP_TICK */
 /* RP_METADATA: SEL_META_* tags, valid until close. */
 typedef const sel_tag* (*sel_rp_metadata_fn)(void* state);
+/* RP_SCAN_META (I1314): optional, manifest only. SEL_META_* tags for a file the manifest's probe answered YES for,
+ * computed from the bytes alone (no module load, no open); NULL = the scan must open the song. `buf` holds strings. */
+typedef const sel_tag* (*sel_rp_scan_meta_fn)(const uint8_t* data, size_t size, const char* path, char* buf,
+                                              size_t buf_n);
 
 /* RP_RENDER (RENDER kind only; RP_START gets voices = NULL): interleaved
  * stereo int16 at the rate given to RP_START; returns frames written, less

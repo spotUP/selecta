@@ -43,6 +43,7 @@ typedef struct sel_local_scan_stats {
     uint32_t rescanned_dirs;  /* directories rescanned by sel_source_rescan (I160) */
     uint32_t covers_read;     /* embedded covers (ID3v2 APIC, FLAC PICTURE) found and stored as artwork (I437) */
     uint32_t bytes_read;      /* bytes read from song files; a streamed MP3 or Ogg reads far less than its size (I184d) */
+    uint32_t scan_meta_cheap; /* rows filled by a manifest SEL_RP_SCAN_META, module not loaded or opened (I1314) */
 } sel_local_scan_stats;
 
 /* Scans `root` recursively. Returns 0 when the root cannot be listed, memory runs out or the DB

@@ -288,6 +288,7 @@ typedef struct sel_scan_info {
     uint32_t archive_lzx;     /* LZX archives opened */
     uint32_t depack_pp;       /* PowerPacker files depacked and scanned */
     uint32_t bytes_read;      /* bytes read from song files; a streamed MP3 or Ogg reads less than its size (I184d) */
+    uint32_t scan_meta_cheap; /* rows filled by a manifest SEL_RP_SCAN_META without loading the module (I1314) */
 } sel_scan_info;
 
 typedef struct sel_engine_config {

@@ -5368,6 +5368,7 @@ static void scan_collect(sel_engine* e) {
     e->scan_info.archive_lzx = e->scan_stats.archive_lzx;
     e->scan_info.depack_pp = e->scan_stats.depack_pp;
     e->scan_info.bytes_read = e->scan_stats.bytes_read;
+    e->scan_info.scan_meta_cheap = e->scan_stats.scan_meta_cheap;
     if (e->addf_active) {
         addf_finish(e, e->scan_ok);
     }

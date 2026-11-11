@@ -119,8 +119,10 @@ static uint8_t* read_file(const sel_host* host, const char* path, size_t* size) 
     return buf;
 }
 
-/* Same choice as the engine: first YES, else first UNSURE. */
-static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t size, const char* path) {
+/* Same choice as the engine: first YES, else first UNSURE. `verdict` gets the winner's answer (I1314: only a YES
+ * may skip the open). */
+static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t size, const char* path,
+                                    int* verdict) {
     const sel_tag* best = NULL;
     uint32_t i, n = s->cfg->registry_count();
 
@@ -138,13 +140,30 @@ static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t s
             s->stats->probed++;
         }
         if (r == SEL_PROBE_YES) {
+            *verdict = SEL_PROBE_YES;
             return hooks;
         }
         if (r == SEL_PROBE_UNSURE && best == NULL) {
             best = hooks;
+            *verdict = SEL_PROBE_UNSURE;
         }
     }
     return best;
+}
+
+/* Copies a replayer's SEL_META_* list into the queued row (title replaces the base name only when set). */
+static void fill_row_meta(scan_row_text* t, sel_scan_row* r, const sel_tag* meta) {
+    const char* title = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_TITLE, 0) : NULL;
+
+    if (title != NULL && title[0] != '\0') {
+        copy_meta(t->name, sizeof t->name, title);
+    }
+    if (meta != NULL) {
+        copy_meta(t->artist, sizeof t->artist, (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0));
+        copy_meta(t->album, sizeof t->album, (const char*)sel_tag_find(meta, SEL_META_RELEASE, 0));
+        copy_meta(t->format, sizeof t->format, (const char*)sel_tag_find(meta, SEL_META_FORMAT, 0));
+        r->duration_ms = (int32_t)sel_tag_find(meta, SEL_META_DURATION_MS, 0);
+    }
 }
 
 /* I437: the embedded cover of an mp3 (ID3v2 APIC) or flac (PICTURE) file goes to the artwork table through
@@ -195,16 +214,31 @@ static void scan_cover(scan_state* s, const uint8_t* data, size_t size, scan_row
 static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const sel_byte_stream* stream,
                         uint64_t total, const char* probe_path, const char* row_path) {
     const sel_tag* hooks;
+    const sel_tag* cheap = NULL;
     scan_row_text* t;
     sel_scan_row* r;
     sel_rp_open_fn open_fn;
     sel_rp_close_fn close_fn;
     sel_rp_metadata_fn meta_fn;
+    sel_rp_scan_meta_fn scan_meta_fn;
     sel_rp_info info;
     sel_song_source src;
     void* state;
+    int verdict = SEL_PROBE_NO;
+    char cheap_buf[TEXT_NAME];
 
-    hooks = sel_plugin_resolve(find_replayer(s, data, size, probe_path)); /* I427e: load an on-demand module */
+    hooks = find_replayer(s, data, size, probe_path, &verdict);
+    /* I1314: a manifest sure of the file (its own probe said YES) may describe it from the bytes alone; the module
+     * is then neither loaded nor opened. NULL from the hook, or an UNSURE claim, takes the full open below. */
+    scan_meta_fn = hooks != NULL && verdict == SEL_PROBE_YES
+                       ? (sel_rp_scan_meta_fn)sel_tag_find(hooks, SEL_RP_SCAN_META, 0)
+                       : NULL;
+    if (scan_meta_fn != NULL) {
+        cheap = scan_meta_fn(data, size, probe_path, cheap_buf, sizeof cheap_buf);
+    }
+    if (cheap == NULL) {
+        hooks = sel_plugin_resolve(hooks); /* I427e: load an on-demand module */
+    }
     if (hooks == NULL) {
         s->stats->skipped_files++;
         return 0;
@@ -220,6 +254,11 @@ static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const s
     t->artist[0] = '\0';
     t->album[0] = '\0';
     t->format[0] = '\0';
+    if (cheap != NULL) {
+        fill_row_meta(t, r, cheap);
+        s->stats->scan_meta_cheap++;
+        goto queue_row;
+    }
     open_fn = (sel_rp_open_fn)sel_tag_find(hooks, SEL_RP_OPEN, 0);
     close_fn = (sel_rp_close_fn)sel_tag_find(hooks, SEL_RP_CLOSE, 0);
     meta_fn = (sel_rp_metadata_fn)sel_tag_find(hooks, SEL_RP_METADATA, 0);
@@ -235,23 +274,11 @@ static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const s
         s->stats->skipped_files++;
         return 0;
     }
-    {
-        const sel_tag* meta = meta_fn != NULL ? meta_fn(state) : NULL;
-        const char* title = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_TITLE, 0) : NULL;
-
-        if (title != NULL && title[0] != '\0') {
-            copy_meta(t->name, sizeof t->name, title);
-        }
-        if (meta != NULL) {
-            copy_meta(t->artist, sizeof t->artist, (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0));
-            copy_meta(t->album, sizeof t->album, (const char*)sel_tag_find(meta, SEL_META_RELEASE, 0));
-            copy_meta(t->format, sizeof t->format, (const char*)sel_tag_find(meta, SEL_META_FORMAT, 0));
-            r->duration_ms = (int32_t)sel_tag_find(meta, SEL_META_DURATION_MS, 0);
-        }
-        if (close_fn != NULL) {
-            close_fn(state);
-        }
+    fill_row_meta(t, r, meta_fn != NULL ? meta_fn(state) : NULL);
+    if (close_fn != NULL) {
+        close_fn(state);
     }
+queue_row:
     scan_cover(s, data, size, t);
     r->source = "local";
     r->path = t->path;
@@ -308,7 +335,8 @@ static int scan_streamed(scan_state* s, const char* path) {
         return 0;
     }
     if (sel_archive_kind(head, headn) == SEL_ARCHIVE_NONE) {
-        hooks = find_replayer(s, head, headn, path);
+        int verdict;
+        hooks = find_replayer(s, head, headn, path, &verdict);
         if (hooks != NULL && sel_tag_find(hooks, SEL_RP_STREAMING, 0) != 0) {
             scan_blob_ex(s, head, headn, sel_file_stream_source(fs), sel_file_stream_size(fs), path, path);
             done = 1;

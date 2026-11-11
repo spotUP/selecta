@@ -676,11 +676,13 @@ static int library_scan(int argc, char** argv) {
     printf("rescanned_dirs=%u rescan_files=%u watch_events=%u ", (unsigned)rs.rescanned_dirs,
            (unsigned)rs.scanned_files, (unsigned)watch_events);
     printf("scanned_files=%u skipped_files=%u scan_batches=%u probed=%u dirs=%u archives=%u archive_members=%u "
-           "archive_lzx=%u depack_pp=%u bytes_read=%u db_songs=%d heap_bytes=%u db_heap_peak=%u\n",
+           "archive_lzx=%u depack_pp=%u bytes_read=%u db_songs=%d heap_bytes=%u db_heap_peak=%u scan_meta_cheap=%u "
+           "module_loads=%u\n",
            (unsigned)info.scanned_files, (unsigned)info.skipped_files, (unsigned)info.scan_batches,
            (unsigned)info.probed, (unsigned)info.dirs, (unsigned)info.archives, (unsigned)info.archive_members,
            (unsigned)info.archive_lzx, (unsigned)info.depack_pp, (unsigned)info.bytes_read, st.args[SEL_LIB_STAT_SONGS].v.i,
-           (unsigned)sel_library_heap_size(lib), (unsigned)sel_library_heap_peak());
+           (unsigned)sel_library_heap_size(lib), (unsigned)sel_library_heap_peak(), (unsigned)info.scan_meta_cheap,
+           (unsigned)sel_registry_get_stats()->module_loads);
     sel_engine_destroy(e);
     sel_library_close(lib);
 #ifndef __amigaos__
