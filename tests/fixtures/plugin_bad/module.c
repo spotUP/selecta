@@ -1,6 +1,6 @@
 /* T5 negative path: a descriptor whose hook list carries a tag with no
- * tags.def row. Built only with -DSEL_TEST_BAD_PLUGIN=ON; the lint must
- * count it and selecta-cli plugins --lint must fail. */
+ * tags.def row. A test-only loadable module (tests/fixtures/plugin_bad); with
+ * it on $SELECTA_PLUGIN_PATH, selecta-cli plugins --lint must count it and fail. */
 #include <selecta/plugin.h>
 
 static sel_tag g_hooks[2];

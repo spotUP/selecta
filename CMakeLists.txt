@@ -46,7 +46,6 @@ option(SELECTA_GPL_PLUGINS "Build the GPL plugin modules (sndh, sid, ...) as loa
 # MSX driver binaries (I698): libkss wraps MGSDRV/MoonBlaster/MuSICA/OPLLDRV/MPK songs with driver binaries that carry no redistribution grant.
 option(SELECTA_KSS_DRIVERS "Build the libkss replayer module, which ships the MSX driver binaries (MGSDRV, MoonBlaster, MuSICA, OPLLDRV, MPK, Kinrou)" ${SELECTA_GPL_PLUGINS})
 option(SELECTA_RELEASE_MIT_ONLY "Release build: the macOS bundle holds only the MIT modules" OFF)
-option(SEL_TEST_BAD_PLUGIN "Compile a deliberately broken plugin descriptor (T5 negative path)" OFF)
 # I1082f: ThreadSanitizer build (use a separate build directory, e.g. build/tsan); the threaded engine tests report data races.
 option(SELECTA_TSAN "Build everything with -fsanitize=thread" OFF)
 if(SELECTA_TSAN)

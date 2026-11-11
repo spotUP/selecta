@@ -74,11 +74,6 @@ if(APPLE)
     "-framework AVFoundation" "-framework CoreMedia" "-framework Foundation")
 endif()
 
-# T5 negative path only; see tests/m0/bad_plugin.cmake.
-if(SEL_TEST_BAD_PLUGIN)
-  sel_add_plugin(bad 2 "${PROJECT_SOURCE_DIR}/tests/m0/bad_plugin.c")
-endif()
-
 add_subdirectory(replayers/nuade)
 
 # Stream decoders (M3 phase 11, D-M3-8): single-header libraries, float inside, tagged SEL_RP_NEEDS_FLOAT.

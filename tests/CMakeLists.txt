@@ -258,17 +258,12 @@ if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(fixtures/plugin_dyn)
   add_subdirectory(fixtures/plugin_sidfeed)
   add_subdirectory(fixtures/plugin_sysfile) # I710ga6
+  add_subdirectory(fixtures/plugin_bad) # T5 negative path, registry-tags-negative (I1317)
   if(SELECTA_GPL_PLUGINS)
     add_subdirectory(fixtures/sndh)
   endif()
 endif()
 add_subdirectory(thread)
-
-# T5 negative path: a second tree with a broken descriptor must fail lint.
-add_test(NAME registry-tags-negative
-  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}"
-    "-DBIN=${PROJECT_BINARY_DIR}/host-bad" -DEXPECT_PLUGINS=${SEL_EXPECT_BAD_PLUGINS} "-DGEN=${CMAKE_GENERATOR}"
-    -P "${CMAKE_CURRENT_SOURCE_DIR}/m0/bad_plugin.cmake")
 
 # T7: every plugin compiles with include/ as its only project include path.
 add_test(NAME sdk-isolation
