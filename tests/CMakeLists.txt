@@ -281,9 +281,11 @@ find_program(SEL_VAMOS vamos)
 set(SEL_AMIGA_CLI "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-cli")
 # Every vamos test runs the binary in build/amiga, which the host build does
 # not produce. The amiga-build fixture rebuilds it first so a host ctest never
-# runs a stale 68k binary. vamos keeps one temp RAM: volume per user
+# runs a stale 68k binary. vamos' own RAM: is one temp dir per user
 # (~/.vamos/volumes/ram) and fails "temp volume volume path already exists"
-# when two instances start at once, so all vamos tests share the vamos lock.
+# when two instances start at once; sel_vamos_cmd gives each run a private
+# RAM: instead (I1305l). All vamos tests still share the vamos lock (one
+# vamos at a time on the cores, shared ~/.vamos/volumes/system).
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   add_test(NAME amiga-build
     COMMAND "${CMAKE_COMMAND}" --build "${PROJECT_SOURCE_DIR}/build/amiga" --parallel 2)
@@ -301,6 +303,14 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_config_dir.cmake")
   set_tests_properties(amiga-config-dir PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+
+  # I1305l: each vamos run has its own RAM: volume; a busy or stale shared ~/.vamos/volumes/ram neither
+  # stops it nor gets deleted by it (scratch HOME, the user's ~/.vamos is not touched).
+  add_test(NAME amiga-vamos-private-ram
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/vamos-private-ram"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos_ram.cmake")
+  set_tests_properties(amiga-vamos-private-ram PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
 
   # I218d: Latin-1 file names listed as UTF-8 and opened by that name, through library browse --names.
   add_test(NAME amiga-latin1-name
