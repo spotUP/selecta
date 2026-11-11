@@ -718,6 +718,15 @@ static void test_offer_card(void) {
     CHECK(src_count("CTL_OFFER_ROW + (LONG)k, 0, 0, MUI_AA_ROLE_GHOST") == 0, "the sync offer rows are still ghost buttons");
 }
 
+/* mui-p8-offer-ask (I1308e): on a fresh rig 2 start the sync offer never opened. mui_offer_window sent SOURCES from the open's first
+ * refresh; the shell then pumps its start-up lines with no sink (apps/selecta/main.c send_line), so the reply rows were dropped and
+ * the offer waited for them forever. The request must wait for the first turn after open (s->opens set), as the desktop UI does. */
+static void test_offer_ask(void) {
+    CHECK(src_count("        if (s->opens == 0u) { /* I1308e: SOURCES waits for the first turn after open */") == 1,
+          "the sync offer asks SOURCES during open, where the shell drops the reply");
+    CHECK(src_count("    s->opens++;") == 1, "s->opens is no longer set once the open is done");
+}
+
 /* mui-p8-col-titles (I1306b): an album page on rig 2 listed "selecta-test-mk.mod" where the desktop shows the catalogued "mk tune". MUI
  * song rows read the title from the shared posted song_briefs model (uimodel/briefs.h, the text UI's too) before the file name, and the
  * shown page posts its read. mui_ui.c is Amiga only, so the wiring is read from its source like offer-card. */
@@ -818,6 +827,8 @@ int main(int argc, char** argv) {
         test_queue_scope_ui();
     } else if (strcmp(argv[1], "offer-card") == 0) {
         test_offer_card();
+    } else if (strcmp(argv[1], "offer-ask") == 0) {
+        test_offer_ask();
     } else if (strcmp(argv[1], "col-titles") == 0) {
         test_col_titles();
     } else if (strcmp(argv[1], "queue-scope") == 0) {

@@ -2976,6 +2976,13 @@ static void mui_offer_window(mui_state* s) {
     uint32_t k;
     char row[160];
     if (!s->offer_asked) {
+        /* I1308e: asked on the first turn after open, never from the open's own first refresh. The shell's start-up lines after
+         * the UIs open (LIBRARY_BROWSE, VIEW_SHOW, option-word PREF_SET; apps/selecta/main.c send_line) pump with no sink, so a
+         * SOURCES reply queued during open was dropped, m->wait never cleared and the offer never opened. Same turn as the
+         * desktop UI (desktop_ui.c, "asked on the first turn, when the engine answers UI events"). */
+        if (s->opens == 0u) { /* I1308e: SOURCES waits for the first turn after open */
+            return;
+        }
         s->offer_asked = 1;
         (void)mui_route_send(s, "SOURCES");
         return;
