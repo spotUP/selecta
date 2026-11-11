@@ -37,7 +37,12 @@
  * found by opcode scans of the replayer code), sidmon1 (code search in the first 4096 bytes), scumm and soundmaster
  * (the driver version is an FNV hash of the code), soundimages (BRA.W at 0, its marks sit at the branch target),
  * scottjohnston (file name decides), soundcontrol (the 0xFFFF/0x400 mark sits at an offset read from the header; the
- * fixed bytes are only the version word), soundfactory (length and range checks, no mark). */
+ * fixed bytes are only the version word), soundfactory (length and range checks, no mark).
+ * Also without a row (I1305i3 part 6): specialfx (a BRA.W entry table, the lea marks sit at the branch target),
+ * synthdream (offset and range checks; its 0xFFFF word sits at an offset read from the header), thomashermann (the
+ * table pointers are relative to a base long read from the header, and the file name prefix decides), tomytracker
+ * (length and range checks, no mark), tronic (the 0x58/0xB0 instrument-table mark sits behind variable-length
+ * blocks), voodoo (the "VSS0" mark is a footer in the last 64 bytes). */
 #include "signatures.h"
 
 #include <string.h>
@@ -228,6 +233,35 @@ static const sig_row k_rows[] = {
     { "soundmon", 512, { { 26, 3, "V.3" } }, 0, 0, 0 },
     /* ss_module.c check_magic: "SPEEDY-SYSTEM" at 0 */
     { "speedysystem", 13, { { 0, 13, "SPEEDY-SYSTEM" } }, 0, 0, 0 },
+    /* sa_module.c find_tables (Check2): high word of the speed long at 0 is zero, tag long 0x200 at 0xC, the order
+     * list runs to 0x1010 */
+    { "speedya1system", 0x1010, { { 0, 2, "\0\0" }, { 0xC, 4, "\0\0\x02\0" } }, 0, 0, 0 },
+    /* spl_module.c parse_hunk_file + read_header: one-hunk executable (0x3F3, 0, 1, 0, 0, memory-flag bits of the
+     * size long set, HUNK_CODE under the flag mask), code at 0x20 = moveq #-1,d0; rts, "!SOPROL!"; header 0x38 bytes
+     * plus HUNK_END */
+    { "spl", 0x5C,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x01" "\0\0\0\0" "\0\0\0\0" },
+        { 20, 0, NULL },
+        { 25, 3, "\0\x03\xE9" },
+        { 32, 12, "\x70\xFF\x4E\x75" "!SOPROL!" } },
+      0, 0, 0 },
+    /* sbr_module.c identify: per build, four bra.w at 0 with fixed targets (entry[k] = 4k + 2 + displacement); the file
+     * holds the build's FORM at `form` (min size form + 4). Builds: Advanced Ski Simulator, Artificial Dreams,
+     * Dragonscape, Kelly X, Chronicles of Omega, Street Fighter */
+    { "stevebarrett", 0x1516, { { 0, 16, "\x60\0\0\x78" "\x60\0\0\x6A" "\x60\0\0\xBE" "\x60\0\x06\x6C" } }, 0, 0, 0 },
+    { "stevebarrett", 0xFF8, { { 0, 16, "\x60\0\0\x74" "\x60\0\0\x66" "\x60\0\0\xA4" "\x60\0\x06\x50" } }, 0, 0, 0 },
+    { "stevebarrett", 0xE94, { { 0, 16, "\x60\0\0\x6E" "\x60\0\0\x60" "\x60\0\0\xB4" "\x60\0\x06\x06" } }, 0, 0, 0 },
+    { "stevebarrett", 0xE10, { { 0, 16, "\x60\0\0\x6E" "\x60\0\0\x60" "\x60\0\0\xB4" "\x60\0\x04\xF0" } }, 0, 0, 0 },
+    { "stevebarrett", 0xFDE, { { 0, 16, "\x60\0\0\x4E" "\x60\0\0\x40" "\x60\0\0\x94" "\x60\0\x04\xD0" } }, 0, 0, 0 },
+    { "stevebarrett", 0xFAE, { { 0, 16, "\x60\0\0\x40" "\x60\0\0\x32" "\x60\0\0\x74" "\x60\0\x06\x14" } }, 0, 0, 0 },
+    /* steveturner.c st_check_code: move.l #,d16(a5) (0x2B7C) at 0, 8, 0x10, 0x18 (first two checked here), then
+     * move.w #$FF,d0; move.w d0,d1; jsr at 0x20 and rts at 0x2C */
+    { "steveturner", 0x2E,
+      { { 0, 2, "\x2B\x7C" }, { 8, 2, "\x2B\x7C" }, { 0x20, 8, "\x30\x3C\0\xFF\x32\0\x4E\xB9" }, { 0x2C, 2, "\x4E\x75" } },
+      0, 0, 0 },
+    /* sun_module.c eagleplayer_check: movem.l d0-d7/a0-a6,-(a7); lea x(pc),a6; tst.b $18(a6) or tst.b $10(a6) */
+    { "suntronic", 12, { { 0, 6, "\x48\xE7\xFF\xFE\x4D\xFA" }, { 8, 4, "\x4A\x2E\0\x18" } }, 0, 0, 0 },
+    { "suntronic", 12, { { 0, 6, "\x48\xE7\xFF\xFE\x4D\xFA" }, { 8, 4, "\x4A\x2E\0\x10" } }, 0, 0, 0 },
     { "synthesis", 8, { { 0, 8, "Synth4.0" } }, 0, 0, 0 },
     { "synthesis", 0x1F16, { { 0x1F0E, 8, "Synth4.2" } }, 0, 0, 0 },
     /* sp_module.c sp_song_layout: "OBISYNTHPACK" at 0, notes at 0x50C */
@@ -235,8 +269,19 @@ static const sig_row k_rows[] = {
     { "syntracker", 16, { { 0, 16, "SYNTRACKER-SONG:" } }, 0, 0, 0 },
     /* timetracker: "TMK" and a non-zero pattern count */
     { "timetracker", 4, { { 0, 3, "TMK" }, { 3, 0, NULL } }, 0, 0, 0 },
+    /* tfol_module.c tfol_module_locate: six jmp (0x4EF9) every 6 bytes from 0 (first four checked here), song table at
+     * 0x432; or the data mark 0x1010/0x1012 at 0, or behind a 0x1C-byte TOS header (0x601A); the song table (0x154
+     * bytes) follows the mark */
+    { "timfollin", 0x586, { { 0, 2, "\x4E\xF9" }, { 6, 2, "\x4E\xF9" }, { 12, 2, "\x4E\xF9" }, { 18, 2, "\x4E\xF9" } },
+      0, 0, 0 },
+    { "timfollin", 0x156, { { 0, 2, "\x10\x10" } }, 0, 0, 0 },
+    { "timfollin", 0x156, { { 0, 2, "\x10\x12" } }, 0, 0, 0 },
+    { "timfollin", 0x172, { { 0, 2, "\x60\x1A" }, { 0x1C, 2, "\x10\x10" } }, 0, 0, 0 },
+    { "timfollin", 0x172, { { 0, 2, "\x60\x1A" }, { 0x1C, 2, "\x10\x12" } }, 0, 0, 0 },
     /* ufo_song.c has_tags: FORM....DDAT BODY .... CHAN */
     { "ufo", 0x18, { { 0, 4, "FORM" }, { 8, 4, "DDAT" }, { 12, 4, "BODY" }, { 0x14, 4, "CHAN" } }, 0, 0, 0 },
+    /* wb_module.c check_header (Check2): bra.w at 0, movem.l d0-d7/a0-a6,-(a7) at 4, bsr.w at 8; size >= 0x40 */
+    { "wallybeben", 0x40, { { 0, 2, "\x60\0" }, { 4, 6, "\x48\xE7\xFF\xFE\x61\0" } }, 0, 0, 0 },
 };
 
 size_t sel_nuade_sig_count(void) {
