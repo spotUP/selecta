@@ -2943,6 +2943,15 @@ if(NOT SEL_AMIGA)
   set_tests_properties(klystron-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "klystron_decode_ok" SKIP_RETURN_CODE 77
     ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
 
+  # I1312: the song's own reverb reaches the klystron engine (adapter calls mus_set_fx): ringmod.kt renders different PCM
+  # than a work-dir copy with its reverb taps muted. Revert proof: without mus_set_fx both render the same dry PCM.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/klystron-fx)
+  add_test(NAME klystron-fx
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/klystron_fx.sh $<TARGET_FILE:selecta-cli>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/klystron-fx)
+  set_tests_properties(klystron-fx PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "klystron_fx_ok" SKIP_RETURN_CODE 77
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+
   # I704: a QSF song plays through the render entry point (qsf module). GPL module, opt-in.
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/qsf-decode)

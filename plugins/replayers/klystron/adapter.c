@@ -92,6 +92,10 @@ static int engine_start(kt_state* s, uint32_t rate) {
         return 0;
     }
     cyd_set_callback(&s->cyd, mus_advance_tick, &s->mus, s->song.song_rate);
+    /* The song's effect units (reverb, chorus, crush) and pitch inaccuracy live in the MusSong; the engine only uses them
+       once the caller copies them in with mus_set_fx, as klystron's ksnd.c KSND_PlaySong and klystrack do before
+       mus_set_song. Seek reloads through here, so the effects apply on every start. */
+    mus_set_fx(&s->mus, &s->song);
     mus_set_song(&s->mus, &s->song, 0);
     ms = mus_get_playtime_at(&s->song, s->song.song_length);
     s->end_frames = (uint64_t)ms * rate / 1000u + (uint64_t)rate * KT_TAIL_SECONDS;
