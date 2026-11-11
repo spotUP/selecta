@@ -671,11 +671,11 @@ static void test_pref_keys(void) {
 /* mui-p8-queue-scope-ui (I1176): the Queue scope Cycle in mui_ui.c is wired to the shared scope action. The Cycle entries are the
  * desktop labels (sel_uim_scope_label), a pick goes through mui_scope_fire (SCOPE <name> + queue re-read), and the Cycle follows the
  * engine's SEL_OPT_SCOPE through sel_uim_scope_index. The sentinel counts the real fire path. */
-static int src_count(const char* pattern) {
+static int file_count(const char* rel, const char* pattern) {
     char path[512], cmd[1024], buf[64];
     FILE* f;
     int n = -1;
-    snprintf(path, sizeof path, "%s/plugins/ui/mui/mui_ui.c", MUI_SRC_ROOT);
+    snprintf(path, sizeof path, "%s/%s", MUI_SRC_ROOT, rel);
     snprintf(cmd, sizeof cmd, "grep -c -F '%s' %s", pattern, path);
     f = popen(cmd, "r");
     if (f != NULL) {
@@ -686,6 +686,8 @@ static int src_count(const char* pattern) {
     }
     return n;
 }
+
+static int src_count(const char* pattern) { return file_count("plugins/ui/mui/mui_ui.c", pattern); }
 
 static void test_queue_scope_ui(void) {
     static const char* const label[MUI_SCOPE_COUNT] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
@@ -725,6 +727,33 @@ static void test_offer_ask(void) {
     CHECK(src_count("        if (s->opens == 0u) { /* I1308e: SOURCES waits for the first turn after open */") == 1,
           "the sync offer asks SOURCES during open, where the shell drops the reply");
     CHECK(src_count("    s->opens++;") == 1, "s->opens is no longer set once the open is done");
+}
+
+/* mui-p8-offer-never (I1308c): the MUI sync offer had Not now and Sync only; the desktop dialog (I602) has Never / Not now / Sync now,
+ * and Never switches the ticked sources off in library.sources_off. The line is the shared sel_uim_sources_never_line: the ticked
+ * sources off, every other source as stored. The desktop sent it with flip 0, which also toggled source row 0 (the local library):
+ * with "local" on and unticked, Never listed it off too. MUI fires the shared line (mui_offer_never) and mui_ui.c builds the three
+ * buttons in the desktop order and routes Never to mui_offer_panel_never. */
+static void test_offer_never(void) {
+    sel_uim_source s[3] = {{"local", "/music", 1}, {"modland", "https://m", 1}, {"hvsc", "https://h", 0}};
+    fake_engine e;
+    char line[256];
+    uint32_t base = mui_source_fires();
+    CHECK(sel_uim_sources_never_line(s, 3, 1u << 1, line, sizeof line) != 0u && strcmp(line, "PREF_SET library.sources_off \"modland,hvsc\"") == 0,
+          "Never line '%s' (local must stay on)", line);
+    CHECK(sel_uim_sources_never_line(s, 3, 0u, line, sizeof line) == 0u, "Never with nothing ticked made a line");
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_never(s, 3, 1u << 1, fake_send, &e) == 2u && e.n == 2u, "Never sent %u lines", (unsigned)e.n);
+    CHECK(strcmp(e.lines[0], "PREF_SET library.sources_off \"modland,hvsc\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "Never lines '%s' '%s'", e.lines[0], e.lines[1]);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_never(s, 3, 0u, fake_send, &e) == 0u && e.n == 0u, "Never with nothing ticked sent %u lines", (unsigned)e.n);
+    CHECK(mui_source_fires() - base == 1u, "sentinel: %u fires", (unsigned)(mui_source_fires() - base));
+    CHECK(src_count("mui_make_button_i(\"Never\", \"Never\", NULL, NULL, CTL_OFFER_NEVER, 0, 0, MUI_AA_ROLE_NORMAL)") == 1, "the sync offer has no Never button");
+    CHECK(src_count("mui_make_button_i(\"Sync now\", \"Sync now\", NULL, NULL, CTL_OFFER_SYNC") == 1, "the sync offer button is not \"Sync now\"");
+    CHECK(src_count("(void)mui_offer_panel_never(&s->offer, &s->srcs, mui_route_send, s);") == 1, "CTL_OFFER_NEVER is not routed to mui_offer_panel_never");
+    CHECK(file_count("plugins/ui/desktop/desktop_ui.c", "(void)src_off_send(d, SEL_UIM_SOURCES_NO_FLIP, ticked);") == 1 &&
+              file_count("plugins/ui/desktop/desktop_ui.c", "(void)src_off_send(d, 0u, ticked);") == 0,
+          "the desktop Never still flips source row 0");
 }
 
 /* mui-p8-col-titles (I1306b): an album page on rig 2 listed "selecta-test-mk.mod" where the desktop shows the catalogued "mk tune". MUI
@@ -829,6 +858,8 @@ int main(int argc, char** argv) {
         test_offer_card();
     } else if (strcmp(argv[1], "offer-ask") == 0) {
         test_offer_ask();
+    } else if (strcmp(argv[1], "offer-never") == 0) {
+        test_offer_never();
     } else if (strcmp(argv[1], "col-titles") == 0) {
         test_col_titles();
     } else if (strcmp(argv[1], "queue-scope") == 0) {

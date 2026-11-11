@@ -22,6 +22,11 @@ typedef struct sel_uim_source {
 /* PREF_SET library.sources_off "<csv>" with source `flip` toggled (flip >= n: none) and the sources in bitmask `force_off` off.
  * Returns the line length, 0 when it does not fit. */
 uint32_t sel_uim_sources_off_line(const sel_uim_source* s, uint32_t n, uint32_t flip, uint32_t force_off, char* out, uint32_t cap);
+/* The flip of sel_uim_sources_off_line that toggles no source. */
+#define SEL_UIM_SOURCES_NO_FLIP 0xFFFFFFFFu
+/* I1308c: the sync offer's Never (desktop nagdlg_close action 0, I602): the sources in bitmask `ticked` off, every other source as
+ * stored (no flip). 0 when nothing is ticked (Never then sends nothing) or the line does not fit. */
+uint32_t sel_uim_sources_never_line(const sel_uim_source* s, uint32_t n, uint32_t ticked, char* out, uint32_t cap);
 /* LIBRARY_SYNC <key> "<path>": the per-source Sync button and the offer's Sync button. */
 uint32_t sel_uim_sync_line(const char* key, const char* path, char* out, uint32_t cap);
 /* The offer's Not now: PREF_SET library.sync_notice_at <unix time>. */

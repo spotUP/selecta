@@ -416,6 +416,19 @@ uint32_t mui_offer_not_now(int64_t now, mui_send_fn send, void* ctx) {
     return sent + (send != NULL && send(ctx, "SOURCES") != 0);
 }
 
+/* I1308c: Never (desktop nagdlg_close action 0, I602) switches the ticked sources off in library.sources_off, the setting the Sources
+ * page toggles (the shared sel_uim_sources_never_line), then SOURCES; nothing is sent when no row is ticked. */
+uint32_t mui_offer_never(const sel_uim_source* s, uint32_t n, uint32_t ticked, mui_send_fn send, void* ctx) {
+    char line[256];
+    uint32_t sent;
+    if (sel_uim_sources_never_line(s, n, ticked, line, sizeof line) == 0u) {
+        return 0;
+    }
+    sent = send_line(1u, line, send, ctx);
+    g_source_fires++;
+    return sent + (send != NULL && send(ctx, "SOURCES") != 0);
+}
+
 uint32_t mui_offer_sync(const sel_uim_source* s, uint32_t n, uint32_t ticked, mui_send_fn send, void* ctx) {
     char line[256];
     uint32_t i, sent = 0;

@@ -22,6 +22,10 @@ uint32_t sel_uim_sources_off_line(const sel_uim_source* s, uint32_t n, uint32_t 
     return done(snprintf(out, cap, "PREF_SET library.sources_off \"%s\"", csv), cap);
 }
 
+uint32_t sel_uim_sources_never_line(const sel_uim_source* s, uint32_t n, uint32_t ticked, char* out, uint32_t cap) {
+    return ticked != 0u ? sel_uim_sources_off_line(s, n, SEL_UIM_SOURCES_NO_FLIP, ticked, out, cap) : 0u;
+}
+
 uint32_t sel_uim_sync_line(const char* key, const char* path, char* out, uint32_t cap) {
     return done(snprintf(out, cap, "LIBRARY_SYNC %s \"%s\"", key, path), cap);
 }

@@ -190,3 +190,23 @@ uint32_t mui_offer_panel_not_now(mui_offer_panel* p, mui_srcs* m, int64_t now, m
     m->gen++;
     return sent;
 }
+
+/* I1308c: Never, the desktop nagdlg_close action 0 (I602): the ticked sources off through the shared sel_uim_sources_never_line,
+ * then SOURCES for the stored state; with no row ticked it only closes, as the desktop does. */
+uint32_t mui_offer_panel_never(mui_offer_panel* p, mui_srcs* m, mui_send_fn send, void* ctx) {
+    sel_uim_source s[SEL_SOURCE_MAX];
+    uint32_t ticked, unticked, sent;
+    if (!p->open) {
+        return 0;
+    }
+    sel_uim_offer_masks(&p->o, m->it, m->n, &ticked, &unticked);
+    fill(m, s);
+    p->open = 0;
+    p->nevers++;
+    sent = mui_offer_never(s, m->n, ticked, send, ctx);
+    if (sent != 0u) {
+        m->wait = 1;
+    }
+    m->gen++;
+    return sent;
+}

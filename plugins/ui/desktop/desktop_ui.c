@@ -3335,8 +3335,8 @@ static void nagdlg_close(desk* d, int action) {
         }
         d->dlg_confirms++;
     } else if (action == 0) {
-        if (ticked != 0u) {
-            (void)src_off_send(d, 0u, ticked);
+        if (ticked != 0u) { /* I1308c: no flip (sel_uim_sources_never_line); a flip of 0 also toggled source row 0 (the local library) */
+            (void)src_off_send(d, SEL_UIM_SOURCES_NO_FLIP, ticked);
         }
         d->dlg_confirms++;
     } else {

@@ -682,6 +682,7 @@ uint32_t mui_source_sync(const sel_uim_source* s, mui_send_fn send, void* ctx); 
 const char* mui_source_status(int pending, int failed, int64_t synced);
 uint32_t mui_offer_not_now(int64_t now, mui_send_fn send, void* ctx);                                         /* Not now button */
 uint32_t mui_offer_sync(const sel_uim_source* s, uint32_t n, uint32_t ticked, mui_send_fn send, void* ctx);   /* Sync button */
+uint32_t mui_offer_never(const sel_uim_source* s, uint32_t n, uint32_t ticked, mui_send_fn send, void* ctx);  /* Never button (I1308c) */
 const char* mui_search_source_label(uint32_t i);
 uint32_t mui_search_source_set(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_source_fires(void); /* call-count sentinel */
@@ -702,12 +703,13 @@ uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);   
 
 /* I1182: the first-start sync offer window, the desktop's nag dialog (nagdlg_*) on the shared sel_uim_offer model. It opens once per
  * launch when the SOURCES rows hold a due source; one check per due source, all ticked; Sync sends what the desktop's Sync now sends
- * (LIBRARY_SYNC per ticked row, then the snooze line and SOURCES when a row is unticked); Not now sends the notice time and SOURCES.
- * Either button closes it for good. opens, syncs and later are the call-count sentinels. */
+ * (LIBRARY_SYNC per ticked row, then the snooze line and SOURCES when a row is unticked); Not now sends the notice time and SOURCES;
+ * Never (I1308c) switches the ticked sources off, as the desktop's Never. Any button closes it for good. opens, syncs, later and
+ * nevers are the call-count sentinels. */
 typedef struct mui_offer_panel {
     sel_uim_offer o;
     int open;
-    uint32_t opens, syncs, later;
+    uint32_t opens, syncs, later, nevers;
 } mui_offer_panel;
 int mui_offer_panel_follow(mui_offer_panel* p, int blocked, const mui_srcs* m); /* 1 when the offer opened on this call */
 uint32_t mui_offer_panel_title(const mui_offer_panel* p, char* out, size_t cap);
@@ -715,6 +717,7 @@ uint32_t mui_offer_panel_row(const mui_offer_panel* p, const mui_srcs* m, uint32
 void mui_offer_panel_tick(mui_offer_panel* p, uint32_t k); /* flip the check of row k */
 uint32_t mui_offer_panel_sync(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx); /* lines sent */
 uint32_t mui_offer_panel_not_now(mui_offer_panel* p, mui_srcs* m, int64_t now, mui_send_fn send, void* ctx);
+uint32_t mui_offer_panel_never(mui_offer_panel* p, mui_srcs* m, mui_send_fn send, void* ctx); /* I1308c: ticked sources off; lines sent */
 
 /* MUI-P8-9: info line pieces. */
 int32_t mui_info_mode_key(char key);

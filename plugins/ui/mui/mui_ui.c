@@ -107,7 +107,8 @@ static void mui_report(mui_fail why, const char* detail);
 #define MUI_STATS_MAX 24u /* rows of the Statistics window; the engine's stats buffer holds far fewer */
 #define CTL_STATS_MORE 0x280AL /* I1181: the Statistics window's More / Less button */
 #define CTL_OFFER_NOTNOW 0x280BL /* I1182: the first-start sync offer, Not now */
-#define CTL_OFFER_SYNC 0x280CL   /* its Sync button */
+#define CTL_OFFER_SYNC 0x280CL   /* its Sync now button */
+#define CTL_OFFER_NEVER 0x280DL  /* I1308c: its Never button */
 #define CTL_OFFER_ROW 0x2900L    /* its per-source checks, CTL_OFFER_ROW + k */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
@@ -2968,7 +2969,7 @@ static void mui_stats_window(mui_state* s) {
 }
 
 /* I1182: the first-start sync offer window. Opens once per launch when the engine marks a source due (mui_offer_panel_follow): the
- * title, one row per listed source, Not now and Sync. Built when it opens (once).
+ * title, one row per listed source, Never, Not now and Sync now (I1308c: the desktop's three). Built when it opens (once).
  * I1308: the content sits in a raised card (AAPanel RAISED, the SURFACE_RAISED face the desktop nag dialog draws), whose padding and
  * spacing keep the rows apart; each row is a real check (mui_make_check, the Settings AACheck) beside its label, as the desktop
  * nagdlg_draw tick box + label. The rows were ghost buttons captioned "[x] text": free-floating framed buttons with a fake check. */
@@ -3005,8 +3006,10 @@ static void mui_offer_window(mui_state* s) {
             DoMethod(line, OM_ADDMEMBER, mui_aatext(row, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0));
             DoMethod(root, OM_ADDMEMBER, line);
         }
+        /* I1308c: Never / Not now / Sync now, the desktop nagdlg_draw buttons in its order, in the one bar (same gaps) */
+        DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Never", "Never", NULL, NULL, CTL_OFFER_NEVER, 0, 0, MUI_AA_ROLE_NORMAL));
         DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Not now", "Not now", NULL, NULL, CTL_OFFER_NOTNOW, 0, 0, MUI_AA_ROLE_NORMAL));
-        DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Sync", "Sync", NULL, NULL, CTL_OFFER_SYNC, 0, 0, MUI_AA_ROLE_NORMAL));
+        DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Sync now", "Sync now", NULL, NULL, CTL_OFFER_SYNC, 0, 0, MUI_AA_ROLE_NORMAL));
         DoMethod(root, OM_ADDMEMBER, bar);
         s->offer_win = mui_dialog_window("Sync your sources", 0x53594E43UL, root);
         if (s->offer_win == NULL) {
@@ -3667,6 +3670,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_stats_more(&s->stats_panel);
     } else if (id == CTL_OFFER_NOTNOW) {
         (void)mui_offer_panel_not_now(&s->offer, &s->srcs, (int64_t)time(NULL), mui_route_send, s);
+    } else if (id == CTL_OFFER_NEVER) {
+        (void)mui_offer_panel_never(&s->offer, &s->srcs, mui_route_send, s);
     } else if (id == CTL_OFFER_SYNC) {
         (void)mui_offer_panel_sync(&s->offer, &s->srcs, (int64_t)time(NULL), mui_route_send, s);
     } else if (id >= CTL_OFFER_ROW && id < CTL_OFFER_ROW + (LONG)SEL_SOURCE_MAX) {

@@ -1777,6 +1777,19 @@ static void test_sync_offer(void) {
     CHECK(strcmp(e.line[0], want) == 0, "not now line '%s'", e.line[0]);
     CHECK(!p.open && p.later == 1u, "Not now did not dismiss");
     CHECK(mui_offer_panel_follow(&p, 0, &m) == 0 && mui_offer_panel_sync(&p, &m, now, offer_send, &e) == 0u, "dismissed offer came back or still syncs");
+    /* I1308c: Never on a third launch, demozoo unticked: only modland goes off, amp (not offered) and demozoo stay on */
+    memset(&p, 0, sizeof p);
+    mui_srcs_asked(&m);
+    offer_feed(&m, "modland", "Modland", "https://m", 1);
+    offer_feed(&m, "amp", "Amiga Music Preservation", "https://a", 0);
+    offer_feed(&m, "demozoo", "Demozoo", "https://d", 1);
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 1, "third launch: offer did not open");
+    mui_offer_panel_tick(&p, 1);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_panel_never(&p, &m, offer_send, &e) == 2u && e.n == 2, "Never sent %d lines", e.n);
+    CHECK(strcmp(e.line[0], "PREF_SET library.sources_off \"modland\"") == 0 && strcmp(e.line[1], "SOURCES") == 0, "Never lines '%s' '%s'", e.line[0], e.line[1]);
+    CHECK(!p.open && p.nevers == 1u && m.wait, "Never did not close the offer or ask SOURCES again");
+    CHECK(mui_offer_panel_follow(&p, 0, &m) == 0 && mui_offer_panel_never(&p, &m, offer_send, &e) == 0u, "the offer came back after Never");
     f = fopen(MUI_UI_SOURCE, "rb");
     CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
     if (f == NULL) {
@@ -1786,7 +1799,7 @@ static void test_sync_offer(void) {
     src[n] = '\0';
     fclose(f);
     CHECK(strstr(src, "mui_offer_panel_follow(&s->offer") != NULL && strstr(src, "mui_offer_panel_sync(&s->offer") != NULL &&
-              strstr(src, "mui_offer_panel_not_now(&s->offer") != NULL && strstr(src, "mui_offer_panel_tick(&s->offer") != NULL,
+              strstr(src, "mui_offer_panel_not_now(&s->offer") != NULL && strstr(src, "mui_offer_panel_tick(&s->offer") != NULL && strstr(src, "mui_offer_panel_never(&s->offer") != NULL,
           "mui_ui.c does not drive the offer panel");
 }
 
