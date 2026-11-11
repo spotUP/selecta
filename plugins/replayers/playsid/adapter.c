@@ -1,7 +1,7 @@
 /* Native playsid.library adapter (I434b, design: thoughts/shared/research/2026-11-01-playsid-inventory.md groups 0, 1,
  * 4). HW kind: the library plays PSID/RSID through its own audio path (classic cycle-exact or reSID, optionally on
  * SIDBlaster, ZorroSID, USBSID-Pico or Trinity hardware), so the engine hands the output over (SEL_ROUTE_HANDOVER)
- * and only counts time, as for kplayer. The library is not bundled: it is opened from LIBS:, and rp_probe answers NO
+ * and only counts time, as for kplayer. The library is not bundled: it is opened from LIBS:, and the probe (probe.c) answers NO
  * when it is absent so the registry falls through to the next SID owner (nuade on the Amiga, libsidplayfp on hosts).
  * The library is reached only through the ps_ops table (playsid_api.h) so the host test substitutes a stub.
  * Only one song plays at a time: g_owner tracks the instance that holds the library. */
@@ -12,8 +12,8 @@
 #include <string.h>
 
 #include "playsid_api.h"
+#include "probe.h"
 
-#define PS_HEADER_MIN 0x76u
 #define PS_TEXT 33u
 
 typedef struct ps_state {
@@ -42,7 +42,8 @@ typedef struct ps_state {
 static ps_state* g_owner;
 
 /* Sentinels (tests/engine/playsid_test.c): the adapter ran, per hook. */
-uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills, sel_playsid_perf_gates, sel_playsid_perf_measures, sel_playsid_perf_asks, sel_playsid_reg_fills, sel_playsid_mute_sets;
+/* sel_playsid_probes lives in probe.c (I427e4). */
+uint32_t sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills, sel_playsid_perf_gates, sel_playsid_perf_measures, sel_playsid_perf_asks, sel_playsid_reg_fills, sel_playsid_mute_sets;
 
 static uint32_t be16(const uint8_t* p) {
     return ((uint32_t)p[0] << 8) | p[1];
@@ -50,25 +51,6 @@ static uint32_t be16(const uint8_t* p) {
 
 static uint32_t be32(const uint8_t* p) {
     return (be16(p) << 16) | be16(p + 2);
-}
-
-static int has_magic(const uint8_t* data, size_t size) {
-    return data != NULL && size >= PS_HEADER_MIN && (memcmp(data, "PSID", 4) == 0 || memcmp(data, "RSID", 4) == 0);
-}
-
-static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    const ps_ops* ops;
-    (void)name;
-    sel_playsid_probes++;
-    if (!has_magic(data, size)) {
-        return SEL_PROBE_NO;
-    }
-    ops = ps_ops_get();
-    if (!ops->open()) {
-        return SEL_PROBE_NO; /* library not installed: the next SID owner takes the file */
-    }
-    ops->close();
-    return SEL_PROBE_YES;
 }
 
 static void copy_text(char* dst, const uint8_t* src) {
@@ -109,7 +91,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     ps_state* s;
     uint32_t i;
     const ps_ops* ops;
-    if (src == NULL || src->stream != NULL || !has_magic(src->data, src->size)) {
+    if (src == NULL || src->stream != NULL || !psid_has_magic(src->data, src->size)) {
         return NULL;
     }
     ops = ps_ops_get();
@@ -442,27 +424,23 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "playsid");
-    set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
-    set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_HW);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "sid,psid");
-    set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
-    set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
-    set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
-    set(&g_hooks[7], SEL_RP_START, SEL_TAG_FN(rp_start));
-    set(&g_hooks[8], SEL_RP_HW_PAUSE, SEL_TAG_FN(rp_hw_pause));
-    set(&g_hooks[9], SEL_RP_HW_RELEASE, SEL_TAG_FN(rp_hw_release));
-    set(&g_hooks[10], SEL_RP_MIN_CPU, 68020);
-    set(&g_hooks[11], SEL_RP_PRIORITY, 20); /* above nuade and libsidplayfp (priority 0) */
-    set(&g_hooks[12], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
-    set(&g_hooks[13], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[14], SEL_RP_SEEKABLE, SEL_TAG_FN(rp_seekable));
-    set(&g_hooks[15], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
-    set(&g_hooks[16], SEL_RP_HW_LENGTH, SEL_TAG_FN(rp_hw_length));
-    set(&g_hooks[17], SEL_RP_VIZ_VOICES, SEL_TAG_FN(rp_viz_voices));
-    set(&g_hooks[18], SEL_RP_VIZ_SID, SEL_TAG_FN(rp_viz_sid));
-    set(&g_hooks[19], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
-    set(&g_hooks[20], SEL_TAG_END, 0);
+    {
+        size_t n = psid_static_hooks(g_hooks); /* probe.c: shared with the Amiga manifest (I427e4) */
+        set(&g_hooks[n++], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
+        set(&g_hooks[n++], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
+        set(&g_hooks[n++], SEL_RP_START, SEL_TAG_FN(rp_start));
+        set(&g_hooks[n++], SEL_RP_HW_PAUSE, SEL_TAG_FN(rp_hw_pause));
+        set(&g_hooks[n++], SEL_RP_HW_RELEASE, SEL_TAG_FN(rp_hw_release));
+        set(&g_hooks[n++], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
+        set(&g_hooks[n++], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
+        set(&g_hooks[n++], SEL_RP_SEEKABLE, SEL_TAG_FN(rp_seekable));
+        set(&g_hooks[n++], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
+        set(&g_hooks[n++], SEL_RP_HW_LENGTH, SEL_TAG_FN(rp_hw_length));
+        set(&g_hooks[n++], SEL_RP_VIZ_VOICES, SEL_TAG_FN(rp_viz_voices));
+        set(&g_hooks[n++], SEL_RP_VIZ_SID, SEL_TAG_FN(rp_viz_sid));
+        set(&g_hooks[n++], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
+        set(&g_hooks[n], SEL_TAG_END, 0);
+    }
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "playsid");

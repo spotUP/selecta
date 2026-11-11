@@ -1163,7 +1163,8 @@ if(NOT SEL_AMIGA)
   add_test(NAME engine-kplayer-tracker-cells COMMAND kplayer_tracker_test "${SEL_MKMOD}")
   set_tests_properties(engine-kplayer-tracker-cells PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "kplayer_tracker: ok")
   # I434b: the native playsid adapter through the engine (stub of the LVO layer logs every library call).
-  add_executable(playsid_test engine/playsid_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/playsid/playsid_map.c)
+  add_executable(playsid_test engine/playsid_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/playsid/playsid_map.c
+    ${PROJECT_SOURCE_DIR}/plugins/replayers/playsid/probe.c)
   target_include_directories(playsid_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/playsid)
   target_include_directories(playsid_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(playsid_test PRIVATE selecta_library selecta_core selecta_formats)

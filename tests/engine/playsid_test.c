@@ -695,10 +695,10 @@ int main(int argc, char** argv) {
         uint8_t hdr[0x80];
         memset(hdr, 0, sizeof hdr);
         memcpy(hdr, "PSID", 4);
-        CHECK(rp_probe(hdr, sizeof hdr, "x.sid") == SEL_PROBE_NO); /* the registry then asks the next owner */
+        CHECK(psid_probe(hdr, sizeof hdr, "x.sid") == SEL_PROBE_NO); /* the registry then asks the next owner */
         s_installed = 1;
-        CHECK(rp_probe(hdr, sizeof hdr, "x.sid") == SEL_PROBE_YES);
-        CHECK(rp_probe((const uint8_t*)"MODU", 4, "x.mod") == SEL_PROBE_NO);
+        CHECK(psid_probe(hdr, sizeof hdr, "x.sid") == SEL_PROBE_YES);
+        CHECK(psid_probe((const uint8_t*)"MODU", 4, "x.mod") == SEL_PROBE_NO);
         CHECK(s_open_refs == 0); /* probe leaves no reference behind */
     }
     eng = sel_engine_create(sel_host_default(), &cfg);
