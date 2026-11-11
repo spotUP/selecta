@@ -118,6 +118,11 @@ typedef struct tui {
     int pg;                                /* I1189: page on screen, 0 none, 1 Shelf, 2 Collection */
     uint32_t pg_shelf, pg_cur, pg_serial, pg_kind, pg_opens_shelf, pg_opens_coll, pg_rows;
     char pg_key[128], pg_title[96];
+    /* I1306: the song titles of the open Collection page, from ONE posted song_briefs read (the desktop pattern, I948a). brf holds the
+     * answer (brf_done songs) for page serial brf_serial (0 none); brf_post is the serial the read in flight was posted for. */
+    char* brf;
+    size_t brf_cap;
+    uint32_t brf_serial, brf_post, brf_inflight, brf_posts, brf_done;
     /* I1190: the song and playlist menu (overlay 4), its name prompt (cmd_mode 3) and confirm prompt (cmd_mode 4) */
     uint32_t mn_n, mn_cur, mn_opens, mn_picks, mn_answers, mn_pending;
     uint32_t mn_act[TUI_MENU_MAX], mn_pl[TUI_MENU_MAX]; /* item action; MN_PLPICK: playlist id (0 makes a new one) */
@@ -615,9 +620,11 @@ static int tui_page_shelf(const tui* u, const sel_view_state* v, sel_uim_shelf* 
 
 /* Line `i` of a Collection page (the shelf rows in shelf order, then the songs); 0 past the end. `tile` is set when Enter on the line
  * opens another page, `song` points at the song key when it is a song line. */
-static int tui_coll_line(const sel_collection_page* pg, uint32_t i, char* buf, size_t cap, sel_uim_tile* tile, const char** song) {
-    uint32_t s, k;
+static int tui_coll_line(const sel_collection_page* pg, const char* briefs, uint32_t briefed, uint32_t i, char* buf, size_t cap,
+                         sel_uim_tile* tile, const char** song) {
+    uint32_t s, k, f;
     const char* r;
+    const char* t = briefs; /* I1306: "title\0artist\0album\0album id\0" per song, NULL until the page's read lands */
     *song = NULL;
     memset(tile, 0, sizeof *tile);
     for (s = 0; s < SEL_COLLECTION_SHELVES; s++) {
@@ -642,13 +649,74 @@ static int tui_coll_line(const sel_collection_page* pg, uint32_t i, char* buf, s
         const char* plays = r + strlen(r) + 1u;
         if (k == i) {
             const char* base = strrchr(r, '/');
-            snprintf(buf, cap, "%s  %s plays", base != NULL ? base + 1 : r, plays);
+            const char* name = k < briefed && t[0] != '\0' ? t : base != NULL ? base + 1 : r;
+            snprintf(buf, cap, "%s  %s plays", name, plays);
             *song = r;
             return 1;
         }
         r = plays + strlen(plays) + 1u;
+        for (f = 0; k < briefed && f < 4u; f++) {
+            t += strlen(t) + 1u;
+        }
     }
     return 0;
+}
+
+/* I1306: the briefs answer of page pg, or NULL when it belongs to another page (or none landed yet). */
+static const char* tui_briefs(const tui* u, const sel_collection_page* pg) {
+    return pg != NULL && u->brf != NULL && u->brf_serial != 0u && pg->serial == u->brf_serial ? u->brf : NULL;
+}
+
+/* I1306: Collection page song rows show the catalogued title, like the desktop page (I948a). The titles come in ONE posted song_briefs
+ * read per page serial; it never blocks the UI turn (I829). Until it lands, and for a song without a title, the row shows the file name. */
+static void tui_briefs_follow(tui* u) {
+    const sel_collection_page* pg = sel_engine_state(u->engine)->collection;
+    const char* r;
+    size_t len = 0;
+    uint32_t k;
+    if (u->brf_inflight) {
+        uint32_t done = 0;
+        int ok = 0;
+        if (!sel_engine_song_briefs_take(u->engine, u->brf, u->brf_cap, &done, &ok)) {
+            return;
+        }
+        u->brf_inflight = 0u;
+        u->brf_serial = ok ? u->brf_post : 0u; /* a read that did not run is posted again on a later turn */
+        u->brf_done = ok ? done : 0u;
+        u->dirty = 1;
+    }
+    if (u->pg != 2 || pg == NULL || pg->rows == NULL || pg->songs == 0u || pg->serial == u->brf_serial || pg->serial == u->pg_serial ||
+        pg->drill == (uint32_t)SEL_DRILL_PAGE_ROOT || pg->drill == (uint32_t)SEL_DRILL_PAGE_GROUPS ||
+        sel_engine_song_briefs_busy(u->engine)) {
+        return;
+    }
+    if (u->brf != NULL) {
+        u->host->mem_free(u->host, u->brf);
+    }
+    u->brf_cap = (size_t)pg->songs * 448u + 16u; /* the desktop's bound per song */
+    u->brf = (char*)u->host->mem_alloc(u->host, u->brf_cap, SEL_MEM_FAST);
+    u->brf_serial = 0u;
+    u->brf_done = 0u;
+    if (u->brf == NULL) {
+        return;
+    }
+    /* the keys block: rows are "key\0plays\0"; the post wants the keys alone, so they are copied into the answer buffer first */
+    for (k = 0, r = pg->rows; k < pg->songs && *r != '\0'; k++) {
+        size_t n = strlen(r) + 1u;
+        if (len + n + 1u > u->brf_cap) {
+            break;
+        }
+        memcpy(u->brf + len, r, n);
+        len += n;
+        r += n;
+        r += strlen(r) + 1u;
+    }
+    if (len == 0u || !sel_engine_song_briefs_post(u->engine, u->brf, len, u->brf_cap)) {
+        return;
+    }
+    u->brf_post = pg->serial;
+    u->brf_inflight = 1u;
+    u->brf_posts++;
 }
 
 static uint32_t tui_page_count(const tui* u, const sel_state* s) {
@@ -684,7 +752,7 @@ static void tui_page_activate(tui* u) {
             tui_send(u, buf);
             tui_send(u, "VIEW_ACTIVATE");
         }
-    } else if (s->collection != NULL && tui_coll_line(s->collection, u->pg_cur, buf, sizeof buf, &tile, &song)) {
+    } else if (s->collection != NULL && tui_coll_line(s->collection, tui_briefs(u, s->collection), u->brf_done, u->pg_cur, buf, sizeof buf, &tile, &song)) {
         if (song != NULL) {
             snprintf(buf, sizeof buf, "QUEUE_ADD %s", song);
             tui_send(u, buf);
@@ -814,7 +882,7 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
         n = ready ? tui_page_count(u, s) : 0u;
         for (i = 0; i < n && i < rows; i++) {
             txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
-            if (!tui_coll_line(pg, i, buf + 1, sizeof buf - 1u, &tile, &song)) {
+            if (!tui_coll_line(pg, tui_briefs(u, pg), u->brf_done, i, buf + 1, sizeof buf - 1u, &tile, &song)) {
                 break;
             }
             buf[0] = ' ';
@@ -2334,6 +2402,9 @@ static void tui_close(void* state) {
     if (u->key_text != NULL) {
         host->mem_free(host, u->key_text);
     }
+    if (u->brf != NULL) {
+        host->mem_free(host, u->brf);
+    }
     host->mem_free(host, u);
 }
 
@@ -2477,6 +2548,7 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
             tui_pattern_ask(u);
         }
     }
+    tui_briefs_follow(u);
     if (u->dirty) {
         tui_present(u);
     }
