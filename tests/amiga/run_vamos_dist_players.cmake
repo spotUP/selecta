@@ -13,7 +13,18 @@ set(TAG I427e2)
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 set(drawer "${WORK}/Selecta")
-execute_process(COMMAND "${CMAKE_COMMAND}" -DMODE=stage "-DDEST=${drawer}" "-DBIN_DIR=${APP_DIR}" "-DROOT=${ROOT}"
+# The template is only baked when build/amiga was configured with -DSELECTA_TEMPLATEBAKE_EXE (src/library/CMakeLists.txt).
+# This test checks Players/, not the template, so a build without it stages from a copy of APP_DIR with a stand-in
+# template (as the selecta_dist.cmake selftest does) instead of failing on a file it does not test.
+set(bin_dir "${APP_DIR}")
+if(NOT EXISTS "${APP_DIR}/library-template.db")
+  set(bin_dir "${WORK}/bin")
+  file(MAKE_DIRECTORY "${bin_dir}")
+  file(COPY "${APP_DIR}/selecta" "${APP_DIR}/Players" DESTINATION "${bin_dir}")
+  file(WRITE "${bin_dir}/library-template.db" "stand-in template\n")
+  message(STATUS "[INFO] ${APP_DIR} has no library-template.db; staging with a stand-in template")
+endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" -DMODE=stage "-DDEST=${drawer}" "-DBIN_DIR=${bin_dir}" "-DROOT=${ROOT}"
                         -P "${ROOT}/cmake/selecta_dist.cmake"
                 RESULT_VARIABLE rc OUTPUT_VARIABLE so ERROR_VARIABLE se)
 if(NOT rc EQUAL 0)
