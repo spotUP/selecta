@@ -24,8 +24,11 @@ set(CMAKE_CXX_COMPILER "${AMIGA_GCC_ROOT}/bin/m68k-amigaos-c++")
 set(CMAKE_CXX_FLAGS_INIT "-m68020 -mcrt=nix20 -fomit-frame-pointer -fno-exceptions -fno-rtti")
 set(CMAKE_C_FLAGS_INIT "-m68020 -mcrt=nix20 -fomit-frame-pointer")
 # build/amiga is an optimised Release build (-O2, no -g); build/amiga-dbg passes -DCMAKE_BUILD_TYPE=Debug.
-set(CMAKE_C_FLAGS_RELEASE_INIT "-O2 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_RELEASE_INIT "-O2 -DNDEBUG")
+# Set the cache entries, not *_FLAGS_RELEASE_INIT: CMake's GNU module appends its own " -O3 -DNDEBUG" to the _INIT
+# value, so a fresh configure got "-O2 -DNDEBUG -O3 -DNDEBUG" and gcc honours the last -O. That -O3 binary is ~45%
+# larger (3.02 MB vs 2.08 MB code) and crashes in LIBRARY_SCAN under vamos (I1319). Not FORCE: -D still overrides.
+set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "Amiga Release C flags (-O2, see I1319)")
+set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "Amiga Release C++ flags (-O2, see I1319)")
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Release default, Debug for build/amiga-dbg)" FORCE)
 endif()
