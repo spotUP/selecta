@@ -1,3 +1,5 @@
-2
-# I1316: a1200 (no FPU) hides only the 2 SEL_RP_NEEDS_FPU (68881) plugins, minimp3 and stb_vorbis; the 4
-# SEL_RP_NEEDS_FLOAT plugins stay listed and rank below non-float players (slow_needs_float=4).
+3
+# I1313: a1200 (68020, 2 MB chip, no FPU) hides 3 of the desktop built-ins: the 2 SEL_RP_NEEDS_FPU (68881)
+# plugins, minimp3 and stb_vorbis, and nuade, whose measured SEL_RP_MEMORY (2.62 MB) is above the 2 MB free.
+# The 4 SEL_RP_NEEDS_FLOAT plugins stay listed and rank below non-float players (slow_needs_float=4, I1316).
+# Was 2 before I1313.

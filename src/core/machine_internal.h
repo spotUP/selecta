@@ -9,6 +9,7 @@ typedef struct sel_machine_raw {
     uint32_t fpu;
     uintptr_t fast_ram;
     uintptr_t chip_ram;
+    uintptr_t free_ram; /* I1313: free RAM of every type at probe time */
     sel_tier tier;
     const char* gfx;   /* "OCS" "ECS" "AGA" ..., NULL = not probed */
     const char* audio; /* "paula", "paula,ahi", ..., NULL = not probed */

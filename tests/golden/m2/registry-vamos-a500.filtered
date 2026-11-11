@@ -1,4 +1,4 @@
-4
-# I1316: a500 hides 4, all SEL_RP_MIN_CPU (hidden_min_cpu=4; the 2 SEL_RP_NEEDS_FPU plugins minimp3, stb_vorbis
-# and 1 SEL_RP_MEMORY hide fall in the same set). The 9 SEL_RP_NEEDS_FLOAT plugins are no longer hidden: they
-# stay listed and rank below non-float players. Was 10 before I1316 (I1305j).
+9
+# I1313: a500 (68000, 512 KB, nothing running) hides 9: hidden_min_cpu=4, hidden_needs_fpu=2, hidden_memory=8
+# (every player whose measured SEL_RP_MEMORY is above 512 KB; sets overlap). Was 4 before I1313, when only
+# nuade declared a flat 2 MB.

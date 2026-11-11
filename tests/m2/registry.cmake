@@ -25,6 +25,34 @@ m2_run_ok(T49 out plugins --machine a500 --stats)
 m2_check(T49 "${out}" "hidden_memory>=1")
 m2_run_ok(T49 out plugins --machine a1200-fpu --stats)
 m2_check(T49 "${out}" "filtered==0,slow_needs_float==0,hidden_needs_fpu==0")
+# I1313: the real machine probe (--machine probe) under vamos. SEL_MACHINE_FREE_RAM is AvailMem(MEMF_ANY) after
+# Selecta has started; a player whose measured SEL_RP_MEMORY peak is above it is hidden (hidden_memory). At the
+# 16 MB baseline nuade (the largest Amiga player) is listed; at SMALL_RAM_KB it is not.
+if(MODE STREQUAL "vamos")
+  m2_run_ok(T49 out plugins --machine probe --stats)
+  m2_check(T49 "${out}" "hidden_memory==0")
+  if(NOT out MATCHES "(^|\n)nuade[ \t]")
+    message(FATAL_ERROR "RED[T49]: nuade not listed at -m ${SEL_VAMOS_RAM_KB}:\n${out}")
+  endif()
+  set(ram_16mb ${SEL_VAMOS_RAM_KB})
+  # 4 MB: free RAM after start falls below nuade's SEL_RP_MEMORY (2621440, plugins/replayers/nuade/manifest.c).
+  # The run prints the free RAM the gate used, so a smaller Selecta (more free RAM) fails the precondition
+  # below by name instead of turning the gate check red.
+  set(SEL_VAMOS_RAM_KB 4096)
+  m2_run_ok(T49 out plugins --machine probe --stats)
+  set(SEL_VAMOS_RAM_KB ${ram_16mb})
+  if(NOT out MATCHES "free_ram=([0-9]+)")
+    message(FATAL_ERROR "RED[T49]: --stats printed no free_ram:\n${out}")
+  endif()
+  set(free_ram ${CMAKE_MATCH_1})
+  if(NOT free_ram LESS 2621440)
+    message(FATAL_ERROR "RED[T49]: precondition: free_ram=${free_ram} at vamos -m 4096 is not below nuade's 2621440; lower the RAM size")
+  endif()
+  m2_check(T49 "${out}" "hidden_memory>=1")
+  if(out MATCHES "(^|\n)nuade[ \t]")
+    message(FATAL_ERROR "RED[T49]: nuade listed with free_ram=${free_ram} below its 2621440 (vamos -m 4096):\n${out}")
+  endif()
+endif()
 # Priority owner: one owner per format, from the registry the filter feeds.
 m2_run_ok(T49 out plugins --owner actionamics)
 if(NOT out MATCHES "owner=nuade")

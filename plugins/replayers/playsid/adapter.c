@@ -412,7 +412,7 @@ static int rp_seek(void* state, uint32_t ms) {
     return 1;
 }
 
-static sel_tag g_hooks[21];
+static sel_tag g_hooks[22];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {

@@ -522,6 +522,9 @@ SEL_TAG(MACHINE, AUDIO,        0x9007, STR)
 SEL_TAG(MACHINE, NET,          0x9008, STR)
 SEL_TAG(MACHINE, DISK,         0x9009, STR)
 SEL_TAG(MACHINE, TIER,         0x900A, INT)
+/* I1313: RAM free (all types) when the probe ran, after Selecta itself has loaded; the registry hides a player whose
+ * SEL_RP_MEMORY peak is above it. Amiga AvailMem(MEMF_ANY); desktop reports physical memory. */
+SEL_TAG(MACHINE, FREE_RAM,     0x900B, INT)
 
 SEL_TAG(HOSTQ, API_VERSION,    0xA000, INT)
 SEL_TAG(HOSTQ, LOCAL_TIME,     0xA001, INT) /* milliseconds since local midnight */

@@ -26,5 +26,6 @@ void sel_machine_probe_platform(sel_machine_raw* raw) {
     raw->fpu = 1;
     raw->fast_ram = physical_memory();
     raw->chip_ram = 0;
+    raw->free_ram = raw->fast_ram; /* I1313: physical memory stands in; desktop players never run short */
     raw->tier = SEL_TIER_GPU;
 }

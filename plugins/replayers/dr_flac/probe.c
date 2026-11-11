@@ -26,11 +26,15 @@ size_t flac_static_hooks(sel_tag* t) {
     flac_set_tag(&t[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
     flac_set_tag(&t[3], SEL_RP_EXTENSIONS, (uintptr_t) "flac");
     flac_set_tag(&t[4], SEL_RP_PROBE, SEL_TAG_FN(flac_probe));
-    return 5u;
+    /* I1313: RAM peak 143912 B (module hunk plus allocations) rendering cover_tagged.flac, measured 2026-11-11 by vamos -l mem_alloc:info, render peak minus a no-player baseline
+     * (tools/player_ram.py). Declared = peak +25%, rounded up to 64 KB; the registry hides the player
+     * when this is above the RAM free after Selecta has started. */
+    flac_set_tag(&t[5], SEL_RP_MEMORY, 196608);
+    return 6u;
 }
 
 #ifdef SEL_PLUGIN_MANIFEST
-static sel_tag g_hooks[6];
+static sel_tag g_hooks[7];
 static sel_tag g_desc[6];
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

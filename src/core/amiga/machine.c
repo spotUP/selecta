@@ -127,6 +127,9 @@ void sel_machine_probe_platform(sel_machine_raw* raw) {
     /* Free fast RAM, not the installed total: the engine sizes its queues from this tag, and a Replay with 192 MB
      * installed but 13 MB free (RAM disk, other programs) failed its 2 MB queue allocations (I287). */
     raw->fast_ram = (uintptr_t)AvailMem(MEMF_FAST);
+    /* I1313: what is left for a player after Selecta has loaded (exe, heaps, queues); the registry compares each
+     * player's SEL_RP_MEMORY peak with it. */
+    raw->free_ram = (uintptr_t)AvailMem(MEMF_ANY);
 
     gfx = OpenLibrary((CONST_STRPTR) "graphics.library", 36);
     if (gfx) {

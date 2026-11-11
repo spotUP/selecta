@@ -82,11 +82,15 @@ size_t sel_nuade_static_hooks(sel_tag* t, const char* extensions, const char* fo
     sel_nuade_set_tag(&t[3], SEL_RP_EXTENSIONS, (uintptr_t)extensions);
     sel_nuade_set_tag(&t[4], SEL_RP_FORMATS, (uintptr_t)formats);
     sel_nuade_set_tag(&t[5], SEL_RP_MAX_VOICES, SEL_NUADE_MAX_VOICES);
-    /* Needs: 68020 build, floating point in the voice shim (pending the T60 per-player
-     * measurement), and a 1.85 MB runtime image (fast RAM counts). */
+    /* Needs: 68020 build and floating point in the voice shim (pending the T60 per-player
+     * measurement). */
     sel_nuade_set_tag(&t[6], SEL_RP_MIN_CPU, 68020);
     sel_nuade_set_tag(&t[7], SEL_RP_NEEDS_FLOAT, 1);
-    sel_nuade_set_tag(&t[8], SEL_RP_MEMORY, 2097152);
+    /* I1313: RAM peak 2066908 B (module hunk plus allocations) rendering the I1305i4 vamos run (hunk 0x16621c plus open allocations), measured 2026-11-11 by adding the nuade hunk and open allocations from the I1305i4 vamos run (vamos -C 68020 offers
+     * no nuade owner for a test song)
+     * (tools/player_ram.py). Declared = peak +25%, rounded up to 64 KB; the registry hides the player
+     * when this is above the RAM free after Selecta has started. */
+    sel_nuade_set_tag(&t[8], SEL_RP_MEMORY, 2621440);
     sel_nuade_set_tag(&t[9], SEL_RP_CONFIG, (uintptr_t)g_config);
     sel_nuade_set_tag(&t[10], SEL_RP_COMPANIONS, (uintptr_t)g_companions);
     sel_nuade_set_tag(&t[11], SEL_RP_CONTENT_COMPANIONS, SEL_TAG_FN(rp_content_companions));

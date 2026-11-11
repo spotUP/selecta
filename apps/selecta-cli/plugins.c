@@ -56,9 +56,12 @@ int sel_cli_plugins(int argc, char** argv) {
 
     for (a = 0; a < argc; a++) {
         if (strcmp(argv[a], "--machine") == 0 && a + 1 < argc) {
-            machine = sel_machine_fake(argv[++a]);
+            ++a;
+            /* "probe": the machine this runs on, as render/play see it (I1313: real SEL_MACHINE_FREE_RAM) */
+            machine = strcmp(argv[a], "probe") == 0 ? sel_cli_probed_machine(sel_host_default())
+                                                    : sel_machine_fake(argv[a]);
             if (machine == NULL) {
-                fprintf(stderr, "unknown machine %s (a500, a1200, a1200-fpu, a060)\n", argv[a]);
+                fprintf(stderr, "unknown machine %s (a500, a1200, a1200-fpu, a060, probe)\n", argv[a]);
                 return 1;
             }
         } else if (strcmp(argv[a], "--stats") == 0) {
@@ -98,6 +101,10 @@ int sel_cli_plugins(int argc, char** argv) {
                (unsigned)st->slow_needs_float, (unsigned)st->hidden_needs_fpu, (unsigned)st->hidden_memory,
                (unsigned)st->hidden_chip, (unsigned)st->dyn_loaded, (unsigned)st->dyn_rejected,
                (unsigned)st->builtin_loaded, (unsigned)st->builtin_missing, (unsigned)st->module_loads);
+        if (machine != NULL) {
+            /* The RAM the memory gate compared against, so a test can assert the gate, not a fixed RAM size. */
+            printf("free_ram=%lu\n", (unsigned long)sel_tag_find(machine, SEL_MACHINE_FREE_RAM, 0));
+        }
     }
     return 0;
 }
