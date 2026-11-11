@@ -32,7 +32,12 @@
  * musicmaker (an old song is recognised by its ".sdata" name), onescapee (the one free longword of the XOR check
  * pattern may sit at any of 25 positions), paulrobotham, peterverswyvelen and pierreadane (count and offset range
  * checks, no mark), paulshields (ten zero bytes; the table mark sits at an offset read from the header), quartet
- * (the end words sit at the end of the file, the header has a tempo range and one byte). */
+ * (the end words sit at the end of the file, the header has a tempo range and one byte).
+ * Also without a row (I1305i3 part 5): robhubbard and seanconnolly (a BRA.W entry table, then the layout or version is
+ * found by opcode scans of the replayer code), sidmon1 (code search in the first 4096 bytes), scumm and soundmaster
+ * (the driver version is an FNV hash of the code), soundimages (BRA.W at 0, its marks sit at the branch target),
+ * scottjohnston (file name decides), soundcontrol (the 0xFFFF/0x400 mark sits at an offset read from the header; the
+ * fixed bytes are only the version word), soundfactory (length and range checks, no mark). */
 #include "signatures.h"
 
 #include <string.h>
@@ -181,6 +186,14 @@ static const sig_row k_rows[] = {
     { "protracker4", 16, { { 0, 4, "FORM" }, { 8, 4, "MODL" }, { 12, 4, "VERS" } }, 0, 0, 0 },
     { "quadracomposer", 12, { { 0, 4, "FORM" }, { 8, 8, "EMODEMIC" } }, 0, 0, 0 },
     { "richardjoseph", 8, { { 0, 3, "RJP" }, { 4, 4, "SMOD" } }, 0, 0, 0 },
+    /* rjg_module.c parse_hunk + check_header: one-hunk executable (0x3F3, 0, 1, 0, 0, memory-flag byte of the size
+     * long non-zero, HUNK_CODE), code at 0x20 = moveq #-1,d0; rts, "R.JOSEPH"; code hunk >= HEADER_SIZE 0x44 */
+    { "richardjosephrj", 0x64,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x01" "\0\0\0\0" "\0\0\0\0" },
+        { 20, 0, NULL },
+        { 24, 4, "\0\0\x03\xE9" },
+        { 32, 12, "\x70\xFF\x4E\x75" "R.JOSEPH" } },
+      0, 0, 0 },
     /* rr_module.c rr_parse_hunks + rr_read_header: one-hunk executable (0x3F3, 0, 1, 0, 0, memory-flag byte of the
      * size long non-zero, HUNK_CODE), code at 0x20 = moveq #-1,d0; rts, "RIFF", "RAFF"; code hunk >= 0x44 bytes plus
      * 8 bytes behind it */
@@ -190,8 +203,19 @@ static const sig_row k_rows[] = {
         { 24, 4, "\0\0\x03\xE9" },
         { 32, 12, "\x70\xFF\x4E\x75" "RIFFRAFF" } },
       0, 0, 0 },
+    /* rhst_module.c rhst_module_open: the first waveform longs 0x00407F40 0x00C081C0 at 0, lea -$12(pc),a0 at 0x38 */
+    { "robhubbardst", 0x3C, { { 0, 8, "\0\x40\x7F\x40" "\0\xC0\x81\xC0" }, { 0x38, 4, "\x41\xFA\xFF\xEE" } }, 0, 0, 0 },
     { "ronklaren", 63, { { 0, 4, "\x00\x00\x03\xF3" }, { 40, 23, "RON_KLAREN_SOUNDMODULE!" } }, 0, 0, 0 },
+    /* sc_module.c find_table_end + check_table_end: the period table's first three longs (short table: 0x0FFF0FE2 or
+     * 0x10000FE2 first; long table: 0x0F1C0F0E first), then 128 words behind the table (0x124 or 0x1C4) + 2 */
+    { "seanconran", 0x226, { { 0, 12, "\x0F\xFF\x0F\xE2" "\x0F\xC4\x0F\xA7" "\x0F\x8B\x0F\x6E" } }, 0, 0, 0 },
+    { "seanconran", 0x226, { { 0, 12, "\x10\x00\x0F\xE2" "\x0F\xC4\x0F\xA7" "\x0F\x8B\x0F\x6E" } }, 0, 0, 0 },
+    { "seanconran", 0x2C6, { { 0, 12, "\x0F\x1C\x0F\x0E" "\x0F\x00\x0E\xF2" "\x0E\xE4\x0E\xD6" } }, 0, 0, 0 },
     { "sidmon2", 86, { { 58, 28, "SIDMON II - THE MIDI VERSION" } }, 0, 0, 0 },
+    /* sil_module.c container_form: form word 0x0016 at +4, five zero words, width marks 0x0020 at +18 and +22, from 0
+     * or behind a 6-byte prefix */
+    { "silmarils", 24, { { 4, 12, "\0\x16" "\0\0\0\0\0\0\0\0\0\0" }, { 18, 2, "\0\x20" }, { 22, 2, "\0\x20" } }, 0, 0, 0 },
+    { "silmarils", 30, { { 10, 12, "\0\x16" "\0\0\0\0\0\0\0\0\0\0" }, { 24, 2, "\0\x20" }, { 28, 2, "\0\x20" } }, 0, 0, 0 },
     { "sonicarranger", 8, { { 0, 8, "SOARV1.0" } }, 0, 0, 0 },
     /* sonix.c: IFF FORM of type SMUS; the probe says Supported by content only for SMUS (SNX/TINY need the name) */
     { "sonix", 24, { { 0, 4, "FORM" }, { 8, 4, "SMUS" } }, 0, 0, 0 },
