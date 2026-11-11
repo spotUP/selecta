@@ -130,6 +130,7 @@ static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating",
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
+#define MUI_OFF_ROWS 6u    /* I1313d: most "Players Turned Off" rows */
 #define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
 
 typedef struct mui_shelf_ctx { /* I795: the row callback of a shelf list finds its mui_state and slot here */
@@ -250,6 +251,9 @@ typedef struct mui_state {
     char np_buf[4][112];
     char np_lyric_buf[1024];
     char np_up_buf[3][96];
+    Object* np_off_box;             /* I1313d: "Players Turned Off" heading + rows, shown only when the machine filter hid a player */
+    Object* np_off[MUI_OFF_ROWS];
+    char np_off_buf[MUI_OFF_ROWS][128];
     Object* info_list;              /* MUI-P4-9 song info rows */
     volatile uint32_t mode_pending; /* I1173: 1 + the SEL_UIM_LAYOUT_* a ui.desktop.mode change asked for; the event runs on the engine's pump, the window is touched by mui_refresh */
     uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
@@ -2066,6 +2070,18 @@ static Object* mui_detail_group(mui_state* s, int compact) {
                 s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
                 DoMethod(page_lyr, OM_ADDMEMBER, s->np_up[i]);
             }
+            /* I1313d: players this machine cannot run, one row per line the registry filter wrote (st->players_off, never derived
+             * here); the box stays hidden until a line arrives, as the text UI leaves the section out. */
+            s->np_off_box = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+            if (s->np_off_box != NULL) {
+                DoMethod(s->np_off_box, OM_ADDMEMBER,
+                         mui_aatext("Players Turned Off", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0));
+                for (i = 0; i < MUI_OFF_ROWS; i++) {
+                    s->np_off[i] = mui_np_text(s->np_off_buf[i], sizeof s->np_off_buf[i], " ", MUI_LBL_UPCOMING);
+                    DoMethod(s->np_off_box, OM_ADDMEMBER, s->np_off[i]);
+                }
+                DoMethod(page_lyr, OM_ADDMEMBER, s->np_off_box);
+            }
             if (info_g != NULL) {
                 DoMethod(page_info, OM_ADDMEMBER, info_g);
             } else {
@@ -2233,6 +2249,16 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     MUI_SIG(st->queue_playing);
     MUI_SIG(st->queue_count);
     MUI_SIG(pv != NULL ? pv->seq : 0u);
+    {
+        const char* off;
+        for (off = st->players_off; off != NULL && *off != '\0'; off++) { /* each line's bytes, then its NUL, until the empty line */
+            MUI_SIG(*off);
+            if (off[1] == '\0') {
+                MUI_SIG(0);
+                off++;
+            }
+        }
+    }
     if (sig == s->detail_sig) {
         return;
     }
@@ -2274,6 +2300,17 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
         const char* p = n + i < st->queue_count && st->queue != NULL ? st->queue_text + st->queue[n + i].path_offset : NULL;
         mui_flat(s->np_up_buf[i], sizeof s->np_up_buf[i], p != NULL ? mui_base_name(p) : " ");
         mui_text_set(s->np_up[i], s->np_up_buf[i]);
+    }
+    /* I1313d: the registry's own "why off" lines, as the text UI shows them; rows past the last line stay blank. */
+    if (s->np_off_box != NULL) {
+        const char* line = st->players_off;
+        for (i = 0; i < MUI_OFF_ROWS; i++) {
+            int have = line != NULL && line[0] != '\0';
+            mui_flat(s->np_off_buf[i], sizeof s->np_off_buf[i], have ? line : " ");
+            mui_text_set(s->np_off[i], s->np_off_buf[i]);
+            line = have ? line + strlen(line) + 1u : NULL;
+        }
+        set(s->np_off_box, MUIA_ShowMe, st->players_off != NULL && st->players_off[0] != '\0' ? TRUE : FALSE);
     }
     if (title != NULL && title[0] != '\0') {
         s->p4[P4_NP]++;

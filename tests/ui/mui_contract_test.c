@@ -1261,6 +1261,10 @@ static void test_np_page_plan(void) {
         CHECK(strstr(src, "p == MUI_PANE_NOWPLAYING && !mui_screen_compact()") != NULL, "the View item is compact only");
         CHECK(strstr(src, "mui_main_pages(s, np_page)") != NULL, "the window build passes the Now Playing group to the page group");
         CHECK(strstr(src, "static Object* mui_main_pages(mui_state* s, Object* np_page)") != NULL, "mui_main_pages takes the Now Playing group");
+        /* I1313d: the detail page carries the "Players Turned Off" section, filled from the engine's players_off lines as written. */
+        CHECK(strstr(src, "mui_aatext(\"Players Turned Off\"") != NULL, "the detail group builds the Players Turned Off heading");
+        CHECK(strstr(src, "const char* line = st->players_off;") != NULL, "mui_detail_refresh fills the rows from st->players_off");
+        CHECK(strstr(src, "set(s->np_off_box, MUIA_ShowMe,") != NULL, "the section shows only when a player is off");
     }
 }
 
