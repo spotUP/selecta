@@ -240,9 +240,8 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     if (tw > 0) {
         aa_text(&d->aa, obj, rp, x, t + (h - th) / 2, d->caption, text, face);
     }
-    if (d->role == MUI_AA_ROLE_GHOST && d->aa.tok[SEL_GUI_TOKEN_TEXT_MUTED] != face) { /* I685w run 5: a ghost button has a visible 1 px edge */
-        aa_round_frame(&d->aa, rp, l, t, w, h, d->m.radius, d->aa.tok[SEL_GUI_TOKEN_TEXT_MUTED]);
-    }
+    /* I1308d: no role draws an edge. The I685w run 5 TEXT_MUTED 1 px frame on ghost buttons was the grey outline Johan saw around the
+     * sidebar doors, the +/> buttons and the crumb on rig 2; the desktop ghost button has none. Only the focus ring frames a button. */
     if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {

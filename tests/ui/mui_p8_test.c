@@ -738,6 +738,17 @@ static void test_fill_height(void) {
           "the visualizer page without plugins has no filler, so its bounded text caps the window height");
 }
 
+/* mui-p8-button-edge (I1308d): Johan on rig 2, "all buttons have a grey outline as well they should not have that": the sidebar
+ * doors, the +/> buttons and the PROGDIR: crumb are all MUI_AA_ROLE_GHOST, and aabtn_draw framed every ghost button in TEXT_MUTED
+ * (I685w run 5). The desktop buttons carry no outline, so the only aa_round_frame left in the button face path is the focus ring. */
+static void test_button_edge(void) {
+    static const char* cls = "plugins/shared/mcc/src/class/mui_aabtn_class.c";
+    CHECK(file_count(cls, "d->m.radius, d->aa.tok[SEL_GUI_TOKEN_TEXT_MUTED]);") == 0, "aabtn_draw still frames a button in TEXT_MUTED (grey outline)");
+    CHECK(file_count(cls, "aa_round_frame(&d->aa, rp, l, t, w, h, d->m.radius, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);") == 1,
+          "the focus ring frame is gone from aabtn_draw");
+    CHECK(file_count(cls, "aa_round_frame(&d->aa, rp, l, t, w, h,") == 1, "aabtn_draw frames a button with something besides the focus ring");
+}
+
 /* mui-p8-offer-never (I1308c): the MUI sync offer had Not now and Sync only; the desktop dialog (I602) has Never / Not now / Sync now,
  * and Never switches the ticked sources off in library.sources_off. The line is the shared sel_uim_sources_never_line: the ticked
  * sources off, every other source as stored. The desktop sent it with flip 0, which also toggled source row 0 (the local library):
@@ -871,6 +882,8 @@ int main(int argc, char** argv) {
         test_fill_height();
     } else if (strcmp(argv[1], "offer-never") == 0) {
         test_offer_never();
+    } else if (strcmp(argv[1], "button-edge") == 0) {
+        test_button_edge();
     } else if (strcmp(argv[1], "col-titles") == 0) {
         test_col_titles();
     } else if (strcmp(argv[1], "queue-scope") == 0) {
