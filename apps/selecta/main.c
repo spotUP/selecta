@@ -384,7 +384,7 @@ static const char* stat_hash_str(const sel_tag* stats, uint32_t tag) {
     return v != NULL ? v : "0000000000000000";
 }
 
-static void send_line(sel_engine* e, const char* line);
+static void send_line(sel_engine* e, void** ctx, const char* line);
 
 /* I674: a positional song path (`selecta --ui mui RAM:meme.mod`). The shell owns it for every UI: it is a plain argument
  * (no leading '-', no KEY=VALUE option word, not a share link, not the value of a `--name value` option) naming a file. */
@@ -412,7 +412,7 @@ static int is_song_argument(int argc, char** argv, int a) {
 /* Start options as KEY=VALUE words (MODE=mini, DUI-P1-3): the one parser (src/engine/options.c, the same as
  * ToolTypes and selecta-cli) validates each word against a scratch prefs table, and the prefs it changed reach the
  * engine as PREF_SET, so the engine and every UI see them as an ordinary pref change. */
-static void apply_option_words(sel_engine* e, int argc, char** argv) {
+static void apply_option_words(sel_engine* e, void** ctx, int argc, char** argv) {
     sel_prefs defaults;
     sel_prefs set;
     sel_opts o;
@@ -433,7 +433,7 @@ static void apply_option_words(sel_engine* e, int argc, char** argv) {
         for (id = 0; r == SEL_OPTS_OK && id < SEL_PREF_COUNT; id++) {
             if (strcmp(set.value[id], defaults.value[id]) != 0) {
                 snprintf(cmd, sizeof cmd, "PREF_SET %s %s", sel_prefs_key(id), set.value[id]);
-                send_line(e, cmd);
+                send_line(e, ctx, cmd);
             }
         }
     }
@@ -472,10 +472,12 @@ static int ui_switch(const char* id, const sel_ui_open_args* args, void** ctx) {
     return 1;
 }
 
-static void send_line(sel_engine* e, const char* line) {
+/* I1311: every caller runs after the UIs open, so the replies and events of the line go through the shell sink to
+ * them; pumping into a NULL sink dropped them (the MUI SOURCES reply, the PREFS_CHANGED of option words). */
+static void send_line(sel_engine* e, void** ctx, const char* line) {
     char pool[1024];
     if (sel_engine_send_line(e, line, pool, sizeof pool) == SEL_CODEC_OK) {
-        sel_engine_pump(e, NULL, NULL); /* the pool is gone after this call */
+        sel_engine_pump(e, sink, ctx); /* the pool is gone after this call */
     }
 }
 
@@ -886,29 +888,29 @@ int main(int argc, char** argv)
     }
     if (start != NULL && sel_path_is_absolute(start)) {
         snprintf(cmd, sizeof cmd, "LIBRARY_BROWSE %s", start);
-        send_line(e, cmd);
+        send_line(e, ctx, cmd);
         const char* view = option(argc, argv, "--view", "");
         int own = strcmp(ui_id, "desktop") == 0 && (view[0] == '\0' || strcmp(view, "home") == 0 || strcmp(view, "library") == 0 || strcmp(view, "folders") == 0 || /* no --view: the desktop UI starts on Home (I594) */
                                                      strcmp(view, "playlists") == 0 || strcmp(view, "songs") == 0);
         /* the desktop UI enters these pages itself (desk_page_goto), the one place their engine verbs live (I266) */
         if (!own) {
             if (strcmp(option(argc, argv, "--view", ""), "home") == 0) { /* the start view the user named: Home, not the folder list */
-                send_line(e, "VIEW_SOURCE home");
-                send_line(e, "VIEW_WINDOW 32");
+                send_line(e, ctx, "VIEW_SOURCE home");
+                send_line(e, ctx, "VIEW_WINDOW 32");
                 sel_engine_pump(e, sink, ctx);
             } else if (strcmp(option(argc, argv, "--view", ""), "library") == 0) { /* the Library page: composers and the stats (DUI-P4-3) */
-                send_line(e, "VIEW_SHOW browse");
-                send_line(e, "COMPOSERS_SHOW");
-                send_line(e, "STATS_SHOW");
+                send_line(e, ctx, "VIEW_SHOW browse");
+                send_line(e, ctx, "COMPOSERS_SHOW");
+                send_line(e, ctx, "STATS_SHOW");
             } else if (strcmp(option(argc, argv, "--view", ""), "playlists") == 0 || strcmp(option(argc, argv, "--view", ""), "songs") == 0) {
-                send_line(e, "VIEW_SOURCE folders"); /* the saved playlists: the Playlists page lists them, the Songs page drops onto them */
-                send_line(e, "VIEW_WINDOW 64");
+                send_line(e, ctx, "VIEW_SOURCE folders"); /* the saved playlists: the Playlists page lists them, the Songs page drops onto them */
+                send_line(e, ctx, "VIEW_WINDOW 64");
             } else {
-                send_line(e, "VIEW_SHOW browse");
+                send_line(e, ctx, "VIEW_SHOW browse");
             }
         }
     }
-    apply_option_words(e, argc, argv);
+    apply_option_words(e, ctx, argc, argv);
     {
         /* I427f: a built-in module the loader could not load is an error the UI shows (toast path); reported here, after the startup send_line pumps (ctlexec drops events), so the first sink pump delivers it, never a silent gap */
         const sel_registry_stats* rs = sel_registry_get_stats();
@@ -945,7 +947,7 @@ int main(int argc, char** argv)
             snprintf(cmd, sizeof cmd, "OPEN %s", argv[a]);
             if (sel_engine_send_line(e, cmd, pool, sizeof pool) == SEL_CODEC_OK) {
                 sel_engine_pump(e, sink, ctx);
-                send_line(e, "PLAY");
+                send_line(e, ctx, "PLAY");
             }
             break;
         }

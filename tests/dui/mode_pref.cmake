@@ -10,6 +10,14 @@ endif()
 if(NOT out MATCHES "pref ui.desktop.mode=mini")
   message(FATAL_ERROR "PREF_GET ui.desktop.mode does not print mini:\n${out}")
 endif()
+# I1311: the PREF_SET an option word sends after the UIs open emits PREFS_CHANGED; the shell sink must see it (the
+# --stats "pref" line is printed by that sink), not a NULL sink that drops it. No PREF_GET here, so only the option word
+# can print the line.
+file(REMOVE_RECURSE "${WORK}")
+dui_run(word MODE=mini --ui desktop --backend mem --stats)
+if(NOT word MATCHES "pref ui.desktop.mode=mini")
+  message(FATAL_ERROR "the option word MODE=mini must reach the UIs as PREFS_CHANGED (pref line missing):\n${word}")
+endif()
 file(REMOVE_RECURSE "${WORK}")
 dui_run(dflt --ui desktop --backend mem --stats)
 dui_stat(layout "${dflt}" desktop uim_layout)
