@@ -110,6 +110,11 @@ void cydfx_set(CydFx *fx, const CydFxSerialized *ser)
 {
 #ifndef CYD_DISABLE_FX
 	fx->flags = ser->flags;
+	
+	/* Selecta (I1305m): the reverb buffer is allocated when a song turns reverb on for this unit; if that fails the
+	   unit plays without reverb instead of writing through a NULL buffer. */
+	if ((fx->flags & CYDFX_ENABLE_REVERB) && !cydrvb_alloc(&fx->rvb))
+		fx->flags &= ~CYDFX_ENABLE_REVERB;
 
 	for (int i = 0 ; i < CYDRVB_TAPS ; ++i)
 	{

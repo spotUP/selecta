@@ -56,6 +56,7 @@ typedef struct
 
 void cydrvb_init(CydReverb *rvb, int rate);
 void cydrvb_deinit(CydReverb *rvb);
+int cydrvb_alloc(CydReverb *rvb); /* Selecta (I1305m): lazy delay buffer, 0 on failure */
 
 #ifdef STEREOOUTPUT
 void cydrvb_cycle(CydReverb *rvb, Sint32 left, Sint32 right);

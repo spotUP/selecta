@@ -1687,6 +1687,18 @@ if(NOT SEL_AMIGA)
       "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
       "-DCHECKS1=replayer==hively,module_loads==1,rendered_frames>=56000,underruns==0")
   endif()
+  # I1305m: klystron is a LoadSeg module on the Amiga too (Players/sel_klystron, the manifest probe matches "cyd!song").
+  # The song is the ringmod.kt klystron-decode fetches by checksum into the fixture cache (never committed); the test exists
+  # only once the cache holds it. module_loads==1 proves the LoadSeg ran, replayer==klystron that the module's hooks
+  # rendered (2 s at the AHI shadow's 28150 Hz). It fits in vamos's 8 MB only because the klystron chorus LUT and reverb
+  # buffers are allocated lazily (third_party/klystron VERSION.txt). Revert proof: without PROGDIR:Players/sel_klystron
+  # the render fails replayer_load_failed.
+  set(SEL_KT_SONG "${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/.cache/ringmod.kt")
+  if(EXISTS "${SEL_KT_SONG}")
+    sel_m2_test(klystron-render run vamos -DTAG=I1305m "-DMOD=${SEL_KT_SONG}" -DMOD_COPY=ringmod.kt
+      "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
+      "-DCHECKS1=replayer==klystron,module_loads==1,rendered_frames>=56000,underruns==0")
+  endif()
   # T53 LED filter and stereo width.
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).

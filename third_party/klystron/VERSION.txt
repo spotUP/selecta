@@ -8,3 +8,7 @@ Build defines: NOSDL_MIXER (no SDL_mixer), STEREOOUTPUT. USESDL_RWOPS stays unde
 Local patch: cydfm.c, `const int MUL = 2;` became `enum { MUL = 2 };` (strict-C constant expression for gcc 6 on the Amiga). sdl_shim/SDL.h defines M_PI when the libm omits it.
 Local patch (I1305m): cydchr.c/.h allocate the chorus LUT lazily in cydchr_set (lut_cap, lut_fixed) instead of
 sample_rate * 4 Sint32 per fx unit in cydchr_init (8 units = 5.6 MB at 44.1 kHz, which an 8 MB Amiga cannot hold).
+Local patch (I1305m): cydrvb.c/.h and cydfx.c allocate the reverb delay buffer lazily: cydrvb_init leaves it NULL,
+cydfx_set calls the new cydrvb_alloc when a song turns CYDFX_ENABLE_REVERB on for the unit (the buffer is then kept until
+cydrvb_deinit, as upstream), and clears the flag if the allocation fails. cydrvb_cycle/cydrvb_output return silence while
+the buffer is NULL. Upstream allocated 2 s of stereo Sint32 (705,600 B at 44.1 kHz) per fx unit, 5.6 MB for all 8.

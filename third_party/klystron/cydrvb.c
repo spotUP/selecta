@@ -38,14 +38,29 @@ void cydrvb_init(CydReverb *rvb, int rate)
 	
 	rvb->size = bufsize;
 	rvb->rate = rate;
-#ifdef STEREOOUTPUT
-	rvb->buffer = calloc(sizeof(*rvb->buffer) * 2, bufsize);
-#else
-	rvb->buffer = calloc(sizeof(*rvb->buffer), bufsize);
-#endif
+	/* Selecta (I1305m): upstream allocated the delay buffer here for each of the 8 fx units (2 s of stereo Sint32,
+	   705,600 B at 44.1 kHz, 5.6 MB in all), used or not. It is now allocated by cydrvb_alloc when a song first
+	   enables reverb on the unit (cydfx_set); buffer stays NULL until then. */
+	rvb->buffer = NULL;
 	
 	for (int i = 0 ; i < CYDRVB_TAPS ; ++i)
 		cydrvb_set_tap(rvb, i, i * 100 + 50, (i + 1) * -30, CYD_PAN_CENTER);
+}
+
+
+/* Selecta (I1305m): allocates the zeroed delay buffer on first use; returns 0 when it cannot (reverb stays off).
+   Once allocated it is kept until cydrvb_deinit, so its contents persist across cydfx_set calls as upstream. */
+int cydrvb_alloc(CydReverb *rvb)
+{
+	if (rvb->buffer) return 1;
+	
+#ifdef STEREOOUTPUT
+	rvb->buffer = calloc(sizeof(*rvb->buffer) * 2, rvb->size);
+#else
+	rvb->buffer = calloc(sizeof(*rvb->buffer), rvb->size);
+#endif
+	
+	return rvb->buffer != NULL;
 }
 
 
@@ -59,6 +74,8 @@ void cydrvb_deinit(CydReverb *rvb)
 #ifdef STEREOOUTPUT
 void cydrvb_cycle(CydReverb *rvb, Sint32 left, Sint32 right)
 {
+	if (!rvb->buffer) return; /* Selecta (I1305m): not allocated, reverb off */
+	
 	for (int i = 0 ; i < CYDRVB_TAPS ; ++i)
 	{
 		++rvb->tap[i].position;
@@ -78,6 +95,8 @@ void cydrvb_cycle(CydReverb *rvb, Sint32 left, Sint32 right)
 
 void cydrvb_cycle(CydReverb *rvb, Sint32 input)
 {
+	if (!rvb->buffer) return; /* Selecta (I1305m): not allocated, reverb off */
+	
 	for (int i = 0 ; i < CYDRVB_TAPS ; ++i)
 	{
 		++rvb->tap[i].position;
@@ -99,6 +118,8 @@ void cydrvb_output(CydReverb *rvb, Sint32 *left, Sint32 *right)
 	*left = 0;
 	*right = 0;
 	
+	if (!rvb->buffer) return; /* Selecta (I1305m): not allocated, reverb off */
+	
 	for (int i = 0 ; i < CYDRVB_TAPS ; ++i)
 	{
 		if (rvb->tap[i].gain_l != 0 || rvb->tap[i].gain_r != 0)
@@ -114,6 +135,8 @@ void cydrvb_output(CydReverb *rvb, Sint32 *left, Sint32 *right)
 Sint32 cydrvb_output(CydReverb *rvb)
 {
 	Sint32 o = 0;
+	
+	if (!rvb->buffer) return o; /* Selecta (I1305m): not allocated, reverb off */
 	
 	for (int i = 0 ; i < CYDRVB_TAPS ; ++i)
 	{
