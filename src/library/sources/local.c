@@ -127,19 +127,16 @@ static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t s
     for (i = 0; i < n; i++) {
         const sel_tag* desc = s->cfg->registry_get(i);
         const sel_tag* hooks;
-        sel_rp_probe_fn probe;
         int r;
 
         if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) != SEL_PLUGIN_KIND_REPLAYER) {
             continue;
         }
         hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
-        probe = hooks != NULL ? (sel_rp_probe_fn)sel_tag_find(hooks, SEL_RP_PROBE, 0) : NULL;
-        if (probe == NULL) {
-            continue;
+        r = sel_plugin_probe(&hooks, data, size, path);
+        if (hooks != NULL && sel_tag_find(hooks, SEL_RP_PROBE, 0) != 0u) {
+            s->stats->probed++;
         }
-        s->stats->probed++;
-        r = probe(data, size, path);
         if (r == SEL_PROBE_YES) {
             return hooks;
         }

@@ -40,8 +40,19 @@ endif()
 
 # The adapter sees include/selecta plus nuade's public headers, nothing else
 # (T7: the sdk-isolation target compiles it with exactly those two paths).
-sel_add_plugin(nuade 1 adapter.c
-  THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
+# On the Amiga (I427e4) nuade is an on-demand LoadSeg module (Players/sel_nuade): the registry links only manifest.c,
+# with the lists from the committed manifest_lists.h; the players and the shim live in the module.
+set(SEL_NUADE_PLUGIN_SOURCES adapter.c manifest.c lists.c)
+if(SEL_AMIGA)
+  sel_add_plugin(nuade 1 ${SEL_NUADE_PLUGIN_SOURCES} AMIGA_MANIFEST manifest.c
+    THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
+else()
+  sel_add_plugin(nuade 1 ${SEL_NUADE_PLUGIN_SOURCES}
+    THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
+  # Writes manifest_lists.h for the Amiga manifest; test nuade-manifest-lists checks the committed copy.
+  add_executable(nuade_manifest_lists manifest_lists_gen.c lists.c)
+  target_link_libraries(nuade_manifest_lists PRIVATE selecta_nuade)
+endif()
 
 # The players call nuade_voice_* and nuade_player*, defined in the shim. The
 # shim is a third static target so the link graph is a DAG: plugin ->
@@ -58,7 +69,11 @@ target_include_directories(sel_sdkcheck_nuade_shim PRIVATE
   "${PROJECT_SOURCE_DIR}/include" "${NUADE_DIR}/include")
 add_dependencies(sdk-isolation sel_sdkcheck_nuade_shim)
 target_link_libraries(selecta_nuade PUBLIC sel_nuade_shim)
-target_link_libraries(sel_plugin_nuade PUBLIC selecta_nuade)
+if(SEL_AMIGA)
+  target_link_libraries(sel_seg_nuade PRIVATE selecta_nuade)
+else()
+  target_link_libraries(sel_plugin_nuade PUBLIC selecta_nuade)
+endif()
 
 # T27: the nuade link graph must be a DAG (plugin -> selecta_nuade ->
 # sel_nuade_shim). selecta_nuade linking back into the plugin is the cycle

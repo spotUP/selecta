@@ -61,6 +61,10 @@ void sel_registry_note_module_load(void);
 typedef const sel_tag* (*sel_plugin_resolve_fn)(const sel_tag* hooks);
 void sel_plugin_set_resolver(sel_plugin_resolve_fn fn);
 const sel_tag* sel_plugin_resolve(const sel_tag* hooks);
+/* Runs a replayer's SEL_RP_PROBE and returns its SEL_PROBE_* verdict (SEL_PROBE_NO without a probe). A manifest that
+ * carries no probe (it lives in the module, I427e4) is resolved first when its SEL_RP_EXTENSIONS claim the name in
+ * path; *hooks then becomes the module's real hooks. */
+int sel_plugin_probe(const sel_tag** hooks, const uint8_t* data, size_t size, const char* path);
 /* sel_registry_init_machine(host, NULL). */
 uint32_t sel_registry_init(const sel_host* host);
 const sel_registry_stats* sel_registry_get_stats(void);

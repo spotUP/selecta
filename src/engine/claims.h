@@ -12,6 +12,8 @@
  * last extension of `name` ("x.mod") or its Amiga prefix, the part before the first dot ("mod.x"),
  * case-insensitively. 0 for a NULL registry, a name without a dot, or an empty extension. The engine
  * core does not link the registry, so this takes the same count/get pair the engine is configured with. */
+/* One replayer's hooks: true when its SEL_RP_EXTENSIONS names the prefix or the last extension of name. */
+int sel_hooks_claim_name(const sel_tag* hooks, const char* name);
 int sel_registry_claims_name(uint32_t (*registry_count)(void), const sel_tag* (*registry_get)(uint32_t), const char* name);
 
 #endif

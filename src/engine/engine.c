@@ -2253,17 +2253,12 @@ static const sel_tag* find_replayer(const sel_engine* e, const uint8_t* data, si
     for (i = 0; i < n; i++) {
         const sel_tag* desc = e->registry_get(i);
         const sel_tag* hooks;
-        sel_rp_probe_fn probe;
         int r;
         if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) != SEL_PLUGIN_KIND_REPLAYER) {
             continue;
         }
         hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
-        probe = hooks ? (sel_rp_probe_fn)sel_tag_find(hooks, SEL_RP_PROBE, 0) : NULL;
-        if (probe == NULL) {
-            continue;
-        }
-        r = probe(data, size, path);
+        r = sel_plugin_probe(&hooks, data, size, path);
         if (r == SEL_PROBE_YES) {
             intptr_t pri = (intptr_t)sel_tag_find(hooks, SEL_RP_PRIORITY, 0);
             if (best_yes == NULL || pri > best_yes_pri) {

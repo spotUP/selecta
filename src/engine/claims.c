@@ -26,13 +26,13 @@ static int list_has_nocase(const char* list, const char* s, size_t n) {
     return 0;
 }
 
-int sel_registry_claims_name(uint32_t (*registry_count)(void), const sel_tag* (*registry_get)(uint32_t), const char* name) {
+int sel_hooks_claim_name(const sel_tag* hooks, const char* name) {
+    const char* exts = hooks != NULL ? (const char*)sel_tag_find(hooks, SEL_RP_EXTENSIONS, 0) : NULL;
     const char* first;
     const char* last;
     size_t pre_n, last_n;
-    uint32_t i, n;
 
-    if (registry_count == NULL || registry_get == NULL || name == NULL) {
+    if (exts == NULL || name == NULL) {
         return 0;
     }
     first = strchr(name, '.');
@@ -42,14 +42,21 @@ int sel_registry_claims_name(uint32_t (*registry_count)(void), const sel_tag* (*
     last = strrchr(name, '.') + 1;
     pre_n = (size_t)(first - name);
     last_n = strlen(last);
+    return (pre_n > 0u && list_has_nocase(exts, name, pre_n)) || (last_n > 0u && list_has_nocase(exts, last, last_n));
+}
+
+int sel_registry_claims_name(uint32_t (*registry_count)(void), const sel_tag* (*registry_get)(uint32_t), const char* name) {
+    uint32_t i, n;
+
+    if (registry_count == NULL || registry_get == NULL || name == NULL) {
+        return 0;
+    }
     n = registry_count();
     for (i = 0; i < n; i++) {
         const sel_tag* desc = registry_get(i);
         const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
-        const char* exts = hooks != NULL ? (const char*)sel_tag_find(hooks, SEL_RP_EXTENSIONS, 0) : NULL;
 
-        if (exts != NULL && ((pre_n > 0u && list_has_nocase(exts, name, pre_n)) ||
-                             (last_n > 0u && list_has_nocase(exts, last, last_n)))) {
+        if (sel_hooks_claim_name(hooks, name)) {
             return 1;
         }
     }
