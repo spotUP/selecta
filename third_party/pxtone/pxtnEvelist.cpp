@@ -760,8 +760,8 @@ pxtnERR pxtnEvelist::io_Read( void* desc )
 	int32_t size     = 0;
 	int32_t eve_num  = 0;
 
-	if( !_io_read( desc, &size   , 4, 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &eve_num, 4, 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &eve_num, "l" ) ) return pxtnERR_desc_r;
 
 	int32_t clock    = 0;
 	int32_t absolute = 0;
@@ -788,8 +788,8 @@ int32_t pxtnEvelist::io_Read_EventNum( void* desc ) const
 	int32_t size    = 0;
 	int32_t eve_num = 0;
 
-	if( !_io_read( desc, &size   , 4, 1 ) ) return 0;
-	if( !_io_read( desc, &eve_num, 4, 1 ) ) return 0;
+	if( !_io_read_le( desc, &size, "l" ) ) return 0;
+	if( !_io_read_le( desc, &eve_num, "l" ) ) return 0;
 
 	int32_t count   = 0;
 	int32_t clock   = 0;
@@ -832,8 +832,8 @@ pxtnERR pxtnEvelist::io_Unit_Read_x4x_EVENT( void* desc, bool bTailAbsolute, boo
 	int32_t          e        = 0;
 	int32_t          size     = 0;
 
-	if( !_io_read( desc, &size, 4,                          1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &evnt, sizeof( _x4x_EVENTSTRUCT ), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &evnt, "wwwwl" ) ) return pxtnERR_desc_r;
 
 	if( evnt.data_num != 2               ) return pxtnERR_fmt_unknown;
 	if( evnt.event_kind >= EVENTKIND_NUM ) return pxtnERR_fmt_unknown;
@@ -865,8 +865,8 @@ pxtnERR pxtnEvelist::io_Read_x4x_EventNum( void* desc, int32_t* p_num ) const
 	int32_t          e    =  0 ;
 	int32_t          size =  0 ;
 
-	if( !_io_read( desc, &size, 4,                          1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &evnt, sizeof( _x4x_EVENTSTRUCT ), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &evnt, "wwwwl" ) ) return pxtnERR_desc_r;
 
 	// support only 2
 	if( evnt.data_num != 2 ) return pxtnERR_fmt_unknown;

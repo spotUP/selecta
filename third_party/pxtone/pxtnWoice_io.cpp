@@ -54,8 +54,8 @@ pxtnERR pxtnWoice::io_matePCM_r( void* desc )
 	_MATERIALSTRUCT_PCM pcm  = {0};
 	int32_t             size =  0 ;
 
-	if( !_io_read( desc, &size,                             4, 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &pcm , sizeof( _MATERIALSTRUCT_PCM ), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &pcm, "wwlwwlll" ) ) return pxtnERR_desc_r;
 
 	if( ((int32_t)pcm.voice_flags) & PTV_VOICEFLAG_UNCOVERED )return pxtnERR_fmt_unknown;
 
@@ -69,6 +69,7 @@ pxtnERR pxtnWoice::io_matePCM_r( void* desc )
 		res   = p_vc->p_pcm->Create( pcm.ch, pcm.sps, pcm.bps, pcm.data_size / ( pcm.bps / 8 * pcm.ch ) );
 		if( res != pxtnOK ) goto term;
 		if( !_io_read( desc, p_vc->p_pcm->get_p_buf_variable(), 1, pcm.data_size ) ){ res = pxtnERR_desc_r; goto term; }
+		if( pcm.bps == 16 ) pxtn_le16_to_native( p_vc->p_pcm->get_p_buf_variable(), pcm.data_size / 2 ); // I427e7: LE PCM
 		_type = pxtnWOICE_PCM;
 
 		p_vc->voice_flags = pcm.voice_flags;
@@ -139,8 +140,8 @@ pxtnERR pxtnWoice::io_matePTN_r( void* desc )
 	_MATERIALSTRUCT_PTN ptn  = {0};
 	int32_t             size =  0 ;
 
-	if( !_io_read( desc, &size, sizeof(int32_t            ), 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &ptn,  sizeof(_MATERIALSTRUCT_PTN), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &ptn, "wwlll" ) ) return pxtnERR_desc_r;
 
 	if     ( ptn.rrr > 1 ) return pxtnERR_fmt_unknown;
 	else if( ptn.rrr < 0 ) return pxtnERR_fmt_unknown;
@@ -220,8 +221,8 @@ pxtnERR pxtnWoice::io_matePTV_r( void* desc )
 	_MATERIALSTRUCT_PTV ptv  = {0};
 	int32_t             size =  0 ;
 
-	if( !_io_read( desc, &size, sizeof(int32_t              ), 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &ptv,  sizeof( _MATERIALSTRUCT_PTV ), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &ptv, "wwll" ) ) return pxtnERR_desc_r;
 
 	if( ptv.rrr ) return pxtnERR_fmt_unknown;
 
@@ -284,8 +285,8 @@ pxtnERR pxtnWoice::io_mateOGGV_r( void* desc )
 	_MATERIALSTRUCT_OGGV mate = {};
 	int32_t              size =  0;
 
-	if( !_io_read( desc, &size, 4,                              1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &mate, sizeof( _MATERIALSTRUCT_OGGV ), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &mate, "wwll" ) ) return pxtnERR_desc_r;
 
 	if( ((int32_t)mate.voice_flags) & PTV_VOICEFLAG_UNCOVERED ) return pxtnERR_fmt_unknown;
 

@@ -24,6 +24,8 @@ extern sv_ret_t psynth_fm( PSYTEXX_SYNTH_PARAMETERS );
 extern sv_ret_t psynth_generator( PSYTEXX_SYNTH_PARAMETERS );
 extern sv_ret_t psynth_sampler( PSYTEXX_SYNTH_PARAMETERS );
 extern sv_ret_t psynth_spectravoice( PSYTEXX_SYNTH_PARAMETERS );
+extern void psynth_sampler_chunks_from_file( char **chunks, int *chunk_flags, int chunks_num );
+extern void psynth_spectravoice_chunks_from_file( char **chunks, int *chunk_flags, int chunks_num );
 extern sv_ret_t psynth_kicker( PSYTEXX_SYNTH_PARAMETERS );
 extern sv_ret_t psynth_delay( PSYTEXX_SYNTH_PARAMETERS );
 extern sv_ret_t psynth_distortion( PSYTEXX_SYNTH_PARAMETERS );
@@ -156,16 +158,14 @@ void sunvox_engine_close( sunvox_engine *s )
     sound_stream_play();
 }
 
-#define SWAP32(n) (	((((unsigned long) n) << 24 ) & 0xFF000000) | \
-			((((unsigned long) n) << 8 ) & 0x00FF0000) | \
-			((((unsigned long) n) >> 8 ) & 0x0000FF00) | \
-			((((unsigned long) n) >> 24 ) & 0x000000FF) )
 
 void save_block( ulong id, int size, void *ptr, V3_FILE f )
 {
-    id = SWAP32( id );
-    v3_write( &id, 1, 4, f );
-    v3_write( &size, 1, 4, f );
+    //I427e7: the id is four ASCII bytes (big-endian of the 'XXXX' constant), the size is little-endian.
+    uchar hdr[ 8 ];
+    hdr[ 0 ] = (uchar)( id >> 24 ); hdr[ 1 ] = (uchar)( id >> 16 ); hdr[ 2 ] = (uchar)( id >> 8 ); hdr[ 3 ] = (uchar)id;
+    hdr[ 4 ] = (uchar)size; hdr[ 5 ] = (uchar)( size >> 8 ); hdr[ 6 ] = (uchar)( size >> 16 ); hdr[ 7 ] = (uchar)( size >> 24 );
+    v3_write( hdr, 1, 8, f );
     if( size )
 	v3_write( ptr, 1, size, f );
 }
@@ -176,16 +176,14 @@ char *g_block_data = 0;
 
 void load_block( V3_FILE f )
 {
-    if( v3_read( &g_block_id, 1, 4, f ) != 4 ) g_block_id = 0;
-    if( g_block_id )
-    {
-	char id[ 5 ];
-	id[ 4 ] = 0;
-	mem_copy( id, &g_block_id, 4 );
-	//dprint( "Loading block: %s\n", id );
-    }
-    g_block_id = SWAP32( g_block_id );
-    if( v3_read( &g_block_size, 1, 4, f ) != 4 ) g_block_id = 0;
+    //I427e7: read the header as bytes so it is host-independent: the id is four ASCII bytes compared against
+    //'XXXX' multi-char constants (big-endian), the size is little-endian. Reading either raw broke 68k hosts.
+    uchar hdr[ 8 ];
+    g_block_id = 0;
+    g_block_size = 0;
+    if( v3_read( hdr, 1, 4, f ) == 4 ) g_block_id = sv_rd_be32( hdr );
+    if( v3_read( hdr + 4, 1, 4, f ) != 4 ) g_block_id = 0;
+    else g_block_size = sv_rd_le32( hdr + 4 );
     if( g_block_id == 0 ) return;
     if( g_block_size )
     {
@@ -196,9 +194,9 @@ void load_block( V3_FILE f )
 
 int get_integer( void )
 {
-    int res = 0;
-    mem_copy( &res, g_block_data, 4 );
-    return res;
+    //I427e7: block integers are little-endian in the file.
+    if( g_block_data == 0 || g_block_size < 4 ) return 0;
+    return (int)sv_rd_le32( g_block_data );
 }
 
 void sunvox_load_song( const UTF8_CHAR *name, sunvox_engine *s )
@@ -261,7 +259,20 @@ void sunvox_load_song( const UTF8_CHAR *name, sunvox_engine *s )
 	    if( g_block_id == 'SPED' ) { s->speed = get_integer(); goto bfound; }
 	    if( g_block_id == 'NAME' ) { s->song_name = g_block_data; g_block_data = 0; goto bfound; }
 	    if( g_block_id == 'GVOL' ) { s->net->global_volume = get_integer(); goto bfound; }
-	    if( g_block_id == 'PDTA' ) { pat_data = g_block_data; g_block_data = 0; goto bfound; }
+	    if( g_block_id == 'PDTA' )
+	    {
+		//I427e7: sunvox_note is 4 bytes + uint16 ctl + uint16 ctl_val, little-endian in the file.
+		if( g_block_data )
+		{
+		    sunvox_note *n = (sunvox_note*)g_block_data;
+		    for( ulong i = 0; i < g_block_size / sizeof( sunvox_note ); i++ )
+		    {
+			n[ i ].ctl = sv_rd_le16( &n[ i ].ctl );
+			n[ i ].ctl_val = sv_rd_le16( &n[ i ].ctl_val );
+		    }
+		}
+		pat_data = g_block_data; g_block_data = 0; goto bfound;
+	    }
 	    if( g_block_id == 'PLIN' ) { pat_lines = get_integer(); goto bfound; }
 	    if( g_block_id == 'PCHN' ) { pat_channels = get_integer(); goto bfound; }
 	    if( g_block_id == 'PYSZ' ) { pat_ysize = get_integer(); goto bfound; }
@@ -341,7 +352,11 @@ void sunvox_load_song( const UTF8_CHAR *name, sunvox_engine *s )
 	    if( g_block_id == 'SREL' ) { s_relative_note = get_integer(); goto bfound; }
 	    if( g_block_id == 'SXXX' ) { s_x = get_integer(); goto bfound; }
 	    if( g_block_id == 'SYYY' ) { s_y = get_integer(); goto bfound; }
-	    if( g_block_id == 'SLNK' ) { s_links = (int*)g_block_data; g_block_data = 0; goto bfound; }
+	    if( g_block_id == 'SLNK' )
+	    {
+		if( g_block_data ) sv_le32_to_native( g_block_data, g_block_size / 4 ); //I427e7: int array, little-endian
+		s_links = (int*)g_block_data; g_block_data = 0; goto bfound;
+	    }
 	    if( g_block_id == 'CVAL' ) { s_ctls[ c_num++ ] = get_integer(); goto bfound; }
 	    if( g_block_id == 'CHNK' ) 
 	    {
@@ -421,6 +436,10 @@ void sunvox_load_song( const UTF8_CHAR *name, sunvox_engine *s )
 			    //Save chunks:
 			    if( chunks )
 			    {
+				//I427e7: chunk contents are synth-defined structures and sample data stored little-endian;
+				//the synth that owns the layout converts them to the host form.
+				if( s_synth == psynth_sampler ) psynth_sampler_chunks_from_file( chunks, chunk_flags, chunks_num );
+				if( s_synth == psynth_spectravoice ) psynth_spectravoice_chunks_from_file( chunks, chunk_flags, chunks_num );
 				if( s->net->items[ s_num ].chunks )
 				    psynth_clear_chunks( s_num, s->net );
 				s->net->items[ s_num ].chunks = chunks;

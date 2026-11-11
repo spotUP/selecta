@@ -140,8 +140,8 @@ pxtnERR pxtnDelay::Read( void* desc )
 	_DELAYSTRUCT dela = {0};
 	int32_t      size =  0 ;
 
-	if( !_io_read( desc, &size, 4,                    1 ) ) return pxtnERR_desc_r     ;
-	if( !_io_read( desc, &dela, sizeof(_DELAYSTRUCT), 1 ) ) return pxtnERR_desc_r     ;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r     ;
+	if( !_io_read_le( desc, &dela, "wwll" ) ) return pxtnERR_desc_r     ;
 	if( dela.unit >= DELAYUNIT_num                  ) return pxtnERR_fmt_unknown;
 
 	_unit  = (DELAYUNIT)dela.unit;

@@ -1,4 +1,5 @@
 ﻿#include "./pxtnData.h"
+#include <string.h>
 
 
 
@@ -39,7 +40,7 @@ static bool _v_to_int( uint32_t* p_i, const uint8_t* bytes5, int byte_num )
 		return false;
 	}
 
-	*p_i = *((int32_t*)b);
+	*p_i = (uint32_t)b[ 0 ] | ( (uint32_t)b[ 1 ] << 8 ) | ( (uint32_t)b[ 2 ] << 16 ) | ( (uint32_t)b[ 3 ] << 24 ); // I427e7: LE, not host order
 	return true;
 }
 
@@ -47,10 +48,10 @@ void _int_to_v( uint8_t* bytes5, int* p_byte_num, uint32_t i )
 {
 	uint8_t a[ 5 ] = {};
 
-	bytes5[ 0 ] = 0; a[ 0 ] = *( (uint8_t *)(&i) + 0 );
-	bytes5[ 1 ] = 0; a[ 1 ] = *( (uint8_t *)(&i) + 1 );
-	bytes5[ 2 ] = 0; a[ 2 ] = *( (uint8_t *)(&i) + 2 );
-	bytes5[ 3 ] = 0; a[ 3 ] = *( (uint8_t *)(&i) + 3 );
+	bytes5[ 0 ] = 0; a[ 0 ] = (uint8_t)( i >> 0 );
+	bytes5[ 1 ] = 0; a[ 1 ] = (uint8_t)( i >> 8 );
+	bytes5[ 2 ] = 0; a[ 2 ] = (uint8_t)( i >> 16 );
+	bytes5[ 3 ] = 0; a[ 3 ] = (uint8_t)( i >> 24 );
 	bytes5[ 4 ] = 0; a[ 4 ] = 0;
 	
 	// 1byte(7bit)
@@ -181,4 +182,48 @@ void pxtnData::_release()
 pxtnData::~pxtnData()
 {
 	_release();
+}
+
+
+// I427e7: little-endian file data to host order.
+int32_t pxtn_le_layout_size( const char* layout )
+{
+	int32_t total = 0, rep = 0;
+	for( const char* s = layout; *s; s++ )
+	{
+		if( *s >= '0' && *s <= '9' ){ rep = rep * 10 + ( *s - '0' ); continue; }
+		int32_t n = rep ? rep : 1; rep = 0;
+		total += n * ( *s == 'w' ? 2 : *s == 'l' ? 4 : 1 );
+	}
+	return total;
+}
+
+void pxtn_le_to_native( void* p, const char* layout )
+{
+	uint8_t* b = (uint8_t*)p;
+	int32_t rep = 0;
+	for( const char* s = layout; *s; s++ )
+	{
+		if( *s >= '0' && *s <= '9' ){ rep = rep * 10 + ( *s - '0' ); continue; }
+		int32_t n = rep ? rep : 1; rep = 0;
+		for( int32_t k = 0; k < n; k++ )
+		{
+			if( *s == 'w' ){ uint16_t v = (uint16_t)( b[ 0 ] | ( b[ 1 ] << 8 ) ); memcpy( b, &v, 2 ); b += 2; }
+			else if( *s == 'l' ){ uint32_t v = (uint32_t)b[ 0 ] | ( (uint32_t)b[ 1 ] << 8 ) | ( (uint32_t)b[ 2 ] << 16 ) | ( (uint32_t)b[ 3 ] << 24 ); memcpy( b, &v, 4 ); b += 4; }
+			else b += 1;
+		}
+	}
+}
+
+void pxtn_le16_to_native( void* p, int32_t count )
+{
+	uint8_t* b = (uint8_t*)p;
+	for( int32_t k = 0; k < count; k++, b += 2 ){ uint16_t v = (uint16_t)( b[ 0 ] | ( b[ 1 ] << 8 ) ); memcpy( b, &v, 2 ); }
+}
+
+bool pxtnData::_io_read_le( void* desc, void* p, const char* layout ) const
+{
+	if( !_io_read( desc, p, pxtn_le_layout_size( layout ), 1 ) ) return false;
+	pxtn_le_to_native( p, layout );
+	return true;
 }

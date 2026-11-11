@@ -1054,3 +1054,11 @@ sv_ret_t SYNTH_HANDLER(
 
     return retval;
 }
+
+//I427e7: chunk 0 is the uint16 harmonic frequency table, little-endian in the song file; chunks 1-3 are bytes.
+void psynth_spectravoice_chunks_from_file( char **chunks, int *chunk_flags, int chunks_num )
+{
+    (void)chunk_flags;
+    if( chunks && chunks_num > 0 && chunks[ 0 ] )
+	sv_le16_to_native( chunks[ 0 ], mem_get_size( chunks[ 0 ] ) / 2 );
+}

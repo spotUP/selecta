@@ -1687,6 +1687,19 @@ if(NOT SEL_AMIGA)
       "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
       "-DCHECKS1=replayer==hively,module_loads==1,rendered_frames>=56000,underruns==0")
   endif()
+  # I427e7: sunvox and pxtone play on the Amiga (Players/sel_sunvox, Players/sel_pxtone). Both song formats are
+  # little-endian; before I427e7 the engines read them raw, so on m68k SunVox asked for a 0x4001000-byte block and
+  # pxtone failed to start. module_loads==1 proves the LoadSeg ran, replayer== that the module's hooks rendered.
+  # The sunvox song is the cached sunvox-decode fixture (never committed); the test exists only once the cache holds it.
+  set(SEL_SV_SONG "${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/.cache/sunvox_tune.sunvox")
+  if(EXISTS "${SEL_SV_SONG}")
+    sel_m2_test(sunvox-render run vamos -DTAG=I427e7 "-DMOD=${SEL_SV_SONG}" -DMOD_COPY=tune.sunvox
+      "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
+      "-DCHECKS1=replayer==sunvox,module_loads==1,rendered_frames>=56000,underruns==0")
+  endif()
+  sel_m2_test(pxtone-render run vamos -DTAG=I427e7 "-DMOD=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/pxtone_test.ptcop"
+    -DMOD_COPY=test.ptcop "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
+    "-DCHECKS1=replayer==pxtone,module_loads==1,rendered_frames>=56000,underruns==0")
   # I1305m: klystron is a LoadSeg module on the Amiga too (Players/sel_klystron, the manifest probe matches "cyd!song").
   # The song is the ringmod.kt klystron-decode fetches by checksum into the fixture cache (never committed); the test exists
   # only once the cache holds it. module_loads==1 proves the LoadSeg ran, replayer==klystron that the module's hooks

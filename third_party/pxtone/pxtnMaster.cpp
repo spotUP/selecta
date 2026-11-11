@@ -122,14 +122,14 @@ pxtnERR pxtnMaster::io_r_v5( void* desc )
 
 	uint32_t  size         = 0;
 
-	if( !_io_read( desc, &size, sizeof(uint32_t), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
 	if( size != 15                              ) return pxtnERR_fmt_unknown;
 
-	if( !_io_read( desc, &beat_clock  ,sizeof(int16_t), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &beat_clock, "w" ) ) return pxtnERR_desc_r;
 	if( !_io_read( desc, &beat_num    ,sizeof(int8_t ), 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &beat_tempo  ,sizeof(float  ), 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &clock_repeat,sizeof(int32_t), 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &clock_last  ,sizeof(int32_t), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &beat_tempo, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &clock_repeat, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &clock_last, "l" ) ) return pxtnERR_desc_r;
 
 	_beat_clock = beat_clock;
 	_beat_num   = beat_num  ;
@@ -144,7 +144,7 @@ pxtnERR pxtnMaster::io_r_v5( void* desc )
 int32_t pxtnMaster::io_r_v5_EventNum( void* desc )
 {
 	uint32_t size;
-	if( !_io_read( desc, &size, sizeof(uint32_t),  1 ) ) return 0;
+	if( !_io_read_le( desc, &size, "l" ) ) return 0;
 	if( size != 15                               ) return 0;
 	int8_t buf[ 15 ];
 	if( !_io_read( desc,  buf , sizeof(int8_t ), 15 )  ) return 0;
@@ -178,8 +178,8 @@ pxtnERR pxtnMaster::io_r_x4x( void* desc )
 	int32_t     beat_clock, beat_num, repeat_clock, last_clock;
 	float       beat_tempo = 0;
 
-	if( !_io_read( desc, &size,                     4, 1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &mast, sizeof( _x4x_MASTER ), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &mast, "wwl" ) ) return pxtnERR_desc_r;
 
 	// unknown format
 	if( mast.data_num != 3 ) return pxtnERR_fmt_unknown;
@@ -232,8 +232,8 @@ int32_t pxtnMaster::io_r_x4x_EventNum( void* desc )
 	int32_t     e   ;
 
 	memset( &mast, 0, sizeof( _x4x_MASTER ) );
-	if( !_io_read( desc, &size,                     4, 1 ) ) return 0;
-	if( !_io_read( desc, &mast, sizeof( _x4x_MASTER ), 1 ) ) return 0;
+	if( !_io_read_le( desc, &size, "l" ) ) return 0;
+	if( !_io_read_le( desc, &mast, "wwl" ) ) return 0;
 
 	if( mast.data_num != 3 ) return 0;
 

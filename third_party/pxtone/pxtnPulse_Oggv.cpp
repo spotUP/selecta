@@ -288,10 +288,10 @@ bool pxtnPulse_Oggv::pxtn_read( void* desc )
 {
 	bool  b_ret  = false;
 
-	if( !_io_read( desc, &_ch     , sizeof(int32_t), 1 ) ) goto End;
-	if( !_io_read( desc, &_sps2   , sizeof(int32_t), 1 ) ) goto End;
-	if( !_io_read( desc, &_smp_num, sizeof(int32_t), 1 ) ) goto End;
-	if( !_io_read( desc, &_size   , sizeof(int32_t), 1 ) ) goto End;
+	if( !_io_read_le( desc, &_ch, "l" ) ) goto End;
+	if( !_io_read_le( desc, &_sps2, "l" ) ) goto End;
+	if( !_io_read_le( desc, &_smp_num, "l" ) ) goto End;
+	if( !_io_read_le( desc, &_size, "l" ) ) goto End;
 
 	if( !_size ) goto End;
 

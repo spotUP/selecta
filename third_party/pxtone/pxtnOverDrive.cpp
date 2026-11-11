@@ -78,8 +78,8 @@ pxtnERR pxtnOverDrive::Read( void* desc )
 	int32_t          size =  0 ;
 
 	memset( &over, 0, sizeof(_OVERDRIVESTRUCT) );
-	if( !_io_read( desc, &size, 4,                        1 ) ) return pxtnERR_desc_r;
-	if( !_io_read( desc, &over, sizeof(_OVERDRIVESTRUCT), 1 ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &size, "l" ) ) return pxtnERR_desc_r;
+	if( !_io_read_le( desc, &over, "wwlll" ) ) return pxtnERR_desc_r;
 
 	if( over.xxx                         ) return pxtnERR_fmt_unknown;
 	if( over.yyy                         ) return pxtnERR_fmt_unknown;

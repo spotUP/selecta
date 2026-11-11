@@ -1510,3 +1510,82 @@ render_finished:
 
     return retval;
 }
+
+//I427e7: the song file stores the sampler chunks as raw dumps of the structures above, written by a little-endian
+//x86 build: CHUNK_INS is "instrument" in the x86 layout (int32 aligned to 4), CHUNK_SMP(n) is "sample",
+//CHUNK_SMP_DATA(n) is 8-bit, 16-bit or float PCM as the chunk flags say. Convert them to the host form once at
+//load so the engine reads native values on every host (68k: big-endian, and int32 aligned to 2, which moves every
+//instrument field after samples_num). The instrument is rebuilt field by field from the file offsets; the result
+//equals the raw bytes on a little-endian host with the x86 layout.
+#define SMP_FILE_INS_MIN 2298 //end of panning_env in the file layout; samples[] pointers after it are runtime-only
+void psynth_sampler_chunks_from_file( char **chunks, int *chunk_flags, int chunks_num )
+{
+    if( chunks == 0 ) return;
+    if( chunks_num > CHUNK_INS && chunks[ CHUNK_INS ] && mem_get_size( chunks[ CHUNK_INS ] ) >= SMP_FILE_INS_MIN )
+    {
+	const uchar *f = (const uchar*)chunks[ CHUNK_INS ];
+	instrument *ins = (instrument*)MEM_NEW( HEAP_DYNAMIC, sizeof( instrument ) );
+	mem_set( ins, sizeof( instrument ), 0 );
+	ins->instrument_size = sv_rd_le32( f + 0 );
+	mem_copy( ins->name, f + 4, 22 );
+	ins->type = f[ 26 ];
+	ins->samples_num = sv_rd_le16( f + 28 );
+	ins->sample_header_size = sv_rd_le32( f + 32 );
+	mem_copy( ins->sample_number, f + 36, 96 );
+	for( int i = 0; i < 24; i++ )
+	{
+	    ins->volume_points[ i ] = sv_rd_le16( f + 132 + i * 2 );
+	    ins->panning_points[ i ] = sv_rd_le16( f + 180 + i * 2 );
+	}
+	ins->volume_points_num = f[ 228 ];
+	ins->panning_points_num = f[ 229 ];
+	ins->vol_sustain = f[ 230 ];
+	ins->vol_loop_start = f[ 231 ];
+	ins->vol_loop_end = f[ 232 ];
+	ins->pan_sustain = f[ 233 ];
+	ins->pan_loop_start = f[ 234 ];
+	ins->pan_loop_end = f[ 235 ];
+	ins->volume_type = f[ 236 ];
+	ins->panning_type = f[ 237 ];
+	ins->vibrato_type = f[ 238 ];
+	ins->vibrato_sweep = f[ 239 ];
+	ins->vibrato_depth = f[ 240 ];
+	ins->vibrato_rate = f[ 241 ];
+	ins->volume_fadeout = sv_rd_le16( f + 242 );
+	ins->volume = f[ 244 ];
+	ins->finetune = (signed char)f[ 245 ];
+	ins->panning = f[ 246 ];
+	ins->relative_note = (signed char)f[ 247 ];
+	ins->flags = f[ 248 ];
+	for( int i = 0; i < ENV_TICKS; i++ )
+	{
+	    ins->volume_env[ i ] = sv_rd_le16( f + 250 + i * 2 );
+	    ins->panning_env[ i ] = sv_rd_le16( f + 250 + ENV_TICKS * 2 + i * 2 );
+	}
+	mem_free( chunks[ CHUNK_INS ] );
+	chunks[ CHUNK_INS ] = (char*)ins;
+    }
+    for( int c = CHUNK_INS + 1; c < chunks_num; c++ )
+    {
+	if( chunks[ c ] == 0 ) continue;
+	ulong size = mem_get_size( chunks[ c ] );
+	if( ( c - 1 ) % 2 == 0 )
+	{
+	    //CHUNK_SMP: length, reppnt, replen are int32 at 0, 4, 8 (same offsets on every host); the data pointer
+	    //at 40 is set at render time, so make room for a host pointer.
+	    if( size < sizeof( sample ) ) chunks[ c ] = (char*)mem_resize( chunks[ c ], sizeof( sample ) );
+	    if( size >= 12 ) sv_le32_to_native( chunks[ c ], 3 );
+	}
+	else
+	{
+	    //CHUNK_SMP_DATA: the render reads the depth from the sample header's type (bits 4-5: 0 8-bit, 1 16-bit,
+	    //2 float), so decode by the same field; the chunk flags only when the header is missing.
+	    int depth = -1;
+	    if( chunks[ c - 1 ] ) depth = ( ( (sample*)chunks[ c - 1 ] )->type >> 4 ) & 3;
+	    else if( chunk_flags && ( chunk_flags[ c ] & PSYNTH_CHUNK_FLAG_SAMPLE_16BIT ) ) depth = 1;
+	    else if( chunk_flags && ( chunk_flags[ c ] & PSYNTH_CHUNK_FLAG_SAMPLE_FLOAT ) ) depth = 2;
+	    if( depth == 1 ) sv_le16_to_native( chunks[ c ], size / 2 );
+	    else if( depth == 2 ) sv_le32_to_native( chunks[ c ], size / 4 );
+	}
+    }
+}
