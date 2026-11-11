@@ -729,6 +729,15 @@ static void test_offer_ask(void) {
     CHECK(src_count("    s->opens++;") == 1, "s->opens is no longer set once the open is done");
 }
 
+/* mui-p8-fill-height (I1307): on an 800x600 rig screen the MUI window stopped about 150 rows short of the bottom. MUI never sizes a
+ * window beyond its contents' maximum height; a page group takes the smallest maximum of its pages and the body HGroup the smallest
+ * of its columns. With no visualizer plugin the Visualizer page held only a text, which has a fixed maximum, so the whole body row
+ * was capped at its minimum. The page needs a stretchable filler. */
+static void test_fill_height(void) {
+    CHECK(src_count("        DoMethod(viz_g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* I1307: unbounded page height */") == 1,
+          "the visualizer page without plugins has no filler, so its bounded text caps the window height");
+}
+
 /* mui-p8-offer-never (I1308c): the MUI sync offer had Not now and Sync only; the desktop dialog (I602) has Never / Not now / Sync now,
  * and Never switches the ticked sources off in library.sources_off. The line is the shared sel_uim_sources_never_line: the ticked
  * sources off, every other source as stored. The desktop sent it with flip 0, which also toggled source row 0 (the local library):
@@ -858,6 +867,8 @@ int main(int argc, char** argv) {
         test_offer_card();
     } else if (strcmp(argv[1], "offer-ask") == 0) {
         test_offer_ask();
+    } else if (strcmp(argv[1], "fill-height") == 0) {
+        test_fill_height();
     } else if (strcmp(argv[1], "offer-never") == 0) {
         test_offer_never();
     } else if (strcmp(argv[1], "col-titles") == 0) {

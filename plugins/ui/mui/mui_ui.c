@@ -2162,6 +2162,9 @@ static Object* mui_main_pages(mui_state* s, Object* np_page) {
         DoMethod(viz_g, OM_ADDMEMBER, s->viz_page_area);
     } else {
         DoMethod(viz_g, OM_ADDMEMBER, mui_aatext("No visualizer plugin is loaded", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1));
+        /* I1307: a lone text has a fixed maximum height; the page group takes its pages' smallest maximum and the body row
+         * the smallest of its columns, so without this filler the window stops ~150 rows short of an 800x600 screen. */
+        DoMethod(viz_g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* I1307: unbounded page height */
     }
     DoMethod(trk_g, OM_ADDMEMBER, rows != NULL ? rows : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     DoMethod(pages, OM_ADDMEMBER, list_g);
@@ -3933,8 +3936,8 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_DepthGadget, (ULONG)wattr.depthgadget, MUIA_Window_SizeGadget, (ULONG)wattr.sizegadget,
             MUIA_Window_CloseGadget, (ULONG)wattr.closegadget,
             /* D-M4-3: full screen by default; width and height are 100 percent of the public screen area MUI can use.
-             * The HVSpace child gives the group unbounded height: a lone Text object has a fixed maximum height and MUI
-             * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
+             * MUI never sizes a window beyond its contents' maximum height, so every body column and every page of a
+             * page group must have an unbounded maximum (a lone Text object is bounded; I1307 left 150 rows empty). */
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_FONT TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
