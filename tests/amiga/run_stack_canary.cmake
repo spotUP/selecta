@@ -8,8 +8,10 @@ foreach(v VAMOS CANARY_TEST)
   endif()
 endforeach()
 
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${CANARY_TEST}")
 function(run_case mode out_var rc_var)
-  execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${CANARY_TEST}" ${mode}
+  execute_process(COMMAND ${SEL_VAMOS_CMD} -- "${CANARY_TEST}" ${mode}
     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc TIMEOUT 60)
   set(${out_var} "${out}${err}" PARENT_SCOPE)
   set(${rc_var} "${rc}" PARENT_SCOPE)

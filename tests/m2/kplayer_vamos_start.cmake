@@ -24,7 +24,8 @@ if(NOT prc EQUAL 0)
   message(FATAL_ERROR "RED[I219c]: could not write the test module")
 endif()
 file(WRITE "${WORK}/k.keys" "Down\nEnter\nwait 1000\nq\n")
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -V work:${WORK} -l exec:info -- "${AMIGA_SELECTA}"
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_SELECTA}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -l exec:info -- "${AMIGA_SELECTA}"
     --size 80x25 --start-dir work:songs --keys work:k.keys
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc TIMEOUT 90)
 if(NOT rc EQUAL 0)

@@ -17,7 +17,9 @@ file(MAKE_DIRECTORY "${dir}")
 file(WRITE "${dir}/Björk Ärger.mod" "x")
 file(WRITE "${dir}/plain.mod" "x")
 
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${AMIGA_CLI}" library browse "${dir}" --names
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_CLI}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -- "${AMIGA_CLI}" library browse "${dir}" --names
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc TIMEOUT 60)
 file(REMOVE_RECURSE "${dir}")
 if(NOT rc EQUAL 0)

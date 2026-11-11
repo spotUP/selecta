@@ -12,7 +12,8 @@ if(NOT EXISTS "${AMIGA_SELECTA}")
 endif()
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -V "work:${WORK}" -- "${AMIGA_SELECTA}" --size 80x25 --start-dir ""
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_SELECTA}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -V "work:${WORK}" -- "${AMIGA_SELECTA}" --size 80x25 --start-dir ""
     --db work:amiga.db
   INPUT_FILE "${KEYS}" OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)

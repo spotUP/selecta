@@ -12,8 +12,10 @@ foreach(v TAGS_DEF PLATFORM EXPECT_CPU EXPECT_FPU EXPECT_TIER)
   endif()
 endforeach()
 
+include("${CMAKE_CURRENT_LIST_DIR}/amiga/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_CLI}")
 if(PLATFORM STREQUAL "amiga")
-  execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${AMIGA_CLI}" machine
+  execute_process(COMMAND ${SEL_VAMOS_CMD} -- "${AMIGA_CLI}" machine
     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 else()
   execute_process(COMMAND "${CLI}" machine

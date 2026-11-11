@@ -24,8 +24,10 @@ endif()
 
 file(RELATIVE_PATH rel_mod "${ROOT}" "${MOD}")
 file(RELATIVE_PATH rel_wav "${ROOT}" "${amiga_wav}")
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_CLI}")
 execute_process(
-  COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${AMIGA_CLI}" render "${rel_mod}" --output "${rel_wav}"
+  COMMAND ${SEL_VAMOS_CMD} -- "${AMIGA_CLI}" render "${rel_mod}" --output "${rel_wav}"
           --seconds 10 --rate 44100 --resample ${RESAMPLE}
   WORKING_DIRECTORY "${ROOT}"
   OUTPUT_VARIABLE amiga_out ERROR_VARIABLE err RESULT_VARIABLE rc)

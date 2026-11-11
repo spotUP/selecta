@@ -17,7 +17,8 @@ endforeach()
 string(ASCII 155 csi)
 string(ASCII 228 auml)
 file(WRITE "${WORK}/arrows.keys" "${csi}B\n${csi}B\n${csi}A\n${csi}S\n${auml}\n${csi}B\nq\n")
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_SELECTA}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
     --start-dir work:songs --keys work:arrows.keys
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
@@ -30,7 +31,7 @@ message(STATUS "[OK] I218")
 # the text UI regrows its grid and tells the engine the new list height: 80x25 gives 21 list rows,
 # 120x50 gives 46. Sentinel view_window= (the engine's requested window height).
 file(WRITE "${WORK}/resize.keys" "${csi}12;0;0;0;0;0;0;0|\n${csi}1;1;50;120 r\nq\n")
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
+execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
     --start-dir work:songs --keys work:resize.keys
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)

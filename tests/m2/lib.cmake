@@ -30,6 +30,8 @@ function(m2_path var path)
   set(${var} "${p}" PARENT_SCOPE)
 endfunction()
 
+include("${CMAKE_CURRENT_LIST_DIR}/../amiga/vamos_cmd.cmake")
+
 # m2_exec(out_var rc_var <args...>): runs the CLI (or AMIGA_CLI under vamos), captures stdout+stderr.
 function(m2_exec out_var rc_var)
   if(MODE STREQUAL "vamos")
@@ -43,7 +45,8 @@ function(m2_exec out_var rc_var)
         list(APPEND vols -V "song:${song_dir}")
       endif()
     endif()
-    set(cmd "${VAMOS}" -C 68020 -m 8192 ${vols} -- "${AMIGA_CLI}" ${ARGN})
+    sel_vamos_cmd(vcmd "${AMIGA_CLI}")
+    set(cmd ${vcmd} ${vols} -- "${AMIGA_CLI}" ${ARGN})
   else()
     set(cmd "${CLI}" ${ARGN})
   endif()

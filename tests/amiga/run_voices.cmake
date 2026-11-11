@@ -5,7 +5,9 @@ foreach(v VAMOS AMIGA_CLI GOLDEN)
     message(FATAL_ERROR "run_voices.cmake: -D${v} is required")
   endif()
 endforeach()
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${AMIGA_CLI}" abi voices
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_CLI}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -- "${AMIGA_CLI}" abi voices
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "vamos abi voices: exit ${rc}\n${err}")

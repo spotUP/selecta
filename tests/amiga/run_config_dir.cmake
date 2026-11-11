@@ -11,7 +11,9 @@ foreach(v VAMOS AMIGA_CLI)
   endif()
 endforeach()
 
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${AMIGA_CLI}" config-dir
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_CLI}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -- "${AMIGA_CLI}" config-dir
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc TIMEOUT 60)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "config-dir (ENVARC: unassigned): exit '${rc}'\n${out}${err}")
@@ -20,7 +22,7 @@ if(NOT out STREQUAL "config_dir=PROGDIR:Selecta\n")
   message(FATAL_ERROR "ENVARC: unassigned must fall back to PROGDIR:Selecta, got: ${out}")
 endif()
 
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -V cfgvol:${CMAKE_CURRENT_LIST_DIR} -a ENVARC:cfgvol:
+execute_process(COMMAND ${SEL_VAMOS_CMD} -V cfgvol:${CMAKE_CURRENT_LIST_DIR} -a ENVARC:cfgvol:
   -- "${AMIGA_CLI}" config-dir
   OUTPUT_VARIABLE out2 ERROR_VARIABLE err RESULT_VARIABLE rc TIMEOUT 60)
 if(NOT rc EQUAL 0 OR NOT out2 STREQUAL "config_dir=ENVARC:Selecta\n")

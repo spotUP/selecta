@@ -12,7 +12,9 @@ endforeach()
 
 set(db "build/lowfd-test.db")
 file(REMOVE "${db}")
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -l dos:info -- "${LOWFD_TEST}" "${db}"
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${LOWFD_TEST}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -l dos:info -- "${LOWFD_TEST}" "${db}"
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc TIMEOUT 60)
 file(REMOVE "${db}")
 if(NOT rc EQUAL 0 OR NOT out MATCHES "low_fd_open=ok\n")

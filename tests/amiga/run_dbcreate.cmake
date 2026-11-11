@@ -10,7 +10,9 @@ endforeach()
 
 set(db "build/dbcreate-test.db")
 file(REMOVE "${db}" "${db}-journal")
-execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${DBCREATE_TEST}" "${db}"
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${DBCREATE_TEST}")
+execute_process(COMMAND ${SEL_VAMOS_CMD} -- "${DBCREATE_TEST}" "${db}"
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc TIMEOUT 90)
 file(REMOVE "${db}" "${db}-journal")
 if(NOT rc EQUAL 0 OR NOT out MATCHES "db_create=ok\n")

@@ -1649,9 +1649,14 @@ if(NOT SEL_AMIGA)
   sel_m2_test(ahi-routing run desktop -DTAG=T59
     "-DARGS1=render --output ahi-shadow @MOD@ --seconds 2"
     "-DCHECKS1=ahi_bufs>=78,ahi_bufs<=95,underruns==0,ahi_buffer_frames==1024,ahi_rate==44100")
+  # I1305i1: step 2 renders a .ptm copy (nuade protracker4 claims "ptm" by extension) so nuade loads on demand
+  # from PROGDIR:Players/sel_nuade; module_loads=1 proves the LoadSeg ran (vamos needs the PROGDIR: assign from
+  # tests/amiga/vamos_cmd.cmake).
   sel_m2_test(ahi-routing run vamos -DTAG=T59
     "-DARGS1=render --output ahi-shadow @MOD@ --seconds 2"
-    "-DCHECKS1=ahi_bufs>=12,ahi_bufs<=15,underruns==0,ahi_buffer_frames==4096,ahi_rate==28150")
+    "-DCHECKS1=ahi_bufs>=12,ahi_bufs<=15,underruns==0,ahi_buffer_frames==4096,ahi_rate==28150"
+    -DMOD_COPY=selecta-test.ptm "-DARGS2=render --output ahi-shadow @MOD_COPY@ --seconds 1"
+    "-DCHECKS2=module_loads==1,underruns==0")
   # T53 LED filter and stereo width.
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).

@@ -8,8 +8,10 @@ foreach(v VAMOS HOST_CLI AMIGA_CLI GOLDEN)
   endif()
 endforeach()
 
+include("${CMAKE_CURRENT_LIST_DIR}/vamos_cmd.cmake")
+sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_CLI}")
 function(run_amiga out_var)
-  execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${AMIGA_CLI}" ${ARGN}
+  execute_process(COMMAND ${SEL_VAMOS_CMD} -- "${AMIGA_CLI}" ${ARGN}
     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "vamos ${ARGN}: exit ${rc}\n${err}")
