@@ -20,7 +20,12 @@
  * are BRA.W opcodes or moveq/rts shared by many replayer executables), hippel7v and dirkbialluch (the header and the
  * tags are searched for, not at a fixed offset), ems and gmc (field range checks, no mark), davelowe (three layouts:
  * game driver, Deli module, new driver), fred_np (three layouts: "Fred Editor ", the Final replayer's 0x4EFA jump
- * table, and either wrapped in a hunk executable). */
+ * table, and either wrapped in a hunk executable).
+ * Also without a row (I1305i3 part 3): hippelhip and maniacsofnoise (a branch or jump table at 0, the header is found
+ * by following the code), jeroentel (code pattern searched in the first bytes), jasonbrooke and jesperolsen (several
+ * replayers; version A is found by code search or a code hash, so no single header covers the player),
+ * kimchristensen, markii, mikedavies and markcooksey_old (file name decides), maximumeffect (field range checks, no
+ * mark). */
 #include "signatures.h"
 
 #include <string.h>
@@ -107,9 +112,31 @@ static const sig_row k_rows[] = {
     { "gluemon", 8, { { 0, 4, "GLUE" }, { 4, 4, "\xB8\xB3\xAA\xBA" } }, 0, 0, 0 },
     /* hippel: COSO packed TFMX */
     { "hippel", 0x24, { { 0, 4, "COSO" }, { 0x20, 4, "TFMX" } }, 0, 0, 0 },
+    /* hd_module.c load_hunks + read_header: one-hunk executable (0x3F3, 0, 1, 0, 0, size word non-zero, HUNK_CODE), code at 0x20 starts
+     * moveq #-1,d0; rts and "H.DAVIES" (Check2) */
+    { "howiedavies", 44,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x01" "\0\0\0\0" "\0\0\0\0" },
+        { 20, 0, NULL },
+        { 24, 4, "\0\0\x03\xE9" },
+        { 32, 12, "\x70\xFF\x4E\x75" "H.DAVIES" } },
+      0, 0, 0 },
+    /* jmf_module.c load_hunks + read_header: one-hunk executable (0x3F3, 0, 1, 0, 0, size word non-zero, HUNK_CODE), code at 0x20 starts
+     * moveq #-1,d0; rts and "J.FLOGEL" (Check2) */
+    { "jankomrsicflogel", 44,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x01" "\0\0\0\0" "\0\0\0\0" },
+        { 20, 0, NULL },
+        { 24, 4, "\0\0\x03\xE9" },
+        { 32, 12, "\x70\xFF\x4E\x75" "J.FLOGEL" } },
+      0, 0, 0 },
     { "instereo1", 8, { { 0, 8, "ISM!V1.2" } }, 0, 0, 0 },
     { "instereo2", 8, { { 0, 8, "IS20DF10" } }, 0, 0, 0 },
     { "jamcracker", 4, { { 0, 4, "BeEp" } }, 0, 0, 0 },
+    /* laxity.c check_module: 0x18-byte records, flag byte 0xFF in records 1 and 2 (0x1F, 0x37), and either the known
+     * header (0x00820048 at 0, record 2 = 00010008 001800FF) or the default title "YET ANOTHER COOL" in record 0 */
+    { "laxity", 0x38, { { 0, 4, "\0\x82\0\x48" }, { 0x1F, 1, "\xFF" }, { 0x30, 8, "\0\x01\0\x08\0\x18\0\xFF" } }, 0, 0, 0 },
+    { "laxity", 0x38, { { 8, 16, "YET ANOTHER COOL" }, { 0x1F, 1, "\xFF" }, { 0x37, 1, "\xFF" } }, 0, 0, 0 },
+    /* lme_module.c lme_module_parse: "LME\0" at 0, zero long at 0x24, tables to 0x48 */
+    { "legglessmusiceditor", 0x48, { { 0, 4, "LME\0" }, { 0x24, 4, "\0\0\0\0" } }, 0, 0, 0 },
     /* mt_module.c: "ARP." at 0 */
     { "majortom", 4, { { 0, 4, "ARP." } }, 0, 0, 0 },
     { "markcooksey", 6, { { 0, 4, "\xD0\x40\xD0\x40" }, { 4, 2, "\x4E\xFB" } }, 0, 0, 0 },
