@@ -356,6 +356,7 @@ static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), v
                         const char* s2, const char* s3);
 static void wq_submit(sel_engine* e);
 static void wq_sticker_set_run(sel_library* lib, sel_wq_op* op);
+static void wq_cache_drop_run(sel_library* lib, sel_wq_op* op);
 
 /* I906g: what a song start reads from the library (best source, per-song config, stored loudness), filled by the rd_play read before the
  * pump starts the song. A start that finds no entry posts the read and waits (play_meta_ready); read_song, song_config_load and
@@ -1514,7 +1515,10 @@ static void cmd_PREF_SET(sel_engine* e, const sel_message* m) {
     if (e->lib != NULL) {
         sel_library_set_sources_off(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
         if (e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF][0] != '\0') { /* I1231b: a switched-off source keeps no cached search */
-            (void)sel_library_search_cache_drop(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
+            /* I1305f: queued on the writer thread, never a call here: the pump must not wait on a busy library (I829). */
+            if (wq_new(e, wq_cache_drop_run, NULL, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], NULL, NULL) != NULL) {
+                wq_submit(e);
+            }
         }
         sel_library_set_hide_duplicates(e->lib, e->prefs.value[SEL_PREF_LIBRARY_HIDE_DUPLICATES]);
         sel_library_scrape_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_LIBRARY_SCRAPE_ARTWORK], "on") == 0);
@@ -3163,6 +3167,11 @@ static int open_share_link(sel_engine* e, const char* text);
  * action that commits to a hit: OPEN, queue insert, playlist add and SOURCE_PIN. A key that is no hit does nothing; while
  * a search runs the table is being rewritten, so nothing is matched. Returns 1 when the key was a hit. */
 /* I906f2: the pin is a queued write. s[0] source, s[1] path, s[2] title; res holds artist and format (NUL separated). */
+/* I1231b/I1305f: the writer thread drops the cached searches of the switched-off sources (s[0] is the sources_off list). */
+static void wq_cache_drop_run(sel_library* lib, sel_wq_op* op) {
+    (void)sel_library_search_cache_drop(lib, op->s[0]);
+}
+
 static void wq_pin_run(sel_library* lib, sel_wq_op* op) {
     const char* artist = (const char*)op->res;
 

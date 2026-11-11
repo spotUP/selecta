@@ -236,6 +236,10 @@ int main(int argc, char** argv) {
     cfg.registry_get = reg_get;
     e = sel_engine_create(host, &cfg);
     CHECK(e != NULL);
+    /* I1305f: switch the hippo playlists-only source off, as library_ui_nowait_test does (I1130c). Since I1234 VIEW_SOURCE folders
+     * syncs it when its group folder is missing; that network sync holds sync_running, so the add-folder section's PLAYLIST_ADD_FOLDER
+     * answered busy (plfail 1, addf_runs +0). */
+    CHECK(sel_engine_send_line(e, "PREF_SET library.sources_off \"hippo\"", pool, sizeof pool) == 0);
     db_enter(lib);
     CHECK(sqlite3_exec(lib->db,
                        "INSERT INTO songs(key, source, path, name, artist, album, format, added) VALUES"
