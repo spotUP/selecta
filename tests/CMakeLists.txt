@@ -1676,6 +1676,17 @@ if(NOT SEL_AMIGA)
     "-DCHECKS1=ahi_bufs>=12,ahi_bufs<=15,underruns==0,ahi_buffer_frames==4096,ahi_rate==28150"
     -DMOD_COPY=selecta-test.ptm "-DARGS2=render --output ahi-shadow @MOD_COPY@ --seconds 1"
     "-DCHECKS2=module_loads==1,underruns==0")
+  # I427e4: hively is a LoadSeg module on the Amiga (Players/sel_hively, the manifest probe matches the THX header). The
+  # AHX song is the one hively-decode fetches by checksum into the fixture cache (scene files are never committed); the
+  # test exists only once that cache holds it. module_loads==1 proves the LoadSeg ran, replayer==hively that the module's
+  # hooks rendered (2 s at the AHI shadow's 28150 Hz). Revert proof: without PROGDIR:Players/sel_hively the render fails
+  # with no_replayer.
+  set(SEL_HVL_SONG "${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/.cache/hively_raining_stars.ahx")
+  if(EXISTS "${SEL_HVL_SONG}")
+    sel_m2_test(hively-render run vamos -DTAG=I427e4 "-DMOD=${SEL_HVL_SONG}" -DMOD_COPY=raining.ahx
+      "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
+      "-DCHECKS1=replayer==hively,module_loads==1,rendered_frames>=56000,underruns==0")
+  endif()
   # T53 LED filter and stereo width.
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).
