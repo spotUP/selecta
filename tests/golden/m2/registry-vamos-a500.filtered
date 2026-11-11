@@ -1,1 +1,4 @@
-8
+10
+# a500 hides 10: nuade minimp3 stb_vorbis klystron organya pxtone sunvox playsid (I1130d, e2495f9f) plus
+# bbmp_ptk (static Amiga plugin since e852f25c, float mixer) and hively (Amiga manifest since ea6eed5a, soft-float),
+# both SEL_RP_NEEDS_FLOAT. I1305j.

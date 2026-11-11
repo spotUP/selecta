@@ -1,1 +1,3 @@
-7
+9
+# a1200 (no FPU) hides 9: the 7 SEL_RP_NEEDS_FLOAT plugins of I1130d (e2495f9f) plus bbmp_ptk (e852f25c)
+# and hively (ea6eed5a), both SEL_RP_NEEDS_FLOAT. I1305j.
