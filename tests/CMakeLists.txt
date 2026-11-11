@@ -627,7 +627,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(mui-p8-library-modes PROPERTIES TIMEOUT 30 LABELS mui)
   add_test(NAME mui-p8-queue-scope COMMAND mui_p8_test queue-scope)
   target_compile_definitions(mui_p8_test PRIVATE MUI_SRC_ROOT="${PROJECT_SOURCE_DIR}")
-  foreach(t view-buttons tile-steps amiga-settings doors statistics panels sources infoline tooltips remember pref-keys layout-modes library-styles library-pages queue-scope-ui)
+  foreach(t view-buttons tile-steps amiga-settings doors statistics panels sources infoline tooltips remember pref-keys layout-modes library-styles library-pages queue-scope-ui offer-card)
     add_test(NAME mui-p8-${t} COMMAND mui_p8_test ${t})
     set_tests_properties(mui-p8-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
@@ -3787,6 +3787,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(nuade_companion_rules_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME nuade-companion-rules COMMAND nuade_companion_rules_test)
   set_tests_properties(nuade-companion-rules PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "nuade_companion_rules_ok")
+  # I427e4: the Amiga nuade manifest's FORMATS / EXTENSIONS (committed manifest_lists.h) equal the plugin's own walk.
+  if(TARGET nuade_manifest_lists)
+    add_test(NAME nuade-manifest-lists COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_CURRENT_BINARY_DIR} sh -c
+      "$<TARGET_FILE:nuade_manifest_lists> nuade_manifest_lists.h && ${CMAKE_COMMAND} -E compare_files nuade_manifest_lists.h ${PROJECT_SOURCE_DIR}/plugins/replayers/nuade/manifest_lists.h && echo nuade_manifest_lists_ok")
+    set_tests_properties(nuade-manifest-lists PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "nuade_manifest_lists_ok")
+  endif()
   # I1127b: content companions. U1/U2 sanitiser + trim exemption (unit); the reachability test fetches a remote .eup
   # through the library cache and asserts the banks arrived (net-fixture).
   add_executable(content_companions_test m3/content_companions_test.c)

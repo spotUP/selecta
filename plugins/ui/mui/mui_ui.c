@@ -2944,28 +2944,36 @@ static void mui_stats_window(mui_state* s) {
     mui_stats_sync(s);
 }
 
-/* I1182: the first-start sync offer window. Opens once per launch when the engine marks a source due (mui_offer_panel_follow), one
- * check button per listed source, Not now and Sync. Built when it opens (once); the rows hold "[x] text" and follow the ticks. */
+/* I1182: the first-start sync offer window. Opens once per launch when the engine marks a source due (mui_offer_panel_follow): the
+ * title, one row per listed source, Not now and Sync. Built when it opens (once).
+ * I1308: the content sits in a raised card (AAPanel RAISED, the SURFACE_RAISED face the desktop nag dialog draws), whose padding and
+ * spacing keep the rows apart; each row is a real check (mui_make_check, the Settings AACheck) beside its label, as the desktop
+ * nagdlg_draw tick box + label. The rows were ghost buttons captioned "[x] text": free-floating framed buttons with a fake check. */
 static void mui_offer_window(mui_state* s) {
     uint32_t k;
-    char txt[220], row[160];
+    char row[160];
     if (!s->offer_asked) {
         s->offer_asked = 1;
         (void)mui_route_send(s, "SOURCES");
         return;
     }
     if (s->offer_win == NULL && mui_offer_panel_follow(&s->offer, 0, &s->srcs)) {
-        Object *root = MUI_NewObject((char*)MUIC_Group, TAG_DONE), *bar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        Object *root = mui_aapanel(MUI_AA_PANEL_RAISED, 0), *bar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
         if (root == NULL || bar == NULL) {
             return;
         }
         mui_offer_panel_title(&s->offer, row, sizeof row);
-        DoMethod(root, OM_ADDMEMBER, mui_aatext_sized(row, row, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(root, OM_ADDMEMBER, mui_aatext_sized(row, row, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT, 0));
         for (k = 0; k < s->offer.o.n; k++) {
+            Object* line = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+            if (line == NULL) {
+                return;
+            }
             mui_offer_panel_row(&s->offer, &s->srcs, k, row, sizeof row);
-            snprintf(txt, sizeof txt, "[x] %s", row);
-            s->offer_row[k] = mui_make_button_i(txt, NULL, NULL, NULL, CTL_OFFER_ROW + (LONG)k, 0, 0, MUI_AA_ROLE_GHOST);
-            DoMethod(root, OM_ADDMEMBER, s->offer_row[k]);
+            s->offer_row[k] = mui_make_check(row, sel_uim_offer_ticked(&s->offer.o, k), CTL_OFFER_ROW + (LONG)k);
+            DoMethod(line, OM_ADDMEMBER, s->offer_row[k]);
+            DoMethod(line, OM_ADDMEMBER, mui_aatext(row, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0));
+            DoMethod(root, OM_ADDMEMBER, line);
         }
         DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Not now", "Not now", NULL, NULL, CTL_OFFER_NOTNOW, 0, 0, MUI_AA_ROLE_NORMAL));
         DoMethod(bar, OM_ADDMEMBER, mui_make_button_i("Sync", "Sync", NULL, NULL, CTL_OFFER_SYNC, 0, 0, MUI_AA_ROLE_NORMAL));
@@ -2988,10 +2996,12 @@ static void mui_offer_window(mui_state* s) {
             (void)mui_offer_panel_not_now(&s->offer, &s->srcs, (int64_t)time(NULL), mui_route_send, s);
             return;
         }
-        for (k = 0; k < s->offer.o.n; k++) {
-            mui_offer_panel_row(&s->offer, &s->srcs, k, row, sizeof row);
-            snprintf(txt, sizeof txt, "[%c] %s", sel_uim_offer_ticked(&s->offer.o, k) ? 'x' : ' ', row);
-            mui_aabtn_set_caption(s->offer_row[k], txt);
+        for (k = 0; k < s->offer.o.n; k++) { /* the check follows the model; no notify, so the set does not return the row id again */
+            ULONG on = 0;
+            GetAttr(MUIA_Selected, s->offer_row[k], &on);
+            if ((on != 0) != (sel_uim_offer_ticked(&s->offer.o, k) != 0)) {
+                SetAttrs(s->offer_row[k], MUIA_NoNotify, TRUE, MUIA_Selected, (ULONG)(sel_uim_offer_ticked(&s->offer.o, k) != 0), TAG_DONE);
+            }
         }
     } else {
         set(s->offer_win, MUIA_Window_Open, FALSE);

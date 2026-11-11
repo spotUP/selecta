@@ -705,6 +705,19 @@ static void test_queue_scope_ui(void) {
     CHECK(src_count("sel_uim_scope_index(st->options[SEL_OPT_SCOPE])") == 1, "the scope Cycle does not follow SEL_OPT_SCOPE");
 }
 
+/* mui-p8-offer-card (I1308): Johan on rig 2, "the sync your sources dialog is missing the dialog card i see free floating buttons and
+ * text", "no vertical spacing between the buttons", "a fake [x] checkbox they need a real checkbox with a label". The MUI sync offer
+ * (mui_offer_window) must build its content in a raised card (AAPanel RAISED: face, padding, row spacing) and one real check (AACheck,
+ * mui_make_check) plus label per source, as the desktop nagdlg_draw; no ghost buttons captioned "[x] text". mui_ui.c is Amiga only, so
+ * the build is read from its source like queue-scope-ui. */
+static void test_offer_card(void) {
+    CHECK(src_count("Object *root = mui_aapanel(MUI_AA_PANEL_RAISED, 0), *bar") == 1, "the sync offer content is not in a raised card");
+    CHECK(src_count("s->offer_row[k] = mui_make_check(row, sel_uim_offer_ticked(&s->offer.o, k), CTL_OFFER_ROW + (LONG)k);") == 1,
+          "the sync offer rows are not real checks");
+    CHECK(src_count("\"[x] %s\"") == 0 && src_count("\"[%c] %s\"") == 0, "a fake [x] caption is left in mui_ui.c");
+    CHECK(src_count("CTL_OFFER_ROW + (LONG)k, 0, 0, MUI_AA_ROLE_GHOST") == 0, "the sync offer rows are still ghost buttons");
+}
+
 /* mui-p8-library-pages (I1175): Files, History, Sources modes and the Sources page rows, switch and Sync, fed with real engine events */
 static sel_message src_event(const sel_tag* t) {
     sel_message m;
@@ -794,6 +807,8 @@ int main(int argc, char** argv) {
         test_library_modes();
     } else if (strcmp(argv[1], "queue-scope-ui") == 0) {
         test_queue_scope_ui();
+    } else if (strcmp(argv[1], "offer-card") == 0) {
+        test_offer_card();
     } else if (strcmp(argv[1], "queue-scope") == 0) {
         test_queue_scope();
     } else if (strcmp(argv[1], "view-buttons") == 0) {
