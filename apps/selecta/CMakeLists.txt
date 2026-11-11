@@ -2,6 +2,7 @@ add_executable(selecta main.c ../common/integration_host.c ../common/catalogue.c
 target_include_directories(selecta PRIVATE ../common)
 target_include_directories(selecta PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
 target_link_libraries(selecta PRIVATE selecta_registry)
+sel_amiga_players_beside(selecta) # I1305i: PROGDIR:Players/ in the build tree
 # The control socket is POSIX only; the Amiga's equivalent is the ARexx port (M4).
 if(SEL_AMIGA)
   target_compile_definitions(selecta PRIVATE SEL_NO_CONTROL_SOCKET)

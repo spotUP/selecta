@@ -2,6 +2,7 @@ add_executable(selecta-cli main.c abi.c plugins.c play_null.c machine.c render.c
   ../common/integration_host.c ../common/catalogue.c)
 target_include_directories(selecta-cli PRIVATE ../common)
 target_link_libraries(selecta-cli PRIVATE selecta_registry_cli)
+sel_amiga_players_beside(selecta-cli) # I1305i: PROGDIR:Players/ in the build tree
 
 # I1242b: the CLI carries its modules in <exe dir>/plugins, the folder sel_app_plugin_dir (src/core/config_dir.c) gives the loader for a
 # program that is not a macOS bundle, so a CLI run from the build tree or from wherever it is installed finds every built-in and

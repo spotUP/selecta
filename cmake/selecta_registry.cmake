@@ -72,6 +72,29 @@ function(sel_make_registry target list_file_name)
   endforeach()
 endfunction()
 
+# I1305i: an Amiga executable finds its on-demand players in PROGDIR:Players/ (loader_seg.c), so the build tree
+# carries the freshly built modules there, the same layout as an installed Selecta. The modules are built once in
+# <build>/Players; this copies them beside `target` on every build (copy_if_different), as the desktop CLI's
+# <exe dir>/plugins copy does (apps/selecta-cli/CMakeLists.txt, I1242b). Without it a vamos run of the build tree
+# found no module, or a stale one copied by hand.
+function(sel_amiga_players_beside target)
+  if(NOT SEL_AMIGA)
+    return()
+  endif()
+  get_property(_segs GLOBAL PROPERTY SEL_SEG_MODULES)
+  set(_dir "$<TARGET_FILE_DIR:${target}>/Players")
+  add_custom_target(${target}_players COMMAND ${CMAKE_COMMAND} -E make_directory "${_dir}" VERBATIM)
+  foreach(_s IN LISTS _segs)
+    add_custom_command(TARGET ${target}_players POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${_s}>" "${_dir}/"
+      VERBATIM)
+  endforeach()
+  if(_segs)
+    add_dependencies(${target}_players ${_segs})
+  endif()
+  add_dependencies(${target} ${target}_players)
+endfunction()
+
 get_property(_sel_all_plugins GLOBAL PROPERTY SEL_PLUGINS)
 get_property(_sel_gui_only GLOBAL PROPERTY SEL_GUI_ONLY_PLUGINS)
 sel_make_registry(selecta_registry registry_list.c ${_sel_all_plugins})
