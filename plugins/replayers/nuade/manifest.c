@@ -95,16 +95,36 @@ size_t sel_nuade_static_hooks(sel_tag* t, const char* extensions, const char* fo
 
 #ifdef SEL_PLUGIN_MANIFEST
 #include "manifest_lists.h"
+#include "signatures.h"
 
-static sel_tag g_hooks[13];
+/* Amiga manifest probe (I1305i2): the players live in the on-demand module, so the scan matches the magic byte
+ * table instead of loading it. A signature is a sure answer; a song with no known header that the nuade
+ * EXTENSIONS claim is Unsure, so it opens with nuade only when no other replayer is sure. The module's own
+ * probe runs at open time. */
+static int rp_manifest_probe(const uint8_t* data, size_t size, const char* name) {
+    const char* base = name;
+    const char* p;
+    if (sel_nuade_sig_match(data, size) != NULL) {
+        return SEL_PROBE_YES;
+    }
+    for (p = name; p != NULL && *p != '\0'; p++) {
+        if (*p == '/' || *p == ':') {
+            base = p + 1;
+        }
+    }
+    return sel_nuade_sig_name_claimed(SEL_NUADE_MANIFEST_EXTENSIONS, base) ? SEL_PROBE_UNSURE : SEL_PROBE_NO;
+}
+
+static sel_tag g_hooks[14];
 static sel_tag g_desc[6];
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
+    size_t n = sel_nuade_static_hooks(g_hooks, SEL_NUADE_MANIFEST_EXTENSIONS, SEL_NUADE_MANIFEST_FORMATS);
     if (host_api < 1u) {
         return NULL;
     }
-    sel_nuade_set_tag(&g_hooks[sel_nuade_static_hooks(g_hooks, SEL_NUADE_MANIFEST_EXTENSIONS, SEL_NUADE_MANIFEST_FORMATS)],
-                      SEL_TAG_END, 0);
+    sel_nuade_set_tag(&g_hooks[n++], SEL_RP_PROBE, SEL_TAG_FN(rp_manifest_probe));
+    sel_nuade_set_tag(&g_hooks[n], SEL_TAG_END, 0);
     sel_nuade_set_tag(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     sel_nuade_set_tag(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "nuade");
     sel_nuade_set_tag(&g_desc[2], SEL_PLUGIN_VERSION, 1);

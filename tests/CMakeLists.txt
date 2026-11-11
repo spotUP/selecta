@@ -988,6 +988,15 @@ target_include_directories(nuade_sibling_io_test PRIVATE "${PROJECT_SOURCE_DIR}/
 add_test(NAME nuade-sibling-io COMMAND nuade_sibling_io_test)
 set_tests_properties(nuade-sibling-io PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "nuade_sibling_io_ok"
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+# I1305i2: the Amiga nuade manifest detects songs by the magic byte table (signatures.c) instead of loading the
+# player module. The table must agree with each player's real probe on every corpus file; FORM MODL must hit.
+add_executable(nuade_signature_probe_test m3/nuade_signature_probe_test.c "${PROJECT_SOURCE_DIR}/plugins/replayers/nuade/signatures.c")
+target_link_libraries(nuade_signature_probe_test PRIVATE selecta_nuade)
+target_include_directories(nuade_signature_probe_test PRIVATE "${SELECTA_NUADE_DIR}/include")
+add_test(NAME nuade-signature-probe-match COMMAND nuade_signature_probe_test
+  "${CMAKE_CURRENT_BINARY_DIR}/songs" "${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures")
+set_tests_properties(nuade-signature-probe-match PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "nuade_signature_probe_ok")
 if(NOT SEL_AMIGA AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
   # I1133: 400 modules through the user path, none rejected with "module table full".
   add_test(NAME plugin-table-growth COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/plugin_table_growth.sh $<TARGET_FILE:selecta-cli> ${CMAKE_BINARY_DIR}/modules)

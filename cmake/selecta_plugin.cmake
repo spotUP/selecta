@@ -66,7 +66,7 @@ add_custom_target(sdk-isolation
   COMMENT "Every plugin compiles with include/ as its only project include path")
 
 function(sel_add_plugin name kind)
-  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE;STATIC" "AMIGA_MANIFEST" "THIRD_PARTY_INCLUDES")
+  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE;STATIC" "" "AMIGA_MANIFEST;THIRD_PARTY_INCLUDES")
   set(sources ${SELP_UNPARSED_ARGUMENTS})
   if(NOT sources)
     message(FATAL_ERROR "sel_add_plugin(${name}): no sources")
