@@ -1727,6 +1727,13 @@ if(NOT SEL_AMIGA)
       "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
       "-DCHECKS1=replayer==klystron,module_loads==1,rendered_frames>=56000,underruns==0")
   endif()
+  # I427e4: organya is a LoadSeg module on the Amiga (Players/sel_organya, the manifest probe matches the "Org-0x" header).
+  # The song is the committed generated fixture org_test.org. module_loads==1 proves the LoadSeg ran, replayer==organya
+  # that the module's hooks rendered (2 s at the AHI shadow's 28150 Hz). Revert proof: without PROGDIR:Players/sel_organya
+  # the render fails with replayer_load_failed.
+  sel_m2_test(organya-render run vamos -DTAG=I427e4 "-DMOD=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/org_test.org"
+    -DMOD_COPY=org_test.org "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
+    "-DCHECKS1=replayer==organya,module_loads==1,rendered_frames>=56000,underruns==0")
   # T53 LED filter and stereo width.
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).

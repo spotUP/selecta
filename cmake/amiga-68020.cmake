@@ -30,6 +30,11 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Release default, Debug for build/amiga-dbg)" FORCE)
 endif()
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-m68020 -mcrt=nix20")
+# libnix keeps the soft-float primitives (__adddf3, __ltdf2, ...) in libm, and the -mcrt=nix20 driver does not add
+# -lm, so even libgcc's own _fixdfdi/_floatdidf need it. Every link gets it last, like libgcc itself. Before I427e4
+# (organya) the executables only linked because one statically linked replayer happened to pull libm in PUBLIC.
+set(CMAKE_C_STANDARD_LIBRARIES "-lm")
+set(CMAKE_CXX_STANDARD_LIBRARIES "-lm")
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 set(CMAKE_FIND_ROOT_PATH "${AMIGA_GCC_ROOT}/m68k-amigaos")
