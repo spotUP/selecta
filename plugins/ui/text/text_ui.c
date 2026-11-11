@@ -1799,6 +1799,15 @@ static void tui_nowplaying_page(tui* u, const sel_state* s) {
         snprintf(buf, sizeof buf, "%s", slash != NULL ? slash + 1 : path);
         tui_ptext(u, 1, y, buf, u->grid.cols - 2u, tui_style(u, TXT_ROLE_NORMAL));
     }
+    /* I1313c: players this machine cannot run, each line as the registry filter wrote it (never derived here). */
+    if (s->players_off != NULL && s->players_off[0] != '\0' && y + 2u < u->grid.rows) {
+        const char* line;
+        y++;
+        tui_ptext(u, 1, y++, "Players Turned Off", u->grid.cols - 2u, lab);
+        for (line = s->players_off; *line != '\0' && y + 1u < u->grid.rows; line += strlen(line) + 1u, y++) {
+            tui_ptext(u, 1, y, line, u->grid.cols - 2u, tui_style(u, TXT_ROLE_DIM));
+        }
+    }
 }
 
 /* Song Information page (desktop draw_songinfo): the three buttons, the note field, then every tag of the open song. */

@@ -274,6 +274,8 @@ typedef struct sel_state {
     const char* lyric_current;  /* text of that line, NULL when lyric_line is -1 */
     const char* lyric_prev;     /* DUI-P4-7: text of the line before the current one, NULL when there is none */
     const char* lyric_next;     /* DUI-P4-7: text of the line after the current one (the first line while lyric_line is -1), NULL when none */
+    const char* players_off;    /* I1313c: "line\0...\0", why each plugin the machine filter hid is off (the registry's own
+                                 * lines, sel_registry_hidden_text); "\0" or NULL: none */
     uint32_t queue_text_bytes;  /* I1082d: bytes of `queue_text` in use (the published snapshot copies that much) */
 } sel_state;
 
@@ -296,6 +298,8 @@ typedef struct sel_engine_config {
      * OPEN answers ERROR no_replayer. */
     uint32_t (*registry_count)(void);
     const sel_tag* (*registry_get)(uint32_t index);
+    /* I1313c: sel_registry_hidden_text, the lines saying why each hidden plugin is off; NULL: none shown. */
+    const char* (*registry_hidden_text)(void);
     /* Queue sizes, allocated once in sel_engine_create. 0: scaled from the
      * SEL_MACHINE_FAST_RAM tag of `machine` (the list sel_machine_probe
      * returns; the front end probes, the engine does not), or the smallest

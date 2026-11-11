@@ -1643,7 +1643,8 @@ if(NOT SEL_AMIGA)
 
   # T49 registry machine filter, desktop and vamos.
   sel_m2_test(registry-machine-filter registry desktop)
-  sel_m2_test(registry-machine-filter registry vamos)
+  sel_m2_test(registry-machine-filter registry vamos
+    "-DAMIGA_SELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta")
   # I1316: render of an .ogg under vamos (68020, no FPU) is a clean no_replayer refusal, not a CPU exception.
   sel_m2_test(ogg-render-no-fpu fpu_refusal vamos "-DMOD=${CMAKE_CURRENT_SOURCE_DIR}/m3/stream/sine.ogg")
   # I222: the real probe plus the registry pick the machine's output (vamos: paula).

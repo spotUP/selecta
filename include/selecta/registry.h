@@ -31,6 +31,27 @@ typedef struct sel_registry_stats {
     uint32_t module_loads;       /* manifest plugins whose module was loaded on demand (Amiga LoadSeg, I427e) */
 } sel_registry_stats;
 
+/* I1313c: why a plugin is off on this machine. One record per unmet need of a hidden plugin, kept by the machine
+ * filter of the last init (the same check that counts hidden_* above), so a UI shows the filter's own verdict. */
+typedef enum sel_registry_hidden_reason {
+    SEL_REGISTRY_HIDDEN_MIN_CPU = 1, /* needed: SEL_RP_MIN_CPU (68020), available: the machine CPU (68000) */
+    SEL_REGISTRY_HIDDEN_NEEDS_FPU,   /* needed: 1, available: 0 (no FPU) */
+    SEL_REGISTRY_HIDDEN_MEMORY,      /* needed: SEL_RP_MEMORY bytes, available: SEL_MACHINE_FREE_RAM bytes */
+    SEL_REGISTRY_HIDDEN_CHIP         /* needed: SEL_OUT_MEM_CHIP bytes, available: SEL_MACHINE_CHIP_RAM bytes */
+} sel_registry_hidden_reason;
+typedef struct sel_registry_hidden {
+    const char* id; /* the plugin's own SEL_PLUGIN_ID */
+    uint32_t reason; /* sel_registry_hidden_reason */
+    uint32_t needed, available;
+    const char* line; /* the one display line, e.g. "nuade off: needs 2560 KB of free memory, 1790 KB free" */
+} sel_registry_hidden;
+uint32_t sel_registry_hidden_count(void);
+const sel_registry_hidden* sel_registry_hidden_get(uint32_t index); /* NULL out of range */
+/* The reason as a key word: "min_cpu", "needs_fpu", "memory", "chip". */
+const char* sel_registry_hidden_reason_name(uint32_t reason);
+/* Every hidden line as "line\0line\0...\0" (an empty list is "\0"); valid until the next init. */
+const char* sel_registry_hidden_text(void);
+
 /* Calls every entry once; keeps the plugins the machine can run (a sel_machine tag list, NULL =
  * no filter, the desktop probe passes everything). Returns the number kept. */
 uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine);

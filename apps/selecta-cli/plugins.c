@@ -105,6 +105,13 @@ int sel_cli_plugins(int argc, char** argv) {
             /* The RAM the memory gate compared against, so a test can assert the gate, not a fixed RAM size. */
             printf("free_ram=%lu\n", (unsigned long)sel_tag_find(machine, SEL_MACHINE_FREE_RAM, 0));
         }
+        /* I1313c: why each hidden plugin is off, as the filter decided it, then the line a UI shows. */
+        for (i = 0; i < sel_registry_hidden_count(); i++) {
+            const sel_registry_hidden* h = sel_registry_hidden_get(i);
+            printf("hidden=%s reason=%s needed=%lu available=%lu\nhidden_line=%s\n", h->id,
+                   sel_registry_hidden_reason_name(h->reason), (unsigned long)h->needed,
+                   (unsigned long)h->available, h->line);
+        }
     }
     return 0;
 }

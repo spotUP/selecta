@@ -52,6 +52,38 @@ if(MODE STREQUAL "vamos")
   if(out MATCHES "(^|\n)nuade[ \t]")
     message(FATAL_ERROR "RED[T49]: nuade listed with free_ram=${free_ram} below its 2621440 (vamos -m 4096):\n${out}")
   endif()
+  # I1313c: the registry keeps why nuade is off (the filter's own numbers), and the line a UI shows.
+  if(NOT out MATCHES "(^|\n)hidden=nuade reason=memory needed=2621440 available=${free_ram}\n")
+    message(FATAL_ERROR "RED[I1313c]: no hidden record for nuade (reason memory, 2621440 vs ${free_ram}):\n${out}")
+  endif()
+  if(NOT out MATCHES "(^|\n)hidden_line=nuade off: needs 2560 KB of free memory, [0-9]+ KB free\n")
+    message(FATAL_ERROR "RED[I1313c]: no hidden_line for nuade:\n${out}")
+  endif()
+  # The text UI's Now Playing page shows the same line, read from the engine state (never derived in the UI).
+  if(AMIGA_SELECTA)
+    set(WORK "${WORK}-i1313c")
+    file(REMOVE_RECURSE "${WORK}")
+    file(MAKE_DIRECTORY "${WORK}")
+    file(WRITE "${WORK}/np.keys" "wait 500\nN\nwait 300\nq\n")
+    # Selecta is larger than selecta-cli and does not load at -m 4096 (vamos "alloc: NO MEMORY"); at -m 6144 its free RAM
+    # after start (about 2150 KB) is still below nuade's 2560 KB. Below 16 MB Selecta exits 1 with a CPU error on a custom
+    # chip register after the keys ran (with or without the Now Playing page), so only the screen dump is checked here.
+    set(SEL_VAMOS_RAM_KB 6144)
+    sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_SELECTA}")
+    set(SEL_VAMOS_RAM_KB ${ram_16mb})
+    execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25 --start-dir work:
+                            --keys work:np.keys --screen-dump work:np.txt
+                    RESULT_VARIABLE rc OUTPUT_VARIABLE uout ERROR_VARIABLE uerr TIMEOUT 120)
+    if(NOT EXISTS "${WORK}/np.txt")
+      message(FATAL_ERROR "RED[I1313c]: Selecta at vamos -m 6144 wrote no screen dump (rc=${rc}):\n${uout}\n${uerr}")
+    endif()
+    file(READ "${WORK}/np.txt" dump)
+    if(NOT dump MATCHES "Players Turned Off" OR NOT dump MATCHES "nuade off: needs 2560 KB of free memory, [0-9]+ KB free")
+      message(FATAL_ERROR "RED[I1313c]: text UI Now Playing shows no nuade line (rc=${rc}):\n${dump}\n${uerr}")
+    endif()
+    string(REGEX MATCH "nuade off: needs 2560 KB of free memory, [0-9]+ KB free" ui_line "${dump}")
+    message(STATUS "[OK] I1313c text UI: ${ui_line}")
+  endif()
 endif()
 # Priority owner: one owner per format, from the registry the filter feeds.
 m2_run_ok(T49 out plugins --owner actionamics)

@@ -720,6 +720,7 @@ int main(int argc, char** argv)
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
+    cfg.registry_hidden_text = sel_registry_hidden_text; /* I1313c: the UI shows why a player is off */
     cfg.machine = machine_tags; /* queue and browse buffers scale with the machine */
     if (catalogue != NULL) {
         library = sel_cli_open_catalogue(catalogue);

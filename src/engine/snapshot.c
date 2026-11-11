@@ -117,6 +117,7 @@ static int copy_core(cur* c, sel_state* dst, const sel_state* src) {
     dst->composers = put_list(c, src->composers, src->composers != NULL ? span_list(src->composers, 3u) : 0u);
     dst->formats = put_list(c, src->formats, src->formats != NULL ? span_list(src->formats, 2u) : 0u);
     dst->composer_page = put_list(c, src->composer_page, src->composer_page != NULL ? span_composer_page(src->composer_page) : 0u);
+    dst->players_off = put_list(c, src->players_off, src->players_off != NULL ? span_list(src->players_off, 1u) : 0u);
     dst->lyric_text = put_str(c, src->lyric_text);
     dst->lyric_current = put_str(c, src->lyric_current);
     dst->lyric_prev = put_str(c, src->lyric_prev);

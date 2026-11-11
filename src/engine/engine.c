@@ -544,6 +544,7 @@ struct sel_engine {
     int result_overflow;
     uint32_t (*registry_count)(void);
     const sel_tag* (*registry_get)(uint32_t index);
+    const char* (*registry_hidden_text)(void);
     uint32_t rate;
     uint32_t resampler;
     /* Playback policy, parsed from the options by set_option; the audio side reads them. */
@@ -11281,6 +11282,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (cfg) {
         e->registry_count = cfg->registry_count;
         e->registry_get = cfg->registry_get;
+        e->registry_hidden_text = cfg->registry_hidden_text;
         sel_source_set_plugins(cfg->registry_count, cfg->registry_get, host);
         e->lib = cfg->library;
         if (e->lib != NULL) {
@@ -11708,6 +11710,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.queue_playing = e->q_playing;
     e->state.queue_version = e->queue.version;
     e->state.ctx_name = e->ctx_name;
+    e->state.players_off = e->registry_hidden_text != NULL ? e->registry_hidden_text() : NULL;
 }
 
 /* While the output is handed over to a HW-kind replayer no output pulls sel_engine_render, so the pump runs it

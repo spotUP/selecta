@@ -132,8 +132,114 @@ static uint32_t cpu_number(uintptr_t cpu) {
     }
 }
 
+/* I1313c: the hidden list of the last init, one record per unmet need, and its display lines. */
+static sel_registry_hidden* g_hidden;
+static uint32_t g_hidden_n, g_hidden_cap;
+static char* g_hidden_text;
+static size_t g_hidden_text_used, g_hidden_text_cap;
+
+const char* sel_registry_hidden_reason_name(uint32_t reason) {
+    switch (reason) {
+    case SEL_REGISTRY_HIDDEN_MIN_CPU:
+        return "min_cpu";
+    case SEL_REGISTRY_HIDDEN_NEEDS_FPU:
+        return "needs_fpu";
+    case SEL_REGISTRY_HIDDEN_MEMORY:
+        return "memory";
+    case SEL_REGISTRY_HIDDEN_CHIP:
+        return "chip";
+    default:
+        return "?";
+    }
+}
+
+/* KB rounded up, so a need never reads smaller than it is. */
+static unsigned long kb_up(uint32_t bytes) {
+    return ((unsigned long)bytes + 1023ul) / 1024ul;
+}
+
+static void hidden_line(char* out, size_t n, const char* id, uint32_t reason, uint32_t needed, uint32_t available) {
+    switch (reason) {
+    case SEL_REGISTRY_HIDDEN_MIN_CPU:
+        snprintf(out, n, "%s off: needs a %lu processor, this one is a %lu", id, (unsigned long)needed,
+                 (unsigned long)available);
+        break;
+    case SEL_REGISTRY_HIDDEN_NEEDS_FPU:
+        snprintf(out, n, "%s off: needs a floating point unit, none found", id);
+        break;
+    case SEL_REGISTRY_HIDDEN_MEMORY:
+        snprintf(out, n, "%s off: needs %lu KB of free memory, %lu KB free", id, kb_up(needed), available / 1024ul);
+        break;
+    default:
+        snprintf(out, n, "%s off: needs %lu KB of chip memory, %lu KB found", id, kb_up(needed), available / 1024ul);
+        break;
+    }
+}
+
+/* Records one unmet need of `d`; a failed allocation drops the record, never the filter verdict. */
+static void note_hidden(const sel_tag* d, uint32_t reason, uintptr_t needed, uintptr_t available) {
+    const char* id = (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "?");
+    char line[160];
+    size_t len;
+    if (g_hidden_n >= g_hidden_cap) {
+        uint32_t cap = g_hidden_cap != 0 ? g_hidden_cap * 2u : 16u;
+        sel_registry_hidden* grown = (sel_registry_hidden*)realloc(g_hidden, cap * sizeof *grown);
+        if (grown == NULL) {
+            return;
+        }
+        g_hidden = grown;
+        g_hidden_cap = cap;
+    }
+    hidden_line(line, sizeof line, id, reason, (uint32_t)needed, (uint32_t)available);
+    len = strlen(line) + 1u;
+    if (g_hidden_text_used + len + 1u > g_hidden_text_cap) {
+        size_t cap = g_hidden_text_cap != 0 ? g_hidden_text_cap * 2u : 1024u;
+        char* grown;
+        while (cap < g_hidden_text_used + len + 1u) {
+            cap *= 2u;
+        }
+        grown = (char*)realloc(g_hidden_text, cap);
+        if (grown == NULL) {
+            return;
+        }
+        g_hidden_text = grown;
+        g_hidden_text_cap = cap;
+    }
+    memcpy(g_hidden_text + g_hidden_text_used, line, len);
+    g_hidden[g_hidden_n].id = id;
+    g_hidden[g_hidden_n].reason = reason;
+    g_hidden[g_hidden_n].needed = (uint32_t)needed;
+    g_hidden[g_hidden_n].available = (uint32_t)available;
+    g_hidden[g_hidden_n].line = NULL; /* set once the text buffer stops moving (sel_registry_hidden_get) */
+    g_hidden_text_used += len;
+    g_hidden_text[g_hidden_text_used] = '\0';
+    g_hidden_n++;
+}
+
+uint32_t sel_registry_hidden_count(void) {
+    return g_hidden_n;
+}
+
+const sel_registry_hidden* sel_registry_hidden_get(uint32_t index) {
+    const char* p = g_hidden_text;
+    uint32_t i;
+    if (index >= g_hidden_n || p == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < index; i++) {
+        p += strlen(p) + 1u;
+    }
+    g_hidden[index].line = p;
+    return &g_hidden[index];
+}
+
+const char* sel_registry_hidden_text(void) {
+    return g_hidden_text != NULL ? g_hidden_text : "";
+}
+
 /* The one machine filter (desktop and 68k). Returns 1 when `d` runs on `machine` and counts the
- * first unmet need per reason in g_stats; a plugin failing several needs counts under each. */
+ * first unmet need per reason in g_stats; a plugin failing several needs counts under each and
+ * leaves one hidden record per need (I1313c). */
 static int fits(const sel_tag* d, const sel_tag* machine) {
     const sel_tag* hooks = (const sel_tag*)sel_tag_find(d, SEL_PLUGIN_TAGS, 0);
     uintptr_t min_cpu = hooks ? sel_tag_find(hooks, SEL_RP_MIN_CPU, 0) : 0;
@@ -148,6 +254,7 @@ static int fits(const sel_tag* d, const sel_tag* machine) {
     }
     if (min_cpu > cpu_number(sel_tag_find(machine, SEL_MACHINE_CPU, 0))) {
         g_stats.hidden_min_cpu++;
+        note_hidden(d, SEL_REGISTRY_HIDDEN_MIN_CPU, min_cpu, cpu_number(sel_tag_find(machine, SEL_MACHINE_CPU, 0)));
         ok = 0;
     }
     if (floats && !sel_tag_find(machine, SEL_MACHINE_FPU, 0)) {
@@ -155,16 +262,19 @@ static int fits(const sel_tag* d, const sel_tag* machine) {
     }
     if (fpu_code && !sel_tag_find(machine, SEL_MACHINE_FPU, 0)) { /* I1316: 68881 code crashes without an FPU */
         g_stats.hidden_needs_fpu++;
+        note_hidden(d, SEL_REGISTRY_HIDDEN_NEEDS_FPU, 1u, 0u);
         ok = 0;
     }
     /* I1313: SEL_RP_MEMORY is the player's own peak (module hunk plus allocations); it must fit in the RAM free
      * after Selecta has started, not the installed total. */
     if (memory > sel_tag_find(machine, SEL_MACHINE_FREE_RAM, 0)) {
         g_stats.hidden_memory++;
+        note_hidden(d, SEL_REGISTRY_HIDDEN_MEMORY, memory, sel_tag_find(machine, SEL_MACHINE_FREE_RAM, 0));
         ok = 0;
     }
     if (chip > sel_tag_find(machine, SEL_MACHINE_CHIP_RAM, 0)) {
         g_stats.hidden_chip++;
+        note_hidden(d, SEL_REGISTRY_HIDDEN_CHIP, chip, sel_tag_find(machine, SEL_MACHINE_CHIP_RAM, 0));
         ok = 0;
     }
     return ok;
@@ -222,6 +332,11 @@ uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine)
     }
     g_count = 0;
     memset(&g_stats, 0, sizeof g_stats);
+    g_hidden_n = 0;
+    g_hidden_text_used = 0;
+    if (g_hidden_text != NULL) {
+        g_hidden_text[0] = '\0';
+    }
     g_stats.dyn_rejected = g_load_rejected;
     g_stats.builtin_missing = g_missing_n;
     for (i = 0; i < sel_registry_entry_count; i++) {
