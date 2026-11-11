@@ -20,8 +20,13 @@ size_t sel_nuade_sig_count(void);
 const char* sel_nuade_sig_player(size_t i);
 /* 1 when the header in data[0..size) matches one of entry i's signatures, else 0. */
 int sel_nuade_sig_match_entry(size_t i, const uint8_t* data, size_t size);
-/* Player id whose signature matches data, NULL when none does. */
+/* 1 when entry i is an Unsure row: its hit never makes a sure claim (I1305i3, audiosculpture vs FLT4 mods). */
+int sel_nuade_sig_entry_unsure(size_t i);
+/* Player id whose sure (not Unsure) signature matches data, NULL when none does. */
 const char* sel_nuade_sig_match(const uint8_t* data, size_t size);
+/* The manifest probe's answer: 2 = a sure signature matched (claim), 1 = an Unsure row matched or `name` (path
+ * allowed) is claimed by the comma extension list `exts`, 0 = no. */
+int sel_nuade_sig_probe_level(const uint8_t* data, size_t size, const char* name, const char* exts);
 /* 1 when `name` (a file name, no directory) has a prefix ("mod.x") or suffix ("x.mod") in the comma list `exts`,
  * case-insensitive. Same rule as the engine's EXTENSIONS claim (src/engine/claims.c), which plugins cannot link. */
 int sel_nuade_sig_name_claimed(const char* exts, const char* name);

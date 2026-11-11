@@ -1003,6 +1003,8 @@ set_tests_properties(nuade-sibling-io PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGUL
 # player module. The table must agree with each player's real probe on every corpus file; FORM MODL must hit.
 add_executable(nuade_signature_probe_test m3/nuade_signature_probe_test.c "${PROJECT_SOURCE_DIR}/plugins/replayers/nuade/signatures.c")
 target_link_libraries(nuade_signature_probe_test PRIVATE selecta_nuade)
+# the corpus is the generated songs/ directory; building the test alone must generate it (protracker4 sentinel)
+add_dependencies(nuade_signature_probe_test testmod)
 target_include_directories(nuade_signature_probe_test PRIVATE "${SELECTA_NUADE_DIR}/include")
 add_test(NAME nuade-signature-probe-match COMMAND nuade_signature_probe_test
   "${CMAKE_CURRENT_BINARY_DIR}/songs" "${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures")

@@ -102,17 +102,8 @@ size_t sel_nuade_static_hooks(sel_tag* t, const char* extensions, const char* fo
  * EXTENSIONS claim is Unsure, so it opens with nuade only when no other replayer is sure. The module's own
  * probe runs at open time. */
 static int rp_manifest_probe(const uint8_t* data, size_t size, const char* name) {
-    const char* base = name;
-    const char* p;
-    if (sel_nuade_sig_match(data, size) != NULL) {
-        return SEL_PROBE_YES;
-    }
-    for (p = name; p != NULL && *p != '\0'; p++) {
-        if (*p == '/' || *p == ':') {
-            base = p + 1;
-        }
-    }
-    return sel_nuade_sig_name_claimed(SEL_NUADE_MANIFEST_EXTENSIONS, base) ? SEL_PROBE_UNSURE : SEL_PROBE_NO;
+    const int level = sel_nuade_sig_probe_level(data, size, name, SEL_NUADE_MANIFEST_EXTENSIONS);
+    return level == 2 ? SEL_PROBE_YES : level == 1 ? SEL_PROBE_UNSURE : SEL_PROBE_NO;
 }
 
 static sel_tag g_hooks[14];

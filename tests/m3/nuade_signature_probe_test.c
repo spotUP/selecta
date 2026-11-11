@@ -108,13 +108,55 @@ static void walk(const char* dir) {
     closedir(d);
 }
 
+/* I1305i3: the audiosculpture row must never make a sure claim on a 4-channel tracker mod. A FLT4 or M.K. mod whose
+ * sample 3 is an empty slot with volume 64 (common in tracker mods, and exactly what asc_probe accepts) goes to the
+ * tracker replayer only when nuade's manifest answer is not YES: the engine (engine.c, local.c) takes the first
+ * replayer that is sure and falls back to an Unsure one. So FLT4 must be Unsure (2 = sure would steal it), M.K. no. */
+static unsigned g_asc_unsure; /* sentinel: the Unsure audiosculpture row ran and hit */
+
+static void check_tracker_collision(void) {
+    static uint8_t mod[0x43C + 1024];
+    const char* marks[2] = { "FLT4", "M.K." };
+    int m;
+    size_t i;
+    for (m = 0; m < 2; m++) {
+        int level, want = m == 0 ? 1 : 0;
+        memset(mod, 0, sizeof mod);
+        memcpy(mod, "tracker song", 12);
+        mod[20 + 3 * 30 + 25] = 64; /* sample 4: length 0, volume 64 */
+        mod[20 + 0 * 30 + 23] = 0x10; /* sample 1: a real sample of 16 words */
+        mod[20 + 0 * 30 + 25] = 64;
+        mod[950] = 1;
+        memcpy(mod + 0x438, marks[m], 4);
+        level = sel_nuade_sig_probe_level(mod, sizeof mod, "mods/song.mod", "adsc,mod_adsc4");
+        if (level != want || sel_nuade_sig_match(mod, sizeof mod) != NULL) {
+            printf("FAIL %s tracker mod: nuade manifest level %d (want %d), sure match %s\n", marks[m], level, want,
+                   sel_nuade_sig_match(mod, sizeof mod) != NULL ? sel_nuade_sig_match(mod, sizeof mod) : "none");
+            g_bad++;
+        }
+        for (i = 0; i < sel_nuade_sig_count(); i++) {
+            if (strcmp(sel_nuade_sig_player(i), "audiosculpture") == 0 && sel_nuade_sig_entry_unsure(i) &&
+                sel_nuade_sig_match_entry(i, mod, sizeof mod)) {
+                g_asc_unsure++;
+            }
+        }
+    }
+    /* named .adsc the same content stays Unsure (the module's probe decides at open), never sure */
+    if (sel_nuade_sig_probe_level(mod, sizeof mod, "song.adsc", "adsc,mod_adsc4") != 1) {
+        printf("FAIL song.adsc not Unsure\n");
+        g_bad++;
+    }
+}
+
 int main(int argc, char** argv) {
     int i;
+    check_tracker_collision();
     for (i = 1; i < argc; i++) {
         walk(argv[i]);
     }
-    printf("files=%u table_hits=%u protracker4_hits=%u mismatches=%u\n", g_files, g_hits, g_ptk4_hits, g_bad);
-    if (g_bad != 0u || g_ptk4_hits == 0u) {
+    printf("files=%u table_hits=%u protracker4_hits=%u audiosculpture_unsure=%u mismatches=%u\n", g_files, g_hits,
+           g_ptk4_hits, g_asc_unsure, g_bad);
+    if (g_bad != 0u || g_ptk4_hits == 0u || g_asc_unsure == 0u) {
         return 1;
     }
     printf("nuade_signature_probe_ok\n");

@@ -4,8 +4,17 @@
  * `min_size` bytes. A part with len 0 means "the byte at offset is not zero". The source of each row is the header
  * gate of that player's probe (file:function noted per row); players whose probe parses the whole module, checks
  * code patterns at varying offsets or decides by file name have no row and fall back to the extension claim.
- * Not listed on purpose: audiosculpture (EXO4/FLT4 at 0x438 is the common 4-channel tracker mark; its probe only
- * says Unsure unless the extension is .adsc), pokeynoise and dynamicsynthesizer (file name decides). */
+ *
+ * A row marked `unsure` mirrors a probe that by content alone only says Unsure (I1305i3): its hit makes the manifest
+ * answer Unsure, never a sure claim, so a replayer that is sure of the file still wins. audiosculpture is the case:
+ * EXO4/FLT4 at 0x438 is also the common 4-channel tracker mark, and a sure row would steal those tracker mods.
+ * `repeat`/`stride`: parts after the first are also tried shifted by j * stride for j < repeat (any shift may match),
+ * for probes that loop over a table of fixed-size records.
+ *
+ * Without a row on purpose (I1305i3; extension claim only): pokeynoise and dynamicsynthesizer (file name decides),
+ * dsc (field range checks, no mark), pumatracker and zoundmonitor (the mark sits at an offset computed from header
+ * counts), infogrames (the first word is the offset of the checked envelope bytes), earache (three header layouts,
+ * one without the EASO mark). */
 #include "signatures.h"
 
 #include <string.h>
@@ -20,64 +29,89 @@ typedef struct {
     const char* player;
     uint32_t min_size;
     sig_part part[4];
+    uint8_t unsure; /* 1: a hit is only Unsure (the player's own probe never says Supported by content) */
+    uint8_t repeat; /* parts 1.. also tried at offset + j * stride, j < repeat; 0 or 1: no shift */
+    uint8_t stride;
 } sig_row;
 
 static const sig_row k_rows[] = {
     /* actionamics.c probe: "ACTIONAMICS SOUND TOOL" at 62 */
-    { "actionamics", 90, { { 62, 22, "ACTIONAMICS SOUND TOOL" } } },
+    { "actionamics", 90, { { 62, 22, "ACTIONAMICS SOUND TOOL" } }, 0, 0, 0 },
     /* amcomposer: 16-byte replay mark at 0 */
-    { "amcomposer", 16, { { 0, 16, "AMC V1.2 REPLAY!" } } },
-    { "andrewparton", 4, { { 0, 4, "BANK" } } },
+    { "amcomposer", 16, { { 0, 16, "AMC V1.2 REPLAY!" } }, 0, 0, 0 },
+    { "andrewparton", 4, { { 0, 4, "BANK" } }, 0, 0, 0 },
+    /* aprosys_module.c aps_module_parse: "ADRVPACK" at 0 */
+    { "aprosys", 8, { { 0, 8, "ADRVPACK" } }, 0, 0, 0 },
     /* artandmagic: "EXIT" at 0x1A */
-    { "artandmagic", 0x1E, { { 0x1A, 4, "EXIT" } } },
-    { "cinemaware", 4, { { 0, 4, "IBLK" } } },
-    { "davidhanney", 4, { { 0, 4, "DSNG" } } },
-    { "deltamusic1", 4, { { 0, 4, "ALL " } } },
+    { "artandmagic", 0x1E, { { 0x1A, 4, "EXIT" } }, 0, 0, 0 },
+    /* audiosculpture.c asc_probe: EXO4/FLT4 at 0x438 and one of the first 32 sample headers (30 bytes from 20) with
+     * length 0 (word at +22) and a non-zero volume (+25). Unsure: the probe says Supported only for .adsc names. */
+    { "audiosculpture", 0x43C, { { 0x438, 4, "EXO4" }, { 42, 2, "\0\0" }, { 45, 0, NULL } }, 1, 32, 30 },
+    { "audiosculpture", 0x43C, { { 0x438, 4, "FLT4" }, { 42, 2, "\0\0" }, { 45, 0, NULL } }, 1, 32, 30 },
+    { "cinemaware", 4, { { 0, 4, "IBLK" } }, 0, 0, 0 },
+    { "davidhanney", 4, { { 0, 4, "DSNG" } }, 0, 0, 0 },
+    { "deltamusic1", 4, { { 0, 4, "ALL " } }, 0, 0, 0 },
     /* deltamusic2: ".FNL" at 0xBC6, header to 0xFDA */
-    { "deltamusic2", 0xFDA, { { 0xBC6, 4, ".FNL" } } },
-    { "digmug", 204, { { 0, 24, " MUGICIAN/SOFTEYES 1990 " } } },
-    { "digmug", 204, { { 0, 24, " MUGICIAN2/SOFTEYES 1990" } } },
-    { "dss", 4, { { 0, 4, "MMU2" } } },
-    { "emsv6", 10, { { 0, 10, "E.M.S. V6." } } },
+    { "deltamusic2", 0xFDA, { { 0xBC6, 4, ".FNL" } }, 0, 0, 0 },
+    { "digmug", 204, { { 0, 24, " MUGICIAN/SOFTEYES 1990 " } }, 0, 0, 0 },
+    { "digmug", 204, { { 0, 24, " MUGICIAN2/SOFTEYES 1990" } }, 0, 0, 0 },
+    { "dss", 4, { { 0, 4, "MMU2" } }, 0, 0, 0 },
+    { "emsv6", 10, { { 0, 10, "E.M.S. V6." } }, 0, 0, 0 },
     /* facethemusic: "FTM" and version byte 3 */
-    { "facethemusic", 5, { { 0, 3, "FTM" }, { 4, 1, "\x03" } } },
+    { "facethemusic", 5, { { 0, 3, "FTM" }, { 4, 1, "\x03" } }, 0, 0, 0 },
     /* fashiontracker: fixed replay code at the start of the file */
     { "fashiontracker", 0x1A,
-      { { 0, 4, "\x13\xFC\x00\x40" }, { 8, 4, "\x4E\x71\x04\x39" }, { 12, 2, "\x00\x01" }, { 0x12, 8, "\x66\xF4\x4E\x75\x48\xE7\xFF\xFE" } } },
-    { "fcbsi", 4, { { 0, 4, "FUCO" } } },
-    { "forgottenworlds", 4, { { 0, 4, "FWMP" } } },
+      { { 0, 4, "\x13\xFC\x00\x40" }, { 8, 4, "\x4E\x71\x04\x39" }, { 12, 2, "\x00\x01" }, { 0x12, 8, "\x66\xF4\x4E\x75\x48\xE7\xFF\xFE" } }, 0, 0, 0 },
+    { "fcbsi", 4, { { 0, 4, "FUCO" } }, 0, 0, 0 },
+    { "forgottenworlds", 4, { { 0, 4, "FWMP" } }, 0, 0, 0 },
     /* futurecomposer.c fc_create: size >= 100, FC14 or SMOD */
-    { "futurecomposer", 100, { { 0, 4, "FC14" } } },
-    { "futurecomposer", 100, { { 0, 4, "SMOD" } } },
+    { "futurecomposer", 100, { { 0, 4, "FC14" } }, 0, 0, 0 },
+    { "futurecomposer", 100, { { 0, 4, "SMOD" } }, 0, 0, 0 },
+    /* gm_module.c gm_module_parse: "GLUE" and its bitwise complement */
+    { "gluemon", 8, { { 0, 4, "GLUE" }, { 4, 4, "\xB8\xB3\xAA\xBA" } }, 0, 0, 0 },
     /* hippel: COSO packed TFMX */
-    { "hippel", 0x24, { { 0, 4, "COSO" }, { 0x20, 4, "TFMX" } } },
-    { "instereo1", 8, { { 0, 8, "ISM!V1.2" } } },
-    { "instereo2", 8, { { 0, 8, "IS20DF10" } } },
-    { "jamcracker", 4, { { 0, 4, "BeEp" } } },
-    { "markcooksey", 6, { { 0, 4, "\xD0\x40\xD0\x40" }, { 4, 2, "\x4E\xFB" } } },
-    { "mcmd", 4, { { 0, 4, "MCMD" } } },
-    { "oktalyzer", 1368, { { 0, 8, "OKTASONG" } } },
+    { "hippel", 0x24, { { 0, 4, "COSO" }, { 0x20, 4, "TFMX" } }, 0, 0, 0 },
+    { "instereo1", 8, { { 0, 8, "ISM!V1.2" } }, 0, 0, 0 },
+    { "instereo2", 8, { { 0, 8, "IS20DF10" } }, 0, 0, 0 },
+    { "jamcracker", 4, { { 0, 4, "BeEp" } }, 0, 0, 0 },
+    /* mt_module.c: "ARP." at 0 */
+    { "majortom", 4, { { 0, 4, "ARP." } }, 0, 0, 0 },
+    { "markcooksey", 6, { { 0, 4, "\xD0\x40\xD0\x40" }, { 4, 2, "\x4E\xFB" } }, 0, 0, 0 },
+    { "mcmd", 4, { { 0, 4, "MCMD" } }, 0, 0, 0 },
+    /* mdl_module.c: "MSOB" at 0, header 20 bytes */
+    { "medley", 20, { { 0, 4, "MSOB" } }, 0, 0, 0 },
+    /* ntsp.c module_read: "SPNT" at 0, header 8 bytes */
+    { "ntsp", 8, { { 0, 4, "SPNT" } }, 0, 0, 0 },
+    { "oktalyzer", 1368, { { 0, 8, "OKTASONG" } }, 0, 0, 0 },
+    /* professionalsoundartists.c: "PSA" and a zero byte at 0, subsong table to 0x40 */
+    { "professionalsoundartists", 0x40, { { 0, 4, "PSA\0" } }, 0, 0, 0 },
     /* protracker4.c parse_module: IFF FORM of type MODL starting with a VERS chunk */
-    { "protracker4", 16, { { 0, 4, "FORM" }, { 8, 4, "MODL" }, { 12, 4, "VERS" } } },
-    { "quadracomposer", 12, { { 0, 4, "FORM" }, { 8, 8, "EMODEMIC" } } },
-    { "richardjoseph", 8, { { 0, 3, "RJP" }, { 4, 4, "SMOD" } } },
-    { "ronklaren", 63, { { 0, 4, "\x00\x00\x03\xF3" }, { 40, 23, "RON_KLAREN_SOUNDMODULE!" } } },
-    { "sidmon2", 86, { { 58, 28, "SIDMON II - THE MIDI VERSION" } } },
-    { "sonicarranger", 8, { { 0, 8, "SOARV1.0" } } },
+    { "protracker4", 16, { { 0, 4, "FORM" }, { 8, 4, "MODL" }, { 12, 4, "VERS" } }, 0, 0, 0 },
+    { "quadracomposer", 12, { { 0, 4, "FORM" }, { 8, 8, "EMODEMIC" } }, 0, 0, 0 },
+    { "richardjoseph", 8, { { 0, 3, "RJP" }, { 4, 4, "SMOD" } }, 0, 0, 0 },
+    { "ronklaren", 63, { { 0, 4, "\x00\x00\x03\xF3" }, { 40, 23, "RON_KLAREN_SOUNDMODULE!" } }, 0, 0, 0 },
+    { "sidmon2", 86, { { 58, 28, "SIDMON II - THE MIDI VERSION" } }, 0, 0, 0 },
+    { "sonicarranger", 8, { { 0, 8, "SOARV1.0" } }, 0, 0, 0 },
+    /* sonix.c: IFF FORM of type SMUS; the probe says Supported by content only for SMUS (SNX/TINY need the name) */
+    { "sonix", 24, { { 0, 4, "FORM" }, { 8, 4, "SMUS" } }, 0, 0, 0 },
     /* soundfx.c sfx_find_layout: SONG at 60 (15 samples) or SO31 at 124 (31 samples) */
-    { "soundfx", 660, { { 60, 4, "SONG" } } },
-    { "soundfx", 1204, { { 124, 4, "SO31" } } },
+    { "soundfx", 660, { { 60, 4, "SONG" } }, 0, 0, 0 },
+    { "soundfx", 1204, { { 124, 4, "SO31" } }, 0, 0, 0 },
     /* soundmon.c sniff_type: version mark at 26, size >= 512 */
-    { "soundmon", 512, { { 26, 3, "V.2" } } },
-    { "soundmon", 512, { { 26, 4, "BPSM" } } },
-    { "soundmon", 512, { { 26, 3, "V.3" } } },
-    { "synthesis", 8, { { 0, 8, "Synth4.0" } } },
-    { "synthesis", 0x1F16, { { 0x1F0E, 8, "Synth4.2" } } },
-    { "syntracker", 16, { { 0, 16, "SYNTRACKER-SONG:" } } },
+    { "soundmon", 512, { { 26, 3, "V.2" } }, 0, 0, 0 },
+    { "soundmon", 512, { { 26, 4, "BPSM" } }, 0, 0, 0 },
+    { "soundmon", 512, { { 26, 3, "V.3" } }, 0, 0, 0 },
+    /* ss_module.c check_magic: "SPEEDY-SYSTEM" at 0 */
+    { "speedysystem", 13, { { 0, 13, "SPEEDY-SYSTEM" } }, 0, 0, 0 },
+    { "synthesis", 8, { { 0, 8, "Synth4.0" } }, 0, 0, 0 },
+    { "synthesis", 0x1F16, { { 0x1F0E, 8, "Synth4.2" } }, 0, 0, 0 },
+    /* sp_module.c sp_song_layout: "OBISYNTHPACK" at 0, notes at 0x50C */
+    { "synthpack", 0x510, { { 0, 12, "OBISYNTHPACK" } }, 0, 0, 0 },
+    { "syntracker", 16, { { 0, 16, "SYNTRACKER-SONG:" } }, 0, 0, 0 },
     /* timetracker: "TMK" and a non-zero pattern count */
-    { "timetracker", 4, { { 0, 3, "TMK" }, { 3, 0, NULL } } },
+    { "timetracker", 4, { { 0, 3, "TMK" }, { 3, 0, NULL } }, 0, 0, 0 },
     /* ufo_song.c has_tags: FORM....DDAT BODY .... CHAN */
-    { "ufo", 0x18, { { 0, 4, "FORM" }, { 8, 4, "DDAT" }, { 12, 4, "BODY" }, { 0x14, 4, "CHAN" } } },
+    { "ufo", 0x18, { { 0, 4, "FORM" }, { 8, 4, "DDAT" }, { 12, 4, "BODY" }, { 0x14, 4, "CHAN" } }, 0, 0, 0 },
 };
 
 size_t sel_nuade_sig_count(void) {
@@ -88,42 +122,80 @@ const char* sel_nuade_sig_player(size_t i) {
     return i < sel_nuade_sig_count() ? k_rows[i].player : NULL;
 }
 
-int sel_nuade_sig_match_entry(size_t i, const uint8_t* data, size_t size) {
-    const sig_row* r;
+int sel_nuade_sig_entry_unsure(size_t i) {
+    return i < sel_nuade_sig_count() && k_rows[i].unsure != 0u;
+}
+
+/* Parts first..3 of row r match with parts after the first shifted by `shift` bytes. */
+static int parts_match(const sig_row* r, size_t first, size_t end, size_t shift, const uint8_t* data, size_t size) {
     size_t k;
-    if (i >= sel_nuade_sig_count() || data == NULL) {
-        return 0;
-    }
-    r = &k_rows[i];
-    if (size < r->min_size) {
-        return 0;
-    }
-    for (k = 0; k < sizeof r->part / sizeof r->part[0]; k++) {
+    for (k = first; k < end; k++) {
         const sig_part* p = &r->part[k];
+        size_t at;
         if (p->len == 0u && p->bytes == NULL && k > 0u && p->offset == 0u) {
             break; /* unused slot */
         }
+        at = (size_t)p->offset + (k > 0u ? shift : 0u);
         if (p->len == 0u) {
-            if ((size_t)p->offset >= size || data[p->offset] == 0u) {
+            if (at >= size || data[at] == 0u) {
                 return 0;
             }
             continue;
         }
-        if ((size_t)p->offset + p->len > size || memcmp(data + p->offset, p->bytes, p->len) != 0) {
+        if (at + p->len > size || memcmp(data + at, p->bytes, p->len) != 0) {
             return 0;
         }
     }
     return 1;
 }
 
+int sel_nuade_sig_match_entry(size_t i, const uint8_t* data, size_t size) {
+    const sig_row* r;
+    size_t j;
+    if (i >= sel_nuade_sig_count() || data == NULL) {
+        return 0;
+    }
+    r = &k_rows[i];
+    /* part 0 sits at its fixed offset; parts 1.. are tried at each shift */
+    if (size < r->min_size || !parts_match(r, 0, 1, 0, data, size)) {
+        return 0;
+    }
+    for (j = 0; j < (r->repeat > 1u ? r->repeat : 1u); j++) {
+        if (parts_match(r, 1, sizeof r->part / sizeof r->part[0], j * r->stride, data, size)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 const char* sel_nuade_sig_match(const uint8_t* data, size_t size) {
     size_t i;
     for (i = 0; i < sel_nuade_sig_count(); i++) {
-        if (sel_nuade_sig_match_entry(i, data, size)) {
+        if (!k_rows[i].unsure && sel_nuade_sig_match_entry(i, data, size)) {
             return k_rows[i].player;
         }
     }
     return NULL;
+}
+
+int sel_nuade_sig_probe_level(const uint8_t* data, size_t size, const char* name, const char* exts) {
+    const char* base = name;
+    const char* p;
+    size_t i;
+    if (sel_nuade_sig_match(data, size) != NULL) {
+        return 2;
+    }
+    for (i = 0; i < sel_nuade_sig_count(); i++) {
+        if (k_rows[i].unsure && sel_nuade_sig_match_entry(i, data, size)) {
+            return 1;
+        }
+    }
+    for (p = name; p != NULL && *p != '\0'; p++) {
+        if (*p == '/' || *p == ':') {
+            base = p + 1;
+        }
+    }
+    return sel_nuade_sig_name_claimed(exts, base) ? 1 : 0;
 }
 
 static int list_has_nocase(const char* list, const char* s, size_t n) {
