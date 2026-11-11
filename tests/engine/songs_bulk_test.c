@@ -76,10 +76,16 @@ static uint32_t home_song_rows(sel_engine* e) {
     return n;
 }
 
-static void mkmod(const char* tool, const char* path) {
+/* gen_testmod writes the same bytes every time, and opening a local song hashes it (I184a): two played copies share an md5,
+ * the later one becomes a duplicate (I1094a) and library.hide_duplicates drops it from Search and the folder tree. One byte
+ * after the module, different per file, keeps the four songs distinct songs. */
+static void mkmod(const char* tool, const char* path, int tag) {
     char cmd[700];
+    FILE* fp;
     snprintf(cmd, sizeof cmd, "\"%s\" --loop \"%s\"", tool, path);
     CHECK(system(cmd) == 0);
+    fp = fopen(path, "ab");
+    CHECK(fp != NULL && fputc(tag, fp) == tag && fclose(fp) == 0);
 }
 
 /* I632b2: the view list in every style and source, and SONGS_PLAY. Real modules (argv[1] = gen_testmod) so that a started
@@ -100,7 +106,7 @@ static void test_views(sel_engine* e, sel_library* lib, const char* dir, const c
     snprintf(f[3], sizeof f[3], "%s/d.mod", py);
     tsv[0] = '\0';
     for (i = 0; i < 4; i++) {
-        mkmod(tool, f[i]);
+        mkmod(tool, f[i], (int)('a' + i));
         snprintf(tsv + strlen(tsv), sizeof tsv - strlen(tsv), "%s\tlocal\t%s\tsong %c\tzedartist\tmod\t1994\n", f[i], f[i], (char)('a' + i));
     }
     memset(&job, 0, sizeof job);
