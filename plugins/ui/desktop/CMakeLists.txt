@@ -1,10 +1,8 @@
-# The Amiga cross build cannot run a tool it builds, so the desktop UI plugin is built only when a host-built
-# gui_iconbake is given (-DSELECTA_ICONBAKE_EXE=<path>); the canonical Amiga configure leaves the plugin out.
+# The Amiga cross build cannot run a tool it builds; it compiles the bake tools with the host compiler
+# (cmake/host_bake_tools.cmake, I1315) unless -DSELECTA_ICONBAKE_EXE / -DSELECTA_FONTBAKE_EXE name prebuilt ones.
 option(SEL_DESKTOP_AGA "Amiga: the desktop plugin draws through the AGA c2p backend instead of RTG (I439, M4-P6-1a)" ON)
-include(${PROJECT_SOURCE_DIR}/cmake/desktop_bake_check.cmake)
-sel_desktop_bake_check()
-if(SEL_DESKTOP_SKIP)
-  return()
+if(SEL_AMIGA)
+  include(${PROJECT_SOURCE_DIR}/cmake/host_bake_tools.cmake)
 endif()
 
 # Desktop UI plugin (M3d, plan 2026-10-24-desktop-ui.md section 2.1). The plugin entry and the headless `mem`
@@ -37,11 +35,13 @@ endforeach()
 
 # Icons (DUI-P3-1): tools/gui_iconbake.c (host tool, floating point allowed outside src/gui) rasterises the Lucide SVGs of
 # third_party/lucide listed in include/selecta/gui/gui_icons.h into alpha masks; the plugin links the generated tables.
-# The Amiga cross build cannot run a tool it builds, so it takes a host-built one: -DSELECTA_ICONBAKE_EXE=<path to the
-# host gui_iconbake>.
-if(SEL_AMIGA)
+# The Amiga cross build runs a host-compiled one (I1315), or -DSELECTA_ICONBAKE_EXE=<prebuilt host gui_iconbake>.
+if(SEL_AMIGA AND SELECTA_ICONBAKE_EXE)
   set(ICONBAKE_CMD "${SELECTA_ICONBAKE_EXE}")
-  set(ICONBAKE_DEP "")
+  set(ICONBAKE_DEP "${SELECTA_ICONBAKE_EXE}")
+elseif(SEL_AMIGA)
+  sel_host_iconbake(ICONBAKE_CMD)
+  set(ICONBAKE_DEP "${ICONBAKE_CMD}")
 else()
   add_executable(gui_iconbake "${PROJECT_SOURCE_DIR}/tools/gui_iconbake.c")
   target_sources(gui_iconbake PRIVATE "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c")
@@ -61,16 +61,19 @@ add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c"
   COMMAND ${ICONBAKE_CMD} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h"
     "${PROJECT_SOURCE_DIR}/third_party/lucide/icons" "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c" ${ICONBAKE_MAXPX}
-  DEPENDS ${ICONBAKE_DEP} ${SELECTA_ICONBAKE_EXE} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${LUCIDE_SVGS}
+  DEPENDS ${ICONBAKE_DEP} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${LUCIDE_SVGS}
   COMMENT "Baking the icon atlas")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c")
 
 # Baked text atlases (I463): the 68020 tier has no floating point, so tools/gui_fontbake.c runs the atlas builder
 # (atlas_build.c, the same code the host runs at run time) at build time and writes the tables desk_font() uses. Same
-# pattern as the icons: the Amiga cross build takes a host-built tool, -DSELECTA_FONTBAKE_EXE=<path to the host gui_fontbake>.
-if(SEL_AMIGA)
+# pattern as the icons: the Amiga cross build runs a host-compiled tool (I1315), or -DSELECTA_FONTBAKE_EXE=<prebuilt>.
+if(SEL_AMIGA AND SELECTA_FONTBAKE_EXE)
   set(FONTBAKE_CMD "${SELECTA_FONTBAKE_EXE}")
-  set(FONTBAKE_DEP "")
+  set(FONTBAKE_DEP "${SELECTA_FONTBAKE_EXE}")
+elseif(SEL_AMIGA)
+  sel_host_fontbake(FONTBAKE_CMD)
+  set(FONTBAKE_DEP "${FONTBAKE_CMD}")
 else()
   add_executable(gui_fontbake "${PROJECT_SOURCE_DIR}/tools/gui_fontbake.c" atlas_build.c amiga_font.c "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c")
   target_include_directories(gui_fontbake PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
@@ -86,7 +89,7 @@ add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
   COMMAND ${FONTBAKE_CMD} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
     "mini4:${AMIGA_MINI_DIR}/mini4/6" "mini4:${AMIGA_MINI_DIR}/mini4/8" "mini6:${AMIGA_MINI_DIR}/mini6/6" "mini6:${AMIGA_MINI_DIR}/mini6/8" "mini8:${AMIGA_MINI_DIR}/mini8/8"
-  DEPENDS ${FONTBAKE_DEP} ${SELECTA_FONTBAKE_EXE} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" ${AMIGA_MINI_FILES}
+  DEPENDS ${FONTBAKE_DEP} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" ${AMIGA_MINI_FILES}
   COMMENT "Baking the text atlases")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c")
 if(NOT SEL_AMIGA)

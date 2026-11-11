@@ -46,16 +46,11 @@ if(SEL_AMIGA)
 endif()
 # I651/I685e4: button icons (design section 6, D4: the package ships the baked Lucide set). The MUI plugin archive no longer holds them.
 # I651: The desktop UI's Lucide set is rasterised at BUILD time by tools/gui_iconbake.c (--mui writes the
-# MUI Bodychunk bodies). The tool is compiled with the host compiler here so the Amiga cross build needs no prebuilt path.
-find_program(SEL_HOST_CC NAMES cc gcc clang REQUIRED)
-set(MCC_ICONBAKE_EXE "${CMAKE_CURRENT_BINARY_DIR}/mcc_iconbake_host")
+# MUI Bodychunk bodies). The tool is compiled with the host compiler (cmake/host_bake_tools.cmake) so the Amiga cross
+# build needs no prebuilt path.
+include(${PROJECT_SOURCE_DIR}/cmake/host_bake_tools.cmake)
+sel_host_iconbake(MCC_ICONBAKE_EXE)
 file(GLOB MCC_LUCIDE_SVGS "${PROJECT_SOURCE_DIR}/third_party/lucide/icons/*.svg")
-add_custom_command(
-  OUTPUT "${MCC_ICONBAKE_EXE}"
-  COMMAND ${SEL_HOST_CC} -O1 -I "${PROJECT_SOURCE_DIR}/include" -o "${MCC_ICONBAKE_EXE}" "${PROJECT_SOURCE_DIR}/tools/gui_iconbake.c"
-    "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c" -lm
-  DEPENDS "${PROJECT_SOURCE_DIR}/tools/gui_iconbake.c" "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c"
-  COMMENT "Building the host icon baker for the MCC package")
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mui_icons_baked.c"
   COMMAND "${MCC_ICONBAKE_EXE}" "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" "${PROJECT_SOURCE_DIR}/third_party/lucide/icons"

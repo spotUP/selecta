@@ -84,11 +84,14 @@ add_test(NAME link-warnings
     -P "${CMAKE_CURRENT_SOURCE_DIR}/link_warnings.cmake")
 set_tests_properties(link-warnings PROPERTIES RUN_SERIAL TRUE)
 
-# I494: the Amiga desktop plugin gate (cmake/desktop_bake_check.cmake) stops configure for SEL_DESKTOP_AGA without
-# the host bake tools instead of silently building selecta without the desktop plugin.
-add_test(NAME desktop-bake-check
-  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/desktop-bake-check.tmp"
-    -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/desktop_bake_check.cmake")
+# I1315: the RULES.md Amiga configure line works on a fresh tree and includes the desktop plugin, its bake tools
+# host-compiled (cmake/host_bake_tools.cmake). Replaces the I494 gate test, whose "canonical" case never set the
+# SEL_DESKTOP_AGA default (ON since I441) and so passed while the documented configure failed.
+add_test(NAME amiga-configure-canonical
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/amiga-configure-canonical.tmp"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/amiga_configure_canonical.cmake")
+set_tests_properties(amiga-configure-canonical PROPERTIES PASS_REGULAR_EXPRESSION "amiga-configure-canonical: all checks passed"
+  SKIP_REGULAR_EXPRESSION "amiga-configure-canonical: skipped")
 
 # I1218b: a desktop dev configure without the GPL/KSS players stops (cmake/player_set_check.cmake), so the dev Selecta.app
 # cannot silently lose the sid/sndh/zxtune/kss replayers again ("No player for HVSC yet").
