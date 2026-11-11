@@ -3012,7 +3012,7 @@ static void mui_stats_window(mui_state* s) {
  * title, one row per listed source, Never, Not now and Sync now (I1308c: the desktop's three). Built when it opens (once).
  * I1308: the content sits in a raised card (AAPanel RAISED, the SURFACE_RAISED face the desktop nag dialog draws), whose padding and
  * spacing keep the rows apart; each row is a real check (mui_make_check, the Settings AACheck) beside its label, as the desktop
- * nagdlg_draw tick box + label. The rows were ghost buttons captioned "[x] text": free-floating framed buttons with a fake check. */
+ * nagdlg_draw tick box + label. The rows were ghost buttons captioned "[x] text": free-floating bordered buttons with a fake check. */
 static void mui_offer_window(mui_state* s) {
     uint32_t k;
     char row[160];
