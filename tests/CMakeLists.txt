@@ -1689,6 +1689,14 @@ if(NOT SEL_AMIGA)
       "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 2"
       "-DCHECKS1=replayer==hively,module_loads==1,rendered_frames>=56000,underruns==0")
   endif()
+  # I427e4: the codec decoders are LoadSeg modules too (Players/sel_dr_flac, sel_stb_vorbis, sel_minimp3); the
+  # registry links only each probe.c manifest. module_loads==1 proves the LoadSeg ran, replayer==<name> that the
+  # module's hooks rendered. Revert proof: without PROGDIR:Players/sel_<name> the render fails (replayer_load_failed).
+  sel_m2_test(flac-render run vamos -DTAG=I427e4 "-DMOD=${CMAKE_CURRENT_SOURCE_DIR}/library/fixtures/cover_tagged.flac"
+    -DMOD_COPY=song.flac "-DARGS1=render --output ahi-shadow @MOD_COPY@ --seconds 1"
+    "-DCHECKS1=replayer==dr_flac,module_loads==1,rendered_frames>=1,underruns==0")
+  # sel_stb_vorbis and sel_minimp3 are 68881 objects: vamos has no FPU and stops on the first F-line opcode
+  # ("Invalid CPU State", m68k Exception), so their module renders are proven on the rig, not here (open, I427e4).
   # I427e7: sunvox and pxtone play on the Amiga (Players/sel_sunvox, Players/sel_pxtone). Both song formats are
   # little-endian; before I427e7 the engines read them raw, so on m68k SunVox asked for a 0x4001000-byte block and
   # pxtone failed to start. module_loads==1 proves the LoadSeg ran, replayer== that the module's hooks rendered.
@@ -3986,7 +3994,8 @@ if(NOT SEL_AMIGA)
   # arena and must fail rp_open cleanly (VORBIS_outofmem).
   foreach(_variant IN ITEMS "" "_tiny")
     add_executable(stb_vorbis_arena${_variant}_test m3/stb_vorbis_arena_test.c
-      "${PROJECT_SOURCE_DIR}/plugins/replayers/stb_vorbis/adapter.c" "${PROJECT_SOURCE_DIR}/third_party/stb_vorbis/stb_vorbis.c")
+      "${PROJECT_SOURCE_DIR}/plugins/replayers/stb_vorbis/adapter.c" "${PROJECT_SOURCE_DIR}/plugins/replayers/stb_vorbis/probe.c"
+      "${PROJECT_SOURCE_DIR}/third_party/stb_vorbis/stb_vorbis.c")
     target_include_directories(stb_vorbis_arena${_variant}_test PRIVATE "${PROJECT_SOURCE_DIR}/include"
       "${PROJECT_SOURCE_DIR}/third_party/stb_vorbis")
     target_compile_definitions(stb_vorbis_arena${_variant}_test PRIVATE SEL_PLUGIN_KIND_BUILD=1)

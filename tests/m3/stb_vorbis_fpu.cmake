@@ -15,7 +15,7 @@ set(forbidden floor ldexp pow sin cos exp log sqrt fabs frexp
 
 set(objs
   "${BUILD_DIR}/plugins/replayers/stb_vorbis/CMakeFiles/selecta_stb_vorbis.dir/__/__/__/third_party/stb_vorbis/stb_vorbis.c.obj"
-  "${BUILD_DIR}/plugins/replayers/stb_vorbis/CMakeFiles/sel_plugin_stb_vorbis.dir/adapter.c.obj")
+  "${BUILD_DIR}/plugins/replayers/stb_vorbis/CMakeFiles/sel_seg_stb_vorbis.dir/adapter.c.obj")
 set(failed "")
 foreach(obj IN LISTS objs)
   if(NOT EXISTS "${obj}")

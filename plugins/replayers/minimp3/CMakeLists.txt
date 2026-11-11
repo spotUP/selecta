@@ -5,15 +5,16 @@ add_library(selecta_minimp3 STATIC "${PROJECT_SOURCE_DIR}/third_party/minimp3/mi
 target_include_directories(selecta_minimp3 PUBLIC "${PROJECT_SOURCE_DIR}/third_party/minimp3")
 set_target_properties(selecta_minimp3 PROPERTIES COMPILE_OPTIONS "-Wall")
 
-sel_add_plugin(minimp3 1 adapter.c THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/minimp3")
-target_link_libraries(sel_plugin_minimp3 PUBLIC selecta_minimp3)
-
-# I213: -m68881 returns doubles in fp0 while libm returns d0:d1, so only code that calls no libm may use it: minimp3
-# with -ffast-math inlines all of its math (checked with nm -u). stb_vorbis gets its floor, ldexp and pow from
-# plugins/replayers/stb_vorbis/fpu_math.h (I213a). The registry hides this decoder (SEL_RP_NEEDS_FLOAT) on a
-# machine without one, so FPU code never executes there. Only the float decoders get -m68881, never the engine.
+# I427e4: on the Amiga the decoder is the LoadSeg module Players/sel_minimp3 (adapter.c + selecta_minimp3, FPU
+# objects); the registry links only the probe.c manifest (integer C, no FPU flags; the hively pattern, ea6eed5a).
 if(SEL_AMIGA)
+  sel_add_plugin(minimp3 1 adapter.c probe.c AMIGA_MANIFEST probe.c
+    THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/minimp3")
+  target_link_libraries(sel_seg_minimp3 PRIVATE selecta_minimp3 m)
   target_compile_options(selecta_minimp3 PRIVATE -m68881 -ffast-math)
-  target_compile_options(sel_plugin_minimp3 PRIVATE -m68881 -ffast-math)
+  target_compile_options(sel_seg_minimp3 PRIVATE -m68881 -ffast-math)
+else()
+  sel_add_plugin(minimp3 1 adapter.c probe.c THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/minimp3")
+  target_link_libraries(sel_plugin_minimp3 PUBLIC selecta_minimp3)
+  target_link_libraries(sel_plugin_minimp3 PUBLIC selecta_plugin_shared)
 endif()
-target_link_libraries(sel_plugin_minimp3 PUBLIC selecta_plugin_shared)

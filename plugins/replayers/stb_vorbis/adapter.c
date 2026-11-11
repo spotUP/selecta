@@ -14,6 +14,7 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include "probe.h"
 #include "stream/stream_pcm.h"
 
 #include <stdlib.h>
@@ -59,22 +60,6 @@ typedef struct vorbis_state {
     uint32_t left, off;
     uint8_t win[VORBIS_WINDOW];
 } vorbis_state;
-
-/* "OggS", then the Vorbis identification packet (type 1, "vorbis") in the first page. Ogg also carries Opus
- * and FLAC, which stb_vorbis cannot decode. */
-static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    size_t i;
-    (void)name;
-    if (size < 36u || memcmp(data, "OggS", 4) != 0) {
-        return SEL_PROBE_NO;
-    }
-    for (i = 26u; i + 7u <= 64u && i + 7u <= size; i++) {
-        if (data[i] == 1u && memcmp(data + i + 1u, "vorbis", 6) == 0) {
-            return SEL_PROBE_YES;
-        }
-    }
-    return SEL_PROBE_NO;
-}
 
 /* Vorbis comment "KEY=value" with a case-insensitive key; copies the value into dst. */
 static void comment(const stb_vorbis_comment* c, const char* key, char* dst) {
@@ -488,21 +473,14 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "stb_vorbis");
-    set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
-    set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "ogg");
-    set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
-    set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
-    set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
-    set(&g_hooks[7], SEL_RP_START, SEL_TAG_FN(rp_start));
-    set(&g_hooks[8], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
-    set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
-    set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[11], SEL_RP_MIN_CPU, 68020);
-    set(&g_hooks[12], SEL_RP_NEEDS_FLOAT, 1);
-    set(&g_hooks[13], SEL_RP_STREAMING, 1);
-    set(&g_hooks[14], SEL_TAG_END, 0);
+    size_t n = vorbis_static_hooks(g_hooks); /* NAME..PROBE, MIN_CPU, NEEDS_FLOAT, STREAMING (probe.c) */
+    set(&g_hooks[n++], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
+    set(&g_hooks[n++], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
+    set(&g_hooks[n++], SEL_RP_START, SEL_TAG_FN(rp_start));
+    set(&g_hooks[n++], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
+    set(&g_hooks[n++], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
+    set(&g_hooks[n++], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
+    set(&g_hooks[n], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "stb_vorbis");

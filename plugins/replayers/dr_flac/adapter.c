@@ -8,6 +8,7 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include "probe.h"
 #include "stream/flac_meta.h"
 #include "stream/stream_pcm.h"
 
@@ -29,11 +30,6 @@ typedef struct flac_state {
     char album[FLAC_TAGLEN], artist[FLAC_TAGLEN];
     sel_tag meta[8];
 } flac_state;
-
-static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    (void)name;
-    return size >= 8u && memcmp(data, "fLaC", 4) == 0 ? SEL_PROBE_YES : SEL_PROBE_NO;
-}
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     flac_state* s;
@@ -163,18 +159,14 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "dr_flac");
-    set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
-    set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "flac");
-    set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
-    set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
-    set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
-    set(&g_hooks[7], SEL_RP_START, SEL_TAG_FN(rp_start));
-    set(&g_hooks[8], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
-    set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
-    set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[11], SEL_TAG_END, 0);
+    size_t n = flac_static_hooks(g_hooks); /* NAME..PROBE, shared with the Amiga manifest (probe.c) */
+    set(&g_hooks[n++], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
+    set(&g_hooks[n++], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
+    set(&g_hooks[n++], SEL_RP_START, SEL_TAG_FN(rp_start));
+    set(&g_hooks[n++], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
+    set(&g_hooks[n++], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
+    set(&g_hooks[n++], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
+    set(&g_hooks[n], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "dr_flac");
