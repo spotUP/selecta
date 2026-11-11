@@ -97,7 +97,17 @@ void cydchr_set(CydChorus *chr, int rate, int min_delay, int max_delay, int ster
 	if (rate)
 	{
 		int old = chr->lut_size;
-		chr->lut_size = CYD_CHORUS_OVERSAMPLE * chr->sample_rate * 4 * 10 / (10 + (rate - 1));
+		int want = CYD_CHORUS_OVERSAMPLE * chr->sample_rate * 4 * 10 / (10 + (rate - 1));
+		
+		/* Selecta (I1305m): the LUT is allocated when a chorus is first set, sized to what it needs, not up front. */
+		if (want > chr->lut_cap)
+		{
+			Sint32 *lut = realloc(chr->lut_cap ? chr->lut : NULL, want * sizeof(chr->lut[0]));
+			if (!lut) return;
+			chr->lut = lut;
+			chr->lut_cap = want;
+		}
+		chr->lut_size = want;
 		
 		chr->pos_l = 0;
 		chr->pos_r = (stereo_separation * chr->lut_size / 2 / 64) % chr->lut_size;
@@ -115,7 +125,7 @@ void cydchr_set(CydChorus *chr, int rate, int min_delay, int max_delay, int ster
 		chr->pos_l = 0;
 		chr->pos_r = 0;
 		chr->lut_size = 0;
-		chr->lut[0] = chr->sample_rate * min_delay / 10000;
+		chr->lut[0] = chr->sample_rate * min_delay / 10000; /* lut_fixed when lut_cap is 0 (see cydchr_init) */
 	}
 #endif
 }
@@ -127,7 +137,10 @@ void cydchr_init(CydChorus *chr, int sample_rate)
 	chr->sample_rate = sample_rate;
 	chr->buf_size = sample_rate * CYDCHR_SIZE / 1000;
 	chr->buffer = calloc(chr->buf_size, sizeof(chr->buffer[0]) * 2);
-	chr->lut = calloc(sample_rate * 4 * CYD_CHORUS_OVERSAMPLE, sizeof(chr->buffer[0]));
+	/* Selecta (I1305m): upstream allocated sample_rate * 4 entries here for each of the 8 fx units (5.6 MB at 44.1 kHz),
+	   used or not. The LUT now starts as one fixed delay entry and grows in cydchr_set when a chorus is enabled. */
+	chr->lut = &chr->lut_fixed;
+	chr->lut_cap = 0;
 	chr->lut_size = 0;
 }
 
@@ -135,6 +148,8 @@ void cydchr_init(CydChorus *chr, int sample_rate)
 void cydchr_deinit(CydChorus *chr)
 {
 	free(chr->buffer);
-	free(chr->lut);
+	if (chr->lut_cap) free(chr->lut);
+	chr->lut = &chr->lut_fixed;
+	chr->lut_cap = 0;
 }
 

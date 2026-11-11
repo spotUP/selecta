@@ -6,3 +6,5 @@ sdl_shim/ is Selecta's own (not upstream): SDL types, no-op mutex and a byte-swa
 Build defines: NOSDL_MIXER (no SDL_mixer), STEREOOUTPUT. USESDL_RWOPS stays undefined, so the engine's own RWops reads songs from memory.
 
 Local patch: cydfm.c, `const int MUL = 2;` became `enum { MUL = 2 };` (strict-C constant expression for gcc 6 on the Amiga). sdl_shim/SDL.h defines M_PI when the libm omits it.
+Local patch (I1305m): cydchr.c/.h allocate the chorus LUT lazily in cydchr_set (lut_cap, lut_fixed) instead of
+sample_rate * 4 Sint32 per fx unit in cydchr_init (8 units = 5.6 MB at 44.1 kHz, which an 8 MB Amiga cannot hold).

@@ -36,6 +36,8 @@ typedef struct
 	int sample_rate;
 	int min_delay, max_delay;
 	int pos_l, pos_r, pos_buf, buf_size, lut_size;
+	int lut_cap; /* Selecta (I1305m): heap entries in lut, 0 while lut points at lut_fixed */
+	Sint32 lut_fixed;
 } CydChorus;
 
 void cydchr_output(CydChorus *chr, Sint32 in_l, Sint32 in_r, Sint32 *out_l, Sint32 *out_r);
