@@ -14,7 +14,13 @@
  * Without a row on purpose (I1305i3; extension claim only): pokeynoise and dynamicsynthesizer (file name decides),
  * dsc (field range checks, no mark), pumatracker and zoundmonitor (the mark sits at an offset computed from header
  * counts), infogrames (the first word is the offset of the checked envelope bytes), earache (three header layouts,
- * one without the EASO mark). */
+ * one without the EASO mark).
+ * Also without a row (I1305i3 part 2): activisionpro, ashleyhogg, bendaglish, bendaglishsid, dariuszendeh, desire,
+ * davidwhittaker, fredgray (the probe scans the replayer code for instruction patterns; the fixed bytes at the start
+ * are BRA.W opcodes or moveq/rts shared by many replayer executables), hippel7v and dirkbialluch (the header and the
+ * tags are searched for, not at a fixed offset), ems and gmc (field range checks, no mark), davelowe (three layouts:
+ * game driver, Deli module, new driver), fred_np (three layouts: "Fred Editor ", the Final replayer's 0x4EFA jump
+ * table, and either wrapped in a hunk executable). */
 #include "signatures.h"
 
 #include <string.h>
@@ -39,6 +45,12 @@ static const sig_row k_rows[] = {
     { "actionamics", 90, { { 62, 22, "ACTIONAMICS SOUND TOOL" } }, 0, 0, 0 },
     /* amcomposer: 16-byte replay mark at 0 */
     { "amcomposer", 16, { { 0, 16, "AMC V1.2 REPLAY!" } }, 0, 0, 0 },
+    /* amos.c read_header: "AmBk", length long flagged 0x80 and "Music   " at 12; without "AmBk" the length long
+     * starts with 0xC0 and "Music   " sits at 8. Size >= 0x30. */
+    { "amos", 0x30, { { 0, 4, "AmBk" }, { 8, 1, "\x80" }, { 12, 8, "Music   " } }, 0, 0, 0 },
+    { "amos", 0x30, { { 0, 1, "\xC0" }, { 8, 8, "Music   " } }, 0, 0, 0 },
+    /* andersoland.c probe_chunks: chunk "mpl" (3-byte tag) at 0 with an 8-byte chunk header */
+    { "andersoland", 8, { { 0, 3, "mpl" } }, 0, 0, 0 },
     { "andrewparton", 4, { { 0, 4, "BANK" } }, 0, 0, 0 },
     /* aprosys_module.c aps_module_parse: "ADRVPACK" at 0 */
     { "aprosys", 8, { { 0, 8, "ADRVPACK" } }, 0, 0, 0 },
@@ -48,7 +60,23 @@ static const sig_row k_rows[] = {
      * length 0 (word at +22) and a non-zero volume (+25). Unsure: the probe says Supported only for .adsc names. */
     { "audiosculpture", 0x43C, { { 0x438, 4, "EXO4" }, { 42, 2, "\0\0" }, { 45, 0, NULL } }, 1, 32, 30 },
     { "audiosculpture", 0x43C, { { 0x438, 4, "FLT4" }, { 42, 2, "\0\0" }, { 45, 0, NULL } }, 1, 32, 30 },
+    /* beathoven_module.c check2 + bth_module_open: hunk header 0x3F3 with one hunk, memory flags byte 0x14 set, code
+     * at 0x20 = moveq #-1,d0; rts, "BEATHOVE", version N100/N109/NNEW; size >= 0x20 + 16 + 15 longs */
+    { "beathoven", 0x6C,
+      { { 0, 4, "\0\0\x03\xF3" }, { 8, 4, "\0\0\0\x01" }, { 0x14, 0, NULL }, { 0x20, 16, "\x70\xFF\x4E\x75" "BEATHOVEN100" } },
+      0, 0, 0 },
+    { "beathoven", 0x6C,
+      { { 0, 4, "\0\0\x03\xF3" }, { 8, 4, "\0\0\0\x01" }, { 0x14, 0, NULL }, { 0x20, 16, "\x70\xFF\x4E\x75" "BEATHOVEN109" } },
+      0, 0, 0 },
+    { "beathoven", 0x6C,
+      { { 0, 4, "\0\0\x03\xF3" }, { 8, 4, "\0\0\0\x01" }, { 0x14, 0, NULL }, { 0x20, 16, "\x70\xFF\x4E\x75" "BEATHOVENNEW" } },
+      0, 0, 0 },
     { "cinemaware", 4, { { 0, 4, "IBLK" } }, 0, 0, 0 },
+    /* cd_module.c load_hunk + has_magic: hunk header 0x3F3, no library names, one hunk (first = last = 0); the hunk
+     * data at 32 starts with moveq #-1,d0; rts, "S.PH", "IPPS" */
+    { "coredesign", 44,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x01" "\0\0\0\0" "\0\0\0\0" }, { 32, 12, "\x70\xFF\x4E\x75" "S.PHIPPS" } },
+      0, 0, 0 },
     { "davidhanney", 4, { { 0, 4, "DSNG" } }, 0, 0, 0 },
     { "deltamusic1", 4, { { 0, 4, "ALL " } }, 0, 0, 0 },
     /* deltamusic2: ".FNL" at 0xBC6, header to 0xFDA */
@@ -67,6 +95,14 @@ static const sig_row k_rows[] = {
     /* futurecomposer.c fc_create: size >= 100, FC14 or SMOD */
     { "futurecomposer", 100, { { 0, 4, "FC14" } }, 0, 0, 0 },
     { "futurecomposer", 100, { { 0, 4, "SMOD" } }, 0, 0, 0 },
+    /* futureplayer.c fp_hunk_parse: hunk header 0x3F3, no library names, one hunk (first = last = 0), memory flags byte
+     * 20 set, HUNK_CODE at 24, code at 32 = moveq #-1,d0; rts, "F.PLAYER" */
+    { "futureplayer", 44,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x01" "\0\0\0\0" "\0\0\0\0" },
+        { 20, 0, NULL },
+        { 24, 4, "\0\0\x03\xE9" },
+        { 32, 12, "\x70\xFF\x4E\x75" "F.PLAYER" } },
+      0, 0, 0 },
     /* gm_module.c gm_module_parse: "GLUE" and its bitwise complement */
     { "gluemon", 8, { { 0, 4, "GLUE" }, { 4, 4, "\xB8\xB3\xAA\xBA" } }, 0, 0, 0 },
     /* hippel: COSO packed TFMX */
