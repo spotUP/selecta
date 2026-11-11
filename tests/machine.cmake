@@ -52,9 +52,23 @@ endfunction()
 
 if(EXPECT_FAST_RAM STREQUAL "vamos-image")
   # vamos AvailMem(MEMF_FAST) is the free allocator total: the -m 8192 RAM
-  # (8388608) less a constant 307260 of its own use (measured on the 8faf9b3
-  # and HEAD images alike) less every hunk the loader allocates. The hunk sizes
-  # come from the HUNK_HEADER (0x3F3) of the binary under test.
+  # (8388608) less a constant 307704 of runtime use less every hunk the loader
+  # allocates. The hunk sizes come from the HUNK_HEADER (0x3F3) of the binary
+  # under test. The constant is not the image size: it is identical on images
+  # of 3.66 MB and 5.24 MB, at any exe path and cwd (I1305k). It is:
+  #   307260  vamos itself plus selecta's startup state (libnix pools, 128 KiB
+  #           swapped stack, stdio), measured on 8faf9b3 and 99e18bb5;
+  #   +  284  mathieeesingtrans.library, which libnix auto-opens at startup
+  #           once the image references expf/powf/sqrtf (libm.a expf.o, powf.o,
+  #           sqrtf.o need _MathIeeeSingTransBase). Its vamos base is 166 +
+  #           name strings 28 + 44 + vectors 44 bytes. Pulled in by klystron
+  #           cyd.c sqrtf (2fa40df2) and Krakatoa krk_core.c / krk_lava_fx.c
+  #           expf/powf (64d87fcf, 3e158b13); the double library was already
+  #           open (hively sin, sqlite log);
+  #   +  160  the -V selbin: volume (80) and the -a PROGDIR: assign (80) that
+  #           sel_vamos_cmd adds (9935e25e), measured with and without each.
+  # A startup library the image newly references moves this number; check with
+  # `vamos -l mem_alloc:info` which allocations are live at AvailMem.
   file(READ "${AMIGA_CLI}" hdr HEX LIMIT 4096)
   string(SUBSTRING "${hdr}" 0 8 magic)
   if(NOT magic STREQUAL "000003f3")
@@ -72,7 +86,7 @@ if(EXPECT_FAST_RAM STREQUAL "vamos-image")
     math(EXPR words "0x${sz_hex} & 0x3fffffff")
     math(EXPR image_bytes "${image_bytes} + ${words} * 4")
   endforeach()
-  math(EXPR EXPECT_FAST_RAM "8388608 - 307260 - ${image_bytes}")
+  math(EXPR EXPECT_FAST_RAM "8388608 - 307704 - ${image_bytes}")
 endif()
 
 if(EXPECT_FAST_RAM STREQUAL "sysctl")
