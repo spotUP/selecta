@@ -51,8 +51,8 @@ function(sel_get name outvar)
 endfunction()
 
 if(EXPECT_FAST_RAM STREQUAL "vamos-image")
-  # vamos AvailMem(MEMF_FAST) is the free allocator total: the -m 8192 RAM
-  # (8388608) less a constant 307704 of runtime use less every hunk the loader
+  # vamos AvailMem(MEMF_FAST) is the free allocator total: the -m ${SEL_VAMOS_RAM_KB} RAM
+  # (sel_vamos_cmd, KiB) less a constant 307704 of runtime use less every hunk the loader
   # allocates. The hunk sizes come from the HUNK_HEADER (0x3F3) of the binary
   # under test. The constant is not the image size: it is identical on images
   # of 3.66 MB and 5.24 MB, at any exe path and cwd (I1305k). It is:
@@ -86,7 +86,7 @@ if(EXPECT_FAST_RAM STREQUAL "vamos-image")
     math(EXPR words "0x${sz_hex} & 0x3fffffff")
     math(EXPR image_bytes "${image_bytes} + ${words} * 4")
   endforeach()
-  math(EXPR EXPECT_FAST_RAM "8388608 - 307704 - ${image_bytes}")
+  math(EXPR EXPECT_FAST_RAM "${SEL_VAMOS_RAM_KB} * 1024 - 307704 - ${image_bytes}")
 endif()
 
 if(EXPECT_FAST_RAM STREQUAL "sysctl")
