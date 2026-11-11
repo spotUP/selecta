@@ -25,7 +25,14 @@
  * by following the code), jeroentel (code pattern searched in the first bytes), jasonbrooke and jesperolsen (several
  * replayers; version A is found by code search or a code hash, so no single header covers the player),
  * kimchristensen, markii, mikedavies and markcooksey_old (file name decides), maximumeffect (field range checks, no
- * mark). */
+ * mark).
+ * Also without a row (I1305i3 part 4): jasonpage (the Graftgold/Virocop layout has only the version word 2 at 0 plus
+ * range checks), musicalenlightenment (a module without the shortcut signatures is accepted by its section sizes),
+ * musicassembler and paulsummers (code patterns: BRA.W/movem opcodes, then a scan of the init and play code),
+ * musicmaker (an old song is recognised by its ".sdata" name), onescapee (the one free longword of the XOR check
+ * pattern may sit at any of 25 positions), paulrobotham, peterverswyvelen and pierreadane (count and offset range
+ * checks, no mark), paulshields (ten zero bytes; the table mark sits at an offset read from the header), quartet
+ * (the end words sit at the end of the file, the header has a tempo range and one byte). */
 #include "signatures.h"
 
 #include <string.h>
@@ -131,6 +138,26 @@ static const sig_row k_rows[] = {
     { "instereo1", 8, { { 0, 8, "ISM!V1.2" } }, 0, 0, 0 },
     { "instereo2", 8, { { 0, 8, "IS20DF10" } }, 0, 0, 0 },
     { "jamcracker", 4, { { 0, 4, "BeEp" } }, 0, 0, 0 },
+    /* kh_module.c kh_layout: three-hunk executable (0x3F3, 0, 3, 0, 2; third size long 1, HUNK_CODE at 0x20), then
+     * the code at 0x28: BRA.W + 0x0000ABCD with cmp.w #0,d0 at 0x40 (embedded driver) or lea abs,a0 + rts at 0x40
+     * (external), or lea abs,a0 + rts at 0x28 (short stub). Size >= 0x48. */
+    { "krishatlelid", 0x48,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x03" "\0\0\0\0" "\0\0\0\x02" },
+        { 0x1C, 8, "\0\0\0\x01" "\0\0\x03\xE9" },
+        { 0x28, 8, "\x60\0\0\x16" "\0\0\xAB\xCD" },
+        { 0x40, 4, "\xB0\x7C\0\0" } },
+      0, 0, 0 },
+    { "krishatlelid", 0x48,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x03" "\0\0\0\0" "\0\0\0\x02" },
+        { 0x1C, 8, "\0\0\0\x01" "\0\0\x03\xE9" },
+        { 0x28, 8, "\x60\0\0\x16" "\0\0\xAB\xCD" },
+        { 0x40, 8, "\x41\xF9\0\0" "\0\0\x4E\x75" } },
+      0, 0, 0 },
+    { "krishatlelid", 0x48,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x03" "\0\0\0\0" "\0\0\0\x02" },
+        { 0x1C, 8, "\0\0\0\x01" "\0\0\x03\xE9" },
+        { 0x28, 8, "\x41\xF9\0\0" "\0\0\x4E\x75" } },
+      0, 0, 0 },
     /* laxity.c check_module: 0x18-byte records, flag byte 0xFF in records 1 and 2 (0x1F, 0x37), and either the known
      * header (0x00820048 at 0, record 2 = 00010008 001800FF) or the default title "YET ANOTHER COOL" in record 0 */
     { "laxity", 0x38, { { 0, 4, "\0\x82\0\x48" }, { 0x1F, 1, "\xFF" }, { 0x30, 8, "\0\x01\0\x08\0\x18\0\xFF" } }, 0, 0, 0 },
@@ -141,6 +168,8 @@ static const sig_row k_rows[] = {
     { "majortom", 4, { { 0, 4, "ARP." } }, 0, 0, 0 },
     { "markcooksey", 6, { { 0, 4, "\xD0\x40\xD0\x40" }, { 4, 2, "\x4E\xFB" } }, 0, 0, 0 },
     { "mcmd", 4, { { 0, 4, "MCMD" } }, 0, 0, 0 },
+    /* mmdc_module.c check_header: "MMDC" at 0, zero word at 0x10 (high word of the block array offset), header 0x34 */
+    { "mmdc", 0x34, { { 0, 4, "MMDC" }, { 0x10, 2, "\0\0" } }, 0, 0, 0 },
     /* mdl_module.c: "MSOB" at 0, header 20 bytes */
     { "medley", 20, { { 0, 4, "MSOB" } }, 0, 0, 0 },
     /* ntsp.c module_read: "SPNT" at 0, header 8 bytes */
@@ -152,6 +181,15 @@ static const sig_row k_rows[] = {
     { "protracker4", 16, { { 0, 4, "FORM" }, { 8, 4, "MODL" }, { 12, 4, "VERS" } }, 0, 0, 0 },
     { "quadracomposer", 12, { { 0, 4, "FORM" }, { 8, 8, "EMODEMIC" } }, 0, 0, 0 },
     { "richardjoseph", 8, { { 0, 3, "RJP" }, { 4, 4, "SMOD" } }, 0, 0, 0 },
+    /* rr_module.c rr_parse_hunks + rr_read_header: one-hunk executable (0x3F3, 0, 1, 0, 0, memory-flag byte of the
+     * size long non-zero, HUNK_CODE), code at 0x20 = moveq #-1,d0; rts, "RIFF", "RAFF"; code hunk >= 0x44 bytes plus
+     * 8 bytes behind it */
+    { "riffraff", 0x6C,
+      { { 0, 20, "\0\0\x03\xF3" "\0\0\0\0" "\0\0\0\x01" "\0\0\0\0" "\0\0\0\0" },
+        { 20, 0, NULL },
+        { 24, 4, "\0\0\x03\xE9" },
+        { 32, 12, "\x70\xFF\x4E\x75" "RIFFRAFF" } },
+      0, 0, 0 },
     { "ronklaren", 63, { { 0, 4, "\x00\x00\x03\xF3" }, { 40, 23, "RON_KLAREN_SOUNDMODULE!" } }, 0, 0, 0 },
     { "sidmon2", 86, { { 58, 28, "SIDMON II - THE MIDI VERSION" } }, 0, 0, 0 },
     { "sonicarranger", 8, { { 0, 8, "SOARV1.0" } }, 0, 0, 0 },
