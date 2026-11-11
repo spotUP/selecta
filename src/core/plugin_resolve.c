@@ -19,6 +19,64 @@ const sel_tag* sel_plugin_resolve(const sel_tag* hooks) {
     return g_resolver != NULL && hooks != NULL ? g_resolver(hooks) : hooks;
 }
 
+/* I1314b: unloading idle modules after a scan. The loader installs the mark/unload pair; the engine holds the
+ * real hooks of every open song here, so the unload skips a module current playback runs. One small table: at
+ * most a few slots play at once (current, next, crossfade). */
+enum { kHeldMax = 16 };
+static struct {
+    const sel_tag* hooks;
+    uint32_t n;
+} g_held[kHeldMax];
+static sel_plugin_mark_fn g_mark;
+static sel_plugin_unload_fn g_unload;
+
+void sel_plugin_set_unloader(sel_plugin_mark_fn mark, sel_plugin_unload_fn unload) {
+    g_mark = mark;
+    g_unload = unload;
+}
+
+uint32_t sel_plugin_load_mark(void) {
+    return g_mark != NULL ? g_mark() : 0u;
+}
+
+uint32_t sel_plugin_unload_since(uint32_t mark) {
+    return g_unload != NULL ? g_unload(mark) : 0u;
+}
+
+void sel_plugin_hold(const sel_tag* hooks, int hold) {
+    uint32_t i, free_i = kHeldMax;
+    if (hooks == NULL) {
+        return;
+    }
+    for (i = 0; i < kHeldMax; i++) {
+        if (g_held[i].n != 0u && g_held[i].hooks == hooks) {
+            if (hold) {
+                g_held[i].n++;
+            } else {
+                g_held[i].n--;
+            }
+            return;
+        }
+        if (g_held[i].n == 0u && free_i == kHeldMax) {
+            free_i = i;
+        }
+    }
+    if (hold && free_i < kHeldMax) {
+        g_held[free_i].hooks = hooks;
+        g_held[free_i].n = 1u;
+    }
+}
+
+int sel_plugin_held(const sel_tag* hooks) {
+    uint32_t i;
+    for (i = 0; i < kHeldMax; i++) {
+        if (g_held[i].n != 0u && g_held[i].hooks == hooks) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int sel_replayer_outranks(const sel_tag* cand, const sel_tag* best, int has_fpu) {
     int cand_slow, best_slow;
     intptr_t cand_pri, best_pri;

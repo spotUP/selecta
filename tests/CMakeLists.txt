@@ -3227,6 +3227,17 @@ if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
     RESOURCE_LOCK vamos PASS_REGULAR_EXPRESSION "hash_idle_vamos_ok")
 endif()
 
+# I1314b: a scan end unloads the player modules the scan loaded; the next play loads them again (vamos, organya).
+if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME scan-unload-vamos
+    COMMAND "${CMAKE_COMMAND}" "-DMODE=vamos" "-DCLI=${SEL_CLI}" "-DVAMOS=${SEL_VAMOS}"
+      "-DAMIGA_CLI=${SEL_AMIGA_CLI}" "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/org_test.org"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m3/scan-unload-vamos"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_unload_vamos.cmake")
+  set_tests_properties(scan-unload-vamos PROPERTIES LABELS m3 FIXTURES_REQUIRED amiga_cli
+    RESOURCE_LOCK vamos PASS_REGULAR_EXPRESSION "scan_unload_vamos_ok")
+endif()
+
 # T75 cache-fetch (rows I165, I166): LIBRARY_FETCH through the file cache and its companions.
 # Runs after mirrors-ranking because both read the shared request log.
 if(NOT SEL_AMIGA)

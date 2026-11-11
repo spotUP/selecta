@@ -3,6 +3,8 @@
  * front end makes. */
 #ifdef __amigaos__
 #include "amiga_start.h"
+
+#include <proto/exec.h>
 #endif
 #include <selecta/api.h>
 #include <selecta/engine.h>
@@ -318,6 +320,8 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @dup_stats          DUP redirects=N played=<key> (OPENs that played the best source of the same md5, D-M3-14, T86)
  *   @scan_stats         wait for the running LIBRARY_SCAN, then SCAN scanned_files=N skipped_files=N
  *                       scan_meta_cheap=N module_loads=N (rows filled without loading a module, I1314)
+ *                       module_unloads=N modules_resident=N free_ram=N (modules a scan end unloaded, I1314b;
+ *                       free_ram is AvailMem(MEMF_ANY) on the Amiga, 0 elsewhere)
  *   @render N           render N frames on this thread, then pump and print
  *   @fade_mid           render until the end fade runs, then to its midpoint; print FADE gain_q16 pos total
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
@@ -474,11 +478,18 @@ static void script_directive(sel_engine* e, const char* line) {
         printf("ARCHIVE unpacks=%u member=%s\n", (unsigned)es.archive_unpacks, es.archive_member);
     } else if (strcmp(line, "@scan_stats") == 0) {
         sel_scan_info si;
+        const sel_registry_stats* rs = sel_registry_get_stats();
+        unsigned long free_ram = 0;
         sel_engine_scan_wait(e, print_event, NULL);
         sel_engine_scan_info(e, &si);
-        printf("SCAN scanned_files=%u skipped_files=%u scan_meta_cheap=%u module_loads=%u\n",
+#ifdef __amigaos__
+        free_ram = (unsigned long)AvailMem(MEMF_ANY);
+#endif
+        printf("SCAN scanned_files=%u skipped_files=%u scan_meta_cheap=%u module_loads=%u module_unloads=%u "
+               "modules_resident=%u free_ram=%lu\n",
                (unsigned)si.scanned_files, (unsigned)si.skipped_files, (unsigned)si.scan_meta_cheap,
-               (unsigned)sel_registry_get_stats()->module_loads);
+               (unsigned)rs->module_loads, (unsigned)rs->module_unloads,
+               (unsigned)(rs->module_loads - rs->module_unloads), free_ram);
     } else if (strcmp(line, "@hash_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);

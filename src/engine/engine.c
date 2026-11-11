@@ -252,6 +252,7 @@ typedef struct sel_playpol {
 typedef struct sel_slot {
     uint32_t busy; /* pump side: the slot holds a song until RP_CLOSE ran */
     void* rp_state;
+    const sel_tag* rp_hooks; /* resolved hooks held while rp_state is open, so a scan end keeps the module (I1314b) */
     sel_rp_close_fn rp_close;
     sel_rp_start_fn rp_start;
     sel_rp_tick_fn rp_tick;
@@ -615,6 +616,7 @@ struct sel_engine {
     char scan_root[SEL_BROWSE_PATH_MAX];
     int scan_ok;
     int scan_running;
+    uint32_t scan_mod_mark; /* sel_plugin_load_mark() at scan start (I1314b) */
     /* I506: roots of LIBRARY_SCANs that arrived while a scan ran, oldest first; scan_collect starts the next */
     char scan_next[SEL_SCAN_QUEUE][SEL_BROWSE_PATH_MAX];
     uint32_t scan_next_n;
@@ -1789,6 +1791,8 @@ static void close_slot(sel_engine* e, sel_slot* sl) {
     if (sl->rp_state != NULL) {
         sl->rp_close(sl->rp_state);
         sl->rp_state = NULL;
+        sel_plugin_hold(sl->rp_hooks, 0);
+        sl->rp_hooks = NULL;
     }
     if (sl->stream != NULL) {
         sel_live_close(sl->stream); /* ends the download thread; the replayer is already closed */
@@ -2946,6 +2950,8 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         sel_engine_report_error(e, "open_failed", err_detail);
         return 0;
     }
+    sl->rp_hooks = hooks;
+    sel_plugin_hold(hooks, 1);
     sl->song_data = data; /* the replayer reads it until close */
     sl->stream = live;
     sl->fstream = fs;
@@ -5306,6 +5312,7 @@ static void scan_start(sel_engine* e, const char* root) {
         e->scan_delay_ms = delay != NULL ? (uint32_t)strtoul(delay, NULL, 10) : 0u;
     }
     scan_progress_set(e, 1u, "", 0u, 0u);
+    e->scan_mod_mark = sel_plugin_load_mark();
     e->scan_running = 1;
     if (!sel_library_task_start(e->lib, scan_task, e)) {
         e->scan_running = 0;
@@ -5369,6 +5376,9 @@ static void scan_collect(sel_engine* e) {
     e->scan_info.depack_pp = e->scan_stats.depack_pp;
     e->scan_info.bytes_read = e->scan_stats.bytes_read;
     e->scan_info.scan_meta_cheap = e->scan_stats.scan_meta_cheap;
+    /* I1314b (Johan 2026-11-11, "unload after scan"): the player modules this scan loaded leave memory now; a song
+     * that plays one holds it, and the next play of any other loads it from disk again. */
+    sel_plugin_unload_since(e->scan_mod_mark);
     if (e->addf_active) {
         addf_finish(e, e->scan_ok);
     }

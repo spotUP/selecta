@@ -32,6 +32,10 @@ void sel_registry_note_module_load(void) {
     g_stats.module_loads++;
 }
 
+void sel_registry_note_module_unload(void) {
+    g_stats.module_unloads++;
+}
+
 /* Dynamic entries (plugin loader, I427a): added by a loader before init, walked after the static array. */
 static struct dyn_entry {
     sel_plugin_entry_fn fn;

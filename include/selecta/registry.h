@@ -29,6 +29,7 @@ typedef struct sel_registry_stats {
     uint32_t builtin_loaded;     /* built-in modules accepted (SELECTA_PLUGIN_LINK=MODULE, I427f); not counted in dyn_loaded */
     uint32_t builtin_missing;    /* built-in modules this build expects but the loader could not load */
     uint32_t module_loads;       /* manifest plugins whose module was loaded on demand (Amiga LoadSeg, I427e) */
+    uint32_t module_unloads;     /* modules unloaded again after a scan (I1314b); resident = loads - unloads */
 } sel_registry_stats;
 
 /* I1313c: why a plugin is off on this machine. One record per unmet need of a hidden plugin, kept by the machine
@@ -74,6 +75,8 @@ void sel_registry_note_rejected(const char* path, const char* reason);
 const char* sel_registry_origin(uint32_t index);
 /* Counts one on-demand module load (loader_seg.c, I427e). */
 void sel_registry_note_module_load(void);
+/* Counts one module unload (loader_seg.c, I1314b). */
+void sel_registry_note_module_unload(void);
 
 /* On-demand plugin modules (I427e). A manifest descriptor (SEL_PLUGIN_MODULE) carries only static tags and
  * the probe; before any other hook is looked up, callers pass the hooks they picked through
@@ -83,6 +86,18 @@ void sel_registry_note_module_load(void);
 typedef const sel_tag* (*sel_plugin_resolve_fn)(const sel_tag* hooks);
 void sel_plugin_set_resolver(sel_plugin_resolve_fn fn);
 const sel_tag* sel_plugin_resolve(const sel_tag* hooks);
+/* I1314b: modules a library scan loaded are unloaded when the scan ends; the next play loads them again. The
+ * engine takes sel_plugin_load_mark() at scan start and calls sel_plugin_unload_since(mark) at scan end, which
+ * unloads every module loaded after the mark that no open song holds and returns how many it unloaded. The
+ * engine holds the resolved hooks of each open song (sel_plugin_hold(hooks, 1) after RP_OPEN, 0 after RP_CLOSE);
+ * held modules stay. Without an installed unloader (desktop builds) both are no-ops. */
+typedef uint32_t (*sel_plugin_mark_fn)(void);
+typedef uint32_t (*sel_plugin_unload_fn)(uint32_t mark);
+void sel_plugin_set_unloader(sel_plugin_mark_fn mark, sel_plugin_unload_fn unload);
+uint32_t sel_plugin_load_mark(void);
+uint32_t sel_plugin_unload_since(uint32_t mark);
+void sel_plugin_hold(const sel_tag* hooks, int hold);
+int sel_plugin_held(const sel_tag* hooks);
 /* Runs a replayer's SEL_RP_PROBE and returns its SEL_PROBE_* verdict (SEL_PROBE_NO without a probe). A manifest that
  * carries no probe (it lives in the module, I427e4) is resolved first when its SEL_RP_EXTENSIONS claim the name in
  * path; *hooks then becomes the module's real hooks. */
