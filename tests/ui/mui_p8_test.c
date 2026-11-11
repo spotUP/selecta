@@ -718,6 +718,15 @@ static void test_offer_card(void) {
     CHECK(src_count("CTL_OFFER_ROW + (LONG)k, 0, 0, MUI_AA_ROLE_GHOST") == 0, "the sync offer rows are still ghost buttons");
 }
 
+/* mui-p8-col-titles (I1306b): an album page on rig 2 listed "selecta-test-mk.mod" where the desktop shows the catalogued "mk tune". MUI
+ * song rows read the title from the shared posted song_briefs model (uimodel/briefs.h, the text UI's too) before the file name, and the
+ * shown page posts its read. mui_ui.c is Amiga only, so the wiring is read from its source like offer-card. */
+static void test_col_titles(void) {
+    CHECK(src_count("r = sel_uim_briefs_title(&s->col_brf, pg, (uint32_t)row);") == 1, "mui_col_row does not read the catalogued title");
+    CHECK(src_count("(void)sel_uim_briefs_post(&s->col_brf, s->engine, pg);") == 1, "the shown collection page posts no song_briefs read");
+    CHECK(src_count("mui_col_briefs(s, pg, col);") == 1, "the route sync does not follow the song_briefs read");
+}
+
 /* mui-p8-library-pages (I1175): Files, History, Sources modes and the Sources page rows, switch and Sync, fed with real engine events */
 static sel_message src_event(const sel_tag* t) {
     sel_message m;
@@ -809,6 +818,8 @@ int main(int argc, char** argv) {
         test_queue_scope_ui();
     } else if (strcmp(argv[1], "offer-card") == 0) {
         test_offer_card();
+    } else if (strcmp(argv[1], "col-titles") == 0) {
+        test_col_titles();
     } else if (strcmp(argv[1], "queue-scope") == 0) {
         test_queue_scope();
     } else if (strcmp(argv[1], "view-buttons") == 0) {

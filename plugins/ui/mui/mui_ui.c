@@ -22,6 +22,7 @@
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/libfilter.h>
+#include <selecta/uimodel/briefs.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/uimodel/viewcmds.h>
@@ -186,6 +187,7 @@ typedef struct mui_state {
     char col_title_buf[160];
     char col_meta_buf[224];
     uint32_t col_serial;            /* the collection serial the list shows */
+    sel_uim_briefs col_brf;         /* I1306b: the catalogued song titles of the page, one posted song_briefs read per page (shared model) */
     int col_shown;                  /* 1 while col_page replaces the list */
     Object* list;
     mui_list_entry entries[MUI_ROWS_MAX];
@@ -1630,7 +1632,8 @@ static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_
     return mui_row_aalist(mui_ptr_row, ctx, count, rows, list_out);
 }
 
-/* I794 (P3): row `row` of the collection page: the file name of the song's path (rows are "path\0plays\0" pairs). */
+/* I794 (P3): row `row` of the collection page (rows are "path\0plays\0" pairs): the song's catalogued title (I1306b), else the file name
+ * of its path. */
 static const char* mui_col_row(void* ctx, long row) {
     mui_state* s = (mui_state*)ctx;
     const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
@@ -1639,6 +1642,10 @@ static const char* mui_col_row(void* ctx, long row) {
     long i;
     if (pg == NULL || pg->rows == NULL || row < 0 || (uint32_t)row >= pg->songs) {
         return "";
+    }
+    r = sel_uim_briefs_title(&s->col_brf, pg, (uint32_t)row);
+    if (r != NULL) {
+        return r;
     }
     for (r = pg->rows, i = 0; i < row && *r != '\0'; i++) {
         r += strlen(r) + 1u;
@@ -2491,6 +2498,21 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
     }
 }
 
+/* I1306b: the posted song_briefs read of the shown collection page (the text UI's model, uimodel/briefs.h). A landed answer redraws the
+ * list (setting the count always redraws an AAList); a new page posts its read once. */
+static void mui_col_briefs(mui_state* s, const sel_collection_page* pg, int col) {
+    if (sel_uim_briefs_take(&s->col_brf, s->engine) && col && pg != NULL && pg->serial == s->col_brf.serial) {
+        SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, TAG_DONE);
+    }
+    if (!col || !sel_uim_briefs_due(&s->col_brf, s->engine, pg)) {
+        return;
+    }
+    free(s->col_brf.buf);
+    s->col_brf.cap = sel_uim_briefs_cap(pg);
+    s->col_brf.buf = (char*)malloc(s->col_brf.cap);
+    (void)sel_uim_briefs_post(&s->col_brf, s->engine, pg);
+}
+
 /* I794: the route history drives the top bar Back / Forward state and which of the two main views shows: the collection page (P3) when
  * the history is on an album, artist or composer page the engine has built, else the main list (Home, Show all, doors). */
 static void mui_route_sync(mui_state* s, const sel_state* st) {
@@ -2527,6 +2549,7 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
     }
+    mui_col_briefs(s, pg, col);
     mui_pages_sync(s, st, cur, col);
 }
 
@@ -4109,6 +4132,15 @@ static int mui_wait(void* state, uint32_t timeout_ms) {
 
 static void mui_close(void* state) {
     mui_state* s = (mui_state*)state;
+    if (s->col_brf.inflight) { /* the engine still writes the answer into the buffer until it is taken */
+        uint32_t done = 0;
+        int ok = 0;
+        while (s->engine != NULL && !sel_engine_song_briefs_take(s->engine, s->col_brf.buf, s->col_brf.cap, &done, &ok)) {
+            Delay(1);
+        }
+    }
+    free(s->col_brf.buf);
+    s->col_brf.buf = NULL;
     if (s->app != NULL) {
         MUI_DisposeObject(s->app); /* closes the window and frees the children */
         s->app = NULL;
