@@ -309,6 +309,15 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/vamos-private-ram"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos_ram.cmake")
   set_tests_properties(amiga-vamos-private-ram PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+  # I427e2: the staged release drawer (Selecta.lha tree) carries Players/, and a player loads from it with PROGDIR:
+  # on that drawer; with Players/ moved away the same song does not load (revert proof inside the test).
+  add_test(NAME amiga-dist-players
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            "-DAPP_DIR=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta" "-DROOT=${PROJECT_SOURCE_DIR}"
+            "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/pxtone_test.ptcop"
+            "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/amiga-dist-players"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos_dist_players.cmake")
+  set_tests_properties(amiga-dist-players PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
 
   # I218d: Latin-1 file names listed as UTF-8 and opened by that name, through library browse --names.
   add_test(NAME amiga-latin1-name

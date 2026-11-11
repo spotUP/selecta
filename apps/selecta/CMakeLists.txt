@@ -94,7 +94,7 @@ if(TARGET library_template)
     VERBATIM)
 endif()
 
-# I1137: the Selecta Amiga archive tree. cmake/selecta_dist.cmake stages Selecta/ (program, library-template.db, Install-Selecta, rexx);
+# I1137: the Selecta Amiga archive tree. cmake/selecta_dist.cmake stages Selecta/ (program, Players/, library-template.db, Install-Selecta, rexx);
 # the CI step packs it. The host test selecta-dist-layout runs the same staging with stand-in files.
 if(SEL_AMIGA AND TARGET library_template)
   add_custom_target(selecta_dist
