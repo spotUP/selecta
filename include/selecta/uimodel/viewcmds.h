@@ -12,6 +12,11 @@ extern "C" {
 
 #define SEL_UIM_CMD_MAX 160u
 
+/* I1339: the Play button's one rule for every UI. With nothing playing (play state stopped) and the view cursor on a song row (a file,
+ * a queue entry or a Home song tile), Play starts that row: the caller sends VIEW_ACTIVATE (the cursor is already on the clicked row)
+ * instead of PLAY. Returns 1 for that case, 0 when Play keeps its plain PLAY line. */
+uint32_t sel_uim_play_activates_cursor(sel_play_state play, const sel_view_state* view);
+
 /* Playlists view buttons: 0 New Folder, 1 New Playlist. `name` empty or NULL uses the default name. Returns the line length, 0
  * for a bad button. */
 uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, char* out, uint32_t cap);

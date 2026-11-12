@@ -3667,7 +3667,10 @@ static void mui_control_fire(mui_state* s, LONG id) {
     char line[64];
     LONG v = 0;
     if (id >= CTL_BTN_BASE && id < CTL_BTN_BASE + (LONG)MUI_BTN_COUNT) {
-        if (mui_engine_line(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
+        /* I1339: the shared Play rule: stopped with a song row selected, Play starts that row (a single click selects, only a double click activates). */
+        const char* ln = (uint32_t)(id - CTL_BTN_BASE) == MUI_BTN_PLAY && sel_uim_play_activates_cursor(s->uim.frame.play, sel_engine_state(s->engine)->view)
+                             ? "VIEW_ACTIVATE" : mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame));
+        if (mui_engine_line(s, ln)) {
             s->transport_hits++;
         }
     } else if (id == CTL_SUB_PREV || id == CTL_SUB_NEXT) {

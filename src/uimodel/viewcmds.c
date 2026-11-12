@@ -147,3 +147,15 @@ uint32_t sel_uim_stats_shown(const char* stats, int more) {
     uint32_t n = sel_uim_stats_rows(stats);
     return more || n <= SEL_UIM_STATS_LESS ? n : SEL_UIM_STATS_LESS;
 }
+
+uint32_t sel_uim_play_activates_cursor(sel_play_state play, const sel_view_state* view) {
+    const sel_view_row* r;
+    if (play != SEL_STOPPED || view == NULL || view->cursor < view->window_start || view->cursor - view->window_start >= view->row_n) {
+        return 0;
+    }
+    r = &view->rows[view->cursor - view->window_start];
+    if (r->kind == (uint32_t)SEL_ROW_FILE || r->kind == (uint32_t)SEL_ROW_QUEUE) {
+        return 1;
+    }
+    return r->kind == (uint32_t)SEL_ROW_HOME && !r->album && !r->composer;
+}

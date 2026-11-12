@@ -1062,6 +1062,40 @@ static void test_list_pending(void) {
     CHECK(mui_list_pending_resolve(&p, 0) == 0, "cleared (double-click sent): snapshot wins");
 }
 
+/* I1339: Play with nothing playing and a song row selected starts that row (one click selects, Play activates). The rule is the shared
+ * sel_uim_play_activates_cursor; the transport branch of mui_control_fire in mui_ui.c must ask it before sending the button's PLAY. */
+static void test_play_selected_row(void) {
+    static char src[400000];
+    sel_view_row rows[3];
+    sel_view_state v;
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    const char* br;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    memset(rows, 0, sizeof rows);
+    memset(&v, 0, sizeof v);
+    rows[0].kind = SEL_ROW_DIR;
+    rows[1].kind = SEL_ROW_FILE;
+    rows[2].kind = SEL_ROW_HOME;
+    rows[2].album = 1u;
+    v.rows = rows;
+    v.row_n = 3u;
+    v.cursor = 1u;
+    CHECK(sel_uim_play_activates_cursor(SEL_STOPPED, &v) == 1u, "stopped with a file row selected: Play activates it");
+    CHECK(sel_uim_play_activates_cursor(SEL_PLAYING, &v) == 0u, "playing: Play keeps its pause line");
+    CHECK(sel_uim_play_activates_cursor(SEL_STOPPED, NULL) == 0u, "no view: plain PLAY");
+    v.cursor = 0u;
+    CHECK(sel_uim_play_activates_cursor(SEL_STOPPED, &v) == 0u, "a directory row is not a song: plain PLAY");
+    v.cursor = 2u;
+    CHECK(sel_uim_play_activates_cursor(SEL_STOPPED, &v) == 0u, "an album tile is not a song: plain PLAY");
+    br = strstr(src, "if (id >= CTL_BTN_BASE && id < CTL_BTN_BASE + (LONG)MUI_BTN_COUNT) {");
+    CHECK(br != NULL && strstr(br, "sel_uim_play_activates_cursor(") != NULL && strstr(br, "sel_uim_play_activates_cursor(") < strstr(br, "CTL_SUB_PREV"),
+          "the transport branch of mui_control_fire asks the shared Play rule");
+}
+
 /* MUI-P3-1 (I716): a double click acts on the row the list reported as picked, not on the List cursor a refresh may have
  * moved since; the DBL branch of mui_ui.c reads the picked row from the list and decides through mui_list_dbl_row. */
 static void test_list_dbl_row(void) {
@@ -3958,6 +3992,8 @@ int main(int argc, char** argv) {
         test_list_pending();
     } else if (strcmp(argv[1], "list-dbl-row") == 0) {
         test_list_dbl_row();
+    } else if (strcmp(argv[1], "play-selected") == 0) {
+        test_play_selected_row();
     } else if (strcmp(argv[1], "list-backends") == 0) {
         test_list_backends();
     } else if (strcmp(argv[1], "topbar") == 0) {
