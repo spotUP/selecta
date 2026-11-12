@@ -80,6 +80,7 @@ typedef struct mui_layout_map_t {
     uint8_t side_wide;     /* I1166b: Expand Library is on (desktop side_wide): the sidebar takes the widened width of the layout */
     uint8_t mode;          /* I1173: SEL_UIM_LAYOUT_* the shared layout actions chose (ui.desktop.mode) */
     uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
+    uint8_t detail_in_main; /* I1341: the detail slot stands in for the main slot (mui_layout_detail_in_main) */
 } mui_layout_map_t;
 /* I949c: the compact class of a 640x256-class screen: the bitmap tier at the icon-sidebar breakpoint (width 600-699) and at most
  * MUI_COMPACT_MAX_ROWS rows. Its sidebar is the labelled door rail uimodel asks for (SIDEBAR_RAIL_LABELLED, 160 px): doors only, no
@@ -165,6 +166,15 @@ int mui_mode_from_pref(const char* key, const char* value, uint32_t* mode);
 uint32_t mui_mode_applies(void);
 /* I798: 1 when the Hide / Show Now Playing button exists (three column breakpoint, top bar shown), as the Mac np_toggle_rect. */
 uint32_t mui_np_toggle_shown(const mui_layout_map_t* m);
+/* I1341: the Now Playing and Song Information doors where the layout has no Now Playing column and the toggle cannot bring one
+ * (below the three column breakpoint of sel_uim_layout_compute, or the Window mode): the detail slot takes the main slot's place and
+ * weights, as the Mac opens both pages in its main region (desktop_ui.c desk_page_flags np_page / si_page). The compact class keeps
+ * its own Now Playing page (mui_door_pane). Refused (0, map unchanged) when the detail slot's minimum (detail_min_w x detail_min_h)
+ * does not fit the main slot's current box (main_w x main_h): a body minimum over the screen makes MUI close the window (40e42b25).
+ * Returns 1 when the detail slot now stands in for main (also when it already did). mui_layout_detail_restore puts main back (a page
+ * change); relayout keeps the swap while the new breakpoint still has no Now Playing column. */
+uint32_t mui_layout_detail_in_main(mui_layout_map_t* m, uint32_t detail_min_w, uint32_t detail_min_h, uint32_t main_w, uint32_t main_h);
+uint32_t mui_layout_detail_restore(mui_layout_map_t* m);
 /* I1166b: as mui_layout_map_panel with Expand Library `side_wide` (layout.c expanded_side) under layout `mode` (I1173); relayout, the
  * Now Playing toggle and the Expand Library toggle keep both. */
 void mui_layout_map_wide(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t side_wide,

@@ -260,10 +260,47 @@ uint32_t mui_np_toggle_shown(const mui_layout_map_t* m) {
     return m->show[MUI_SLOT_TOPBAR] && m->breakpoint == SEL_UIM_BP_THREE_COLUMN;
 }
 
+/* I1341: the layout has no Now Playing column to reveal, so the detail slot can take the main slot's place. */
+static uint32_t mui_layout_detail_absent(const mui_layout_map_t* m) {
+    return !m->compact && m->show[MUI_SLOT_MAIN] && !m->show[MUI_SLOT_DETAIL] && !mui_np_toggle_shown(m);
+}
+
+static void mui_layout_detail_swap(mui_layout_map_t* m) {
+    m->detail_in_main = 1u;
+    m->show[MUI_SLOT_DETAIL] = 1u;
+    m->weight_w[MUI_SLOT_DETAIL] = m->weight_w[MUI_SLOT_MAIN];
+    m->weight_h[MUI_SLOT_DETAIL] = m->weight_h[MUI_SLOT_MAIN];
+    m->show[MUI_SLOT_MAIN] = 0u;
+    m->balance_sidebar_main = 0u; /* main is hidden: no Balance sits between two shown panels on the main side */
+    m->balance_main_detail = 0u;
+}
+
+uint32_t mui_layout_detail_in_main(mui_layout_map_t* m, uint32_t detail_min_w, uint32_t detail_min_h, uint32_t main_w, uint32_t main_h) {
+    if (m->detail_in_main) {
+        return 1u;
+    }
+    if (!mui_layout_detail_absent(m) || detail_min_w > main_w || detail_min_h > main_h) {
+        return 0u;
+    }
+    mui_layout_detail_swap(m);
+    return 1u;
+}
+
+uint32_t mui_layout_detail_restore(mui_layout_map_t* m) {
+    if (!m->detail_in_main) {
+        return 0u;
+    }
+    mui_layout_map_wide(m, m->width, m->height, m->tier, m->detail_hidden, m->side_wide, m->mode);
+    return 1u;
+}
+
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips) {
     mui_layout_map_t next;
     uint32_t s, n = 0;
     mui_layout_map_wide(&next, width, height, tier, m->detail_hidden, m->side_wide, m->mode);
+    if (m->detail_in_main && mui_layout_detail_absent(&next)) {
+        mui_layout_detail_swap(&next); /* I1341: the shown Now Playing stays until a page change */
+    }
     if (next.breakpoint == m->breakpoint) {
         /* Same breakpoint: only the weights follow the new size, no object appears or disappears. */
         *m = next;

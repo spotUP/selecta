@@ -2222,8 +2222,13 @@ static Object* mui_main_pages(mui_state* s, Object* np_page) {
 }
 
 /* The page entry: shows the pane of `page` (mui_pane_open counts it), whatever opened it (the Mac UI's key, the View menu item). */
+static void mui_apply_layout(mui_state* s);
+
 static void mui_pane_show(mui_state* s, uint32_t page) {
     uint32_t pane = mui_pane_open(&s->pane, page);
+    if (mui_layout_detail_restore(&s->lay)) { /* I1341: a page change puts the main slot back where Now Playing stood in for it */
+        mui_apply_layout(s);
+    }
     if (pane == MUI_PANE_NOWPLAYING) {
         s->p4[P4_NPPAGE]++; /* I960d sentinel: the Now Playing page was shown */
     }
@@ -3804,8 +3809,12 @@ static void mui_control_fire(mui_state* s, LONG id) {
             }
         } else if (mui_door_detail_tab((uint32_t)(id - CTL_DOOR_BASE), &np_tab)) {
             /* I1333: the full class shows Now Playing and Song Information in the detail column: reveal it when the top bar toggle hid it
-             * (the same flip as CTL_NP_TOGGLE), then select the Lyrics or Info tab. */
-            if (s->lay.detail_hidden != 0u) {
+             * (the same flip as CTL_NP_TOGGLE), then select the Lyrics or Info tab. I1341: below three columns there is no column to
+             * reveal; the detail slot takes the main slot's place (the Mac's main region page) when its minimum fits the main box. */
+            if (mui_layout_detail_in_main(&s->lay, (uint32_t)_minwidth(s->slot[MUI_SLOT_DETAIL]), (uint32_t)_minheight(s->slot[MUI_SLOT_DETAIL]),
+                                          (uint32_t)_width(s->slot[MUI_SLOT_MAIN]), (uint32_t)_height(s->slot[MUI_SLOT_MAIN]))) {
+                mui_apply_layout(s);
+            } else if (s->lay.detail_hidden != 0u) {
                 mui_control_fire(s, CTL_NP_TOGGLE);
             }
             if (s->np_tabs != NULL) {
