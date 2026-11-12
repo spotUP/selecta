@@ -9,12 +9,23 @@
 
 static const char SQL_FILE[] =
     "INSERT OR REPLACE INTO files(source, path, format, artist, name, md5, size) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)";
+#define SAME_FILE "COALESCE(excluded.md5 = md5, excluded.size = size, 0)"
 static const char SQL_SONG[] =
     "INSERT INTO songs(key, source, path, name, artist, format, year, duration_ms, md5, size, added, album)"
     " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
-    " ON CONFLICT(key) DO UPDATE SET name=" SEL_SONG_TAG_KEEP(name) ", artist=" SEL_SONG_TAG_KEEP(artist)
-    ", album=COALESCE(excluded.album, album), format=excluded.format,"
-    " year=excluded.year, duration_ms=excluded.duration_ms, md5=excluded.md5, size=excluded.size";
+    " ON CONFLICT(key) DO UPDATE SET name="
+    /* I1314a2: the same file scanned again without a title, author or length keeps what a play filled (user.c
+     * SEL_USER_META_FILL): the scan had nothing better. Same file = same md5 when both are known (the md5 pass runs later, so
+     * a scan row often has none), else the same size. A changed file takes the scan's values. */
+    SEL_SONG_TAG_KEEP_AT(name, "excluded.key",
+                         "CASE WHEN " SAME_FILE " AND " SEL_SONG_NAME_PLACEHOLDER("excluded.name", "excluded.path")
+                         " AND NOT " SEL_SONG_NAME_PLACEHOLDER("name", "path") " THEN name ELSE excluded.name END")
+    ", artist=" SEL_SONG_TAG_KEEP_AT(artist, "excluded.key",
+                                     "CASE WHEN " SAME_FILE " AND COALESCE(excluded.artist, '') = '' THEN artist ELSE excluded.artist END")
+    ", album=COALESCE(excluded.album, album), format=excluded.format, year=excluded.year,"
+    " duration_ms=CASE WHEN " SAME_FILE " AND excluded.duration_ms IS NULL THEN duration_ms ELSE excluded.duration_ms END,"
+    " md5=excluded.md5, size=excluded.size";
+#undef SAME_FILE
 
 static void bind_text(sqlite3_stmt* st, int i, const char* s) {
     if (s != NULL && s[0] != '\0') {
@@ -138,7 +149,21 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
                 break;
             }
         }
-        rc = sel_library_tag_composer(lib->db, key, r->artist);
+        if (r->artist != NULL && r->artist[0] != '\0') {
+            rc = sel_library_tag_composer(lib->db, key, r->artist);
+        } else {
+            /* I1314a2: a row scanned without an author may have kept the artist a play filled (SQL_SONG); its composer row follows
+             * the stored artist, not the empty scan */
+            char kept[512];
+            kept[0] = '\0';
+            sqlite3_reset(so);
+            sqlite3_bind_text(so, 1, key, -1, SQLITE_STATIC);
+            if (sqlite3_step(so) == SQLITE_ROW && sqlite3_column_type(so, 1) == SQLITE_TEXT) {
+                snprintf(kept, sizeof kept, "%s", (const char*)sqlite3_column_text(so, 1));
+            }
+            sqlite3_reset(so);
+            rc = sel_library_tag_composer(lib->db, key, kept);
+        }
         if (rc != SQLITE_OK) {
             break;
         }

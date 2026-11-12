@@ -273,6 +273,10 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
 /* I172: inside `INSERT ... ON CONFLICT DO UPDATE SET col = ...` on songs, keeps a user's tag edit (sticker
  * "tag.<col>") over the scanned value. Every songs upsert uses it, so the edit survives a rescan. */
 #define SEL_SONG_TAG_KEEP(col) SEL_SONG_TAG_KEEP_AT(col, "excluded.key", "excluded." #col)
+/* I1314a, I1314a2: true when the title expression `name` is empty or the scan's file-name placeholder (the last component of `path`
+ * after '/' or ':', src/library/sources/local.c sel_browse_basename). The play-time fill and the scan upsert share it. */
+#define SEL_SONG_NAME_PLACEHOLDER(name, path)                                                                                  \
+    "(COALESCE(" name ", '') = '' OR " name " = substr(" path ", length(rtrim(" path ", replace(replace(" path ", '/', ''), ':', ''))) + 1))"
 /* The same rule with the sticker key and the scanned value as SQL expressions, for a plain UPDATE (the MOVE
  * rekey, where the stickers still sit under the old key). */
 #define SEL_SONG_TAG_KEEP_AT(col, key, value) \

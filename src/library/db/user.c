@@ -889,28 +889,60 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         }
     } else if (op->op == SEL_USER_META_FILL) {
         /* I1314a: a field is written only while the row's value is NULL, "" (text) or <= 0 (length). The scan stores the file name
-         * as the title of a song it could not describe (src/library/sources/local.c, sel_browse_basename), so a name equal to the
-         * path's last component (after '/' or ':') also counts as empty. The WHERE clause leaves a full row untouched, so a song
-         * played again changes nothing. */
-#define META_FILL_NAME_EMPTY                                                                                                   \
-    "(COALESCE(name, '') = '' OR name = substr(path, length(rtrim(path, replace(replace(path, '/', ''), ':', ''))) + 1))"
+         * as the title of a song it could not describe, so that placeholder also counts as empty (SEL_SONG_NAME_PLACEHOLDER).
+         * I1314a2: a field the user set by a tag edit (sticker "tag.<col>") is never filled, even when the edited title equals the
+         * file name, and a title equal to the stored one is no change. The fields to fill are read first: a row with nothing to
+         * fill (every song played again) runs no write transaction, so the commit hook does not move library_serial and no view
+         * re-reads. A filled artist gets its composer row the way a scan's author tag does (sel_library_tag_composer). */
+#define META_FILL_TAG_FREE(col) "NOT EXISTS (SELECT 1 FROM stickers WHERE key = ?1 AND name = 'tag." col "')"
+#define META_FILL_NAME "(?2 IS NOT NULL AND ?2 IS NOT name AND " SEL_SONG_NAME_PLACEHOLDER("name", "path") " AND " META_FILL_TAG_FREE("name") ")"
+#define META_FILL_ARTIST "(?3 IS NOT NULL AND COALESCE(artist, '') = '' AND " META_FILL_TAG_FREE("artist") ")"
+#define META_FILL_LENGTH "(?4 IS NOT NULL AND COALESCE(duration_ms, 0) <= 0)"
         sqlite3_stmt* st = NULL;
-        rc = sqlite3_prepare_v2(lib->db,
-                                "UPDATE songs SET name = CASE WHEN " META_FILL_NAME_EMPTY " AND ?2 IS NOT NULL THEN ?2 ELSE name END,"
-                                " artist = CASE WHEN COALESCE(artist, '') = '' AND ?3 IS NOT NULL THEN ?3 ELSE artist END,"
-                                " duration_ms = CASE WHEN COALESCE(duration_ms, 0) <= 0 AND ?4 IS NOT NULL THEN ?4 ELSE duration_ms END"
-                                " WHERE key = ?1 AND ((" META_FILL_NAME_EMPTY " AND ?2 IS NOT NULL) OR (COALESCE(artist, '') = '' AND ?3 IS NOT NULL)"
-                                " OR (COALESCE(duration_ms, 0) <= 0 AND ?4 IS NOT NULL))",
+        int fill_name = 0;
+        int fill_artist = 0;
+        int fill_length = 0;
+        rc = sqlite3_prepare_v2(lib->db, "SELECT " META_FILL_NAME ", " META_FILL_ARTIST ", " META_FILL_LENGTH " FROM songs WHERE key = ?1",
                                 -1, &st, NULL);
-#undef META_FILL_NAME_EMPTY
         if (rc == SQLITE_OK) {
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
             if (op->name != NULL && op->name[0] != '\0') sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
             if (op->value != NULL && op->value[0] != '\0') sqlite3_bind_text(st, 3, op->value, -1, SQLITE_STATIC);
             if (op->duration_ms > 0) sqlite3_bind_int64(st, 4, op->duration_ms);
-            rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
-            found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                fill_name = sqlite3_column_int(st, 0);
+                fill_artist = sqlite3_column_int(st, 1);
+                fill_length = sqlite3_column_int(st, 2);
+            }
             sqlite3_finalize(st);
+            st = NULL;
+        }
+#undef META_FILL_TAG_FREE
+#undef META_FILL_NAME
+#undef META_FILL_ARTIST
+#undef META_FILL_LENGTH
+        if (rc == SQLITE_OK && (fill_name || fill_artist || fill_length)) {
+            rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
+            if (rc == SQLITE_OK) {
+                rc = sqlite3_prepare_v2(lib->db,
+                                        "UPDATE songs SET name = CASE WHEN ?5 THEN ?2 ELSE name END, artist = CASE WHEN ?6 THEN ?3 ELSE artist END,"
+                                        " duration_ms = CASE WHEN ?7 THEN ?4 ELSE duration_ms END WHERE key = ?1",
+                                        -1, &st, NULL);
+            }
+            if (rc == SQLITE_OK) {
+                sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+                if (fill_name) sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
+                if (fill_artist) sqlite3_bind_text(st, 3, op->value, -1, SQLITE_STATIC);
+                if (fill_length) sqlite3_bind_int64(st, 4, op->duration_ms);
+                sqlite3_bind_int(st, 5, fill_name);
+                sqlite3_bind_int(st, 6, fill_artist);
+                sqlite3_bind_int(st, 7, fill_length);
+                rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+                found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
+                sqlite3_finalize(st);
+            }
+            if (rc == SQLITE_OK && fill_artist) rc = sel_library_tag_composer(lib->db, op->key, op->value);
+            sqlite3_exec(lib->db, rc == SQLITE_OK ? "COMMIT" : "ROLLBACK", NULL, NULL, NULL);
         }
     } else if (op->op == SEL_USER_LOUDNESS_GET) {
         sqlite3_stmt* st = NULL;

@@ -137,7 +137,7 @@ static void write_file(const char* dir, const char* name, const char* body) {
 /* One column of the songs row of `name` as text ("" when NULL or no row). */
 static void read_field(sel_library* lib, const char* col, const char* name, char* got, size_t cap) {
     sqlite3_stmt* st = NULL;
-    char sql[96];
+    char sql[256];
     got[0] = '\0';
     snprintf(sql, sizeof sql, "SELECT %s FROM songs WHERE path LIKE ?", col);
     db_enter(lib);
@@ -234,6 +234,81 @@ int main(void) {
         check_field(lib, "name", "sure.chp", "Played Title");
         check_field(lib, "artist", "sure.chp", "Kept Author");
         check_field(lib, "duration_ms", "sure.chp", "123000");
+    }
+    /* I1314a2 (4): filling a row that is already full writes nothing: no change and no committed write transaction, so
+     * library_serial (which follows sel_library_write_gen) does not move on every song open. */
+    {
+        char key[512];
+        uint32_t wg0;
+        int rc;
+
+        read_field(lib, "key", "sure.chp", key, sizeof key);
+        wg0 = sel_library_write_gen(lib);
+        rc = sel_library_song_meta_fill(lib, key, "Played Title", "Player Author", 123000);
+        printf("full row fill rc=%d write_gen %u -> %u\n", rc, (unsigned)wg0, (unsigned)sel_library_write_gen(lib));
+        CHECK(rc != 2);
+        CHECK(sel_library_write_gen(lib) == wg0);
+    }
+    /* I1314a2 (3): a title the user set by a tag edit (sticker tag.name) that equals the file name is a real title, not the
+     * scan's placeholder; the player does not retitle it. (1): the artist the play fills gets its composer row, as a scan's
+     * author tag does. */
+    {
+        char key[512], path[512];
+        sel_engine_stats s1;
+        int i;
+
+        read_field(lib, "key", "ext.chp", key, sizeof key);
+        read_field(lib, "path", "ext.chp", path, sizeof path);
+        db_enter(lib);
+        {
+            sqlite3_stmt* st = NULL;
+            CHECK(sqlite3_prepare_v2(lib->db, "INSERT INTO stickers(key, name, value) VALUES(?1, 'tag.name', 'ext.chp')", -1, &st,
+                                     NULL) == SQLITE_OK);
+            sqlite3_bind_text(st, 1, key, -1, SQLITE_TRANSIENT);
+            CHECK(sqlite3_step(st) == SQLITE_DONE);
+            sqlite3_finalize(st);
+        }
+        db_leave(lib);
+        snprintf(line, sizeof line, "OPEN \"%s\"", path);
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        for (i = 0; i < 2500; i++) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &s1);
+            if (s1.meta_fills > 1u) break;
+            usleep(2000);
+        }
+        printf("play ext meta_fills=%u\n", (unsigned)s1.meta_fills);
+        CHECK(s1.meta_fills == 2u); /* sentinel: the artist and length of ext.chp were filled */
+        check_field(lib, "name", "ext.chp", "ext.chp");
+        check_field(lib, "artist", "ext.chp", "Player Author");
+        check_field(lib, "duration_ms", "ext.chp", "123000");
+        {
+            char n[16];
+            char sql[160];
+            snprintf(sql, sizeof sql, "(SELECT COUNT(*) FROM song_composers c WHERE c.song_key = songs.key)");
+            read_field(lib, sql, "ext.chp", n, sizeof n);
+            printf("ext composers=%s\n", n);
+            CHECK(strcmp(n, "1") == 0);
+        }
+    }
+    /* I1314a2 (2): a rescan of unchanged files keeps what the play filled (title, author, length, composer row). */
+    {
+        unsigned opens0 = g_opens;
+        char n[16];
+
+        g_playing = 0;
+        snprintf(line, sizeof line, "LIBRARY_SCAN %s", songs);
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        sel_engine_pump(e, sink, NULL);
+        sel_engine_scan_wait(e, sink, NULL);
+        printf("rescan opens=%u\n", g_opens - opens0);
+        CHECK(g_opens > opens0); /* sentinel: the rescan described the files again */
+        check_field(lib, "name", "sure.chp", "Played Title");
+        check_field(lib, "duration_ms", "sure.chp", "123000");
+        check_field(lib, "artist", "ext.chp", "Player Author");
+        check_field(lib, "duration_ms", "ext.chp", "123000");
+        read_field(lib, "(SELECT COUNT(*) FROM song_composers c WHERE c.song_key = songs.key)", "ext.chp", n, sizeof n);
+        CHECK(strcmp(n, "1") == 0);
     }
     sel_engine_destroy(e);
     sel_library_close(lib);
