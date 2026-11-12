@@ -99,6 +99,7 @@ size_t sel_nuade_static_hooks(sel_tag* t, const char* extensions, const char* fo
 
 #ifdef SEL_PLUGIN_MANIFEST
 #include "manifest_lists.h"
+#include "scan_text.h"
 #include "signatures.h"
 
 /* Amiga manifest probe (I1305i2): the players live in the on-demand module, so the scan matches the magic byte
@@ -111,10 +112,11 @@ static int rp_manifest_probe(const uint8_t* data, size_t size, const char* name)
 }
 
 /* I1314 scan metadata: a sure signature hit names the player, so the scan row needs no module load or open. Title and
- * author stay empty and variant players show their base name until the song is opened (Johan, 2026-11-11). An
+ * author come from the header for the players scan_text.c knows (I1314c); for the rest they stay empty, and variant
+ * players show their base name, until the song is opened (Johan, 2026-11-11). An
  * Unsure claim, or a player not in the generated name table, returns NULL: the scan opens the song as before. */
 static const sel_tag* rp_scan_meta(const uint8_t* data, size_t size, const char* path, char* buf, size_t buf_n) {
-    static sel_tag meta[2];
+    static sel_tag meta[4];
     const char* id = sel_nuade_sig_match(data, size);
     const char* p = SEL_NUADE_MANIFEST_SIG_NAMES;
     size_t id_n;
@@ -130,14 +132,25 @@ static const sel_tag* rp_scan_meta(const uint8_t* data, size_t size, const char*
             return NULL;
         }
         if ((size_t)(eq - p) == id_n && memcmp(p, id, id_n) == 0) {
-            size_t n = (size_t)(end - eq - 1);
+            size_t n = (size_t)(end - eq - 1), k = 1u, rest, half;
             if (n >= buf_n) {
                 n = buf_n - 1u;
             }
             memcpy(buf, eq + 1, n);
             buf[n] = '\0';
             sel_nuade_set_tag(&meta[0], SEL_META_FORMAT, (uintptr_t)buf);
-            sel_nuade_set_tag(&meta[1], SEL_TAG_END, 0);
+            /* I1314c: title and author from the header, in the rest of buf (half each) */
+            rest = buf_n - n - 1u;
+            half = rest / 2u;
+            if (half != 0u && sel_nuade_scan_text(id, data, size, buf + n + 1u, half, buf + n + 1u + half, rest - half)) {
+                if (buf[n + 1u] != '\0') {
+                    sel_nuade_set_tag(&meta[k++], SEL_META_TITLE, (uintptr_t)(buf + n + 1u));
+                }
+                if (buf[n + 1u + half] != '\0') {
+                    sel_nuade_set_tag(&meta[k++], SEL_META_AUTHOR, (uintptr_t)(buf + n + 1u + half));
+                }
+            }
+            sel_nuade_set_tag(&meta[k], SEL_TAG_END, 0);
             return meta;
         }
         p = end + 1;

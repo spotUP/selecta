@@ -1021,6 +1021,13 @@ target_include_directories(nuade_signature_probe_test PRIVATE "${SELECTA_NUADE_D
 add_test(NAME nuade-signature-probe-match COMMAND nuade_signature_probe_test
   "${CMAKE_CURRENT_BINARY_DIR}/songs" "${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures")
 set_tests_properties(nuade-signature-probe-match PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "nuade_signature_probe_ok")
+
+# I1314c: the Amiga nuade manifest's SEL_RP_SCAN_META fills title/author from the header (scan_text.c)
+add_executable(nuade_scan_text_test m3/nuade_scan_text_test.c "${PROJECT_SOURCE_DIR}/plugins/replayers/nuade/signatures.c"
+  "${PROJECT_SOURCE_DIR}/plugins/replayers/nuade/scan_text.c")
+target_include_directories(nuade_scan_text_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/replayers/nuade" "${PROJECT_SOURCE_DIR}/include" "${SELECTA_NUADE_DIR}/include")
+add_test(NAME nuade-scan-text COMMAND nuade_scan_text_test)
+set_tests_properties(nuade-scan-text PROPERTIES LABELS m3 TIMEOUT 30 PASS_REGULAR_EXPRESSION "nuade_scan_text_ok")
 if(NOT SEL_AMIGA AND SELECTA_PLUGIN_LINK STREQUAL "MODULE")
   # I1133: 400 modules through the user path, none rejected with "module table full".
   add_test(NAME plugin-table-growth COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/plugin_table_growth.sh $<TARGET_FILE:selecta-cli> ${CMAKE_BINARY_DIR}/modules)

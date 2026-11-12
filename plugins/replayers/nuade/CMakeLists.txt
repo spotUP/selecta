@@ -44,7 +44,7 @@ endif()
 # with the lists from the committed manifest_lists.h; the players and the shim live in the module.
 set(SEL_NUADE_PLUGIN_SOURCES adapter.c manifest.c lists.c)
 if(SEL_AMIGA)
-  sel_add_plugin(nuade 1 ${SEL_NUADE_PLUGIN_SOURCES} AMIGA_MANIFEST manifest.c signatures.c
+  sel_add_plugin(nuade 1 ${SEL_NUADE_PLUGIN_SOURCES} AMIGA_MANIFEST manifest.c signatures.c scan_text.c
     THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
 else()
   sel_add_plugin(nuade 1 ${SEL_NUADE_PLUGIN_SOURCES}
