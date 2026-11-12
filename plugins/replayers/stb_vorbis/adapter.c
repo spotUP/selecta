@@ -461,7 +461,11 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[16];
+/* I1319c: vorbis_static_hooks gives 10 tags (probe.c) and this entry adds 6 hooks and the END tag, 17 in all; the table was 16 and the END tag
+ * was written one past it (ASan global-buffer-overflow in the host scan). Raise VORBIS_HOOK_MAX with probe.c's count; the typedef fails the build when it is too small. */
+enum { VORBIS_HOOK_MAX = 20, VORBIS_HOOK_NEED = 10 + 6 + 1 };
+typedef char vorbis_hooks_fit[VORBIS_HOOK_MAX >= VORBIS_HOOK_NEED ? 1 : -1];
+static sel_tag g_hooks[VORBIS_HOOK_MAX];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
