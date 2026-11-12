@@ -538,7 +538,11 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[23];
+/* I1319c: sel_nuade_static_hooks returns 12 tags (manifest.c) and this entry adds 10 hooks and the END tag, 23 in all: an exact fit. The typedef fails the
+ * build if either side grows without this table (the minimp3/stb_vorbis tables overflowed by one the same way). */
+enum { NUADE_HOOK_MAX = 23, NUADE_HOOK_NEED = 12 + 10 + 1 };
+typedef char nuade_hooks_fit[NUADE_HOOK_MAX >= NUADE_HOOK_NEED ? 1 : -1];
+static sel_tag g_hooks[NUADE_HOOK_MAX];
 static sel_tag g_desc[5];
 /* Built by the registry walk at entry (lists.c): every usable player's id, and the union of their extensions. A list
  * that would overflow its buffer fails the entry instead of truncating. */

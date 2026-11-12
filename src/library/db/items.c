@@ -164,7 +164,9 @@ static const char* format_sql(uint32_t kind) {
                " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
                " UNION ALL SELECT s.path FROM song_composers c JOIN songs s ON s.key=c.song_key WHERE c.canon=?1 AND ?1<>'" SEL_COMPOSER_UNKNOWN_CANON "'";
     case SEL_LIB_ITEM_PLAYLIST:
-        return "SELECT s.path FROM playlist_entries e JOIN songs s ON s.key=e.key WHERE e.playlist_id=CAST(?1 AS INTEGER)";
+        /* I1291: the entry keys, the very strings the playlist page tallies for its hero cover (desktop_ui pls_key): a tile and its page
+         * name one family. The songs.path behind a key can carry another extension (non-local sources), and a key without a songs row counts too. */
+        return "SELECT e.key FROM playlist_entries e WHERE e.playlist_id=CAST(?1 AS INTEGER)";
     case SEL_LIB_ITEM_LIKED: return "SELECT s.path FROM songs s JOIN liked l ON l.key=s.key";
     case SEL_LIB_ITEM_RECENT: return "SELECT s.path FROM songs s WHERE s.key IN (SELECT key FROM history)";
     case SEL_LIB_ITEM_LOCAL: return "SELECT path FROM songs WHERE source='local'";

@@ -11273,8 +11273,15 @@ static int browse_name_claimed(void* ctx, const char* name) {
     return sel_registry_claims_name(e->registry_count, e->registry_get, name);
 }
 
+static const char* g_create_why = "engine state";
+
+const char* sel_engine_create_failure(void) {
+    return g_create_why;
+}
+
 sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg) {
     sel_engine* e = host->mem_alloc(host, sizeof *e, SEL_MEM_FAST);
+    g_create_why = "engine state";
     uint32_t cmd_depth = cfg && cfg->cmd_queue_depth ? cfg->cmd_queue_depth : 64;
     uint32_t evt_depth = cfg && cfg->evt_queue_depth ? cfg->evt_queue_depth : 256;
     uint32_t queue_cap, queue_text;
@@ -11372,34 +11379,43 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->cur = SEL_SLOT_NONE;
     e->audio_slot = SEL_SLOT_NONE;
     e->act = SEL_SLOT_NONE;
-    if (!sel_spsc_init_arena(&e->cmd_q, host, cmd_depth, SEL_CMD_ARENA_BYTES) || !sel_spsc_init(&e->evt_q, host, evt_depth) ||
-        !sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH) ||
-        !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
-        !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
-        !sel_queue_init(&e->qview, host, queue_cap, queue_text) ||
-        !sel_history_init(&e->history, host, queue_cap, queue_text) ||
-        (e->order = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->order, SEL_MEM_FAST)) == NULL ||
-        (e->order_seen = host->mem_alloc(host, queue_cap, SEL_MEM_FAST)) == NULL ||
-        (e->pl_entries = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->pl_entries, SEL_MEM_FAST)) == NULL ||
-        (e->pl_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
-        (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
-        (e->res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
-        (e->res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+    /* I1325: each allocation names itself in g_create_why, so the shell can say which step ran out of memory. */
+#define CREATE_STEP(name, ok) \
+    do {                      \
+        g_create_why = (name); \
+        if (!(ok)) {          \
+            sel_engine_destroy(e); \
+            return NULL;      \
+        }                     \
+    } while (0)
+    CREATE_STEP("command queue", sel_spsc_init_arena(&e->cmd_q, host, cmd_depth, SEL_CMD_ARENA_BYTES));
+    CREATE_STEP("event queue", sel_spsc_init(&e->evt_q, host, evt_depth));
+    CREATE_STEP("swap ring", sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH));
+    CREATE_STEP("return ring", sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH));
+    CREATE_STEP("play queue", sel_queue_init(&e->queue, host, queue_cap, queue_text));
+    CREATE_STEP("queue view", sel_queue_init(&e->qview, host, queue_cap, queue_text));
+    CREATE_STEP("history", sel_history_init(&e->history, host, queue_cap, queue_text));
+    CREATE_STEP("order table", (e->order = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->order, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("order seen", (e->order_seen = host->mem_alloc(host, queue_cap, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("playlist entries", (e->pl_entries = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->pl_entries, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("playlist text", (e->pl_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("playlist file", (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("result text", (e->res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("result meta", (e->res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
 #if defined(SEL_LI_THREAD)
-        (e->rd_res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
-        (e->rd_res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+    CREATE_STEP("reader result text", (e->rd_res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("reader result meta", (e->rd_res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
 #endif
-        (e->rd_home_text = host->mem_alloc(host, SEL_VIEW_HOME_TEXT_MAX, SEL_MEM_FAST)) == NULL ||
-        (e->qmeta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
-        (e->qmeta_off = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->qmeta_off, SEL_MEM_FAST)) == NULL ||
-        !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
-                         cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
-        !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
-        sel_engine_destroy(e);
-        return NULL;
-    }
+    CREATE_STEP("home text", (e->rd_home_text = host->mem_alloc(host, SEL_VIEW_HOME_TEXT_MAX, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("queue meta", (e->qmeta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("queue meta offsets", (e->qmeta_off = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->qmeta_off, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("browser", sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
+                                           cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text));
+    CREATE_STEP("view window", sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX));
+#undef CREATE_STEP
     if (cfg && cfg->library != NULL) { /* I1035: library engines size the search buckets once, at start; job engines never search */
         sel_source_register_builtin();
+        g_create_why = "search buckets";
         if (!search_buckets_ensure(e)) {
             sel_engine_destroy(e);
             return NULL;

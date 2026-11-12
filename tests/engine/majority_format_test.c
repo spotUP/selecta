@@ -94,9 +94,13 @@ int main(void) {
                        "('local:t2.mod','local','t2.mod','t2','Bob','Tied',7),('local:t3.mod','local','t3.mod','t3','Bob','Tied',8),"
                        "('local:p0.mp3','local','p0.mp3','p0','Cy','Plain',9),('local:p1.ogg','local','p1.ogg','p1','Cy','Plain',10),"
                        "('local:s0.mp3','local','s0.mp3','s0','Di','Stray',11),('local:s1.xm','local','s1.xm','s1','Di','Stray',12);"
+                       "INSERT INTO songs(key, source, path, name, artist, album, added) VALUES"
+                       "('csdb:1','csdb','a.mod','o1','Eve','Opq',13),('csdb:2','csdb','b.mod','o2','Eve','Opq',14);"
                        "INSERT INTO playlists(name) VALUES('Mod Mix');"
                        "INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1,0,'local:m0.mp3'),(1,1,'local:m1.mod'),"
                        "(1,2,'local:m2.mod');"
+                       "INSERT INTO playlists(name) VALUES('Opaque Keys');"
+                       "INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(2,0,'csdb:1'),(2,1,'csdb:2');"
                        "INSERT INTO history(key, played_at) VALUES('local:m1.mod',500),('local:t2.mod',400);",
                        NULL, NULL, &err) == SQLITE_OK);
     db_leave(lib);
@@ -119,6 +123,10 @@ int main(void) {
     CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA);
     it = find(all, n, SEL_LIB_ITEM_PLAYLIST, "Mod Mix");
     CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA);
+    /* I1291: the sidebar tile tallies the same strings as the page hero (the playlist's entry keys, desktop_ui pls_key), never the
+     * songs.path behind them: keys without an extension are Music on both, even when the path says .mod. */
+    it = find(all, n, SEL_LIB_ITEM_PLAYLIST, "Opaque Keys");
+    CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_MUSIC);
 
     /* 2. A collection shelf: the artist's albums carry the album's format in field 5. */
     memset(&sc, 0, sizeof sc);

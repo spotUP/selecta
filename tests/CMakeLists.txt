@@ -325,6 +325,14 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_latin1_name.cmake"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
   set_tests_properties(amiga-latin1-name PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+
+  # I1323: a Quadra Composer .emod renders under vamos (gcc 6.5 -O2 miscompile of qc_create made it crash on 68k only).
+  add_test(NAME amiga-quadra-emod
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/quadra/mini.emod"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_quadra_emod.cmake"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+  set_tests_properties(amiga-quadra-emod PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
 endif()
 
 # Library open on a low file descriptor (libnix hands SQLite fd 0 after close(0); SQLite must not reopen /dev/null).
