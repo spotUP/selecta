@@ -1547,7 +1547,7 @@ static Object* mui_tool_group(mui_state* s) {
     if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
         s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0, mui_search_hint());
         mui_search_live_notify(s->str_search);
-    mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
+        mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     }
     s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0, SEL_UIM_CMD_HINT);
     mui_set_tip(s, MUI_TS_CMD, s->str_cmd, MUI_TIP_CMD, 0, NULL, 0);
