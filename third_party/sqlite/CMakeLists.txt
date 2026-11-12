@@ -20,6 +20,16 @@ if(SEL_AMIGA)
   target_compile_definitions(selecta_sqlite PRIVATE HAVE_PREAD=1 HAVE_PWRITE=1)
 endif()
 
+if(SEL_AMIGA)
+  # I1319b: an Amiga tree built at -O3 crashed scan_unload_vamos inside sqlite3ExprDeleteNN (garbage pointers). Only
+  # sqlite3.c at -O3 was needed to crash; with -O2 on sqlite3.c alone it passed. One-flag-off bisect on sqlite3.c at -O3
+  # (agent-reports/I1319b-run3.md): -fno-inline-functions and -fno-gcse-after-reload each flip crash to pass; the other
+  # nine tested passes (ipa-cp-clone, both vectorizers, unswitch-loops, predictive-commoning, loop-distribute-patterns,
+  # peel-loops, split-paths) and -fno-strict-aliasing still crash. Layout-sensitive evidence, so both are switched off.
+  # Release pins -O2 (cmake/amiga-68020.cmake); these are no-ops there and guard a future -O3 bump.
+  set_source_files_properties(sqlite3.c PROPERTIES COMPILE_OPTIONS "-fno-inline-functions;-fno-gcse-after-reload")
+endif()
+
 # Host-only sqlite3 CLI for the tests (shell.c, same 3.54.1 release as sqlite3.c). The runner's system sqlite3 has no FTS5.
 # It links selecta_sqlite, so it gets exactly the library's SQLITE_ENABLE_* options without a second list.
 if(NOT SEL_AMIGA)
