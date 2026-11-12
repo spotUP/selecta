@@ -3475,6 +3475,10 @@ static void test_overlays(void) {
     memset(&fr, 0, sizeof fr);
     mui_palette_open(&pal);
     all = pal.count;
+    /* I1330: every shared palette match needs a row; row[] sized below pal.items[] overran into mui_state (crash #80000008) */
+    CHECK(sizeof pal.row / sizeof pal.row[0] >= sizeof pal.pal.items / sizeof pal.pal.items[0] && all <= sizeof pal.row / sizeof pal.row[0],
+          "palette rows %u fit %u row slots of %u items", (unsigned)all, (unsigned)(sizeof pal.row / sizeof pal.row[0]),
+          (unsigned)(sizeof pal.pal.items / sizeof pal.pal.items[0]));
     CHECK(all > 0u && all == pal.pal.count && pal.opens >= 1u, "palette rows %u, shared %u", (unsigned)all, (unsigned)pal.pal.count);
     CHECK(strcmp(mui_palette_row(&pal, 0), pal.row[0]) == 0 && mui_palette_row(&pal, (long)pal.count)[0] == '\0', "row callback");
     mui_palette_filter(&pal, "pause");
