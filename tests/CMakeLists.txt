@@ -485,6 +485,11 @@ add_executable(sysfile_tags_test host/sysfile_tags_test.c)
 target_link_libraries(sysfile_tags_test PRIVATE selecta_registry)
 add_test(NAME sysfile-tags-unit COMMAND sysfile_tags_test)
 set_tests_properties(sysfile-tags-unit PROPERTIES PASS_REGULAR_EXPRESSION "sysfile_tags_ok")
+# I427e5: a loaded module's real hooks are owned by their manifest's PLUGIN_ID (sel_plugin_owner_id).
+add_executable(plugin_owner_test host/plugin_owner_test.c)
+target_link_libraries(plugin_owner_test PRIVATE selecta_core)
+add_test(NAME plugin-owner-unit COMMAND plugin_owner_test)
+set_tests_properties(plugin-owner-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_owner_ok")
 # The default integration follows the OS preference list and the registry ("none" when not built).
 add_executable(default_integration_test host/default_integration_test.c)
 target_link_libraries(default_integration_test PRIVATE selecta_registry)

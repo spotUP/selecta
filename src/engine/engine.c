@@ -2788,19 +2788,6 @@ static sel_sf_entry* sf_entry(sel_engine* e, const sel_sysfile_decl* decl) {
     return &e->sf[e->sf_n++];
 }
 
-static const char* sysfile_owner_name(const sel_engine* e, const sel_tag* hooks) {
-    uint32_t i, n = e->registry_count != NULL && e->registry_get != NULL ? e->registry_count() : 0;
-
-    for (i = 0; i < n; i++) {
-        const sel_tag* desc = e->registry_get(i);
-
-        if ((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) == hooks) {
-            return (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, (uintptr_t) "?");
-        }
-    }
-    return "?";
-}
-
 /* I710ga4: the contract before RP_OPEN. Every system file the replayer declares must be installed and checked;
  * the first missing one reports system_file_missing, starts one download per name and session, and fails the open. */
 static int sysfiles_ready(sel_engine* e, const sel_tag* hooks, const char* path, uint32_t subsong, int queued) {
@@ -2810,7 +2797,7 @@ static int sysfiles_ready(sel_engine* e, const sel_tag* hooks, const char* path,
     char detail[160];
 
     if (e->config_dir[0] == '\0') return 1;
-    n = sel_sysfile_decls(hooks, sysfile_owner_name(e, hooks), d, SEL_SYSFILE_MAX, NULL, NULL);
+    n = sel_sysfile_decls(hooks, sel_plugin_owner_id(e->registry_count, e->registry_get, hooks), d, SEL_SYSFILE_MAX, NULL, NULL);
     for (i = 0; i < n; i++) {
         sel_sf_entry* en = sf_entry(e, &d[i]);
 

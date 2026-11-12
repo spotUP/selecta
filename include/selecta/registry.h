@@ -84,7 +84,9 @@ void sel_registry_note_module_unload(void);
  * plugin, or NULL when the module cannot be loaded. The registry's loader installs the resolver; with none
  * installed hooks come back unchanged. Lives in selecta_core so the engine and the library can call it. */
 typedef const sel_tag* (*sel_plugin_resolve_fn)(const sel_tag* hooks);
-void sel_plugin_set_resolver(sel_plugin_resolve_fn fn);
+/* `manifest_of` is the inverse (I427e5): the manifest hooks a loaded module's real hooks came from, the same pointer
+ * for anything else; NULL when the loader has no modules. */
+void sel_plugin_set_resolver(sel_plugin_resolve_fn fn, sel_plugin_resolve_fn manifest_of);
 const sel_tag* sel_plugin_resolve(const sel_tag* hooks);
 /* I1314b: modules a library scan loaded are unloaded when the scan ends; the next play loads them again. The
  * engine takes sel_plugin_load_mark() at scan start and calls sel_plugin_unload_since(mark) at scan end, which
@@ -98,6 +100,12 @@ uint32_t sel_plugin_load_mark(void);
 uint32_t sel_plugin_unload_since(uint32_t mark);
 void sel_plugin_hold(const sel_tag* hooks, int hold);
 int sel_plugin_held(const sel_tag* hooks);
+/* The hooks the registry lists for `hooks`: the manifest when `hooks` are a resolved module's real hooks, else
+ * `hooks` unchanged. Never loads anything. */
+const sel_tag* sel_plugin_manifest(const sel_tag* hooks);
+/* PLUGIN_ID of the registered plugin whose SEL_PLUGIN_TAGS are `hooks` (resolved module hooks match their manifest,
+ * I427e5); "?" when none. count/get are the registry's, passed in so the engine need not link the registry. */
+const char* sel_plugin_owner_id(uint32_t (*count)(void), const sel_tag* (*get)(uint32_t), const sel_tag* hooks);
 /* Runs a replayer's SEL_RP_PROBE and returns its SEL_PROBE_* verdict (SEL_PROBE_NO without a probe). A manifest that
  * carries no probe (it lives in the module, I427e4) is resolved first when its SEL_RP_EXTENSIONS claim the name in
  * path; *hooks then becomes the module's real hooks. */

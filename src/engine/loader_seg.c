@@ -174,7 +174,18 @@ static const sel_tag* resolve(const sel_tag* hooks) {
     return hooks;
 }
 
+/* The inverse of resolve (I427e5): a loaded module's real hooks back to the manifest the registry lists. */
+static const sel_tag* manifest_of(const sel_tag* hooks) {
+    unsigned i;
+    for (i = 0; i < g_mod_n; i++) {
+        if (g_mod[i].real == hooks && hooks != NULL) {
+            return g_mod[i].manifest;
+        }
+    }
+    return hooks;
+}
+
 void sel_loader_scan(void) {
-    sel_plugin_set_resolver(resolve);
+    sel_plugin_set_resolver(resolve, manifest_of);
     sel_plugin_set_unloader(load_mark, unload_since);
 }

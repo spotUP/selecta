@@ -10,9 +10,11 @@
 #include <stddef.h>
 
 static sel_plugin_resolve_fn g_resolver;
+static sel_plugin_resolve_fn g_manifest_of;
 
-void sel_plugin_set_resolver(sel_plugin_resolve_fn fn) {
+void sel_plugin_set_resolver(sel_plugin_resolve_fn fn, sel_plugin_resolve_fn manifest_of) {
     g_resolver = fn;
+    g_manifest_of = manifest_of;
 }
 
 const sel_tag* sel_plugin_resolve(const sel_tag* hooks) {
@@ -97,6 +99,24 @@ int sel_replayer_outranks(const sel_tag* cand, const sel_tag* best, int has_fpu)
 
 int sel_machine_has_fpu(const sel_tag* machine) {
     return machine == NULL || sel_tag_find(machine, SEL_MACHINE_FPU, 0) != 0;
+}
+
+const sel_tag* sel_plugin_manifest(const sel_tag* hooks) {
+    return g_manifest_of != NULL && hooks != NULL ? g_manifest_of(hooks) : hooks;
+}
+
+const char* sel_plugin_owner_id(uint32_t (*count)(void), const sel_tag* (*get)(uint32_t), const sel_tag* hooks) {
+    const sel_tag* key = sel_plugin_manifest(hooks); /* a loaded module's hooks are listed under their manifest */
+    uint32_t i, n = count != NULL && get != NULL ? count() : 0;
+
+    for (i = 0; i < n; i++) {
+        const sel_tag* desc = get(i);
+
+        if ((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) == key) {
+            return (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, (uintptr_t) "?");
+        }
+    }
+    return "?";
 }
 
 int sel_plugin_probe(const sel_tag** hooks, const uint8_t* data, size_t size, const char* path) {

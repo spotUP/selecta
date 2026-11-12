@@ -555,16 +555,6 @@ void sel_registry_lint(sel_lint_report* r) {
     }
 }
 
-static const char* sysfile_owner(const sel_tag* hooks) {
-    uint32_t i;
-    for (i = 0; i < g_count; i++) {
-        if ((const sel_tag*)sel_tag_find(g_desc[i], SEL_PLUGIN_TAGS, 0) == hooks) {
-            return (const char*)sel_tag_find(g_desc[i], SEL_PLUGIN_ID, (uintptr_t) "?");
-        }
-    }
-    return "?";
-}
-
 static void sysfile_warn(const char* plugin, const char* why) {
     char msg[160];
     snprintf(msg, sizeof msg, "plugin %s: %s", plugin, why);
@@ -582,5 +572,5 @@ unsigned sel_registry_sysfiles(const sel_tag* hooks, sel_sysfile_decl* out, unsi
     if (hooks == NULL) {
         return 0;
     }
-    return sel_sysfile_decls(hooks, sysfile_owner(hooks), out, max, sysfile_warn_cb, NULL);
+    return sel_sysfile_decls(hooks, sel_plugin_owner_id(sel_registry_count, sel_registry_get, hooks), out, max, sysfile_warn_cb, NULL);
 }
