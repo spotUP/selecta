@@ -755,7 +755,7 @@ int main(int argc, char** argv)
     e = sel_engine_create(host, &cfg);
     sel_trace(host, "engine created (prefs load, catalogue open, source setup)");
     if (e == NULL) {
-        STARTUP_FAIL("engine allocation failed");
+        STARTUP_FAIL("engine allocation failed at %s", sel_engine_create_failure());
         return 1;
     }
     if (getenv("SELECTA_PUBLISH_MEASURE") != NULL) {
