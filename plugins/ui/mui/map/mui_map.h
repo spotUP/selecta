@@ -360,6 +360,9 @@ uint32_t mui_home_lines(const sel_view_state* v, uint32_t row, char lines[3][48]
  * shelf is a heading plus the SEL_ROW_HOME rows after it. `shelf_id` counts every shelf heading (1-based, the id Show all routes with),
  * also those past the MUI_HOME_SHELF_MAX slots. */
 #define MUI_HOME_QUICK_MAX 6u
+/* I1341: the quick tiles size from this, not from their song title captions (cut with "..." in the button). A fit tile asked for its whole
+ * title as minimum width; six long titles in one row passed the 800 px screen and MUI closed the window on Home (screen title only, no input). */
+#define MUI_HOME_QUICK_WIDEST "..."
 #define MUI_HOME_SHELF_MAX 4u
 #define MUI_HOME_SHELF_ROWS 5u /* rows of a shelf the Home page lists; Show all has the rest */
 typedef struct mui_shelf {

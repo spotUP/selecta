@@ -480,6 +480,9 @@ static void test_btn_align(void) {
     CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_CENTRE, 100, 40, 8) == (100 - 40) / 2, "centre x");
     CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_LEFT, 100, 40, 8) == 8, "left x %d", mui_aa_btn_content_x(MUI_AA_ALIGN_LEFT, 100, 40, 8));
     CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_RIGHT, 100, 40, 8) == 100 - 40 - 8, "right x");
+    /* I1341: a caption wider than its button is cut to the room inside the padding and the icon */
+    CHECK(mui_aa_btn_text_room(100, 8, 16, 4, 1) == 100 - 16 - 16 - 4 && mui_aa_btn_text_room(100, 8, 16, 4, 0) == 84 && mui_aa_btn_text_room(20, 8, 16, 4, 1) == 0,
+          "button caption room %d", mui_aa_btn_text_room(100, 8, 16, 4, 1));
     CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_LEFT, 30, 40, 8) >= 8, "wide content keeps the pad");
     CHECK(ui != NULL && cls != NULL, "sources readable");
     if (ui != NULL && cls != NULL) {

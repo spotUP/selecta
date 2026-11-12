@@ -184,12 +184,31 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
     }
 }
 
+/* I1341: width callback of mui_aa_text_fit for a caption cut (as aalist_width): ink width of the first len bytes in the button's font. */
+typedef struct aabtn_fit {
+    aabtn_data* d;
+    Object* self;
+} aabtn_fit;
+
+static int aabtn_width(void* ctx, const char* s, int len) {
+    aabtn_fit* f = (aabtn_fit*)ctx;
+    char buf[sizeof f->d->caption];
+    if (len >= (int)sizeof buf) {
+        len = (int)sizeof buf - 1;
+    }
+    memcpy(buf, s, (size_t)len);
+    buf[len] = '\0';
+    return aa_text_width(&f->d->aa, f->self, buf);
+}
+
 static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aabtn_data* d = INST_DATA(cl, obj);
     struct RastPort* rp;
     ULONG active = 0;
     int l, t, w, h, tw = 0, th = 0, state, icon = aabtn_cur_icon(d), cw, x;
     uint32_t face, text;
+    char cap[sizeof d->caption];
+    strcpy(cap, d->caption);
     DoSuperMethodA(cl, obj, (Msg)msg);
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE))) {
         return 0;
@@ -228,8 +247,16 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     }
     aa_round_fill(&d->aa, rp, l, t, w, h, d->m.radius, face);
     if (!d->icon_only) {
+        int room = mui_aa_btn_text_room(w, d->m.pad_x, d->m.icon_px, d->m.icon_gap, icon != AABTN_NO_ICON);
         tw = aa_text_width(&d->aa, obj, d->caption);
         th = aa_text_height(&d->aa, obj);
+        if (tw > room) { /* I1341: a caption wider than its button (a bounded tile with a song title) is cut with "...", never drawn past the face */
+            aabtn_fit fit;
+            fit.d = d;
+            fit.self = obj;
+            mui_aa_text_fit(d->caption, room, aabtn_width, &fit, cap, (int)sizeof cap);
+            tw = aa_text_width(&d->aa, obj, cap);
+        }
     }
     cw = (icon != AABTN_NO_ICON ? d->m.icon_px : 0) + (icon != AABTN_NO_ICON && tw > 0 ? d->m.icon_gap : 0) + tw;
     x = l + mui_aa_btn_content_x(d->align, w, cw, d->m.pad_x);
@@ -238,7 +265,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         x += d->m.icon_px + d->m.icon_gap;
     }
     if (tw > 0) {
-        aa_text(&d->aa, obj, rp, x, t + (h - th) / 2, d->caption, text, face);
+        aa_text(&d->aa, obj, rp, x, t + (h - th) / 2, cap, text, face);
     }
     /* I1308d: no role draws an edge. The I685w run 5 TEXT_MUTED 1 px frame on ghost buttons was the grey outline Johan saw around the
      * sidebar doors, the +/> buttons and the crumb on rig 2; the desktop ghost button has none. Only the focus ring frames a button. */

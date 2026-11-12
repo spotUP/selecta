@@ -1752,7 +1752,7 @@ static Object* mui_home_page_group(mui_state* s) {
         return NULL;
     }
     for (k = 0; k < MUI_HOME_QUICK_MAX; k++) {
-        s->quick_btn[k] = mui_make_button_w(" ", "tile", CTL_QUICK_BASE + (LONG)k, 100);
+        s->quick_btn[k] = mui_make_button_i(" ", MUI_HOME_QUICK_WIDEST, "tile", NULL, CTL_QUICK_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_GHOST); /* I1341 */
         if (s->quick_btn[k] == NULL) {
             return NULL;
         }
@@ -1799,7 +1799,7 @@ static Object* mui_browse_page_group(mui_state* s) {
         return NULL;
     }
     for (k = 0; k < MUI_TILE_MAX; k++) {
-        s->tile_btn[k] = mui_make_button_w(" ", "tile", CTL_TILE_BASE + (LONG)k, 100);
+        s->tile_btn[k] = mui_make_button_i(" ", MUI_HOME_QUICK_WIDEST, "tile", NULL, CTL_TILE_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_GHOST); /* I1341: bounded, as the quick tiles */
         if (s->tile_btn[k] == NULL) {
             return NULL;
         }

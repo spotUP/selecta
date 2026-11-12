@@ -278,6 +278,11 @@ int mui_aa_btn_content_x(int align, int w, int cw, int pad_x) {
     return pad_x + mui_aa_align_x(align, w - 2 * pad_x, cw);
 }
 
+int mui_aa_btn_text_room(int w, int pad_x, int icon_px, int icon_gap, int has_icon) {
+    int room = w - 2 * pad_x - (has_icon ? icon_px + icon_gap : 0);
+    return room > 0 ? room : 0;
+}
+
 int mui_aa_text_fit(const char* s, int max_w, mui_aa_width_fn width, void* ctx, char* out, int cap) {
     int len = (int)strlen(s), n, dots_w;
     static const char dots[] = "...";

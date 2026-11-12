@@ -2594,6 +2594,12 @@ static void test_siflags(void) {
           "the three P4 ids or their sentinel names are missing");
     /* I1335: the Your Library "+" and card button show the playlists page, create, and refresh the sidebar. */
     CHECK(strstr(src, "mui_engine_line(s, mui_door_line(3));\n            mui_viewbtn_fire(1, \"\", 0, mui_p8_send, s);") != NULL, "the sidebar create button does not open the playlists page before creating");
+    /* I1341: Home and Browse tiles carry song titles and composer names; a fit button asks for its whole caption as minimum width, so a row
+     * of long titles passed the 800 px screen and MUI closed the window on Home. Both tile rows size from MUI_HOME_QUICK_WIDEST. */
+    CHECK(strstr(src, "s->quick_btn[k] = mui_make_button_i(\" \", MUI_HOME_QUICK_WIDEST,") != NULL &&
+              strstr(src, "s->tile_btn[k] = mui_make_button_i(\" \", MUI_HOME_QUICK_WIDEST,") != NULL && strstr(src, "s->quick_btn[k] = mui_make_button_w(") == NULL &&
+              strstr(src, "s->tile_btn[k] = mui_make_button_w(") == NULL,
+          "a Home quick tile or Browse tile still sizes from its caption (fit button)");
     /* I1336: typing in the search field reaches the engine: a Contents notify on the inner String returns P4_SEARCHLIVE, which sends the local lines. */
     CHECK(strstr(src, "MUIA_String_Contents, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID") != NULL &&
               strstr(src, "case P4_SEARCHLIVE:") != NULL && strstr(src, "mui_search_live_notify(s->str_search)") != NULL,

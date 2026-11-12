@@ -113,6 +113,9 @@ int mui_aa_align_x(int align, int w, int cw);
 /* I667b4: left edge of a button's icon+caption content of width cw in a button of width w: the alignment inside the box inset by
  * pad_x on both sides (mui_aa_align_x); centre = (w - cw) / 2, left = pad_x, right = w - cw - pad_x. */
 int mui_aa_btn_content_x(int align, int w, int cw, int pad_x);
+/* I1341: caption room of a button of width w: the box inset by pad_x on both sides, less the icon and its gap when it has one (never
+ * below 0). A caption wider than this is cut with "..." (mui_aa_text_fit) so a button never draws past its face. */
+int mui_aa_btn_text_room(int w, int pad_x, int icon_px, int icon_gap, int has_icon);
 /* Ink width of the first len bytes of s, supplied by the drawing side (ttengine pixmap on the Amiga, an advance table in the test). */
 typedef int (*mui_aa_width_fn)(void* ctx, const char* s, int len);
 /* Text that fits max_w: s itself when it fits, else the longest prefix plus "..." that fits (just "..." when not even one character
