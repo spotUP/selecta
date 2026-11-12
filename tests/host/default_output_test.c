@@ -63,14 +63,21 @@ static void check_default_ui(void) {
     const char* backend;
     int have_desktop = sel_registry_find(SEL_PLUGIN_KIND_UI, "desktop") != NULL;
     int want_desktop = 0;
+    const char* want_other = "text";
 #ifdef __APPLE__
     want_desktop = have_desktop;
+#endif
+#if defined(__amigaos__) || defined(AMIGA)
+    /* I1325: Amiga defaults to MUI when it is registered. */
+    if (sel_registry_find(SEL_PLUGIN_KIND_UI, "mui") != NULL) {
+        want_other = "mui";
+    }
 #endif
     none[0].tag = SEL_TAG_END;
     none[0].value = 0;
     ui = sel_registry_default_ui(none);
     backend = sel_registry_default_backend(none);
-    if (strcmp(ui, want_desktop ? "desktop" : "text") != 0) {
+    if (strcmp(ui, want_desktop ? "desktop" : want_other) != 0) {
         failures++;
         printf("FAIL default ui '%s' (desktop registered: %d)\n", ui, have_desktop);
     }

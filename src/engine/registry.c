@@ -491,6 +491,14 @@ const char* sel_registry_default_ui(const sel_tag* machine) {
         return "desktop";
     }
 #endif
+#if defined(__amigaos__) || defined(AMIGA)
+    /* I1325: a start with no console (Workbench icon, `run >NIL: <NIL:`) takes the MUI UI; the text UI needs a
+     * console and gave only a "no terminal" requester. A MUI that cannot open falls back to text with its own
+     * console (apps/selecta/main.c, MUI-P1-4). */
+    if (sel_registry_find(SEL_PLUGIN_KIND_UI, "mui") != NULL) {
+        return "mui";
+    }
+#endif
     return "text";
 }
 
