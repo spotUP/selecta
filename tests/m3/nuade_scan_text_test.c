@@ -74,6 +74,43 @@ int main(void) {
     put(b, 22, "Quadra Song");
     check("quadracomposer", b, 512, "quadracomposer", "Quadra Song", "");
 
+    memset(b, 0, sizeof b);
+    memcpy(b, "\0\x82\0\x48", 4);
+    b[0x1F] = 0xFF;
+    memcpy(b + 0x30, "\0\x01\0\x08\0\x18\0\xFF", 8);
+    put(b, 8, "Laxity Title");
+    check("laxity", b, 512, "laxity", "Laxity Title", "");
+
+    memset(b, 0, sizeof b);
+    put(b, 0, "PSA");
+    put(b, 4, "Pro Sound Title");
+    check("professionalsoundartists", b, 512, "professionalsoundartists", "Pro Sound Title", "");
+
+    memset(b, 0, sizeof b);
+    put(b, 0, "GLUE");
+    memcpy(b + 4, "\xB8\xB3\xAA\xBA", 4);
+    put(b, 8, "GlueSong");
+    check("gluemon", b, 512, "gluemon", "GlueSong", "");
+
+    memset(b, 0, sizeof b);
+    put(b, 0, "FORM");
+    b[7] = 200; /* form size */
+    put(b, 8, "MODLVERS");
+    b[19] = 12; /* VERS chunk size: INFO follows at 24 */
+    put(b, 24, "INFO");
+    b[31] = 0x34;
+    put(b, 32, "PT4 Title");
+    check("protracker4", b, 512, "protracker4", "PT4 Title", "");
+
+    memset(b, 0, sizeof b);
+    put(b, 0, "OBISYNTHPACK");
+    check("synthpack", b, 0x510, "synthpack", "", "Karsten Obarski");
+
+    memset(b, 0, sizeof b);
+    memcpy(b, "\x60\0", 2);
+    memcpy(b + 4, "\x48\xE7\xFF\xFE\x61\0", 6);
+    check("wallybeben", b, 512, "wallybeben", "", "Wally Beben");
+
     /* bounds: a header cut before the title gives empty text; a tiny buffer truncates without overrun */
     memset(b, 0, sizeof b);
     put(b, 0, "ISM!V1.2");
