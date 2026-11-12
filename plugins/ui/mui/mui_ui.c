@@ -1678,6 +1678,13 @@ static int mui_playlist_page(mui_state* s, const sel_view_row* row, const char* 
     return mui_route_click(&s->route, SEL_ROUTE_SIDEBAR_ROW, (uint32_t)SEL_LIB_ITEM_PLAYLIST, row->id, key, name, "", mui_route_send, s);
 }
 
+/* I1307: a page whose children are all bounded (buttons, Text) or hidden at runtime has a fixed maximum height; the page group takes
+ * its pages' smallest maximum and the body row its columns', so the window stops short of the screen bottom. This stretchable
+ * filler (weight 1: a visible list keeps nearly all the room) gives such a page an unbounded maximum height. */
+static Object* mui_page_filler(void) {
+    return MUI_NewObject((char*)MUIC_Rectangle, MUIA_Weight, 1, TAG_DONE); /* I1307: unbounded page height */
+}
+
 static Object* mui_col_page_group(mui_state* s) {
     mui_aalist_spec sp;
     Object* lg;
@@ -1763,6 +1770,7 @@ static Object* mui_home_page_group(mui_state* s) {
         DoMethod(s->shelf_grp[k], OM_ADDMEMBER, lg);
         DoMethod(g, OM_ADDMEMBER, s->shelf_grp[k]);
     }
+    DoMethod(g, OM_ADDMEMBER, mui_page_filler()); /* I1307: Home with no shelves (library still scanning) is all hidden or bounded */
     return g;
 }
 
@@ -1781,6 +1789,9 @@ static Object* mui_browse_page_group(mui_state* s) {
         set(s->tile_btn[k], MUIA_ShowMe, FALSE);
         DoMethod(g, OM_ADDMEMBER, s->tile_btn[k]);
     }
+    /* I1307: the tile buttons are bounded; two fillers fill the last grid row (two columns) */
+    DoMethod(g, OM_ADDMEMBER, mui_page_filler()); /* I1307: Browse grid, column 1 */
+    DoMethod(g, OM_ADDMEMBER, mui_page_filler()); /* I1307: Browse grid, column 2 */
     return g;
 }
 
@@ -2106,6 +2117,7 @@ static Object* mui_detail_group(mui_state* s, int compact) {
             if (s->trk_group != NULL && trk_g != NULL) {
                 DoMethod(s->trk_group, OM_ADDMEMBER, trk_g);
                 DoMethod(page_trk, OM_ADDMEMBER, s->trk_group);
+                DoMethod(page_trk, OM_ADDMEMBER, mui_page_filler()); /* I1307: trk_group is hidden without rows */
             } else {
                 DoMethod(page_trk, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
             }

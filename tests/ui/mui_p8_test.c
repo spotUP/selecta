@@ -736,6 +736,15 @@ static void test_offer_ask(void) {
 static void test_fill_height(void) {
     CHECK(src_count("        DoMethod(viz_g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* I1307: unbounded page height */") == 1,
           "the visualizer page without plugins has no filler, so its bounded text caps the window height");
+    /* I1307 round 2: the Home page (no shelves while the library scans), the Browse tile grid and the Tracks detail page (its group is
+     * hidden without rows) are all bounded or hidden, so each ends in the page filler. */
+    CHECK(src_count("static Object* mui_page_filler(void) {") == 1, "the shared page filler helper is missing");
+    CHECK(src_count("    DoMethod(g, OM_ADDMEMBER, mui_page_filler()); /* I1307: Home with no shelves (library still scanning) is all hidden or bounded */") == 1,
+          "the Home page has no filler, so with no shelves its hidden or bounded children cap the window height");
+    CHECK(src_count("mui_page_filler()); /* I1307: Browse grid, column 1 */") == 1 && src_count("mui_page_filler()); /* I1307: Browse grid, column 2 */") == 1,
+          "the Browse tile grid does not end in two fillers, so its bounded buttons cap the window height");
+    CHECK(src_count("                DoMethod(page_trk, OM_ADDMEMBER, mui_page_filler()); /* I1307: trk_group is hidden without rows */") == 1,
+          "the Tracks detail page has no filler, so its hidden group leaves the page bounded");
 }
 
 /* mui-p8-button-edge (I1308d): Johan on rig 2, "all buttons have a grey outline as well they should not have that": the sidebar
