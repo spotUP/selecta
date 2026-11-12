@@ -3778,7 +3778,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id >= CTL_SIDE_BASE && id < CTL_SIDE_BASE + (LONG)MUI_SIDE_COUNT) {
         LONG k = id - CTL_SIDE_BASE;
         if (k == MUI_SIDE_CREATE || k == MUI_SIDE_CARD) {
-            mui_viewbtn_fire(1, "", 0, mui_p8_send, s); /* S4, S9: PLAYLIST_CREATE, as the Playlists page New button */
+            /* I1335: show the playlists page first (as the desktop side_create_playlist goes to the collection page) so the click has a visible
+             * effect, then PLAYLIST_CREATE as the Playlists page New button, then refresh the sidebar list so the new row appears. */
+            mui_engine_line(s, mui_door_line(3));
+            mui_viewbtn_fire(1, "", 0, mui_p8_send, s); /* S4, S9 */
+            mui_sidebar_refresh(s);
         } else if (k >= MUI_SIDE_CHIP) {
             mui_lib_press(s, 0, (int)(k - MUI_SIDE_CHIP)); /* I669: a click on a fitting chip toggles the filter */
         } else if (k == MUI_SIDE_EXPAND) {

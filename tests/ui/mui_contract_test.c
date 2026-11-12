@@ -2592,6 +2592,8 @@ static void test_siflags(void) {
     }
     CHECK(strstr(src, "P4_SIWRONG, P4_SISKIP, P4_SINOTE, P4_SEARCHLIVE, P4_COUNT") != NULL && strstr(src, "\"siwrong\", \"siskip\", \"sinote\", \"searchlive\"}") != NULL,
           "the three P4 ids or their sentinel names are missing");
+    /* I1335: the Your Library "+" and card button show the playlists page, create, and refresh the sidebar. */
+    CHECK(strstr(src, "mui_engine_line(s, mui_door_line(3));\n            mui_viewbtn_fire(1, \"\", 0, mui_p8_send, s);") != NULL, "the sidebar create button does not open the playlists page before creating");
     /* I1336: typing in the search field reaches the engine: a Contents notify on the inner String returns P4_SEARCHLIVE, which sends the local lines. */
     CHECK(strstr(src, "MUIA_String_Contents, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID") != NULL &&
               strstr(src, "case P4_SEARCHLIVE:") != NULL && strstr(src, "mui_search_live_notify(s->str_search)") != NULL,
