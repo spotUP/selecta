@@ -391,6 +391,8 @@ int sel_engine_scan_busy(const sel_engine* e);
 void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx);
 
 sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg);
+/* I1325: the step the last sel_engine_create stopped at (a static string); read it after a NULL return to say why. */
+const char* sel_engine_create_failure(void);
 void sel_engine_destroy(sel_engine* e);
 /* I1019c sentinel: search buckets still queued when sel_engine_destroy cleared the queue (the last destroy in this process). */
 uint32_t sel_engine_quit_queue_dropped(void);
