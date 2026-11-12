@@ -51,6 +51,16 @@ Using the classes from C
   UP_IconFind and others) are in Docs/up-mcc.library.doc; open up-mcc.library version 1 or use the inline headers in Include/.
   Demo/updemo.c is a complete example that creates all eleven classes.
 
+Running the demo
+  Demo/UP-Demo opens one window with all eleven classes and stays open until you close it. Its content sits in a scroll
+  group, so it also opens on a 640x256 screen (MUI 3.8 refuses a window whose minimum size is taller than the screen).
+  Arguments: QUIT closes it at once, AUTO closes it after about 3 seconds (for scripted runs; Ctrl-C also ends it),
+  HOLD stays open and prints the box of every widget. It runs on OS 3.0 or newer with or without ttengine.library.
+
+Stack
+  MUI 5 warns about any program that runs with less than 32000 bytes of stack. UP-Demo asks for 48 KB (it switches to its own stack at start). A program of your own that
+  uses MUI should do the same, or be started after "Stack 32768" in the Shell.
+
 Licence
   The package code is MIT licensed (Docs/LICENSE).
   Third-party files: the Lucide icons are ISC licensed (Docs/LICENSE.Lucide); the Inter font is licensed under the SIL

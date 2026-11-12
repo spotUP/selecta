@@ -9,8 +9,10 @@
  * Backend: the demo uses whatever the classes pick. Without ttengine they fall back to PLAIN text; the success criterion is the same
  * (gate item 3), so there is no switch here.
  * Gate item 2 (live theme reload from UP-MCC.mcp, row I685n): the token store and the retheme list live in up-mcc.library, so a
- * Save in the prefs recolours this window. Run: UP-Demo [QUIT | HOLD] (QUIT closes the window at once, HOLD keeps it open until
- * the close gadget, so the prefs can be opened and saved meanwhile). */
+ * Save in the prefs recolours this window. Run: UP-Demo [QUIT | AUTO | HOLD]. No argument: the window stays open until the close
+ * gadget. QUIT closes it at once, AUTO after about 3 s (scripted runs), HOLD is the default plus a [RECT] listing of the widget boxes.
+ * I1343: the content sits in a Scrollgroup, so the window opens on a 640x256 screen under MUI 3.8 (which refuses a window whose
+ * minimum size exceeds the screen, unlike MUI 5 that scrolls); the program asks for 48 KB of stack (MUI 5 warns below 32000). */
 #include <stdio.h>
 #include <string.h>
 
@@ -28,6 +30,8 @@
 #include <mcc/up.h>
 
 struct Library* MUIMasterBase;
+
+#define DEMO_STACK_BYTES 49152UL /* I1343: MUI 5 warns below 32000; libnix does not honour a __stack cookie in this build */
 
 #define CLASS_COUNT 11
 
@@ -139,12 +143,13 @@ static Object* make(int index) {
     }
 }
 
-int main(int argc, char** argv) {
+static int demo_main(int argc, char** argv) {
     Object* obj[CLASS_COUNT];
-    Object *app = NULL, *win, *root;
+    Object *app = NULL, *win, *root, *content = NULL;
     ULONG sigs = 0, is_open = 0;
     int quit_now = argc > 1 && argv[1] != NULL && strcmp(argv[1], "QUIT") == 0;
     int hold = argc > 1 && argv[1] != NULL && strcmp(argv[1], "HOLD") == 0;
+    int auto_close = argc > 1 && argv[1] != NULL && strcmp(argv[1], "AUTO") == 0;
     int i, ok = 0, ticks = 0;
 
     memset(obj, 0, sizeof obj);
@@ -182,6 +187,16 @@ int main(int argc, char** argv) {
                                  MUIA_Group_Child, (ULONG)obj[1], MUIA_Group_Child, (ULONG)ctl,
                                  MUIA_Group_Child, (ULONG)box(TRUE, left, obj[4], right, NULL, NULL, NULL), TAG_DONE);
         }
+        if (root != NULL) { /* I1343: a scrolling view onto the content, so the window minimum is the scrollgroup's, not the content's */
+            Object* virt;
+            content = root;
+            virt = MUI_NewObject((char*)MUIC_Virtgroup, MUIA_Group_Child, (ULONG)root, TAG_DONE);
+            Object* scr = virt == NULL ? NULL : MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_Contents, (ULONG)virt, TAG_DONE);
+            if (scr == NULL) {
+                MUI_DisposeObject(virt != NULL ? virt : root);
+            }
+            root = scr;
+        }
         win = root == NULL ? NULL
                            : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431, MUIA_Window_Width, (ULONG)MUIV_Window_Width_Screen(90),
                                            MUIA_Window_Height, (ULONG)MUIV_Window_Height_Screen(90),
@@ -207,7 +222,7 @@ int main(int argc, char** argv) {
                 printf("[ERROR] window did not open\n");
                 ok = 0;
             }
-            if (is_open && hold) { /* I685w: the rig census reads the widget boxes from here, in screen pixels */
+            if (is_open && (hold || auto_close)) { /* I685w: the rig census reads the widget boxes from here, in screen pixels */
                 ULONG wptr = 0;
                 GetAttr(MUIA_Window_Window, win, &wptr);
                 Delay(50);
@@ -221,13 +236,23 @@ int main(int argc, char** argv) {
                         GetAttr(MUIA_Height, obj[i], &hh);
                         printf("[RECT] %s %ld %ld %ld %ld\n", g_names[i], (long)(w->LeftEdge + l), (long)(w->TopEdge + t), (long)ww, (long)hh);
                     }
+                    {
+                        ULONG ch = 0, cw = 0;
+                        GetAttr(MUIA_Width, content, &cw);
+                        GetAttr(MUIA_Height, content, &ch);
+                        printf("[SIZE] content %ld x %ld on a window of %ld x %ld\n", (long)cw, (long)ch, (long)w->Width, (long)w->Height);
+                    }
+                    {
+                        struct Task* me = FindTask(NULL);
+                        printf("[STACK] %lu bytes\n", (unsigned long)((char*)me->tc_SPUpper - (char*)me->tc_SPLower));
+                    }
                     printf("[RECT] Window %ld %ld %ld %ld\n", (long)w->LeftEdge, (long)w->TopEdge, (long)w->Width, (long)w->Height);
                     fflush(stdout);
                 }
             }
-            while (!quit_now && (hold || ticks < 30) && is_open) { /* about 3 s, or until the close gadget (HOLD: only that) */
+            while (!quit_now && (!auto_close || ticks < 30) && is_open) { /* until the close gadget; AUTO: about 3 s */
                 ULONG id = DoMethod(app, MUIM_Application_NewInput, (ULONG)&sigs);
-                if (id == (ULONG)MUIV_Application_ReturnID_Quit) {
+                if (id == (ULONG)MUIV_Application_ReturnID_Quit || (SetSignal(0, 0) & SIGBREAKF_CTRL_C) != 0) { /* close gadget or Ctrl-C from a script */
                     break;
                 }
                 Delay(5);
@@ -244,4 +269,51 @@ int main(int argc, char** argv) {
     }
     CloseLibrary(MUIMasterBase);
     return ok == CLASS_COUNT ? 0 : 20;
+}
+
+/* Run demo_main on a stack of DEMO_STACK_BYTES when the process stack is smaller (I1343). Same technique as
+ * apps/common/amiga_start.c (StackSwap, both swaps in one asm block so no compiler code runs on the wrong stack);
+ * repeated here because the demo is headers-only and must not link Selecta code. */
+static struct StackSwapStruct g_sss;
+static int g_argc, g_rc;
+static char** g_argv;
+
+static void run_body(void) {
+    g_rc = demo_main(g_argc, g_argv);
+}
+
+static void __attribute__((noinline)) run_swapped(void) {
+    __asm__ volatile("move.l %0,%%a0\n\t"
+                     "move.l %1,%%a6\n\t"
+                     "jsr -732(%%a6)\n\t"
+                     "move.l %2,%%a1\n\t"
+                     "jsr (%%a1)\n\t"
+                     "move.l %0,%%a0\n\t"
+                     "move.l %1,%%a6\n\t"
+                     "jsr -732(%%a6)\n\t"
+                     :
+                     : "i"(&g_sss), "m"(SysBase), "i"(run_body)
+                     : "d0", "d1", "a0", "a1", "a6", "cc", "memory");
+}
+
+int main(int argc, char** argv) {
+    struct Task* me = FindTask(NULL);
+    unsigned long have = (unsigned long)me->tc_SPUpper - (unsigned long)me->tc_SPLower;
+    UBYTE* mem;
+
+    if (have >= DEMO_STACK_BYTES) {
+        return demo_main(argc, argv);
+    }
+    mem = (UBYTE*)AllocMem(DEMO_STACK_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
+    if (mem == NULL) {
+        return demo_main(argc, argv);
+    }
+    g_argc = argc;
+    g_argv = argv;
+    g_sss.stk_Lower = mem;
+    g_sss.stk_Upper = (ULONG)(mem + DEMO_STACK_BYTES);
+    g_sss.stk_Pointer = (APTR)(mem + DEMO_STACK_BYTES);
+    run_swapped();
+    FreeMem(mem, DEMO_STACK_BYTES);
+    return g_rc;
 }

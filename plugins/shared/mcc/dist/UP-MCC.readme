@@ -16,7 +16,9 @@ program with its source.
 
 Install with the Installer script Install-UP-MCC. The classes use ttengine.library for
 anti-aliased text when it is installed (optional, not included); without it they draw
-plain text.
+plain text. The demonstration program (UP-Demo) stays open until its window is closed,
+fits a 640x256 screen under MUI 3.8, and sets 48 KB of stack (MUI 5 wants 32000 or
+more; give your own MUI programs the same).
 
 Licence: MIT for the package code. Lucide icons: ISC. Inter font: SIL Open Font License 1.1.
 Source: https://github.com/spotUP/selecta
