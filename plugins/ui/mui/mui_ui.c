@@ -123,10 +123,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_PFOLDER, P4_SIWRONG, P4_SISKIP, P4_SINOTE, P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_NPPAGE, P4_PFOLDER, P4_SIWRONG, P4_SISKIP, P4_SINOTE, P4_SEARCHLIVE, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage", "pfolder", "siwrong", "siskip", "sinote"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage", "pfolder", "siwrong", "siskip", "sinote", "searchlive"};
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -1476,6 +1476,21 @@ static Object* mui_make_cycle(const char* const* entries, LONG active, LONG id) 
     return mui_aacycle_new(&sp);
 }
 
+/* I1336: the search field is a Selecta_AAField whose wrapper notifies Return only, so typing never reached the engine and the field looked dead.
+ * A second ReturnID on the inner String contents (P4_SEARCHLIVE) sends the LOCAL search lines per change, as the desktop twin does; the online
+ * From <source> sections stay on Return (I1019g: no library job thread on Amiga). */
+static void mui_search_live_notify(Object* field) {
+    ULONG str = 0;
+    if (field == NULL) {
+        return;
+    }
+    GetAttr(UPA_Field_String, field, &str);
+    if (str != 0) {
+        DoMethod((Object*)str, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID,
+                 (ULONG)(CTL_P4_BASE + P4_SEARCHLIVE));
+    }
+}
+
 /* I615d (design 8.3): the window-wide top bar of the DEFAULT tier, centred like topbar_compute: Home (round icon button), the search field
  * and Browse joined to its right end by a 1 px divider. Built only on an RTG screen; on the bitmap tier the slot is an empty hidden group
  * (the search field then stays in the tool row). One search String and one control id (CTL_P4_BASE + P4_SEARCH) either way. */
@@ -1486,6 +1501,7 @@ static Object* mui_topbar_group(mui_state* s) {
         return g;
     }
     s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX, mui_search_hint());
+    mui_search_live_notify(s->str_search);
     mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     mui_theme_bg_spec(g_tokens[SEL_GUI_TOKEN_DIVIDER], div_spec, sizeof div_spec);
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
@@ -1530,7 +1546,8 @@ static Object* mui_tool_group(mui_state* s) {
     }
     if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
         s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0, mui_search_hint());
-        mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
+        mui_search_live_notify(s->str_search);
+    mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     }
     s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0, SEL_UIM_CMD_HINT);
     mui_set_tip(s, MUI_TS_CMD, s->str_cmd, MUI_TIP_CMD, 0, NULL, 0);
@@ -3387,6 +3404,13 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         }
         if (n > 0) {
             mui_p4_note(s, which, lines[0]);
+        }
+        break;
+    case P4_SEARCHLIVE:
+        mui_str_utf8(s->str_search, text, sizeof text);
+        n = mui_search_lines(text, lines);
+        for (i = 0; i < n; i++) {
+            mui_engine_line(s, lines[i]);
         }
         break;
     case P4_CMD:
