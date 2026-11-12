@@ -739,7 +739,7 @@ uint32_t mui_tooltip_hovers(void);
 typedef struct mui_palette {
     txt_bindings binds;
     txt_palette pal;
-    char row[SEL_CMD_COUNT][96];
+    char row[TXT_PAL_ITEM_MAX][96]; /* I1330: one per possible match; SEL_CMD_COUNT overran into mui_state since I1211 */
     char query[TXT_PAL_QUERY];
     char last_verb[48];
     uint32_t count;

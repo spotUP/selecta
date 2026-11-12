@@ -26,6 +26,8 @@ extern "C" {
  * SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT + action index, name = the action label, line = the protocol line it sends, key = the
  * key the binding table gives that exact line. TXT_PAL_ACTION_MAX bounds the table (palette_test checks it holds). */
 #define TXT_PAL_ACTION_MAX 128u
+/* I1330: the most matches a palette holds; every copy of the rows (mui_palette.row) is sized from this, never SEL_CMD_COUNT. */
+#define TXT_PAL_ITEM_MAX (SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT + TXT_PAL_ACTION_MAX)
 
 typedef struct txt_palette_item {
     uint32_t id;       /* sel_cmd_id; SEL_CMD_COUNT + n for a local entry; above that an action row */
@@ -45,7 +47,7 @@ typedef enum txt_pal_result {
 typedef struct txt_palette {
     char query[TXT_PAL_QUERY];
     uint32_t len;
-    txt_palette_item items[SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT + TXT_PAL_ACTION_MAX]; /* the matches, best first; grouped by area when the query is empty */
+    txt_palette_item items[TXT_PAL_ITEM_MAX]; /* the matches, best first; grouped by area when the query is empty */
     uint32_t count;
     uint32_t cursor;
     const txt_bindings* binds;
