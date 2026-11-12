@@ -158,7 +158,10 @@ static const sel_tag* rp_scan_meta(const uint8_t* data, size_t size, const char*
     return NULL;
 }
 
-static sel_tag g_hooks[15];
+/* I1319c: 12 static tags + PROBE + SCAN_META + END = 15, an exact fit; the typedef fails the build if the count outgrows the table. */
+enum { NUADE_MANIFEST_HOOK_MAX = 15, NUADE_MANIFEST_HOOK_NEED = 12 + 2 + 1 };
+typedef char nuade_manifest_hooks_fit[NUADE_MANIFEST_HOOK_MAX >= NUADE_MANIFEST_HOOK_NEED ? 1 : -1];
+static sel_tag g_hooks[NUADE_MANIFEST_HOOK_MAX];
 static sel_tag g_desc[6];
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

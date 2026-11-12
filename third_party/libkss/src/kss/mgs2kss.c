@@ -149,7 +149,9 @@ KSS *KSS_mgs2kss(uint8_t *data, uint32_t size) {
   memset(buf, 0, load_size + KSS_HEADER_SIZE);
   KSS_make_header(buf, load_adr, load_size, init_adr, play_adr);
   memcpy(buf + KSS_HEADER_SIZE, data, data_size);
-  memcpy(buf + KSS_HEADER_SIZE + 0x6000 - load_adr, MGSDRV + 0x0D, 0x2000);
+  /* I1319c: MGSDRV is 0x2000 bytes and the copy starts 0x0D in, so 0x2000 bytes read 13 past the array (ASan global-buffer-overflow in the
+     host scan); the last 13 bytes of the driver window stay zero. */
+  memcpy(buf + KSS_HEADER_SIZE + 0x6000 - load_adr, MGSDRV + 0x0D, sizeof(MGSDRV) - 0x0D);
   memcpy(buf + KSS_HEADER_SIZE + init_adr - load_adr, mgsdrv_init, 0x100);
   memcpy(buf + KSS_HEADER_SIZE + init_adr + 0x100 - load_adr, mgsdrv_play, 0x100);
 
