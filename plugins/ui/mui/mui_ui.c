@@ -416,6 +416,7 @@ static Object* mui_song_context_menu(void) {
 }
 
 static int mui_screen_compact(void); /* I949c, defined with the screen helpers; the View menu needs it (I960d) */
+static int mui_screen_np_page(void); /* I1341: the screen has no detail column (mui_layout_np_page) */
 /* I1179: the cursor row decides which context items work. Called after every list refresh. */
 static void mui_ctx_sync(const sel_view_state* view) {
     uint32_t kind = SEL_UIM_CTXK_NONE, mask, i, w;
@@ -523,8 +524,8 @@ static Object* mui_menu_strip(void) {
         uint32_t p;
         for (p = MUI_PANE_LIST + 1u; view != NULL && p < MUI_PANE_COUNT; p++) {
             Object* pi;
-            if (p == MUI_PANE_NOWPLAYING && !mui_screen_compact()) {
-                continue; /* I960d: the Now Playing page exists in the compact class only; the full class has the detail column */
+            if (p == MUI_PANE_NOWPLAYING && !mui_screen_np_page()) {
+                continue; /* I960d, I1341: the Now Playing page exists only where the screen has no detail column */
             }
             pane_sc[p][0] = mui_pane_shortcut(p);
             pane_sc[p][1] = '\0';
@@ -1114,6 +1115,14 @@ static int mui_screen_compact(void) {
     int laced;
     mui_screen_size(&w, &h, &laced);
     return mui_layout_compact(w, mui_layout_rows(h, laced), g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP) != 0u;
+}
+
+/* I1341: the screen can never show the detail column, so Now Playing is a main page (map/mui_layout.c mui_layout_np_page). */
+static int mui_screen_np_page(void) {
+    uint32_t w, h;
+    int laced;
+    mui_screen_size(&w, &h, &laced);
+    return mui_layout_np_page(w, mui_layout_rows(h, laced), g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP) != 0u;
 }
 
 /* fixed_h 0: the fixed frame is square; I949d: the compact player's art frame has its own height (tall pixels). */
@@ -1743,9 +1752,12 @@ static const char* mui_shelf_row(void* ctx, long row) {
 }
 
 /* I795 (P1): the Home page group: the quick tile row, then up to MUI_HOME_SHELF_MAX shelves (header Text, Show all button, a short AAList).
- * Hidden until mui_route_sync shows it; the slots fill from the view (mui_home_split). */
+ * Hidden until mui_route_sync shows it; the slots fill from the view (mui_home_split). I1341: the slots sit in a scrolled virtual group,
+ * as the sidebar (I1092c): a plain group asks for the height of every shown shelf (each list brings its scroller's minimum), so with three
+ * filled shelves Home alone pushed the window's minimum to 742 rows on the 800x600 screen and MUI closed the window. */
 static Object* mui_home_page_group(mui_state* s) {
-    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    Object* g = MUI_NewObject((char*)MUIC_Virtgroup, TAG_DONE);
+    Object* sg;
     uint32_t k;
     s->quick_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     if (g == NULL || s->quick_row == NULL) {
@@ -1788,7 +1800,11 @@ static Object* mui_home_page_group(mui_state* s) {
         DoMethod(g, OM_ADDMEMBER, s->shelf_grp[k]);
     }
     DoMethod(g, OM_ADDMEMBER, mui_page_filler()); /* I1307: Home with no shelves (library still scanning) is all hidden or bounded */
-    return g;
+    sg = MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, g, MUIA_ShowMe, FALSE, TAG_DONE);
+    if (sg == NULL) {
+        MUI_DisposeObject(g);
+    }
+    return sg;
 }
 
 /* I795 (P4): the Browse page: the tiles of mui_browse_tiles in a two column grid (FORMATS_SHOW, COMPOSERS_SHOW, SOURCES). */
@@ -2222,13 +2238,8 @@ static Object* mui_main_pages(mui_state* s, Object* np_page) {
 }
 
 /* The page entry: shows the pane of `page` (mui_pane_open counts it), whatever opened it (the Mac UI's key, the View menu item). */
-static void mui_apply_layout(mui_state* s);
-
 static void mui_pane_show(mui_state* s, uint32_t page) {
     uint32_t pane = mui_pane_open(&s->pane, page);
-    if (mui_layout_detail_restore(&s->lay)) { /* I1341: a page change puts the main slot back where Now Playing stood in for it */
-        mui_apply_layout(s);
-    }
     if (pane == MUI_PANE_NOWPLAYING) {
         s->p4[P4_NPPAGE]++; /* I960d sentinel: the Now Playing page was shown */
     }
@@ -3801,20 +3812,16 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the history entry is the door's lines (I794) */
         uint32_t np_tab = 0u;
-        uint32_t np_pane = mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab);
-        if (np_pane == MUI_PANE_NOWPLAYING) { /* I960d: the compact class opens its Now Playing page for the Now Playing and Song Information doors */
+        uint32_t np_pane = mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_np_page(), &np_tab);
+        if (np_pane == MUI_PANE_NOWPLAYING) { /* I960d, I1341: a screen without the detail column opens its Now Playing page for the Now Playing and Song Information doors */
             mui_pane_show(s, mui_pane_page(np_pane));
             if (s->np_tabs != NULL) {
                 set(s->np_tabs, UPA_Tabs_Active, (ULONG)np_tab);
             }
         } else if (mui_door_detail_tab((uint32_t)(id - CTL_DOOR_BASE), &np_tab)) {
             /* I1333: the full class shows Now Playing and Song Information in the detail column: reveal it when the top bar toggle hid it
-             * (the same flip as CTL_NP_TOGGLE), then select the Lyrics or Info tab. I1341: below three columns there is no column to
-             * reveal; the detail slot takes the main slot's place (the Mac's main region page) when its minimum fits the main box. */
-            if (mui_layout_detail_in_main(&s->lay, (uint32_t)_minwidth(s->slot[MUI_SLOT_DETAIL]), (uint32_t)_minheight(s->slot[MUI_SLOT_DETAIL]),
-                                          (uint32_t)_width(s->slot[MUI_SLOT_MAIN]), (uint32_t)_height(s->slot[MUI_SLOT_MAIN]))) {
-                mui_apply_layout(s);
-            } else if (s->lay.detail_hidden != 0u) {
+             * (the same flip as CTL_NP_TOGGLE), then select the Lyrics or Info tab. */
+            if (s->lay.detail_hidden != 0u) {
                 mui_control_fire(s, CTL_NP_TOGGLE);
             }
             if (s->np_tabs != NULL) {
@@ -4020,8 +4027,10 @@ static void* mui_open(const sel_ui_open_args* a) {
     /* MUI-P4-17: MUIA_Application_Base is the settings identity only. The shell opened the one ARexx port SELECTA before this
      * UI (arexx_open, apps/selecta/main.c), so MUI takes SELECTA.1 for its own built-in commands and no MUIA_Application_Commands
      * table is given: PLAY and every other command reach the engine through the shell's port, one command set (plan section 5). */
-    /* I960c: the detail group is built once; the compact class puts it in the main page group as the Now Playing page, the full class in the detail slot. */
-    np_compact = mui_screen_compact();
+    /* I960c: the detail group is built once (an MUI object has one parent); a screen that can never show the detail column (the compact
+     * class, I1341 every screen below the three column breakpoint, e.g. 800x600) puts it in the main page group as the Now Playing page,
+     * in its compact form (art beside the text, no visualizer strip: the Visualizer page is beside it), the full class in the detail slot. */
+    np_compact = mui_screen_np_page();
     np_detail = mui_detail_group(s, np_compact);
     np_page = np_compact ? np_detail : NULL;
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",

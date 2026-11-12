@@ -403,11 +403,11 @@ uint32_t mui_door_detail_tab(uint32_t door, uint32_t* tab) {
     return 0u;
 }
 
-uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab) {
+uint32_t mui_door_pane(uint32_t door, uint32_t np_page, uint32_t* tab) {
     if (tab != NULL) {
         *tab = 0u;
     }
-    return compact && mui_door_detail_tab(door, tab) ? MUI_PANE_NOWPLAYING : MUI_PANE_COUNT;
+    return np_page && mui_door_detail_tab(door, tab) ? MUI_PANE_NOWPLAYING : MUI_PANE_COUNT;
 }
 
 /* I670: see mui_map.h. */

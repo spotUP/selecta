@@ -80,13 +80,17 @@ typedef struct mui_layout_map_t {
     uint8_t side_wide;     /* I1166b: Expand Library is on (desktop side_wide): the sidebar takes the widened width of the layout */
     uint8_t mode;          /* I1173: SEL_UIM_LAYOUT_* the shared layout actions chose (ui.desktop.mode) */
     uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
-    uint8_t detail_in_main; /* I1341: the detail slot stands in for the main slot (mui_layout_detail_in_main) */
 } mui_layout_map_t;
 /* I949c: the compact class of a 640x256-class screen: the bitmap tier at the icon-sidebar breakpoint (width 600-699) and at most
  * MUI_COMPACT_MAX_ROWS rows. Its sidebar is the labelled door rail uimodel asks for (SIDEBAR_RAIL_LABELLED, 160 px): doors only, no
  * brand row, and the Your Library block lives on the Library page. mui_layout_map sets `compact` from this. */
 enum { MUI_COMPACT_MAX_ROWS = 300 };
 uint32_t mui_layout_compact(uint32_t width, uint32_t height, uint32_t tier);
+/* I1341: 1 when a screen `width` x `height` (rows) of `tier` can never show the detail column: the compact class, or any screen narrower
+ * than the three column breakpoint (src/uimodel/layout.c adds the detail region only there, and the window is never wider than its
+ * screen). Such a screen builds the Now Playing group as page MUI_PANE_NOWPLAYING of the main page group, as the Mac opens Now Playing
+ * and Song Information in its main region (desktop_ui.c desk_page_flags np_page / si_page); the detail slot stays an empty Rectangle. */
+uint32_t mui_layout_np_page(uint32_t width, uint32_t height, uint32_t tier);
 /* I949d: the player band of the compact class: ONE band at most MUI_PLAYER_COMPACT_MAX_H px high. Left the art (MUI_PLAYER_ART_PX wide, the
  * height from the pixel aspect so it is square on screen: 28 rows at aspect 512) with title and artist; centre the transport row and the
  * seek row; right the volume and the format/status on ONE row. Album and speed leave the band: they are menu items only (the action
@@ -166,15 +170,6 @@ int mui_mode_from_pref(const char* key, const char* value, uint32_t* mode);
 uint32_t mui_mode_applies(void);
 /* I798: 1 when the Hide / Show Now Playing button exists (three column breakpoint, top bar shown), as the Mac np_toggle_rect. */
 uint32_t mui_np_toggle_shown(const mui_layout_map_t* m);
-/* I1341: the Now Playing and Song Information doors where the layout has no Now Playing column and the toggle cannot bring one
- * (below the three column breakpoint of sel_uim_layout_compute, or the Window mode): the detail slot takes the main slot's place and
- * weights, as the Mac opens both pages in its main region (desktop_ui.c desk_page_flags np_page / si_page). The compact class keeps
- * its own Now Playing page (mui_door_pane). Refused (0, map unchanged) when the detail slot's minimum (detail_min_w x detail_min_h)
- * does not fit the main slot's current box (main_w x main_h): a body minimum over the screen makes MUI close the window (40e42b25).
- * Returns 1 when the detail slot now stands in for main (also when it already did). mui_layout_detail_restore puts main back (a page
- * change); relayout keeps the swap while the new breakpoint still has no Now Playing column. */
-uint32_t mui_layout_detail_in_main(mui_layout_map_t* m, uint32_t detail_min_w, uint32_t detail_min_h, uint32_t main_w, uint32_t main_h);
-uint32_t mui_layout_detail_restore(mui_layout_map_t* m);
 /* I1166b: as mui_layout_map_panel with Expand Library `side_wide` (layout.c expanded_side) under layout `mode` (I1173); relayout, the
  * Now Playing toggle and the Expand Library toggle keep both. */
 void mui_layout_map_wide(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden, uint32_t side_wide,
@@ -442,10 +437,10 @@ char mui_pane_shortcut(uint32_t pane);          /* the Mac UI's key for the page
 uint32_t mui_pane_open(mui_mainpane* mp, uint32_t page);
 /* A key press (txt_key code and mods) as the Mac UI's default table reads it: opens the page it names. MUI_PANE_COUNT when the key opens none. */
 uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods);
-/* I960: the compact class (640x256) hides the detail column, so a door whose page has no engine line (Now Playing, Song Information) opens
- * MUI_PANE_NOWPLAYING in the main slot; `*tab` (when not NULL) gets the detail tab to show: 0 Lyrics, 1 Info. MUI_PANE_COUNT in the full
- * class and for every door with an engine line (those go through the engine). */
-uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab);
+/* I960, I1341: where the screen has no detail column (`np_page`, mui_layout_np_page), a door whose page has no engine line (Now Playing,
+ * Song Information) opens MUI_PANE_NOWPLAYING in the main slot; `*tab` (when not NULL) gets the detail tab to show: 0 Lyrics, 1 Info.
+ * MUI_PANE_COUNT where the detail column exists and for every door with an engine line (those go through the engine). */
+uint32_t mui_door_pane(uint32_t door, uint32_t np_page, uint32_t* tab);
 /* I1333: 1 when door `door` is a page of the Now Playing detail group (Now Playing: tab 0 Lyrics, Song Information: tab 1 Info; `*tab` gets it).
  * The full class has no main page for them: its door handler shows the detail column (the Hide / Show Now Playing toggle) and sets the tab. */
 uint32_t mui_door_detail_tab(uint32_t door, uint32_t* tab);

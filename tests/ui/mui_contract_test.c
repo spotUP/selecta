@@ -1224,64 +1224,6 @@ static void test_panes(void) {
     }
 }
 
-/* I1341: at 800x600 RTG (default tier, icon-sidebar breakpoint) the layout has no Now Playing column, so the Now Playing and Song
- * Information doors show the detail slot in the main slot's place (the Mac's main region page) and a page change puts main back. The
- * detail minimum measured on rig 2 at 800x600 (ladder log, thoughts/spot/agent-reports/start1.txt: slot 3 min 167x419, main page slot
- * height 512) fits; a detail minimum over the main box is refused so the body minimum never grows past the screen (40e42b25). */
-static void test_detail_in_main(void) {
-    enum { RIG2_DETAIL_MIN_W = 167, RIG2_DETAIL_MIN_H = 419, RIG2_MAIN_H = 512 };
-    mui_layout_map_t lm, before, wide;
-    uint32_t main_w, flips = 9u;
-    mui_layout_map_wide(&lm, 800u, 600u, SEL_UIM_TIER_DEFAULT, 0u, 0u, SEL_UIM_LAYOUT_FULL);
-    CHECK(lm.breakpoint != SEL_UIM_BP_THREE_COLUMN && lm.show[MUI_SLOT_MAIN] && !lm.show[MUI_SLOT_DETAIL] && !mui_np_toggle_shown(&lm) && !lm.compact,
-          "800x600 default tier: no Now Playing column and no toggle to bring one");
-    main_w = lm.weight_w[MUI_SLOT_MAIN];
-    before = lm;
-    /* too tall for the main box: refused, map untouched (the window would close) */
-    CHECK(mui_layout_detail_in_main(&lm, RIG2_DETAIL_MIN_W, RIG2_MAIN_H + 1u, main_w, RIG2_MAIN_H) == 0u && memcmp(&lm, &before, sizeof lm) == 0,
-          "a detail minimum over the main height was not refused");
-    CHECK(mui_layout_detail_in_main(&lm, main_w + 1u, RIG2_DETAIL_MIN_H, main_w, RIG2_MAIN_H) == 0u && memcmp(&lm, &before, sizeof lm) == 0,
-          "a detail minimum over the main width was not refused");
-    /* the measured minimum fits: detail shows with main's weights, main hides, no Balance */
-    CHECK(mui_layout_detail_in_main(&lm, RIG2_DETAIL_MIN_W, RIG2_DETAIL_MIN_H, main_w, RIG2_MAIN_H) == 1u, "the Now Playing door did not show the detail slot at 800x600");
-    CHECK(lm.detail_in_main && lm.show[MUI_SLOT_DETAIL] && !lm.show[MUI_SLOT_MAIN] && lm.show[MUI_SLOT_SIDEBAR] && lm.show[MUI_SLOT_PLAYER],
-          "detail %u main %u sidebar %u player %u", (unsigned)lm.show[MUI_SLOT_DETAIL], (unsigned)lm.show[MUI_SLOT_MAIN], (unsigned)lm.show[MUI_SLOT_SIDEBAR],
-          (unsigned)lm.show[MUI_SLOT_PLAYER]);
-    CHECK(lm.weight_w[MUI_SLOT_DETAIL] == before.weight_w[MUI_SLOT_MAIN] && lm.weight_h[MUI_SLOT_DETAIL] == before.weight_h[MUI_SLOT_MAIN] &&
-              !lm.balance_sidebar_main && !lm.balance_main_detail,
-          "detail did not take the main weights or a Balance stayed");
-    CHECK(mui_layout_detail_in_main(&lm, 9999u, 9999u, 0u, 0u) == 1u, "a second door press while shown must keep it");
-    /* a resize inside the breakpoint keeps it; a page change restores main */
-    CHECK(mui_layout_relayout(&lm, 820u, 600u, SEL_UIM_TIER_DEFAULT, &flips) == 0u && flips == 0u && lm.detail_in_main && !lm.show[MUI_SLOT_MAIN],
-          "relayout dropped the shown Now Playing");
-    CHECK(mui_layout_detail_restore(&lm) == 1u && !lm.detail_in_main && lm.show[MUI_SLOT_MAIN] && !lm.show[MUI_SLOT_DETAIL],
-          "a page change did not put main back");
-    CHECK(mui_layout_detail_restore(&lm) == 0u, "restore without a swap reported a change");
-    /* three columns: the column exists, the door keeps the I1333 path; the compact class keeps its own page */
-    mui_layout_map_wide(&wide, 1280u, 720u, SEL_UIM_TIER_DEFAULT, 0u, 0u, SEL_UIM_LAYOUT_FULL);
-    CHECK(mui_layout_detail_in_main(&wide, 1u, 1u, 9999u, 9999u) == 0u && wide.show[MUI_SLOT_MAIN], "three columns swapped main");
-    mui_layout_map_wide(&wide, 1280u, 720u, SEL_UIM_TIER_DEFAULT, 1u, 0u, SEL_UIM_LAYOUT_FULL);
-    CHECK(mui_layout_detail_in_main(&wide, 1u, 1u, 9999u, 9999u) == 0u, "three columns with the column hidden: the toggle reveals it, no swap");
-    mui_layout_map_wide(&wide, 640u, 256u, SEL_UIM_TIER_BITMAP, 0u, 0u, SEL_UIM_LAYOUT_FULL);
-    CHECK(!wide.compact || mui_layout_detail_in_main(&wide, 1u, 1u, 9999u, 9999u) == 0u, "the compact class swapped main");
-    {
-        /* the glue: the door handler asks with the live minimum and main box, a page change restores (mui_ui.c is Amiga-only) */
-        static char src[400000];
-        size_t n;
-        FILE* f = fopen(MUI_UI_SOURCE, "rb");
-        CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
-        if (f == NULL) {
-            return;
-        }
-        n = fread(src, 1, sizeof src - 1, f);
-        fclose(f);
-        src[n] = 0;
-        CHECK(strstr(src, "mui_layout_detail_in_main(&s->lay, (uint32_t)_minwidth(s->slot[MUI_SLOT_DETAIL]), (uint32_t)_minheight(s->slot[MUI_SLOT_DETAIL]),") != NULL,
-              "the door handler does not ask mui_layout_detail_in_main with the detail minimum");
-        CHECK(strstr(src, "if (mui_layout_detail_restore(&s->lay)) {") != NULL, "mui_pane_show does not restore main");
-    }
-}
-
 /* I960b: the Now Playing page plan on the compact tier. Tall pixels (512): art 64x32, the page adds at most MUI_NP_PAGE_BUDGET_H rows to
  * the main slot minimum. Square pixels (256, a user-chosen laced screen): art 64x64 and the plan still fits a 256-row screen's main
  * height. The plan moves the output: a wider main column or a taller pixel changes the art. */
@@ -1318,10 +1260,22 @@ static void test_np_page_plan(void) {
             calls++;
         }
         CHECK(calls == 1, "mui_detail_group(s, called %d times, want once", calls);
-        CHECK(strstr(src, "mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab)") != NULL, "the door handler asks mui_door_pane");
+        /* I1341: below three columns there is no detail column, so the doors open the Now Playing page in the main area (rig 2 800x600). */
+        CHECK(mui_layout_np_page(800, 600, SEL_UIM_TIER_DEFAULT) == 1 && mui_layout_np_page(1280, 800, SEL_UIM_TIER_DEFAULT) == 0,
+              "I1341: 800x600 gets the Now Playing page, a three column screen keeps the detail column");
+        CHECK(strstr(src, "mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_np_page(), &np_tab)") != NULL, "the door handler asks mui_door_pane");
+        CHECK(strstr(src, "np_compact = mui_screen_np_page();") != NULL, "I1341: the window build adds the Now Playing page below three columns");
+        {
+            /* I1341: Home's shelves sit in a scrolled virtual group; a plain group asked 742 rows on the 600 row screen and MUI closed the window. */
+            const char* hp = strstr(src, "static Object* mui_home_page_group(mui_state* s) {");
+            const char* end = hp != NULL ? strstr(hp, "\n}\n") : NULL;
+            const char* vg = hp != NULL ? strstr(hp, "MUI_NewObject((char*)MUIC_Virtgroup") : NULL;
+            const char* sg = hp != NULL ? strstr(hp, "MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, g,") : NULL;
+            CHECK(end != NULL && vg != NULL && sg != NULL && vg < end && sg < end, "I1341: Home builds its shelves in a Virtgroup inside a Scrollgroup");
+        }
         CHECK(strstr(src, "mui_door_detail_tab((uint32_t)(id - CTL_DOOR_BASE), &np_tab)") != NULL, "I1333: the full class door handler reaches the detail tab");
         CHECK(strstr(src, "s->p4[P4_NPPAGE]++") != NULL && strstr(src, "set(s->np_tabs, UPA_Tabs_Active") != NULL, "the Now Playing sentinel counts and the tab is set");
-        CHECK(strstr(src, "p == MUI_PANE_NOWPLAYING && !mui_screen_compact()") != NULL, "the View item is compact only");
+        CHECK(strstr(src, "p == MUI_PANE_NOWPLAYING && !mui_screen_np_page()") != NULL, "the View item shows only when the Now Playing page exists");
         CHECK(strstr(src, "mui_main_pages(s, np_page)") != NULL, "the window build passes the Now Playing group to the page group");
         CHECK(strstr(src, "static Object* mui_main_pages(mui_state* s, Object* np_page)") != NULL, "mui_main_pages takes the Now Playing group");
         /* I1313d: the detail page carries the "Players Turned Off" section, filled from the engine's players_off lines as written. */
@@ -4018,8 +3972,6 @@ int main(int argc, char** argv) {
         test_tiles_reach();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
-    } else if (strcmp(argv[1], "detail-in-main") == 0) {
-        test_detail_in_main();
     } else if (strcmp(argv[1], "sidebar") == 0) {
         test_sidebar();
     } else if (strcmp(argv[1], "sidebar-bullet-latin1") == 0) {
