@@ -102,6 +102,28 @@ int main(void) {
     put(b, 32, "PT4 Title");
     check("protracker4", b, 512, "protracker4", "PT4 Title", "");
 
+    /* musicmaker: FORM/MMV8, an INST chunk first, then SDAT; title 6 bytes into the SDAT body */
+    memset(b, 0, sizeof b);
+    put(b, 0, "FORM");
+    b[7] = 100; /* form size */
+    put(b, 8, "MMV8");
+    put(b, 12, "INST");
+    b[19] = 10; /* INST body 10 bytes: SDAT at 12 + 8 + 10 = 30 */
+    put(b, 30, "SDAT");
+    b[37] = 60;
+    put(b, 38 + 4 + 2, "MM Title");
+    check("musicmaker", b, 512, "musicmaker", "MM Title", "");
+    /* near miss: another form type is no musicmaker signature, and the SDAT walk gives no text */
+    put(b, 8, "MMV9");
+    if (sel_nuade_sig_match(b, 512) != NULL) {
+        printf("FAIL musicmaker near miss matched %s\n", sel_nuade_sig_match(b, 512));
+        g_fail++;
+    }
+    if (!sel_nuade_scan_text("musicmaker", b, 512, t, sizeof t, a, sizeof a) || t[0] != '\0') {
+        printf("FAIL musicmaker near miss text '%s'\n", t);
+        g_fail++;
+    }
+
     memset(b, 0, sizeof b);
     put(b, 0, "OBISYNTHPACK");
     check("synthpack", b, 0x510, "synthpack", "", "Karsten Obarski");

@@ -29,7 +29,7 @@
  * Also without a row (I1305i3 part 4): jasonpage (the Graftgold/Virocop layout has only the version word 2 at 0 plus
  * range checks), musicalenlightenment (a module without the shortcut signatures is accepted by its section sizes),
  * musicassembler and paulsummers (code patterns: BRA.W/movem opcodes, then a scan of the init and play code),
- * musicmaker (an old song is recognised by its ".sdata" name), onescapee (the one free longword of the XOR check
+ * musicmaker's old bare song (recognised by its ".sdata" name; the FORM MMV8 song has a row), onescapee (the one free longword of the XOR check
  * pattern may sit at any of 25 positions), paulrobotham, peterverswyvelen and pierreadane (count and offset range
  * checks, no mark), paulshields (ten zero bytes; the table mark sits at an offset read from the header), quartet
  * (the end words sit at the end of the file, the header has a tempo range and one byte).
@@ -42,7 +42,10 @@
  * synthdream (offset and range checks; its 0xFFFF word sits at an offset read from the header), thomashermann (the
  * table pointers are relative to a base long read from the header, and the file name prefix decides), tomytracker
  * (length and range checks, no mark), tronic (the 0x58/0xB0 instrument-table mark sits behind variable-length
- * blocks), voodoo (the "VSS0" mark is a footer in the last 64 bytes). */
+ * blocks), voodoo (the "VSS0" mark is a footer in the last 64 bytes).
+ * Also without a sure row (I1314c3): audiosculpture keeps its Unsure rows (a sure row steals FLT4 tracker mods; its
+ * probe is Supported only by the .adsc name), seanconnolly, fredgray and bendaglishsid (the probe loads and checks
+ * the whole module, opcode scans), pumatracker (the 'patt' mark sits at an offset computed from header counts). */
 #include "signatures.h"
 
 #include <string.h>
@@ -182,6 +185,9 @@ static const sig_row k_rows[] = {
     { "mmdc", 0x34, { { 0, 4, "MMDC" }, { 0x10, 2, "\0\0" } }, 0, 0, 0 },
     /* mdl_module.c: "MSOB" at 0, header 20 bytes */
     { "medley", 20, { { 0, 4, "MSOB" } }, 0, 0, 0 },
+    /* musicmaker mm_file.c split_file (I1314c3): IFF FORM with form type "MMV8" (an SDAT and an INST/PINS chunk follow;
+     * the scan text walks to SDAT). The old bare ".sdata" song has no mark and stays on the file name. */
+    { "musicmaker", 12, { { 0, 4, "FORM" }, { 8, 4, "MMV8" } }, 0, 0, 0 },
     /* ntsp.c module_read: "SPNT" at 0, header 8 bytes */
     { "ntsp", 8, { { 0, 4, "SPNT" } }, 0, 0, 0 },
     { "oktalyzer", 1368, { { 0, 8, "OKTASONG" } }, 0, 0, 0 },

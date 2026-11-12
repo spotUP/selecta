@@ -23,6 +23,7 @@ static const scan_text_row k_rows[] = {
     { "professionalsoundartists", 4, 32, 0, NULL }, /* professionalsoundartists.c: PSA_TITLE_OFFSET, PSA_TITLE_BYTES */
     { "gluemon", 8, 8, 0, NULL },          /* gm_module.c read_header: name behind the 8 byte marks */
     { "protracker4", 8, 32, 0, NULL },     /* protracker4.c read_info: INFO chunk body at +8; chunk found by find_info below */
+    { "musicmaker", 6, 20, 0, NULL },      /* mm_song.c read_title: SDAT chunk body + 4 (SDAT_HEADER) + 2; body found by mm_sdat_at */
     { "synthpack", 0, 0, 0, "Karsten Obarski" },  /* synthpack_nuade.c: constant artist */
     { "wallybeben", 0, 0, 0, "Wally Beben" },     /* wallybeben_nuade.c: constant artist */
 };
@@ -86,6 +87,28 @@ static size_t pt4_info_at(const uint8_t* data, size_t size) {
     return 0;
 }
 
+/* musicmaker mm_file.c find_chunk: FORM/MMV8, chunks follow each other without padding until the one named SDAT.
+ * Returns the offset of the SDAT chunk body, 0 when absent or cut short. */
+static size_t mm_sdat_at(const uint8_t* data, size_t size) {
+    uint64_t pos = 12u, form_end;
+    if (size < 20u || be32(data) != 0x464F524Du || be32(data + 8) != 0x4D4D5638u) {
+        return 0;
+    }
+    form_end = 8u + (uint64_t)be32(data + 4);
+    do {
+        uint32_t len;
+        if (pos > size || size - pos < 8u) {
+            return 0;
+        }
+        len = be32(data + pos + 4);
+        if (be32(data + pos) == 0x53444154u) {
+            return len >= 4u && len <= size - pos - 8u ? (size_t)(pos + 8u) : 0u;
+        }
+        pos += 8u + (uint64_t)len;
+    } while (pos < form_end);
+    return 0;
+}
+
 int sel_nuade_scan_text(const char* id, const uint8_t* data, size_t size, char* title, size_t title_n, char* author,
                         size_t author_n) {
     size_t r, base = 0;
@@ -106,6 +129,12 @@ int sel_nuade_scan_text(const char* id, const uint8_t* data, size_t size, char* 
         }
         if (strcmp(id, "protracker4") == 0) {
             base = pt4_info_at(data, size);
+            if (base == 0u) {
+                return 1;
+            }
+        }
+        if (strcmp(id, "musicmaker") == 0) {
+            base = mm_sdat_at(data, size);
             if (base == 0u) {
                 return 1;
             }
