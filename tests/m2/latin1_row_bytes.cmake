@@ -11,7 +11,7 @@ file(MAKE_DIRECTORY "${WORK}/songs")
 file(WRITE "${WORK}/songs/Björk Ärger.mod" "x")
 file(WRITE "${WORK}/q.keys" "Down\nwait 200\nq\n") # Down ends the I355 start screen, which covers the list until a key
 sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_SELECTA}")
-execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
+execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --output null --size 80x25
     --start-dir work:songs --keys work:q.keys --frame-dump work:frames.bin
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)

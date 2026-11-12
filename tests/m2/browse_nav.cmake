@@ -21,7 +21,7 @@ file(WRITE "${WORK}/root.mod" "x")
 file(WRITE "${WORK}/root_file.keys" "Down\nwait 200\nq\n")
 sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_SELECTA}")
 function(run name expect_title expect_rows forbid_rows)
-  execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
+  execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --output null --size 80x25
       --start-dir work: --keys work:${name}.keys --screen-dump work:${name}.txt
     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)

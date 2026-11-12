@@ -7,7 +7,9 @@
 # is the smallest supported one. Peak use of hash-idle-vamos was 9,485,860 bytes, over the old 8 MB. RAM use
 # is still kept down; a player that needs more RAM than the machine has is disabled, not the whole app.
 # Why -H disable: vamos refuses more than ~10 MB with custom-chip access mapped ("Too much RAM allocated
-# with hw access enabled!"). No test reaches the custom chips: output is the null sink or a WAV file.
+# with hw access enabled!"). So no test may reach the custom chips: Amiga Selecta runs pass --output null (the
+# default output is Paula, whose quit writes DMACON $DFF096 and faults below ~14 MB, I1318), the CLI renders to
+# the null sink or a WAV file. Exception: amiga-kplayer-start-refused-vamos needs the Paula handover (I219c).
 #
 # Why the PROGDIR: assign: on a real Amiga PROGDIR: is the directory the exe was started from, and player
 # modules load with LoadSeg("PROGDIR:Players/sel_<name>") (I427e, cmake/selecta_registry.cmake

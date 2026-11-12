@@ -71,7 +71,7 @@ if(MODE STREQUAL "vamos")
     set(SEL_VAMOS_RAM_KB 6144)
     sel_vamos_cmd(SEL_VAMOS_CMD "${AMIGA_SELECTA}")
     set(SEL_VAMOS_RAM_KB ${ram_16mb})
-    execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25 --start-dir work:
+    execute_process(COMMAND ${SEL_VAMOS_CMD} -V work:${WORK} -- "${AMIGA_SELECTA}" --output null --size 80x25 --start-dir work:
                             --keys work:np.keys --screen-dump work:np.txt
                     RESULT_VARIABLE rc OUTPUT_VARIABLE uout ERROR_VARIABLE uerr TIMEOUT 120)
     if(NOT EXISTS "${WORK}/np.txt")
