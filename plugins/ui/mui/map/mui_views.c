@@ -381,26 +381,33 @@ uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods) {
     return mui_pane_open(mp, k_panes[pane].page);
 }
 
-uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab) {
+uint32_t mui_door_detail_tab(uint32_t door, uint32_t* tab) {
     const sel_uim_door* d = sel_uim_door_at(door);
     uint32_t pg;
     if (tab != NULL) {
         *tab = 0u;
     }
-    if (!compact || d == NULL || d->line != NULL) {
-        return MUI_PANE_COUNT;
+    if (d == NULL || d->line != NULL) {
+        return 0u;
     }
     pg = sel_uim_page_by_name(d->page);
     if (pg == (uint32_t)SEL_UIM_PG_NOWPLAYING) {
-        return MUI_PANE_NOWPLAYING;
+        return 1u;
     }
     if (pg == (uint32_t)SEL_UIM_PG_SONGINFO) {
         if (tab != NULL) {
             *tab = 1u;
         }
-        return MUI_PANE_NOWPLAYING;
+        return 1u;
     }
-    return MUI_PANE_COUNT;
+    return 0u;
+}
+
+uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab) {
+    if (tab != NULL) {
+        *tab = 0u;
+    }
+    return compact && mui_door_detail_tab(door, tab) ? MUI_PANE_NOWPLAYING : MUI_PANE_COUNT;
 }
 
 /* I670: see mui_map.h. */

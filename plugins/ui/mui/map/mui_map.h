@@ -433,6 +433,9 @@ uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods);
  * MUI_PANE_NOWPLAYING in the main slot; `*tab` (when not NULL) gets the detail tab to show: 0 Lyrics, 1 Info. MUI_PANE_COUNT in the full
  * class and for every door with an engine line (those go through the engine). */
 uint32_t mui_door_pane(uint32_t door, uint32_t compact, uint32_t* tab);
+/* I1333: 1 when door `door` is a page of the Now Playing detail group (Now Playing: tab 0 Lyrics, Song Information: tab 1 Info; `*tab` gets it).
+ * The full class has no main page for them: its door handler shows the detail column (the Hide / Show Now Playing toggle) and sets the tab. */
+uint32_t mui_door_detail_tab(uint32_t door, uint32_t* tab);
 
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the

@@ -3774,6 +3774,15 @@ static void mui_control_fire(mui_state* s, LONG id) {
             if (s->np_tabs != NULL) {
                 set(s->np_tabs, UPA_Tabs_Active, (ULONG)np_tab);
             }
+        } else if (mui_door_detail_tab((uint32_t)(id - CTL_DOOR_BASE), &np_tab)) {
+            /* I1333: the full class shows Now Playing and Song Information in the detail column: reveal it when the top bar toggle hid it
+             * (the same flip as CTL_NP_TOGGLE), then select the Lyrics or Info tab. */
+            if (s->lay.detail_hidden != 0u) {
+                mui_control_fire(s, CTL_NP_TOGGLE);
+            }
+            if (s->np_tabs != NULL) {
+                set(s->np_tabs, UPA_Tabs_Active, (ULONG)np_tab);
+            }
         } else if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
             mui_pane_show(s, SEL_UIM_PG_HOME); /* the engine moves the list's source: the list pane shows it */
             mui_route_door(&s->route, (uint32_t)(id - CTL_DOOR_BASE), dl, mui_route_send, s);

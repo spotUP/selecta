@@ -1204,6 +1204,10 @@ static void test_panes(void) {
         CHECK(mui_pane_open(&mp, mui_pane_page(mui_door_pane(np_door, 1u, NULL))) == MUI_PANE_NOWPLAYING && mp.opens[MUI_PANE_NOWPLAYING] == 1u, "one door press did not count one opening");
         CHECK(mui_door_pane(info_door, 1u, &tab) == MUI_PANE_NOWPLAYING && tab == 1u, "Song Information door gives tab 1");
         CHECK(mui_door_pane(info_door, 0u, &tab) == MUI_PANE_COUNT && mui_door_pane(99u, 1u, NULL) == MUI_PANE_COUNT, "full class / past the table");
+        /* I1333: the full class has no main page for the two doors; the detail column handles them (tab 0 Lyrics, 1 Info) */
+        CHECK(mui_door_detail_tab(np_door, &tab) == 1u && tab == 0u, "Now Playing door is a detail door, tab 0");
+        CHECK(mui_door_detail_tab(info_door, &tab) == 1u && tab == 1u, "Song Information door is a detail door, tab 1");
+        CHECK(mui_door_detail_tab(0u, &tab) == 0u && mui_door_detail_tab(99u, NULL) == 0u, "Home / past the table are no detail door");
         CHECK(mui_pane_of_action("@nowplaying") == MUI_PANE_COUNT, "action map reached the NULL-action pane");
     }
     /* the menu shortcuts of the other items leave 'v' and 't' to the panes */
@@ -1257,6 +1261,7 @@ static void test_np_page_plan(void) {
         }
         CHECK(calls == 1, "mui_detail_group(s, called %d times, want once", calls);
         CHECK(strstr(src, "mui_door_pane((uint32_t)(id - CTL_DOOR_BASE), (uint32_t)mui_screen_compact(), &np_tab)") != NULL, "the door handler asks mui_door_pane");
+        CHECK(strstr(src, "mui_door_detail_tab((uint32_t)(id - CTL_DOOR_BASE), &np_tab)") != NULL, "I1333: the full class door handler reaches the detail tab");
         CHECK(strstr(src, "s->p4[P4_NPPAGE]++") != NULL && strstr(src, "set(s->np_tabs, UPA_Tabs_Active") != NULL, "the Now Playing sentinel counts and the tab is set");
         CHECK(strstr(src, "p == MUI_PANE_NOWPLAYING && !mui_screen_compact()") != NULL, "the View item is compact only");
         CHECK(strstr(src, "mui_main_pages(s, np_page)") != NULL, "the window build passes the Now Playing group to the page group");
