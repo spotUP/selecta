@@ -570,6 +570,11 @@ int mui_screen_is_rtg(int dipf_foreign, int bm_standard, uint32_t bm_depth);
 typedef struct mui_window_attrs_t {
     uint8_t borderless, backdrop, dragbar, depthgadget, sizegadget, closegadget, titled;
     uint8_t header; /* I730: 1 = the window draws its own flat header row (title + close button); dialogs on the own screen only */
+    /* I1307 round 3: 1 = the window gets a MUIA_Window_ID, so MUI restores a remembered or snapshotted size and position in place
+     * of MUIA_Window_Width/Height. The full screen backdrop window cannot be moved or sized, so a remembered geometry can only be
+     * stale (rig 2: a 454-row height, 480 - 26, survived on the 800x600 screen, 146 rows empty below the player bar). 0 on the
+     * own screen: the window always opens at MUIV_Window_*_Screen(100). */
+    uint8_t remember;
 } mui_window_attrs_t;
 void mui_window_attrs(int own_screen, mui_window_attrs_t* out);
 uint32_t mui_window_attrs_calls(void);

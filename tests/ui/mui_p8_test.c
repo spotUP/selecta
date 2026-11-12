@@ -745,6 +745,20 @@ static void test_fill_height(void) {
           "the Browse tile grid does not end in two fillers, so its bounded buttons cap the window height");
     CHECK(src_count("                DoMethod(page_trk, OM_ADDMEMBER, mui_page_filler()); /* I1307: trk_group is hidden without rows */") == 1,
           "the Tracks detail page has no filler, so its hidden group leaves the page bounded");
+    /* I1307 round 3: both filler rounds left the same 146 empty rows (454 = 480 - 26 on the 800x600 screen). The main window had
+     * MUIA_Window_ID 'SELM', so MUI restored a remembered geometry over MUIV_Window_Height_Screen(100). On the own screen the
+     * window gets no ID; on Workbench (movable, sizable) it keeps one. */
+    {
+        mui_window_attrs_t own, wb;
+        memset(&own, 0xff, sizeof own);
+        memset(&wb, 0, sizeof wb);
+        mui_window_attrs(1, &own);
+        mui_window_attrs(0, &wb);
+        CHECK(own.remember == 0u, "the full screen window still remembers its geometry (MUIA_Window_ID set)");
+        CHECK(wb.remember == 1u, "the Workbench window lost its remembered geometry");
+        CHECK(src_count("MUIA_Window_ID, wattr.remember ? SEL_MAKE_ID(") == 1, /* no quotes: file_count passes the pattern to grep in '' */
+              "the main window does not take MUIA_Window_ID from wattr.remember");
+    }
 }
 
 /* mui-p8-button-edge (I1308d): Johan on rig 2, "all buttons have a grey outline as well they should not have that": the sidebar

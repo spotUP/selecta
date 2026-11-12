@@ -79,6 +79,7 @@ void mui_window_attrs(int own_screen, mui_window_attrs_t* out) {
     out->header = 0u;
     out->borderless = out->backdrop = (uint8_t)(own_screen != 0);
     out->dragbar = out->depthgadget = out->sizegadget = out->closegadget = out->titled = (uint8_t)(own_screen == 0);
+    out->remember = (uint8_t)(own_screen == 0); /* I1307: no remembered geometry for the full screen window */
 }
 
 uint32_t mui_window_attrs_calls(void) {

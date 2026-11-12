@@ -3980,7 +3980,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     np_page = np_compact ? np_detail : NULL;
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
-        SubWindow, s->win = WindowObject, TH_SCR MUIA_Window_Title, wattr.titled ? (ULONG) "Selecta" : (ULONG)NULL, MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'), MUIA_Window_AppWindow, TRUE,
+        SubWindow, s->win = WindowObject, TH_SCR MUIA_Window_Title, wattr.titled ? (ULONG) "Selecta" : (ULONG)NULL, MUIA_Window_ID, wattr.remember ? SEL_MAKE_ID('S', 'E', 'L', 'M') : 0ul, MUIA_Window_AppWindow, TRUE,
             MUIA_Window_Borderless, (ULONG)wattr.borderless, MUIA_Window_Backdrop, (ULONG)wattr.backdrop, MUIA_Window_DragBar, (ULONG)wattr.dragbar,
             MUIA_Window_DepthGadget, (ULONG)wattr.depthgadget, MUIA_Window_SizeGadget, (ULONG)wattr.sizegadget,
             MUIA_Window_CloseGadget, (ULONG)wattr.closegadget,
