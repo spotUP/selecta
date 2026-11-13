@@ -29,6 +29,10 @@ void sel_queue_default_sizes(uint32_t fast_ram, uint32_t* capacity, uint32_t* te
 int sel_queue_init(sel_queue* q, const sel_host* host, uint32_t capacity, uint32_t text_bytes);
 void sel_queue_free(sel_queue* q, const sel_host* host);
 
+/* Grows the entry table and the text arena (doubling) until they hold at least need_entries entries and need_text bytes.
+ * Contents and ids are kept; returns 0 (queue unchanged) when memory runs out. */
+int sel_queue_grow(sel_queue* q, const sel_host* host, uint32_t need_entries, uint32_t need_text);
+
 /* Inserts `path` before position `at` (SEL_QUEUE_NONE or count: at the end).
  * Returns 0 when the entry table or the text arena is full. On success
  * *id_out is the new id and the version is bumped. */

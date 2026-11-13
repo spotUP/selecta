@@ -594,6 +594,9 @@ struct sel_engine {
      * playing), the rest is the shuffled remainder. Valid for order_qver. */
     uint32_t* order;
     uint8_t* order_seen; /* scratch, one byte per queue position */
+    uint32_t pool_cap;   /* I1373-2: size of the pools that do not follow the play queue (query view, results, browse) */
+    uint32_t pool_text;
+    int queue_fixed;     /* the caller set queue_capacity / queue_text_bytes: that size is a hard cap, no growth */
     uint32_t order_n;
     uint32_t order_done;
     uint32_t order_qver;
@@ -649,7 +652,8 @@ struct sel_engine {
     /* I1019a: SOURCE_SEARCH * fans out over the enabled searchable sources. One bucket per registered source with a search hook, in registry
      * order; the collect of each finished task copies the landing into its bucket. The single-source form is one bucket.
      * I1035: the array is sized by the searchable source count and allocated when the engine starts (library engines); a source
-     * registered later grows it at the next query (search_buckets_ensure), never during one. */
+     * registered later grows it at the next query (search_buckets_ensure), never during one.
+     * I1373: the first query allocates it, not the engine start. */
     struct sel_search_bucket {
         char id[SEL_SOURCE_ID_MAX];
         int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
@@ -4142,10 +4146,45 @@ static void cmd_PREV(sel_engine* e, const sel_message* m) {
     queue_start(e, prev);
 }
 
+/* I1373-2: the play queue starts small and grows (doubling) when full; every pool sized by it (history, play order, playlist
+ * scratch) grows first, so they are never smaller than the queue. A queue_capacity / queue_text_bytes in the config is a hard cap. */
+static int grow_buf(const sel_host* host, void** p, size_t old, size_t want) {
+    void* n = host->mem_alloc(host, want, SEL_MEM_FAST);
+    if (n == NULL) return 0;
+    memcpy(n, *p, old);
+    host->mem_free(host, *p);
+    *p = n;
+    return 1;
+}
+
+static int queue_reserve(sel_engine* e, uint32_t add, uint32_t add_text) {
+    sel_queue* q = &e->queue;
+    uint32_t cap = q->capacity, tb = q->text_bytes, old_cap = q->capacity, old_tb = q->text_bytes;
+    uint32_t need_e = q->count + add, need_t = q->text_used + add_text;
+    if (e->queue_fixed || (need_e <= cap && need_t <= tb)) return 1;
+    while (cap < need_e) cap = cap > 0x7FFFFFFFu / 2u ? need_e : cap * 2u;
+    while (tb < need_t) tb = tb > 0x7FFFFFFFu / 2u ? need_t : tb * 2u;
+    if (!grow_buf(e->host, (void**)&e->order, (size_t)old_cap * sizeof *e->order, (size_t)cap * sizeof *e->order) ||
+        !grow_buf(e->host, (void**)&e->order_seen, old_cap, cap) ||
+        !grow_buf(e->host, (void**)&e->pl_entries, (size_t)old_cap * sizeof *e->pl_entries, (size_t)cap * sizeof *e->pl_entries) ||
+        !grow_buf(e->host, (void**)&e->pl_text, (size_t)old_tb + 16u, (size_t)tb + 16u) ||
+        !grow_buf(e->host, (void**)&e->pl_file, (size_t)old_tb + 16u, (size_t)tb + 16u) ||
+        !sel_history_grow(&e->history, e->host, cap, tb) || !sel_queue_grow(q, e->host, cap, tb)) {
+        return 0; /* whatever grew stays: every pool is still at least as big as the queue */
+    }
+    return 1;
+}
+
+/* sel_queue_insert into the engine's play queue, growing it first; other queues (the query view) have fixed pools. */
+static int engine_queue_insert(sel_engine* e, sel_queue* q, uint32_t at, const char* path, uint32_t* id) {
+    if (q == &e->queue && !queue_reserve(e, 1u, (uint32_t)strlen(path) + 1u)) return 0;
+    return sel_queue_insert(q, at, path, id);
+}
+
 static void queue_insert(sel_engine* e, uint32_t at, const char* path, const char* who) {
     uint32_t id;
     sel_history_record(&e->history, &e->queue);
-    if (!sel_queue_insert(&e->queue, at, path, &id)) {
+    if (!engine_queue_insert(e, &e->queue, at, path, &id)) {
         sel_history_forget(&e->history);
         sel_engine_report_error(e, "queue_full", who);
         return;
@@ -4260,7 +4299,7 @@ static void cmd_PLAYLIST_LOAD(sel_engine* e, const sel_message* m) {
             sel_engine_report_error(e, "range", "PLAYLIST_LOAD");
             break;
         }
-        if (!sel_queue_insert(&e->queue, e->queue.count, shown, &id)) {
+        if (!engine_queue_insert(e, &e->queue, e->queue.count, shown, &id)) {
             sel_engine_report_error(e, "queue_full", "PLAYLIST_LOAD");
             break;
         }
@@ -4865,10 +4904,10 @@ static void search_job_init(sel_engine* e, sel_lib_job* job, const char* text, c
     job->text = text;
     job->now = (long long)time(NULL);
     job->out = out;
-    job->out_cap = e->queue.text_bytes;
-    job->scan_max = e->queue.capacity; /* a per-row scan returns at most as many keys as the queue holds (I198e) */
+    job->out_cap = e->pool_text;
+    job->scan_max = e->pool_cap; /* a per-row scan returns at most as many keys as the queue holds (I198e) */
     job->meta = meta;
-    job->meta_cap = e->queue.text_bytes;
+    job->meta_cap = e->pool_text;
 }
 
 /* Takes a finished search job (ran: sel_library_run succeeded) into res_count; on failure the ERROR event is raised. */
@@ -4972,7 +5011,7 @@ static void run_search_post(sel_engine* e, const char* text, const char* who, in
         sel_engine_report_error(e, "no_library", who);
         return;
     }
-    r = (run_search_res*)e->host->mem_alloc(e->host, sizeof *r + 2u * (size_t)e->queue.text_bytes, SEL_MEM_FAST);
+    r = (run_search_res*)e->host->mem_alloc(e->host, sizeof *r + 2u * (size_t)e->pool_text, SEL_MEM_FAST);
     op = r != NULL ? wq_new(e, wq_search_run, wq_search_done, text, who, NULL) : NULL;
     if (op == NULL) {
         if (r != NULL) e->host->mem_free(e->host, r);
@@ -4983,7 +5022,7 @@ static void run_search_post(sel_engine* e, const char* text, const char* who, in
     op->res = r;
     op->u1 = (uint32_t)what;
     /* the query text lives in op->buf (s[0]) until the op is freed */
-    search_job_init(e, &r->job, op->s[0], out, out + e->queue.text_bytes);
+    search_job_init(e, &r->job, op->s[0], out, out + e->pool_text);
     wq_submit(e);
 }
 
@@ -10672,7 +10711,7 @@ static uint32_t songs_insert(sel_engine* e, const char* verb, const songs_sel* s
     uint32_t i, done = 0, id;
     sel_history_record(&e->history, &e->queue);
     for (i = 0; i < s->pn; i++) {
-        if (!sel_queue_insert(&e->queue, at == SEL_QUEUE_NONE ? SEL_QUEUE_NONE : at + done, s->plist[i], &id)) {
+        if (!engine_queue_insert(e, &e->queue, at == SEL_QUEUE_NONE ? SEL_QUEUE_NONE : at + done, s->plist[i], &id)) {
             sel_engine_report_error(e, "queue_full", verb);
             break;
         }
@@ -10776,6 +10815,7 @@ static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
     }
     /* 2. make room: oldest played context rows first (section 7) */
     for (i = 0; i < s.pn; i++) need_text += (uint32_t)strlen(s.plist[i]) + 1u;
+    if (q == &e->queue) (void)queue_reserve(e, s.pn, need_text); /* I1373-2: grow instead of dropping played rows */
     for (i = 0; i < q->count && i < from && (q->count + s.pn > q->capacity || need_text > q->text_bytes - q->text_used);) {
         if ((q->entries[i].flags & SEL_QUEUE_FLAG_CONTEXT) != 0u && q->entries[i].id != e->q_playing) {
             queue_take(e, q->entries[i].id);
@@ -10785,7 +10825,7 @@ static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
         }
     }
     /* 3. the clicked row right after the playing entry, then the rest at the end (everything after is hand-added) */
-    if (!sel_queue_insert(q, from, s.plist[0], &id)) {
+    if (!engine_queue_insert(e, q, from, s.plist[0], &id)) {
         sel_history_forget(&e->history);
         sel_engine_report_error(e, "queue_full", verb);
         songs_sel_free(&s);
@@ -10796,7 +10836,7 @@ static void cmd_PLAY_CONTEXT(sel_engine* e, const sel_message* m) {
     search_pin(e, s.plist[0]); /* I406b: a search hit that enters the queue is handed to the library, as queue_insert does */
     done = 1u;
     for (i = 1; i < s.pn; i++) {
-        if (!sel_queue_insert(q, q->count, s.plist[i], &id)) break;
+        if (!engine_queue_insert(e, q, q->count, s.plist[i], &id)) break;
         q->entries[q->count - 1u].flags |= SEL_QUEUE_FLAG_CONTEXT;
         search_pin(e, s.plist[i]);
         done++;
@@ -11356,6 +11396,13 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (cfg && cfg->queue_text_bytes) {
         queue_text = cfg->queue_text_bytes;
     }
+    e->pool_cap = queue_cap;
+    e->pool_text = queue_text;
+    if (cfg && (cfg->queue_capacity || cfg->queue_text_bytes)) {
+        e->queue_fixed = 1;
+    } else {
+        sel_queue_default_sizes(0, &queue_cap, &queue_text); /* I1373-2: the play queue and what follows it start small and grow */
+    }
     sel_prefs_init(&e->prefs);
     if (cfg) {
     }
@@ -11398,33 +11445,30 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     CREATE_STEP("swap ring", sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH));
     CREATE_STEP("return ring", sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH));
     CREATE_STEP("play queue", sel_queue_init(&e->queue, host, queue_cap, queue_text));
-    CREATE_STEP("queue view", sel_queue_init(&e->qview, host, queue_cap, queue_text));
+    CREATE_STEP("queue view", sel_queue_init(&e->qview, host, e->pool_cap, e->pool_text));
     CREATE_STEP("history", sel_history_init(&e->history, host, queue_cap, queue_text));
     CREATE_STEP("order table", (e->order = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->order, SEL_MEM_FAST)) != NULL);
     CREATE_STEP("order seen", (e->order_seen = host->mem_alloc(host, queue_cap, SEL_MEM_FAST)) != NULL);
     CREATE_STEP("playlist entries", (e->pl_entries = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->pl_entries, SEL_MEM_FAST)) != NULL);
     CREATE_STEP("playlist text", (e->pl_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
     CREATE_STEP("playlist file", (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
-    CREATE_STEP("result text", (e->res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
-    CREATE_STEP("result meta", (e->res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("result text", (e->res_text = host->mem_alloc(host, (size_t)e->pool_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("result meta", (e->res_meta = host->mem_alloc(host, (size_t)e->pool_text + 16u, SEL_MEM_FAST)) != NULL);
 #if defined(SEL_LI_THREAD)
-    CREATE_STEP("reader result text", (e->rd_res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
-    CREATE_STEP("reader result meta", (e->rd_res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("reader result text", (e->rd_res_text = host->mem_alloc(host, (size_t)e->pool_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("reader result meta", (e->rd_res_meta = host->mem_alloc(host, (size_t)e->pool_text + 16u, SEL_MEM_FAST)) != NULL);
 #endif
     CREATE_STEP("home text", (e->rd_home_text = host->mem_alloc(host, SEL_VIEW_HOME_TEXT_MAX, SEL_MEM_FAST)) != NULL);
-    CREATE_STEP("queue meta", (e->qmeta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
-    CREATE_STEP("queue meta offsets", (e->qmeta_off = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->qmeta_off, SEL_MEM_FAST)) != NULL);
-    CREATE_STEP("browser", sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
-                                           cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text));
+    CREATE_STEP("queue meta", (e->qmeta = host->mem_alloc(host, (size_t)e->pool_text + 16u, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("queue meta offsets", (e->qmeta_off = host->mem_alloc(host, (size_t)e->pool_cap * sizeof *e->qmeta_off, SEL_MEM_FAST)) != NULL);
+    CREATE_STEP("browser", sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : e->pool_cap,
+                                           cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : e->pool_text));
     CREATE_STEP("view window", sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX));
 #undef CREATE_STEP
-    if (cfg && cfg->library != NULL) { /* I1035: library engines size the search buckets once, at start; job engines never search */
+    if (cfg && cfg->library != NULL) {
+        /* I1373: the search buckets (one 40-hit landing per searchable source, about 373 KB on the host) are not allocated here any more:
+         * the first SOURCE_SEARCH allocates them (search_buckets_ensure in search_run), so a 16 MB Amiga starts without them. */
         sel_source_register_builtin();
-        g_create_why = "search buckets";
-        if (!search_buckets_ensure(e)) {
-            sel_engine_destroy(e);
-            return NULL;
-        }
     }
     e->browse.name_ok = browse_name_claimed; /* the folder browser lists folders and files a replayer claims (I218i) */
     e->browse.name_ctx = e;
