@@ -43,7 +43,14 @@ void mui_set_probe(mui_probe_fn probe);
 int mui_present(void);
 
 /* MUI-P1-4: the distinct failure texts printed and shown in the EasyRequest when the UI cannot open. */
-typedef enum mui_fail { MUI_FAIL_NO_LIBRARY = 0, MUI_FAIL_NO_WINDOW = 1 } mui_fail;
+/* I1352: every reason names the cause and the fix; the detail the caller passes (needed size, library name) follows it. */
+typedef enum mui_fail {
+    MUI_FAIL_NO_LIBRARY = 0,   /* muimaster.library 19 missing or older */
+    MUI_FAIL_NO_WINDOW = 1,    /* the window did not open, cause unknown */
+    MUI_FAIL_SCREEN_SMALL = 2, /* the layout needs more pixels than the screen shows */
+    MUI_FAIL_NO_OBJECTS = 3,   /* MUI could not create the objects: a class is missing or memory ran out */
+    MUI_FAIL_NO_GRAPHICS = 4   /* graphics.library 37 (OS 2.04) missing */
+} mui_fail;
 const char* mui_fail_text(mui_fail why);
 
 /* MUI-P2-3: one Menustrip row per action-table row with a non-empty menu path. "Menu/Item" gives title and item,

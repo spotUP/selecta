@@ -1,6 +1,7 @@
-/* Amiga part of the fatal start-up report (I563): an intuition.library EasyRequest when no console is attached.
+/* Amiga part of the fatal start-up report (I563, I1352): always an intuition.library EasyRequest, console or not, so a
+ * failure is never silent (Johan 2026-11-13). Text states the cause and the fix.
  * EasyRequestArgs exists since OS 2.0; the library is opened at version 36 or later only when needed, so OS 3.0
- * is covered and the console case never touches intuition. */
+ * is covered. */
 #include "startup_error.h"
 
 /* The library base is renamed for the reason given in backend_rtg.c: libnix would open it at program start, and a
@@ -15,19 +16,10 @@
 
 struct IntuitionBase* IntuitionBase;
 
-/* 1 when stderr reaches a person: Output() exists and is an interactive console. A Workbench start has no Output(). */
-static int console_attached(void) {
-    BPTR out = Output();
-    return out != 0 && IsInteractive(out) != 0;
-}
-
 void sel_amiga_startup_requester(const char* text) {
     struct EasyStruct es;
     struct IntuitionBase* ib;
 
-    if (console_attached()) {
-        return;
-    }
     ib = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 36);
     if (ib == NULL) {
         return;

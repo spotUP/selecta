@@ -145,17 +145,20 @@ desk_rtg* desk_rtg_open(int32_t w, int32_t h, int index8) {
     P96Base = OpenLibrary((CONST_STRPTR) "Picasso96API.library", 0);
     if (IntuitionBase == NULL || GfxBase == NULL || !desk_amiga_input_open(&b->in)) {
         fprintf(stdout, "rtg: intuition, graphics or keymap library missing\n"); fflush(stdout);
+        desk_amiga_why_set("The RTG screen needs intuition.library 37, graphics.library 37 and keymap.library 37. Install the missing library in LIBS:, or start Selecta with --ui text.");
         desk_rtg_close(b);
         return NULL;
     }
     if (P96Base == NULL) {
         fprintf(stdout, "rtg: Picasso96API.library missing\n"); fflush(stdout);
+        desk_amiga_why_set("Picasso96API.library is not installed. Install Picasso96 (or use the AGA or MUI screen), or start Selecta with --ui text.");
         desk_rtg_close(b);
         return NULL;
     }
     mode = pick_mode(&w, &h, &depth, index8);
     if (mode == 0u) {
         fprintf(stdout, "rtg: no Picasso96 mode of the wanted size\n"); fflush(stdout);
+        desk_amiga_why_set("No Picasso96 screen mode of the wanted size exists. Add a mode of at least that size in the Picasso96 mode preferences, or use a smaller --size.");
         desk_rtg_close(b);
         return NULL;
     }
@@ -163,6 +166,11 @@ desk_rtg* desk_rtg_open(int32_t w, int32_t h, int index8) {
                                SA_Quiet, TRUE, SA_ShowTitle, FALSE, SA_Type, CUSTOMSCREEN, TAG_DONE);
     if (b->screen == NULL) {
         fprintf(stdout, "rtg: the %dx%d screen did not open\n", (int)w, (int)h); fflush(stdout);
+        {
+            char m[160];
+            snprintf(m, sizeof m, "The %dx%d RTG screen did not open. Free graphics memory or choose a smaller screen size, then start again.", (int)w, (int)h);
+            desk_amiga_why_set(m);
+        }
         desk_rtg_close(b);
         return NULL;
     }
@@ -175,6 +183,7 @@ desk_rtg* desk_rtg_open(int32_t w, int32_t h, int index8) {
     if (b->window == NULL || b->treq == NULL ||
         OpenDevice((CONST_STRPTR) "timer.device", UNIT_VBLANK, (struct IORequest*)b->treq, 0) != 0) {
         fprintf(stdout, "rtg: window or timer did not open\n"); fflush(stdout);
+        desk_amiga_why_set("The RTG window or timer.device did not open. Free some memory and start again.");
         if (b->treq != NULL) {
             DeleteIORequest((struct IORequest*)b->treq);
             b->treq = NULL;

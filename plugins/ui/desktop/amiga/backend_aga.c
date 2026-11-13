@@ -177,6 +177,7 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
 static int fail(desk_aga* b, const char* why) {
     fprintf(stderr, "aga: %s\n", why); /* stderr: --log redirects it, stdout would hide the reason (I522) */
     fflush(stderr);
+    desk_amiga_why_set(why);
     desk_aga_close(b);
     return 0;
 }
@@ -189,28 +190,32 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     if (!index8) {
         fprintf(stderr, "aga: the AGA screen shows an INDEX8 canvas only; use --format index8 or leave --format out\n");
         fflush(stderr);
+        desk_amiga_why_set("The AGA screen shows an INDEX8 canvas only. Use --format index8 or leave --format out.");
         return NULL;
     }
     b = (desk_aga*)AllocVec(sizeof *b, MEMF_CLEAR);
-    if (b == NULL) return NULL;
+    if (b == NULL) {
+        desk_amiga_why_set("Not enough memory to open the AGA screen. Close other programs, then start again.");
+        return NULL;
+    }
     b->safe = 1; /* no ChangeScreenBuffer is pending: close must not wait for a safe message that never comes */
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
     IntuitionBase = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 39);
-    if (GfxBase == NULL || IntuitionBase == NULL) return fail(b, "needs graphics and intuition v39"), NULL;
-    if (!desk_amiga_input_open(&b->in)) return fail(b, "needs keymap.library v37"), NULL;
-    if ((GfxBase->ChipRevBits0 & GFXF_AA_ALICE) == 0) return fail(b, "no AGA chipset"), NULL;
+    if (GfxBase == NULL || IntuitionBase == NULL) return fail(b, "The AGA screen needs graphics.library and intuition.library version 39 (OS 3.0 or newer). Use OS 3.0 or newer, or start Selecta with --ui text."), NULL;
+    if (!desk_amiga_input_open(&b->in)) return fail(b, "The AGA screen needs keymap.library version 37. Install keymap.library in LIBS:, or start Selecta with --ui text."), NULL;
+    if ((GfxBase->ChipRevBits0 & GFXF_AA_ALICE) == 0) return fail(b, "This computer has no AGA chipset (A1200, A4000). Use the MUI or RTG screen, or start Selecta with --ui text."), NULL;
     mode = pick_mode(&w, &h);
-    if (mode == AGA_NO_MODE) return fail(b, "the AGA screen is 640x256 or 320x256 (640x200 / 320x200 on NTSC)"), NULL;
+    if (mode == AGA_NO_MODE) return fail(b, "No AGA screen mode of 640x256 or 320x256 (640x200 or 320x200 on NTSC) is available. Choose a PAL or NTSC mode in the Screenmode preferences."), NULL;
     b->w = w;
     b->h = h;
     bytes = desk_aga_buffer_bytes(w, h);
     if (AvailMem(MEMF_CHIP | MEMF_LARGEST) < desk_aga_chip_bytes(w, h) / 2u ||
         AvailMem(MEMF_CHIP) < desk_aga_chip_bytes(w, h)) {
-        return fail(b, "not enough chip RAM for two 8-bitplane buffers"), NULL;
+        return fail(b, "Not enough chip memory for the AGA screen (two 8-bitplane buffers). Close other programs to free chip memory, then start again."), NULL;
     }
     for (i = 0; i < 2; i++) {
         b->buf[i] = (UBYTE*)AllocMem((ULONG)bytes, MEMF_CHIP | MEMF_CLEAR);
-        if (b->buf[i] == NULL) return fail(b, "chip RAM allocation failed"), NULL;
+        if (b->buf[i] == NULL) return fail(b, "Not enough chip memory for the AGA screen. Close other programs to free chip memory, then start again."), NULL;
         InitBitMap(&b->bm[i], 8, (LONG)w, (LONG)h);
         for (p = 0; p < 8; p++) b->bm[i].Planes[p] = (PLANEPTR)(b->buf[i] + (size_t)p * (bytes / 8u));
     }

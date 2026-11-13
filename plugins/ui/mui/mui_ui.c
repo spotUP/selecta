@@ -4032,7 +4032,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 37);
     if (GfxBase == NULL) {
         mui_libs_close();
-        mui_report(MUI_FAIL_NO_LIBRARY, "(graphics.library)");
+        mui_report(MUI_FAIL_NO_GRAPHICS, "");
         return NULL;
     }
     mui_trace("ui: muimaster and graphics libraries open");
@@ -4088,7 +4088,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         }
         mui_screen_close();
         mui_libs_close();
-        mui_report(MUI_FAIL_NO_WINDOW, "(MUI could not create the objects)");
+        mui_report(MUI_FAIL_NO_OBJECTS, "");
         return NULL;
     }
     mui_keys_targets(s->str_search, s->list); /* I1165: Down from Search enters the results */
@@ -4167,14 +4167,14 @@ static void* mui_open(const sel_ui_open_args* a) {
         uint32_t sw, sh;
         int sl;
         mui_screen_size(&sw, &sh, &sl); /* I1350: name the screen size beside the size the layout needs */
-        snprintf(why, sizeof why, "(the layout needs %ldx%ld px, the screen is %lux%lu)", (long)_minwidth(s->root),
+        snprintf(why, sizeof why, "The layout needs at least %ldx%ld pixels; the screen is %lux%lu.", (long)_minwidth(s->root),
                  (long)_minheight(s->root), (unsigned long)sw, (unsigned long)sh);
         MUI_DisposeObject(s->app);
         s->app = NULL;
         s->win = NULL;
         mui_screen_close();
         mui_libs_close();
-        mui_report(MUI_FAIL_NO_WINDOW, why);
+        mui_report(MUI_FAIL_SCREEN_SMALL, why);
         return NULL;
     }
     s->wake_mask = 0;

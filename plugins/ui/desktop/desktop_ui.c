@@ -51,6 +51,7 @@
 #elif defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_SDL)
 #define SELECTA_DESKTOP_SDL 1
 #include "amiga/backend_rtg.h"
+#include "amiga/input.h"
 #define DESK_BACKEND_NAME "rtg"
 #define desk_backend_depth(b) desk_rtg_depth(b)
 #define DESK_BACKEND_INDEX8 1 /* --format index8 opens an 8-bit CLUT screen (I369) */
@@ -17182,6 +17183,9 @@ static void* desk_open(const sel_ui_open_args* a) {
         d->sdl = desk_backend_open(d->canvas->w, d->canvas->h, d->canvas->format == SEL_GUI_INDEX8);
         desk_trace(a->host, "desk_open backend (screen) open done");
         if (d->sdl == NULL) {
+#if defined(SELECTA_DESKTOP_AGA) || defined(SELECTA_DESKTOP_RTG)
+            desk_refuse(a, "%s", desk_amiga_why()); /* I1352: cause and fix, shown in the shell's requester */
+#endif
             desk_close(d);
             return NULL;
         }

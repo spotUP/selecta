@@ -740,7 +740,7 @@ int main(int argc, char** argv)
         if (db != NULL) {
             library = sel_library_open(host, machine_tags, 0, db);
             if (library == NULL) {
-                STARTUP_FAIL("cannot open the library database %s", db);
+                STARTUP_FAIL("cannot open the library database %s. Check that the drawer exists and is not write protected, that the disk has free space, or give another file with --db.", db);
                 return 1;
             }
             cfg.library = library;
@@ -755,7 +755,8 @@ int main(int argc, char** argv)
     e = sel_engine_create(host, &cfg);
     sel_trace(host, "engine created (prefs load, catalogue open, source setup)");
     if (e == NULL) {
-        STARTUP_FAIL("engine allocation failed at %s", sel_engine_create_failure());
+        STARTUP_FAIL("not enough memory to start the engine (%s). Close other programs or free memory, then start Selecta again.",
+                     sel_engine_create_failure());
         return 1;
     }
     if (getenv("SELECTA_PUBLISH_MEASURE") != NULL) {
@@ -766,7 +767,7 @@ int main(int argc, char** argv)
     sel_engine_set_output(e, oh);
     out = out_open(sel_engine_plugin_host(e), rate, 2); /* I729: the plugin host answers prefs.conf keys */
     if (out == NULL) {
-        STARTUP_FAIL("no output device");
+        STARTUP_FAIL("no audio output could be opened. Check that no other program holds the audio device (ahi.device or audio.device), that AHI is installed for the AHI output, then start again.");
         sel_engine_destroy(e);
         return 77;
     }
@@ -826,7 +827,7 @@ int main(int argc, char** argv)
             } else if (ui_why[0] != '\0') {
                 STARTUP_FAIL("the UI '%s' could not open: %s", g_uis[u].id, ui_why);
             } else {
-                STARTUP_FAIL("the UI could not open (no terminal?)");
+                STARTUP_FAIL("the UI could not open. Start Selecta from a Shell window, or from the Workbench with MUI 3.8 installed.");
             }
             while (u-- > 0) {
                 g_uis[u].close(g_uis[u].state);

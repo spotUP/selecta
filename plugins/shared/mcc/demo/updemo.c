@@ -32,6 +32,28 @@
 struct Library* MUIMasterBase;
 
 #define DEMO_STACK_BYTES 49152UL /* I1343: MUI 5 warns below 32000; libnix does not honour a __stack cookie in this build */
+/* I1352: every failure shows a requester that names the cause and the fix, then the demo exits with rc 20 (the [ERROR] line
+ * stays for the rig). muimaster is open when a MUI_Request would work, but the demo fails exactly when MUI is the problem,
+ * so the intuition EasyRequest serves every case. The base is renamed: libnix would open it at start and abort without it. */
+#define IntuitionBase demo_IntuitionBase
+struct IntuitionBase* IntuitionBase;
+
+static void demo_requester(const char* text) {
+    struct EasyStruct es;
+    struct IntuitionBase* ib = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 36);
+    if (ib == NULL) {
+        return;
+    }
+    IntuitionBase = ib;
+    es.es_StructSize = sizeof es;
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE*)"UP-Demo";
+    es.es_TextFormat = (UBYTE*)"%s";
+    es.es_GadgetFormat = (UBYTE*)"Ok";
+    EasyRequest(NULL, &es, NULL, (APTR)text);
+    CloseLibrary((struct Library*)ib);
+    IntuitionBase = NULL;
+}
 
 #define CLASS_COUNT 11
 
@@ -177,6 +199,7 @@ static int demo_main(int argc, char** argv) {
     MUIMasterBase = OpenLibrary((CONST_STRPTR) "muimaster.library", 19);
     if (MUIMasterBase == NULL) {
         printf("[ERROR] muimaster.library 19\n");
+        demo_requester("muimaster.library 19 (MUI 3.8) is not installed.\nInstall MUI 3.8, then start UP-Demo again.");
         return 20;
     }
     g_list_rows = tier == 2 ? 5 : 3;
@@ -194,6 +217,20 @@ static int demo_main(int argc, char** argv) {
         }
         printf("[OK] %s from MUI:Libs/mui (origin 0x%08lx)\n", g_names[i], (unsigned long)origin);
         ok++;
+    }
+    if (ok != CLASS_COUNT) {
+        char msg[300];
+        size_t n;
+        snprintf(msg, sizeof msg, "These classes did not open:");
+        for (i = 0; i < CLASS_COUNT; i++) {
+            n = strlen(msg);
+            if (obj[i] == NULL && n < sizeof msg - 16) {
+                snprintf(msg + n, sizeof msg - n, " UP-%s", g_names[i]);
+            }
+        }
+        n = strlen(msg);
+        snprintf(msg + n, sizeof msg - n, "\nInstall the UP-MCC classes (UP-<name>.mcc) in MUI:Libs/mui and up-mcc.library in LIBS:, then start again.");
+        demo_requester(msg);
     }
     if (ok == CLASS_COUNT) {
         {   /* I1349: the window covers the screen and the content is chosen to fit it, no scrolling: three tiers by screen height */
@@ -238,6 +275,7 @@ static int demo_main(int argc, char** argv) {
         }
         if (app == NULL) {
             printf("[ERROR] window or application could not be created\n");
+            demo_requester("The window could not be created.\nFree some memory and check that the MUI classes in MUI:Libs/mui are installed, then start again.");
             ok = 0;
             if (win != NULL) {
                 MUI_DisposeObject(win);
@@ -251,6 +289,8 @@ static int demo_main(int argc, char** argv) {
             GetAttr(MUIA_Window_Open, win, &is_open);
             if (!is_open) {
                 printf("[ERROR] window did not open\n");
+                demo_requester("The window did not open.\nUse a screen of at least 640x256 pixels (Screenmode preferences), free some memory, "
+                               "and check that ttengine.library is in LIBS: and the MUI classes are in MUI:Libs/mui, then start again.");
                 ok = 0;
             }
             if (is_open && (hold || auto_close)) { /* I685w: the rig census reads the widget boxes from here, in screen pixels */

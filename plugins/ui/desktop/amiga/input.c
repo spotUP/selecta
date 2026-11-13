@@ -2,6 +2,23 @@
 #include "input.h"
 #include "folder_pick.h"
 
+#include <string.h>
+
+static char g_why[200];
+
+void desk_amiga_why_set(const char* text) {
+    size_t n = strlen(text);
+    if (n >= sizeof g_why) {
+        n = sizeof g_why - 1u;
+    }
+    memcpy(g_why, text, n);
+    g_why[n] = '\0';
+}
+
+const char* desk_amiga_why(void) {
+    return g_why;
+}
+
 /* The library bases are renamed for the reason given in backend_rtg.c: libnix would open them at program start. */
 #define IntuitionBase sel_input_IntuitionBase
 #define KeymapBase sel_input_KeymapBase

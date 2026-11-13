@@ -30,6 +30,11 @@ typedef struct desk_amiga_input {
  * after a frame) and the running down/up counts, so a long frame or a lost half of a pair shows in the log (I525). */
 extern int desk_amiga_input_trace;
 
+/* I1352: why the last backend open (aga or rtg) failed, in words naming the cause and the fix. desktop_ui passes it to the
+ * shell's start-up report (args->why), which shows it in a requester. */
+void desk_amiga_why_set(const char* text);
+const char* desk_amiga_why(void);
+
 int desk_amiga_input_open(desk_amiga_input* in);
 void desk_amiga_input_close(desk_amiga_input* in);
 /* Translates one message of the window. 1 when it queued an event (or a press that waits for its release). */
