@@ -1034,7 +1034,10 @@ static Object* mui_aatext(const char* contents, int tone, int align, int hidden)
 /* I730: the one constructor of every dialog window (Settings, Help, the Commands palette). The attributes come from
  * mui_dialog_attrs: on the own screen the window is borderless, untitled, centred and fixed, and the root gets our flat header
  * row (title text + close button; the button takes Esc); on Workbench it keeps the normal borders and title. No per-dialog copy. */
-static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
+/* I1365: the Commands palette takes this share of the screen width (the Mac palette is 560 px, 87% of a 640 px screen), so command names and hints are not cut. */
+#define MUI_PALETTE_W_PCT 88
+
+static Object* mui_dialog_window_w(const char* title, ULONG id, Object* root, int width_pct) {
     mui_window_attrs_t da;
     Object *win, *content = root;
     mui_dialog_attrs(g_scr != NULL, &da);
@@ -1067,7 +1070,8 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
         win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG)NULL, MUIA_Window_ID, id, MUIA_Window_Borderless, (ULONG)da.borderless,
                             MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget, MUIA_Window_SizeGadget, (ULONG)da.sizegadget,
                             MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered,
-                            MUIA_Window_TopEdge, MUIV_Window_TopEdge_Centered, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
+                            MUIA_Window_TopEdge, MUIV_Window_TopEdge_Centered, MUIA_Window_RootObject, (ULONG)content,
+                            width_pct > 0 ? MUIA_Window_Width : TAG_IGNORE, (ULONG)MUIV_Window_Width_Screen(width_pct), TAG_DONE);
         if (win != NULL) {
             DoMethod(close, MUIM_Notify, MUIA_Pressed, FALSE, win, 3, MUIM_Set, MUIA_Window_Open, FALSE);
         }
@@ -1075,7 +1079,12 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
     }
     return MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, da.titled ? (ULONG)mui_l1_keep(title) : (ULONG)NULL, MUIA_Window_ID, id,
                          MUIA_Window_Borderless, (ULONG)da.borderless, MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget,
-                         MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
+                         MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content,
+                         width_pct > 0 ? MUIA_Window_Width : TAG_IGNORE, (ULONG)MUIV_Window_Width_Screen(width_pct), TAG_DONE);
+}
+
+static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
+    return mui_dialog_window_w(title, id, root, 0);
 }
 
 static Object* mui_make_text_al(mui_state* s, uint32_t attr, const char* initial, mui_label label, int align) {
@@ -3298,7 +3307,7 @@ static void mui_palette_show(mui_state* s) {
         }
         DoMethod(str_g, OM_ADDMEMBER, s->pal_str);
         DoMethod(str_g, OM_ADDMEMBER, lst_g);
-        s->pal_win = mui_dialog_window("Selecta Command Palette", 0x50414C54UL, str_g);
+        s->pal_win = mui_dialog_window_w("Selecta Command Palette", 0x50414C54UL, str_g, MUI_PALETTE_W_PCT);
         if (s->pal_win == NULL) {
             return;
         }
