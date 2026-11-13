@@ -3047,8 +3047,8 @@ static void test_status_face(void) {
     if (src == NULL || cls == NULL) {
         return;
     }
-    ctor = strstr(src, "static Object* mui_aatext_sized(");
-    CHECK(ctor != NULL && strstr(ctor, "sp.frame = (ULONG)MUIV_Frame_None") != NULL && strstr(ctor, "sp.background = 0UL") != NULL, "mui_aatext_sized does not build frameless, backgroundless texts");
+    ctor = strstr(src, "static Object* mui_aatext_cut("); /* I1357: the one spec builder under mui_aatext_sized and mui_aatext_whole */
+    CHECK(ctor != NULL && strstr(ctor, "sp.frame = (ULONG)MUIV_Frame_None") != NULL && strstr(ctor, "sp.background = 0UL") != NULL, "mui_aatext_cut does not build frameless, backgroundless texts");
     CHECK(strstr(src, "sp.face") == NULL && strstr(src, "framed") == NULL && strstr(src, "MUI_TH_STATUS") == NULL, "mui_ui.c still gives texts a face or framed look");
     CHECK(strstr(cls, "mui_aa_field_plan(") == NULL && strstr(cls, "aa_round_fill(") == NULL && strstr(cls, "MUIA_InnerLeft") == NULL && strstr(cls, "d->face") == NULL,
           "AAText still draws a field face or inner paddings");

@@ -902,6 +902,27 @@
 *
 ******/
 
+/****** UP-Field.mcc/UPA_Field_EscClose ******
+*
+*   NAME
+*       UPA_Field_EscClose -- attribute of UP-Field.mcc
+*
+*   FUNCTION
+*       BOOL: Esc in the active field sets MUIA_Window_CloseRequest on its
+*       window. The inner String gadget eats Esc itself, so the window never
+*       sees it; a dialog with a field sets this to close on Esc (I1360).
+*
+*   INPUTS
+*       UPA_Field_EscClose - access IS. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Field.mcc
+*
+******/
+
 /****** UP-Panel.mcc/UPA_Panel_Tokens ******
 *
 *   NAME
