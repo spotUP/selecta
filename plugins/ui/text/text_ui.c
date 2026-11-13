@@ -1373,12 +1373,12 @@ static void tui_key(tui* u, const txt_key* k) {
     }
     action = txt_bindings_lookup(&u->binds, tui_bind_ctx(u), k->code, k->mods);
     if (action == NULL) {
-        if (k->code == 27u && k->mods == 0) { /* I1367 / I623: Escape with nothing open asks before quitting; literal text moves to uimodel in I1368 */
+        if (k->code == 27u && k->mods == 0) { /* I1367 / I623: Escape with nothing open asks before quitting; text from the uimodel dialog table (I1368) */
             u->key_count++;
             u->dirty = 1;
             u->mn_pending = (uint32_t)MN_QUIT;
             u->cmd_mode = 4;
-            snprintf(u->mn_lab[0], sizeof u->mn_lab[0], "Quit Selecta?");
+            snprintf(u->mn_lab[0], sizeof u->mn_lab[0], "%s", sel_uim_dlg_text(SEL_UIM_DLG_QUIT));
         }
         return; /* not a key the UI knows */
     }
@@ -2260,7 +2260,13 @@ static void tui_draw(tui* u) {
         uint32_t ly = my + mh - 1u;
         if (u->cmd_mode) {
             if (u->cmd_mode == 4) {
-                snprintf(line, sizeof line, u->mn_pending == (uint32_t)MN_QUIT ? "%s  Enter Quit  Esc Cancel" : "%s  y Yes  any other key No", u->mn_lab[0]);
+                if (u->mn_pending == (uint32_t)MN_QUIT) {
+                    char hint[48];
+                    sel_uim_dlg_hint(SEL_UIM_DLG_QUIT, hint, sizeof hint);
+                    snprintf(line, sizeof line, "%s  %s", u->mn_lab[0], hint);
+                } else {
+                    snprintf(line, sizeof line, "%s  y Yes  any other key No", u->mn_lab[0]);
+                }
             } else if (u->cmd_mode == 5) {
                 snprintf(line, sizeof line, "Note: %s%s%s", txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
             } else if (u->cmd_mode == 3) {

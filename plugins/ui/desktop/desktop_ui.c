@@ -3402,7 +3402,7 @@ static int nagdlg_pointer(desk* d, const sel_gui_input* ev) {
 
 /* I623: Escape with nothing open asks before it quits. */
 static void dlg_open_quit(desk* d) {
-    snprintf(d->dlg_text, sizeof d->dlg_text, "%s", "Quit Selecta?");
+    snprintf(d->dlg_text, sizeof d->dlg_text, "%s", sel_uim_dlg_text(SEL_UIM_DLG_QUIT));
     d->dlg_open = DLG_QUIT;
     d->dlg_opens++;
 }
@@ -3432,14 +3432,14 @@ static const char* dlg_title(const desk* d) {
     if (d->dlg_open == DLG_PLDEL) {
         return d->dlg_pl_folder ? "Delete Folder" : "Delete Playlist";
     }
-    return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove from Library";
+    return sel_uim_dlg_title(d->dlg_open == DLG_CLEAR ? SEL_UIM_DLG_CLEAR : d->dlg_open == DLG_QUIT ? SEL_UIM_DLG_QUIT : SEL_UIM_DLG_REMOVE);
 }
 
 static const char* dlg_confirm_label(const desk* d) {
     if (d->dlg_open == DLG_PLDEL) {
         return "Delete";
     }
-    return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove";
+    return sel_uim_dlg_confirm_label(d->dlg_open == DLG_CLEAR ? SEL_UIM_DLG_CLEAR : d->dlg_open == DLG_QUIT ? SEL_UIM_DLG_QUIT : SEL_UIM_DLG_REMOVE);
 }
 
 static int sysfile_pick(desk* d);
@@ -3498,7 +3498,7 @@ static void dlg_draw(desk* d) {
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1, &d->text);
     tr = rect_of(p.x + m, p.y + m + head->line_height + lpx(d, 10), p.w - 2 * m, body->line_height * 3);
     sel_gui_text_wrap(d->canvas, body, tr, d->dlg_text, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
-    draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Cancel", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), sel_uim_dlg_cancel_label(), 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     if (d->dlg_open == DLG_SYSFILE) {
         draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Retry Download", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         draw_button(d, dlg_button_rect(d, 2u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Pick File...", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
