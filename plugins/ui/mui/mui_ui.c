@@ -305,6 +305,7 @@ typedef struct mui_state {
     Object* facet_btn[SEL_UIM_SEARCH_FACETS];
     uint32_t search_facet;
     int home_shown, browse_shown, facet_shown, modes_shown, scope_shown;
+    uint32_t scope_in_mode_row;     /* I1350: compact screens: the scope Cycle sits inside the mode row */
     Object* scope_row;              /* I1176: the Queue scope Cycle (Library, Album, Playlist) above the queue list */
     Object* cyc_scope;
     const char* scope_ent[MUI_SCOPE_COUNT + 1u];
@@ -1751,6 +1752,35 @@ static const char* mui_shelf_row(void* ctx, long row) {
     return v->rows[idx].text;
 }
 
+/* I1350: a page whose natural minimum height can exceed a 640x256 AGA screen goes in a vertical Scrollgroup (a Scrollgroup has no fixed
+ * minimum height; MUI refused to open, or left a blank window after the page was shown, when the minimum passed the screen). The
+ * contents sit in a Virtgroup. Only on a compact (short) screen, else the contents are returned as they are. hidden: the wrapper starts with MUIA_ShowMe FALSE. Takes `contents`; NULL on failure (contents disposed). */
+static Object* mui_scroll_page(Object* contents, int hidden) {
+    Object* vg;
+    Object* sg;
+    if (contents == NULL) {
+        return NULL;
+    }
+    if (!mui_screen_compact()) { /* a tall screen (RTG, laced AGA) has the room: the page stays as it was */
+        if (hidden) {
+            set(contents, MUIA_ShowMe, FALSE);
+        }
+        return contents;
+    }
+    vg = MUI_NewObject((char*)MUIC_Virtgroup, TAG_DONE);
+    if (vg == NULL) {
+        MUI_DisposeObject(contents);
+        return NULL;
+    }
+    DoMethod(vg, OM_ADDMEMBER, contents);
+    sg = MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, vg,
+                       MUIA_ShowMe, (ULONG)(hidden ? FALSE : TRUE), TAG_DONE);
+    if (sg == NULL) {
+        MUI_DisposeObject(vg);
+    }
+    return sg;
+}
+
 /* I795 (P1): the Home page group: the quick tile row, then up to MUI_HOME_SHELF_MAX shelves (header Text, Show all button, a short AAList).
  * Hidden until mui_route_sync shows it; the slots fill from the view (mui_home_split). I1341: the slots sit in a scrolled virtual group,
  * as the sidebar (I1092c): a plain group asks for the height of every shown shelf (each list brings its scroller's minimum), so with three
@@ -1878,6 +1908,11 @@ static Object* mui_mode_row_group(mui_state* s) {
         return NULL;
     }
     DoMethod(s->mode_row, OM_ADDMEMBER, s->cyc_libmode);
+    if (mui_screen_compact() && s->scope_row != NULL) {
+        /* I1350: on a 256-row screen the Queue scope Cycle shares the mode row; a separate row pushed the list page past the window height. */
+        DoMethod(s->mode_row, OM_ADDMEMBER, s->scope_row);
+        s->scope_in_mode_row = 1;
+    }
     DoMethod(s->mode_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     return s->mode_row;
 }
@@ -1895,7 +1930,9 @@ static Object* mui_scope_row_group(mui_state* s) {
         return NULL;
     }
     DoMethod(s->scope_row, OM_ADDMEMBER, s->cyc_scope);
-    DoMethod(s->scope_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    if (!mui_screen_compact()) {
+        DoMethod(s->scope_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    }
     return s->scope_row;
 }
 
@@ -1993,7 +2030,9 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->browse_page);
     DoMethod(g, OM_ADDMEMBER, s->src_page);
     DoMethod(g, OM_ADDMEMBER, s->mode_row);
-    DoMethod(g, OM_ADDMEMBER, s->scope_row);
+    if (!s->scope_in_mode_row) {
+        DoMethod(g, OM_ADDMEMBER, s->scope_row);
+    }
     DoMethod(g, OM_ADDMEMBER, s->facet_row);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
@@ -2232,7 +2271,12 @@ static Object* mui_main_pages(mui_state* s, Object* np_page) {
     DoMethod(pages, OM_ADDMEMBER, viz_g);
     DoMethod(pages, OM_ADDMEMBER, trk_g);
     /* I960a/c: page MUI_PANE_NOWPLAYING is the compact Now Playing group; the full class keeps an empty page so the page index exists. */
-    DoMethod(pages, OM_ADDMEMBER, np_page != NULL ? np_page : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    /* I1350: the Now Playing page alone needed 253 rows, so the window minimum (page group = max over pages) exceeded a 640x256 AGA
+     * screen and the window refused to open; the page scrolls (mui_scroll_page). */
+    {
+        Object* np_wrap = np_page != NULL ? mui_scroll_page(np_page, 0) : NULL;
+        DoMethod(pages, OM_ADDMEMBER, np_wrap != NULL ? np_wrap : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    }
     s->main_pages = pages;
     return pages;
 }
@@ -4142,8 +4186,11 @@ static void* mui_open(const sel_ui_open_args* a) {
     }
     if (!open) {
         static char why[96];
-        snprintf(why, sizeof why, "(the layout needs %ldx%ld px, more than the screen shows)", (long)_minwidth(s->root),
-                 (long)_minheight(s->root));
+        uint32_t sw, sh;
+        int sl;
+        mui_screen_size(&sw, &sh, &sl); /* I1350: name the screen size beside the size the layout needs */
+        snprintf(why, sizeof why, "(the layout needs %ldx%ld px, the screen is %lux%lu)", (long)_minwidth(s->root),
+                 (long)_minheight(s->root), (unsigned long)sw, (unsigned long)sh);
         MUI_DisposeObject(s->app);
         s->app = NULL;
         s->win = NULL;
