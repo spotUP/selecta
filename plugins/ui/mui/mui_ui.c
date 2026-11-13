@@ -1562,11 +1562,14 @@ static Object* mui_topbar_group(mui_state* s) {
  * the queue and playlist actions of the cursor row, and Clear Library (confirmed by a MUI_Request). */
 static Object* mui_tool_group(mui_state* s) {
     Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
-    Object* r1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    /* I1337d: r1 holds only the search field, so it exists only on the DEFAULT tier. On RTG the search field is in the top bar and,
+     * since I1337 moved the command line to a popup, r1 would be a Group with no children: MUI 3.8 cannot lay one out, the whole
+     * window layout fails and every object keeps a 0x0 box at 0,0 (stray list header at the top left, empty panes). */
+    Object* r1 = g_screen_rtg ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* r3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     uint32_t i;
-    if (g == NULL || r1 == NULL || r2 == NULL || r3 == NULL) {
+    if (g == NULL || (!g_screen_rtg && r1 == NULL) || r2 == NULL || r3 == NULL) {
         return NULL;
     }
     if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
@@ -1598,7 +1601,9 @@ static Object* mui_tool_group(mui_state* s) {
     }
     DoMethod(r3, OM_ADDMEMBER, s->cyc_rating);
     DoMethod(r3, OM_ADDMEMBER, s->cyc_subsong);
-    DoMethod(g, OM_ADDMEMBER, r1);
+    if (r1 != NULL) {
+        DoMethod(g, OM_ADDMEMBER, r1);
+    }
     DoMethod(g, OM_ADDMEMBER, r2);
     DoMethod(g, OM_ADDMEMBER, r3);
     DoMethod(g, OM_ADDMEMBER, s->status);

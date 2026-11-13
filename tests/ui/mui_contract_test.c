@@ -3166,6 +3166,11 @@ static void test_player_bar(void) {
     tend = tool != NULL ? strstr(tool, "I667i2") : NULL;
     CHECK(tool != NULL && tend != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") < tend,
           "the tool rows still build Like");
+    /* I1337d: on RTG the first tool row has no child (search in the top bar, command line in a popup); an empty MUI 3.8 Group breaks
+     * the whole window layout, so the row must be skipped, not added empty. */
+    CHECK(tool != NULL && tend != NULL && strstr(tool, "g_screen_rtg ? NULL : MUI_NewObject") != NULL && strstr(tool, "if (r1 != NULL) {") != NULL &&
+              strstr(tool, "if (r1 != NULL) {") < tend,
+          "the tool rows add an empty first row on RTG");
 }
 
 /* I973c: the subsong label and the minus/plus lines. Pure maths; the wiring is checked by test_player_bar. */
