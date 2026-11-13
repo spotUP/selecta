@@ -45,6 +45,16 @@ static void keyrows_build(void) {
         }
     }
     txt_bindings_default(&def);
+    {
+        char key[24]; /* I1337: ':' opens the command line popup (the desktop @command binding) */
+        mui_key_row* r = &g_keyrows[g_keyrow_n];
+        if (g_keyrow_n < KEYROW_MAX && txt_bindings_key_for(&def, "@command", key, sizeof key) != NULL && txt_key_parse(key, &r->code, &r->mods)) {
+            r->kind = MUI_KEYROW_OVERLAY;
+            r->id = "@command";
+            r->arg = 0;
+            g_keyrow_n++;
+        }
+    }
     for (i = 0; i < (uint32_t)SEL_UIM_PAGE_KEY_COUNT && g_keyrow_n < KEYROW_MAX; i++) {
         const char* act = NULL;
         uint32_t page = 0, code = 0, mods = 0, d, pane;
@@ -86,6 +96,9 @@ const mui_key_row* mui_key_row_at(uint32_t i) { return i < mui_key_row_count() ?
 
 int32_t mui_key_find(uint32_t code, uint32_t mods, int text_active) {
     uint32_t i, n = mui_key_row_count();
+    if (code > 32u && code < 127u && !((code >= '0' && code <= '9') || (code >= 'A' && code <= 'Z') || (code >= 'a' && code <= 'z'))) {
+        mods &= ~(uint32_t)TXT_MOD_SHIFT; /* I1337: Shift only makes the symbol (':' is Shift+';'), the table names ':' with no modifier */
+    }
     for (i = 0; i < n; i++) {
         const mui_key_row* r = &g_keyrows[i];
         if (r->code != code || r->mods != mods) {

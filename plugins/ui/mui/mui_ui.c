@@ -208,7 +208,8 @@ typedef struct mui_state {
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
     Object* str_search;             /* MUI-P4-3 */
     Object* keys;                   /* I1171: Selecta_Keys, the window key handler */
-    Object* str_cmd;                /* MUI-P4-13 */
+    Object* str_cmd;                /* MUI-P4-13; I1337: lives in cmd_win, built on the first ':' */
+    Object* cmd_win;                /* I1337: the command line popup (the desktop OV_CMDLINE) */
     Object* cyc_rating;             /* MUI-P4-7 */
     Object* cyc_subsong;            /* MUI-P4-9 */
     Object* sub_grp;                /* I973c: the bar's subsong group (label + minus + plus), shown only when the song has subsongs */
@@ -923,7 +924,9 @@ static void mui_caption_set(Object* obj, const char* utf8) {
 /* The string gadget's contents (Latin-1 as typed) as UTF-8 in buf[cap]. */
 static const char* mui_str_utf8(Object* str, char* buf, size_t cap) {
     ULONG v = 0;
-    GetAttr(MUIA_String_Contents, str, &v);
+    if (str != NULL) { /* I1337: the command String exists only once its popup was opened */
+        GetAttr(MUIA_String_Contents, str, &v);
+    }
     mui_l1_to_utf8(buf, cap, v != 0 ? (const char*)v : "");
     return buf;
 }
@@ -1543,7 +1546,7 @@ static Object* mui_topbar_group(mui_state* s) {
     return g;
 }
 
-/* MUI-P4: the tool rows above the list: search and command line Strings, the like button, the rating and subsong Cycles,
+/* MUI-P4: the tool rows above the list: the search String (the command line is a popup, I1337), the like button, the rating and subsong Cycles,
  * the queue and playlist actions of the cursor row, and Clear Library (confirmed by a MUI_Request). */
 static Object* mui_tool_group(mui_state* s) {
     Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
@@ -1559,19 +1562,16 @@ static Object* mui_tool_group(mui_state* s) {
         mui_search_live_notify(s->str_search);
         mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     }
-    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0, SEL_UIM_CMD_HINT);
-    mui_set_tip(s, MUI_TS_CMD, s->str_cmd, MUI_TIP_CMD, 0, NULL, 0);
     s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
     s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
-    if ((!g_screen_rtg && s->str_search == NULL) || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
+    if ((!g_screen_rtg && s->str_search == NULL) || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
     if (!g_screen_rtg) {
         DoMethod(r1, OM_ADDMEMBER, s->str_search);
     }
-    DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
         if (g_tool_which[i] == P4_LIKE) {
             continue; /* I1125: Like lives on the Now Playing panel (Mac location), not in the tool row */
@@ -3198,6 +3198,32 @@ static int mui_cmd_send(void* ctx, const char* line) {
     return mui_engine_line((mui_state*)ctx, line);
 }
 
+/* I1337: the command line popup, opened by the desktop's ':' key (the @command binding); not a permanent tool-row field. Built on the
+ * first use; Return fires P4_CMD (mui_p4_fire sends the line and closes it), Esc and the Close button close it. */
+static void mui_cmd_popup_show(mui_state* s) {
+    if (s->cmd_win == NULL) {
+        Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0, SEL_UIM_CMD_HINT);
+        if (g == NULL || s->str_cmd == NULL) {
+            s->str_cmd = NULL;
+            return;
+        }
+        mui_set_tip(s, MUI_TS_CMD, s->str_cmd, MUI_TIP_CMD, 0, NULL, 0);
+        DoMethod(g, OM_ADDMEMBER, s->str_cmd);
+        s->cmd_win = mui_dialog_window("Selecta Command Line", 0x434D444CUL, g);
+        if (s->cmd_win == NULL) {
+            s->str_cmd = NULL;
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->cmd_win);
+        mui_close_on_request(s->cmd_win);
+    } else {
+        set(s->str_cmd, MUIA_String_Contents, (ULONG) "");
+    }
+    set(s->cmd_win, MUIA_Window_Open, TRUE);
+    set(s->cmd_win, MUIA_Window_ActiveObject, s->str_cmd);
+}
+
 /* I798 (O1): the command palette window: a String over an AAList of the shared txt_palette matches (the Mac palette rows). */
 static void mui_palette_show(mui_state* s) {
     mui_palette_open(&s->pal);
@@ -3251,7 +3277,10 @@ static void mui_palette_choose(mui_state* s, long row) {
         if (r == MUI_PAL_FILL) {
             {
                 char l1[sizeof fill * 2]; /* I1139 */
-                set(s->str_cmd, MUIA_String_Contents, (ULONG)mui_l1(l1, sizeof l1, fill));
+                mui_cmd_popup_show(s); /* I1337: the verb is typed into the command line popup, as the desktop opens its overlay */
+                if (s->str_cmd != NULL) {
+                    set(s->str_cmd, MUIA_String_Contents, (ULONG)mui_l1(l1, sizeof l1, fill));
+                }
             }
         }
         snprintf(s->status_buf, sizeof s->status_buf, r == MUI_PAL_RUN ? "Command sent: %s" : "Command needs arguments: %s", s->pal.last_verb);
@@ -3474,6 +3503,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         mui_str_utf8(s->str_cmd, text, sizeof text);
         if (mui_cmdline_submit(mui_cmd_send, s, text)) {
             mui_p4_note(s, which, text);
+        }
+        if (s->cmd_win != NULL) {
+            set(s->cmd_win, MUIA_Window_Open, FALSE); /* I1337: Return sends and closes, as the desktop overlay does */
         }
         break;
     case P4_LIKE:
@@ -3891,6 +3923,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         const mui_key_row* kr = mui_key_row_at((uint32_t)(id - CTL_KEY_BASE)); /* I1171: the action rows; door and pane rows send their own ids */
         if (kr != NULL && kr->kind == MUI_KEYROW_ACTION) {
             mui_action_fire(kr->id, mui_p8_send, s);
+        } else if (kr != NULL && kr->kind == MUI_KEYROW_OVERLAY) {
+            mui_cmd_popup_show(s); /* I1337: ':' (@command) */
         }
     } else if (id >= CTL_SM_BASE && id < CTL_SM_BASE + (LONG)SEL_UIM_SONG_MENU_ITEMS) {
         mui_song_menu_fire(s, (uint32_t)(id - CTL_SM_BASE));

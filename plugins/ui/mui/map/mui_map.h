@@ -248,7 +248,7 @@ uint32_t mui_keys_build(mui_key_bind* out, uint32_t cap); /* returns the row cou
  * mui_keys_build) and the page keys (@home @library @folders @info open a sidebar door, @viz @pattern a main pane), all read
  * from the shared tables (sel_uim_action_at, sel_uim_page_key_at + the text UI default bindings). One-char action keys stay
  * Menuitem shortcuts. */
-enum { MUI_KEYROW_ACTION = 0, MUI_KEYROW_DOOR, MUI_KEYROW_PANE };
+enum { MUI_KEYROW_ACTION = 0, MUI_KEYROW_DOOR, MUI_KEYROW_PANE, MUI_KEYROW_OVERLAY }; /* I1337: OVERLAY = the @command line popup */
 typedef struct mui_key_row {
     uint32_t kind;
     const char* id;  /* ACTION: the action id; DOOR / PANE: the page action name (@home...) */
