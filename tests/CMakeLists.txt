@@ -861,6 +861,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(selecta-startup-error-report PROPERTIES
     PASS_REGULAR_EXPRESSION "selecta: ui 'no-such-ui' is not registered.*startup_error_reports=1")
 
+  # I1352b: --help prints the usage on stdout and exits 0 before any UI, requester or library opens (the report count
+  # line of a start-up failure must be absent).
+  add_test(NAME selecta-help-usage COMMAND selecta --help)
+  set_tests_properties(selecta-help-usage PROPERTIES PASS_REGULAR_EXPRESSION "usage: selecta .*--help"
+    FAIL_REGULAR_EXPRESSION "startup_error_reports")
+
   # I625a: the start-up phase trace. --log writes one "trace t_ms=" line per phase (ms since main entry) plus the system
   # time at main entry; without --log none appear. Fail-before: the lines did not exist.
   add_test(NAME selecta-start-phase-trace

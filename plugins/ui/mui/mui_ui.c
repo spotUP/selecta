@@ -103,6 +103,9 @@ static void mui_libs_close(void) {
 
 /* MUI-P1-4: a distinct error on stderr (the shell keeps the text UI) and, on the Amiga, an EasyRequest. */
 static void mui_report(mui_fail why, const char* detail);
+#ifdef SEL_MUI_NATIVE
+static void mui_requester(const char* text); /* I1352b */
+#endif
 
 #define MUI_HELP_MAX 160 /* MUI-P4-14: most help rows shown (one per action table row) */
 #define MUI_STATS_MAX 24u /* rows of the Statistics window; the engine's stats buffer holds far fewer */
@@ -256,6 +259,7 @@ typedef struct mui_state {
     Object* np_off[MUI_OFF_ROWS];
     char np_off_buf[MUI_OFF_ROWS][128];
     Object* info_list;              /* MUI-P4-9 song info rows */
+    char fail_pending[160]; /* I1352b: a failed-open engine error to show; the event runs on the engine's pump, mui_refresh shows it */
     volatile uint32_t mode_pending; /* I1173: 1 + the SEL_UIM_LAYOUT_* a ui.desktop.mode change asked for; the event runs on the engine's pump, the window is touched by mui_refresh */
     uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
     int side_rail;                  /* I949c: the sidebar is the compact door rail, side_dyn stays NULL */
@@ -2695,6 +2699,14 @@ static void mui_on_event(void* state, const sel_message* evt) {
         evt->args[1].type == SEL_ARG_STR && mui_mode_from_pref(evt->args[0].v.s, evt->args[1].v.s, &mode)) {
         s->mode_pending = mode + 1u;
     }
+    if (s != NULL && evt != NULL && evt->id == SEL_EVT_ERROR && evt->argc > 0u && evt->args[0].type == SEL_ARG_STR) {
+        const char* code = evt->args[0].v.s;
+        const char* detail = evt->argc > 1u && evt->args[1].type == SEL_ARG_STR ? evt->args[1].v.s : "";
+        if (strcmp(code, "open_failed") == 0 || strcmp(code, "no_replayer") == 0 || strcmp(code, "unsupported_kind") == 0 ||
+            strcmp(code, "replayer_incomplete") == 0 || strcmp(code, "replayer_load_failed") == 0) { /* same set as the desktop UI (I695b) */
+            snprintf(s->fail_pending, sizeof s->fail_pending, "Cannot play: %s %.100s", code, detail);
+        }
+    }
     if (s != NULL && evt != NULL) {
         mui_srcs_event(&s->srcs, evt); /* I1175: SOURCES rows, sync completion and sync errors */
     }
@@ -2707,6 +2719,12 @@ static void mui_refresh(mui_state* s) {
     const sel_view_state* v;
     if (st == NULL) {
         return;
+    }
+    if (s->fail_pending[0] != '\0') {
+        snprintf(s->status_buf, sizeof s->status_buf, "%s", s->fail_pending);
+        s->fail_pending[0] = '\0';
+        mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
+        mui_text_set(s->status, s->status_buf);
     }
     if (s->mode_pending != 0u) {
         uint32_t want = s->mode_pending - 1u;
@@ -2941,8 +2959,9 @@ static void mui_clip_copy(mui_state* s) {
     uint8_t iff[240];
     uint32_t n = mui_clip_text(s->uim.frame.artist, s->uim.frame.title, text, sizeof text);
     uint32_t len = n != 0 ? mui_clip_iff(text, n, iff, sizeof iff) : 0;
-    if (len != 0) {
-        (void)mui_clip_write(iff, len);
+    if (len != 0 && !mui_clip_write(iff, len)) {
+        mui_requester("The song title could not be copied: clipboard.device did not accept it. Check that the clipboard "
+                      "device is available (Prefs, ClipUnit) and that memory is free, then try Copy Song Title again.");
     }
 }
 
@@ -4230,6 +4249,10 @@ static void mui_timer_open(mui_state* s) {
         DeleteIORequest((struct IORequest*)s->treq);
         s->treq = NULL;
     }
+    if (s->treq == NULL) {
+        mui_requester("timer.device did not open, so Selecta waits by polling and will use more processor time. "
+                      "Check that timer.device is in DEVS: or ROM and that memory is free, then start Selecta again.");
+    }
 }
 
 static void mui_timer_close(mui_state* s) {
@@ -4329,20 +4352,23 @@ static int mui_native_probe(void) {
     return 1;
 }
 
-static void mui_report(mui_fail why, const char* detail) {
+/* I1352b: the one requester of this plugin (title Selecta, one button); mui_report and every runtime failure use it. */
+static void mui_requester(const char* text) {
     struct EasyStruct es;
-    char text[300];
-    snprintf(text, sizeof text, "%s %s", mui_fail_text(why), detail);
-    fprintf(stderr, "%s\n", text);
+    char l1[300]; /* I1139 */
     es.es_StructSize = sizeof es;
     es.es_Flags = 0;
     es.es_Title = (UBYTE*)"Selecta";
     es.es_TextFormat = (UBYTE*)"%s";
     es.es_GadgetFormat = (UBYTE*)"Continue";
-    {
-        char l1[sizeof text]; /* I1139 */
-        EasyRequest(NULL, &es, NULL, (ULONG)mui_l1(l1, sizeof l1, text));
-    }
+    EasyRequest(NULL, &es, NULL, (ULONG)mui_l1(l1, sizeof l1, text));
+}
+
+static void mui_report(mui_fail why, const char* detail) {
+    char text[300];
+    snprintf(text, sizeof text, "%s %s", mui_fail_text(why), detail);
+    fprintf(stderr, "%s\n", text);
+    mui_requester(text);
 }
 #else
 /* Host build: no window, so a layout change has nothing to apply (I1173). */

@@ -109,9 +109,16 @@ static void reject_line(const char* path, const char* reason) {
     }
 }
 
+static char g_last_reject[SEL_ORIGIN_MAX + 96];
+
 void sel_registry_note_rejected(const char* path, const char* reason) {
     g_load_rejected++;
     reject_line(path, reason);
+    snprintf(g_last_reject, sizeof g_last_reject, "%s: %s", path, reason);
+}
+
+const char* sel_registry_last_reject(void) {
+    return g_last_reject;
 }
 
 /* Machine CPU as the number a plugin declares in SEL_RP_MIN_CPU (68020 = 68020). */

@@ -652,6 +652,23 @@ int main(int argc, char** argv)
     arexx_port* arexx = NULL;
 #endif
 
+    for (a = 1; a < argc; a++) {
+        /* I1352b: --help prints the usage on stdout and exits before any UI, requester or library opens. */
+        if (strcmp(argv[a], "--help") == 0 || strcmp(argv[a], "-h") == 0 || strcmp(argv[a], "-?") == 0 ||
+            strcmp(argv[a], "?") == 0) {
+            fputs("usage: selecta [options] [song or folder ...] [KEY=VALUE ...]\n"
+                  "  --ui <id>            user interface to open (repeat for several); --view <name> start view\n"
+                  "  --backend <id>       screen backend of the desktop UI; --size <WxH> its size\n"
+                  "  --output <id>        audio output; --integration <id> media-session integration\n"
+                  "  --db <file>          library database; --catalogue <file> read-only catalogue\n"
+                  "  --config-dir <dir>   preferences drawer; --start-dir <dir> first folder shown\n"
+                  "  --input <file>       replay a key script; --keys <text> send keys at start\n"
+                  "  --log <file>         write start-up messages to a file; --stats print run statistics\n"
+                  "  --help               show this text\n",
+                  stdout);
+            return 0;
+        }
+    }
     {
         /* --log <file>: stderr (all startup errors) goes to the file; the Amiga shell cannot redirect libnix stderr. */
         const char* log_path = option(argc, argv, "--log", "");
@@ -741,6 +758,7 @@ int main(int argc, char** argv)
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
+    cfg.registry_last_reject = sel_registry_last_reject;
     cfg.registry_hidden_text = sel_registry_hidden_text; /* I1313c: the UI shows why a player is off */
     cfg.machine = machine_tags; /* queue and browse buffers scale with the machine */
     if (catalogue != NULL) {

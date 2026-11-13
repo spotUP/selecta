@@ -301,6 +301,8 @@ typedef struct sel_engine_config {
     const sel_tag* (*registry_get)(uint32_t index);
     /* I1313c: sel_registry_hidden_text, the lines saying why each hidden plugin is off; NULL: none shown. */
     const char* (*registry_hidden_text)(void);
+    /* I1352b: sel_registry_last_reject, the player file and reason of the last refused load; NULL: no detail. */
+    const char* (*registry_last_reject)(void);
     /* Queue sizes, allocated once in sel_engine_create. 0: scaled from the
      * SEL_MACHINE_FAST_RAM tag of `machine` (the list sel_machine_probe
      * returns; the front end probes, the engine does not), or the smallest

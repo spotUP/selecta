@@ -547,6 +547,7 @@ struct sel_engine {
     uint32_t (*registry_count)(void);
     const sel_tag* (*registry_get)(uint32_t index);
     const char* (*registry_hidden_text)(void);
+    const char* (*registry_last_reject)(void); /* I1352b */
     uint32_t rate;
     uint32_t resampler;
     /* Playback policy, parsed from the options by set_option; the audio side reads them. */
@@ -2903,7 +2904,10 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     hooks = sel_plugin_resolve(hooks); /* I427e: a manifest plugin's module loads here, before any hook lookup */
     if (hooks == NULL) {
         drop_song(e, data, live, fs);
-        sel_engine_report_error(e, "replayer_load_failed", err_detail);
+        {
+            const char* why = e->registry_last_reject != NULL ? e->registry_last_reject() : ""; /* I1352b: name the player file and the reason */
+            sel_engine_report_error(e, "replayer_load_failed", why[0] != '\0' ? why : err_detail);
+        }
         return 0;
     }
     kind = sel_tag_find(hooks, SEL_RP_KIND, 0);
@@ -11330,6 +11334,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         e->registry_count = cfg->registry_count;
         e->registry_get = cfg->registry_get;
         e->registry_hidden_text = cfg->registry_hidden_text;
+        e->registry_last_reject = cfg->registry_last_reject;
         sel_source_set_plugins(cfg->registry_count, cfg->registry_get, host);
         e->lib = cfg->library;
         if (e->lib != NULL) {

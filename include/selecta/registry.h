@@ -71,6 +71,8 @@ const char* sel_registry_builtin_missing_name(uint32_t index);
 /* A loader's own reject (dlopen failure, missing entry symbol): logs one line with path and reason through the
  * host and counts it in dyn_rejected. */
 void sel_registry_note_rejected(const char* path, const char* reason);
+/* I1352b: the last reject as "<module file>: <reason>" ("" when none), for the error a failed replayer load reports. */
+const char* sel_registry_last_reject(void);
 /* Where plugin `index` (as sel_registry_get) came from: "static" or the module path; NULL out of range. */
 const char* sel_registry_origin(uint32_t index);
 /* Counts one on-demand module load (loader_seg.c, I427e). */
