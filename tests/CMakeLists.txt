@@ -505,6 +505,13 @@ target_link_libraries(plugin_resolve_paths_test PRIVATE selecta_library selecta_
 target_include_directories(plugin_resolve_paths_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 add_test(NAME plugin-resolve-paths-unit COMMAND plugin_resolve_paths_test)
 set_tests_properties(plugin-resolve-paths-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_resolve_paths_ok")
+# I1193b-M2: the generated manifest C compiles and round-trips the tags of two plugins.
+add_executable(plugin_manifest_dump_test host/plugin_manifest_dump_test.c)
+target_link_libraries(plugin_manifest_dump_test PRIVATE selecta_core ${CMAKE_DL_LIBS})
+target_include_directories(plugin_manifest_dump_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_compile_definitions(plugin_manifest_dump_test PRIVATE SEL_TEST_CC="${CMAKE_C_COMPILER}" SEL_TEST_INC="${PROJECT_SOURCE_DIR}/include")
+add_test(NAME plugin-manifest-dump-unit COMMAND plugin_manifest_dump_test)
+set_tests_properties(plugin-manifest-dump-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_manifest_dump_ok")
 # The default integration follows the OS preference list and the registry ("none" when not built).
 add_executable(default_integration_test host/default_integration_test.c)
 target_link_libraries(default_integration_test PRIVATE selecta_registry)
