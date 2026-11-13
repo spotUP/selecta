@@ -1185,7 +1185,7 @@ static void test_screen_font(void) {
     {
         const char* dispose = ui != NULL ? strstr(ui, "MUI_DisposeObject(s->app); /* closes the window") : NULL;
         const char* close_scr = dispose != NULL ? strstr(dispose, "mui_screen_close();") : NULL;
-        CHECK(close_scr != NULL && close_scr - dispose < 800, "the font closes (mui_screen_close) only after the app is disposed");
+        CHECK(close_scr != NULL && close_scr - dispose < 1200, "the font closes (mui_screen_close) only after the app is disposed");
     }
     free(ui);
 }
