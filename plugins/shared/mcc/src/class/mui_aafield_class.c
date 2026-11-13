@@ -33,6 +33,7 @@ typedef struct aafield_data {
     int max_w;
     const char* placeholder;
     aa_ctx aa;
+    int esc_close; /* I1360: Esc in the active String requests the window close */
     int pens_logged; /* the old String pens went to stderr once (I667n evidence) */
     struct MUI_EventHandlerNode ehn; /* I731: pointer and key events for the flat tooltip only; it never eats one */
     aatip_slot tip;
@@ -68,7 +69,7 @@ static ULONG aafield_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     DoMethod(_win(obj), MUIM_Notify, MUIA_Window_ActiveObject, MUIV_EveryTime, (ULONG)obj, 1, UPM_Field_Redraw);
     DoMethod(d->str, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, (ULONG)obj, 1, UPM_Field_Redraw); /* I733: the placeholder shows and hides with the contents */
-    d->ehn.ehn_Priority = 0;
+    d->ehn.ehn_Priority = 1; /* above the String's own handler, which eats Esc (I1360); every other key still passes */
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
     d->ehn.ehn_Class = cl;
@@ -179,6 +180,8 @@ static ULONG aafield_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     while ((tag = NextTagItem(&list)) != NULL) {
         if (tag->ti_Tag == MUIA_String_Contents && d->str != NULL) {
             set(d->str, MUIA_String_Contents, tag->ti_Data);
+        } else if (tag->ti_Tag == UPA_Field_EscClose) {
+            d->esc_close = tag->ti_Data != 0;
         }
     }
     return aatip_super_set(cl, obj, msg, offsetof(aafield_data, tip));
@@ -189,6 +192,14 @@ static ULONG aafield_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEv
     struct IntuiMessage* im = msg->imsg;
     if (im != NULL) {
         aatip_event(obj, &d->tip, im, im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj));
+        if (d->esc_close && im->Class == IDCMP_RAWKEY && (im->Code & 0x80) == 0 && (im->Code & 0x7Fu) == 0x45u /* Esc; raw code, so the standalone UP-*.mcc libraries need no Selecta symbol */) {
+            ULONG active = 0;
+            GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
+            if (active == (ULONG)(uintptr_t)d->str) {
+                set(_win(obj), MUIA_Window_CloseRequest, TRUE); /* the dialog's mui_close_on_request notify closes it */
+                return MUI_EventHandlerRC_Eat;
+            }
+        }
     }
     return 0;
 }

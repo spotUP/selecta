@@ -1484,6 +1484,7 @@ static const char* mui_search_hint(void) {
 /* I1337b: a field is a wrapper group; the window focus lives on its inner String (UPA_Field_String), so activating the wrapper does nothing. */
 static void mui_field_activate(Object* win, Object* field) {
     ULONG str = 0;
+    set(field, UPA_Field_EscClose, TRUE); /* I1360: Esc in a popup's field closes the popup (the String eats it before the Close button's key) */
     GetAttr(UPA_Field_String, field, &str);
     set(win, MUIA_Window_ActiveObject, str != 0 ? str : (ULONG)field);
 }

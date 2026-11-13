@@ -148,6 +148,7 @@ int main(void) {
     CHECK(txt_key_from_amiga_raw(0x4C) == TXT_KEY_UP && txt_key_from_amiga_raw(0x71) == TXT_KEY_END);
     CHECK(txt_key_from_amiga_raw(0x44) == 13u && txt_key_from_amiga_raw(0x42) == 9u);
     CHECK(txt_key_from_amiga_raw(0x50) == TXT_KEY_F1 && txt_key_from_amiga_raw(0x6F) == TXT_KEY_F1 + 11u);
+    CHECK(txt_key_from_amiga_raw(0x45) == 27u); /* Esc: the MUI popup field close (I1360) relies on it */
     CHECK(txt_key_from_amiga_raw(0x20) == 0u);
     CHECK(txt_mods_from_amiga_qual(0x0002u) == TXT_MOD_SHIFT && txt_mods_from_amiga_qual(0x0008u) == TXT_MOD_CTRL);
     CHECK(txt_mods_from_amiga_qual(0x0020u | 0x0001u) == (TXT_MOD_ALT | TXT_MOD_SHIFT));
