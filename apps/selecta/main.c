@@ -201,6 +201,8 @@ static uint32_t g_engine_pumps; /* I1082a: pumps run on the engine thread (0 unt
  * this turn drains it and calls on_event. Today both sides run on this thread (inline_drain: a full ring is drained on the spot, an event
  * too big for a slot is delivered directly); I1082f moves the pump to the engine thread and the drain stays here. */
 static sel_evt_ring g_evt_ring;
+/* I1374: 256 slots x 2048 bytes = 512 KB; a machine up to 16 MB gets 32 slots (64 KB), a full ring is drained on the spot (inline_drain). */
+static uint32_t g_evt_ring_slots = 256u;
 static int g_evt_ring_state; /* 0: not opened, 1: open, -1: no memory (events go straight to on_event) */
 static uint32_t g_evt_ring_events; /* events that crossed the ring (sentinel evt_ring_events=) */
 
@@ -211,7 +213,7 @@ static void pump_turn(sel_engine* e, int clockless, sel_event_sink on_event, voi
     void* pump_ctx = ctx;
 
     if (g_evt_ring_state == 0) {
-        g_evt_ring_state = sel_evt_ring_init(&g_evt_ring, ph, 256u, 2048u, on_event, ctx) ? 1 : -1;
+        g_evt_ring_state = sel_evt_ring_init(&g_evt_ring, ph, g_evt_ring_slots, 2048u, on_event, ctx) ? 1 : -1;
         g_evt_ring.inline_drain = 1;
     }
     if (g_evt_ring_state > 0 && on_event != NULL) {
@@ -760,6 +762,9 @@ int main(int argc, char** argv)
     cfg.registry_get = sel_registry_get;
     cfg.registry_last_reject = sel_registry_last_reject;
     cfg.registry_hidden_text = sel_registry_hidden_text; /* I1313c: the UI shows why a player is off */
+    if ((unsigned long long)sel_tag_find(machine_tags, SEL_MACHINE_FAST_RAM, 0) + (unsigned long long)sel_tag_find(machine_tags, SEL_MACHINE_CHIP_RAM, 0) <= 16ull * 1024 * 1024) {
+        g_evt_ring_slots = 32u;
+    }
     cfg.machine = machine_tags; /* queue and browse buffers scale with the machine */
     if (catalogue != NULL) {
         library = sel_cli_open_catalogue(catalogue);
