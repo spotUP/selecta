@@ -1003,18 +1003,28 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
 /* I667d (design 3.7): the one text constructor. Every Selecta text line is a Selecta_AAText (mui_aatext_class.c): antialiased in the
  * tone colour (normal TEXT, muted TEXT_MUTED, title TEXT at font + 4 px), aligned and cut with "..." at the width. Labels carry no
  * frame and no field box (I740, like the Mac footer: muted text on the window); the tone of a label comes from mui_pens_label_tone. */
-static Object* mui_aatext_sized(const char* contents, const char* widest, int tone, int align, int hidden) {
+static Object* mui_aatext_cut(const char* contents, const char* widest, int tone, int align, int hidden, int ellipsis) {
     mui_aatext_spec sp;
     sp.contents = contents;
     sp.widest = widest;
     sp.fixed = widest != NULL;
     sp.tone = tone;
     sp.align = align;
-    sp.ellipsis = 1;
+    sp.ellipsis = ellipsis;
     sp.frame = (ULONG)MUIV_Frame_None;
     sp.background = 0UL;
     sp.hidden = hidden;
     return mui_aatext_new(&sp);
+}
+
+static Object* mui_aatext_sized(const char* contents, const char* widest, int tone, int align, int hidden) {
+    return mui_aatext_cut(contents, widest, tone, align, hidden, 1);
+}
+
+/* I1357: a text that is never cut. Its minimum width is the whole text, so a dialog sized from its minimum (the sync offer) shows
+ * every row in full; the "..." text's minimum is three dots wide and the offer rows opened as "never sy...", "Internet Archi...". */
+static Object* mui_aatext_whole(const char* contents, int tone, int align) {
+    return mui_aatext_cut(contents, NULL, tone, align, 0, 0);
 }
 
 static Object* mui_aatext(const char* contents, int tone, int align, int hidden) {
@@ -3137,7 +3147,7 @@ static void mui_offer_window(mui_state* s) {
             return;
         }
         mui_offer_panel_title(&s->offer, row, sizeof row);
-        DoMethod(root, OM_ADDMEMBER, mui_aatext_sized(row, row, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(root, OM_ADDMEMBER, mui_aatext_whole(row, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT));
         for (k = 0; k < s->offer.o.n; k++) {
             Object* line = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
             if (line == NULL) {
@@ -3146,7 +3156,7 @@ static void mui_offer_window(mui_state* s) {
             mui_offer_panel_row(&s->offer, &s->srcs, k, row, sizeof row);
             s->offer_row[k] = mui_make_check(row, sel_uim_offer_ticked(&s->offer.o, k), CTL_OFFER_ROW + (LONG)k);
             DoMethod(line, OM_ADDMEMBER, s->offer_row[k]);
-            DoMethod(line, OM_ADDMEMBER, mui_aatext(row, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0));
+            DoMethod(line, OM_ADDMEMBER, mui_aatext_whole(row, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT));
             DoMethod(root, OM_ADDMEMBER, line);
         }
         /* I1308c: Never / Not now / Sync now, the desktop nagdlg_draw buttons in its order, in the one bar (same gaps) */
