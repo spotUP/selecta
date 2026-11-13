@@ -1,24 +1,24 @@
  [Home]  [What do you want to play?]  [Browse]
- Playlists         │ Scope
- Queue             │ Voice  1
- Now Playing       │ Voice  2  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
- Song Information  │ Voice  3  ▃▁▂▃▃▁▂▂▃▃▂▁▂▃▂▂▃▃▃▃▂▂▃▂▁▁▂▁▂▃▂▂▂▂▂▂▂▂▃▃▃▂▁▂▂▂▂▁▂
- Your Library  [+] │ Voice  4  ▃▃▃▃▃▃▃▃▃▃▃▃▃▃▃▂▃▃▃▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂
- [Playlists]       │
- [Albums]          │
- [Artists]         │
- [Composers]       │
- [Sources]         │
- [Local Files]     │
- ..                │
- selecta-test.mod  │
-                   │
-                   │
-                   │
-                   │
-                   │
-                   │
-                   │
-                   │
-                   │
+ Playlists         │ Scope                        │ Now Playing
+ Queue             │ Voice  1                     │ selecta test
+ Now Playing       │ Voice  2  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▁▁▁│ Like  Rating 0/5
+ Song Information  │ Voice  3  ▃▁▂▃▃▁▂▂▃▃▂▁▂▃▂▂▃▃▃│ Next in Queue
+ Your Library  [+] │ Voice  4  ▃▃▃▃▃▃▃▃▃▃▃▃▃▃▃▂▃▃▃│
+ [Playlists]       │                              │
+ [Albums]          │                              │
+ [Artists]         │                              │
+ [Composers]       │                              │
+ [Sources]         │                              │
+ [Local Files]     │                              │
+ ..                │                              │
+ selecta-test.mod  │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
  selecta test                         >  00:02 / -:--                Volume 100

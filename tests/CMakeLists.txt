@@ -4710,6 +4710,19 @@ if(NOT SEL_AMIGA)
   set_tests_properties(text-ui-libmode PROPERTIES LABELS m3)
 endif()
 
+# I1222i: the text UI places main and detail by the shared layout regions; the detail column is the Now Playing panel, Tab is region focus.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-regions
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_c.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_regions"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions.cmake")
+  set_tests_properties(text-ui-regions PROPERTIES LABELS m3)
+endif()
+
 # I1188: the text UI Settings screen (key S, palette entry) over the shared pref rows; every change is a PREF_SET.
 if(NOT SEL_AMIGA)
   add_test(NAME text-ui-settings

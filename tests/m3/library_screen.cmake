@@ -28,7 +28,7 @@ if(NOT screen STREQUAL golden)
 endif()
 
 execute_process(
-  COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${WORK}" --db "${WORK}/library.db"
+  COMMAND "${SELECTA}" --output null --size 120x25 --start-dir "${WORK}" --db "${WORK}/library.db"
           --exec "LIBRARY_SCAN ${SONGS}" --keys "${DBKEYS}" --screen-dump "${WORK}/db.txt"
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
@@ -39,7 +39,7 @@ if(at LESS 0)
   message(FATAL_ERROR "--db run: library screen did not open\n${out}")
 endif()
 file(READ "${WORK}/db.txt" dbscreen)
-if(NOT dbscreen MATCHES "Library by format  Tree  Mode Tree  Scope: Library\n[^\n]*\\[\\+\\] Protracker \\(mod\\) \\([1-9][0-9]*\\)")
+if(NOT dbscreen MATCHES "Library by format  Tree  Mode Tree  Scope: Library[^\n]*\n[^\n]*\\[\\+\\] Protracker \\(mod\\) \\([1-9][0-9]*\\)")
   message(FATAL_ERROR "--db run: no scanned rows on the screen:\n${dbscreen}")
 endif()
 if(NOT EXISTS "${WORK}/library.db")

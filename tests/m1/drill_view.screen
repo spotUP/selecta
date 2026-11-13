@@ -1,24 +1,24 @@
  [Home]  [What do you want to play?]  [Browse]
- Queue by folder  Drilldown > /tmp/selecta-tree-view/root/a  Scope: Library
-   selecta-test-mk.mod
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ Playlists         │ Queue by folder  Drilldown > │ Now Playing
+ Queue             │   selecta-test-mk.mod        │
+ Now Playing       │                              │ Like  Rating 0/5
+ Song Information  │                              │ Next in Queue
+ Your Library  [+] │                              │
+ [Playlists]       │                              │
+ [Albums]          │                              │
+ [Artists]         │                              │
+ [Composers]       │                              │
+ [Sources]         │                              │
+ [Local Files]     │                              │
+ selecta-test-mk.mo│                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
+                   │                              │
  -                                    ||  --:-- / -:--               Volume 100
