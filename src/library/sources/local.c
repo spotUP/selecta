@@ -3,6 +3,8 @@
  * engine (first replayer answering YES, else the first UNSURE). */
 #include "local_source.h"
 
+#include "../../engine/claims.h"
+
 #include "../source.h"
 #include "archive/archive.h"
 #include "dir.h"
@@ -136,7 +138,7 @@ static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t s
         }
         hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
         r = sel_plugin_probe(&hooks, data, size, path);
-        if (hooks != NULL && sel_tag_find(hooks, SEL_RP_PROBE, 0) != 0u) {
+        if (sel_hooks_has(hooks, SEL_RP_PROBE)) {
             s->stats->probed++;
         }
         if (r == SEL_PROBE_YES) {

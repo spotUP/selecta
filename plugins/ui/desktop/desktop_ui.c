@@ -3,6 +3,7 @@
  * to a backend: `mem` (headless, no SDL, DUI-P2-6) or `sdl` (a window, DUI-P2-7), selected with `--backend`. */
 #include <ctype.h>
 #include <selecta/plugin.h>
+#include <selecta/registry.h>
 #include <selecta/engine.h>
 #include <selecta/library_item.h>
 #include <selecta/format_label.h>
@@ -1444,7 +1445,7 @@ static sel_gui_rect dev_btn_rect(const desk* d) {
 /* I1039: reads the device list from the output plugin the shell opened (the registry hook SEL_OUT_DEVICES). */
 static void dev_load(desk* d) {
     const sel_tag* desc = d->find_plugin != NULL && d->output_id != NULL ? d->find_plugin(SEL_PLUGIN_KIND_OUTPUT, d->output_id) : NULL;
-    const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    const sel_tag* hooks = desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
     d->dev_fn = hooks != NULL ? (sel_out_devices_fn)sel_tag_find(hooks, SEL_OUT_DEVICES, 0) : NULL;
     d->dev_n = d->dev_fn != NULL ? d->dev_fn(d->dev, DESK_DEV_MAX) : 0u;
 }
@@ -7095,7 +7096,7 @@ static void viz_load(desk* d) {
     d->viz_n = 0u;
     for (i = 0; d->find_plugin != NULL && i < VIZ_MAX; i++) {
         const sel_tag* desc = d->find_plugin(SEL_PLUGIN_KIND_VIZ, ids[i]);
-        const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+        const sel_tag* hooks = desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
         uintptr_t fn = hooks != NULL ? sel_tag_find(hooks, SEL_VIZ_FRAME, 0) : 0;
         if (fn == 0) {
             continue;

@@ -1280,7 +1280,7 @@ static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
         const char* pid = (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0);
         if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_OUTPUT && pid != NULL &&
             strcmp(pid, m->args[0].v.s) == 0) {
-            e->mixed_path = sel_tag_find((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), SEL_OUT_VOICES, 0) == 0;
+            e->mixed_path = !sel_hooks_has((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), SEL_OUT_VOICES);
         }
     }
     changed(e, PENDING_OUTPUT);
@@ -1622,7 +1622,7 @@ static void cmd_DSP(sel_engine* e, const sel_message* m) {
         return;
     }
     if (!sel_dsp_chain_enable(&e->dsp, e->host, (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0),
-                              (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), e->rate)) {
+                              sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)), e->rate)) { /* I1193b-M1 */
         sel_engine_report_error(e, "dsp_failed", name);
     }
 }
@@ -1869,7 +1869,7 @@ static const char* pcm_output_for(const sel_engine* e) {
             const sel_tag* desc = e->registry_get(j);
             const char* pid = (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0);
             if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_OUTPUT && pid != NULL && strcmp(pid, k_pcm[i].id) == 0 &&
-                sel_tag_find((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), SEL_OUT_VOICES, 0) == 0) {
+                !sel_hooks_has((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), SEL_OUT_VOICES)) {
                 return pid;
             }
         }
@@ -1887,7 +1887,7 @@ static int switch_output(sel_engine* e, const char* id) {
             if (!e->out_switch(e->out_switch_ctx, pid)) {
                 return 0;
             }
-            sel_engine_set_output(e, (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0));
+            sel_engine_set_output(e, sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0))); /* I1193b-M1 */
             copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, pid);
             changed(e, PENDING_OUTPUT);
             return 1;

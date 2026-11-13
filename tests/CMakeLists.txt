@@ -498,6 +498,13 @@ add_executable(plugin_owner_test host/plugin_owner_test.c)
 target_link_libraries(plugin_owner_test PRIVATE selecta_core)
 add_test(NAME plugin-owner-unit COMMAND plugin_owner_test)
 set_tests_properties(plugin-owner-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_owner_ok")
+
+# I1193b-M1: pointer tags of a registry descriptor are read through sel_plugin_resolve (stub manifest + fake resolver).
+add_executable(plugin_resolve_paths_test host/plugin_resolve_paths_test.c)
+target_link_libraries(plugin_resolve_paths_test PRIVATE selecta_library selecta_core)
+target_include_directories(plugin_resolve_paths_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+add_test(NAME plugin-resolve-paths-unit COMMAND plugin_resolve_paths_test)
+set_tests_properties(plugin-resolve-paths-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_resolve_paths_ok")
 # The default integration follows the OS preference list and the registry ("none" when not built).
 add_executable(default_integration_test host/default_integration_test.c)
 target_link_libraries(default_integration_test PRIVATE selecta_registry)
