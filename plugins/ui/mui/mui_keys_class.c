@@ -30,6 +30,7 @@ struct Library* KeymapBase; /* opened with the window, closed at cleanup */
 
 static struct MUI_CustomClass* g_k_class;
 static struct MUI_EventHandlerNode g_k_ehn;
+static int g_k_esc_seen;
 static ULONG g_k_key_base, g_k_door_base, g_k_pane_base;
 static Object* g_k_search;
 static Object* g_k_list;
@@ -124,13 +125,20 @@ static ULONG __attribute__((used)) k_dispatch_c(struct IClass* cl, Object* obj, 
                 DoMethod(_app(obj), MUIM_Application_ReturnID, id);
                 return MUI_EventHandlerRC_Eat;
             }
-            if (code == 27u) { /* I1354: an unbound Esc reached MUI, which closed the main window = quit with no requester */
+            if (code == 27u) { /* I1354, I1359: MUI closes the main window on Esc even when eaten; the flag lets the main loop drop that Quit */
+                g_k_esc_seen = 1;
                 return MUI_EventHandlerRC_Eat;
             }
         }
         return 0;
     }
     return DoSuperMethodA(cl, obj, msg);
+}
+
+int mui_keys_esc_seen(void) {
+    int r = g_k_esc_seen;
+    g_k_esc_seen = 0;
+    return r;
 }
 
 void mui_keys_targets(Object* search, Object* list) {
