@@ -246,7 +246,12 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         aa_round_corners(&d->aa, rp, l, t, w, h, d->m.radius, d->aa.bg_rgb);
     }
     aa_round_fill(&d->aa, rp, l, t, w, h, d->m.radius, face);
-    aa_low_outline(&d->aa, rp, l, t, w, h, d->m.radius);
+    if (d->role == MUI_AA_ROLE_TAB && (state == MUI_AA_SELECTED || state == MUI_AA_PRESSED)) {
+        /* I1349: the active tab rounds only its top corners; the bottom half is square so it sits flush on the ACCENT underline */
+        aa_rect(&d->aa, rp, l, t + h / 2, l + w - 1, t + h - 1, face);
+    } else {
+        aa_low_outline(&d->aa, rp, l, t, w, h, d->m.radius);
+    }
     if (!d->icon_only) {
         int room = mui_aa_btn_text_room(w, d->m.pad_x, d->m.icon_px, d->m.icon_gap, icon != AABTN_NO_ICON);
         tw = aa_text_width(&d->aa, obj, d->caption);

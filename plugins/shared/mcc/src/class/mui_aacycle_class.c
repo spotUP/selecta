@@ -179,17 +179,25 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     tl[0].ti_Tag = UPA_List_Count, tl[0].ti_Data = (ULONG)d->n;
     tl[1].ti_Tag = UPA_List_Active, tl[1].ti_Data = (ULONG)d->active;
     tl[2].ti_Tag = UPA_List_RowHook, tl[2].ti_Data = (ULONG)(uintptr_t)&d->row_hook;
-    tl[3].ti_Tag = UPA_List_MaxRows, tl[3].ti_Data = 12;
-    tl[4].ti_Tag = TAG_DONE, tl[4].ti_Data = 0;
+    tl[3].ti_Tag = UPA_List_MaxRows, tl[3].ti_Data = (ULONG)(d->n < 12 ? d->n : 12); /* I1349: the list is exactly the item count, no empty row at the bottom */
+    tl[4].ti_Tag = UPA_List_KeysUnfocused, tl[4].ti_Data = (ULONG)TRUE; /* I1349: keys work with no active object, so MUI draws no white active frame */
+    tl[5].ti_Tag = TAG_DONE, tl[5].ti_Data = 0;
     group = UP_NewList(tl, &list); /* I667i: the AAList look (padding, row spacing, flat scroller) instead of the stock List */
     if (group == NULL) {
         return;
+    }
+    {
+        /* I1349: root = a themed card (Surface token, rounded, no MUI frame) around the list, not MUI's stock window frame and bevel */
+        Object* card = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Surface, MUIA_Group_Child, (ULONG)group, TAG_DONE);
+        if (card != NULL) {
+            group = card;
+        }
     }
     /* The popup opens on the cycle's own screen; without MUIA_Window_Screen MUI opens it on the default public screen and brings
      * that screen to the front, hiding Selecta's screen (Johan rig 2 2026-10-29). */
     d->popup = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Screen, (ULONG)_screen(obj), MUIA_Window_Borderless, TRUE, MUIA_Window_DragBar, FALSE, MUIA_Window_CloseGadget, FALSE,
                              MUIA_Window_SizeGadget, FALSE, MUIA_Window_DepthGadget, FALSE, MUIA_Window_LeftEdge, (ULONG)(win->LeftEdge + _left(obj)),
-                             MUIA_Window_TopEdge, (ULONG)(win->TopEdge + _bottom(obj) + 1), MUIA_Window_Width, (ULONG)_width(obj),
+                             MUIA_Window_TopEdge, (ULONG)(win->TopEdge + _bottom(obj) + 2), MUIA_Window_Width, (ULONG)_width(obj),
                              MUIA_Window_RootObject, (ULONG)group, TAG_DONE);
     if (d->popup == NULL) {
         MUI_DisposeObject(group);
@@ -202,7 +210,6 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     DoMethod(list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(d->popup, MUIM_Notify, MUIA_Window_Activate, FALSE, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     set(d->popup, MUIA_Window_Open, TRUE);
-    set(d->popup, MUIA_Window_ActiveObject, (ULONG)list); /* keys go to the list */
 }
 
 static ULONG aacycle_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEvent* msg) {

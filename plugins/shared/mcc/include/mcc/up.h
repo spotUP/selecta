@@ -111,6 +111,7 @@ enum { UPV_Text_Align_Left, UPV_Text_Align_Centre, UPV_Text_Align_Right };
 #define UPA_List_Title UP_TAG(UP_CLS_LIST, 0x0A)    /* I BOOL: a title row above the rows (the cell hook is asked for row -1) */
 #define UPA_List_DoublePick UP_TAG(UP_CLS_LIST, 0x0B) /* I BOOL: UPA_List_Picked only on a double click or Return */
 #define UPA_List_NoSelect UP_TAG(UP_CLS_LIST, 0x0C) /* I BOOL: no hover, no selection, wheel only */
+#define UPA_List_KeysUnfocused UP_TAG(UP_CLS_LIST, 0x0D) /* I BOOL: Up/Down/Return act while no object is active (popup list; MUI draws a white frame round an active object) */
 /* UPM_List_GetRow (I713): the read-back method for tools that drive the window from outside. The caller fills row and text/cap;
  * the method returns TRUE when the row exists and sets: text = the cell texts joined by two spaces (truncated to cap), x/y/w/h =
  * the row's box in window coordinates (all 0 when scrolled out of view or not shown), selected = 1 on the active row. */

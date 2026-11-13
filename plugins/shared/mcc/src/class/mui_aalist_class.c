@@ -30,7 +30,7 @@ typedef struct aalist_data {
     struct Hook *row, *cell; /* UPA_List_RowHook, UPA_List_CellHook (owned by the caller) */
     UP_ListColumns cols;
     long playing;
-    int title, double_pick, no_select;
+    int title, double_pick, no_select, keys_unfocused;
     ULONG last_s, last_m;
     long last_row;
     int max_rows;
@@ -280,7 +280,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
         }
         return 0;
     }
-    if (d->no_select || (Object*)act != obj) { /* I1165: Up/Down act on the active object only, not on the one under the pointer */
+    if (d->no_select || ((Object*)act != obj && !(d->keys_unfocused && act == 0))) { /* I1165: Up/Down act on the active object only, not on the one under the pointer */
         return 0;
     }
     switch (im->Code) {
@@ -435,6 +435,7 @@ static ULONG aalist_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     d->title = (int)GetTagData(UPA_List_Title, FALSE, t);
     d->double_pick = (int)GetTagData(UPA_List_DoublePick, FALSE, t);
     d->no_select = no_select;
+    d->keys_unfocused = (int)GetTagData(UPA_List_KeysUnfocused, FALSE, t);
     return (ULONG)obj;
 }
 
