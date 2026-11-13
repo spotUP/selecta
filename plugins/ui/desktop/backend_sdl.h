@@ -19,6 +19,7 @@ void desk_sdl_default_size(int32_t* w, int32_t* h);
 /* Window of w x h pixels; NULL (with a message on stderr) when SDL or the video driver fails. */
 desk_sdl* desk_sdl_open(int32_t w, int32_t h);
 void desk_sdl_close(desk_sdl* b);
+void desk_sdl_test_ready(desk_sdl* b); /* arms SELECTA_SDL_TEST_TIMED after the first frame when SELECTA_SDL_TEST_READY is set (I1164a) */
 /* True for the offscreen and dummy drivers: no human can close or resize the window. */
 int desk_sdl_headless(const desk_sdl* b);
 /* The integer pixel scale 1 to 3 of the window: its pixel density rounded up (DUI-P2-8). */

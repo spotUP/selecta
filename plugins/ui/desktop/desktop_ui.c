@@ -293,6 +293,8 @@ typedef struct desk {
     uint32_t pls_briefed; /* I1198: 1 once the briefs answer filled pls_title/pls_meta of the current song set */
     uint32_t held_keys[16], held_n, held_replayed; /* I1290: list keys that arrived while the opened page had no rows yet, replayed when it has; keys replayed */
     uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
+    uint32_t fr_txt[4];      /* I1164a: this frame's text draws inside the sidebar, main, detail and player regions (--stats only) */
+    uint32_t fr_pan;         /* I1164a: bit per region whose panel this frame painted (1 sidebar, 2 main, 4 detail, 8 player) */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
     uint32_t local_icon_side, local_icon_head; /* I938: the icon the Local Files sidebar tile and the Local Files page header last drew (dump line localicon) */
     char hdr_count[64];      /* I910b: the count line the header drew last (the per-frame trace) */
@@ -752,6 +754,8 @@ static void desk_frame_begin(desk* d) {
         d->frame_t0 = ch->clock_ms(ch);
         d->frame_open = 1;
         d->frame_flow = 0;
+        memset(d->fr_txt, 0, sizeof d->fr_txt);
+        d->fr_pan = 0u;
         if (d->report && d->canvas != NULL) {
             memcpy(d->frame_prof0, d->canvas->prof_ms, sizeof d->frame_prof0);
         }
@@ -794,6 +798,7 @@ static uint32_t desk_flush(desk* d) {
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL) {
         desk_sdl_present(d->sdl, d->canvas);
+        desk_sdl_test_ready(d->sdl);
     }
 #endif
     {
@@ -811,9 +816,9 @@ static uint32_t desk_flush(desk* d) {
                     fprintf(stderr, " prof%u=%u", (unsigned)k, (unsigned)pk);
                 }
             }
-            fprintf(stderr, " page=%u colkind=%u colkey=[%.40s] pls_name=[%.40s] pls_n=%u pls_stale=%u col_ready=%d hdr_count=[%s]", (unsigned)d->page,
+            fprintf(stderr, " page=%u colkind=%u colkey=[%.40s] pls_name=[%.40s] pls_n=%u pls_stale=%u col_ready=%d hdr_count=[%s] pan=%u txt_side=%u txt_main=%u txt_detail=%u txt_player=%u", (unsigned)d->page,
                     (unsigned)d->col_kind, d->col_key, d->pls_name, (unsigned)d->pls_n, (unsigned)d->pls_stale, d->col_ready,
-                    d->hdr_count); /* I910b: what page this frame presented */
+                    d->hdr_count, (unsigned)d->fr_pan, (unsigned)d->fr_txt[0], (unsigned)d->fr_txt[1], (unsigned)d->fr_txt[2], (unsigned)d->fr_txt[3]); /* I910b: what page this frame presented; I1164a: the column oracle */
             fputc('\n', stderr);
         }
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
@@ -1041,7 +1046,27 @@ static const sel_gui_atlas* desk_text_atlas(desk* d, int semibold, int px, int32
     return at;
 }
 
+static const char* const k_oracle_region[4] = { "sidebar", "main", "detail", "player" };
+/* I1164a: the per-frame column oracle. region_rect of a region the layout lacks is empty, so it never matches. */
+static int oracle_region_of(const desk* d, sel_gui_rect box) {
+    int32_t cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    uint32_t k;
+    for (k = 0; k < 4u; k++) {
+        sel_gui_rect r = region_rect(d, k_oracle_region[k]);
+        if (r.w > 0 && r.h > 0 && cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h) {
+            return (int)k;
+        }
+    }
+    return -1;
+}
+
 static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+    if (d->report && s != NULL && *s != '\0') {
+        int k = oracle_region_of(d, box);
+        if (k >= 0) {
+            d->fr_txt[k]++;
+        }
+    }
     const sel_gui_atlas* at = desk_text_atlas(d, semibold, px, box.h);
     if (at != NULL) {
         sel_gui_clip_push(d->canvas, box);
@@ -1314,6 +1339,14 @@ static sel_gui_rect draw_panel(desk* d, const char* name) {
                            ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
         sel_gui_dirty_add(d->canvas, r);
         d->home_parts |= HP_PANELS;
+        if (d->report) {
+            uint32_t k;
+            for (k = 0; k < 4u; k++) {
+                if (strcmp(name, k_oracle_region[k]) == 0) {
+                    d->fr_pan |= 1u << k;
+                }
+            }
+        }
     }
     return pr;
 }
