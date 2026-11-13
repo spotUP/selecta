@@ -601,7 +601,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
 #define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
 #define CTL_NAME_STR 0x280EL   /* I1337b: the name prompt's String (Rename, New Playlist, New Folder, Song Information notes) */
-#define CTL_WIN_CLOSE 0x280FL /* I1366: the close button of the borderless main window (no gadget there); quits at once */
+#define CTL_WIN_CLOSE 0x280FL /* I1366: the close button of the borderless main window (no gadget there); asks "Quit Selecta?" like Esc */
 #define CTL_DLG_CLOSE 0x2809L /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
@@ -1571,8 +1571,8 @@ static Object* mui_topbar_group(mui_state* s) {
 }
 
 /* I1366: the borderless main window (D-M4-3) has no close gadget, so a Close button sits in the upper left corner, left of the top bar.
- * One row with the top bar on RTG; on the bitmap tier the top bar is hidden and the row holds the button alone. A press quits at once
- * (mui_io_new_input maps CTL_WIN_CLOSE to MUIV_Application_ReturnID_Quit, like the gadget); only Esc asks. */
+ * One row with the top bar on RTG; on the bitmap tier the top bar is hidden and the row holds the button alone. A press asks "Quit Selecta?"
+ * through the Esc requester (mui_io_new_input). */
 static Object* mui_close_row(Object* top) {
     Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* b = mui_make_button_i("Close", "Close", "close", NULL, CTL_WIN_CLOSE, 0, 1, MUI_AA_ROLE_NORMAL);
@@ -4373,17 +4373,18 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     LONG id;
     (void)mui_keys_esc_seen();
     id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
-    if (mui_keys_esc_seen() && id == (LONG)MUIV_Application_ReturnID_Quit) {
+    if ((mui_keys_esc_seen() && id == (LONG)MUIV_Application_ReturnID_Quit) || id == CTL_WIN_CLOSE) {
         /* I1359: the Quit is MUI's Esc-to-CloseRequest on the main window. Esc asks before it quits, as the desktop UI does
-         * (I623 dlg_open_quit: "Quit Selecta?"). Cancel re-arms the close notify and drops the Quit. */
+         * (I623 dlg_open_quit: "Quit Selecta?"). Cancel re-arms the close notify and drops the Quit.
+         * I1366: the Close button (CTL_WIN_CLOSE) takes the same path; Quit turns its id into the application Quit. */
+        LONG was_close = (id == CTL_WIN_CLOSE);
         mui_state* s = (mui_state*)ctx;
         if (MUI_Request(s->app, s->win, 0, "Selecta", "*Quit|Cancel", "%s", (ULONG) "Quit Selecta?") != 1) {
             SetAttrs(s->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE);
             id = 0;
+        } else if (was_close) {
+            id = (LONG)MUIV_Application_ReturnID_Quit;
         }
-    }
-    if (id == CTL_WIN_CLOSE) {
-        id = (LONG)MUIV_Application_ReturnID_Quit; /* I1366: the Close button quits at once, no requester */
     }
     *sigs = (uint32_t)got;
     mui_check_resize((mui_state*)ctx);
