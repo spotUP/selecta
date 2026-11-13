@@ -46,13 +46,17 @@ static void keyrows_build(void) {
     }
     txt_bindings_default(&def);
     {
-        char key[24]; /* I1337: ':' opens the command line popup (the desktop @command binding) */
-        mui_key_row* r = &g_keyrows[g_keyrow_n];
-        if (g_keyrow_n < KEYROW_MAX && txt_bindings_key_for(&def, "@command", key, sizeof key) != NULL && txt_key_parse(key, &r->code, &r->mods)) {
-            r->kind = MUI_KEYROW_OVERLAY;
-            r->id = "@command";
-            r->arg = 0;
-            g_keyrow_n++;
+        static const char* const overlay[3] = {"@command", "@palette", "@help"}; /* I1337: the desktop overlay keys: ':' command line, C-p palette, '?' help */
+        uint32_t o;
+        for (o = 0; o < 3u && g_keyrow_n < KEYROW_MAX; o++) {
+            char key[24];
+            mui_key_row* r = &g_keyrows[g_keyrow_n];
+            if (txt_bindings_key_for(&def, overlay[o], key, sizeof key) != NULL && txt_key_parse(key, &r->code, &r->mods)) {
+                r->kind = MUI_KEYROW_OVERLAY;
+                r->id = overlay[o];
+                r->arg = 0;
+                g_keyrow_n++;
+            }
         }
     }
     for (i = 0; i < (uint32_t)SEL_UIM_PAGE_KEY_COUNT && g_keyrow_n < KEYROW_MAX; i++) {

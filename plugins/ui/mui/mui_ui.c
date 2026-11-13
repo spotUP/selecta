@@ -209,7 +209,11 @@ typedef struct mui_state {
     Object* str_search;             /* MUI-P4-3 */
     Object* keys;                   /* I1171: Selecta_Keys, the window key handler */
     Object* str_cmd;                /* MUI-P4-13; I1337: lives in cmd_win, built on the first ':' */
-    Object* cmd_win;                /* I1337: the command line popup (the desktop OV_CMDLINE) */
+    Object* name_win;               /* I1337b: the name prompt window */
+    Object* str_name;
+    uint32_t name_for;              /* the P4 action waiting for the name */
+    int name_go;                    /* set while the prompt's Return replays the action */
+    Object* cmd_win;              /* I1337: the command line popup (the desktop OV_CMDLINE) */
     Object* cyc_rating;             /* MUI-P4-7 */
     Object* cyc_subsong;            /* MUI-P4-9 */
     Object* sub_grp;                /* I973c: the bar's subsong group (label + minus + plus), shown only when the song has subsongs */
@@ -596,7 +600,8 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_PAL_BTN 0x2806L    /* I798 (O1): the Commands button opening the palette window */
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
 #define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
-#define CTL_DLG_CLOSE 0x2809L  /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
+#define CTL_NAME_STR 0x280EL   /* I1337b: the name prompt's String (Rename, New Playlist, New Folder, Song Information notes) */
+#define CTL_DLG_CLOSE 0x2809L /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
 #define CTL_SHELF_ALL_BASE 0x2A10L  /* I795 (P1): Show all of a shelf slot */
@@ -1466,6 +1471,13 @@ static const char* mui_search_hint(void) {
 }
 
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
+/* I1337b: a field is a wrapper group; the window focus lives on its inner String (UPA_Field_String), so activating the wrapper does nothing. */
+static void mui_field_activate(Object* win, Object* field) {
+    ULONG str = 0;
+    GetAttr(UPA_Field_String, field, &str);
+    set(win, MUIA_Window_ActiveObject, str != 0 ? str : (ULONG)field);
+}
+
 static Object* mui_make_string(LONG id, int max_w, const char* placeholder) {
     /* I667h (design 3.4): every string gadget is a Selecta_AAField (mui_aafield_class.c). */
     mui_aafield_spec sp;
@@ -3221,7 +3233,33 @@ static void mui_cmd_popup_show(mui_state* s) {
         set(s->str_cmd, MUIA_String_Contents, (ULONG) "");
     }
     set(s->cmd_win, MUIA_Window_Open, TRUE);
-    set(s->cmd_win, MUIA_Window_ActiveObject, s->str_cmd);
+    mui_field_activate(s->cmd_win, s->str_cmd);
+}
+
+/* I1337b: the name prompt for Rename, New Playlist, New Folder and the Song Information notes (not read from the command line).
+ * Return replays the waiting P4 action with the typed name (name_go). */
+static void mui_name_prompt(mui_state* s, uint32_t which) {
+    if (s->name_win == NULL) {
+        Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        s->str_name = mui_make_string(CTL_NAME_STR, 0, "Name");
+        if (g == NULL || s->str_name == NULL) {
+            s->str_name = NULL;
+            return;
+        }
+        DoMethod(g, OM_ADDMEMBER, s->str_name);
+        s->name_win = mui_dialog_window("Selecta Name", 0x4E414D45UL, g);
+        if (s->name_win == NULL) {
+            s->str_name = NULL;
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->name_win);
+        mui_close_on_request(s->name_win);
+    } else {
+        set(s->str_name, MUIA_String_Contents, (ULONG) "");
+    }
+    s->name_for = which;
+    set(s->name_win, MUIA_Window_Open, TRUE);
+    mui_field_activate(s->name_win, s->str_name);
 }
 
 /* I798 (O1): the command palette window: a String over an AAList of the shared txt_palette matches (the Mac palette rows). */
@@ -3249,7 +3287,7 @@ static void mui_palette_show(mui_state* s) {
         SetAttrs(s->pal_list, UPA_List_Count, (ULONG)s->pal.count, UPA_List_Active, (ULONG)0, TAG_DONE);
     }
     set(s->pal_win, MUIA_Window_Open, TRUE);
-    set(s->pal_win, MUIA_Window_ActiveObject, s->pal_str);
+    mui_field_activate(s->pal_win, s->pal_str);
 }
 
 /* Live filter: the String text changed, so narrow the shared palette and redraw the list (called from mui_refresh). */
@@ -3583,7 +3621,14 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_PRENAME:
     case P4_PDELETE:
         if (row != NULL && row->kind == (uint32_t)SEL_ROW_PLAYLIST) {
-            mui_str_utf8(s->str_cmd, text, sizeof text);
+            text[0] = '\0';
+            if (which == P4_PRENAME) {
+                if (!s->name_go) {
+                    mui_name_prompt(s, which); /* I1337b: the new name is asked, not read from the command line */
+                    break;
+                }
+                mui_str_utf8(s->str_name, text, sizeof text);
+            }
             s->sm_playlist = row->id;
             if (which == P4_POPEN && mui_playlist_page(s, row, row->text != NULL ? row->text : text)) {
                 mui_p4_note(s, which, "COLLECTION_OPEN");
@@ -3595,14 +3640,22 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_PNEW:
         /* The name comes from the command field (as Rename does); empty gives the default "New Playlist" (mui_viewbtn_fire). */
-        mui_str_utf8(s->str_cmd, text, sizeof text);
+        if (!s->name_go) {
+            mui_name_prompt(s, which); /* I1337b */
+            break;
+        }
+        mui_str_utf8(s->str_name, text, sizeof text);
         if (mui_viewbtn_fire(1, text, mui_pl_target_folder(view), mui_p8_send, s)) {
             mui_p4_note(s, which, "New Playlist");
         }
         break;
     case P4_PFOLDER:
         /* I1177: the desktop's New Folder (FOLDER_ADD), into the same target folder as New Playlist. */
-        mui_str_utf8(s->str_cmd, text, sizeof text);
+        if (!s->name_go) {
+            mui_name_prompt(s, which); /* I1337b */
+            break;
+        }
+        mui_str_utf8(s->str_name, text, sizeof text);
         if (mui_viewbtn_fire(0, text, mui_pl_target_folder(view), mui_p8_send, s)) {
             mui_p4_note(s, which, "New Folder");
         }
@@ -3611,7 +3664,14 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_SISKIP:
     case P4_SINOTE:
         /* I1178: button 2 + k of the shared view buttons = sel_uim_flag_line(k): FLAG wrong, FLAG skip, NOTE (the desktop si_button_label buttons). */
-        mui_str_utf8(s->str_cmd, text, sizeof text);
+        text[0] = '\0';
+        if (which == P4_SINOTE) {
+            if (!s->name_go) {
+                mui_name_prompt(s, which); /* I1337b: the note text is asked; Wrong and Skip carry no text */
+                break;
+            }
+            mui_str_utf8(s->str_name, text, sizeof text);
+        }
         if (mui_viewbtn_fire(2u + (which - P4_SIWRONG), text, 0, mui_p8_send, s)) {
             mui_p4_note(s, which, mui_viewbtn_label(2u + (which - P4_SIWRONG)));
         }
@@ -3855,6 +3915,14 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_palette_sync(s);
         GetAttr(UPA_List_Active, s->pal_list, &active);
         mui_palette_choose(s, (long)active);
+    } else if (id == CTL_NAME_STR) {
+        uint32_t which = s->name_for;
+        if (s->name_win != NULL) {
+            s->name_go = 1; /* I1337b: Return replays the waiting action with the typed name, then the prompt closes */
+            mui_p4_fire(s, which);
+            s->name_go = 0;
+            set(s->name_win, MUIA_Window_Open, FALSE);
+        }
     } else if (id == CTL_NP_TOGGLE) {
         uint32_t hidden = mui_np_toggle(&s->lay);
         mui_apply_layout(s);
@@ -3924,7 +3992,13 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (kr != NULL && kr->kind == MUI_KEYROW_ACTION) {
             mui_action_fire(kr->id, mui_p8_send, s);
         } else if (kr != NULL && kr->kind == MUI_KEYROW_OVERLAY) {
-            mui_cmd_popup_show(s); /* I1337: ':' (@command) */
+            if (strcmp(kr->id, "@palette") == 0) {
+                mui_palette_show(s); /* I1337: C-p */
+            } else if (strcmp(kr->id, "@help") == 0) {
+                mui_help_open(s); /* I1337: ? */
+            } else {
+                mui_cmd_popup_show(s); /* I1337: ':' (@command) */
+            }
         }
     } else if (id >= CTL_SM_BASE && id < CTL_SM_BASE + (LONG)SEL_UIM_SONG_MENU_ITEMS) {
         mui_song_menu_fire(s, (uint32_t)(id - CTL_SM_BASE));
