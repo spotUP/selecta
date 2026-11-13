@@ -798,6 +798,7 @@ static uint32_t desk_flush(desk* d) {
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL) {
         desk_sdl_present(d->sdl, d->canvas);
+        desk_sdl_test_ready(d->sdl);
     }
 #endif
     {
