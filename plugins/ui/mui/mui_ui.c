@@ -4264,6 +4264,10 @@ static uint32_t mui_io_wait(void* ctx, uint32_t mask, uint32_t timeout_ms) {
         AbortIO((struct IORequest*)s->treq);
     }
     WaitIO((struct IORequest*)s->treq);
+    /* An aborted request is often already replied when WaitIO runs, so WaitIO never Waits and the port signal stays
+     * set. The next Wait then returned at once, aborted its fresh request and left the bit set again: every 20 ms turn
+     * shrank to about 1 ms once the output stopped pacing the loop (I1340: ~1900 false timeouts per 2 s). */
+    SetSignal(0, 1UL << s->tport->mp_SigBit);
     return (uint32_t)(got & mask);
 }
 

@@ -34,7 +34,8 @@ static int sh_finished(void* ctx, uint32_t idx) {
     return 0;
 }
 
-static const sel_ahi_backend g_be = {"ahi-shadow", "AHI shadow", sh_open, sh_close, sh_submit, sh_wait, sh_finished};
+static const sel_ahi_backend g_be = {"ahi-shadow", "AHI shadow", sh_open, sh_close, sh_submit, sh_wait, sh_finished,
+                                     NULL,         NULL,         NULL}; /* no feeder task: the pump pulls (I1340) */
 static sel_tag g_hooks[12];
 static sel_tag g_desc[5];
 

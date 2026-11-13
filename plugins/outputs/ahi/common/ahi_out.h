@@ -22,10 +22,17 @@ typedef struct sel_ahi_backend {
     void (*wait)(void* ctx, uint32_t idx);
     /* 1 when buffer `idx` was submitted and has finished playing. */
     int (*finished)(void* ctx, uint32_t idx);
+    /* Optional feeder task (I1340); all three NULL keeps the pulls on the caller's pump. task_start runs body(arg, task)
+     * on a task of its own, one priority above the caller, and returns once the body called task_ready (NULL when no
+     * task could start). task_join waits until the body has returned and frees the handle. With a feeder the output
+     * opens the device, pulls, submits and waits on that task, so the UI task never blocks on the device. */
+    void* (*task_start)(const sel_host* host, void (*body)(void* arg, void* task), void* arg);
+    void (*task_ready)(void* task);
+    void (*task_join)(const sel_host* host, void* task);
 } sel_ahi_backend;
 
 void* sel_ahi_out_open(const sel_ahi_backend* be, const sel_host* host, uint32_t rate, uint32_t channels);
-/* Fills `hooks` (12 tags) and `desc` (5 tags) for a plugin entry. */
+/* Fills `hooks` (12 tags; a backend with a feeder task adds SEL_OUT_UNPACED, I1340) and `desc` (5 tags) for a plugin entry. */
 const sel_tag* sel_ahi_out_describe(const sel_ahi_backend* be, sel_out_open_fn open, sel_tag* hooks, sel_tag* desc);
 
 #endif

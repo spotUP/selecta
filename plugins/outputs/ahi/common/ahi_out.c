@@ -18,8 +18,34 @@ typedef struct ahi_out {
     void* pull_ctx;
     uint32_t decode_ms;
     uint32_t wait_ms;
+    void* task;        /* feeder task handle (I1340), NULL when the caller's pump pulls */
+    volatile int stop; /* the UI task asks the feeder to end */
     sel_tag stats[8];
 } ahi_out;
+
+static uint32_t fill(ahi_out* s, uint32_t frames);
+static void submit(ahi_out* s, uint32_t frames);
+static void drain(ahi_out* s);
+
+/* Feeder task body (I1340): mp3 decode plus the WaitIO for a free buffer used to sit inside the UI task's pump and
+ * held the MUI loop for most of every turn. The device opens here, so its reply port signals this task. */
+static void feeder_body(void* arg, void* task) {
+    ahi_out* s = (ahi_out*)arg;
+    s->dev = s->be->open(s->host, s->rate, s->buf_frames);
+    s->be->task_ready(task);
+    if (s->dev == NULL) {
+        return;
+    }
+    while (!s->stop) {
+        uint32_t bufs = s->bufs;
+        (void)fill(s, s->buf_frames - s->have);
+        if (s->bufs == bufs) { /* no source yet or a short pull: pad with silence so the device keeps its clock */
+            memset(s->pcm[s->cur] + s->have * 2u, 0, (s->buf_frames - s->have) * 2u * sizeof(int16_t));
+            submit(s, s->buf_frames);
+        }
+    }
+    drain(s);
+}
 
 void* sel_ahi_out_open(const sel_ahi_backend* be, const sel_host* host, uint32_t rate, uint32_t channels) {
     ahi_out* s;
@@ -39,7 +65,16 @@ void* sel_ahi_out_open(const sel_ahi_backend* be, const sel_host* host, uint32_t
     s->buf_frames = sel_ahi_pick_buffer(cpu, host->config_get != NULL ? host->config_get(host, "output.buffer", "0") : "0");
     s->pcm[0] = (int16_t*)host->mem_alloc(host, s->buf_frames * 4u * sizeof(int16_t), SEL_MEM_FAST);
     s->pcm[1] = s->pcm[0] != NULL ? s->pcm[0] + s->buf_frames * 2u : NULL;
-    s->dev = s->pcm[0] != NULL ? be->open(host, s->rate, s->buf_frames) : NULL;
+    if (s->pcm[0] != NULL && be->task_start != NULL) {
+        s->task = be->task_start(host, feeder_body, s); /* returns after feeder_body opened (or failed to open) the device */
+        if (s->task != NULL && s->dev == NULL) {
+            be->task_join(host, s->task);
+            s->task = NULL;
+        }
+    }
+    if (s->task == NULL) { /* no feeder: the caller's pump pulls and waits, as before I1340 */
+        s->dev = s->pcm[0] != NULL ? be->open(host, s->rate, s->buf_frames) : NULL;
+    }
     if (s->dev == NULL) {
         if (s->pcm[0] != NULL) {
             host->mem_free(host, s->pcm[0]);
@@ -66,17 +101,27 @@ static void submit(ahi_out* s, uint32_t frames) {
     }
 }
 
+/* Plays out what is queued and closes the device; runs on the task that opened it. */
+static void drain(ahi_out* s) {
+    if (s->have > 0) { /* flush the partial final buffer, padded with silence */
+        memset(s->pcm[s->cur] + s->have * 2u, 0, (s->buf_frames - s->have) * 2u * sizeof(int16_t));
+        submit(s, s->have);
+    }
+    s->be->wait(s->dev, 0);
+    s->be->wait(s->dev, 1);
+    s->be->close(s->host, s->dev);
+}
+
 static void out_close(void* state) {
     ahi_out* s = (ahi_out*)state;
     if (s) {
         const sel_host* host = s->host;
-        if (s->have > 0) { /* flush the partial final buffer, padded with silence */
-            memset(s->pcm[s->cur] + s->have * 2u, 0, (s->buf_frames - s->have) * 2u * sizeof(int16_t));
-            submit(s, s->have);
+        if (s->task != NULL) { /* the feeder drains and closes the device itself (I1340) */
+            s->stop = 1;
+            s->be->task_join(host, s->task);
+        } else {
+            drain(s);
         }
-        s->be->wait(s->dev, 0);
-        s->be->wait(s->dev, 1);
-        s->be->close(host, s->dev);
         host->mem_free(host, s->pcm[0]);
         host->mem_free(host, s);
     }
@@ -84,12 +129,12 @@ static void out_close(void* state) {
 
 static void out_set_source(void* state, sel_pcm_pull fn, void* ctx) {
     ahi_out* s = (ahi_out*)state;
+    s->pull_ctx = ctx; /* context first: a running feeder reads the pull pointer, then the context */
     s->pull = fn;
-    s->pull_ctx = ctx;
 }
 
-static uint32_t out_pump(void* state, uint32_t frames) {
-    ahi_out* s = (ahi_out*)state;
+/* Pulls up to `frames` into the buffers, submitting each full one (which blocks until the next buffer is free). */
+static uint32_t fill(ahi_out* s, uint32_t frames) {
     uint32_t done = 0;
     if (s->pull == NULL) {
         return 0;
@@ -112,6 +157,11 @@ static uint32_t out_pump(void* state, uint32_t frames) {
         }
     }
     return done;
+}
+
+static uint32_t out_pump(void* state, uint32_t frames) {
+    ahi_out* s = (ahi_out*)state;
+    return s->task != NULL ? frames : fill(s, frames); /* with a feeder the UI turn never pulls or waits (I1340) */
 }
 
 static const sel_tag* out_stats(void* state) {
@@ -157,6 +207,9 @@ const sel_tag* sel_ahi_out_describe(const sel_ahi_backend* be, sel_out_open_fn o
     set(&hooks[n++], SEL_OUT_PUMP, SEL_TAG_FN(out_pump));
     set(&hooks[n++], SEL_OUT_STATS, SEL_TAG_FN(out_stats));
     set(&hooks[n++], SEL_OUT_RATE_FOR, SEL_TAG_FN(out_rate_for));
+    if (be->task_start != NULL) { /* the feeder paces itself; the UI loop paces on its own wait, like Paula (I684c) */
+        set(&hooks[n++], SEL_OUT_UNPACED, 1);
+    }
     set(&hooks[n++], SEL_TAG_END, 0);
 
     set(&desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);
