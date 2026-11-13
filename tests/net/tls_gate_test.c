@@ -1,7 +1,7 @@
 /* I899g: TLS backend choice and the missing-library fallback.
  *   tls_gate_test mirrors      host build (selecta_library): backend mbedtls; with TLS forced off the https mirrors are
  *                              skipped (http/ftp list only), the DEViLBOX base is http and the install note is set.
- *   tls_gate_test amissl <rc>  tls_gate.c compiled with SEL_TLS_AMISSL and the stub sel_amissl_open below returning rc
+ *   tls_gate_test amissl <rc>  tls_gate.c compiled with SEL_TLS_AMISSL and the stub sel_amissl_probe below returning rc
  *                              (0 opened, 1 library missing or old, 2 other failure): the probe runs once and the note
  *                              appears only for rc 1. */
 #include "tls.h"
@@ -12,7 +12,7 @@
 
 #ifdef GATE_AMISSL_STUB
 static int g_rc, g_calls;
-int sel_amissl_open(void) {
+int sel_amissl_probe(void) {
     g_calls++;
     return g_rc;
 }

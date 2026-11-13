@@ -9,15 +9,16 @@
 static int g_forced = -1;
 
 #ifdef SEL_TLS_AMISSL
-/* tls_amissl.c: 0 opened, 1 amisslmaster.library missing or too old, 2 any other failure (no TCP/IP stack, bad open). */
-int sel_amissl_open(void);
+/* tls_amissl.c: 0 library present and new enough, 1 amisslmaster.library missing or too old. Opens nothing else, so
+ * the startup answer never touches bsdsocket (I1344e); the full sel_amissl_open runs on the first real TLS connect. */
+int sel_amissl_probe(void);
 
 static int g_state;      /* 0 not probed, 1 open, -1 failed */
 static int g_open_rc;
 
 static void probe(void) {
     if (g_state == 0) {
-        g_open_rc = sel_amissl_open();
+        g_open_rc = sel_amissl_probe();
         g_state = g_open_rc == 0 ? 1 : -1;
     }
 }

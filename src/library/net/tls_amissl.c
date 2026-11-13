@@ -1,5 +1,5 @@
 /* TLS over AmiSSL 5 (OpenSSL 3 API behind amisslmaster.library), Amiga builds only (I899g). The library is the user's
- * install (AmiSSL v5), opened at runtime: when it is missing or older than v5 sel_amissl_open answers 1, sel_tls_available
+ * install (AmiSSL v5), opened at runtime: when it is missing or older than v5 sel_amissl_probe answers 1 (the full sel_amissl_open runs on the first connect), sel_tls_available
  * (tls_gate.c) turns 0 and https mirrors are skipped with a one-line hint. Open/init sequence follows
  * vtcon's claude/tls_amissl.c (OpenAmiSSLTags, AmiSSL_ErrNoPtr, SSL_CTX_set_default_verify_paths against AmiSSL:Certs).
  *
@@ -60,11 +60,28 @@ static unsigned remaining_ms(unsigned long deadline) {
     return now >= deadline ? 0u : (unsigned)(deadline - now);
 }
 
+/* Cheap startup probe (I1344e): amisslmaster.library present and at least the v5 the code needs. Opens no bsdsocket and
+ * never calls OpenAmiSSLTags, so cold start cannot hang on the TCP/IP stack. 0 usable, 1 missing or too old. */
+int sel_amissl_probe(void) {
+    struct Library* lib = OpenLibrary((STRPTR) "amisslmaster.library", AMISSLMASTER_MIN_VERSION);
+    if (lib == NULL) {
+        return 1;
+    }
+    CloseLibrary(lib);
+    return 0;
+}
+
+static int g_open_failed; /* a failed full open is final: later connects answer unavailable without retrying */
+
 int sel_amissl_open(void) {
     struct Library* sb;
     if (g_opened) {
         return 0;
     }
+    if (g_open_failed) {
+        return 2;
+    }
+    g_open_failed = 1;
     sb = sel_net_amiga_socketbase();
     if (sb == NULL) {
         return 2; /* no TCP/IP stack: nothing to secure, and not a missing-AmiSSL case */
@@ -81,6 +98,7 @@ int sel_amissl_open(void) {
         return 1; /* AmiSSL older than the v5 API */
     }
     g_opened = 1;
+    g_open_failed = 0;
     return 0;
 }
 
@@ -186,7 +204,7 @@ int sel_tls_open(int h, const char* host, unsigned timeout_ms) {
     tls_slot* s;
     BIO* bio;
     int rc;
-    if (!sel_tls_available()) {
+    if (!sel_tls_available() || sel_amissl_open() != 0) { /* the full AmiSSL open happens here, on the first real connect */
         return SEL_TLS_E_UNAVAILABLE;
     }
     if (h < 0 || h >= SEL_NET_MAX_CONN || tls_init_once() != 0 || !seed_rand()) {
