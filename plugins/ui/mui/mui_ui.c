@@ -2277,7 +2277,14 @@ static Object* mui_main_pages(mui_state* s, Object* np_page) {
         DoMethod(viz_g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* I1307: unbounded page height */
     }
     DoMethod(trk_g, OM_ADDMEMBER, rows != NULL ? rows : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
-    DoMethod(pages, OM_ADDMEMBER, list_g);
+    /* I1358: the list page stacks the toolbar, crumb row, state line, mode, scope and facet rows and the list, and each row shows once data
+     * arrives (crumb row, facet row): its minimum grew 179 -> 207 -> 227 after the window opened, so on a 640x256 AGA screen the root minimum
+     * passed the screen and MUI 3.8 closed the window. The ladder only checks the minimum at open time. The page scrolls on a compact
+     * screen (mui_scroll_page, as the Now Playing page, I1350), so no later row can raise the window minimum. */
+    {
+        Object* list_wrap = mui_scroll_page(list_g, 0);
+        DoMethod(pages, OM_ADDMEMBER, list_wrap != NULL ? list_wrap : list_g);
+    }
     DoMethod(pages, OM_ADDMEMBER, viz_g);
     DoMethod(pages, OM_ADDMEMBER, trk_g);
     /* I960a/c: page MUI_PANE_NOWPLAYING is the compact Now Playing group; the full class keeps an empty page so the page index exists. */
