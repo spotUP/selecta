@@ -12784,8 +12784,8 @@ static void draw_nowplaying(desk* d) {
     snprintf(d->np_ctx_shown, sizeof d->np_ctx_shown, "%s", ctx);
     /* The artwork spans the full content width between the two insets and stays square, so its height follows the panel
      * width (I443); the text lines below share the same insets (I404). */
-    asz = pn.w; /* I619: the artwork is full bleed, the whole panel width, and fades into the panel colour at its bottom */
-    ar = rect_of(pn.x, hdr.y + hdr.h + sp, asz, asz);
+    asz = side; /* I1377: the artwork sits inset by the spacing token on both sides like the text lines, and fades into the panel colour at its bottom */
+    ar = rect_of(pn.x + sp, hdr.y + hdr.h + sp, asz, asz);
     d->np_art = ar;
     d->np_panel = pn;
     if (cover_draw(d, ar, st->song.path, 0)) { /* I692: the full-bleed cover; np_art_average below reads the pixels it drew */
