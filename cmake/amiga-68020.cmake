@@ -19,6 +19,18 @@ if(NOT EXISTS "${AMIGA_GCC_ROOT}/bin/m68k-amigaos-gcc")
   message(FATAL_ERROR "m68k-amigaos-gcc not found under $AMIGA_GCC_ROOT, ~/opt/amiga or /opt/amiga; set AMIGA_GCC_ROOT")
 endif()
 
+# I1347: the MUI UI plugin needs the MUI 3.8 SDK headers and libmui.a, which bebbo's amiga-gcc installs only when it was built
+# with the MUI SDK (bebbo/amiga-gcc: `make all SDK=mui`, or `make sdk=mui` after the first install). The SDK is Stefan Stuntz's
+# and carries no redistribution grant in the headers, so it is not vendored. Fail here with the fix instead of deep in a compile.
+foreach(f "m68k-amigaos/ndk-include/libraries/mui.h" "m68k-amigaos/ndk-include/proto/muimaster.h"
+          "m68k-amigaos/ndk-include/clib/muimaster_protos.h" "m68k-amigaos/lib/libmui.a")
+  if(NOT EXISTS "${AMIGA_GCC_ROOT}/${f}")
+    message(FATAL_ERROR "MUI SDK missing: ${AMIGA_GCC_ROOT}/${f} not found. The Amiga build compiles the MUI UI and needs the MUI 3.8 "
+      "SDK installed into the amiga-gcc toolchain (rebuild bebbo/amiga-gcc with SDK=mui, or copy the MUI includes into "
+      "${AMIGA_GCC_ROOT}/m68k-amigaos/ndk-include and libmui.a into ${AMIGA_GCC_ROOT}/m68k-amigaos/lib). See README.md, section Building for the Amiga.")
+  endif()
+endforeach()
+
 set(CMAKE_C_COMPILER "${AMIGA_GCC_ROOT}/bin/m68k-amigaos-gcc")
 set(CMAKE_CXX_COMPILER "${AMIGA_GCC_ROOT}/bin/m68k-amigaos-c++")
 set(CMAKE_CXX_FLAGS_INIT "-m68020 -mcrt=nix20 -fomit-frame-pointer -fno-exceptions -fno-rtti")
