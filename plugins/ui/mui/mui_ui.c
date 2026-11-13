@@ -601,6 +601,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
 #define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
 #define CTL_NAME_STR 0x280EL   /* I1337b: the name prompt's String (Rename, New Playlist, New Folder, Song Information notes) */
+#define CTL_WIN_CLOSE 0x280FL /* I1366: the close button of the borderless main window (no gadget there); quits at once */
 #define CTL_DLG_CLOSE 0x2809L /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
@@ -1567,6 +1568,20 @@ static Object* mui_topbar_group(mui_state* s) {
         DoMethod(g, OM_ADDMEMBER, s->np_btn);
     }
     return g;
+}
+
+/* I1366: the borderless main window (D-M4-3) has no close gadget, so a Close button sits in the upper left corner, left of the top bar.
+ * One row with the top bar on RTG; on the bitmap tier the top bar is hidden and the row holds the button alone. A press quits at once
+ * (mui_io_new_input maps CTL_WIN_CLOSE to MUIV_Application_ReturnID_Quit, like the gadget); only Esc asks. */
+static Object* mui_close_row(Object* top) {
+    Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* b = mui_make_button_i("Close", "Close", "close", NULL, CTL_WIN_CLOSE, 0, 1, MUI_AA_ROLE_NORMAL);
+    if (row == NULL || b == NULL) {
+        return top;
+    }
+    DoMethod(row, OM_ADDMEMBER, b);
+    DoMethod(row, OM_ADDMEMBER, top);
+    return row;
 }
 
 /* MUI-P4: the tool rows above the list: the search String (the command line is a popup, I1337), the like button, the rating and subsong Cycles,
@@ -4220,7 +4235,7 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_FONT TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
-                Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
+                Child, (s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s), wattr.borderless ? mui_close_row(s->slot[MUI_SLOT_TOPBAR]) : s->slot[MUI_SLOT_TOPBAR]),
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1),
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(s, g_screen_rtg),
@@ -4366,6 +4381,9 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
             SetAttrs(s->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE);
             id = 0;
         }
+    }
+    if (id == CTL_WIN_CLOSE) {
+        id = (LONG)MUIV_Application_ReturnID_Quit; /* I1366: the Close button quits at once, no requester */
     }
     *sigs = (uint32_t)got;
     mui_check_resize((mui_state*)ctx);
