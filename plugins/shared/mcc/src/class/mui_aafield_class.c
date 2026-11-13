@@ -24,7 +24,6 @@
 #include "mui_aa_draw.h"
 #include "mui_aatip.h"
 #include "map/mui_log.h"
-#include "selecta/uimodel/keybind.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -193,7 +192,7 @@ static ULONG aafield_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEv
     struct IntuiMessage* im = msg->imsg;
     if (im != NULL) {
         aatip_event(obj, &d->tip, im, im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj));
-        if (d->esc_close && im->Class == IDCMP_RAWKEY && (im->Code & 0x80) == 0 && txt_key_from_amiga_raw(im->Code & 0x7Fu) == 27u) {
+        if (d->esc_close && im->Class == IDCMP_RAWKEY && (im->Code & 0x80) == 0 && (im->Code & 0x7Fu) == 0x45u /* Esc; raw code, so the standalone UP-*.mcc libraries need no Selecta symbol */) {
             ULONG active = 0;
             GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
             if (active == (ULONG)(uintptr_t)d->str) {
