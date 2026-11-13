@@ -2332,16 +2332,17 @@ static void tui_draw(tui* u) {
         }
         tui_info(u, s, width + 2u, 2u);
     }
+    /* the sidebar goes under the overlays: Settings, the menu and the palette cover the full grid (I1222i makes them region-relative) */
+    if (sr != NULL && u->layout != SEL_UIM_LAYOUT_MINI) {
+        tui_sidebar(u, s, sr, lay.breakpoint == SEL_UIM_BP_ICON_SIDEBAR, lay.topbar.h != 0u);
+        u->sidebar_draws++;
+    }
     if (u->overlay == 3) {
         tui_settings(u);
     } else if (u->overlay == 4) {
         tui_menu_draw(u);
     } else if (u->overlay) {
         tui_overlay(u);
-    }
-    if (sr != NULL && u->layout != SEL_UIM_LAYOUT_MINI) {
-        tui_sidebar(u, s, sr, lay.breakpoint == SEL_UIM_BP_ICON_SIDEBAR, lay.topbar.h != 0u);
-        u->sidebar_draws++;
     }
     if (lay.topbar.h != 0u) {
         tui_topbar(u, (uint32_t)lay.topbar.y);
@@ -2560,6 +2561,12 @@ static void* tui_open(const sel_ui_open_args* a) {
         tui_close(u);
         return NULL;
     }
+    /* --size is the grid for a keys-file run as well as for a headless stdin run (tests drive 60x24 and 120x40 with --keys). */
+    if (tui_opt(a, "--size") != NULL &&
+        (sscanf(tui_opt(a, "--size"), "%ux%u", &cols, &rows) != 2 || cols == 0 || rows == 0)) {
+        tui_close(u);
+        return NULL;
+    }
     if (keys_path != NULL) {
         u->key_text = tui_slurp(a->host, keys_path);
         if (u->key_text == NULL) {
@@ -2569,10 +2576,6 @@ static void* tui_open(const sel_ui_open_args* a) {
         u->use_keys_file = 1;
     } else if (tui_opt(a, "--size") != NULL) {
         /* Headless: a fixed grid and keys read from stdin, so a run is the same on every OS (tests). */
-        if (sscanf(tui_opt(a, "--size"), "%ux%u", &cols, &rows) != 2 || cols == 0 || rows == 0) {
-            tui_close(u);
-            return NULL;
-        }
         u->headless = 1;
         u->term.in_fd = 0;
         u->term.out_fd = 1;
