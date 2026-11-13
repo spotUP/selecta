@@ -561,7 +561,7 @@ static Object* mui_menu_strip(void) {
 /* Sends one command line. The pool is decode scratch only: the engine copies string arguments into its command slot on
  * send (I1082b; before that a stack pool left "VIEW_SOURCE search" with an empty source, I569). */
 /* I1368: the requester gadget string of a confirm, from the shared uimodel dialog table. */
-static const char* mui_dlg_gadgets(sel_uim_dlg_kind k, char* buf, size_t cap) {
+static char* mui_dlg_gadgets(sel_uim_dlg_kind k, char* buf, size_t cap) {
     sel_uim_dlg_mui_gadgets(k, buf, cap);
     return buf;
 }
