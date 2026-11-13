@@ -560,6 +560,12 @@ static Object* mui_menu_strip(void) {
 
 /* Sends one command line. The pool is decode scratch only: the engine copies string arguments into its command slot on
  * send (I1082b; before that a stack pool left "VIEW_SOURCE search" with an empty source, I569). */
+/* I1368: the requester gadget string of a confirm, from the shared uimodel dialog table. */
+static const char* mui_dlg_gadgets(sel_uim_dlg_kind k, char* buf, size_t cap) {
+    sel_uim_dlg_mui_gadgets(k, buf, cap);
+    return buf;
+}
+
 static int mui_engine_line(mui_state* s, const char* line) {
     char pool[512];
     int ok = line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
@@ -601,7 +607,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
 #define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
 #define CTL_NAME_STR 0x280EL   /* I1337b: the name prompt's String (Rename, New Playlist, New Folder, Song Information notes) */
-#define CTL_WIN_CLOSE 0x280FL /* I1366: the close button of the borderless main window (no gadget there); asks "Quit Selecta?" like Esc */
+#define CTL_WIN_CLOSE 0x280FL /* I1366: the close button of the borderless main window (no gadget there); asks to quit like Esc */
 #define CTL_DLG_CLOSE 0x2809L /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
@@ -1580,7 +1586,7 @@ static Object* mui_topbar_group(mui_state* s) {
 }
 
 /* I1366: the borderless main window (D-M4-3) has no close gadget, so a Close button sits in the upper left corner, left of the top bar.
- * One row with the top bar on RTG; on the bitmap tier the top bar is hidden and the row holds the button alone. A press asks "Quit Selecta?"
+ * One row with the top bar on RTG; on the bitmap tier the top bar is hidden and the row holds the button alone. A press asks the quit confirm
  * through the Esc requester (mui_io_new_input). */
 static Object* mui_close_row(Object* top) {
     Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
@@ -3402,9 +3408,9 @@ static void mui_song_menu_fire(mui_state* s, uint32_t item) {
         }
     }
     if (item == 4u && !on_queue) {
-        char msg[200];
+        char msg[200], gad[32];
         mui_confirm_text(0, mui_base_name(path), 0, 0, msg, sizeof msg);
-        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Remove|Cancel", "%s", (ULONG)msg) != 1) {
+        if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_REMOVE, gad, sizeof gad), "%s", (ULONG)msg) != 1) {
             return;
         }
     }
@@ -3738,9 +3744,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_CLEARLIB: {
         /* MUI-P4-12: the confirm text is shared; MUI_Request returns 1 for the first (Clear) button. */
-        char msg[200];
+        char msg[200], gad[32];
         mui_confirm_text(1, "Clear Library", 0, 0, msg, sizeof msg);
-        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Clear|Cancel", "%s", (ULONG)msg) == 1 && mui_engine_line(s, mui_confirm_line(1))) {
+        if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_CLEAR, gad, sizeof gad), "%s", (ULONG)msg) == 1 && mui_engine_line(s, mui_confirm_line(1))) {
             mui_p4_note(s, which, mui_confirm_line(1));
         }
         break;
@@ -4389,11 +4395,12 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
     if ((mui_keys_esc_seen() && id == (LONG)MUIV_Application_ReturnID_Quit) || id == CTL_WIN_CLOSE) {
         /* I1359: the Quit is MUI's Esc-to-CloseRequest on the main window. Esc asks before it quits, as the desktop UI does
-         * (I623 dlg_open_quit: "Quit Selecta?"). Cancel re-arms the close notify and drops the Quit.
+         * (I623 dlg_open_quit, text from the uimodel dialog table). Cancel re-arms the close notify and drops the Quit.
          * I1366: the Close button (CTL_WIN_CLOSE) takes the same path; Quit turns its id into the application Quit. */
         LONG was_close = (id == CTL_WIN_CLOSE);
+        char gad[32];
         mui_state* s = (mui_state*)ctx;
-        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Quit|Cancel", "%s", (ULONG) "Quit Selecta?") != 1) {
+        if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_QUIT, gad, sizeof gad), "%s", (ULONG)sel_uim_dlg_text(SEL_UIM_DLG_QUIT)) != 1) {
             SetAttrs(s->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE);
             id = 0;
         } else if (was_close) {
