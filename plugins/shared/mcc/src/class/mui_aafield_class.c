@@ -154,6 +154,7 @@ static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
             aa_round_fill_hole(&d->aa, rp, _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
                                ops[k].radius, ops[k].rgb, _left(d->str), _top(d->str), _width(d->str), _height(d->str));
         }
+        aa_low_outline(&d->aa, rp, _left(obj), _top(obj), _width(obj), _height(obj), n > 0 ? ops[0].radius : 0);
     }
     if ((msg->flags & MADF_DRAWOBJECT) && d->placeholder != NULL) { /* I733 (design 3.4): after the super, so it lands on the String's box */
         ULONG cont = 0;

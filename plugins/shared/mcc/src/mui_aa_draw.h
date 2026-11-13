@@ -21,6 +21,7 @@ typedef struct aa_ctx {
     struct ColorMap* cm;
     struct Screen* scr;
     int backend, kind, font_px;
+    int lowcol;            /* I1349: a palette screen of 8 colours or fewer: the dark tokens snap to one pen, so cards and fields get an outline */
     int tc;                /* I685w: 15+ bit screen with an RTG fill library open: direct RGB fills, no pens */
     uint32_t bg_rgb;       /* I685w: what aa_erase fills on tc; the Background token unless the class sets another */
     int aspect_q8;         /* I685e1: pixel height over width x 256 of this object's screen (DrawInfo resolution), 256..512 */
@@ -74,6 +75,7 @@ void aa_round_fill_hole(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int
 void aa_round_corners(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb);
 /* One pixel rounded outline, same inset maths. */
 void aa_round_frame(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius, uint32_t rgb);
+void aa_low_outline(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius); /* I1349: only on a screen of 8 colours or fewer */
 /* Runs of equal nonzero slot in one row of n cells at (x, y); slot_rgb[slot] is the colour (glyph rows). */
 void aa_runs(aa_ctx* c, struct RastPort* rp, int x, int y, const unsigned char* slot, int n, const uint32_t* slot_rgb);
 /* Clear the box (x, y, w, h) of obj to its background: bg_rgb on truecolour, MUIM_DrawBackground otherwise. */

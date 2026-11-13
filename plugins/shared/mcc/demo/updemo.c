@@ -11,8 +11,8 @@
  * Gate item 2 (live theme reload from UP-MCC.mcp, row I685n): the token store and the retheme list live in up-mcc.library, so a
  * Save in the prefs recolours this window. Run: UP-Demo [QUIT | AUTO | HOLD]. No argument: the window stays open until the close
  * gadget. QUIT closes it at once, AUTO after about 3 s (scripted runs), HOLD is the default plus a [RECT] listing of the widget boxes.
- * I1343: the content sits in a Scrollgroup, so the window opens on a 640x256 screen under MUI 3.8 (which refuses a window whose
- * minimum size exceeds the screen, unlike MUI 5 that scrolls); the program asks for 48 KB of stack (MUI 5 warns below 32000). */
+ * I1349: the window covers the screen and the content is one of three tiers by screen height (256, 512, 700+ lines), so it opens under MUI 3.8
+ * (which refuses a window whose minimum size exceeds the screen) without a Scrollgroup; the program asks for 48 KB of stack (MUI 5 warns below 32000). */
 #include <stdio.h>
 #include <string.h>
 
@@ -45,6 +45,7 @@ static UP_ListColumns g_columns = {3, {3, 2, 0}, {NULL, NULL, "0:00"}};
 
 /* I685w run 3: three columns (title, artist, time) and a title row; the hook gets row -1 for the column titles. */
 static struct Hook g_row_hook;
+static int g_list_rows = 5;
 static ULONG demo_cell(struct Hook* hook, Object* obj, UP_ListCell* cell) {
     static char text[40];
     static const char* const heads[] = {"Title", "Artist", "Time"};
@@ -139,8 +140,27 @@ static Object* make(int index) {
         g_row_hook.h_Entry = (__typeof__(g_row_hook.h_Entry))(void (*)(void))HookEntry;
         g_row_hook.h_SubEntry = (__typeof__(g_row_hook.h_SubEntry))(void (*)(void))demo_cell;
         return MUI_NewObject(path, UPA_List_Count, 20UL, UPA_List_CellHook, (ULONG)(uintptr_t)&g_row_hook, UPA_List_Columns, (ULONG)(uintptr_t)&g_columns,
-                             UPA_List_Title, (ULONG)TRUE, UPA_List_MaxRows, 5UL, TAG_DONE);
+                             UPA_List_Title, (ULONG)TRUE, UPA_List_MaxRows, (ULONG)(ULONG)g_list_rows, TAG_DONE);
     }
+}
+
+/* I1349: an unused sample object leaves the tree before the window exists; its slot is NULL afterwards. */
+static void demo_drop(Object** obj, int i) {
+    if (obj[i] != NULL) {
+        MUI_DisposeObject(obj[i]);
+        obj[i] = NULL;
+    }
+}
+
+/* I1349: 0 under 400 screen lines, 1 under 700, else 2. */
+static int demo_tier(void) {
+    struct Screen* scr = LockPubScreen(NULL);
+    int h = 256;
+    if (scr != NULL) {
+        h = scr->Height;
+        UnlockPubScreen(NULL, scr);
+    }
+    return h < 400 ? 0 : h < 700 ? 1 : 2;
 }
 
 static int demo_main(int argc, char** argv) {
@@ -151,6 +171,7 @@ static int demo_main(int argc, char** argv) {
     int hold = argc > 1 && argv[1] != NULL && strcmp(argv[1], "HOLD") == 0;
     int auto_close = argc > 1 && argv[1] != NULL && strcmp(argv[1], "AUTO") == 0;
     int i, ok = 0, ticks = 0;
+    int tier = demo_tier();
 
     memset(obj, 0, sizeof obj);
     MUIMasterBase = OpenLibrary((CONST_STRPTR) "muimaster.library", 19);
@@ -158,6 +179,7 @@ static int demo_main(int argc, char** argv) {
         printf("[ERROR] muimaster.library 19\n");
         return 20;
     }
+    g_list_rows = tier == 2 ? 5 : 3;
     for (i = 0; i < CLASS_COUNT; i++) {
         ULONG origin = 0;
         obj[i] = make(i);
@@ -174,32 +196,41 @@ static int demo_main(int argc, char** argv) {
         ok++;
     }
     if (ok == CLASS_COUNT) {
-        {   /* I685w run 3: titled cards, the Balance between the two columns. Each of the 11 objects is in the tree once. */
-            Object* ctl = card("Controls",
-                               box(TRUE, obj[0], MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Shuffle", UPA_Button_Icon, (ULONG) "shuffle", TAG_DONE),
-                                   MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Queue", UPA_Button_Role, (ULONG)UPV_Button_Role_Ghost, TAG_DONE),
-                                   MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Role, (ULONG)UPV_Button_Role_Toggle, TAG_DONE), label("Repeat", UPV_Text_Tone_Normal), NULL),
-                               box(FALSE, label("Search", UPV_Text_Tone_Muted), obj[8], obj[7], NULL, NULL, NULL), NULL, NULL);
-            Object* left = card("Library", box(FALSE, obj[3], tab_pages(obj[3]), NULL, NULL, NULL, NULL), label("128 songs in your library", UPV_Text_Tone_Muted), obj[2], obj[10]);
-            Object* right = card("Playback", label("Volume 40", UPV_Text_Tone_Muted), obj[5], label("Elapsed 2:05 of 3:22", UPV_Text_Tone_Muted),
-                                 box(FALSE, obj[6], label("Scroll position", UPV_Text_Tone_Muted), obj[9], NULL, NULL, NULL));
-            root = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Panel, MUIA_Group_Child, (ULONG)label("UP-Demo", UPV_Text_Tone_Heading),
-                                 MUIA_Group_Child, (ULONG)obj[1], MUIA_Group_Child, (ULONG)ctl,
-                                 MUIA_Group_Child, (ULONG)box(TRUE, left, obj[4], right, NULL, NULL, NULL), TAG_DONE);
-        }
-        if (root != NULL) { /* I1343: a scrolling view onto the content, so the window minimum is the scrollgroup's, not the content's */
-            Object* virt;
-            content = root;
-            virt = MUI_NewObject((char*)MUIC_Virtgroup, MUIA_Group_Child, (ULONG)root, TAG_DONE);
-            Object* scr = virt == NULL ? NULL : MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_Contents, (ULONG)virt, TAG_DONE);
-            if (scr == NULL) {
-                MUI_DisposeObject(virt != NULL ? virt : root);
+        {   /* I1349: the window covers the screen and the content is chosen to fit it, no scrolling: three tiers by screen height */
+            Object* ctl;
+            Object* pbk;
+            ctl = card("Controls",
+                       box(TRUE, obj[0], MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Shuffle", UPA_Button_Icon, (ULONG) "shuffle", TAG_DONE),
+                           MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Caption, (ULONG) "Queue", UPA_Button_Role, (ULONG)UPV_Button_Role_Ghost, TAG_DONE),
+                           MUI_NewObject((char*)"UP-Button.mcc", UPA_Button_Role, (ULONG)UPV_Button_Role_Toggle, TAG_DONE), label("Repeat", UPV_Text_Tone_Normal), NULL),
+                       box(FALSE, tier == 0 ? NULL : label("Search", UPV_Text_Tone_Muted), obj[8], obj[7], NULL, NULL, NULL), NULL, NULL);
+            pbk = card("Playback", tier == 0 ? NULL : label("Volume 40", UPV_Text_Tone_Muted), obj[5], tier == 0 ? NULL : label("Elapsed 2:05 of 3:22", UPV_Text_Tone_Muted),
+                       box(FALSE, obj[6], tier == 0 ? NULL : label("Scroll position", UPV_Text_Tone_Muted), obj[9], NULL, NULL, NULL));
+            if (tier == 2) {
+                Object* left = card("Library", box(FALSE, obj[3], tab_pages(obj[3]), NULL, NULL, NULL, NULL), label("128 songs in your library", UPV_Text_Tone_Muted), obj[2], obj[10]);
+                root = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Panel, MUIA_Group_Child, (ULONG)label("UP-Demo", UPV_Text_Tone_Heading),
+                                     MUIA_Group_Child, (ULONG)obj[1], MUIA_Group_Child, (ULONG)ctl,
+                                     MUIA_Group_Child, (ULONG)box(TRUE, left, obj[4], pbk, NULL, NULL, NULL), TAG_DONE);
+            } else if (tier == 1) { /* 512 lines: no welcome line, no Surface panel; controls and playback side by side over a three-row library */
+                Object* lib = card("Library", obj[3], obj[10], NULL, NULL);
+                demo_drop(obj, 1);
+                demo_drop(obj, 2);
+                root = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Panel, MUIA_Group_Child, (ULONG)label("UP-Demo", UPV_Text_Tone_Heading),
+                                     MUIA_Group_Child, (ULONG)box(TRUE, ctl, obj[4], pbk, NULL, NULL, NULL), MUIA_Group_Child, (ULONG)lib, TAG_DONE);
+            } else { /* 256 lines: heading, controls and playback side by side, the tabs; no list, no Surface panel, no welcome line */
+                demo_drop(obj, 1);
+                demo_drop(obj, 2);
+                demo_drop(obj, 10);
+                root = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Panel, MUIA_Group_Child, (ULONG)label("UP-Demo", UPV_Text_Tone_Heading),
+                                     MUIA_Group_Child, (ULONG)box(TRUE, ctl, obj[4], pbk, NULL, NULL, NULL), MUIA_Group_Child, (ULONG)obj[3], TAG_DONE);
             }
-            root = scr;
+        }
+        if (root != NULL) {
+            content = root;
         }
         win = root == NULL ? NULL
-                           : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431, MUIA_Window_Width, (ULONG)MUIV_Window_Width_Screen(90),
-                                           MUIA_Window_Height, (ULONG)MUIV_Window_Height_Screen(90),
+                           : MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "UP-Demo", MUIA_Window_ID, 0x55504431, MUIA_Window_Width, (ULONG)MUIV_Window_Width_Screen(100),
+                                           MUIA_Window_Height, (ULONG)MUIV_Window_Height_Screen(100),
                                            MUIA_Window_RootObject, (ULONG)root, TAG_DONE);
         if (win != NULL) {
             app = MUI_NewObject((char*)MUIC_Application, MUIA_Application_Title, (ULONG) "UP-Demo", MUIA_Application_Base,
@@ -230,6 +261,9 @@ static int demo_main(int argc, char** argv) {
                     struct Window* w = (struct Window*)wptr;
                     for (i = 0; i < CLASS_COUNT; i++) {
                         ULONG l = 0, t = 0, ww = 0, hh = 0;
+                        if (obj[i] == NULL) {
+                            continue;
+                        }
                         GetAttr(MUIA_LeftEdge, obj[i], &l);
                         GetAttr(MUIA_TopEdge, obj[i], &t);
                         GetAttr(MUIA_Width, obj[i], &ww);

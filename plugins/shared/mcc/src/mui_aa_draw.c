@@ -276,6 +276,7 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
         }
     }
     c->tc = mui_aa_truecolour(depth, g_p96 != NULL, g_cgx != NULL);
+    c->lowcol = !c->tc && depth <= 3;
     c->bg_rgb = ctx_bg(c);
     {
         static int logged;
@@ -331,7 +332,11 @@ void aa_plain_font(aa_ctx* c, Object* obj, int px, int bold) {
     if (DiskfontBase == NULL) {
         return;
     }
-    ta.ta_Name = (STRPTR)sf.name;
+    /* I1349: one family on every class: the tone font is the MUI font's own family (bold for title and heading), never a second family */
+    ta.ta_Name = (STRPTR)_font(obj)->tf_Message.mn_Node.ln_Name;
+    if (ta.ta_Name == NULL) {
+        return;
+    }
     ta.ta_YSize = (UWORD)sf.ysize;
     ta.ta_Style = FS_NORMAL;
     ta.ta_Flags = 0;
@@ -463,6 +468,12 @@ void aa_round_frame(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, 
     struct paint_bind b;
     bind_init(&ops, &b, c, rp);
     mui_aa_paint_round_frame(&ops, x, y, w, h, radius, rgb);
+}
+
+void aa_low_outline(aa_ctx* c, struct RastPort* rp, int x, int y, int w, int h, int radius) {
+    if (c->lowcol) { /* I1349: 4 colours collapse background, card and field fill to one pen; the muted text colour draws the edge */
+        aa_round_frame(c, rp, x, y, w, h, radius, c->tok[SEL_GUI_TOKEN_TEXT_MUTED]);
+    }
 }
 
 void aa_runs(aa_ctx* c, struct RastPort* rp, int x, int y, const unsigned char* slot, int n, const uint32_t* slot_rgb) {
