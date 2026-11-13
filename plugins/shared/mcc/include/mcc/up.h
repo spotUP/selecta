@@ -160,6 +160,7 @@ enum { UPV_Button_Align_Left, UPV_Button_Align_Centre, UPV_Button_Align_Right };
 #define UPA_Field_String UP_TAG(UP_CLS_FIELD, 0x03)     /* G Object*: the inner string gadget (for MUIA_String_Acknowledge notifies) */
 #define UPA_Field_Placeholder UP_TAG(UP_CLS_FIELD, 0x04) /* I STRPTR hint while empty and not active; must outlive the field */
 #define UPA_Field_MaxWidth UP_TAG(UP_CLS_FIELD, 0x05)   /* I LONG cap of the field's MaxWidth in px, 0 = unbounded */
+#define UPA_Field_EscClose UP_TAG(UP_CLS_FIELD, 0x06)   /* I S BOOL: Esc in the active field sets MUIA_Window_CloseRequest on its window (I1360); the String eats Esc itself, so the window never saw it */
 /* the string length limit is MUIA_String_MaxLen */
 
 /* UP-Panel */
