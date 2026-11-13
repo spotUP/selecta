@@ -2186,7 +2186,7 @@ static void test_dialog_windows(void) {
     size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
     const char *fn, *end, *p;
     uint32_t windows = 0, via_helper = 0;
-    static const char* const dialogs[] = {"s->help_win = mui_dialog_window(", "s->pal_win = mui_dialog_window(", "s->set_win = mui_dialog_window("};
+    static const char* const dialogs[] = {"s->help_win = mui_dialog_window(", "s->pal_win = mui_dialog_window_w(", "s->set_win = mui_dialog_window("};
     size_t i;
     if (f != NULL) {
         fclose(f);
@@ -2201,8 +2201,10 @@ static void test_dialog_windows(void) {
     CHECK(mui_dialog_attrs_calls() == before + 2u, "dialog attrs sentinel %u", (unsigned)mui_dialog_attrs_calls());
     mui_window_attrs(1, &a);
     CHECK(a.header == 0 && a.backdrop == 1, "the main window must keep backdrop and no header");
-    fn = strstr(src, "static Object* mui_dialog_window(");
-    CHECK(fn != NULL, "mui_dialog_window is gone");
+    /* I1365 4fe619c7: the body moved to mui_dialog_window_w (width percent for the palette); mui_dialog_window forwards with 0. */
+    fn = strstr(src, "static Object* mui_dialog_window_w(");
+    CHECK(fn != NULL, "mui_dialog_window_w is gone");
+    CHECK(strstr(src, "return mui_dialog_window_w(title, id, root, 0);") != NULL, "mui_dialog_window no longer forwards to mui_dialog_window_w");
     end = fn != NULL ? strstr(fn, "\n}\n") : NULL;
     CHECK(end != NULL && strstr(fn, "mui_dialog_attrs(g_scr != NULL, &da)") != NULL && strstr(fn, "mui_dialog_attrs(g_scr != NULL, &da)") < end,
           "mui_dialog_window does not take its attributes from mui_dialog_attrs by own screen");
