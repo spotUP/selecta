@@ -1,24 +1,24 @@
  [Home]  [What do you want to play?]  [Browse]
- Playlists         │ Queue by folder  Tree  Scope:│ Now Playing
- Queue             │ [-] /tmp/selecta-tree-view/ro│
- Now Playing       │     selecta-test-mk.mod      │ Like  Rating 0/5
- Song Information  │ [+] /tmp/selecta-tree-view/ro│ Next in Queue
- Your Library  [+] │                              │
- [Playlists]       │                              │
- [Albums]          │                              │
- [Artists]         │                              │
- [Composers]       │                              │
- [Sources]         │                              │
- [Local Files]     │                              │
- /tmp/selecta-tree-│                              │
- selecta-test-mk.mo│                              │
- /tmp/selecta-tree-│                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
+ Playlists         │ Queue by folder  Tree  Scope: Library
+ Queue             │ [-] /tmp/selecta-tree-view/root/a (1)
+ Now Playing       │     selecta-test-mk.mod
+ Song Information  │ [+] /tmp/selecta-tree-view/root/b (1)
+ Your Library  [+] │
+ [Playlists]       │
+ [Albums]          │
+ [Artists]         │
+ [Composers]       │
+ [Sources]         │
+ [Local Files]     │
+ /tmp/selecta-tree-│
+ selecta-test-mk.mo│
+ /tmp/selecta-tree-│
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
  -                                    ||  --:-- / -:--               Volume 100

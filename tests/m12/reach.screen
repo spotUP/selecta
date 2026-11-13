@@ -1,24 +1,24 @@
  [Home]  [What do you want to play?]  [Browse]
- Playlists         │ Queue by folder  Tree  Scope:│ Now Playing
- Queue             │ [-] tests/m12/a (2)          │
- Now Playing       │     one.mod - Protracker (mod│ Like  Rating 0/5
- Song Information  │     two.mod - Protracker (mod│ Next in Queue
- Your Library  [+] │ [+] tests/m12/b (1)          │
- [Playlists]       │                              │
- [Albums]          │                              │
- [Artists]         │                              │
- [Composers]       │                              │
- [Sources]         │                              │
- [Local Files]     │                              │
- tests/m12/a       │                              │
- one.mod - Protrack│                              │
- two.mod - Protrack│                              │
- tests/m12/b       │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
-                   │                              │
+ Playlists         │ Queue by folder  Tree  Scope: Library
+ Queue             │ [-] tests/m12/a (2)
+ Now Playing       │     one.mod - Protracker (mod)
+ Song Information  │     two.mod - Protracker (mod)
+ Your Library  [+] │ [+] tests/m12/b (1)
+ [Playlists]       │
+ [Albums]          │
+ [Artists]         │
+ [Composers]       │
+ [Sources]         │
+ [Local Files]     │
+ tests/m12/a       │
+ one.mod - Protrack│
+ two.mod - Protrack│
+ tests/m12/b       │
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
  -                                    ||  --:-- / -:--               Volume 100

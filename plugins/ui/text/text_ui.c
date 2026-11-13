@@ -1412,6 +1412,11 @@ static void tui_key(tui* u, const txt_key* k) {
     }
     u->key_count++;
     u->dirty = 1;
+    /* I1222i-2: Tab focus routes the movement keys. The sidebar lists the same view as main (its cursor is the view cursor), so
+     * focus 0 and 1 move it; the detail panel and the player have nothing to scroll, so focus 2 and 3 keep these keys. */
+    if (u->focus >= 2u && (strncmp(action, "VIEW_CURSOR", 11) == 0 || strcmp(action, "@page_up") == 0 || strcmp(action, "@page_down") == 0)) {
+        return;
+    }
     if (action[0] == '@') {
         (void)tui_local(u, action + 1, k);
     } else {
