@@ -32,7 +32,7 @@ uint32_t sel_cli_registry_init(const sel_host* host) {
 
 int sel_cli_find_output(const char* who, const char* id, sel_cli_output* o) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_OUTPUT, id);
-    const sel_tag* hooks = desc ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    const sel_tag* hooks = desc ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
     if (hooks == NULL) {
         fprintf(stderr, "%s: %s output not registered\n", who, id);
         return 0;

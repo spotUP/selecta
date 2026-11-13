@@ -29,6 +29,10 @@ SEL_TAG(PLUGIN, TAGS,          0x0103, LIST)
  * real hooks live in the named module file (an Amiga LoadSeg hunk file), loaded on first open through
  * sel_plugin_resolve. */
 SEL_TAG(PLUGIN, MODULE,        0x0104, STR)
+/* PLUGIN_HOOKS_PRESENT (I1193b-M2): in a generated manifest (selecta-cli plugins --manifest-c) the pointer tags the
+ * module's own descriptor carries are listed here as tag ids only ({id, 0} entries, never a pointer), so "does this
+ * plugin have the hook" answers without loading the module (sel_hooks_has). */
+SEL_TAG(PLUGIN, HOOKS_PRESENT, 0x0105, LIST)
 
 SEL_TAG(RP, NAME,              0x1000, STR)
 SEL_TAG(RP, VERSION,           0x1001, INT)

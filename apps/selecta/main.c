@@ -290,7 +290,7 @@ static void shell_flush(void* ctx) {
 
 static const sel_tag* hooks_of(uint32_t kind, const char* id) {
     const sel_tag* desc = sel_registry_find(kind, id);
-    return desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    return desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
 }
 
 /* Output swap (I532): the engine routes a PCM song while the open output is voice-only (Paula discards PCM), so it
@@ -377,7 +377,7 @@ static int default_ui_allowed(int argc, char** argv) {
 /* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
 static int ui_resolve(const char* id, shell_ui* u) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_UI, id);
-    const sel_tag* h = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    const sel_tag* h = desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
     if (h == NULL) {
         return 0;
     }

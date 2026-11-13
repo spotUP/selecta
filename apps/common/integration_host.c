@@ -85,7 +85,7 @@ static void session_md5_hex(void* ctx, const void* data, size_t len, char out[33
 
 static const sel_tag* plugin_hooks(const char* id) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_INTEGRATION, id);
-    return desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    return desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
 }
 
 sel_int_session* sel_int_session_open(sel_engine* e, const char* id, sel_int_sink sink, void* sink_ctx) {
