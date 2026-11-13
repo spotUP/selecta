@@ -26,6 +26,7 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aapanel_data {
     int role;
+    int popup;      /* I1349: root of a borderless popup window: square corners, no card pad */
     int fixed;      /* > 0: the art frame, no pad */
     Object* inner;  /* I685e5: the plain vertical group that holds the program's children */
     aa_ctx aa;
@@ -41,7 +42,7 @@ static char g_bg_spec[MUI_AA_PANEL_ROLES][40]; /* MUIA_Background strings; MUI k
 static void aapanel_pad(const aapanel_data* d, int* px, int* py) {
     *px = 0;
     *py = 0;
-    if (d->fixed <= 0) {
+    if (d->fixed <= 0 && !d->popup) {
         mui_aa_panel_pad(d->aa.tok, d->aa.aspect_q8, px, py);
         mui_aa_panel_role_pad(d->role, px, py);
     }
@@ -161,6 +162,7 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     aapanel_data* d = INST_DATA(cl, obj);
     ULONG r = DoSuperMethodA(cl, obj, (Msg)msg);
     if (msg->flags & MADF_DRAWOBJECT) {
+        int rad = d->popup ? 0 : mui_aa_panel_radius(d->aa.tok, d->aa.font_px); /* I1349: a popup window is a rectangle */
         if (d->aa.tc) { /* I685w: MUI's background spec snaps to a pen; paint the face in exact RGB around the children, whatever MUI filled */
             int holes[MUI_AA_PAINT_MAX_HOLES * 4], n = 0;
             Object* grp = d->inner != NULL ? d->inner : obj;
@@ -189,11 +191,11 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
                 if (mx0 > ox0) aa_rect(&d->aa, _rp(obj), ox0, my0, mx0 - 1, my1, face);
                 if (mx1 < ox1) aa_rect(&d->aa, _rp(obj), mx1 + 1, my0, ox1, my1, face);
             }
-            aa_round_fill_holes(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px),
+            aa_round_fill_holes(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), rad,
                                 mui_aa_panel_rgb(d->aa.tok, d->role), holes, n);
         }
-        aa_round_corners(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px), d->aa.tok[SEL_GUI_TOKEN_BACKGROUND]); /* I676c: read at draw, a live THEME changes both */
-        aa_low_outline(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px));
+        aa_round_corners(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), rad, d->aa.tok[SEL_GUI_TOKEN_BACKGROUND]); /* I676c: read at draw, a live THEME changes both */
+        aa_low_outline(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), rad);
     }
     return r;
 }
@@ -255,6 +257,7 @@ static ULONG aapanel_new_by_name(struct IClass* cl, Object* obj, struct opSet* o
     if (made != 0) { /* I685w: the by-name panel has no UP_NewPanel to record the role the face is painted in */
         aapanel_data* d = (aapanel_data*)INST_DATA(cl, (Object*)made);
         d->role = role;
+        d->popup = GetTagData(UPA_Panel_Popup, FALSE, ops->ops_AttrList) ? 1 : 0;
         d->inner = inner;
         g_made++;
     }

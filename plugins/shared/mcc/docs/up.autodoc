@@ -560,6 +560,25 @@
 *
 ******/
 
+/****** UP-List.mcc/UPA_List_Cancelled ******
+*
+*   NAME
+*       UPA_List_Cancelled -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       BOOL: set TRUE when Esc is pressed on a list that has UPA_List_KeysUnfocused on (popup list). A notification on it closes the popup.
+*
+*   INPUTS
+*       UPA_List_Cancelled - access S. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
 /****** UP-List.mcc/UPM_List_GetRow ******
 *
 *   NAME
@@ -893,6 +912,25 @@
 *
 *   INPUTS
 *       UPA_Panel_Role - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-Panel.mcc
+*
+******/
+
+/****** UP-Panel.mcc/UPA_Panel_Popup ******
+*
+*   NAME
+*       UPA_Panel_Popup -- attribute of UP-Panel.mcc
+*
+*   FUNCTION
+*       TRUE when the panel is the root of a borderless popup window. The window rectangle is the shape, so the corners stay square and the card adds no padding of its own.
+*
+*   INPUTS
+*       UPA_Panel_Popup - access I. Tag value from <mcc/up.h>.
 *
 *   RESULT
 *       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).

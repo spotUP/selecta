@@ -112,6 +112,7 @@ enum { UPV_Text_Align_Left, UPV_Text_Align_Centre, UPV_Text_Align_Right };
 #define UPA_List_DoublePick UP_TAG(UP_CLS_LIST, 0x0B) /* I BOOL: UPA_List_Picked only on a double click or Return */
 #define UPA_List_NoSelect UP_TAG(UP_CLS_LIST, 0x0C) /* I BOOL: no hover, no selection, wheel only */
 #define UPA_List_KeysUnfocused UP_TAG(UP_CLS_LIST, 0x0D) /* I BOOL: Up/Down/Return act while no object is active (popup list; MUI draws a white frame round an active object) */
+#define UPA_List_Cancelled UP_TAG(UP_CLS_LIST, 0x0E) /* S BOOL: set TRUE by Esc when UPA_List_KeysUnfocused is on (popup list; notify to close the popup) */
 /* UPM_List_GetRow (I713): the read-back method for tools that drive the window from outside. The caller fills row and text/cap;
  * the method returns TRUE when the row exists and sets: text = the cell texts joined by two spaces (truncated to cap), x/y/w/h =
  * the row's box in window coordinates (all 0 when scrolled out of view or not shown), selected = 1 on the active row. */
@@ -167,6 +168,7 @@ enum { UPV_Button_Align_Left, UPV_Button_Align_Centre, UPV_Button_Align_Right };
 #define UPA_Panel_FixedHeight UP_TAG(UP_CLS_PANEL, 0x04) /* I LONG > 0 with FixedWidth: the fixed height when it differs */
 #define UPA_Panel_Self UP_TAG(UP_CLS_PANEL, 0x05)        /* G Object*: the panel itself. A MUI Group passes an unknown OM_GET on to its \
                                                             children, so a Role answer counts only when Self names the asked object */
+#define UPA_Panel_Popup UP_TAG(UP_CLS_PANEL, 0x06)       /* I BOOL: root of a borderless popup window: square corners, no card padding (I1349) */
 enum { UPV_Panel_Role_Panel, UPV_Panel_Role_Surface, UPV_Panel_Role_Raised, UPV_Panel_Role_Count };
 
 /* Shared: tooltip (private to the package) */

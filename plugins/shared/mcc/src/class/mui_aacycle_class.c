@@ -188,7 +188,7 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     }
     {
         /* I1349: root = a themed card (Surface token, rounded, no MUI frame) around the list, not MUI's stock window frame and bevel */
-        Object* card = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Surface, MUIA_Group_Child, (ULONG)group, TAG_DONE);
+        Object* card = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Surface, UPA_Panel_Popup, (ULONG)TRUE, MUIA_Group_Child, (ULONG)group, TAG_DONE);
         if (card != NULL) {
             group = card;
         }
@@ -208,6 +208,7 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     /* A pick sets UPA_Cycle_Active on the cycle and closes the popup; the active row set above fired before these notifications exist. */
     DoMethod(list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, obj, 3, MUIM_Set, UPA_Cycle_Active, MUIV_TriggerValue);
     DoMethod(list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(list, MUIM_Notify, UPA_List_Cancelled, TRUE, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(d->popup, MUIM_Notify, MUIA_Window_Activate, FALSE, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     set(d->popup, MUIA_Window_Open, TRUE);
 }

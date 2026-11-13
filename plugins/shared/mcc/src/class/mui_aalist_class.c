@@ -290,6 +290,12 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
     case 0x49: key = MUI_AA_LIST_KEY_PAGEDOWN; break;
     case 0x70: key = MUI_AA_LIST_KEY_HOME; break;
     case 0x71: key = MUI_AA_LIST_KEY_END; break;
+    case 0x45: /* I1349: Esc cancels a popup list */
+        if (d->keys_unfocused) {
+            set(obj, UPA_List_Cancelled, (ULONG)TRUE);
+            return MUI_EventHandlerRC_Eat;
+        }
+        return 0;
     case 0x44:
     case 0x43:
         if (d->active >= 0) {
