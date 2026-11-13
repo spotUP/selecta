@@ -113,7 +113,7 @@ static void mui_requester(const char* text); /* I1352b */
 #define CTL_OFFER_NOTNOW 0x280BL /* I1182: the first-start sync offer, Not now */
 #define CTL_OFFER_SYNC 0x280CL   /* its Sync now button */
 #define CTL_OFFER_NEVER 0x280DL  /* I1308c: its Never button */
-#define CTL_OFFER_ROW 0x2900L    /* its per-source checks, CTL_OFFER_ROW + k */
+#define CTL_OFFER_ROW 0x2C00L    /* its per-source checks, CTL_OFFER_ROW + k (I1362: was 0x2900 = CTL_SIDE_BASE, so the offer branch swallowed the Your Library + and > presses; keep every base 0x100 apart) */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
 /* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
