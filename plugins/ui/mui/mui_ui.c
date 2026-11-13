@@ -167,6 +167,7 @@ typedef struct mui_state {
     Object* root;                   /* window contents: its MUIA_Width drives the breakpoint (MUI-P2-2) */
     Object* slot[MUI_SLOT_COUNT];   /* the five layout regions and the top bar, created once, shown or hidden */
     Object* balance[2];             /* sidebar|main and main|detail */
+    Object* close_spacer;           /* I1370: the Close row's spacer, shown while the top bar beside the button is hidden or empty */
     uint32_t open_layout_w; /* I973h: layout width of the ladder step that opened the window (cap for the resize check) */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
@@ -1581,8 +1582,12 @@ static Object* mui_topbar_group(mui_state* s) {
 
 /* I1366: the borderless main window (D-M4-3) has no close gadget, so a Close button sits in the upper left corner, left of the top bar.
  * One row with the top bar on RTG; on the bitmap tier the top bar is hidden and the row holds the button alone. A press asks "Quit Selecta?"
- * through the Esc requester (mui_io_new_input). */
-static Object* mui_close_row(Object* top) {
+ * through the Esc requester (mui_io_new_input).
+ * I1370: the row is a child of the root VGroup, and MUI caps a vertical group's maximum width at its children's smallest maximum, so the row
+ * must stay unbounded or the window cannot open full width (D-M4-3). The top bar is unbounded only while it is shown and filled (RTG tier and
+ * lay.show[TOPBAR]); otherwise the row holds the lone button, MUI sized the window to its minimum (519 of 800, rig 8) and centred the button.
+ * The unbounded spacer after the top bar is shown exactly then (mui_close_spacer_sync), so a visible top bar keeps its own centring. */
+static Object* mui_close_row(mui_state* s, Object* top) {
     Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* b = mui_make_button_i("Close", "Close", "close", NULL, CTL_WIN_CLOSE, 0, 1, MUI_AA_ROLE_NORMAL);
     if (row == NULL || b == NULL) {
@@ -1590,12 +1595,18 @@ static Object* mui_close_row(Object* top) {
     }
     DoMethod(row, OM_ADDMEMBER, b);
     DoMethod(row, OM_ADDMEMBER, top);
-    if (!g_screen_rtg) {
-        /* the bitmap-tier top bar is an empty group (max width 0), so MUI centred the lone button (rig 8, effd919a: x240 of 519);
-         * an unbounded spacer takes the rest of the row and keeps the button in the corner */
-        DoMethod(row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    s->close_spacer = MUI_NewObject((char*)MUIC_Rectangle, MUIA_ShowMe, (ULONG)!g_screen_rtg, TAG_DONE);
+    if (s->close_spacer != NULL) {
+        DoMethod(row, OM_ADDMEMBER, s->close_spacer);
     }
     return row;
+}
+
+/* I1370: show the Close row's spacer while the top bar beside the button is hidden or empty (see mui_close_row). */
+static void mui_close_spacer_sync(mui_state* s) {
+    if (s->close_spacer != NULL) {
+        set(s->close_spacer, MUIA_ShowMe, (g_screen_rtg && s->lay.show[MUI_SLOT_TOPBAR]) ? FALSE : TRUE);
+    }
 }
 
 /* MUI-P4: the tool rows above the list: the search String (the command line is a popup, I1337), the like button, the rating and subsong Cycles,
@@ -4132,6 +4143,7 @@ static void mui_apply_layout(mui_state* s) {
         /* I615d (design 8.2): the top bar takes the height of its children (VertWeight 0), the body the rest. */
         set(s->slot[i], MUIA_VertWeight, i == MUI_SLOT_TOPBAR ? 0 : s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
     }
+    mui_close_spacer_sync(s);
     if (s->np_btn != NULL) {
         set(s->np_btn, MUIA_ShowMe, mui_np_toggle_shown(&s->lay) ? TRUE : FALSE); /* the panel exists only at three columns (Mac R3) */
     }
@@ -4249,7 +4261,7 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_FONT TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
-                Child, (s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s), wattr.borderless ? mui_close_row(s->slot[MUI_SLOT_TOPBAR]) : s->slot[MUI_SLOT_TOPBAR]),
+                Child, (s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s), wattr.borderless ? mui_close_row(s, s->slot[MUI_SLOT_TOPBAR]) : s->slot[MUI_SLOT_TOPBAR]),
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1),
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(s, g_screen_rtg),
