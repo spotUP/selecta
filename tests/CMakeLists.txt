@@ -562,6 +562,10 @@ set(MCC_DIR "${PROJECT_SOURCE_DIR}/plugins/shared/mcc")
 add_test(NAME mcc-include-check COMMAND "${CMAKE_COMMAND}" "-DMCC_DIR=${MCC_DIR}" "-DUI_DIR=${PROJECT_SOURCE_DIR}/plugins/ui/mui"
   "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DROOTS=${MCC_CHECK_ROOTS}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake")
 set_tests_properties(mcc-include-check PROPERTIES TIMEOUT 30)
+# I1362b: no two MUI control id ranges overlap (CTL_OFFER_ROW once equalled CTL_SIDE_BASE). Pure cmake -P, no build needed.
+add_test(NAME mui-ctl-ranges COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c"
+  -P "${PROJECT_SOURCE_DIR}/tests/ui/mui_ctl_ranges.cmake")
+set_tests_properties(mui-ctl-ranges PROPERTIES TIMEOUT 30)
 if(NOT SEL_AMIGA)
   add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
   target_include_directories(mui_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
