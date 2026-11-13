@@ -36,7 +36,7 @@ if(NOT src EQUAL 0 OR NOT so MATCHES "listing_rows=3" OR NOT so MATCHES "skipped
   message(FATAL_ERROR "I725f: want 3 rows, 1 skipped (rc=${src})\n${so}${se}")
 endif()
 if(NOT so MATCHES "podcast_row=Fixture-Show/Episode-One/http://icy.test/pod/ep1.mp3\\|Podcast - Mon, 01 Jan 2024"
-   OR NOT so MATCHES "Fixture-Show/Fish & Chips/http://icy.test/pod/ep2.mp3\\?x=1&y=2" OR NOT so MATCHES "Fixture-Show/Cdata Three/")
+   OR NOT so MATCHES "Fixture-Show/Fish & Chips … Odd Pod's/http://icy.test/pod/ep2.mp3\\?x=1&y=2" OR NOT so MATCHES "Fixture-Show/Cdata Three/")
   message(FATAL_ERROR "I725f: rows, titles or enclosure URLs are wrong\n${so}")
 endif()
 

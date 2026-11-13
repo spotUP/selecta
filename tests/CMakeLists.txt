@@ -3831,6 +3831,12 @@ if(NOT SEL_AMIGA)
   add_test(NAME asma-unit COMMAND asma_unit_test)
   set_tests_properties(asma-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "asma_unit_ok")
 
+  # I1346: entity decoding (numeric, hex, named, double-escaped) in the shared XML tag reader.
+  add_executable(xml_scan_unit_test xml_scan_unit_test.c)
+  target_link_libraries(xml_scan_unit_test PRIVATE selecta_shared_source)
+  add_test(NAME xml-scan-unit COMMAND xml_scan_unit_test)
+  set_tests_properties(xml-scan-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xml_scan_unit_ok")
+
   # I405: the aminet INDEX line parser and source descriptor, on the recorded INDEX fixture.
   add_executable(aminet_unit_test aminet_unit_test.c)
   target_sources(aminet_unit_test PRIVATE
