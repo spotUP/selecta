@@ -48,7 +48,7 @@ enum { TUI_INFO_NONE = 0, TUI_INFO_NOWPLAYING = 1, TUI_INFO_SONGINFO = 2 };
 #define TUI_MENU_MAX 10u
 
 /* Menu items (I1190): the song menu in sel_uim_song_menu_label order, the playlist menu, and the playlist picker. */
-enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK };
+enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK, MN_QUIT };
 
 typedef struct tui {
     sel_engine* engine;
@@ -954,6 +954,12 @@ static void tui_menu_name(tui* u, const char* name) {
 static void tui_menu_confirm(tui* u, uint32_t code) {
     char line[320];
     u->mn_answers++;
+    if (u->mn_pending == (uint32_t)MN_QUIT) { /* I1367: Enter (or y) quits, Escape or any other key keeps running */
+        if (code == 13u || code == (uint32_t)'y' || code == (uint32_t)'Y') {
+            u->quit = 1;
+        }
+        return;
+    }
     if (code != (uint32_t)'y' && code != (uint32_t)'Y') {
         return;
     }
@@ -1367,6 +1373,13 @@ static void tui_key(tui* u, const txt_key* k) {
     }
     action = txt_bindings_lookup(&u->binds, tui_bind_ctx(u), k->code, k->mods);
     if (action == NULL) {
+        if (k->code == 27u && k->mods == 0) { /* I1367 / I623: Escape with nothing open asks before quitting; literal text moves to uimodel in I1368 */
+            u->key_count++;
+            u->dirty = 1;
+            u->mn_pending = (uint32_t)MN_QUIT;
+            u->cmd_mode = 4;
+            snprintf(u->mn_lab[0], sizeof u->mn_lab[0], "Quit Selecta?");
+        }
         return; /* not a key the UI knows */
     }
     u->key_count++;
@@ -2247,7 +2260,7 @@ static void tui_draw(tui* u) {
         uint32_t ly = my + mh - 1u;
         if (u->cmd_mode) {
             if (u->cmd_mode == 4) {
-                snprintf(line, sizeof line, "%s  y Yes  any other key No", u->mn_lab[0]);
+                snprintf(line, sizeof line, u->mn_pending == (uint32_t)MN_QUIT ? "%s  Enter Quit  Esc Cancel" : "%s  y Yes  any other key No", u->mn_lab[0]);
             } else if (u->cmd_mode == 5) {
                 snprintf(line, sizeof line, "Note: %s%s%s", txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
             } else if (u->cmd_mode == 3) {

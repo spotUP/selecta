@@ -221,6 +221,47 @@ int main(int argc, char** argv) {
         dump_path = NULL;
     }
 
+    /* I1367 (twin of I623): Escape with nothing open asks "Quit Selecta?"; Escape cancels and keeps running, Enter quits. */
+    {
+        static char dump[8192], keys3[1024], dpath3[1024];
+        uint32_t i;
+        int r = 0, asked = 0, cancelled = 0;
+        snprintf(keys3, sizeof keys3, "%s/text_ui_esc.keys", argv[1]);
+        snprintf(dpath3, sizeof dpath3, "%s/text_ui_esc.dump", argv[1]);
+        f = fopen(keys3, "wb");
+        if (f == NULL) {
+            return 2;
+        }
+        fprintf(f, "Space\nwait 60\nEscape\nwait 60\nEscape\nwait 60\nEscape\nwait 60\nEnter\nwait 600\n");
+        fclose(f);
+        remove(dpath3);
+        dump_path = dpath3;
+        ui = open_ui(host, e, &h, keys3);
+        CHECK(ui != NULL, "esc quit: open failed");
+        if (ui != NULL) {
+            int quit_at = -1;
+            for (i = 0; r >= 0 && i < 120u; i++) {
+                r = h.wait(ui, TURN_MS);
+                read_dump(dump, sizeof dump);
+                if (strstr(dump, "Quit Selecta?") != NULL) {
+                    asked++;
+                } else if (asked > 0 && !cancelled) {
+                    cancelled = 1; /* the second Escape closed the prompt and the UI still runs */
+                    CHECK(r >= 0, "esc quit: Escape in the confirm quit the UI");
+                    CHECK(strstr(dump, "Enter Quit  Esc Cancel") == NULL, "esc quit: prompt text left after cancel");
+                }
+                if (r < 0) {
+                    quit_at = (int)i;
+                }
+            }
+            CHECK(asked > 0, "esc quit: Escape with nothing open showed no 'Quit Selecta?' prompt");
+            CHECK(cancelled, "esc quit: Escape did not cancel the prompt");
+            CHECK(quit_at >= 0, "esc quit: Enter on the prompt did not quit");
+            h.close(ui);
+        }
+        dump_path = NULL;
+    }
+
     sel_engine_destroy(e);
     printf("%s text-ui-keys-wait\n", failures ? "FAIL" : "ok");
     return failures ? 1 : 0;
