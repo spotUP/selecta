@@ -4496,6 +4496,11 @@ if(NOT SEL_AMIGA)
   set_tests_properties(source-sync-due PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_sync_due_ok")
 
   # I1373: the engine start allocation on a 16 MB machine (search buckets grow on demand); fails when the start need grows past BUDGET_KB.
+  add_executable(queue_grow_test engine/queue_grow_test.c)
+  target_include_directories(queue_grow_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(queue_grow_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME engine-queue-grow COMMAND queue_grow_test)
+  set_tests_properties(engine-queue-grow PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "queue_grow_ok")
   add_executable(start_alloc_test engine/start_alloc_test.c)
   target_include_directories(start_alloc_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_compile_definitions(start_alloc_test PRIVATE BUDGET_KB=3200)

@@ -32,6 +32,38 @@ int sel_queue_init(sel_queue* q, const sel_host* host, uint32_t capacity, uint32
     return 1;
 }
 
+/* I1373-2: grow on demand. Doubles until both needs fit; the old tables are copied and freed. Nothing changes on failure. */
+int sel_queue_grow(sel_queue* q, const sel_host* host, uint32_t need_entries, uint32_t need_text) {
+    uint32_t cap = q->capacity, tb = q->text_bytes;
+    sel_queue_entry* ne;
+    char* nt;
+    while (cap < need_entries) {
+        cap = cap > 0x7FFFFFFFu / 2u ? need_entries : cap * 2u;
+    }
+    while (tb < need_text) {
+        tb = tb > 0x7FFFFFFFu / 2u ? need_text : tb * 2u;
+    }
+    if (cap == q->capacity && tb == q->text_bytes) {
+        return 1;
+    }
+    ne = host->mem_alloc(host, (size_t)cap * sizeof *ne, SEL_MEM_FAST);
+    nt = host->mem_alloc(host, tb, SEL_MEM_FAST);
+    if (ne == NULL || nt == NULL) {
+        if (ne) host->mem_free(host, ne);
+        if (nt) host->mem_free(host, nt);
+        return 0;
+    }
+    memcpy(ne, q->entries, (size_t)q->count * sizeof *ne);
+    memcpy(nt, q->text, q->text_used);
+    host->mem_free(host, q->entries);
+    host->mem_free(host, q->text);
+    q->entries = ne;
+    q->text = nt;
+    q->capacity = cap;
+    q->text_bytes = tb;
+    return 1;
+}
+
 void sel_queue_free(sel_queue* q, const sel_host* host) {
     if (q->entries) {
         host->mem_free(host, q->entries);
