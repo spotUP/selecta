@@ -802,7 +802,7 @@ static void test_field_source(void) {
     }
     CHECK(count_of(ui, "MUIC_String") == 0, "stock string left in mui_ui.c: %d", count_of(ui, "MUIC_String"));
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_FIELD") == 0, "stock string frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_string(") == 6, "string constructor sites: %d (definition + 5: top bar, command line, palette, tool rows, settings)", count_of(ui, "mui_make_string("));
+    CHECK(count_of(ui, "mui_make_string(") == 7, "string constructor sites: %d (definition + 6: top bar, command line, palette, name prompt, tool rows, settings)", count_of(ui, "mui_make_string("));
     CHECK(count_of(ui, "mui_aafield_new(") == 1, "one AAField constructor call: %d", count_of(ui, "mui_aafield_new("));
     CHECK(count_of(ui, "mui_aafield_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill_hole(") != NULL,
@@ -891,7 +891,7 @@ static void test_field_placeholder(void) {
         CHECK(ph != NULL && strstr(ph, "aa_text(") != NULL, "placeholder drawn through aa_text");
         CHECK(strstr(cls, "MUIA_String_Contents, MUIV_EveryTime") != NULL, "repaint on contents change");
         CHECK(count_of(ui, "sel_uim_search_hint(") == 1 && count_of(ui, "SEL_UIM_CMD_HINT") == 1 && count_of(ui, "r->label);") >= 1, "string sites pass hints");
-        CHECK(count_of(ui, "mui_make_string(") == 6, "string constructor sites: %d", count_of(ui, "mui_make_string("));
+        CHECK(count_of(ui, "mui_make_string(") == 7, "string constructor sites: %d", count_of(ui, "mui_make_string("));
     }
     free(cls);
     free(ui);
