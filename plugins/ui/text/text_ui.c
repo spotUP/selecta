@@ -1287,6 +1287,8 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
         } else if (verb != NULL && u->pal.items[u->pal.cursor].id >= SEL_CMD_COUNT) { /* a local entry: its action word */
             if (strcmp(verb, "settings") == 0) {
                 tui_settings_open(u);
+            } else {
+                (void)tui_local(u, verb, NULL); /* I1222i-3: switch_view, focus_region */
             }
         } else if (verb != NULL) {
             tui_send(u, verb);

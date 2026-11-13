@@ -1,0 +1,12 @@
+wait 300
+Tab
+wait 100
+Tab
+wait 100
+Tab
+wait 100
+j
+wait 100
+Enter
+wait 100
+wait 300

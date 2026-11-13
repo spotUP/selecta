@@ -19,8 +19,9 @@ extern "C" {
 
 #define TXT_PAL_QUERY 48u
 /* I1188: entries that are not engine verbs but screens of the text UI. Their ids follow the verbs (id >= SEL_CMD_COUNT);
- * the picked name is the screen's word, bound to the "@<name>" action. */
-#define TXT_PAL_LOCAL_COUNT 1u
+ * the picked name is the screen's word, bound to the "@<name>" action. I1222i-3: also the two region keys (V switch_view, Tab
+ * focus_region), which are local @ actions with no verb; listing them here is what puts them on the help page. */
+#define TXT_PAL_LOCAL_COUNT 3u
 
 /* I1211: one row per action of the shared action table (sel_uim_action_at), after the verbs and local entries: id =
  * SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT + action index, name = the action label, line = the protocol line it sends, key = the

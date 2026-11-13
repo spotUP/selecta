@@ -78,6 +78,10 @@ int main(void) {
     CHECK(it != NULL && it->key[0] == 0);
     it = find("settings"); /* I1188: a local entry shows its @settings key */
     CHECK(it != NULL && it->id == SEL_CMD_COUNT && strcmp(it->key, "S") == 0);
+    it = find("switch_view"); /* I1222i-3: the region keys are local entries, so the help page lists V and Tab */
+    CHECK(it != NULL && it->id == SEL_CMD_COUNT + 1u && strcmp(it->key, "V") == 0);
+    it = find("focus_region");
+    CHECK(it != NULL && it->id == SEL_CMD_COUNT + 2u && strcmp(it->key, "Tab") == 0);
 
     /* query qsh: QUEUE_SHUFFLE first */
     txt_palette_set_query(&g_p, "qsh");

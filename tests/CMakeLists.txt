@@ -4718,6 +4718,11 @@ if(NOT SEL_AMIGA)
       "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_a.keys"
       "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_b.keys"
       "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_c.keys"
+      "-DKEYS_E=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_e.keys"
+      "-DKEYS_F=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_f.keys"
+      "-DKEYS_G=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_g.keys"
+      "-DKEYS_H=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_h.keys"
+      "-DKEYS_I=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_i.keys"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_regions"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions.cmake")
   set_tests_properties(text-ui-regions PROPERTIES LABELS m3)

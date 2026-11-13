@@ -92,7 +92,7 @@ static void fill_key(txt_palette* p, txt_palette_item* it) {
 static const struct {
     const char* name;
     const char* area;
-} k_local[TXT_PAL_LOCAL_COUNT] = {{"settings", "view"}};
+} k_local[TXT_PAL_LOCAL_COUNT] = {{"settings", "view"}, {"switch_view", "view"}, {"focus_region", "view"}};
 
 void txt_palette_set_query(txt_palette* p, const char* query) {
     uint32_t id, n = 0, i, j;
