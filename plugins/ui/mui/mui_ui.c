@@ -1590,6 +1590,11 @@ static Object* mui_close_row(Object* top) {
     }
     DoMethod(row, OM_ADDMEMBER, b);
     DoMethod(row, OM_ADDMEMBER, top);
+    if (!g_screen_rtg) {
+        /* the bitmap-tier top bar is an empty group (max width 0), so MUI centred the lone button (rig 8, effd919a: x240 of 519);
+         * an unbounded spacer takes the rest of the row and keeps the button in the corner */
+        DoMethod(row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    }
     return row;
 }
 
