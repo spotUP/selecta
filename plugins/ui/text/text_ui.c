@@ -16,7 +16,12 @@
 #include <string.h>
 
 #include "grid.h"
+#include <selecta/uimodel/sidestack.h>
+/* browse.h #defines SEL_UIM_SIDE_CHIPS (the chip count) and shadows the side-stack kind of that name: take the kind first. */
+static const sel_uim_side_kind TUI_SIDE_KIND_CHIPS = SEL_UIM_SIDE_CHIPS;
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel.h>
@@ -93,11 +98,12 @@ typedef struct tui {
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
-    sel_tag stats[32];
+    sel_tag stats[33];
     sel_uim uim;        /* I1222g: the shared frame the player bar is drawn from */
+    uint32_t pv_x0;     /* I1222h: grid column of the main region; page columns are relative to it */
     uint32_t pv_y0;     /* I1222g: grid row of the main region's first row; page row 2 maps there (pages keep their old row numbers until I1222i) */
     uint32_t pv_rows;   /* I1222g: rows of the main region; page rows 2 .. pv_rows + 2 are drawn, the rest clipped */
-    uint32_t player_draws, player_rows, topbar_draws;
+    uint32_t player_draws, player_rows, topbar_draws, sidebar_draws;
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -157,20 +163,20 @@ static int tui_prow(const tui* u, uint32_t row, uint32_t* grow) {
 static void tui_pput(tui* u, uint32_t col, uint32_t row, uint32_t cp, txt_style style) {
     uint32_t g;
     if (tui_prow(u, row, &g)) {
-        txt_grid_put(&u->grid, col, g, cp, style);
+        txt_grid_put(&u->grid, u->pv_x0 + col, g, cp, style);
     }
 }
 
 static uint32_t tui_ptext(tui* u, uint32_t col, uint32_t row, const char* utf8, uint32_t maxcols, txt_style style) {
     uint32_t g;
-    return tui_prow(u, row, &g) ? txt_grid_text(&u->grid, col, g, utf8, maxcols, style) : 0u;
+    return tui_prow(u, row, &g) ? txt_grid_text(&u->grid, u->pv_x0 + col, g, utf8, maxcols, style) : 0u;
 }
 
 static void tui_pfill(tui* u, uint32_t col, uint32_t row, uint32_t w, uint32_t h, uint32_t cp, txt_style style) {
     uint32_t i, g;
     for (i = 0; i < h; i++) {
         if (tui_prow(u, row + i, &g)) {
-            txt_grid_fill(&u->grid, col, g, w, 1u, cp, style);
+            txt_grid_fill(&u->grid, u->pv_x0 + col, g, w, 1u, cp, style);
         }
     }
 }
@@ -2187,10 +2193,93 @@ static void tui_splash_draw(tui* u) {
     }
 }
 
+/* I1222h: the door the open page belongs to, as the door table names its page (the sidebar selection). */
+static const char* tui_door_page(const tui* u, const sel_state* s) {
+    const sel_view_state* v = s->view;
+    if (u->page == TUI_INFO_NOWPLAYING) {
+        return "nowplaying";
+    }
+    if (u->page == TUI_INFO_SONGINFO) {
+        return "songinfo";
+    }
+    if (v != NULL && v->source == SEL_VIEW_QUEUE) {
+        return "queue";
+    }
+    if (v != NULL && v->source == SEL_VIEW_HOME) {
+        return "home";
+    }
+    return v != NULL && v->source == SEL_VIEW_FOLDERS ? "folders" : "";
+}
+
+/* I1222h: the sidebar region, drawn from the shared side stack (sel_uim_side_stack over the door table, text spec: every row one cell)
+ * with the filter chips wrapped by sel_uim_chips_flow. The icon rail gives one letter per door. The last column is the separator. */
+static void tui_sidebar(tui* u, const sel_state* s, const sel_uim_region* r, int rail, int top_bar) {
+    sel_uim_side_item it[16];
+    sel_uim_side_spec sp;
+    int32_t cw[SEL_UIM_LFILTERS], cx[SEL_UIM_LFILTERS], crow[SEL_UIM_LFILTERS];
+    uint32_t n, i, k, x0 = (uint32_t)r->x, w = r->w > 1u ? r->w - 1u : r->w, nch = SEL_UIM_LFILTERS - 1u;
+    const char* open = tui_door_page(u, s);
+    const sel_view_state* v = s->view;
+    txt_style nm = tui_style(u, TXT_ROLE_NORMAL), dim = tui_style(u, TXT_ROLE_DIM), lab = tui_style(u, TXT_ROLE_LABEL);
+    txt_grid_fill(&u->grid, x0, (uint32_t)r->y, w, r->h, ' ', nm);
+    for (i = 0; i < r->h; i++) {
+        txt_grid_put(&u->grid, x0 + w, (uint32_t)r->y + i, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
+    }
+    memset(&sp, 0, sizeof sp);
+    sp.brand_h = sp.door_h = sp.libhdr_h = sp.chip_row_h = sp.list_row_h = 1;
+    sp.brand_min_w = 12;
+    sp.rail = rail;
+    sp.top_bar = top_bar;
+    for (k = 0; k < nch; k++) {
+        cw[k] = (int32_t)strlen(sel_uim_lfilter_label(k + 1u)) + 2;
+    }
+    sp.chip_rows = w > 2u ? sel_uim_chips_flow(cw, nch, 1, (int32_t)w - 2, cx, crow) : 0;
+    n = sel_uim_side_stack(&sp, (int32_t)w, (int32_t)r->h, it, 16u);
+    for (i = 0; i < n; i++) {
+        uint32_t y = (uint32_t)r->y + (uint32_t)it[i].y;
+        if (it[i].kind == SEL_UIM_SIDE_BRAND) {
+            txt_grid_text(&u->grid, x0 + 1u, y, "Selecta", w - 1u, lab);
+        } else if (it[i].kind == SEL_UIM_SIDE_DOOR) {
+            const sel_uim_door* d = sel_uim_door_at((uint32_t)it[i].door);
+            txt_style st = strcmp(d->page, open) == 0 ? tui_style(u, TXT_ROLE_CURSOR) : nm;
+            txt_grid_fill(&u->grid, x0, y, w, 1u, ' ', st);
+            if (rail) { /* one letter per door; Song Information is I (S is Search) */
+                char l[2];
+                l[0] = strcmp(d->page, "songinfo") == 0 ? 'I' : d->label[0];
+                l[1] = '\0';
+                txt_grid_text(&u->grid, x0 + 1u, y, l, 1u, st);
+            } else {
+                txt_grid_text(&u->grid, x0 + 1u, y, d->label, w - 1u, st);
+            }
+        } else if (it[i].kind == SEL_UIM_SIDE_LIBHDR) {
+            txt_grid_text(&u->grid, x0 + 1u, y, "Your Library", w - 1u, lab);
+            if (w >= 18u) {
+                txt_grid_text(&u->grid, x0 + w - 4u, y, "[+]", 3u, dim);
+            }
+        } else if (it[i].kind == TUI_SIDE_KIND_CHIPS) {
+            for (k = 0; k < nch; k++) {
+                char c[32];
+                snprintf(c, sizeof c, "[%s]", sel_uim_lfilter_label(k + 1u));
+                txt_grid_text(&u->grid, x0 + 1u + (uint32_t)cx[k], y + (uint32_t)crow[k], c, (uint32_t)cw[k], dim);
+            }
+        } else if (it[i].kind == SEL_UIM_SIDE_LIST && v != NULL) { /* the pane's own list data, with its cursor */
+            uint32_t j;
+            for (j = 0; j < v->row_n && j < (uint32_t)it[i].h; j++) {
+                int cur = v->window_start + j == v->cursor;
+                txt_style st = cur ? tui_style(u, TXT_ROLE_CURSOR) : nm;
+                if (cur) {
+                    txt_grid_fill(&u->grid, x0, y + j, w, 1u, ' ', st);
+                }
+                txt_grid_text(&u->grid, x0 + 1u, y + j, v->rows[j].text, w - 1u, st);
+            }
+        }
+    }
+}
+
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
     sel_uim_layout lay;
-    const sel_uim_region *mr, *pr;
+    const sel_uim_region *mr, *pr, *sr;
     uint32_t width, y, my = 0, mh = 0;
     if (s->song.path != NULL) {
         u->splash_off = 1;
@@ -2206,15 +2295,20 @@ static void tui_draw(tui* u) {
     tui_layout(u, &lay);
     mr = u->layout == SEL_UIM_LAYOUT_MINI ? NULL : tui_region(&lay, "main");
     pr = tui_region(&lay, "player");
+    sr = tui_region(&lay, "sidebar");
     if (mr != NULL) {
         my = (uint32_t)mr->y;
         mh = mr->h;
         /* the page view: its row 2 is the main region's first row; the pages keep their row numbers (I1222i makes them region-relative) */
+        u->pv_x0 = (uint32_t)mr->x;
         u->pv_y0 = my;
         u->pv_rows = mh;
     }
-    width = u->info && u->layout == SEL_UIM_LAYOUT_FULL && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS
-                                                                                              : u->grid.cols;
+    /* I1222h: pages draw inside the main region, their column 0 is its first column */
+    width = mr == NULL ? u->grid.cols : mr->w;
+    if (mr != NULL && u->info && u->layout == SEL_UIM_LAYOUT_FULL && mr->w > TUI_INFO_COLS + 20u) {
+        width = mr->w - TUI_INFO_COLS;
+    }
     if (mr == NULL) {
         ; /* the player bar alone */
     } else if (s->stats != NULL) {
@@ -2232,7 +2326,7 @@ static void tui_draw(tui* u) {
     } else {
         tui_pane(u, s, width);
     }
-    if (mr != NULL && width < u->grid.cols && u->page == TUI_INFO_NONE) {
+    if (mr != NULL && width < mr->w && u->page == TUI_INFO_NONE) {
         for (y = 2; y < mh + 2u; y++) {
             tui_pput(u, width, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
         }
@@ -2244,6 +2338,10 @@ static void tui_draw(tui* u) {
         tui_menu_draw(u);
     } else if (u->overlay) {
         tui_overlay(u);
+    }
+    if (sr != NULL && u->layout != SEL_UIM_LAYOUT_MINI) {
+        tui_sidebar(u, s, sr, lay.breakpoint == SEL_UIM_BP_ICON_SIDEBAR, lay.topbar.h != 0u);
+        u->sidebar_draws++;
     }
     if (lay.topbar.h != 0u) {
         tui_topbar(u, (uint32_t)lay.topbar.y);
@@ -2277,8 +2375,8 @@ static void tui_draw(tui* u) {
         } else {
             snprintf(line, sizeof line, "%s", u->cmd.status);
         }
-        txt_grid_fill(&u->grid, 0, ly, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_NORMAL));
-        txt_grid_text(&u->grid, 1, ly, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
+        txt_grid_fill(&u->grid, (uint32_t)mr->x, ly, mr->w, 1, ' ', tui_style(u, TXT_ROLE_NORMAL));
+        txt_grid_text(&u->grid, (uint32_t)mr->x + 1u, ly, line, mr->w - 1u, tui_style(u, TXT_ROLE_NORMAL));
     }
 }
 
@@ -2631,8 +2729,10 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[29].value = (u->player_draws & 0xFFFFu) | (u->player_rows << 16);
     u->stats[30].tag = SEL_UI_STAT_TOPBAR_DRAWS;
     u->stats[30].value = u->topbar_draws;
-    u->stats[31].tag = SEL_TAG_END;
-    u->stats[31].value = 0;
+    u->stats[31].tag = SEL_UI_STAT_SIDEBAR_DRAWS;
+    u->stats[31].value = u->sidebar_draws;
+    u->stats[32].tag = SEL_TAG_END;
+    u->stats[32].value = 0;
     return u->stats;
 }
 

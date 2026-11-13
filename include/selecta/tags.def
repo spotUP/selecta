@@ -459,6 +459,8 @@ SEL_TAG(UI, STAT_NOWPLAY_DRAWS,       0x5100, INT)
 /* I1222g text UI sentinels: player bar frames drawn from sel_uim_frame (low 16 bits; bits 16.. = rows of the last bar) and top bar rows drawn. */
 SEL_TAG(UI, STAT_PLAYER_BAR,          0x5101, INT)
 SEL_TAG(UI, STAT_TOPBAR_DRAWS,        0x5102, INT)
+/* I1222h text UI sentinel: sidebar frames drawn from sel_uim_side_stack. */
+SEL_TAG(UI, STAT_SIDEBAR_DRAWS,       0x5103, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
