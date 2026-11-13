@@ -14114,6 +14114,24 @@ static void palette_pick(desk* d) {
     if (verb == NULL) {
         return;
     }
+    if (d->pal.items[d->pal.cursor].id >= SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT) {
+        /* I1211: an action row (label "Shuffle Queue") runs its line like its key; the label is not a command */
+        const char* act = txt_palette_picked_line(&d->pal);
+        if (act == NULL) {
+            return;
+        }
+        snprintf(line, sizeof line, "%s", act);
+        d->palette_runs++;
+        snprintf(d->last_verb, sizeof d->last_verb, "%s", line);
+        d->overlay = OV_NONE;
+        if (desk_send(d, line)) {
+            d->overlay_sends_ok++;
+            desk_toast(d, "Command sent");
+        } else {
+            desk_toast(d, "Not a command");
+        }
+        return;
+    }
     if (txt_palette_verb_needs_args(verb)) {
         txt_cmdline_open(&d->cmd);
         snprintf(d->cmd.text, sizeof d->cmd.text, "%s ", verb);
