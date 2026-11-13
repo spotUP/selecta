@@ -2014,14 +2014,14 @@ static void songs_cols(desk* d, int32_t row_w, int32_t* x, int32_t* w) {
 }
 
 static sel_gui_rect songs_header_col(desk* d, uint32_t col) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     int32_t x[SONGS_C_N], w[SONGS_C_N];
     songs_cols(d, mn.w, x, w);
     return rect_of(mn.x + x[col], songs_top(d), w[col], lpx(d, SONG_HEADER_H));
 }
 
 static sel_gui_rect songs_row_rect(const desk* d, uint32_t row) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     return rect_of(mn.x, songs_top(d) + lpx(d, SONG_HEADER_H) + (int32_t)row * lpx(d, SONG_ROW_H) - lpx_q16(d, d->scroll_q16), mn.w, lpx(d, SONG_ROW_H));
 }
 
@@ -2108,6 +2108,7 @@ static void draw_songs(desk* d) {
     d->songs_fmt_w = 0; /* I1079d: measure the Format labels again for this frame */
     sel_gui_clip_push(d->canvas, mn);
     sel_gui_fill_rect(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.h), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    draw_text(d, rect_of(panel_rect(d, "main").x + lpx(d, HOME_MARGIN), mn.y + lpx(d, 16), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, page_title_h(d))), "Songs", 1, 32, text);
     for (c = 0; c < 2u; c++) {
         static const char* const names[2] = {"Title", "Format"};
         char label[48];
