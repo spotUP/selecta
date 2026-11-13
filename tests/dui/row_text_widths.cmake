@@ -42,10 +42,21 @@ dui_run(seed --ui desktop --backend mem --view home --clock fixed --stats --db "
 
 function(check_canvas canvas)
   set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas ${canvas})
+  # I1372: at 900x700 the Library chips wrap to five rows and "alpha" sits below the sidebar region (y 636, region ends 628, above the
+  # player bar), so it is reachable by scrolling only. When the idle row is below the region, a wheel over the list brings it up.
+  set(scroll "")
   file(WRITE "${WORK}/idle.txt" "wait 100\n")
   dui_run(idle_${canvas} ${common} --input "${WORK}/idle.txt")
   side_row(xy "${idle_${canvas}}" "alpha")
-  file(WRITE "${WORK}/open_${canvas}.txt" "click ${xy}\nwait 200\n")
+  separate_arguments(xy_l UNIX_COMMAND "${xy}")
+  list(GET xy_l 1 cy)
+  if(cy GREATER 600)
+    set(scroll "move 100 560\nwheel 0 -1\nwheel 0 -1\nwheel 0 -1\nwheel 0 -1\nwheel 0 -1\nwheel 0 -1\nwait 200\n")
+    file(WRITE "${WORK}/idle.txt" "wait 100\n${scroll}")
+    dui_run(idle_${canvas} ${common} --input "${WORK}/idle.txt")
+    side_row(xy "${idle_${canvas}}" "alpha")
+  endif()
+  file(WRITE "${WORK}/open_${canvas}.txt" "wait 100\n${scroll}click ${xy}\nwait 200\n")
   dui_run(run_${canvas} ${common} --input "${WORK}/open_${canvas}.txt")
   set(dump "${run_${canvas}}")
   if(NOT "${dump}" MATCHES "page=collection")
