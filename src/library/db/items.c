@@ -167,7 +167,9 @@ static const char* format_sql(uint32_t kind) {
         /* I1291: the entry keys, the very strings the playlist page tallies for its hero cover (desktop_ui pls_key): a tile and its page
          * name one family. The songs.path behind a key can carry another extension (non-local sources), and a key without a songs row counts too. */
         return "SELECT e.key FROM playlist_entries e WHERE e.playlist_id=CAST(?1 AS INTEGER)";
-    case SEL_LIB_ITEM_LIKED: return "SELECT s.path FROM songs s JOIN liked l ON l.key=s.key";
+    case SEL_LIB_ITEM_LIKED: /* I1193: liked drives the join. Without ANALYZE statistics the planner scanned all of songs (600 000 rows, 5-8 s cold on the real library)
+     * to probe three liked rows; CROSS JOIN pins the order. */
+    return "SELECT s.path FROM liked l CROSS JOIN songs s ON s.key=l.key";
     case SEL_LIB_ITEM_RECENT: return "SELECT s.path FROM songs s WHERE s.key IN (SELECT key FROM history)";
     case SEL_LIB_ITEM_LOCAL: return "SELECT path FROM songs WHERE source='local'";
     case SEL_LIB_ITEM_SOURCE: return "SELECT path FROM songs WHERE source=?1";
@@ -391,7 +393,7 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
                              " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
                              " ELSE s.key IN (SELECT song_key FROM song_composers WHERE canon=?1) END" BY_PLAYS;
         }
-        if (kind == SEL_LIB_ITEM_LIKED) return SONG_COLS " JOIN liked l ON l.key=s.key ORDER BY l.at DESC, s.id";
+        if (kind == SEL_LIB_ITEM_LIKED) return SONG_COLS " WHERE s.key IN (SELECT key FROM liked) ORDER BY (SELECT l.at FROM liked l WHERE l.key=s.key) DESC, s.id"; /* I1193: seek songs by liked key, no songs scan */
         if (kind == SEL_LIB_ITEM_RECENT) { /* I678g: newest play first; the number column is the time of the last play, not a play count */
             return "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),h.t FROM songs s"
                    " JOIN (SELECT key, MAX(played_at) AS t FROM history GROUP BY key) h ON h.key=s.key ORDER BY h.t DESC, s.id";
