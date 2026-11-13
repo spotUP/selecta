@@ -541,6 +541,25 @@
 *
 ******/
 
+/****** UP-List.mcc/UPA_List_KeysUnfocused ******
+*
+*   NAME
+*       UPA_List_KeysUnfocused -- attribute of UP-List.mcc
+*
+*   FUNCTION
+*       BOOL: Up/Down/Return act while no object is active (popup list; MUI draws a white frame round an active object)
+*
+*   INPUTS
+*       UPA_List_KeysUnfocused - access I. Tag value from <mcc/up.h>.
+*
+*   RESULT
+*       Read with GetAttr/get(), set with SetAttrs/set() or in the MUI_NewObject tag list, as the access letters allow (I = initial, S = set, G = get).
+*
+*   SEE ALSO
+*       <mcc/up.h>, UP-List.mcc
+*
+******/
+
 /****** UP-List.mcc/UPM_List_GetRow ******
 *
 *   NAME
