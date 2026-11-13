@@ -113,7 +113,7 @@ static void mui_requester(const char* text); /* I1352b */
 #define CTL_OFFER_NOTNOW 0x280BL /* I1182: the first-start sync offer, Not now */
 #define CTL_OFFER_SYNC 0x280CL   /* its Sync now button */
 #define CTL_OFFER_NEVER 0x280DL  /* I1308c: its Never button */
-#define CTL_OFFER_ROW 0x2900L    /* its per-source checks, CTL_OFFER_ROW + k */
+#define CTL_OFFER_ROW 0x2C00L    /* its per-source checks, CTL_OFFER_ROW + k (I1362: was 0x2900 = CTL_SIDE_BASE, so the offer branch swallowed the Your Library + and > presses; keep every base 0x100 apart) */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
 /* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
@@ -4030,7 +4030,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_aabtn_set_alt(s->side_expand_btn, s->lay.side_wide != 0u);
             mui_sidebar_refresh(s);
         } else {
-            mui_engine_line(s, mui_door_line(3)); /* the header and the kind chips open the playlists page (I673) */
+            mui_control_fire(s, CTL_DOOR_BASE + 3); /* the header opens the playlists page through the Playlists door (I673); I1362: also shows the list pane, the bare engine line changed nothing visible from Queue or Now Playing */
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the history entry is the door's lines (I794) */
