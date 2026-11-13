@@ -1063,7 +1063,7 @@ static Object* mui_dialog_window_w(const char* title, ULONG id, Object* root, in
         if (close == NULL || hdr == NULL || col == NULL) {
             return NULL;
         }
-        DoMethod(hdr, OM_ADDMEMBER, mui_aatext(title, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(hdr, OM_ADDMEMBER, mui_aatext_whole(title, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT)); /* I1369: a headline is never cut; the ellipsis text opens at three dots wide */
         DoMethod(hdr, OM_ADDMEMBER, close);
         DoMethod(col, OM_ADDMEMBER, hdr);
         DoMethod(col, OM_ADDMEMBER, root);
