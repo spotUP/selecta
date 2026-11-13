@@ -119,7 +119,9 @@ static ULONG aapanel_cleanup(struct IClass* cl, Object* obj, Msg msg) {
 /* I685w run 6: the rectangles the face must not cover. A plain MUI Group (the program's own row and column boxes) fills its gaps
  * with MUI's pen-snapped copy of the inherited background, a second colour inside one card; so the walk goes through plain groups
  * (only the shown page of a page group) and keeps their leaves as holes. A UP object, a nested panel included, paints itself. */
-static int aapanel_holes(Object* grp, int* holes, int n, int depth) {
+/* I1355: *full is set when a leaf did not fit in MUI_AA_PAINT_MAX_HOLES; the caller must not paint the face with a short list
+ * (the face covered every child past the cap). max_depth bounds the walk through plain groups. */
+static int aapanel_holes(Object* grp, int* holes, int n, int depth, int max_depth, int* full) {
     struct List* kids = NULL;
     Object *state, *child;
     static struct IClass* group_cl;
@@ -140,13 +142,17 @@ static int aapanel_holes(Object* grp, int* holes, int n, int depth) {
     state = (Object*)kids->lh_Head;
     {
         LONG i = 0;
-        while (n < MUI_AA_PAINT_MAX_HOLES && (child = NextObject(&state)) != NULL) {
+        while (!*full && (child = NextObject(&state)) != NULL) {
             if (page >= 0 && i++ != page) {
                 continue;
             }
-            if (depth < 8 && group_cl != NULL && OCLASS(child) == group_cl) {
-                n = aapanel_holes(child, holes, n, depth + 1);
+            if (depth < max_depth && group_cl != NULL && OCLASS(child) == group_cl) {
+                n = aapanel_holes(child, holes, n, depth + 1, max_depth, full);
                 continue;
+            }
+            if (n >= MUI_AA_PAINT_MAX_HOLES) {
+                *full = 1;
+                break;
             }
             holes[4 * n] = _left(child);
             holes[4 * n + 1] = _top(child);
@@ -164,9 +170,13 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     if (msg->flags & MADF_DRAWOBJECT) {
         int rad = d->popup ? 0 : mui_aa_panel_radius(d->aa.tok, d->aa.font_px); /* I1349: a popup window is a rectangle */
         if (d->aa.tc) { /* I685w: MUI's background spec snaps to a pen; paint the face in exact RGB around the children, whatever MUI filled */
-            int holes[MUI_AA_PAINT_MAX_HOLES * 4], n = 0;
+            int holes[MUI_AA_PAINT_MAX_HOLES * 4], n = 0, full = 0;
             Object* grp = d->inner != NULL ? d->inner : obj;
-            n = aapanel_holes(grp, holes, 0, 0);
+            n = aapanel_holes(grp, holes, 0, 0, 8, &full);
+            if (full) { /* I1355: too many leaves; the direct children as holes (gaps inside plain groups keep MUI's fill) */
+                full = 0;
+                n = aapanel_holes(grp, holes, 0, 0, 0, &full);
+            }
             {   /* I685w: the window margin around the root object is filled by MUI with the snapped spec too; the root repaints the ring in exact RGB */
                 ULONG root = 0, wptr = 0;
                 GetAttr(MUIA_Window_RootObject, _win(obj), &root);
@@ -191,8 +201,10 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
                 if (mx0 > ox0) aa_rect(&d->aa, _rp(obj), ox0, my0, mx0 - 1, my1, face);
                 if (mx1 < ox1) aa_rect(&d->aa, _rp(obj), mx1 + 1, my0, ox1, my1, face);
             }
-            aa_round_fill_holes(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), rad,
-                                mui_aa_panel_rgb(d->aa.tok, d->role), holes, n);
+            if (!full) { /* I1355: still over the cap: leave MUI's fill rather than cover a child */
+                aa_round_fill_holes(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), rad,
+                                    mui_aa_panel_rgb(d->aa.tok, d->role), holes, n);
+            }
         }
         aa_round_corners(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), rad, d->aa.tok[SEL_GUI_TOKEN_BACKGROUND]); /* I676c: read at draw, a live THEME changes both */
         aa_low_outline(&d->aa, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), rad);

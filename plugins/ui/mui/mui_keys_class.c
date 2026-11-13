@@ -124,6 +124,9 @@ static ULONG __attribute__((used)) k_dispatch_c(struct IClass* cl, Object* obj, 
                 DoMethod(_app(obj), MUIM_Application_ReturnID, id);
                 return MUI_EventHandlerRC_Eat;
             }
+            if (code == 27u) { /* I1354: an unbound Esc reached MUI, which closed the main window = quit with no requester */
+                return MUI_EventHandlerRC_Eat;
+            }
         }
         return 0;
     }
