@@ -4030,7 +4030,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_aabtn_set_alt(s->side_expand_btn, s->lay.side_wide != 0u);
             mui_sidebar_refresh(s);
         } else {
-            mui_engine_line(s, mui_door_line(3)); /* the header and the kind chips open the playlists page (I673) */
+            mui_control_fire(s, CTL_DOOR_BASE + 3); /* the header opens the playlists page through the Playlists door (I673); I1362: also shows the list pane, the bare engine line changed nothing visible from Queue or Now Playing */
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the history entry is the door's lines (I794) */
