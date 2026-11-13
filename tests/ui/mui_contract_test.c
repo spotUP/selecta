@@ -1303,9 +1303,9 @@ static void test_np_page_plan(void) {
             /* I1341: Home's shelves sit in a scrolled virtual group; a plain group asked 742 rows on the 600 row screen and MUI closed the window. */
             const char* hp = strstr(src, "static Object* mui_home_page_group(mui_state* s) {");
             const char* end = hp != NULL ? strstr(hp, "\n}\n") : NULL;
-            const char* vg = hp != NULL ? strstr(hp, "MUI_NewObject((char*)MUIC_Virtgroup") : NULL;
-            const char* sg = hp != NULL ? strstr(hp, "MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, g,") : NULL;
-            CHECK(end != NULL && vg != NULL && sg != NULL && vg < end && sg < end, "I1341: Home builds its shelves in a Virtgroup inside a Scrollgroup");
+            const char* vg = hp != NULL ? strstr(hp, "MUI_NewObject((char*)MUIC_Group") : NULL;
+            const char* sg = hp != NULL ? strstr(hp, "mui_aa_scrollgroup_new(g, 1)") : NULL;
+            CHECK(end != NULL && vg != NULL && sg != NULL && vg < end && sg < end, "I1341/I1351: Home builds its shelves in a group inside the AAScroller scroll group (Virtgroup)");
         }
         CHECK(strstr(src, "mui_door_detail_tab((uint32_t)(id - CTL_DOOR_BASE), &np_tab)") != NULL, "I1333: the full class door handler reaches the detail tab");
         CHECK(strstr(src, "s->p4[P4_NPPAGE]++") != NULL && strstr(src, "set(s->np_tabs, UPA_Tabs_Active") != NULL, "the Now Playing sentinel counts and the tab is set");

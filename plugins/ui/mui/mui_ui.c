@@ -89,6 +89,7 @@ static void mui_libs_close(void) {
 #include "mui_vizarea_class.h"
 #include "mui_listview_class.h"
 #include "mui_keys_class.h"
+#include "mui_scrollgroup_class.h"
 #include <selecta/uimodel/viewcmds.h>
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
 
@@ -1183,8 +1184,7 @@ static Object* mui_sidebar_dyn(const mui_sidebar_model* m);
  * group asks for the height of every library row, so with a few playlists the sidebar alone pushed the full layout's minimum to
  * 638 rows and the 800x600 screen refused it (the open ladder fell to the mini layout). A scrolled group asks for scroll bars only. */
 static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
-    Object* d = MUI_NewObject((char*)MUIC_Virtgroup, TAG_DONE);
-    Object* sg;
+    Object* d = MUI_NewObject((char*)MUIC_Group, TAG_DONE); /* I1351: mui_aa_scrollgroup_new adds the Virtgroup */
     uint32_t i;
     if (d == NULL) {
         return NULL;
@@ -1227,11 +1227,7 @@ static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
         mui_side_button(d, m->card_button, CTL_SIDE_BASE + MUI_SIDE_CARD);
     }
     DoMethod(d, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
-    sg = MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, d, TAG_DONE);
-    if (sg == NULL) {
-        MUI_DisposeObject(d);
-    }
-    return sg;
+    return mui_aa_scrollgroup_new(d, 0); /* I1351: our AAScroller, not the stock Scrollgroup bar */
 }
 
 /* The model of the sidebar for the filter in force: the rows are s->side_items, passed by sel_uim_lfilter_pass (mui_sidebar_fill). */
@@ -1756,8 +1752,6 @@ static const char* mui_shelf_row(void* ctx, long row) {
  * minimum height; MUI refused to open, or left a blank window after the page was shown, when the minimum passed the screen). The
  * contents sit in a Virtgroup. Only on a compact (short) screen, else the contents are returned as they are. hidden: the wrapper starts with MUIA_ShowMe FALSE. Takes `contents`; NULL on failure (contents disposed). */
 static Object* mui_scroll_page(Object* contents, int hidden) {
-    Object* vg;
-    Object* sg;
     if (contents == NULL) {
         return NULL;
     }
@@ -1767,18 +1761,7 @@ static Object* mui_scroll_page(Object* contents, int hidden) {
         }
         return contents;
     }
-    vg = MUI_NewObject((char*)MUIC_Virtgroup, TAG_DONE);
-    if (vg == NULL) {
-        MUI_DisposeObject(contents);
-        return NULL;
-    }
-    DoMethod(vg, OM_ADDMEMBER, contents);
-    sg = MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, vg,
-                       MUIA_ShowMe, (ULONG)(hidden ? FALSE : TRUE), TAG_DONE);
-    if (sg == NULL) {
-        MUI_DisposeObject(vg);
-    }
-    return sg;
+    return mui_aa_scrollgroup_new(contents, hidden); /* I1351: AAScroller bar */
 }
 
 /* I795 (P1): the Home page group: the quick tile row, then up to MUI_HOME_SHELF_MAX shelves (header Text, Show all button, a short AAList).
@@ -1786,8 +1769,7 @@ static Object* mui_scroll_page(Object* contents, int hidden) {
  * as the sidebar (I1092c): a plain group asks for the height of every shown shelf (each list brings its scroller's minimum), so with three
  * filled shelves Home alone pushed the window's minimum to 742 rows on the 800x600 screen and MUI closed the window. */
 static Object* mui_home_page_group(mui_state* s) {
-    Object* g = MUI_NewObject((char*)MUIC_Virtgroup, TAG_DONE);
-    Object* sg;
+    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE); /* I1351: mui_aa_scrollgroup_new adds the Virtgroup */
     uint32_t k;
     s->quick_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     if (g == NULL || s->quick_row == NULL) {
@@ -1830,11 +1812,7 @@ static Object* mui_home_page_group(mui_state* s) {
         DoMethod(g, OM_ADDMEMBER, s->shelf_grp[k]);
     }
     DoMethod(g, OM_ADDMEMBER, mui_page_filler()); /* I1307: Home with no shelves (library still scanning) is all hidden or bounded */
-    sg = MUI_NewObject((char*)MUIC_Scrollgroup, MUIA_Scrollgroup_FreeHoriz, FALSE, MUIA_Scrollgroup_Contents, g, MUIA_ShowMe, FALSE, TAG_DONE);
-    if (sg == NULL) {
-        MUI_DisposeObject(g);
-    }
-    return sg;
+    return mui_aa_scrollgroup_new(g, 1); /* I1351: our AAScroller */
 }
 
 /* I795 (P4): the Browse page: the tiles of mui_browse_tiles in a two column grid (FORMATS_SHOW, COMPOSERS_SHOW, SOURCES). */
@@ -4329,6 +4307,7 @@ static void mui_close(void* state) {
         mui_aabtn_class_free();
         mui_listview_class_free();
         mui_keys_class_free();
+        mui_scrollgroup_class_free();
     }
     mui_timer_close(s);
     if (MUIMasterBase != NULL) {
