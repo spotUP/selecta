@@ -4359,8 +4359,13 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     (void)mui_keys_esc_seen();
     id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
     if (mui_keys_esc_seen() && id == (LONG)MUIV_Application_ReturnID_Quit) {
-        SetAttrs(((mui_state*)ctx)->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE); /* re-arm the close notify */
-        id = 0; /* I1359: the Quit is MUI's Esc-to-CloseRequest on the main window, not a close gadget or the Quit command */
+        /* I1359: the Quit is MUI's Esc-to-CloseRequest on the main window. Esc asks before it quits, as the desktop UI does
+         * (I623 dlg_open_quit: "Quit Selecta?"). Cancel re-arms the close notify and drops the Quit. */
+        mui_state* s = (mui_state*)ctx;
+        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Quit|Cancel", "%s", (ULONG) "Quit Selecta?") != 1) {
+            SetAttrs(s->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE);
+            id = 0;
+        }
     }
     *sigs = (uint32_t)got;
     mui_check_resize((mui_state*)ctx);
