@@ -649,7 +649,8 @@ struct sel_engine {
     /* I1019a: SOURCE_SEARCH * fans out over the enabled searchable sources. One bucket per registered source with a search hook, in registry
      * order; the collect of each finished task copies the landing into its bucket. The single-source form is one bucket.
      * I1035: the array is sized by the searchable source count and allocated when the engine starts (library engines); a source
-     * registered later grows it at the next query (search_buckets_ensure), never during one. */
+     * registered later grows it at the next query (search_buckets_ensure), never during one.
+     * I1373: the first query allocates it, not the engine start. */
     struct sel_search_bucket {
         char id[SEL_SOURCE_ID_MAX];
         int state;                           /* SEARCH_QUEUED .. SEARCH_FAILED */
@@ -11418,13 +11419,10 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
                                            cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text));
     CREATE_STEP("view window", sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX));
 #undef CREATE_STEP
-    if (cfg && cfg->library != NULL) { /* I1035: library engines size the search buckets once, at start; job engines never search */
+    if (cfg && cfg->library != NULL) {
+        /* I1373: the search buckets (one 40-hit landing per searchable source, about 373 KB on the host) are not allocated here any more:
+         * the first SOURCE_SEARCH allocates them (search_buckets_ensure in search_run), so a 16 MB Amiga starts without them. */
         sel_source_register_builtin();
-        g_create_why = "search buckets";
-        if (!search_buckets_ensure(e)) {
-            sel_engine_destroy(e);
-            return NULL;
-        }
     }
     e->browse.name_ok = browse_name_claimed; /* the folder browser lists folders and files a replayer claims (I218i) */
     e->browse.name_ctx = e;

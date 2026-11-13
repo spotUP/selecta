@@ -6,9 +6,12 @@ void sel_queue_default_sizes(uint32_t fast_ram, uint32_t* capacity, uint32_t* te
     if (fast_ram >= 64u * 1024u * 1024u) {
         *capacity = 8192u;
         *text_bytes = 2u * 1024u * 1024u;
-    } else if (fast_ram >= 8u * 1024u * 1024u) {
+    } else if (fast_ram >= 24u * 1024u * 1024u) {
         *capacity = 2048u;
         *text_bytes = 256u * 1024u;
+    } else if (fast_ram >= 8u * 1024u * 1024u) { /* I1373: the 16 MB baseline; every engine pool scales with these two, so the start need halves */
+        *capacity = 1024u;
+        *text_bytes = 128u * 1024u;
     } else {
         *capacity = 256u;
         *text_bytes = 32u * 1024u;

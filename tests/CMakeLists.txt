@@ -4495,6 +4495,14 @@ if(NOT SEL_AMIGA)
   add_test(NAME source-sync-due COMMAND source_sync_due_test)
   set_tests_properties(source-sync-due PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_sync_due_ok")
 
+  # I1373: the engine start allocation on a 16 MB machine (search buckets grow on demand); fails when the start need grows past BUDGET_KB.
+  add_executable(start_alloc_test engine/start_alloc_test.c)
+  target_include_directories(start_alloc_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_compile_definitions(start_alloc_test PRIVATE BUDGET_KB=3200)
+  target_link_libraries(start_alloc_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME engine-start-alloc COMMAND start_alloc_test "${CMAKE_CURRENT_BINARY_DIR}/start_alloc_test.db")
+  set_tests_properties(engine-start-alloc PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "start_alloc_ok")
+
   # I1082b: command string arguments are copied into the queue slot on send (64 lines through a 16-entry pool, one pump).
   add_executable(cmd_arena_test engine/cmd_arena_test.c)
   target_link_libraries(cmd_arena_test PRIVATE selecta_core)
