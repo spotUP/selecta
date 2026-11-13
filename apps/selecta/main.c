@@ -75,9 +75,19 @@ static unsigned g_ui_count;
 static int g_trace; /* --stats: one stderr line per launch phase (I524b) */
 static int g_phase_trace; /* --log or --stats: the phase lines only (I625a); the rest of --stats stays on --stats */
 static uint32_t g_trace_t0; /* host clock at main entry; trace lines print ms since this */
+#if defined(__amigaos__) || defined(AMIGA)
+#include <exec/memory.h>
+#include <proto/exec.h>
+#endif
 static void sel_trace(const sel_host* h, const char* phase) {
     if (g_trace || g_phase_trace) {
+#if defined(__amigaos__) || defined(AMIGA)
+        /* I1348: free public RAM and its largest block at every phase, so a start-up memory failure shows which phase ate it. */
+        fprintf(stderr, "trace t_ms=%u free=%lu largest=%lu %s\n", (unsigned)(h->clock_ms(h) - g_trace_t0),
+                (unsigned long)AvailMem(MEMF_PUBLIC), (unsigned long)AvailMem(MEMF_PUBLIC | MEMF_LARGEST), phase);
+#else
         fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)(h->clock_ms(h) - g_trace_t0), phase);
+#endif
         /* I625a4: the Amiga stderr (libnix) buffers into the --log file; a start that hangs must still leave the line. */
         fflush(stderr);
     }
@@ -141,6 +151,17 @@ static void sel_trace_load_address(void) {}
             fprintf(stderr, "startup_error_reports=%u\n", reports_);                                               \
         }                                                                                                          \
     } while (0)
+/* I1348: a low-memory start-up failure names what is free and what Selecta needs (measured: about 9.5 MB of free
+ * memory incl. chip for a start to the first screen; 16 MB machines have more room, 8 MB fast machines are tight). */
+static const char *sel_memory_state(char *buf, size_t cap) {
+#if defined(__amigaos__) || defined(AMIGA)
+    snprintf(buf, cap, "%lu KB free, largest block %lu KB; Selecta needs about 10 MB free to start",
+             (unsigned long)(AvailMem(MEMF_PUBLIC) / 1024), (unsigned long)(AvailMem(MEMF_PUBLIC | MEMF_LARGEST) / 1024));
+#else
+    snprintf(buf, cap, "Selecta needs about 10 MB free to start");
+#endif
+    return buf;
+}
 static int g_stats; /* --stats: the shell reports what the UIs and prefs did on stdout */
 
 /* ctx[0] = engine (set once it exists), ctx[1] = primary UI state, ctx[2] = integration session. */
@@ -740,7 +761,8 @@ int main(int argc, char** argv)
         if (db != NULL) {
             library = sel_library_open(host, machine_tags, 0, db);
             if (library == NULL) {
-                STARTUP_FAIL("cannot open the library database %s. Check that the drawer exists and is not write protected, that the disk has free space, or give another file with --db.", db);
+                char mem_[160];
+                STARTUP_FAIL("cannot open the library database %s (memory: %s). Check that the drawer exists and is not write protected, that the disk has free space, or give another file with --db.", db, sel_memory_state(mem_, sizeof mem_));
                 return 1;
             }
             cfg.library = library;
@@ -755,8 +777,9 @@ int main(int argc, char** argv)
     e = sel_engine_create(host, &cfg);
     sel_trace(host, "engine created (prefs load, catalogue open, source setup)");
     if (e == NULL) {
-        STARTUP_FAIL("not enough memory to start the engine (%s). Close other programs or free memory, then start Selecta again.",
-                     sel_engine_create_failure());
+        char mem_[160];
+        STARTUP_FAIL("not enough memory to start the engine (%s). Memory: %s. Close other programs or free memory, then start Selecta again.",
+                     sel_engine_create_failure(), sel_memory_state(mem_, sizeof mem_));
         return 1;
     }
     if (getenv("SELECTA_PUBLISH_MEASURE") != NULL) {
