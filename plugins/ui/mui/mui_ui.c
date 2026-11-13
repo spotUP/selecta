@@ -1615,6 +1615,16 @@ static void mui_close_spacer_sync(mui_state* s) {
     }
 }
 
+/* I1371: the gap between the buttons of one tool row. A plain MUI group takes its spacing from the MUI preferences (16 px with the UP-MCC
+ * theme), so the 7 buttons of a row were 96 px wider than the design: the main page asked 515 px and the open ladder refused step 0 on an
+ * 800 px screen. Buttons inside a card sit one spacing unit apart (mui_aa_panel_gap, role Raised), the same rule the card layout hook applies
+ * to the children it lays out itself. */
+static LONG mui_tool_row_gap(void) {
+    int gx, gy;
+    mui_aa_panel_gap(g_tokens, (int)g_pixel_aspect_q8, MUI_AA_PANEL_RAISED, &gx, &gy);
+    return (LONG)gx;
+}
+
 /* MUI-P4: the tool rows above the list: the search String (the command line is a popup, I1337), the like button, the rating and subsong Cycles,
  * the queue and playlist actions of the cursor row, and Clear Library (confirmed by a MUI_Request). */
 static Object* mui_tool_group(mui_state* s) {
@@ -1623,8 +1633,8 @@ static Object* mui_tool_group(mui_state* s) {
      * since I1337 moved the command line to a popup, r1 would be a Group with no children: MUI 3.8 cannot lay one out, the whole
      * window layout fails and every object keeps a 0x0 box at 0,0 (stray list header at the top left, empty panes). */
     Object* r1 = g_screen_rtg ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    Object* r3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)mui_tool_row_gap(), MUIA_UserData, UPV_Panel_KeepSpacing, TAG_DONE);
+    Object* r3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)mui_tool_row_gap(), MUIA_UserData, UPV_Panel_KeepSpacing, TAG_DONE);
     uint32_t i;
     if (g == NULL || (!g_screen_rtg && r1 == NULL) || r2 == NULL || r3 == NULL) {
         return NULL;
