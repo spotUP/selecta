@@ -30,7 +30,7 @@ typedef struct aalist_data {
     struct Hook *row, *cell; /* UPA_List_RowHook, UPA_List_CellHook (owned by the caller) */
     UP_ListColumns cols;
     long playing;
-    int title, double_pick, no_select, keys_unfocused;
+    int title, double_pick, no_select, keys_unfocused, raised; /* raised: I1349 rows rest on the Raised token (popup body) */
     ULONG last_s, last_m;
     long last_row;
     int max_rows;
@@ -39,6 +39,14 @@ typedef struct aalist_data {
     aa_ctx aa;
     struct MUI_EventHandlerNode ehn;
 } aalist_data;
+
+/* Row colours of this list: the shared mapping, with the resting face on the Raised token when the list sits in a Raised popup (I1349). */
+static void aalist_row_rgb(const aalist_data* d, int st, int playing, uint32_t* face, uint32_t* text) {
+    mui_aa_list_row_rgb(d->aa.tok, st, playing, face, text);
+    if (face != NULL && d->raised && st == MUI_AA_NORMAL) {
+        *face = d->aa.tok[SEL_GUI_TOKEN_SURFACE_RAISED];
+    }
+}
 
 static struct MUI_CustomClass* g_list_class;
 static uint32_t g_list_made;
@@ -102,7 +110,7 @@ static ULONG aalist_setup(struct IClass* cl, Object* obj, Msg msg) {
         if (st == MUI_AA_PRESSED || st == MUI_AA_DISABLED) {
             continue;
         }
-        mui_aa_list_row_rgb(d->aa.tok, st, 0, &face, &text);
+        aalist_row_rgb(d, st, 0, &face, &text);
         aa_hold(&d->aa, face);
         aa_hold(&d->aa, text);
     }
@@ -163,7 +171,7 @@ static ULONG aalist_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         d->first = mui_aa_list_scroll_to(d->first, vis, d->count, d->active);
         aalist_sync_scroller(obj, d);
     }
-    mui_aa_list_row_rgb(d->aa.tok, MUI_AA_NORMAL, 0, &face, &text);
+    aalist_row_rgb(d, MUI_AA_NORMAL, 0, &face, &text);
     mui_aa_list_header_rgb(d->aa.tok, &muted, &divider);
     aa_round_fill(&d->aa, rp, l, t, w, h, 0, face);
     th = aa_text_height(&d->aa, obj);
@@ -197,7 +205,7 @@ static ULONG aalist_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         int st;
         row = d->first + k;
         st = row == d->active ? MUI_AA_SELECTED : row == d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
-        mui_aa_list_row_rgb(d->aa.tok, st, row == d->playing, &face, &text);
+        aalist_row_rgb(d, st, row == d->playing, &face, &text);
         if (st != MUI_AA_NORMAL) {
             aa_round_fill(&d->aa, rp, l + 2, y, w - 4, d->m.row_h, d->m.radius, face);
             for (c = 1; c < n; c++) { /* the column dividers stay visible over the row highlight */
@@ -442,6 +450,7 @@ static ULONG aalist_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     d->double_pick = (int)GetTagData(UPA_List_DoublePick, FALSE, t);
     d->no_select = no_select;
     d->keys_unfocused = (int)GetTagData(UPA_List_KeysUnfocused, FALSE, t);
+    d->raised = (int)GetTagData(UPA_List_Raised, FALSE, t);
     return (ULONG)obj;
 }
 

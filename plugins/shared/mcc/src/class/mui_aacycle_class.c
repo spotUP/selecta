@@ -164,7 +164,7 @@ static const char* aacycle_row(struct Hook* hook, Object* obj, UP_ListCell* cell
 
 static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     Object *app = NULL, *list = NULL, *group;
-    struct TagItem tl[6];
+    struct TagItem tl[7];
     struct Window* win = _window(obj);
     if (win == NULL || d->n <= 0 || d->popup != NULL) {
         return;
@@ -181,14 +181,15 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     tl[2].ti_Tag = UPA_List_RowHook, tl[2].ti_Data = (ULONG)(uintptr_t)&d->row_hook;
     tl[3].ti_Tag = UPA_List_MaxRows, tl[3].ti_Data = (ULONG)(d->n < 12 ? d->n : 12); /* I1349: the list is exactly the item count, no empty row at the bottom */
     tl[4].ti_Tag = UPA_List_KeysUnfocused, tl[4].ti_Data = (ULONG)TRUE; /* I1349: keys work with no active object, so MUI draws no white active frame */
-    tl[5].ti_Tag = TAG_DONE, tl[5].ti_Data = 0;
+    tl[5].ti_Tag = UPA_List_Raised, tl[5].ti_Data = (ULONG)TRUE; /* I1349: rows rest on the Raised popup body */
+    tl[6].ti_Tag = TAG_DONE, tl[6].ti_Data = 0;
     group = UP_NewList(tl, &list); /* I667i: the AAList look (padding, row spacing, flat scroller) instead of the stock List */
     if (group == NULL) {
         return;
     }
     {
-        /* I1349: root = a themed card (Surface token, rounded, no MUI frame) around the list, not MUI's stock window frame and bevel */
-        Object* card = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Surface, UPA_Panel_Popup, (ULONG)TRUE, MUIA_Group_Child, (ULONG)group, TAG_DONE);
+        /* I1349: root = a themed card (Raised token, rounded, no MUI frame) around the list, not MUI's stock window frame and bevel */
+        Object* card = MUI_NewObject((char*)"UP-Panel.mcc", UPA_Panel_Role, (ULONG)UPV_Panel_Role_Raised, UPA_Panel_Popup, (ULONG)TRUE, MUIA_Group_Child, (ULONG)group, TAG_DONE);
         if (card != NULL) {
             group = card;
         }
