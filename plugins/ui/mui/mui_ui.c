@@ -1922,7 +1922,7 @@ static Object* mui_facet_row_group(mui_state* s) {
         return NULL;
     }
     for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
-        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TOGGLE, MUI_AA_ALIGN_CENTRE, 0, 0);
+        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TAB, MUI_AA_ALIGN_CENTRE, 0, 0); /* I1345: TAB is the captioned chip (the Mac filter chips); TOGGLE is the AACheck box and draws no caption */
         if (s->facet_btn[k] == NULL) {
             return NULL;
         }
