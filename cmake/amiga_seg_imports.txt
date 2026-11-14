@@ -45,3 +45,9 @@ sel_plugin_resolve
 sel_uim_lfilter_match
 sel_uim_lsort_item_cmp
 sel_view_style_label
+# I1378g: the C heap. A module must not keep its own libnix pool (freed by its fini, so core pointers to module heap would
+# dangle after unload, and frees across pools corrupt both). sel_add_seg forces these thunks in with -u, so libnix's
+# malloc.o is never linked into a module; calloc, strdup, stdio buffers and operator new reach the host's malloc.
+malloc
+free
+realloc

@@ -388,6 +388,18 @@ if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_SELECTA}")
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/check_no_libnix_abort.cmake")
 endif()
 
+# I1378g: modules with imports share the host's C heap (no libnix malloc pool of their own). Needs the seg-imports test
+# variant (target sel_seg_pxtone_v2); the desktop UI module joins when it was built.
+set(SEL_AMIGA_HEAP_SEGS "${PROJECT_SOURCE_DIR}/build/amiga/seg-imports-test/v2/sel_pxtone")
+if(EXISTS "${PROJECT_SOURCE_DIR}/build/amiga/Players/sel_desktop_ui")
+  list(APPEND SEL_AMIGA_HEAP_SEGS "${PROJECT_SOURCE_DIR}/build/amiga/Players/sel_desktop_ui")
+endif()
+if(SEL_AMIGA_NM AND EXISTS "${PROJECT_SOURCE_DIR}/build/amiga/seg-imports-test/v2/sel_pxtone")
+  add_test(NAME seg-heap-shared
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${SEL_AMIGA_NM}" "-DSEGS=${SEL_AMIGA_HEAP_SEGS}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/check_seg_heap.cmake")
+endif()
+
 # I225: a new database on libnix (lseek past the end grows the file with junk; ftruncate returns the size).
 set(SEL_AMIGA_DBCREATE "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-dbcreate-test")
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
