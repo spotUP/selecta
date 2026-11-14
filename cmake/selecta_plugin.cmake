@@ -89,6 +89,10 @@ function(sel_add_seg seg name kind out_dir)
       set(n ${SEG_IMPORT_COUNT})
     endif()
     target_compile_definitions(${seg} PRIVATE SEL_SEG_IMPORT_COUNT=${n})
+    # I1378g: the heap thunks are undefined from the first input on, so the thunk archive (linked before libnix) supplies
+    # them even when only libnix members (fopen, strdup, libstdc++ new) call malloc. libnix's malloc.o, the module's own
+    # pool, is then never linked; if anything still pulled it in, its _malloc would clash with the thunk and fail the link.
+    target_link_options(${seg} PRIVATE -Wl,-u,_malloc -Wl,-u,_free -Wl,-u,_realloc)
     if(TARGET sel_seg_thunks)
       # DEFER evaluates its arguments when it runs, after this function returned: EVAL bakes the target name in now.
       cmake_language(EVAL CODE "cmake_language(DEFER CALL target_link_libraries [[${seg}]] PRIVATE sel_seg_thunks)")
