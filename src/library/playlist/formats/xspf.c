@@ -5,6 +5,8 @@
  * small tag scanner (no DTD, no CDATA, no namespaces beyond the default). */
 #include "../playlist_internal.h"
 
+#include "source/xml_scan.h"
+
 #include <string.h>
 
 #define XSPF_BUF 1024u
@@ -52,34 +54,21 @@ static const char* element(const char* s, size_t len, const char* tag, size_t* o
     return a;
 }
 
-static const struct {
-    const char* ent;
-    size_t len;
-    char ch;
-} entities[] = {{"&amp;", 5, '&'}, {"&lt;", 4, '<'}, {"&gt;", 4, '>'}, {"&quot;", 6, '"'}, {"&apos;", 6, '\''}};
-
 /* Unescapes into dst; returns the length or (size_t)-1 when it does not fit. */
 static size_t unescape(const char* s, size_t len, char* dst, size_t cap) {
     size_t i = 0;
     size_t o = 0;
     while (i < len) {
-        char c = s[i];
-        size_t k;
-        size_t step = 1;
-        if (c == '&') {
-            for (k = 0; k < sizeof entities / sizeof entities[0]; k++) {
-                if (i + entities[k].len <= len && memcmp(s + i, entities[k].ent, entities[k].len) == 0) {
-                    c = entities[k].ch;
-                    step = entities[k].len;
-                    break;
-                }
-            }
+        size_t used = 0, k = s[i] == '&' && cap > o ? sel_xml_entity(s + i, s + len, dst + o, cap - o - 1u, &used) : 0;
+        if (k > 0) {
+            o += k;
+            i += used;
+            continue;
         }
         if (o + 1u >= cap) {
             return (size_t)-1;
         }
-        dst[o++] = c;
-        i += step;
+        dst[o++] = s[i++];
     }
     return o;
 }
