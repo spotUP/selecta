@@ -45,7 +45,7 @@ endif()
 execute_process(COMMAND python3 -I -c "
 import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
-raw = lambda t: t.replace('Fish & Chips \u2026 Odd Pod\'s', 'Fish & Chips &#8230; Odd Pod&#039;s')
+raw = lambda t: t.replace(\"Fish & Chips … Odd Pod's\", \"Fish & Chips &#8230; Odd Pod&#039;s\")
 for tbl, col in (('files', 'path'), ('songs', 'key'), ('songs', 'path'), ('songs', 'name')):
     for (v,) in c.execute('SELECT DISTINCT %s FROM %s' % (col, tbl)).fetchall():
         c.execute('UPDATE %s SET %s=? WHERE %s=?' % (tbl, col, col), (raw(v), v))
@@ -63,7 +63,7 @@ import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
 rows = c.execute(\"SELECT key, name FROM songs WHERE source='podcast'\").fetchall()
 raw = [r for r in rows if '&#' in r[0] or '&#' in r[1]]
-odd = [r for r in rows if 'Odd Pod\'s' in r[1]]
+odd = [r for r in rows if \"Odd Pod's\" in r[1]]
 print('rows=%d raw=%d decoded=%d' % (len(rows), len(raw), len(odd)))
 sys.exit(0 if len(rows) == 3 and not raw and len(odd) == 1 else 1)
 " "${DB}" OUTPUT_VARIABLE so1c RESULT_VARIABLE rc1c)
