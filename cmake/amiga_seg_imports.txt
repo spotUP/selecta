@@ -4,3 +4,20 @@
 # reordering or deleting a line breaks every module file already on disk. Never list a function that takes
 # arguments in registers (no -mregparm, no __asm("a0") parameters): the thunk clobbers a0 and passes the stack as is.
 sel_tag_find
+sel_config_dir
+sel_engine_library_items
+sel_engine_pattern_request
+sel_engine_plugin_host
+sel_engine_send_line
+sel_engine_state
+sel_engine_view_cursor_key
+sel_format_label
+sel_tag_name
+sel_tag_type_of
+sel_cmd_area
+sel_cmd_args
+sel_cmd_by_name
+sel_cmd_name
+sel_engine_song_briefs_busy
+sel_engine_song_briefs_post
+sel_engine_song_briefs_take

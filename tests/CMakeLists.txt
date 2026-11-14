@@ -328,6 +328,21 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_seg_imports.cmake")
   set_tests_properties(seg-imports-unit PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
 
+  # I1378b: the text UI is the LoadSeg module Players/sel_text_ui; a missing module fails the start naming the file.
+  foreach(_tm present missing)
+    if(_tm STREQUAL present)
+      set(_tn text-ui-on-demand-vamos)
+    else()
+      set(_tn ui-module-missing-vamos)
+    endif()
+    add_test(NAME ${_tn}
+      COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_SELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta" -DTEST_MODE=${_tm}
+              "-DMODULE=${PROJECT_SOURCE_DIR}/build/amiga/Players/sel_text_ui" "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m2/quit.keys"
+              "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/${_tn}"
+              -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_text_ui_module.cmake")
+    set_tests_properties(${_tn} PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+  endforeach()
+
   # I218d: Latin-1 file names listed as UTF-8 and opened by that name, through library browse --names.
   add_test(NAME amiga-latin1-name
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"

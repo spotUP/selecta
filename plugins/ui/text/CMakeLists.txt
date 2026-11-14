@@ -10,7 +10,17 @@ endif()
 target_include_directories(selecta_textui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # The UI plugin entry (row I60); the shell reaches it through the registry.
-sel_add_plugin(text_ui 5 text_ui.c)
-target_link_libraries(sel_plugin_text_ui PUBLIC selecta_textui)
+if(SEL_AMIGA)
+  # I1378b: text_ui is the LoadSeg module Players/sel_text_ui; the executables link only manifest.c. The module carries
+  # its own grid, terminal and UI model sources (selecta_textui_seg, selecta_uimodel_seg: no selecta_core); the engine
+  # symbols it needs come through the host import table (cmake/amiga_seg_imports.txt).
+  add_library(selecta_textui_seg STATIC grid.c quote.c sizeprobe.c locale.c amiga/term.c amiga/spawn.c)
+  target_include_directories(selecta_textui_seg PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/include")
+  sel_add_plugin(text_ui 5 text_ui.c AMIGA_MANIFEST manifest.c SEG_IMPORTS)
+  target_link_libraries(sel_seg_text_ui PRIVATE selecta_textui_seg selecta_uimodel_seg)
+else()
+  sel_add_plugin(text_ui 5 text_ui.c)
+  target_link_libraries(sel_plugin_text_ui PUBLIC selecta_textui)
+endif()
 # keys, bindings, command line, palette and theme live in src/uimodel (DUI-P1-5), shared with the desktop UI.
 target_link_libraries(selecta_textui PUBLIC selecta_core selecta_uimodel)
