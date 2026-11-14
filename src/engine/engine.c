@@ -7886,10 +7886,21 @@ static void coll_build_run(sel_engine* e) {
         char id[128]; /* I928: the header names the source ("Local files"), never its id; the key carries the drill path after the id */
         const sel_source* src;
         char* us;
-        drill_build(e, key, &b);
         snprintf(id, sizeof id, "%s", key);
         us = strpbrk(id, "\x1f\x1e");
         if (us != NULL) *us = '\0';
+        /* I1381: a stream source (podcasts, radio, Jamendo, archive.org, ccMixter, DLNA) has no formats or platforms worth a facet tile.
+         * Its page is the plain list, filtered and searched like any list: the songs, or for SEL_SOURCE_SHOWS (podcasts) the shows
+         * (artist groups). Module archives keep the drill root. */
+        if (sel_source_is_stream(id) && (sel_source_find(id)->flags & SEL_SOURCE_SHOWS) != 0u) {
+            char shows[sizeof id + 16];
+            snprintf(shows, sizeof shows, "%s\x1f" "artists", id);
+            drill_build(e, shows, &b);
+        } else if (sel_source_is_stream(id)) {
+            if (sel_library_collection(e->lib, kind, id, SEL_COLL_SONGS, coll_song_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
+        } else {
+            drill_build(e, key, &b);
+        }
         src = sel_source_find(id);
         snprintf(pg->title, sizeof pg->title, "%s", src != NULL && src->name != NULL ? src->name : id);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
