@@ -53,7 +53,7 @@ static int64_t fx_find(void* ctx, const char* ref) {
 static uint32_t fx_get(void* ctx, int64_t album, const char* kind, uint8_t* out, uint32_t cap) {
     (void)ctx;
     (void)album;
-    if (strcmp(kind, "thumb144") != 0) return 0;
+    if (strcmp(kind, "thumbf144") != 0) return 0;
     if (out != NULL && cap >= g_blob_len) memcpy(out, g_blob, g_blob_len);
     return g_blob_len;
 }

@@ -157,17 +157,25 @@ static int load_album(art_job* j, int64_t album, const char* thumb_kind, uint32_
         uint32_t* img = desk_image_decode(blob, len, &w, &h);
         free(blob);
         if (img != NULL) {
-            int32_t side = w < h ? w : h;
-            uint32_t* sq = (uint32_t*)malloc((size_t)side * (size_t)side * sizeof *sq);
+            /* I1384c: the whole picture fits the square, aspect kept, black bars on the short side: Demozoo screenshots are
+             * wide (360x284) and a centre crop cut off their sides. Square album covers fill the tile as before. */
+            int32_t fw = w >= h ? DESK_ART_TILE_EDGE : (int32_t)((int64_t)DESK_ART_TILE_EDGE * w / h);
+            int32_t fh = w >= h ? (int32_t)((int64_t)DESK_ART_TILE_EDGE * h / w) : DESK_ART_TILE_EDGE;
+            uint32_t* sq = (uint32_t*)malloc((size_t)(fw > 0 ? fw : 1) * (size_t)(fh > 0 ? fh : 1) * sizeof *sq);
             uint8_t* out = (uint8_t*)malloc(ART_THUMB_MAX);
-            int32_t y;
+            int32_t y, x;
             j->decodes++;
+            if (fw < 1) fw = 1;
+            if (fh < 1) fh = 1;
             if (sq != NULL && out != NULL) {
-                for (y = 0; y < side; y++) { /* the centred square of the cover */
-                    memcpy(sq + (size_t)y * (size_t)side, img + (size_t)(y + (h - side) / 2) * (size_t)w + (size_t)((w - side) / 2),
-                           (size_t)side * sizeof *sq);
+                sel_gui_image_scale(img, w, h, sq, fw, fh);
+                for (y = 0; y < DESK_ART_TILE_EDGE * DESK_ART_TILE_EDGE; y++) px[y] = 0xFF000000u;
+                for (y = 0; y < fh; y++) {
+                    for (x = 0; x < fw; x++) {
+                        px[(size_t)(y + (DESK_ART_TILE_EDGE - fh) / 2) * DESK_ART_TILE_EDGE + (size_t)(x + (DESK_ART_TILE_EDGE - fw) / 2)] =
+                            sq[(size_t)y * (size_t)fw + (size_t)x];
+                    }
                 }
-                sel_gui_image_scale(sq, side, side, px, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE);
                 len = sel_gui_thumb_pack(px, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, out, ART_THUMB_MAX);
                 if (len > 0u) {
                     j->src->put(j->src->ctx, album, thumb_kind, out, len);
@@ -187,7 +195,7 @@ static void worker(void* ctx) {
     char kind[24];
     uint32_t i, k;
 
-    snprintf(kind, sizeof kind, "thumb%d", DESK_ART_TILE_EDGE);
+    snprintf(kind, sizeof kind, "thumbf%d", DESK_ART_TILE_EDGE); /* I1384c: "f" = fitted; the cropped "thumb<edge>" rows are no longer read (shortcut: left in the db, purge on a later schema migration) */
     for (i = 0; i < j->n; i++) {
         int64_t album = j->src->find(j->src->ctx, j->title[i]);
         j->album[i] = 0;
