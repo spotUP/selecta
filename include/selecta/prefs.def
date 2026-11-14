@@ -78,6 +78,7 @@ SEL_PREF(LIBRARY_HIDE_DUPLICATES, "library.hide_duplicates", "on",              
 /* Online cover lookup (I1003a): "on" (default) asks MusicBrainz, the Cover Art Archive and the iTunes Search API, in the background, for the
  * cover of every album that has none, and keeps the image in library.db. "off" sends nothing. SELECTA_ART_SCRAPE=off overrides it. */
 SEL_PREF(LIBRARY_SCRAPE_ARTWORK, "library.scrape_artwork", "on",                                SEL_PREF_PLAIN)
+SEL_PREF(ART_DEMOZOO, "art.demozoo", "on", SEL_PREF_PLAIN) /* I1303c: Demozoo screenshots as the cover of a Modland song without album art */
 /* Sync on launch (I527): a remote source never synced, or not for this many days, is offered on the Library page (0: never
  * offer). library.sync_notice_at is the unix time Not now was pressed; the offer returns once that is as old as the limit. */
 SEL_PREF(LIBRARY_SYNC_STALE_DAYS, "library.sync_stale_days", "30",                              SEL_PREF_PLAIN)

@@ -5,6 +5,7 @@
 
 #include "../song_key.h"
 #include "../source.h"
+#include "../xxh32.h"
 
 #include <selecta/ui.h>
 
@@ -65,10 +66,32 @@ static int art_find_song(sqlite3* db, const sel_art_op* op) {
     return id;
 }
 
+/* I1303c: the key of a Modland song names no albums row; its Demozoo screenshots hang off a hashed negative artwork.album_id. */
+int sel_art_dz_id(const char* key) { /* 31 bits: the ART reply carries an int32; a 'dz_key' row guards the rare collision */
+    return -(int)((sel_xxh32(key, strlen(key), 0) & 0x7fffffffu) % 0x7fffffffu) - 1;
+}
+
+static int art_find_dz(sqlite3* db, const char* ref) {
+    char key[1024];
+    sqlite3_stmt* st = NULL;
+    int id = 0;
+
+    if (!sel_song_key_of(ref, key, sizeof key) || strncmp(key, "modland:", 8) != 0) return 0;
+    id = sel_art_dz_id(key);
+    if (sqlite3_prepare_v2(db, "SELECT 1 FROM artwork c JOIN artwork k ON k.album_id = c.album_id AND k.kind = 'dz_key' AND k.data = ?2"
+                           " WHERE c.album_id = ?1 AND c.kind = 'cover'", -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_int64(st, 1, id);
+    sqlite3_bind_blob(st, 2, key, (int)strlen(key), SQLITE_STATIC);
+    if (sqlite3_step(st) != SQLITE_ROW) id = 0;
+    sqlite3_finalize(st);
+    return id;
+}
+
 static int art_find(sqlite3* db, const sel_art_op* op) {
     int id = art_find_id(db, op->ref);
 
     if (id == 0) id = art_find_song(db, op);
+    if (id == 0) id = art_find_dz(db, op->ref);
     return id != 0 ? id : art_find_album(db, op->ref);
 }
 

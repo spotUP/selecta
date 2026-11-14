@@ -584,6 +584,8 @@ static int library_scan(int argc, char** argv) {
     sel_local_scan_stats rs;
     uint32_t watch_ms = 0, watch_events = 0;
     int use_poll = 0, dump = 0, scrape = 0;
+    const char* dz_key = NULL;
+    unsigned dz_requests = 0;
     int i;
 
     memset(&rs, 0, sizeof rs);
@@ -592,6 +594,8 @@ static int library_scan(int argc, char** argv) {
             db_path = argv[++i];
         } else if (strcmp(argv[i], "--scrape") == 0) {
             scrape = 1; /* I1003a: look up the covers of the scanned albums online and print the scraper stats */
+        } else if (strcmp(argv[i], "--demozoo") == 0 && i + 1 < argc) {
+            dz_key = argv[++i]; /* I1303c: look the Modland song up on hippoplayer.se and cache its Demozoo screenshots */
         } else if (strcmp(argv[i], "--machine") == 0 && i + 1 < argc) {
             machine = sel_machine_fake(argv[++i]);
             if (machine == NULL) {
@@ -640,9 +644,9 @@ static int library_scan(int argc, char** argv) {
         return 1;
     }
     /* The scan kicks the cover scraper; only `--scrape` lets it reach the network, so no other scan run (tests) sends a request. */
-    sel_library_scrape_set_enabled(lib, scrape);
+    sel_library_scrape_set_enabled(lib, scrape || dz_key != NULL);
 #ifndef __amigaos__
-    if (!scrape) {
+    if (!scrape && dz_key == NULL) {
         setenv("SELECTA_ART_SCRAPE", "off", 1);
     }
 #endif
@@ -669,6 +673,14 @@ static int library_scan(int argc, char** argv) {
         printf("artwork_scraped=%u scrape_albums=%u scrape_misses=%u scrape_errors=%u scrape_requests=%u\n", (unsigned)ss.scraped,
                (unsigned)ss.albums, (unsigned)ss.misses, (unsigned)ss.errors, (unsigned)ss.requests);
     }
+    if (dz_key != NULL) {
+        sel_scrape_stats ss;
+
+        sel_library_demozoo_kick(lib, dz_key);
+        sel_library_scrape_wait(lib);
+        sel_library_scrape_stats(lib, &ss);
+        dz_requests = (unsigned)ss.requests;
+    }
     memset(&st, 0, sizeof st);
     if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {
         st.args[SEL_LIB_STAT_SONGS].v.i = -1;
@@ -686,6 +698,21 @@ static int library_scan(int argc, char** argv) {
     sel_engine_destroy(e);
     sel_library_close(lib);
 #ifndef __amigaos__
+    if (dz_key != NULL) { /* counted from the file once the library is closed: a second connection beside the worker threads corrupts sqlite's fixed heap */
+        sqlite3* h = NULL;
+        sqlite3_stmt* q = NULL;
+        int shots = 0, miss = 0;
+
+        if (sqlite3_open_v2(db_path, &h, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK &&
+            sqlite3_prepare_v2(h, "SELECT sum(kind='cover' OR kind GLOB 'dz[0-9]*'), sum(kind='dz_miss') FROM artwork WHERE album_id < 0", -1, &q, NULL) == SQLITE_OK &&
+            sqlite3_step(q) == SQLITE_ROW) {
+            shots = sqlite3_column_int(q, 0);
+            miss = sqlite3_column_int(q, 1);
+        }
+        sqlite3_finalize(q);
+        sqlite3_close(h);
+        printf("demozoo_shots=%d demozoo_miss=%d demozoo_requests=%u\n", shots, miss, dz_requests);
+    }
     if (dump) {
         library_dump_local(db_path);
     }

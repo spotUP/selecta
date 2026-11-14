@@ -98,6 +98,8 @@ struct sel_library {
     int64_t scrape_after;    /* last albums.id the cover scraper looked at (art_scrape.c, I1003a); threads: under job_lock */
     unsigned scrape_pending; /* a pass has albums left; threads: a kick restarts it from id 0 (under job_lock) */
     int scrape_off;          /* set_enabled(0): kick does nothing */
+    int dz_off;              /* I1303c: art.demozoo off: demozoo_kick does nothing */
+    char dz_key[1200];       /* I1303c: song key waiting for a Demozoo lookup, last one wins; threads: under job_lock */
     unsigned long scrape_mb_ms; /* sel_net_now_ms of the last MusicBrainz request, for the 1 request per second limit */
     sel_scrape_stats scrape_stats; /* under job_lock when threads exist */
     void (*task_fn)(void* ctx); /* I336: the queued caller task (job.c) */
@@ -301,6 +303,7 @@ int sel_fetch_job_pending(sel_library* lib);  /* job_lock held */
 void sel_sysf_job_run(sel_library* lib);     /* job_lock held on entry and exit; one request per call */
 void sel_fetch_job_run(sel_library* lib);     /* job_lock held on entry and exit; drops it around the transfer */
 #endif
+int sel_art_dz_id(const char* key);                /* art.c: the artwork.album_id (negative, no albums row) that holds the Demozoo screenshots of song key `key` (I1303c) */
 void sel_pin_job_run(sel_library* lib);       /* I406b: writes the queued pinned hits as one SCAN_BATCH (no lock held) */
 void sel_rating_job_run(sel_library* lib);    /* sends every pending rating (no lock held) */
 

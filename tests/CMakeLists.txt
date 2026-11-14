@@ -4208,6 +4208,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(art-scrape PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 120 PASS_REGULAR_EXPRESSION "art_scrape_ok")
 
+  # I1303c: Demozoo screenshots as the cover of a Modland song, over a local hippoplayer.se lookup fixture.
+  add_test(NAME demozoo-art
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/demozoo_art.cmake")
+  set_tests_properties(demozoo-art PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "demozoo_art_ok")
+
   # I1024d: SOURCE_SEARCH radiobrowser over a local /json/stations/search fixture: codec filter, sink rows, -1 when unreachable.
   add_test(NAME radiobrowser-search
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/radiobrowser_search.cmake")
