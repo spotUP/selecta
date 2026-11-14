@@ -1,0 +1,70 @@
+# dui-collection-sort-composer (I1195 attempt 8): the sort button sorts a composer page.
+# -DSELECTA -DSONGS -DWORK
+# Violated invariant: every song list page's order is the view (COLLECTION_VIEW sort) applied to its songs. The engine built the composer
+# page without sort fields (coll_composer_row wrote no meta), so e->coll_titles stayed NULL, cmd_COLLECTION_VIEW posted no reorder and the
+# button said "Sort: Title" over the stored order.
+# Path: the composer sidebar row click, the sort button click (Custom Order -> Title), a wait. Asserts sort=1 and the rows in Title order
+# (Bass Line;Intro;Main Theme), not the stored order (Intro;Main Theme;Bass Line, song id order).
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-collection-sort-composer needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/lib.db")
+dui_run(init --ui desktop --backend mem --view home --canvas 1280x1600 --clock fixed --stats --db "${db}")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+string(CONCAT seed
+  "UPDATE songs SET key = 'local:' || path WHERE key LIKE 'fixture:%'; "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('local:fixture/1.mod', 'chris huelsbeck', 'Chris Huelsbeck'); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('local:fixture/2.mod', 'chris huelsbeck', 'Chris Huelsbeck'); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('local:fixture/5.sid', 'chris huelsbeck', 'Chris Huelsbeck')")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "${seed}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the composer failed: ${err}")
+endif()
+set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1600)
+file(WRITE "${WORK}/idle.txt" "wait 100\n")
+dui_run(idle ${common} --input "${WORK}/idle.txt")
+if(NOT "${idle}" MATCHES "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=6 Chris Huelsbeck\n")
+  message(FATAL_ERROR "no composer sidebar row in:\n${idle}")
+endif()
+math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+file(WRITE "${WORK}/open.txt" "click ${cx} ${cy}\nwait 100\n")
+dui_run(opened ${common} --input "${WORK}/open.txt")
+if(NOT "${opened}" MATCHES "collection kind=composer [^\n]* sortbtn=([0-9]+),([0-9]+),([0-9]+),([0-9]+)")
+  message(FATAL_ERROR "no composer page sortbtn rectangle in:\n${opened}")
+endif()
+math(EXPR sx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR sy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+# The sidebar reorders after the open (Recents), so the row is read again before the run that clicks it.
+dui_run(idle2 ${common} --input "${WORK}/idle.txt")
+if(NOT "${idle2}" MATCHES "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=6 Chris Huelsbeck\n")
+  message(FATAL_ERROR "no composer sidebar row in:\n${idle2}")
+endif()
+math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+file(WRITE "${WORK}/run.txt" "click ${cx} ${cy}\nwait 100\nclick ${sx} ${sy}\nwait 300\n")
+dui_run(o ${common} --input "${WORK}/run.txt")
+if(NOT "${o}" MATCHES "collection kind=composer [^\n]* sort=([0-9]+) ")
+  message(FATAL_ERROR "no composer collection line in:\n${o}")
+endif()
+if(NOT CMAKE_MATCH_1 STREQUAL "1")
+  message(FATAL_ERROR "sentinel: the sort click did not land, sort=${CMAKE_MATCH_1}:\n${o}")
+endif()
+string(REGEX MATCHALL "plsong [0-9]+ [0-9]+ [0-9]+ [0-9]+ [0-9]+ file=[^ \n]* title=[^\n]*" lines "${o}")
+set(titles "")
+foreach(l IN LISTS lines)
+  string(REGEX MATCH "title=(.*)" m "${l}")
+  list(APPEND titles "${CMAKE_MATCH_1}")
+endforeach()
+if(NOT "${titles}" STREQUAL "Bass Line;Intro;Main Theme")
+  message(FATAL_ERROR "the composer page says Sort: Title but shows '${titles}', expected Bass Line;Intro;Main Theme:\n${o}")
+endif()

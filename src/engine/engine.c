@@ -7508,12 +7508,20 @@ static void coll_song_row(void* ctx, const char* const* f) { /* key, name, artis
 
 static void coll_composer_row(void* ctx, const char* key, const char* name, const char* disp) {
     coll_build* b = (coll_build*)ctx;
-    const char* parts[2];
-    (void)name;
+    const char* parts[5];
     (void)disp;
     parts[0] = key;
     parts[1] = "0";
     composer_put(&b->rows, parts, 2);
+    /* I1195: the sort fields, so COLLECTION_VIEW sorts and filters this page like every song list (without them coll_titles stayed NULL
+     * and a sort click posted no reorder). shortcut: title only (the composer query carries no artist, album, added or duration), extend
+     * SEL_COMPOSER_NEXT when the page gets more sort keys than Title. */
+    parts[0] = name;
+    parts[1] = "";
+    parts[2] = "";
+    parts[3] = "0";
+    parts[4] = "0";
+    composer_put(&b->meta, parts, 5);
     b->n++;
 }
 
