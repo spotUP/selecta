@@ -1774,6 +1774,17 @@ static const char* mui_col_row(void* ctx, long row) {
     return base != NULL ? base + 1 : r;
 }
 
+/* I1329i (desk_rt_leave): what the page being left keeps: the first visible row of the collection list, the Search facet chip. */
+static void mui_route_leave_cb(void* ctx, mui_route_leave_info* out) {
+    mui_state* s = (mui_state*)ctx;
+    long first = 0;
+    if (s->col_list != NULL) {
+        GetAttr(UPA_List_First, s->col_list, (ULONG*)&first);
+    }
+    out->scroll = (int32_t)first;
+    out->facet = s->search_facet;
+}
+
 static int mui_route_send(void* ctx, const char* line) {
     mui_state* s = (mui_state*)ctx;
     if (line != NULL && strcmp(line, "SOURCES") == 0) {
@@ -2751,6 +2762,12 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         mui_text_set(s->col_meta, s->col_meta_buf);
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
+        {
+            int32_t first;
+            if (mui_route_take_scroll(&s->route, &first)) { /* I1329i: Back or Forward: the list is where it was left */
+                SetAttrs(s->col_list, UPA_List_First, (ULONG)first, TAG_DONE);
+            }
+        }
     }
     mui_col_briefs(s, pg, col);
     mui_pages_sync(s, st, cur, col);
@@ -3904,18 +3921,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id == CTL_COL_LIST) {
         const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
         long picked = -1;
+        char pl[512];
         GetAttr(UPA_List_Picked, s->col_list, (ULONG*)&picked);
-        if (pg != NULL && pg->rows != NULL && picked >= 0 && (uint32_t)picked < pg->songs) {
-            const char* r = pg->rows;
-            long i;
-            char pl[512];
-            for (i = 0; i < picked; i++) {
-                r += strlen(r) + 1u;
-                r += strlen(r) + 1u;
-            }
-            if (mui_path_line("OPEN", r, pl, sizeof pl) != 0u && mui_engine_line(s, pl) && mui_engine_line(s, "PLAY")) {
-                s->row_plays++;
-            }
+        /* I1329h: PLAY_CONTEXT plays the row and queues the rest of the page behind it, named for the "Playing from" line (desk_play_context). */
+        if (pg != NULL && picked >= 0 && mui_col_play_line(pg, (uint32_t)picked, pl, sizeof pl) != 0u && mui_engine_line(s, pl)) {
+            s->row_plays++;
         }
     } else if (id > CTL_PANE_BASE + (LONG)MUI_PANE_LIST && id < CTL_PANE_BASE + (LONG)MUI_PANE_COUNT) {
         mui_pane_show(s, mui_pane_page((uint32_t)(id - CTL_PANE_BASE))); /* I735: View > Visualizer Page / Pattern Page */
@@ -4223,6 +4233,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
     mui_route_init(&s->route);
+    mui_route_set_leave(&s->route, mui_route_leave_cb, s); /* I1329i */
     s->find_plugin = a != NULL ? a->find_plugin : NULL;
     g_trace_host = a != NULL ? a->host : NULL;
     g_trace_fn = a != NULL && a->host != NULL ? a->trace : NULL;

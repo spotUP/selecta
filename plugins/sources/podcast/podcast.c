@@ -178,13 +178,13 @@ static void clean_part(char* s) {
 typedef struct run {
     const sel_host* host;
     const sel_catalogue* cat;
-    char show[TEXT_BYTES];
+    char show[TEXT_BYTES], show_old[TEXT_BYTES];
     uint32_t rows, skipped;
 } run;
 
 static void add_episode(run* r, const char* item, const char* end) {
     episode e;
-    char path[URL_BYTES + 2u * TEXT_BYTES], url[URL_BYTES - 64u], format[96];
+    char path[URL_BYTES + 2u * TEXT_BYTES], old_path[URL_BYTES + 2u * TEXT_BYTES], old[TEXT_BYTES], url[URL_BYTES - 64u], format[96];
     sel_catalogue_song song;
     size_t i, j = 0;
 
@@ -214,6 +214,15 @@ static void add_episode(run* r, const char* item, const char* end) {
     song.album = "";
     song.name = e.title;
     song.md5 = "";
+    /* I1346b: a row synced before entities were decoded is keyed by the raw title; a re-sync drops that key. */
+    sel_xml_tag_text_legacy(item, end, "title", old, sizeof old);
+    clean_part(old);
+    snprintf(old_path, sizeof old_path, "%s/%s/%s", r->show_old, old, url);
+    if (strcmp(old_path, path) != 0) {
+        const char* gone = old_path;
+
+        r->cat->remove(r->host, &gone, 1);
+    }
     if (!r->cat->song(r->host, &song)) {
         r->skipped++;
         return;
@@ -230,6 +239,10 @@ static void read_feed(run* r, const char* xml, size_t n) {
         snprintf(r->show, sizeof r->show, "Podcast");
     }
     clean_part(r->show);
+    if (!sel_xml_tag_text_legacy(xml, first != NULL ? first : end, "title", r->show_old, sizeof r->show_old)) {
+        snprintf(r->show_old, sizeof r->show_old, "Podcast");
+    }
+    clean_part(r->show_old);
     while (p != NULL && (p = strstr(p, "<item")) != NULL) {
         const char* close = strstr(p, "</item>");
 

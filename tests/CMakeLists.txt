@@ -604,6 +604,10 @@ set_tests_properties(mcc-include-check PROPERTIES TIMEOUT 30)
 add_test(NAME mui-ctl-ranges COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c"
   -P "${PROJECT_SOURCE_DIR}/tests/ui/mui_ctl_ranges.cmake")
 set_tests_properties(mui-ctl-ranges PROPERTIES TIMEOUT 30)
+# I1329: every engine/uimodel hook the desktop UI calls has a MUI caller or a line in the exempt file. Pure cmake -P.
+add_test(NAME mui-mac-hook-parity COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+  "-DEXEMPT=${PROJECT_SOURCE_DIR}/tests/ui/mui_mac_hook_parity.exempt" -P "${PROJECT_SOURCE_DIR}/tests/ui/mui_mac_hook_parity.cmake")
+set_tests_properties(mui-mac-hook-parity PROPERTIES TIMEOUT 60)
 if(NOT SEL_AMIGA)
   add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
   target_include_directories(mui_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
@@ -673,6 +677,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-topbar COMMAND mui_contract_test topbar)
   add_test(NAME mui-route COMMAND mui_contract_test route)
   add_test(NAME mui-route-reach COMMAND mui_contract_test route-reach)
+  add_test(NAME mui-route-keep COMMAND mui_contract_test route-keep)
   add_test(NAME mui-flag-guard COMMAND mui_contract_test flag-guard)
   add_test(NAME mui-tiles-reach COMMAND mui_contract_test tiles-reach)
   add_test(NAME mui-relayout COMMAND mui_contract_test relayout)
@@ -850,7 +855,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-toolrows COMMAND mui_contract_test toolrows)
   add_test(NAME mui-live-guard COMMAND mui_contract_test live-guard)
   add_test(NAME mui-cycle-initial COMMAND mui_contract_test cycle-initial)
-  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-flag-guard mui-siflags mui-tiles-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-libfilter mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-play-selected mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-sidebar mui-sidebar-bullet-latin1 mui-panes mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-open-compact-reach mui-window-borderless mui-player-bar mui-sidebar-icons mui-compact-rail mui-compact-player mui-player-bar-reach mui-player-band-sizes mui-icon-square mui-subsong-bar mui-viz-chooser mui-overlays mui-dialog-windows mui-tooltip-flat mui-ctxmenu mui-statistics mui-sync-offer PROPERTIES TIMEOUT 30 LABELS mui)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-route-keep mui-flag-guard mui-siflags mui-tiles-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-libfilter mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-play-selected mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-sidebar mui-sidebar-bullet-latin1 mui-panes mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-open-compact-reach mui-window-borderless mui-player-bar mui-sidebar-icons mui-compact-rail mui-compact-player mui-player-bar-reach mui-player-band-sizes mui-icon-square mui-subsong-bar mui-viz-chooser mui-overlays mui-dialog-windows mui-tooltip-flat mui-ctxmenu mui-statistics mui-sync-offer PROPERTIES TIMEOUT 30 LABELS mui)
   # I792: the MUI-vs-Mac parity guard runs in the pre-push gate: nice -n 19 ctest --test-dir build/host -L push-gate
   set_tests_properties(mui-weights mui-doors mui-panes PROPERTIES LABELS "mui;push-gate")
   set(_mui_has_ui 0)
@@ -1382,8 +1387,10 @@ add_test(NAME composer-unit COMMAND composer_test)
 
 # I406: the Modules.pl search page parser over the recorded response.
 add_executable(modulespl_parse_test library/modulespl_parse_test.c
-  "${PROJECT_SOURCE_DIR}/plugins/sources/modulespl/modulespl_parse.c")
-target_include_directories(modulespl_parse_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/modulespl)
+  "${PROJECT_SOURCE_DIR}/plugins/sources/modulespl/modulespl_parse.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/xml_scan.c")
+target_include_directories(modulespl_parse_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/modulespl
+  ${PROJECT_SOURCE_DIR}/plugins/shared)
 target_compile_definitions(modulespl_parse_test PRIVATE
   SEL_MODULESPL_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/www.modules.pl/search_chip.html")
 add_test(NAME modulespl-parse COMMAND modulespl_parse_test)

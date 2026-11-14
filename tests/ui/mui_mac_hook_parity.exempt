@@ -1,0 +1,90 @@
+# I1329: desktop (Mac) UI hooks MUI does not call. Checked by tests/ui/mui_mac_hook_parity.cmake (ctest mui-mac-hook-parity).
+# Line: "<hook> <reason>". A gap names its ledger row; remove the line when the MUI twin lands (the test fails on a
+# stale line). Gap table: thoughts/shared/research/2026-11-14-mui-mac-gap-table.md. I1329a-k are proposed rows there.
+
+# --- Gaps: a Mac feature with no MUI twin yet ---
+sel_engine_sync_progress gap I1328: MUI shows no sync card / progress while the startup sync runs
+sel_engine_sync_cancel gap I1328: no Cancel on a running sync in MUI
+sel_engine_scan_progress gap I1328: no scan progress in MUI
+sel_engine_scan_info gap I1328: scan result toast (desktop desk_on_event) has no MUI twin
+sel_engine_sources_pending gap I1328: "sources still syncing" state not shown in MUI
+sel_uim_selset_bind gap I1329a: multi-select in song lists (I632) has no MUI twin
+sel_uim_selset_clear gap I1329a: multi-select
+sel_uim_selset_contains gap I1329a: multi-select
+sel_uim_selset_count gap I1329a: multi-select
+sel_uim_selset_extend gap I1329a: multi-select (Shift extend)
+sel_uim_selset_format gap I1329a: multi-select (selection line for bulk actions)
+sel_uim_selset_free gap I1329a: multi-select
+sel_uim_selset_init gap I1329a: multi-select
+sel_uim_selset_run_count gap I1329a: multi-select
+sel_uim_selset_select_all gap I1329a: multi-select (Select All)
+sel_uim_selset_select_one gap I1329a: multi-select
+sel_uim_selset_toggle gap I1329a: multi-select (Cmd toggle)
+sel_uim_list_name gap I1329a: song menu "N songs from <list>" on a selection
+sel_uim_rom_install gap I1329b: Settings ROM slots (install, reset, source) have no MUI rows
+sel_uim_rom_is_user gap I1329b: Settings ROM slots
+sel_uim_rom_reset gap I1329b: Settings ROM slots
+sel_uim_rom_slot gap I1329b: Settings ROM slots
+sel_uim_rom_source_text gap I1329b: Settings ROM slots
+sel_uim_lsort_item_cmp gap I1329c: Your Library sort (Recents, Alphabetical, Creator, Added) missing in MUI sidebar
+sel_uim_lsort_label gap I1329c: Your Library sort label
+sel_uim_lfilter_step gap I1329c: chip arrow step through the sidebar filter chips
+sel_uim_chips_place gap I1329c: chips wrap onto rows (I1221, I1208); MUI shows one chip row (sel_uim_lfilter_chips_single)
+sel_uim_search_group gap I1329d: Search result groups (songs, albums, artists, sources, settings)
+sel_uim_search_section_hidden gap I1329d: zero-hit Search sections hidden (I1206)
+sel_uim_search_scope_of_source gap I1329d: source scope follows the opening page (I1224, I1229)
+sel_engine_reads_pending gap I1329d: Search spinner while reads are pending (I1231)
+sel_uim_page_route gap I1329d: search field focus remembers the page it came from
+sel_uim_page_of_route gap I1329d: search field focus remembers the page it came from
+sel_uim_np_lines gap I1329e: Now Playing panel lines from the shared model (I1222f, STIL I1274/I1277)
+sel_uim_np_find gap I1329e: Now Playing panel lines
+sel_uim_np_note_action gap I1329e: Now Playing note action (click on the note line)
+sel_engine_queue_groups gap I1329f: Queue page group dividers (album / source runs)
+sel_engine_song_text_generation gap I1329f: Queue group titles refresh when song texts resolve
+sel_engine_sample_get gap I1329g: Tracker page sample list
+sel_engine_tracker_info gap I1329g: tracker position for the visualizer host (pattern viz)
+sel_uim_rate_line differs I1329j: MUI rating builds its own line; desktop uses the shared rate line (toggle-off on same mark, I306)
+sel_uim_pldel_text differs I1329j: playlist Delete confirm text not from the shared model
+sel_uim_pldel_line differs I1329j: playlist Delete command line not from the shared model
+sel_uim_plremove_label differs I1329j: Remove from Playlist label not from the shared model
+sel_uim_plremove_line differs I1329j: Remove from Playlist command line not from the shared model
+sel_uim_plrename_line differs I1329j: playlist Rename command line not from the shared model
+sel_uim_sysfile_text gap I1329j: missing system file dialog (sample bank / ROM a player needs) has no MUI twin
+sel_engine_song_text gap I1329j: song titles in confirm dialogs, song menu header, composer info come from the engine cache
+sel_uim_home_shelves differs I1329k: Home shelves split ("the one split every UI shares", I1189); MUI splits its own
+sel_uim_tile_route differs I1329k: a Home tile click routes through the shared tile route
+sel_uim_tip_viz_close gap I1173: Visual layout close button (I1248); MUI has no Visual layout
+sel_uim_set_layout gap I1173: desktop layout mode apply (Full, Window, Mini, Visual)
+
+# --- Not gaps: desktop pixel layout, dumps and self-checks, or MUI reaches the same data another way ---
+sel_uim_actions_check desktop --actions self-check print; the action table itself is shared (mui_menu_build)
+sel_uim_exemption_count desktop --actions self-check print
+sel_uim_breakpoint_name desktop resize replay dump
+sel_uim_budget_allows desktop pixel budget (rgba32/index8 canvas); MUI draws through MUI
+sel_uim_default_format desktop canvas format pick
+sel_uim_footer_height desktop pixel layout; MUI lays out with MUI groups
+sel_uim_hit desktop pointer hit-test over its own layout; MUI objects get their own clicks
+sel_uim_layout_check desktop pixel layout self-check
+sel_uim_layout_compute_bar desktop pixel layout; MUI uses sel_uim_layout_compute_tier_expand
+sel_uim_layout_compute_panel desktop pixel layout
+sel_uim_layout_set_side_width desktop pixel layout (sidebar drag)
+sel_uim_cols_split desktop column pixel split; MUI columns come from mui_aalist_cols
+sel_uim_cols_calls desktop dump counter of the column split
+sel_uim_motion_allowed desktop animation gate; MUI has no animation
+sel_uim_page_at desktop dump / control names; MUI resolves pages with sel_uim_page_by_name and sel_uim_door_at
+sel_uim_song_menu_n desktop item count for pointer hit-test; MUI builds the menu from sel_uim_song_menu_label
+sel_uim_pref_choice desktop draws the choice text; MUI uses sel_uim_pref_choice_index and sel_uim_pref_line
+sel_uim_dlg_title MUI reads the same I1368 table through sel_uim_dlg_text and sel_uim_dlg_mui_gadgets
+sel_uim_dlg_confirm_label MUI reads the same I1368 table through sel_uim_dlg_mui_gadgets
+sel_uim_dlg_cancel_label MUI reads the same I1368 table through sel_uim_dlg_mui_gadgets
+sel_uim_stats_rows desktop stats panel rows; MUI Statistics window uses sel_uim_stats_row (I1181)
+sel_route_kind_name desktop dump only
+sel_engine_stats_get engine counters for the desktop dump and perf lines; MUI Statistics reads the STATS reply (I1181)
+sel_engine_lib_deferred desktop dump counter only
+sel_engine_lib_nowait desktop direct engine read on the Playlists page; MUI reads rows from sel_engine_state
+sel_engine_lib_site desktop direct engine read on the Playlists page; MUI reads rows from sel_engine_state
+sel_engine_library_items_busy desktop sidebar lazy library fetch; MUI sidebar reads the view rows
+sel_engine_library_items_post desktop sidebar lazy library fetch
+sel_engine_library_items_take desktop sidebar lazy library fetch
+sel_engine_song_briefs_busy desktop direct briefs read; MUI posts through sel_uim_briefs_post and takes with sel_engine_song_briefs_take
+sel_engine_song_briefs_post desktop direct briefs read; MUI posts through sel_uim_briefs_post
