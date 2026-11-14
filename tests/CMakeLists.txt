@@ -589,6 +589,10 @@ set_tests_properties(mcc-include-check PROPERTIES TIMEOUT 30)
 add_test(NAME mui-ctl-ranges COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c"
   -P "${PROJECT_SOURCE_DIR}/tests/ui/mui_ctl_ranges.cmake")
 set_tests_properties(mui-ctl-ranges PROPERTIES TIMEOUT 30)
+# I1329: every engine/uimodel hook the desktop UI calls has a MUI caller or a line in the exempt file. Pure cmake -P.
+add_test(NAME mui-mac-hook-parity COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+  "-DEXEMPT=${PROJECT_SOURCE_DIR}/tests/ui/mui_mac_hook_parity.exempt" -P "${PROJECT_SOURCE_DIR}/tests/ui/mui_mac_hook_parity.cmake")
+set_tests_properties(mui-mac-hook-parity PROPERTIES TIMEOUT 60)
 if(NOT SEL_AMIGA)
   add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
   target_include_directories(mui_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
