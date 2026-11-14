@@ -29,6 +29,7 @@ static const sel_uim_side_kind TUI_SIDE_KIND_CHIPS = SEL_UIM_SIDE_CHIPS;
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/briefs.h>
+#include <selecta/uimodel/title.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/route.h>
 #include <selecta/uimodel/viewcmds.h>
@@ -673,7 +674,9 @@ static int tui_coll_line(const sel_collection_page* pg, const sel_uim_briefs* br
             const char* base = strrchr(r, '/');
             const char* title = sel_uim_briefs_title(briefs, pg, k); /* I1306: the catalogued title, else the file name */
             const char* name = title != NULL ? title : base != NULL ? base + 1 : r;
-            snprintf(buf, cap, "%s  %s plays", name, plays);
+            char tidy[256];
+            sel_uim_tidy_title(name, tidy, sizeof tidy); /* I1387 */
+            snprintf(buf, cap, "%s  %s plays", tidy, plays);
             *song = r;
             return 1;
         }
@@ -1842,7 +1845,7 @@ static void tui_nowplaying_page(tui* u, const sel_state* s) {
     for (first = ++k; k < s->queue_count && k - first < 8u && y + 1u < (u->pv_rows + 2u); k++, y++) {
         const char* path = s->queue_text + s->queue[k].path_offset;
         const char* slash = strrchr(path, '/');
-        snprintf(buf, sizeof buf, "%s", slash != NULL ? slash + 1 : path);
+        sel_uim_tidy_title(slash != NULL ? slash + 1 : path, buf, sizeof buf); /* I1387 */
         tui_ptext(u, 1, y, buf, u->pv_w - 2u, tui_style(u, TXT_ROLE_NORMAL));
     }
     /* I1313c: players this machine cannot run, each line as the registry filter wrote it (never derived here). */

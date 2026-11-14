@@ -1,6 +1,7 @@
 /* UI model: see include/selecta/uimodel.h. */
 #include <selecta/format_label.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/title.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -37,7 +38,7 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
     if ((title == NULL || title[0] == '\0') && st->song.path != NULL) {
         title = basename_of(st->song.path);
     }
-    snprintf(n.title, sizeof n.title, "%s", title != NULL ? title : "");
+    sel_uim_tidy_title(title, n.title, sizeof n.title);
     snprintf(n.artist, sizeof n.artist, "%s", artist != NULL ? artist : "");
     sel_format_label(format, n.format, sizeof n.format); /* I819: "Protracker (mod)" */
     sel_uim_clock(n.clock, sizeof n.clock, pos, st->song.path != NULL);

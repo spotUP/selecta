@@ -40,6 +40,7 @@
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/theme.h>
+#include <selecta/uimodel/title.h>
 
 #if defined(SELECTA_DESKTOP_AGA) && !defined(SELECTA_DESKTOP_SDL)
 #define SELECTA_DESKTOP_SDL 1
@@ -1592,6 +1593,13 @@ static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap) 
     out[n] = '\0';
 }
 
+/* I1387: queue_title tidied for drawing ("Page_1_x" -> "Page 1 x"); sort keys (songs_key) keep the raw queue_title. */
+static void queue_title_show(const sel_state* st, uint32_t i, char* out, size_t cap) {
+    char raw[256];
+    queue_title(st, i, raw, sizeof raw);
+    sel_uim_tidy_title(raw, out, cap);
+}
+
 /* The text sheet (DUI-P2-3): every size in both weights, then each queue name once ellipsized to one narrow line and
  * once wrapped into three lines, so the golden hash covers glyphs, kerning, ellipsis and wrap. */
 static void draw_textsheet(desk* d) {
@@ -1794,7 +1802,7 @@ static void draw_detail(desk* d) {
     sel_gui_rect body = rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d));
     sel_gui_fill_rect(d->canvas, body, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     if (big != NULL && d->open_tile >= 1 && (uint32_t)d->open_tile <= st->queue_count) {
-        queue_title(st, (uint32_t)d->open_tile - 1u, name, sizeof name);
+        queue_title_show(st, (uint32_t)d->open_tile - 1u, name, sizeof name);
         sel_gui_clip_push(d->canvas, body);
         sel_gui_text_wrap(d->canvas, big, rect_of(mn.x + sp, body.y, mn.w - 2 * sp, 3 * big->line_height), name,
                           ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
@@ -2166,7 +2174,7 @@ static void draw_songs(desk* d) {
         }
         rink = row_ink(d, r, text);
         song_row_reg(d, r, st->queue_text + st->queue[q].path_offset, st->queue[q].id, 1, 0);
-        queue_title(st, q, name, sizeof name);
+        queue_title_show(st, q, name, sizeof name);
         queue_format(st, q, format, sizeof format);
         sel_gui_text_wrap(d->canvas, semi, rect_of(r.x + pad, r.y + lpx(d, 8), songs_header_col(d, 0).w - 2 * pad, semi->line_height),
                           name, rink, 1, &d->text);
@@ -4753,7 +4761,7 @@ static void draw_queue(desk* d) {
         if (divider) { /* a group header: its name in the muted bold face, nothing to play next */
             draw_text(d, rect_of(r.x, r.y, nx.x - r.x, r.h), st->queue_text + st->queue[i].path_offset, 1, 13, muted);
         } else {
-            queue_title(st, i, buf, sizeof buf);
+            queue_title_show(st, i, buf, sizeof buf);
             if (playing) {
                 sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(r.x, r.y + (r.h - ic) / 2, ic, ic), ic, accent);
             }
@@ -4773,7 +4781,7 @@ static void draw_queue(desk* d) {
             sel_gui_fill_rect(d->canvas, rect_of(gr.x, ly - lpx(d, 1), gr.w, lpx(d, 2)), accent);
         }
         sel_gui_fill_rect(d->canvas, lift, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]));
-        queue_title(st, f, buf, sizeof buf);
+        queue_title_show(st, f, buf, sizeof buf);
         draw_text(d, rect_of(lift.x + ic + lpx(d, 12), lift.y, lift.w - ic - lpx(d, 12), lift.h), buf, 1, 14, text);
         d->qdrag_paints++;
     }
@@ -5050,7 +5058,7 @@ static void pls_briefs_follow(desk* d) {
                 const char* alb = art + strlen(art) + 1u;
                 const char* aid = alb + strlen(alb) + 1u;
                 if (r[0] != '\0') {
-                    snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", r);
+                    sel_uim_tidy_title(r, d->pls_title[i], sizeof d->pls_title[i]);
                 }
                 snprintf(d->pls_meta[i].artist, sizeof d->pls_meta[i].artist, "%s", art); /* I678h3: the links route on these, never on UI name matching */
                 snprintf(d->pls_meta[i].album, sizeof d->pls_meta[i].album, "%s", alb);
@@ -5205,7 +5213,7 @@ static void pls_reload_run(desk* d) {
     {   /* I782: the rows show file names now; I948a: the titles, artists, albums and album ids of every song come in ONE posted read */
         for (i = 0, k = buf; i < n && *k != '\0'; i++, k += strlen(k) + 1u) {
             d->pls_off[i] = (uint32_t)(k - buf);
-            snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
+            sel_uim_tidy_title(path_base(k), d->pls_title[i], sizeof d->pls_title[i]);
         }
         if (n > 0u && pv.n == n && pls_buf_len(pv.buf) == pls_buf_len(buf) && memcmp(pv.buf, buf, pls_buf_len(buf)) == 0) {
             if (pv.briefed) { /* the same songs, already resolved: keep titles and meta, no new read */
@@ -10813,7 +10821,7 @@ static void draw_home_content(desk* d) {
         int hovered = d->hover_tile > 0 && (uint32_t)d->hover_tile - 1u == i;
         uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
         uint32_t pc_slot = 0; /* I691b: family + 1 of the platform cover this tile drew, 0 = real art */
-        queue_title(st, i, name, sizeof name);
+        queue_title_show(st, i, name, sizeof name);
         queue_format(st, i, format, sizeof format);
         sel_gui_fill_rect(d->canvas, t, panel); /* the corners blend with the panel, not with the last frame's card */
         sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),

@@ -2,6 +2,7 @@
 #include "view.h"
 
 #include <selecta/library_item.h>
+#include <selecta/uimodel/title.h>
 
 #include <string.h>
 
@@ -779,7 +780,7 @@ static uint32_t row_art(sel_view* v, const sel_view_src* s, uint32_t slot, uint3
 static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx, const char* votes) {
     const char* path = sel_queue_path(s->queue, idx);
     const char* base = sel_browse_basename(path);
-    char ext[16], label[SEL_FORMAT_LABEL_MAX], label_meta[SEL_FORMAT_LABEL_MAX];
+    char ext[16], label[SEL_FORMAT_LABEL_MAX], label_meta[SEL_FORMAT_LABEL_MAX], tidy[SEL_VIEW_TEXT_MAX];
     sel_format_values fv;
     memset(&fv, 0, sizeof fv);
     lower_ext(base, ext, sizeof ext);
@@ -804,6 +805,8 @@ static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx, const
         }
         fv.field[SEL_FMT_DURATION] = dur;
     }
+    sel_uim_tidy_title(fv.field[SEL_FMT_TITLE], tidy, sizeof tidy); /* I1387: display only; the file and path fields stay raw */
+    fv.field[SEL_FMT_TITLE] = tidy;
     (void)sel_format_expand(s->title_format, &fv, SEL_VIEW_TITLE_DEFAULT, out, SEL_VIEW_TEXT_MAX);
 }
 
