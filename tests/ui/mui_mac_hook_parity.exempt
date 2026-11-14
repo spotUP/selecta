@@ -43,9 +43,6 @@ sel_engine_queue_groups gap I1329f: Queue page group dividers (album / source ru
 sel_engine_song_text_generation gap I1329f: Queue group titles refresh when song texts resolve
 sel_engine_sample_get gap I1329g: Tracker page sample list
 sel_engine_tracker_info gap I1329g: tracker position for the visualizer host (pattern viz)
-sel_uim_context_line gap I1329h: "Playing from <list>" context line
-sel_route_hist_keep gap I1329i: Back / Forward restores the list scroll position
-sel_route_hist_scroll gap I1329i: Back / Forward restores the list scroll position
 sel_uim_rate_line differs I1329j: MUI rating builds its own line; desktop uses the shared rate line (toggle-off on same mark, I306)
 sel_uim_pldel_text differs I1329j: playlist Delete confirm text not from the shared model
 sel_uim_pldel_line differs I1329j: playlist Delete command line not from the shared model

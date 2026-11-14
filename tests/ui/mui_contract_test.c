@@ -3702,6 +3702,47 @@ static void test_route(void) {
     CHECK(!mui_route_walk(&r, -1, route_rec, &l) && r.entered == 0u, "Back with no history does nothing");
 }
 
+/* I1329h: a collection row plays through PLAY_CONTEXT named for the page (desk_play_context). I1329i: Back and Forward restore the list scroll
+ * the leaving page kept (desk_rt_leave, sel_route_hist_scroll); the Search facet is kept (sel_route_hist_keep). */
+static int leave_scroll = 0;
+static void leave_rec(void* ctx, mui_route_leave_info* out) {
+    (void)ctx;
+    out->scroll = leave_scroll;
+    out->facet = 2u;
+}
+
+static void test_route_keep(void) {
+    mui_route r;
+    route_log l;
+    sel_collection_page pg;
+    uint32_t order[3] = {2u, 0u, 1u};
+    char line[256];
+    int32_t sc = -1;
+    char* src = ui_source();
+    memset(&l, 0, sizeof l);
+    memset(&pg, 0, sizeof pg);
+    pg.serial = 9u;
+    pg.songs = 3u;
+    snprintf(pg.title, sizeof pg.title, "Nexus");
+    CHECK(mui_col_play_line(&pg, 1u, line, sizeof line) != 0u && strncmp(line, "PLAY_CONTEXT collection 9 1", 27) == 0 && strstr(line, "\"Nexus\"") != NULL,
+          "a collection row plays in context with the page name: %s", line);
+    pg.order = order;
+    pg.shown = 3u;
+    CHECK(mui_col_play_line(&pg, 2u, line, sizeof line) != 0u && strncmp(line, "PLAY_CONTEXT collection 9 0", 27) == 0, "the shown position, not the stored row, is sent: %s", line);
+    CHECK(mui_col_play_line(&pg, 3u, line, sizeof line) == 0u, "a row past the page plays nothing");
+    CHECK(src != NULL && strstr(src, "mui_col_play_line(pg, (uint32_t)picked") != NULL && strstr(src, "mui_route_set_leave(&s->route") != NULL &&
+              strstr(src, "mui_route_take_scroll(&s->route") != NULL, "mui_ui.c wires the context line and the scroll restore");
+    mui_route_init(&r);
+    mui_route_set_leave(&r, leave_rec, NULL);
+    mui_route_click(&r, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Nexus", "Nexus", "", route_rec, &l);
+    leave_scroll = 37;
+    mui_route_click(&r, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Other", "Other", "", route_rec, &l);
+    CHECK(mui_route_walk(&r, -1, route_rec, &l) && mui_route_take_scroll(&r, &sc) && sc == 37 && !mui_route_take_scroll(&r, &sc),
+          "Back puts the list scroll the page kept back, once: %d", (int)sc);
+    mui_route_walk(&r, 1, route_rec, &l);
+    CHECK(!mui_route_take_scroll(&r, &sc), "a page left at the top has nothing to restore");
+}
+
 /* I794 reachability: the one test that drives the MUI's real click path. The control handler of mui_ui.c reaches the handler through the
  * wiring grepped below; the handler is then driven the way the handler drives it (counter and sentinel), and Back returns to the previous
  * page. Removing the wiring from mui_ui.c turns the source checks red. */
@@ -4007,6 +4048,8 @@ int main(int argc, char** argv) {
         test_topbar();
     } else if (strcmp(argv[1], "route") == 0) {
         test_route();
+    } else if (strcmp(argv[1], "route-keep") == 0) {
+        test_route_keep();
     } else if (strcmp(argv[1], "flag-guard") == 0) {
         test_flag_guard();
     } else if (strcmp(argv[1], "route-reach") == 0) {
