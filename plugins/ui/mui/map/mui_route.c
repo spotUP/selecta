@@ -14,11 +14,56 @@ void mui_route_init(mui_route* r) {
     sel_route_hist_init(&r->rh);
 }
 
+void mui_route_set_leave(mui_route* r, mui_route_leave_fn fn, void* ctx) {
+    r->leave_fn = fn;
+    r->leave_ctx = ctx;
+}
+
+int mui_route_take_scroll(mui_route* r, int32_t* scroll) {
+    if (!r->restore_pending) {
+        return 0;
+    }
+    r->restore_pending = 0u;
+    *scroll = r->restore_scroll;
+    return 1;
+}
+
+uint32_t mui_col_play_line(const sel_collection_page* pg, uint32_t picked, char* out, size_t cap) {
+    uint32_t pos = picked;
+    if (pg == NULL || picked >= pg->songs) {
+        return 0u;
+    }
+    if (pg->order != NULL) {
+        for (pos = 0u; pos < pg->shown && pg->order[pos] != picked; pos++) {
+        }
+        if (pos >= pg->shown) {
+            return 0u; /* filtered out of the shown order */
+        }
+    }
+    return (uint32_t)sel_uim_context_line((uint32_t)SEL_UIM_LIST_COLLECTION, 0u, pg->serial, pos, pg->title, out, cap);
+}
+
 static void seed_home(mui_route* r) {
     sel_route_entry cur;
     memset(&cur, 0, sizeof cur);
     cur.page = (uint32_t)SEL_ROUTE_PAGE_HOME;
     sel_route_hist_seed(&r->rh, &cur); /* the window opens on Home */
+}
+
+/* desk_rt_leave: the leaving page keeps its scroll in the history entry, the Search page also its facet. */
+static void leave(mui_route* r) {
+    mui_route_leave_info in;
+    const sel_route_entry* cur = mui_route_cur(r);
+    memset(&in, 0, sizeof in);
+    if (r->leave_fn == NULL || cur == NULL) {
+        return;
+    }
+    r->leave_fn(r->leave_ctx, &in);
+    if (cur->page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
+        sel_route_hist_scroll(&r->rh, in.scroll);
+    } else if (cur->page == (uint32_t)SEL_ROUTE_PAGE_SEARCH) {
+        sel_route_hist_keep(&r->rh, cur->name, cur->sub, in.facet);
+    }
 }
 
 /* The lines that make the page of entry `e` (desk_page_load, desk_route_enter, col_kind_open). `restore` marks Back and Forward: the
@@ -65,7 +110,9 @@ int mui_route_click(mui_route* r, sel_route_target target, uint32_t item_kind, u
     if (!sel_route_go(&r->rh, target, item_kind, id, key != NULL ? key : "", name != NULL ? name : "", sub != NULL ? sub : "", &e)) {
         return 0;
     }
+    leave(r);
     sel_route_hist_push(&r->rh, &e);
+    r->restore_pending = 0u;
     enter(r, &e, 0, send, ctx);
     return 1;
 }
@@ -82,8 +129,11 @@ int mui_route_walk(mui_route* r, int dir, mui_route_send_fn send, void* ctx) {
     if (!sel_route_hist_can(&r->rh, dir)) {
         return 0;
     }
+    leave(r);
     w = sel_route_hist_walk(&r->rh, dir);
     e = *w;
+    r->restore_scroll = e.page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION ? e.scroll : 0;
+    r->restore_pending = r->restore_scroll > 0 ? 1u : 0u;
     enter(r, &e, 1, send, ctx);
     return 1;
 }

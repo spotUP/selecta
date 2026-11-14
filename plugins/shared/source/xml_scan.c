@@ -112,9 +112,28 @@ size_t sel_xml_entity(const char* p, const char* end, char* out, size_t cap, siz
     return k;
 }
 
+/* The five XML entities only: what the reader decoded before I1346 (rows already in a library.db were keyed with it). */
+static size_t legacy_entity(const char* p, const char* end, char* out, size_t* used) {
+    static const struct {
+        const char* e;
+        char c;
+    } ent[] = {{"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&apos;", '\''}};
+    size_t i, l;
+
+    for (i = 0; i < 5; i++) {
+        l = strlen(ent[i].e);
+        if ((size_t)(end - p) >= l && strncmp(p, ent[i].e, l) == 0) {
+            *out = ent[i].c;
+            *used = l;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Copies the text between `<tag ...>` and `</tag>` inside [s, end) to out, decoding CDATA and the XML/HTML entities
  * (sel_xml_entity), so a feed's "&#8230;" and "&#039;" reach the catalogue as UTF-8. */
-int sel_xml_tag_text(const char* s, const char* end, const char* tag, char* out, size_t n) {
+static int tag_text(const char* s, const char* end, const char* tag, char* out, size_t n, int legacy) {
     char open[32];
     const char* p = s;
     size_t ol = (size_t)snprintf(open, sizeof open, "<%s", tag), o = 0;
@@ -139,7 +158,7 @@ int sel_xml_tag_text(const char* s, const char* end, const char* tag, char* out,
             }
             p += p < end ? 3 : 0;
         } else if (*p == '&') {
-            size_t used = 0, k = sel_xml_entity(p, end, out + o, n - o - 1u, &used);
+            size_t used = 0, k = legacy ? legacy_entity(p, end, out + o, &used) : sel_xml_entity(p, end, out + o, n - o - 1u, &used);
 
             if (k > 0) {
                 o += k;
@@ -156,6 +175,14 @@ int sel_xml_tag_text(const char* s, const char* end, const char* tag, char* out,
         out[--o] = '\0';
     }
     return o > 0;
+}
+
+int sel_xml_tag_text(const char* s, const char* end, const char* tag, char* out, size_t n) {
+    return tag_text(s, end, tag, out, n, 0);
+}
+
+int sel_xml_tag_text_legacy(const char* s, const char* end, const char* tag, char* out, size_t n) {
+    return tag_text(s, end, tag, out, n, 1);
 }
 
 /* The value of attribute `attr` of the first `<tag ...>` in [s, end). */

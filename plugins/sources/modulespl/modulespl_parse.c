@@ -7,6 +7,7 @@
  * The modPlayer argument is the direct file under /modules/. A format the site cannot play has
  * `play-disabled.png` and no such argument. */
 #include "modulespl_parse.h"
+#include "source/xml_scan.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -19,44 +20,21 @@
 
 /* Copy src[0..n) to out with HTML entities decoded; 0 when it does not fit. */
 static int decode(const char* src, size_t n, char* out, size_t cap) {
-    static const struct {
-        const char* name;
-        char ch;
-    } named[] = {{"&amp;", '&'}, {"&quot;", '"'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&apos;", '\''}};
     size_t o = 0;
     size_t i = 0;
 
     while (i < n) {
-        char c = src[i];
-        size_t adv = 1;
+        size_t used = 0, k = src[i] == '&' ? sel_xml_entity(src + i, src + n, out + o, cap > o ? cap - o - 1u : 0, &used) : 0;
 
-        if (c == '&') {
-            size_t k;
-
-            for (k = 0; k < sizeof named / sizeof named[0]; k++) {
-                size_t l = strlen(named[k].name);
-
-                if (i + l <= n && memcmp(src + i, named[k].name, l) == 0) {
-                    c = named[k].ch;
-                    adv = l;
-                    break;
-                }
-            }
-            if (adv == 1 && i + 3 < n && src[i + 1] == '#') {
-                char* end = NULL;
-                long v = strtol(src + i + 2, &end, 10);
-
-                if (end != NULL && end > src + i + 2 && end < src + n && *end == ';' && v > 31 && v < 127) {
-                    c = (char)v;
-                    adv = (size_t)(end - (src + i)) + 1u;
-                }
-            }
+        if (k > 0) {
+            o += k;
+            i += used;
+            continue;
         }
         if (o + 1u >= cap) {
             return 0;
         }
-        out[o++] = c;
-        i += adv;
+        out[o++] = src[i++];
     }
     out[o] = '\0';
     return 1;

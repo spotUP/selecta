@@ -397,6 +397,18 @@ static int ui_resolve(const char* id, shell_ui* u) {
     return u->open != NULL && u->wait != NULL && u->close != NULL;
 }
 
+/* I1378b: a UI that is registered but did not resolve is a LoadSeg module missing or broken (Players/sel_<id>_ui, design
+ * 2026-11-13-amiga-plugins-on-demand.md item 4): the message names the file to put back. */
+static void ui_fail(const char* id) {
+#ifdef __amigaos__
+    if (sel_registry_find(SEL_PLUGIN_KIND_UI, id) != NULL) {
+        STARTUP_FAIL("ui '%s' could not load: Players/sel_%s_ui is missing or not a Selecta module", id, id);
+        return;
+    }
+#endif
+    STARTUP_FAIL("ui '%s' is not registered", id);
+}
+
 static const sel_tag* ui_stats_of(const shell_ui* u) {
     return u->stats != NULL && u->state != NULL ? u->stats(u->state) : NULL;
 }
@@ -728,7 +740,7 @@ int main(int argc, char** argv)
                 return 2;
             }
             if (!ui_resolve(argv[a + 1], &g_uis[g_ui_count])) {
-                STARTUP_FAIL("ui '%s' is not registered", argv[a + 1]);
+                ui_fail(argv[a + 1]);
                 return 2;
             }
             g_ui_count++;
@@ -739,7 +751,7 @@ int main(int argc, char** argv)
         }
     }
     if (g_ui_count == 0 && !ui_resolve(ui_id, &g_uis[g_ui_count++])) {
-        STARTUP_FAIL("ui '%s' is not registered", ui_id);
+        ui_fail(ui_id);
         return 2;
     }
     if (oh == NULL) {

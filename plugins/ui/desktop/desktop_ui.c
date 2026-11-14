@@ -12651,14 +12651,16 @@ static void draw_sidebar(desk* d) {
     const sel_gui_atlas* door_at = desk_font(d, 1, 15);
     sel_gui_rect logo = rect_of(sb.x + pad + sp, y, br, br);
     uint32_t i;
-    sel_gui_round_rect(d->canvas, logo, lpx(d, 7), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(logo.x + lpx(d, 6), logo.y + lpx(d, 6), lab, lab), lab,
-                      ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
-    if (sb.w > lpx(d, 120)) {
-        draw_text(d, rect_of(logo.x + br + lpx(d, 10), y, sb.x + sb.w - (logo.x + br + lpx(d, 10)), br), "Selecta", 1, 18,
-                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    if (sb.w > 0 && sb.h > 0) { /* I1376: the compact layouts have no sidebar region; the brand mark there sat at the window corner under the top bar panel. The doors still draw (dui-topbar-doors). */
+        sel_gui_round_rect(d->canvas, logo, lpx(d, 7), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(logo.x + lpx(d, 6), logo.y + lpx(d, 6), lab, lab), lab,
+                          ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        if (sb.w > lpx(d, 120)) {
+            draw_text(d, rect_of(logo.x + br + lpx(d, 10), y, sb.x + sb.w - (logo.x + br + lpx(d, 10)), br), "Selecta", 1, 18,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+        d->home_parts |= HP_BRAND;
     }
-    d->home_parts |= HP_BRAND;
     y += br + pad;
     d->lit_doors = 0u;
     d->doors_drawn = 0u;

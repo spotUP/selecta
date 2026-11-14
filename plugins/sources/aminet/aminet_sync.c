@@ -2,6 +2,7 @@
 #include "aminet_sync.h"
 
 #include "source/sync_text.h"
+#include "source/xml_scan.h"
 
 #include <selecta/catalogue.h>
 
@@ -219,32 +220,28 @@ int sel_aminet_sync(const sel_host* host, const char* dir, sel_aminet_sync_stats
 
 /* Copies `src[0..len)` into `out` without markup and with the HTML entities of the site decoded. */
 static void cell_text(const char* src, size_t len, char* out, size_t n) {
-    static const struct {
-        const char* ent;
-        char ch;
-    } ents[] = {{"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&#39;", '\''}, {"&nbsp;", ' '}};
     size_t i = 0, o = 0;
     int tag = 0;
 
     for (; i < len && o + 1u < n; i++) {
-        size_t k;
+        size_t used = 0, k;
 
         if (src[i] == '<') {
             tag = 1;
         } else if (src[i] == '>') {
             tag = 0;
         } else if (!tag) {
-            out[o] = src[i];
-            for (k = 0; src[i] == '&' && k < sizeof ents / sizeof ents[0]; k++) {
-                size_t el = strlen(ents[k].ent);
-
-                if (i + el <= len && memcmp(src + i, ents[k].ent, el) == 0) {
-                    out[o] = ents[k].ch;
-                    i += el - 1u;
-                    break;
-                }
+            k = src[i] == '&' ? sel_xml_entity(src + i, src + len, out + o, n - o - 1u, &used) : 0;
+            if (k == 2 && (unsigned char)out[o] == 0xC2u && (unsigned char)out[o + 1] == 0xA0u) {
+                out[o] = ' '; /* "&nbsp;" stays a plain space here */
+                k = 1;
             }
-            o++;
+            if (k > 0) {
+                o += k;
+                i += used - 1u;
+            } else {
+                out[o++] = src[i];
+            }
         }
     }
     out[o] = '\0';
