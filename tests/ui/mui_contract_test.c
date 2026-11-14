@@ -3739,7 +3739,10 @@ static void test_route_keep(void) {
     mui_route_click(&r, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Other", "Other", "", route_rec, &l);
     CHECK(mui_route_walk(&r, -1, route_rec, &l) && mui_route_take_scroll(&r, &sc) && sc == 37 && !mui_route_take_scroll(&r, &sc),
           "Back puts the list scroll the page kept back, once: %d", (int)sc);
+    leave_scroll = 0;
     mui_route_walk(&r, 1, route_rec, &l);
+    CHECK(mui_route_take_scroll(&r, &sc) && sc == 37, "Forward restores the scroll the page kept when Back left it: %d", (int)sc);
+    mui_route_walk(&r, -1, route_rec, &l);
     CHECK(!mui_route_take_scroll(&r, &sc), "a page left at the top has nothing to restore");
 }
 
