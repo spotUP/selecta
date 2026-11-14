@@ -126,18 +126,42 @@ if(SEL_AMIGA)
 else()
   set(ART_THREAD posix/art_thread.c)
 endif()
+# Amiga (I1378c, design 2026-11-13-amiga-plugins-on-demand.md items 1, 2, 4): Players/sel_desktop_ui is a LoadSeg module
+# holding desktop_ui.c, the gui, uimodel and archive code, gui_icons_baked.c and font_baked.c; it reaches the engine through
+# the import table (cmake/amiga_seg_imports.txt). The registry links only manifest.c. DESKTOP_IMPL is the target that
+# owns the plugin's sources, definitions and libraries.
+if(SEL_AMIGA)
+  set(DESKTOP_IMPL sel_seg_desktop_ui)
+  set(DESKTOP_SEG_ARGS SEG_IMPORTS AMIGA_MANIFEST manifest.c)
+else()
+  set(DESKTOP_IMPL sel_plugin_desktop_ui)
+  set(DESKTOP_SEG_ARGS "")
+endif()
 sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c font_roles.c art.c ${ART_THREAD} stb_impl.c desk_png.c ${FONT_GEN}
+  ${DESKTOP_SEG_ARGS}
   THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb" "${PROJECT_SOURCE_DIR}/third_party/miniz")
 set_property(GLOBAL APPEND PROPERTY SEL_GUI_ONLY_PLUGINS desktop_ui) # left out of selecta_registry_cli on the Amiga (I583)
 if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
-  target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
+  target_compile_definitions(${DESKTOP_IMPL} PRIVATE SELECTA_DESKTOP_RTG=1)
 endif()
 if(SEL_AMIGA)
-  target_compile_definitions(sel_plugin_desktop_ui PRIVATE SEL_DESKTOP_NO_TTF=1)
+  target_compile_definitions(${DESKTOP_IMPL} PRIVATE SEL_DESKTOP_NO_TTF=1)
 endif()
-target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui selecta_archive)
 if(SEL_AMIGA)
-  target_include_directories(sel_plugin_desktop_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
+  # The module links the archives as plain files: selecta_uimodel's PUBLIC dependency selecta_core would otherwise pull a second
+  # engine into the module. Core symbols stay undefined and resolve through the import table (SEG_IMPORTS).
+  set(DESKTOP_SEG_LIBS selecta_uimodel selecta_gui selecta_archive selecta_platform)
+  set(DESKTOP_SEG_FILES "")
+  foreach(lib ${DESKTOP_SEG_LIBS})
+    list(APPEND DESKTOP_SEG_FILES "$<TARGET_FILE:${lib}>")
+  endforeach()
+  add_dependencies(${DESKTOP_IMPL} ${DESKTOP_SEG_LIBS})
+  target_link_libraries(${DESKTOP_IMPL} PRIVATE ${DESKTOP_SEG_FILES} ${DESKTOP_SEG_FILES})
+else()
+  target_link_libraries(${DESKTOP_IMPL} PUBLIC selecta_uimodel selecta_gui selecta_archive)
+endif()
+if(SEL_AMIGA)
+  target_include_directories(${DESKTOP_IMPL} PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
 endif()
 
 # The aga backend (I439, M4-P6-1, thoughts/shared/plans/2026-10-26-aga-c2p-backend.md): an 8-bitplane Intuition
@@ -163,8 +187,8 @@ if(SEL_AMIGA)
       COMMENT "Assembling Kalms c2p1x1_8_c5_030")
     set_source_files_properties("${AGA_C2P_030}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
     if(SEL_DESKTOP_AGA)
-      target_sources(sel_plugin_desktop_ui PRIVATE amiga/backend_aga.c amiga/aga_planar.c "${AGA_C2P_040}" "${AGA_C2P_030}")
-      target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_AGA=1)
+      target_sources(${DESKTOP_IMPL} PRIVATE amiga/backend_aga.c amiga/aga_planar.c "${AGA_C2P_040}" "${AGA_C2P_030}")
+      target_compile_definitions(${DESKTOP_IMPL} PRIVATE SELECTA_DESKTOP_AGA=1)
     endif()
     add_executable(selecta-aga-first-light amiga/aga_first_light.c amiga/backend_aga.c amiga/aga_planar.c
       amiga/input.c amiga/folder_pick.c "${AGA_C2P_040}" "${AGA_C2P_030}")
