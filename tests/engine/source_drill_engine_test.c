@@ -7,10 +7,12 @@
 #include <selecta/library_item.h>
 #include <selecta/machine.h>
 #include <selecta/registry.h>
+#include <selecta/source.h>
 #include <sqlite3.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "db/db.h"
@@ -20,6 +22,12 @@
 #define ROWS 60000
 
 static int g_fail;
+
+static int podcast_url(const sel_host* host, const char* path, char* out, size_t n) {
+    (void)host;
+    snprintf(out, n, "http://example.invalid/%s", path);
+    return 1;
+}
 
 #define CHECK(c)                                        \
     do {                                                \
@@ -129,6 +137,30 @@ int main(void) {
     snprintf(key, sizeof key, "modland\x1f" "new");
     pg = open_page(e, key);
     CHECK(pg->drill == SEL_DRILL_PAGE_GROUPS && pg->songs == 1u && strcmp(group_name(pg, 0), "20000") == 0);
+
+    /* I1380, I1381: a stream source (podcasts) has no formats, platforms or artists facets: its page is the plain song list. The rows carry
+     * 617 distinct format strings (the podcast plugin stores the episode date there), which made the facet root run 617 sample queries. */
+    {
+        static const sel_source podcast = {.id = "podcast", .name = "Podcasts", .flags = SEL_SOURCE_STREAMS, .play_url = podcast_url};
+        struct timespec t0, t1;
+        CHECK(sel_source_register(&podcast) == 1);
+        db_enter(lib);
+        CHECK(sqlite3_exec(lib->db,
+                           "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 617)"
+                           " INSERT INTO songs(key, source, path, name, artist, album, format, added)"
+                           " SELECT 'podcast:' || i, 'podcast', 'ep' || i, 'Episode ' || i, 'Show ' || (i % 7), '', 'Podcast - day ' || i, 1 FROM n;",
+                           NULL, NULL, NULL) == SQLITE_OK);
+        db_leave(lib);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        pg = open_page(e, "podcast");
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        printf("podcast page open: %.1f ms\n", (double)(t1.tv_sec - t0.tv_sec) * 1e3 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e6);
+        CHECK(pg != NULL && pg->kind == SEL_LIB_ITEM_SOURCE);
+        CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_NONE); /* no facet tiles */
+        CHECK(pg != NULL && pg->songs == 617u);                /* the shows' episodes, listed directly */
+        pg = open_page(e, "modland");
+        CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_ROOT && pg->songs == 4u); /* a module archive keeps its categories */
+    }
 
     /* Recents keeps the source id, not the drill path. */
     {

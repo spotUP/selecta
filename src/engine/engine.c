@@ -7886,10 +7886,16 @@ static void coll_build_run(sel_engine* e) {
         char id[128]; /* I928: the header names the source ("Local files"), never its id; the key carries the drill path after the id */
         const sel_source* src;
         char* us;
-        drill_build(e, key, &b);
         snprintf(id, sizeof id, "%s", key);
         us = strpbrk(id, "\x1f\x1e");
         if (us != NULL) *us = '\0';
+        /* I1381: a stream source (podcasts, radio, Jamendo, archive.org, ccMixter, DLNA) has no formats, platforms or artists worth a facet:
+         * its page is the plain song list, filtered and searched like any list. Module archives keep the drill. */
+        if (0 && sel_source_is_stream(id)) {
+            if (sel_library_collection(e->lib, kind, id, SEL_COLL_SONGS, coll_song_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
+        } else {
+            drill_build(e, key, &b);
+        }
         src = sel_source_find(id);
         snprintf(pg->title, sizeof pg->title, "%s", src != NULL && src->name != NULL ? src->name : id);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
