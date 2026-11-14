@@ -95,6 +95,7 @@ enum {
     /* I1231: `search` is the synced-catalogue search (sel_catalogue_search, perhaps with a live fallback): the engine's
      * fan-out searches every such source in ONE grouped library query (sel_catalogue.search_many). */
     SEL_SOURCE_CATALOGUE_SEARCH = 128u,
+    SEL_SOURCE_SHOWS = 256u,       /* I1381, with STREAMS: the page lists the artist groups (podcast shows), not every song */
     SEL_SOURCE_SEEKABLE = 32u      /* with STREAMS: the play_url answers HTTP Range, so a seek re-requests from the byte (I725f) */
 };
 

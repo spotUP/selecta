@@ -7889,9 +7889,14 @@ static void coll_build_run(sel_engine* e) {
         snprintf(id, sizeof id, "%s", key);
         us = strpbrk(id, "\x1f\x1e");
         if (us != NULL) *us = '\0';
-        /* I1381: a stream source (podcasts, radio, Jamendo, archive.org, ccMixter, DLNA) has no formats, platforms or artists worth a facet:
-         * its page is the plain song list, filtered and searched like any list. Module archives keep the drill. */
-        if (0 && sel_source_is_stream(id)) {
+        /* I1381: a stream source (podcasts, radio, Jamendo, archive.org, ccMixter, DLNA) has no formats or platforms worth a facet tile.
+         * Its page is the plain list, filtered and searched like any list: the songs, or for SEL_SOURCE_SHOWS (podcasts) the shows
+         * (artist groups). Module archives keep the drill root. */
+        if (sel_source_is_stream(id) && (sel_source_find(id)->flags & SEL_SOURCE_SHOWS) != 0u) {
+            char shows[sizeof id + 16];
+            snprintf(shows, sizeof shows, "%s\x1f" "artists", id);
+            drill_build(e, shows, &b);
+        } else if (sel_source_is_stream(id)) {
             if (sel_library_collection(e->lib, kind, id, SEL_COLL_SONGS, coll_song_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
         } else {
             drill_build(e, key, &b);

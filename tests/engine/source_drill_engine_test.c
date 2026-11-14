@@ -7,7 +7,6 @@
 #include <selecta/library_item.h>
 #include <selecta/machine.h>
 #include <selecta/registry.h>
-#include <selecta/source.h>
 #include <sqlite3.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +17,7 @@
 #include "db/db.h"
 #include "db/db_internal.h"
 #include "engine_test_db_lock.h"
+#include "source.h"
 
 #define ROWS 60000
 
@@ -141,7 +141,8 @@ int main(void) {
     /* I1380, I1381: a stream source (podcasts) has no formats, platforms or artists facets: its page is the plain song list. The rows carry
      * 617 distinct format strings (the podcast plugin stores the episode date there), which made the facet root run 617 sample queries. */
     {
-        static const sel_source podcast = {.id = "podcast", .name = "Podcasts", .flags = SEL_SOURCE_STREAMS, .play_url = podcast_url};
+        static const sel_source podcast = {.id = "podcast", .name = "Podcasts", .flags = SEL_SOURCE_STREAMS | SEL_SOURCE_SHOWS, .play_url = podcast_url};
+        static const sel_source station = {.id = "station", .name = "Stations", .flags = SEL_SOURCE_STREAMS, .play_url = podcast_url};
         struct timespec t0, t1;
         CHECK(sel_source_register(&podcast) == 1);
         db_enter(lib);
@@ -156,8 +157,18 @@ int main(void) {
         clock_gettime(CLOCK_MONOTONIC, &t1);
         printf("podcast page open: %.1f ms\n", (double)(t1.tv_sec - t0.tv_sec) * 1e3 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e6);
         CHECK(pg != NULL && pg->kind == SEL_LIB_ITEM_SOURCE);
-        CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_NONE); /* no facet tiles */
-        CHECK(pg != NULL && pg->songs == 617u);                /* the shows' episodes, listed directly */
+        CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_GROUPS); /* no facet tiles: the list of shows */
+        CHECK(pg != NULL && pg->songs == 7u);                    /* 7 shows (artist groups), not 617 episodes */
+        CHECK(sel_source_register(&station) == 1);
+        db_enter(lib);
+        CHECK(sqlite3_exec(lib->db,
+                           "INSERT INTO songs(key, source, path, name, artist, album, format, added)"
+                           " VALUES('station:a','station','a','Station A','DE - rock','','Radio - MP3',1),"
+                           "('station:b','station','b','Station B','FR - pop','','Radio - MP3',1);",
+                           NULL, NULL, NULL) == SQLITE_OK);
+        db_leave(lib);
+        pg = open_page(e, "station");
+        CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_NONE && pg->songs == 2u); /* other stream sources: the plain song list */
         pg = open_page(e, "modland");
         CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_ROOT && pg->songs == 4u); /* a module archive keeps its categories */
     }
