@@ -319,6 +319,15 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos_dist_players.cmake")
   set_tests_properties(amiga-dist-players PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
 
+  # I1378a: v2 modules call core functions through the host import table (cmake/amiga_seg_imports.cmake).
+  add_test(NAME seg-imports-unit
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            "-DSEG_DIR=${PROJECT_SOURCE_DIR}/build/amiga/seg-imports-test"
+            "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/pxtone_test.ptcop"
+            "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/seg-imports-unit"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_seg_imports.cmake")
+  set_tests_properties(seg-imports-unit PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
+
   # I218d: Latin-1 file names listed as UTF-8 and opened by that name, through library browse --names.
   add_test(NAME amiga-latin1-name
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"

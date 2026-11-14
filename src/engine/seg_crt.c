@@ -6,14 +6,24 @@
  * Layout at offset 0 of the first code hunk (the host reads it at BADDR(seg) + 4):
  *   +0  moveq #-1,d0 ; rts      a module run from a shell exits with failure
  *   +4  'SELP'                  magic
- *   +8  1                       header version
+ *   +8  2                       header version (1: the I427e header, no imports; the loader still takes it)
  *   +12 init                    int init(void): sets SysBase, runs libnix's INIT_LIST (opens libraries, runs C++
  *                               constructors); 1 = ready, 0 = an init function called exit()
  *   +16 fini                    void fini(void): runs EXIT_LIST (frees the malloc pool, closes libraries)
  *   +20 sel_plugin_entry        the plugin's normal entry; host API through the sel_host table only
+ *   +24 _sel_seg_imp            v2 (I1378a): writable slot the loader fills with the host's sel_seg_imports table
+ *                               before init; the generated thunks (cmake/amiga_seg_imports.cmake) jump through it
+ *   +28 SEL_SEG_IMPORT_COUNT    v2: length of cmake/amiga_seg_imports.txt this module was built from (0 = no imports);
+ *                               the loader rejects the module when it exceeds the host's table
  *
  * exit() inside init or fini unwinds to the saved stack pointer and returns 0. callfuncs is libnix's own
  * priority walk, copied from ncrt0.o (pairs of function, priority; NULL ends the list). */
+
+#ifndef SEL_SEG_IMPORT_COUNT
+#define SEL_SEG_IMPORT_COUNT 0
+#endif
+#define SEL_SEG_STR_(x) #x
+#define SEL_SEG_STR(x) SEL_SEG_STR_(x)
 
 __asm__(
     "	.text\n"
@@ -22,10 +32,14 @@ __asm__(
     "	moveq	#-1,d0\n"
     "	rts\n"
     "	.long	0x53454c50\n"
-    "	.long	1\n"
+    "	.long	2\n"
     "	.long	_sel_seg_init\n"
     "	.long	_sel_seg_fini\n"
     "	.long	_sel_plugin_entry\n"
+    "	.globl	_sel_seg_imp\n"
+    "_sel_seg_imp:\n"
+    "	.long	0\n"
+    "	.long	" SEL_SEG_STR(SEL_SEG_IMPORT_COUNT) "\n"
     "_sel_seg_init:\n"
     "	moveml	d2-d7/a2-a6,sp@-\n"
     "	movel	4:w,_SysBase\n"

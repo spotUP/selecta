@@ -22,6 +22,21 @@ if(SEL_AMIGA)
   # The module links with the C driver: libstdc++ (operator new/delete, std::nothrow) is named here.
   target_link_libraries(sel_seg_pxtone PRIVATE pxtone_engine stdc++ m)
   set_target_properties(sel_seg_pxtone PROPERTIES CXX_STANDARD 14)
+  # I1378a seg-imports-unit (tests/amiga/run_seg_imports.cmake): two copies of the module that also call sel_tag_find
+  # through the import thunks. v2 carries the real import count and must render exactly like the plain module; over
+  # claims one import more than the host has and must be rejected before init. Not in SEL_SEG_MODULES: never shipped.
+  foreach(variant v2 over)
+    set(count_arg "")
+    if(variant STREQUAL "over")
+      math(EXPR over_n "${SEL_SEG_IMPORT_COUNT} + 1")
+      set(count_arg IMPORT_COUNT ${over_n})
+    endif()
+    sel_add_seg(sel_seg_pxtone_${variant} pxtone 1 "${CMAKE_BINARY_DIR}/seg-imports-test/${variant}" IMPORTS ${count_arg}
+      SOURCES adapter.c probe.c shim.cpp "${PROJECT_SOURCE_DIR}/tests/amiga/seg_imports_probe.c"
+      INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}" "${PX_DIR}/..")
+    target_link_libraries(sel_seg_pxtone_${variant} PRIVATE pxtone_engine stdc++ m)
+    set_target_properties(sel_seg_pxtone_${variant} PROPERTIES CXX_STANDARD 14 EXCLUDE_FROM_ALL ON)
+  endforeach()
 else()
   set(SEL_MODULE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
   sel_add_plugin(pxtone 1 MODULE adapter.c probe.c shim.cpp THIRD_PARTY_INCLUDES "${PX_DIR}/..")
