@@ -8,6 +8,9 @@
  * entities, trailing space trimmed. 1 when non-empty text was found. */
 int sel_xml_tag_text(const char* s, const char* end, const char* tag, char* out, size_t n);
 
+/* sel_xml_tag_text with only the five XML entities decoded (the pre-I1346 reader): rebuilds the old key of a row. */
+int sel_xml_tag_text_legacy(const char* s, const char* end, const char* tag, char* out, size_t n);
+
 /* Decodes the entity whose '&' is at p (inside [p, end)): decimal and hex numeric references, amp lt gt quot apos nbsp
  * hellip ndash mdash rsquo lsquo ldquo rdquo and a few more, and the double-escaped "&amp;#039;". Writes UTF-8 to out
  * (cap bytes) and returns its length, *used = input bytes consumed. 0 when p is not a known entity or does not fit. */
