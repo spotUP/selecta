@@ -1,0 +1,6 @@
+# Core symbols an Amiga LoadSeg module (I1378, design thoughts/shared/research/2026-11-13-amiga-plugins-on-demand.md,
+# Design 1) reaches through the host's import table. One symbol per line, C name without the leading underscore.
+# APPEND ONLY: a symbol's line number is its slot in sel_seg_imports[], baked into every module built from this list;
+# reordering or deleting a line breaks every module file already on disk. Never list a function that takes
+# arguments in registers (no -mregparm, no __asm("a0") parameters): the thunk clobbers a0 and passes the stack as is.
+sel_tag_find

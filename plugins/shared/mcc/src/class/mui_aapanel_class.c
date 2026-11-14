@@ -90,7 +90,9 @@ static void aapanel_space(Object* grp, int gx, int gy, int depth) {
     }
     state = (Object*)kids->lh_Head;
     while ((child = NextObject(&state)) != NULL) {
-        if (OCLASS(child) == group_cl) {
+        ULONG keep = 0;
+        GetAttr(MUIA_UserData, child, &keep);
+        if (OCLASS(child) == group_cl && keep != UPV_Panel_KeepSpacing) { /* I1371: a row that set its own spacing keeps it */
             aapanel_space(child, gx, depth == 0 ? gy / 2 : gy, depth + 1);
         }
     }

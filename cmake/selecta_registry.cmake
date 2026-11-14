@@ -58,6 +58,7 @@ function(sel_make_registry target list_file_name)
   elseif(SEL_AMIGA)
     # On-demand LoadSeg modules (I427e): manifests sit in the registry, players load on first open.
     target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src/engine/loader_seg.c")
+    target_sources(${target} PRIVATE "${SEL_SEG_IMPORTS_C}") # I1378a: host import table the seg thunks call through
     target_compile_definitions(${target} PRIVATE SEL_HAVE_LOADER)
     get_property(_sel_segs GLOBAL PROPERTY SEL_SEG_MODULES)
     foreach(_s IN LISTS _sel_segs)

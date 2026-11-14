@@ -172,6 +172,8 @@ enum { UPV_Button_Align_Left, UPV_Button_Align_Centre, UPV_Button_Align_Right };
                                                             children, so a Role answer counts only when Self names the asked object */
 #define UPA_Panel_Popup UP_TAG(UP_CLS_PANEL, 0x06)       /* I BOOL: root of a borderless popup window: square corners, no card padding (I1349) */
 enum { UPV_Panel_Role_Panel, UPV_Panel_Role_Surface, UPV_Panel_Role_Raised, UPV_Panel_Role_Count };
+/* I1371: MUIA_UserData value of a plain MUI Group inside a panel that keeps the spacing it was created with (a tool row of buttons). */
+#define UPV_Panel_KeepSpacing 0x55505331UL
 
 /* Shared: tooltip (private to the package) */
 #define UPM_Shared_Fire UP_TAG(UP_CLS_SHARED, 0x31) /* private method the timer node sends to the owner */

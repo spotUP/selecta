@@ -14,6 +14,7 @@ endif()
 add_library(selecta_core ${SEL_CORE_KIND}
   core/version.c
   core/tag.c
+  core/manifest_dump.c
   core/plugin_resolve.c
   core/codec.c
   core/machine.c

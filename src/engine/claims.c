@@ -45,6 +45,10 @@ int sel_hooks_claim_name(const sel_tag* hooks, const char* name) {
     return (pre_n > 0u && list_has_nocase(exts, name, pre_n)) || (last_n > 0u && list_has_nocase(exts, last, last_n));
 }
 
+int sel_hooks_has(const sel_tag* hooks, uint32_t tag) {
+    return hooks != NULL && sel_tag_find(hooks, tag, 0) != 0;
+}
+
 int sel_registry_claims_name(uint32_t (*registry_count)(void), const sel_tag* (*registry_get)(uint32_t), const char* name) {
     uint32_t i, n;
 

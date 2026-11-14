@@ -13,7 +13,7 @@ endforeach()
 
 function(run tag keys)
   execute_process(
-    COMMAND "${SELECTA}" --output null --size 100x25 --start-dir "${songs}" --config-dir "${WORK}/cfg"
+    COMMAND "${SELECTA}" --output null --size 160x25 --start-dir "${songs}" --config-dir "${WORK}/cfg"
             --exec "QUEUE_ADD ${songs}/alpha.mod" --exec "QUEUE_ADD ${songs}/bravo.mod"
             --exec "QUEUE_ADD ${songs}/charlie.mod" --exec "QUEUE_ADD ${songs}/delta.mod"
             --keys "${keys}" --screen-dump "${WORK}/${tag}.txt"

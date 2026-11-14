@@ -4,19 +4,38 @@
 #ifndef MUI_ROUTE_H
 #define MUI_ROUTE_H
 
+#include <selecta/engine.h>
 #include <selecta/uimodel/route.h>
+#include <selecta/uimodel/select.h>
 
 #include <stddef.h>
 #include <stdint.h>
 
 typedef int (*mui_route_send_fn)(void* ctx, const char* line);
 
+/* I1329i: what the leaving page keeps (desk_rt_leave): the list scroll of a collection page, the facet chip of the Search page. */
+typedef struct mui_route_leave_info {
+    int32_t scroll;
+    uint32_t facet;
+} mui_route_leave_info;
+typedef void (*mui_route_leave_fn)(void* ctx, mui_route_leave_info* out);
+
 typedef struct mui_route {
     sel_route_hist rh;
+    mui_route_leave_fn leave_fn; /* I1329i: asked once per page change; NULL keeps nothing */
+    void* leave_ctx;
+    int32_t restore_scroll;      /* I1329i: the scroll Back or Forward found; taken by mui_route_take_scroll when the page's rows are shown */
+    uint32_t restore_pending;
     uint32_t entered; /* pages entered through the handler: the sentinel that it ran */
 } mui_route;
 
 void mui_route_init(mui_route* r);
+void mui_route_set_leave(mui_route* r, mui_route_leave_fn fn, void* ctx);
+/* I1329i: 1 and the scroll to put back once, after a Back or Forward onto a collection page; 0 otherwise. */
+int mui_route_take_scroll(mui_route* r, int32_t* scroll);
+/* I1329h: the PLAY_CONTEXT line (desk_play_context, via sel_uim_context_line) that plays row `picked` of a collection page and queues the rest
+ * behind it, named after the page. The list shows the stored order; `pos` is the shown position the engine counts. Length, 0 when none. */
+uint32_t mui_col_play_line(const sel_collection_page* pg, uint32_t picked, char* out, size_t cap);
 /* A click on `target` (design doc section 9): resolves, records in the history and enters the page. 1 when a page opened. */
 int mui_route_click(mui_route* r, sel_route_target target, uint32_t item_kind, uint32_t id, const char* key, const char* name, const char* sub,
                     mui_route_send_fn send, void* ctx);

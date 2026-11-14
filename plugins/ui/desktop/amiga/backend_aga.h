@@ -77,6 +77,7 @@ int desk_aga_open_folder_dialog(desk_aga* b);
 #define desk_sdl_scale(b) ((void)(b), 1)
 #define desk_sdl_resize(b, w, h) ((void)(b), (w) == desk_aga_width(b) && (h) == desk_aga_height(b))
 #define desk_sdl_present desk_aga_present
+#define desk_sdl_test_ready(b) ((void)(b)) /* I1164a SDL test hook; no timed test events on the Amiga backends */
 #define desk_sdl_present_hash(b) ((void)(b), 0u)
 #define desk_sdl_readbacks(b) ((void)(b), 0u)
 #define desk_sdl_raises(b) ((void)(b), 0u) /* a new Amiga screen opens in front; nothing raises it (I501) */

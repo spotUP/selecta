@@ -43,7 +43,7 @@ int sel_cli_play_null(int argc, char** argv) {
 
     sel_cli_registry_init(host);
     desc = sel_registry_find(SEL_PLUGIN_KIND_OUTPUT, "null");
-    hooks = desc ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    hooks = desc ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
     if (hooks == NULL) {
         fputs("play-null: null output not registered\n", stderr);
         return 1;

@@ -5,7 +5,7 @@
 # sent last, the toast state, the per-item menu picks and the queue size. Every check reads that line, so a feature that
 # is not wired to the keys or the pointer leaves the counters at zero and fails.
 # 1. Ctrl+P opens the palette; the query `shuff` ranks SHUFFLE first, and Enter on it (it needs an argument) opens the
-#    command line with `SHUFFLE ` typed, so `on` and Enter send `SHUFFLE on`. Down then Enter picks RESHUFFLE, a bare
+#    command line with `SHUFFLE ` typed, so `on` and Enter send `SHUFFLE on`. Down then Enter picks the Shuffle Queue action row (QUEUE_SHUFFLE), a bare
 #    verb, which runs straight from the palette.
 # 2. `:` opens the command line; `pla` and Tab list the PLAY and PLAYLIST_* verbs of the action list.
 # 3. `?` opens the help overlay; Escape closes any overlay.
@@ -73,7 +73,9 @@ expect_eq("line sent" "${s_last_verb}" "SHUFFLE on")
 expect_eq("engine took the line" "${s_sends_ok}" 1)
 ov_run(r queue "wait 100\n${shuff}key down\nkey enter\nwait 100\n")
 expect_eq("bare verb runs from the palette" "${r_palette_runs}" 1)
-expect_eq("verb sent" "${r_last_verb}" "RESHUFFLE")
+# Since I1211 (cd4b922d) the palette lists one row per shared action: the row after SHUFFLE is the action "Shuffle Queue", which
+# runs its line QUEUE_SHUFFLE (it used to send the label, which is not a command).
+expect_eq("verb sent" "${r_last_verb}" "QUEUE_SHUFFLE")
 expect_eq("engine took the verb" "${r_sends_ok}" 1)
 ov_run(e queue "wait 100\n${shuff}key escape\n")
 expect_eq("Escape closes the palette" "${e_kind}" 0)

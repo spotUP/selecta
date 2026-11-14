@@ -47,6 +47,11 @@ static long ms_since(const struct timespec* t0) {
     return (long)((t1.tv_sec - t0->tv_sec) * 1000L + (t1.tv_nsec - t0->tv_nsec) / 1000000L);
 }
 
+static int count_step(void* p) {
+    (*(long*)p)++;
+    return 0;
+}
+
 int main(void) {
     const sel_host* host = sel_host_default();
     char dir[] = "/tmp/selecta_nowait_XXXXXX";
@@ -145,6 +150,21 @@ int main(void) {
         sel_db_majority_format(lib->db, SEL_LIB_ITEM_SOURCE, "big", raw, sizeof raw);
         sel_db_majority_format_cached(lib->db, SEL_LIB_ITEM_SOURCE, "big", c3, sizeof c3);
         CHECK(strcmp(raw, c3) == 0 && strcmp(c1, c3) != 0); /* the change flipped the majority; the cache followed */
+    }
+
+    /* I1193: the Liked item's majority format seeks songs by liked key; a songs scan (130 000 rows here, 600 000 on the real library:
+     * 5-8 s cold on the library worker, the Playlists/Songs Enter stall) is counted by the VM step handler. */
+    {
+        char fmt[16];
+        long steps = 0;
+
+        CHECK(sqlite3_exec(lib->db, "INSERT OR IGNORE INTO liked(key, at) VALUES('big:1', 1), ('big:2', 2), ('big2:3', 3);", NULL, NULL, NULL) == SQLITE_OK);
+        sqlite3_progress_handler(lib->db, 100, count_step, &steps);
+        sel_db_majority_format(lib->db, SEL_LIB_ITEM_LIKED, "", fmt, sizeof fmt);
+        sqlite3_progress_handler(lib->db, 0, NULL, NULL);
+        printf("liked majority format: %ld x100 vm steps\n", steps);
+        CHECK(fmt[0] != '\0');
+        CHECK(steps < 50);
     }
 
     sel_engine_destroy(e);

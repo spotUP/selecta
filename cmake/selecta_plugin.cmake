@@ -65,8 +65,41 @@ define_property(GLOBAL PROPERTY SEL_PLUGINS
 add_custom_target(sdk-isolation
   COMMENT "Every plugin compiles with include/ as its only project include path")
 
+if(SEL_AMIGA)
+  include("${CMAKE_CURRENT_LIST_DIR}/amiga_seg_imports.cmake")
+endif()
+
+# sel_add_seg(<target> <name> <kind> <out_dir> [IMPORTS] [IMPORT_COUNT <n>] SOURCES <src>... [INCLUDES <dir>...])
+# One Amiga LoadSeg hunk file <out_dir>/sel_<name> (I427e, plugin-loader-sdk D8): seg_crt.c first, at offset 0, then the
+# plugin sources; -nostartfiles. It links no selecta_core (D6). IMPORTS (I1378a) links the generated thunks
+# (cmake/amiga_seg_imports.cmake) last, after every library the caller adds in the same directory, so core symbols the
+# module leaves undefined resolve through the host's import table; the header records the list length (IMPORT_COUNT
+# overrides it, for the count-mismatch test only). A symbol neither the module nor a thunk defines fails the link:
+# m68k-amigaos-ld rejects undefined references in an executable, so no seg ships with a hole.
+function(sel_add_seg seg name kind out_dir)
+  cmake_parse_arguments(PARSE_ARGV 4 SEG "IMPORTS" "IMPORT_COUNT" "SOURCES;INCLUDES")
+  set(crt "${PROJECT_SOURCE_DIR}/src/engine/seg_crt.c")
+  add_executable(${seg} "${crt}" ${SEG_SOURCES})
+  target_include_directories(${seg} PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/shared" ${SEG_INCLUDES})
+  target_compile_definitions(${seg} PRIVATE SEL_PLUGIN_KIND_BUILD=${kind})
+  set_source_files_properties("${crt}" TARGET_DIRECTORY ${seg} PROPERTIES COMPILE_OPTIONS "-fno-toplevel-reorder")
+  if(SEG_IMPORTS)
+    set(n ${SEL_SEG_IMPORT_COUNT})
+    if(DEFINED SEG_IMPORT_COUNT)
+      set(n ${SEG_IMPORT_COUNT})
+    endif()
+    target_compile_definitions(${seg} PRIVATE SEL_SEG_IMPORT_COUNT=${n})
+    if(TARGET sel_seg_thunks)
+      # DEFER evaluates its arguments when it runs, after this function returned: EVAL bakes the target name in now.
+      cmake_language(EVAL CODE "cmake_language(DEFER CALL target_link_libraries [[${seg}]] PRIVATE sel_seg_thunks)")
+    endif()
+  endif()
+  target_link_options(${seg} PRIVATE -nostartfiles) # seg_crt.c is the startup and sits at offset 0
+  set_target_properties(${seg} PROPERTIES OUTPUT_NAME "sel_${name}" RUNTIME_OUTPUT_DIRECTORY "${out_dir}")
+endfunction()
+
 function(sel_add_plugin name kind)
-  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE;STATIC" "" "AMIGA_MANIFEST;THIRD_PARTY_INCLUDES")
+  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE;STATIC;SEG_IMPORTS" "" "AMIGA_MANIFEST;THIRD_PARTY_INCLUDES")
   set(sources ${SELP_UNPARSED_ARGUMENTS})
   if(NOT sources)
     message(FATAL_ERROR "sel_add_plugin(${name}): no sources")
@@ -79,16 +112,13 @@ function(sel_add_plugin name kind)
   # registry links. The module links no selecta_core (D6): it reaches the host through the sel_host table only.
   set(seg_manifest OFF)
   if(SEL_AMIGA AND SELP_AMIGA_MANIFEST)
-    set(seg sel_seg_${name})
-    add_executable(${seg} "${PROJECT_SOURCE_DIR}/src/engine/seg_crt.c" ${sources})
-    target_include_directories(${seg} PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/shared"
-      "${CMAKE_CURRENT_SOURCE_DIR}" ${SELP_THIRD_PARTY_INCLUDES})
-    target_compile_definitions(${seg} PRIVATE SEL_PLUGIN_KIND_BUILD=${kind})
-    set_source_files_properties("${PROJECT_SOURCE_DIR}/src/engine/seg_crt.c" TARGET_DIRECTORY ${seg}
-      PROPERTIES COMPILE_OPTIONS "-fno-toplevel-reorder")
-    target_link_options(${seg} PRIVATE -nostartfiles) # seg_crt.c is the startup and sits at offset 0
-    set_target_properties(${seg} PROPERTIES OUTPUT_NAME "sel_${name}" RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Players")
-    set_property(GLOBAL APPEND PROPERTY SEL_SEG_MODULES ${seg})
+    set(seg_imports "")
+    if(SELP_SEG_IMPORTS)
+      set(seg_imports IMPORTS)
+    endif()
+    sel_add_seg(sel_seg_${name} ${name} ${kind} "${CMAKE_BINARY_DIR}/Players" ${seg_imports}
+      SOURCES ${sources} INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}" ${SELP_THIRD_PARTY_INCLUDES})
+    set_property(GLOBAL APPEND PROPERTY SEL_SEG_MODULES sel_seg_${name})
     set(sources ${SELP_AMIGA_MANIFEST})
     set(seg_manifest ON)
   endif()

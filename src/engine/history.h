@@ -30,6 +30,8 @@ typedef struct sel_history {
 
 int sel_history_init(sel_history* h, const sel_host* host, uint32_t capacity, uint32_t text_bytes);
 void sel_history_free(sel_history* h, const sel_host* host);
+/* Bigger capacity / text arena, snapshots kept (I1373-2). Returns 0 when memory runs out; unchanged then. */
+int sel_history_grow(sel_history* h, const sel_host* host, uint32_t capacity, uint32_t text_bytes);
 
 /* Call before an edit: remembers the current order, clears redo. */
 void sel_history_record(sel_history* h, const sel_queue* q);

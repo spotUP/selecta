@@ -30,6 +30,7 @@ struct Library* KeymapBase; /* opened with the window, closed at cleanup */
 
 static struct MUI_CustomClass* g_k_class;
 static struct MUI_EventHandlerNode g_k_ehn;
+static int g_k_esc_seen;
 static ULONG g_k_key_base, g_k_door_base, g_k_pane_base;
 static Object* g_k_search;
 static Object* g_k_list;
@@ -64,12 +65,16 @@ static uint32_t k_code_of(struct IntuiMessage* im) {
 static ULONG __attribute__((used)) k_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     /* I1307: the key object is invisible, so it must take no layout space. MUIA_FixHeight/FixWidth 0 mean "not fixed" to MUI,
      * so the Rectangle stayed unbounded (maxh 10000) and the root VGroup gave it the spare window height: on rig 2's 800x600
-     * screen it took the bottom 147 rows (layout dump c65dc052) and the body stopped short. Pin min, default and max to 0. */
+     * screen it took the bottom 147 rows (layout dump c65dc052) and the body stopped short. Pin min, default and max height to 0.
+     * I1370: the width stays unbounded. The object is a child of the root VGroup, and MUI caps a vertical group's maximum width
+     * at its children's smallest maximum: MaxWidth 0 made the root's maximum its minimum, so the window opened 519 of 800 wide
+     * on rig 8 instead of full screen (D-M4-3) and showed the narrow hint. Its width takes nothing from anyone in a VGroup. */
     if (msg->MethodID == MUIM_AskMinMax) {
         struct MUI_MinMax* mm;
         DoSuperMethodA(cl, obj, msg);
         mm = ((struct MUIP_AskMinMax*)msg)->MinMaxInfo;
-        mm->MinWidth = mm->DefWidth = mm->MaxWidth = 0;
+        mm->MinWidth = mm->DefWidth = 0;
+        mm->MaxWidth = MUI_MAXMAX;
         mm->MinHeight = mm->DefHeight = mm->MaxHeight = 0;
         return 0;
     }
@@ -124,13 +129,20 @@ static ULONG __attribute__((used)) k_dispatch_c(struct IClass* cl, Object* obj, 
                 DoMethod(_app(obj), MUIM_Application_ReturnID, id);
                 return MUI_EventHandlerRC_Eat;
             }
-            if (code == 27u) { /* I1354: an unbound Esc reached MUI, which closed the main window = quit with no requester */
+            if (code == 27u) { /* I1354, I1359: MUI closes the main window on Esc even when eaten; the flag lets the main loop drop that Quit */
+                g_k_esc_seen = 1;
                 return MUI_EventHandlerRC_Eat;
             }
         }
         return 0;
     }
     return DoSuperMethodA(cl, obj, msg);
+}
+
+int mui_keys_esc_seen(void) {
+    int r = g_k_esc_seen;
+    g_k_esc_seen = 0;
+    return r;
 }
 
 void mui_keys_targets(Object* search, Object* list) {

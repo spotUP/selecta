@@ -21,7 +21,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { kMaxModules = 96, kSegMagic = 0x53454C50, kSegVersion = 1 };
+enum { kMaxModules = 96, kSegMagic = 0x53454C50 };
+
+/* Core symbols modules reach through their generated thunks (I1378a; cmake/amiga_seg_imports.cmake generates the
+ * table from the append-only list cmake/amiga_seg_imports.txt). */
+extern const void* const sel_seg_imports[];
+extern const uint32_t sel_seg_imports_n;
 
 typedef int (*seg_init_fn)(void);
 typedef void (*seg_fini_fn)(void);
@@ -94,7 +99,7 @@ static BPTR load_from(const char* dir, const char* file) {
 /* Loads `file` and returns its descriptor's hooks, or NULL. */
 static const sel_tag* load_module(seg_module* m, const char* id, const char* file) {
     const char* env = getenv("SELECTA_PLUGIN_PATH");
-    const ULONG* hdr;
+    ULONG* hdr;
     const sel_tag* desc;
     const sel_tag* hooks;
     const char* real_id;
@@ -106,11 +111,19 @@ static const sel_tag* load_module(seg_module* m, const char* id, const char* fil
         sel_registry_note_rejected(file, "module file not found");
         return NULL;
     }
-    hdr = (const ULONG*)((const UBYTE*)BADDR(seg) + 4);
-    if (hdr[1] != kSegMagic || hdr[2] != kSegVersion) {
+    hdr = (ULONG*)((UBYTE*)BADDR(seg) + 4);
+    if (hdr[1] != kSegMagic || (hdr[2] != 1u && hdr[2] != 2u)) {
         UnLoadSeg(seg);
         sel_registry_note_rejected(file, "not a Selecta module (no SELP header)");
         return NULL;
+    }
+    if (hdr[2] == 2u) { /* v2: imports slot +24, import count +28 (seg_crt.c) */
+        if (hdr[7] > sel_seg_imports_n) {
+            UnLoadSeg(seg);
+            sel_registry_note_rejected(file, "module needs more imports than this Selecta has (built for a newer one)");
+            return NULL;
+        }
+        hdr[6] = (ULONG)sel_seg_imports; /* before init: constructors may already call an import */
     }
     if (!((seg_init_fn)hdr[3])()) {
         UnLoadSeg(seg);

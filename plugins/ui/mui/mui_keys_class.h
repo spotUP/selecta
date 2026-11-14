@@ -11,6 +11,10 @@
 Object* mui_keys_new(ULONG key_base, ULONG door_base, ULONG pane_base);
 /* Sets the Search string gadget and the results list; call once the window tree exists (argument order inside the tree is unspecified). */
 void mui_keys_targets(Object* search, Object* list);
+/* I1359: nonzero (and cleared) when the keys handler has seen an Esc key-down since the last call. MUI's own Window class turns an
+ * Esc into MUIA_Window_CloseRequest whether or not a handler eats the event (measured on rig 7: handler priority 100, Eat returned,
+ * the notify still sent ReturnID_Quit), so the main loop asks this after NewInput and drops a Quit that an Esc caused. */
+int mui_keys_esc_seen(void);
 /* Deletes the class; call after the application object is disposed. */
 void mui_keys_class_free(void);
 
