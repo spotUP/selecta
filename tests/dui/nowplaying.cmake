@@ -61,6 +61,10 @@ function(np_run tag seek_ms)
   endif()
   math(EXPR want "${CMAKE_MATCH_7} - 2 * ${tok}") # I1377: the cover is inset by the spacing token on both sides
   math(EXPR want_x "${CMAKE_MATCH_5} + ${tok}")
+  math(EXPR want_y "${CMAKE_MATCH_6} + ${tok}") # I1377: the gap above the cover equals the side gaps
+  if(NOT CMAKE_MATCH_2 EQUAL want_y)
+    message(FATAL_ERROR "Now Playing cover top is y ${CMAKE_MATCH_2}, want ${want_y} (panel top ${CMAKE_MATCH_6} + token ${tok})")
+  endif()
   if(NOT CMAKE_MATCH_3 EQUAL want OR NOT CMAKE_MATCH_4 EQUAL CMAKE_MATCH_3 OR NOT CMAKE_MATCH_1 EQUAL want_x)
     message(FATAL_ERROR "Now Playing cover is ${CMAKE_MATCH_3}x${CMAKE_MATCH_4} at x ${CMAKE_MATCH_1}, want a ${want}x${want} square at x ${want_x} (panel width ${CMAKE_MATCH_7}, token ${tok})")
   endif()

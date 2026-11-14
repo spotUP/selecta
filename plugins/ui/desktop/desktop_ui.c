@@ -12792,7 +12792,7 @@ static void draw_nowplaying(desk* d) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     int32_t side = pn.w - 2 * sp, asz, y, rating = 0, liked = 0, ic = lpx(d, 20);
-    sel_gui_rect ar, band, hdr;
+    sel_gui_rect ar, band;
     uint32_t k;
     const char* ctx;
     static sel_uim_np_line L[SEL_UIM_NP_LINES_MAX]; /* I1222f: the panel content, built by src/uimodel/nppanel.c (the text UI draws the same lines) */
@@ -12816,13 +12816,13 @@ static void draw_nowplaying(desk* d) {
     ml = sel_uim_np_find(L, ln, SEL_UIM_NP_MESSAGE, 0u);
     liked = ll->liked;
     rating = ll->rating;
-    hdr = rect_of(pn.x + sp, dt.y + sp, side, lpx(d, 28));
-    draw_text(d, hdr, ctx, 1, 22, text);
+    /* I1377: no heading line; the header tint painted over it, so it was never seen. The cover sits one spacing token
+     * below the panel top like on the sides. np_ctx_shown still records the context for the dump (I994e). */
     snprintf(d->np_ctx_shown, sizeof d->np_ctx_shown, "%s", ctx);
     /* The artwork spans the full content width between the two insets and stays square, so its height follows the panel
      * width (I443); the text lines below share the same insets (I404). */
     asz = side; /* I1377: the artwork sits inset by the spacing token on both sides like the text lines, and fades into the panel colour at its bottom */
-    ar = rect_of(pn.x + sp, hdr.y + hdr.h + sp, asz, asz);
+    ar = rect_of(pn.x + sp, pn.y + sp, asz, asz);
     d->np_art = ar;
     d->np_panel = pn;
     if (cover_draw(d, ar, st->song.path, 0)) { /* I692: the full-bleed cover; np_art_average below reads the pixels it drew */
