@@ -35,6 +35,7 @@ add_library(selecta_core ${SEL_CORE_KIND}
   engine/shuffle.c
   engine/collorder.c
   engine/view.c
+  uimodel/title.c
   engine/prefs.c
   engine/options.c
   engine/format.c

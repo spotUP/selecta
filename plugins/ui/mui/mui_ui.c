@@ -23,6 +23,7 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/briefs.h>
+#include <selecta/uimodel/title.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/uimodel/viewcmds.h>
@@ -1755,13 +1756,15 @@ static const char* mui_col_row(void* ctx, long row) {
     const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
     const char* r;
     const char* base;
+    static char tidy[256]; /* I1387: the row text is read at once by the list callback, one row at a time */
     long i;
     if (pg == NULL || pg->rows == NULL || row < 0 || (uint32_t)row >= pg->songs) {
         return "";
     }
     r = sel_uim_briefs_title(&s->col_brf, pg, (uint32_t)row);
     if (r != NULL) {
-        return r;
+        sel_uim_tidy_title(r, tidy, sizeof tidy);
+        return tidy;
     }
     for (r = pg->rows, i = 0; i < row && *r != '\0'; i++) {
         r += strlen(r) + 1u;
@@ -1771,7 +1774,8 @@ static const char* mui_col_row(void* ctx, long row) {
     if (base == NULL) {
         base = strrchr(r, ':');
     }
-    return base != NULL ? base + 1 : r;
+    sel_uim_tidy_title(base != NULL ? base + 1 : r, tidy, sizeof tidy);
+    return tidy;
 }
 
 /* I1329i (desk_rt_leave): what the page being left keeps: the first visible row of the collection list, the Search facet chip. */

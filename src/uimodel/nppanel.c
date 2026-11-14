@@ -1,5 +1,6 @@
 /* I1222f: the Now Playing panel content, see include/selecta/uimodel/nppanel.h. Taken from the desktop's draw_nowplaying (I619, I1127c, I290). */
 #include <selecta/uimodel/nppanel.h>
+#include <selecta/uimodel/title.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,7 +104,9 @@ uint32_t sel_uim_np_lines(const sel_uim* m, const sel_state* st, sel_uim_np_line
     }
     add(out, max, &n, SEL_UIM_NP_UPNEXT_HDR, "", "Next in Queue");
     for (first = ++k; k < st->queue_count && k - first < SEL_UIM_NP_UPNEXT_MAX; k++) {
-        add(out, max, &n, SEL_UIM_NP_UPNEXT, "", basename_of(st->queue_text + st->queue[k].path_offset));
+        char tidy[96];
+        sel_uim_tidy_title(basename_of(st->queue_text + st->queue[k].path_offset), tidy, sizeof tidy);
+        add(out, max, &n, SEL_UIM_NP_UPNEXT, "", tidy);
     }
     return n;
 }
