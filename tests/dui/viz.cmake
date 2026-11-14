@@ -12,10 +12,10 @@ set(fx "${HERE}/../m3/lyrics")
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 set(viz_song "${fx}/ambient.mod")
-# I1052: Krakatoa Smoke is the fifth plugin where it is built (Mac SDL builds); viz-krakatoa-reach covers it.
-set(viz_want 4)
+# I1052: Krakatoa Smoke is one more plugin; I1386 adds the host-drawn Cover Art entry; where it is built (Mac SDL builds); viz-krakatoa-reach covers it.
+set(viz_want 5)
 if(KRK_BUILT)
-  set(viz_want 5)
+  set(viz_want 6)
 endif()
 
 function(viz_run tag view script)

@@ -451,7 +451,7 @@ expect_eq("wheel over cards reaches the last shelf" "${ycard}" "${ymax}")
 # 10. I471: two albums with the same name by different artists keep their own covers on the Jump back in shelf. Song 9 is a
 # skipped play on a second "Lotus Turbo Challenge" (album 5, artist Other Artist, a copy of album 3's cover); fixture album 1
 # carries the same name by Chris Huelsbeck. Before the fix the shelf grouped by album name alone (one Lotus tile, so album 5
-# never loaded: shelf_album_art_draws 3, no thumb144 row for album 5) and art_find matched the name only (lowest id wins).
+# never loaded: shelf_album_art_draws 3, no thumbf144 row for album 5) and art_find matched the name only (lowest id wins).
 set(db3 "${WORK}/library3.db")
 file(COPY_FILE "${db}" "${db3}")
 string(CONCAT seed3
@@ -482,7 +482,7 @@ endforeach()
 if("${same}" MATCHES "\\|Album\n")
   message(FATAL_ERROR "a Home tile must not carry the placeholder 'Album' as its artist in:\n${same}")
 endif()
-execute_process(COMMAND "${SQLITE3}" "${db3}" "SELECT count(*) FROM artwork WHERE album_id = 5 AND kind = 'thumb144'"
+execute_process(COMMAND "${SQLITE3}" "${db3}" "SELECT count(*) FROM artwork WHERE album_id = 5 AND kind = 'thumbf144'"
   OUTPUT_VARIABLE own_thumb RESULT_VARIABLE rc)
 string(STRIP "${own_thumb}" own_thumb)
 expect_eq("the second Lotus album loaded its own cover" "${own_thumb}" 1)
