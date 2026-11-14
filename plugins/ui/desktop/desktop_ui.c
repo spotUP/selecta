@@ -2048,14 +2048,14 @@ static void songs_cols(desk* d, int32_t row_w, int32_t* x, int32_t* w) {
 }
 
 static sel_gui_rect songs_header_col(desk* d, uint32_t col) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     int32_t x[SONGS_C_N], w[SONGS_C_N];
     songs_cols(d, mn.w, x, w);
     return rect_of(mn.x + x[col], songs_top(d), w[col], lpx(d, SONG_HEADER_H));
 }
 
 static sel_gui_rect songs_row_rect(const desk* d, uint32_t row) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     return rect_of(mn.x, songs_top(d) + lpx(d, SONG_HEADER_H) + (int32_t)row * lpx(d, SONG_ROW_H) - lpx_q16(d, d->scroll_q16), mn.w, lpx(d, SONG_ROW_H));
 }
 
@@ -2142,6 +2142,7 @@ static void draw_songs(desk* d) {
     d->songs_fmt_w = 0; /* I1079d: measure the Format labels again for this frame */
     sel_gui_clip_push(d->canvas, mn);
     sel_gui_fill_rect(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.h), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    draw_text(d, rect_of(panel_rect(d, "main").x + lpx(d, HOME_MARGIN), mn.y + lpx(d, 16), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, page_title_h(d))), "Songs", 1, 32, text);
     for (c = 0; c < 2u; c++) {
         static const char* const names[2] = {"Title", "Format"};
         char label[48];
@@ -12820,8 +12821,8 @@ static void draw_nowplaying(desk* d) {
     snprintf(d->np_ctx_shown, sizeof d->np_ctx_shown, "%s", ctx);
     /* The artwork spans the full content width between the two insets and stays square, so its height follows the panel
      * width (I443); the text lines below share the same insets (I404). */
-    asz = pn.w; /* I619: the artwork is full bleed, the whole panel width, and fades into the panel colour at its bottom */
-    ar = rect_of(pn.x, hdr.y + hdr.h + sp, asz, asz);
+    asz = side; /* I1377: the artwork sits inset by the spacing token on both sides like the text lines, and fades into the panel colour at its bottom */
+    ar = rect_of(pn.x + sp, hdr.y + hdr.h + sp, asz, asz);
     d->np_art = ar;
     d->np_panel = pn;
     if (cover_draw(d, ar, st->song.path, 0)) { /* I692: the full-bleed cover; np_art_average below reads the pixels it drew */
