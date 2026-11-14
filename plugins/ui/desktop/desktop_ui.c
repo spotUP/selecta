@@ -17280,25 +17280,26 @@ static void* desk_open(const sel_ui_open_args* a) {
     return d;
 }
 
-/* I695b: the toast for a failed open, with the reason the engine reported. no_replayer names the format (the source id
- * of the song key, so a source without a replayer needs no entry here); open_failed carries the HTTP status the engine
+/* I695b: the toast for a failed open, with the reason the engine reported. no_replayer names the format (the engine's
+ * "format=<ext>" field, I1383); open_failed carries the HTTP status the engine
  * put in front of its detail ("http_status=404 <url>"). */
 static void desk_open_fail_toast(desk* d, const char* code, const char* detail) {
     char msg[sizeof d->open_fail_text];
-    const char* colon = strchr(detail, ':');
     int status = 0, used = 0;
 
-    if (strcmp(code, "no_replayer") == 0 && colon != NULL && colon != detail && colon - detail < 16) {
+    if (strcmp(code, "no_replayer") == 0) {
+        /* I1383: the engine's "format=<ext> <key>"; never the source id of the key. */
         char fmt[16];
-        size_t i, n = (size_t)(colon - detail);
+        size_t i;
 
-        for (i = 0; i < n; i++) {
-            fmt[i] = (char)toupper((unsigned char)detail[i]);
+        if (sscanf(detail, "format=%15s", fmt) != 1 || strcmp(fmt, "unknown") == 0) {
+            snprintf(msg, sizeof msg, "No player for that file type yet");
+        } else {
+            for (i = 0; fmt[i] != '\0'; i++) {
+                fmt[i] = (char)toupper((unsigned char)fmt[i]);
+            }
+            snprintf(msg, sizeof msg, "No player for %s yet", fmt);
         }
-        fmt[n] = '\0';
-        snprintf(msg, sizeof msg, "No player for %s yet", fmt);
-    } else if (strcmp(code, "no_replayer") == 0) {
-        snprintf(msg, sizeof msg, "No player for that file type yet");
     } else if (sscanf(detail, "http_status=%d %n", &status, &used) >= 1 && used > 0 &&
                strstr(detail + used, "blocks downloads of this song") != NULL) {
         /* I1072d: the engine names the source that refuses the download (report_open_failed, I1072c): show its words. */

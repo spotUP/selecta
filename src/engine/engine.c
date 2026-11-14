@@ -2837,6 +2837,30 @@ static int sysfiles_ready(sel_engine* e, const sel_tag* hooks, const char* path,
     return 1;
 }
 
+/* I1383: the no_replayer detail "format=<ext> <key>": the file extension of the song (lower case, 1-8 letters or digits),
+ * "unknown" when the name has none. Never the source id of the key (modland:, zxart: hold thousands of formats). */
+static void no_replayer_detail(char* out, size_t cap, const char* path, const char* err_detail) {
+    const char* base = strrchr(path, '/');
+    const char* dot;
+    char fmt[9];
+    size_t n = 0;
+
+    base = base != NULL ? base + 1 : path;
+    dot = strrchr(base, '.');
+    if (dot != NULL && dot != base) {
+        for (dot++; dot[n] != '\0' && n < 9 && isalnum((unsigned char)dot[n]); n++) {
+        }
+        if (dot[n] == '\0' && n >= 1 && n <= 8) {
+            size_t i;
+            for (i = 0; i < n; i++) fmt[i] = (char)tolower((unsigned char)dot[i]);
+            fmt[n] = '\0';
+        } else {
+            n = 0;
+        }
+    }
+    snprintf(out, cap, "format=%s %s", n ? fmt : "unknown", err_detail != NULL ? err_detail : path);
+}
+
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
@@ -2901,8 +2925,10 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         }
     }
     if (hooks == NULL) {
+        char nr[SEL_ERROR_DETAIL_MAX];
         drop_song(e, data, live, fs);
-        sel_engine_report_error(e, "no_replayer", err_detail);
+        no_replayer_detail(nr, sizeof nr, path, err_detail);
+        sel_engine_report_error(e, "no_replayer", nr);
         return 0;
     }
     hooks = sel_plugin_resolve(hooks); /* I427e: a manifest plugin's module loads here, before any hook lookup */

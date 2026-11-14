@@ -35,6 +35,9 @@ set(ENV{SELECTA_MIRRORS_MODLAND} "http://fast.mirror.test/mods/")
 set(ENV{SELECTA_CACHE_DIR} "${WORK}/cache")
 file(MAKE_DIRECTORY "${WORK}/cache/files/sndh/Test")
 file(WRITE "${WORK}/cache/files/sndh/Test/ghost.sndh" "not a real tune, only bytes no replayer probes for\n")
+# I1383: a cached Modland file with an unknown extension: the toast names the extension, never the source id "MODLAND".
+file(MAKE_DIRECTORY "${WORK}/cache/files/modland/Test")
+file(WRITE "${WORK}/cache/files/modland/Test/ghost.zzz" "not a real tune, only bytes no replayer probes for\n")
 find_program(SQLITE3 sqlite3)
 if(NOT SQLITE3)
   message(FATAL_ERROR "open-fail-toast needs the sqlite3 command line tool")
@@ -43,6 +46,7 @@ set(db "${WORK}/library.db")
 dui_run(init --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
 file(WRITE "${WORK}/rows.sql" "INSERT INTO songs(id, key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES(1, 'modland:Protracker/nodir/sub/ghost.mod', 'modland', 'Protracker/nodir/sub/ghost.mod', 'Ghost Song', 'Nobody', 'Nowhere', 'mod', 1992, 'Chiptune', 120000, 1700000000);\n"
   "INSERT INTO songs(id, key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES(2, 'sndh:Test/ghost.sndh', 'sndh', 'Test/ghost.sndh', 'Ghost Tune', 'Nobody', 'Nowhere', 'sndh', 1992, 'Chiptune', 120000, 1700000000);\n"
+  "INSERT INTO songs(id, key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES(4, 'modland:Test/ghost.zzz', 'modland', 'Test/ghost.zzz', 'Ghost Zzz', 'Nobody', 'Nowhere', 'zzz', 1992, 'Chiptune', 120000, 1700000000);\n"
   "INSERT INTO songs(id, key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES(3, 'ccmixter:105/artist_five/Blocked-Mix', 'ccmixter', '105/artist_five/Blocked-Mix', 'Zz Blocked Mix', 'artist_five', 'Nowhere', 'ccmixter', 2020, 'Remix', 120000, 1700000000);\n")
 execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${WORK}/rows.sql"
   RESULT_VARIABLE rc ERROR_VARIABLE err)
@@ -77,6 +81,11 @@ endif()
 play_run(nop sndh:Test/ghost.sndh "wait 1\nkey down\nkey enter\nwait 1000\n")
 if(NOT nop_out MATCHES "open_fail_toasts=1 open_fail_text=\"No player for SNDH yet\"")
   message(FATAL_ERROR "the no_replayer play did not toast once with the format name:\n${nop_out}")
+endif()
+
+play_run(nopm modland:Test/ghost.zzz "wait 1\nkey down\nkey enter\nwait 1000\n")
+if(NOT nopm_out MATCHES "open_fail_text=\"No player for ZZZ yet\"")
+  message(FATAL_ERROR "I1383: the no_replayer toast did not name the file extension:\n${nopm_out}")
 endif()
 
 # I1072d: a SYNCED ccMixter library row (a songs row with source ccmixter, not a search hit) whose download the host refuses with 403:
