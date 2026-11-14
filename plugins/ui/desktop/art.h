@@ -33,6 +33,9 @@ int art_known(desk_art* a, const char* title);
 void art_forget_misses(desk_art* a);
 /* The tile pixels (DESK_ART_TILE_EDGE squared) of the album of the song at queue path `title`, NULL when it has no artwork. */
 const uint32_t* art_tile(desk_art* a, const char* title);
+/* I1384d: the cover of the album of `title` decoded from the stored full image into edge x edge pixels (aspect kept, black bars), for views
+ * that draw bigger than the tile. NULL until the background decode lands (art_pump repaints); the caller draws art_tile meanwhile. */
+const uint32_t* art_big(desk_art* a, const char* title, int32_t edge);
 /* I678e: the dominant colour (0xAARRGGBB) of the cover of the album of the song at `title`; 0 when it has no artwork. Computed once per art
  * entry and cached; art_dominants counts the computations. */
 int art_dominant(desk_art* a, const char* title, uint32_t* argb);

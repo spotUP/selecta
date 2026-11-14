@@ -38,6 +38,8 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/font_baked.cmake")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-font-baked.tmp")
   set_tests_properties(dui-font-baked PROPERTIES LABELS dui TIMEOUT 120 ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-font-baked.tmp")
+  add_test(NAME dui-art-big COMMAND dui_art_big_unit)
+  set_tests_properties(dui-art-big PROPERTIES LABELS lib-ui-art TIMEOUT 60 PASS_REGULAR_EXPRESSION "art_big_ok") # ledger row, not a plan item: no dui label
 endif()
 if(NOT SEL_AMIGA)
   # ui-stat-tags (I603): no two SEL_UI_STAT_* tags share a value (PT_MS_OVERLAY and LIST_VIEW did).
