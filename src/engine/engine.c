@@ -7654,6 +7654,10 @@ static void drill_count_row(void* ctx, const char* const* f) {
     (*(unsigned long*)ctx)++;
 }
 
+static void drill_num_row(void* ctx, const char* const* f) {
+    *(unsigned long*)ctx = strtoul(f[1], NULL, 10);
+}
+
 /* Case-insensitive substring test for the drill find filter (same rule as the desktop find field). */
 static int drill_name_has(const char* name, const char* q) {
     size_t n = strlen(q), m = strlen(name), i, j;
@@ -7740,9 +7744,9 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
                 if (part[2] != NULL && strcmp(sel_platform_id(d.family[i]), part[2]) == 0) drill_put_group(b, d.name[i], d.count[i]);
             }
         }
-    } else { /* the first level: Formats, Platforms, Artists, New with their counts (artists: unknown, counting 600k songs is not free) */
+    } else { /* the first level: Formats, Platforms, Artists, New with their counts (artists: one covering-index count) */
         drill_formats d;
-        unsigned long days = 0ul, formats, platforms = 0ul, per[SEL_PLATFORM_FAMILY_COUNT];
+        unsigned long days = 0ul, artists = 0ul, formats, platforms = 0ul, per[SEL_PLATFORM_FAMILY_COUNT];
         pg->drill = (uint32_t)SEL_DRILL_PAGE_ROOT;
         memset(per, 0, sizeof per);
         drill_formats_load(e, source, &d);
@@ -7752,11 +7756,8 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
         drill_query(e, source, SEL_DRILL_NEW, "", "", 0u, drill_count_row, &days);
         drill_put_group(b, "formats", formats);
         drill_put_group(b, "platforms", platforms);
-        {
-            const char* parts[3] = {"artists", "", ""};
-            composer_put(&b->rows, parts, 3);
-            b->n++;
-        }
+        drill_query(e, source, SEL_DRILL_ARTIST_COUNT, "", "", 0u, drill_num_row, &artists);
+        drill_put_group(b, "artists", artists);
         drill_put_group(b, "new", days);
     }
 }

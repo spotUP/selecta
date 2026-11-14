@@ -66,6 +66,12 @@ static const char* group_name(const sel_collection_page* pg, uint32_t i) {
     return r;
 }
 
+/* The second column of row i of a group page. */
+static const char* group_count(const sel_collection_page* pg, uint32_t i) {
+    const char* r = group_name(pg, i);
+    return r + strlen(r) + 1u;
+}
+
 int main(void) {
     const sel_host* host = sel_host_default();
     char dir[] = "/tmp/selecta_srcdrill_XXXXXX";
@@ -97,6 +103,7 @@ int main(void) {
              " CASE i %% 3 WHEN 0 THEN 'Protracker' WHEN 1 THEN 'Fasttracker 2' ELSE 'Impulsetracker' END, 1 FROM n;",
              ROWS);
     CHECK(sqlite3_exec(lib->db, sql, NULL, NULL, NULL) == SQLITE_OK);
+    CHECK(sqlite3_exec(lib->db, "INSERT INTO songs(key, source, path, name, artist, album, format, added) VALUES('noart:1', 'noart', '/n/1.mod', 'S', '', '', 'Protracker', 1);", NULL, NULL, NULL) == SQLITE_OK);
     CHECK(sqlite3_exec(lib->db, "INSERT INTO source_new(source, day, n) VALUES('modland', 20000, 12);", NULL, NULL, NULL) == SQLITE_OK);
     db_leave(lib);
 
@@ -107,6 +114,7 @@ int main(void) {
     CHECK(pg->songs == 4u);
     CHECK(pg != NULL && strcmp(group_name(pg, 0), "formats") == 0 && strcmp(group_name(pg, 1), "platforms") == 0 &&
           strcmp(group_name(pg, 2), "artists") == 0 && strcmp(group_name(pg, 3), "new") == 0);
+    CHECK(strcmp(group_count(pg, 2), "5000") == 0); /* I1244: the Artists value is the distinct artist count, not blank */
     sel_engine_stats_get(e, &st);
     CHECK(st.drill_rows > 0u); /* sentinel: the library drill ran for this page */
     CHECK(pg->songs < ROWS && pg->drill_rows <= 3u * SEL_DRILL_WINDOW);
@@ -187,6 +195,10 @@ int main(void) {
         sqlite3_finalize(q);
         db_leave(lib);
         CHECK(rows == 1 && ok == 1);
+    }
+    {
+        const sel_collection_page* none = open_page(e, "noart");
+        CHECK(none != NULL && none->drill == SEL_DRILL_PAGE_ROOT && strcmp(group_count(none, 2), "0") == 0); /* no artist: "0", not blank */
     }
 
     /* I935: an open taken while the collection read is in flight waits for the next post; quit right after must still write its Recents
