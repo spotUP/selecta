@@ -149,7 +149,7 @@ typedef struct pls_meta_row {
 #define SEARCH_SCOPE_LIBRARY "@library" /* I1019f: the scope of the Library source chip (the library alone, no From sections) */
 struct desk;
 static int desk_scope_online(const struct desk* d);
-#define DESK_VIZ_MAX 5u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope; I1052: Krakatoa (Mac) */
+#define DESK_VIZ_MAX 6u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope; I1052: Krakatoa (Mac); I1386: + host-drawn Cover Art */
 #define DESK_DEV_MAX 16u /* I1039: output devices the picker lists */
 #define DESK_COVER_CACHE 12 /* I845: distinct covers on one screen (queue, shelves, grid) */
 
@@ -7133,10 +7133,10 @@ static int viz_host_position(void* user, uint32_t* order) {
 }
 
 static void viz_load(desk* d) {
-    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs", "viz_krakatoa"};
+    static const char* const ids[VIZ_MAX - 1u] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs", "viz_krakatoa"};
     uint32_t i;
     d->viz_n = 0u;
-    for (i = 0; d->find_plugin != NULL && i < VIZ_MAX; i++) {
+    for (i = 0; d->find_plugin != NULL && i < VIZ_MAX - 1u; i++) {
         const sel_tag* desc = d->find_plugin(SEL_PLUGIN_KIND_VIZ, ids[i]);
         const sel_tag* hooks = desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
         uintptr_t fn = hooks != NULL ? sel_tag_find(hooks, SEL_VIZ_FRAME, 0) : 0;
@@ -7156,6 +7156,15 @@ static void viz_load(desk* d) {
             d->viz_host.position = viz_host_position;
             ((sel_viz_open_fn)sel_tag_find(hooks, SEL_VIZ_OPEN, 0))(&d->viz_host);
         }
+        d->viz_n++;
+    }
+    if (d->find_plugin != NULL) { /* I1386: Cover Art is drawn by the host (viz_draw_area), not by a plugin: it needs the art cache */
+        d->viz_fn[d->viz_n] = NULL;
+        d->viz_id[d->viz_n] = "viz_cover";
+        d->viz_name[d->viz_n] = "Cover Art";
+        d->viz_stats[d->viz_n] = NULL;
+        d->viz_key[d->viz_n] = NULL;
+        d->viz_indexed[d->viz_n] = NULL;
         d->viz_n++;
     }
 }
@@ -7256,6 +7265,17 @@ static void viz_draw_area(desk* d, sel_gui_rect r, uint32_t idx) {
     sel_viz_pen pen;
     uint32_t need;
     if (r.w <= 0 || r.h <= 0 || idx >= d->viz_n) {
+        return;
+    }
+    if (d->viz_fn[idx] == NULL) { /* I1386: Cover Art: the song cover, as large as fits, square, centred, decoded at the drawn size */
+        int32_t e = r.w < r.h ? r.w : r.h;
+        sel_gui_rect ar = rect_of(r.x + (r.w - e) / 2, r.y + (r.h - e) / 2, e, e);
+        const char* path = st->song.path;
+        sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        if (!cover_draw(d, ar, path, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]))) {
+            song_platform_cover(d, ar, path, d->uim.frame.title, &d->pc_bar);
+        }
+        sel_gui_dirty_add(d->canvas, r);
         return;
     }
     need = (uint32_t)r.w * (uint32_t)r.h;
