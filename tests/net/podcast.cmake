@@ -40,6 +40,37 @@ if(NOT so MATCHES "podcast_row=Fixture-Show/Episode-One/http://icy.test/pod/ep1.
   message(FATAL_ERROR "I725f: rows, titles or enclosure URLs are wrong\n${so}")
 endif()
 
+# 1b. I1346b: a library.db that still holds the pre-decoding row (raw "&#8230;" and "&#039;" in path, key and name)
+# is cleaned by a re-sync: one decoded row, no raw entity, no duplicate.
+execute_process(COMMAND python3 -I -c "
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+raw = lambda t: t.replace('Fish & Chips \u2026 Odd Pod\'s', 'Fish & Chips &#8230; Odd Pod&#039;s')
+for tbl, col in (('files', 'path'), ('songs', 'key'), ('songs', 'path'), ('songs', 'name')):
+    for (v,) in c.execute('SELECT DISTINCT %s FROM %s' % (col, tbl)).fetchall():
+        c.execute('UPDATE %s SET %s=? WHERE %s=?' % (tbl, col, col), (raw(v), v))
+c.commit()
+n = c.execute(\"SELECT COUNT(*) FROM songs WHERE key LIKE '%&#039;%'\").fetchone()[0]
+sys.exit(0 if n == 1 else 1)
+" "${DB}" RESULT_VARIABLE seed_rc)
+if(NOT seed_rc EQUAL 0)
+  message(FATAL_ERROR "I1346b: could not seed the raw-entity row")
+endif()
+execute_process(COMMAND "${CLI}" library sync --db "${DB}" --now 2001 podcast "http://pod.test/pod/feed.xml"
+  OUTPUT_VARIABLE so1b ERROR_VARIABLE se1b RESULT_VARIABLE src1b TIMEOUT 40)
+execute_process(COMMAND python3 -I -c "
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+rows = c.execute(\"SELECT key, name FROM songs WHERE source='podcast'\").fetchall()
+raw = [r for r in rows if '&#' in r[0] or '&#' in r[1]]
+odd = [r for r in rows if 'Odd Pod\'s' in r[1]]
+print('rows=%d raw=%d decoded=%d' % (len(rows), len(raw), len(odd)))
+sys.exit(0 if len(rows) == 3 and not raw and len(odd) == 1 else 1)
+" "${DB}" OUTPUT_VARIABLE so1c RESULT_VARIABLE rc1c)
+if(NOT src1b EQUAL 0 OR NOT rc1c EQUAL 0)
+  message(FATAL_ERROR "I1346b: re-sync must leave 3 rows, one decoded, none raw (rc=${src1b}) ${so1c}\n${so1b}${se1b}")
+endif()
+
 # 2. Search: no key -> off; with key -> authenticated request and the found feed is read.
 execute_process(COMMAND "${CLI}" library sync --db "${DB}" --now 2000 podcast "search:fixture"
   OUTPUT_VARIABLE so2 ERROR_VARIABLE se2 RESULT_VARIABLE src2 TIMEOUT 40)
