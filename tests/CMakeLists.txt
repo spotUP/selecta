@@ -319,6 +319,15 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos_dist_players.cmake")
   set_tests_properties(amiga-dist-players PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
 
+  # I1378a: v2 modules call core functions through the host import table (cmake/amiga_seg_imports.cmake).
+  add_test(NAME seg-imports-unit
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            "-DSEG_DIR=${PROJECT_SOURCE_DIR}/build/amiga/seg-imports-test"
+            "-DSONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/pxtone_test.ptcop"
+            "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/seg-imports-unit"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_seg_imports.cmake")
+  set_tests_properties(seg-imports-unit PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
+
   # I218d: Latin-1 file names listed as UTF-8 and opened by that name, through library browse --names.
   add_test(NAME amiga-latin1-name
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
@@ -498,6 +507,20 @@ add_executable(plugin_owner_test host/plugin_owner_test.c)
 target_link_libraries(plugin_owner_test PRIVATE selecta_core)
 add_test(NAME plugin-owner-unit COMMAND plugin_owner_test)
 set_tests_properties(plugin-owner-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_owner_ok")
+
+# I1193b-M1: pointer tags of a registry descriptor are read through sel_plugin_resolve (stub manifest + fake resolver).
+add_executable(plugin_resolve_paths_test host/plugin_resolve_paths_test.c)
+target_link_libraries(plugin_resolve_paths_test PRIVATE selecta_library selecta_core)
+target_include_directories(plugin_resolve_paths_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+add_test(NAME plugin-resolve-paths-unit COMMAND plugin_resolve_paths_test)
+set_tests_properties(plugin-resolve-paths-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_resolve_paths_ok")
+# I1193b-M2: the generated manifest C compiles and round-trips the tags of two plugins.
+add_executable(plugin_manifest_dump_test host/plugin_manifest_dump_test.c)
+target_link_libraries(plugin_manifest_dump_test PRIVATE selecta_core ${CMAKE_DL_LIBS})
+target_include_directories(plugin_manifest_dump_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_compile_definitions(plugin_manifest_dump_test PRIVATE SEL_TEST_CC="${CMAKE_C_COMPILER}" SEL_TEST_INC="${PROJECT_SOURCE_DIR}/include")
+add_test(NAME plugin-manifest-dump-unit COMMAND plugin_manifest_dump_test)
+set_tests_properties(plugin-manifest-dump-unit PROPERTIES PASS_REGULAR_EXPRESSION "plugin_manifest_dump_ok")
 # The default integration follows the OS preference list and the registry ("none" when not built).
 add_executable(default_integration_test host/default_integration_test.c)
 target_link_libraries(default_integration_test PRIVATE selecta_registry)
@@ -562,6 +585,14 @@ set(MCC_DIR "${PROJECT_SOURCE_DIR}/plugins/shared/mcc")
 add_test(NAME mcc-include-check COMMAND "${CMAKE_COMMAND}" "-DMCC_DIR=${MCC_DIR}" "-DUI_DIR=${PROJECT_SOURCE_DIR}/plugins/ui/mui"
   "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta" "-DROOTS=${MCC_CHECK_ROOTS}" -P "${PROJECT_SOURCE_DIR}/cmake/mcc_check_includes.cmake")
 set_tests_properties(mcc-include-check PROPERTIES TIMEOUT 30)
+# I1362b: no two MUI control id ranges overlap (CTL_OFFER_ROW once equalled CTL_SIDE_BASE). Pure cmake -P, no build needed.
+add_test(NAME mui-ctl-ranges COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c"
+  -P "${PROJECT_SOURCE_DIR}/tests/ui/mui_ctl_ranges.cmake")
+set_tests_properties(mui-ctl-ranges PROPERTIES TIMEOUT 30)
+# I1329: every engine/uimodel hook the desktop UI calls has a MUI caller or a line in the exempt file. Pure cmake -P.
+add_test(NAME mui-mac-hook-parity COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+  "-DEXEMPT=${PROJECT_SOURCE_DIR}/tests/ui/mui_mac_hook_parity.exempt" -P "${PROJECT_SOURCE_DIR}/tests/ui/mui_mac_hook_parity.cmake")
+set_tests_properties(mui-mac-hook-parity PROPERTIES TIMEOUT 60)
 if(NOT SEL_AMIGA)
   add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
   target_include_directories(mui_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
@@ -686,12 +717,12 @@ if(NOT SEL_AMIGA)
   add_executable(mui_aa_test ui/mui_aa_test.c)
   target_include_directories(mui_aa_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
   target_link_libraries(mui_aa_test PRIVATE mui_map selecta_uimodel)
-  target_compile_definitions(mui_aa_test PRIVATE "AABTN_SOURCE=\"${MCC_DIR}/src/class/mui_aabtn_class.c\"" "AADRAW_SOURCE=\"${MCC_DIR}/src/mui_aa_draw.c\"" "UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "AATEXT_SOURCE=\"${MCC_DIR}/src/class/mui_aatext_class.c\"" "AAPANEL_SOURCE=\"${MCC_DIR}/src/class/mui_aapanel_class.c\"" "AATABS_SOURCE=\"${MCC_DIR}/src/class/mui_aatabs_class.c\"" "AABALANCE_SOURCE=\"${MCC_DIR}/src/class/mui_aabalance_class.c\"" "AASLIDER_SOURCE=\"${MCC_DIR}/src/class/mui_aaslider_class.c\"" "AACYCLE_SOURCE=\"${MCC_DIR}/src/class/mui_aacycle_class.c\"" "AALIST_SOURCE=\"${MCC_DIR}/src/class/mui_aalist_class.c\"" "LISTVIEW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_listview_class.c\"" "AASCROLLER_SOURCE=\"${MCC_DIR}/src/class/mui_aascroller_class.c\"" "AAFIELD_SOURCE=\"${MCC_DIR}/src/class/mui_aafield_class.c\"" "MUI_CMAKE=\"${MCC_DIR}/CMakeLists.txt\"")
+  target_compile_definitions(mui_aa_test PRIVATE "AABTN_SOURCE=\"${MCC_DIR}/src/class/mui_aabtn_class.c\"" "AADRAW_SOURCE=\"${MCC_DIR}/src/mui_aa_draw.c\"" "UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "DESKTOP_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/desktop/desktop_ui.c\"" "TEXT_UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/text/text_ui.c\"" "UIMODEL_FEATURES_SOURCE=\"${PROJECT_SOURCE_DIR}/src/uimodel/features.c\"" "AATEXT_SOURCE=\"${MCC_DIR}/src/class/mui_aatext_class.c\"" "AAPANEL_SOURCE=\"${MCC_DIR}/src/class/mui_aapanel_class.c\"" "AATABS_SOURCE=\"${MCC_DIR}/src/class/mui_aatabs_class.c\"" "AABALANCE_SOURCE=\"${MCC_DIR}/src/class/mui_aabalance_class.c\"" "AASLIDER_SOURCE=\"${MCC_DIR}/src/class/mui_aaslider_class.c\"" "AACYCLE_SOURCE=\"${MCC_DIR}/src/class/mui_aacycle_class.c\"" "AALIST_SOURCE=\"${MCC_DIR}/src/class/mui_aalist_class.c\"" "LISTVIEW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_listview_class.c\"" "AASCROLLER_SOURCE=\"${MCC_DIR}/src/class/mui_aascroller_class.c\"" "AAFIELD_SOURCE=\"${MCC_DIR}/src/class/mui_aafield_class.c\"" "MUI_CMAKE=\"${MCC_DIR}/CMakeLists.txt\"")
   foreach(t round ramp state tokens check)
     add_test(NAME mui-aa-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-aa-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
-  foreach(t icon-ratio text-fit text-maxw text-tone text-source panel-source tabs tabs-source balance-geom balance-source slider-geom slider-partial slider-source btn-align transport-icons cycle-step cycle-source field-plan field-source field-draw-flags field-placeholder scroller-geom list-rows list-cols list-source i667n i667n-root tight-pad screen-font)
+  foreach(t icon-ratio text-fit text-maxw text-tone text-source dialog-source panel-source tabs tabs-source balance-geom balance-source slider-geom slider-partial slider-source btn-align transport-icons cycle-step cycle-source field-plan field-source field-draw-flags field-placeholder scroller-geom list-rows list-cols list-source i667n i667n-root tight-pad screen-font)
     add_test(NAME mui-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
@@ -4495,6 +4526,19 @@ if(NOT SEL_AMIGA)
   add_test(NAME source-sync-due COMMAND source_sync_due_test)
   set_tests_properties(source-sync-due PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_sync_due_ok")
 
+  # I1373: the engine start allocation on a 16 MB machine (search buckets grow on demand); fails when the start need grows past BUDGET_KB.
+  add_executable(queue_grow_test engine/queue_grow_test.c)
+  target_include_directories(queue_grow_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(queue_grow_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME engine-queue-grow COMMAND queue_grow_test)
+  set_tests_properties(engine-queue-grow PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "queue_grow_ok")
+  add_executable(start_alloc_test engine/start_alloc_test.c)
+  target_include_directories(start_alloc_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_compile_definitions(start_alloc_test PRIVATE BUDGET_KB=3200)
+  target_link_libraries(start_alloc_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME engine-start-alloc COMMAND start_alloc_test "${CMAKE_CURRENT_BINARY_DIR}/start_alloc_test.db")
+  set_tests_properties(engine-start-alloc PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "start_alloc_ok")
+
   # I1082b: command string arguments are copied into the queue slot on send (64 lines through a 16-entry pool, one pump).
   add_executable(cmd_arena_test engine/cmd_arena_test.c)
   target_link_libraries(cmd_arena_test PRIVATE selecta_core)
@@ -4690,6 +4734,19 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_libmode"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_libmode.cmake")
   set_tests_properties(text-ui-libmode PROPERTIES LABELS m3)
+endif()
+
+# I1222i: the text UI places main and detail by the shared layout regions; the detail column is the Now Playing panel, Tab is region focus.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-regions
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_a.keys"
+      "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions_c.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_regions"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_regions.cmake")
+  set_tests_properties(text-ui-regions PROPERTIES LABELS m3)
 endif()
 
 # I1188: the text UI Settings screen (key S, palette entry) over the shared pref rows; every change is a PREF_SET.

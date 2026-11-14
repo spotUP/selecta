@@ -6,19 +6,16 @@
 #include <string.h>
 
 /* I1222c: per-tier metrics. Default and bitmap hold the desktop pixel values (I609 expanded widths, DUI-P4-20 one row footer, I615
- * top bar); the text tier counts cells. Text: three columns from 80 cols up (sidebar 20, main the rest, detail 30), wider panels from
- * 120 cols (sidebar 26, detail 34), an icon rail from 60 cols, mini below; a 1 row top bar; the player 2 rows, 1 row at 25 rows and
+ * top bar); the text tier counts cells (design 2026-11-09-text-frame-design section 3). Text: three columns from 120 cols (sidebar 26, main
+ * the rest, detail 34), two columns from 80 cols (sidebar 20, main the rest, no detail), an icon rail from 60 cols, mini below; a 1 row top bar; the player 2 rows, 1 row at 25 rows and
  * below; no hints row (Johan, 2026-11-09). */
 static const sel_uim_metrics k_metrics[SEL_UIM_TIER_COUNT] = {
     {SEL_UIM_BP_THREE_COLUMN_MIN, SEL_UIM_BP_TWO_COLUMN_MIN, SEL_UIM_BP_ICON_SIDEBAR_MIN, 220, 200, 56, 360, 320, 220, 0, 320, 240,
      120, 56, 72, 40, SEL_UIM_FOOTER_ONE_ROW_MAX_H, 40},
     {SEL_UIM_BP_THREE_COLUMN_MIN, SEL_UIM_BP_TWO_COLUMN_MIN, SEL_UIM_BP_ICON_SIDEBAR_MIN, 220, 200, 56, 360, 320, 220, 0, 320, 240,
      120, 56, 72, 40, SEL_UIM_FOOTER_ONE_ROW_MAX_H, 40},
-    {80, 80, 60, 20, 20, 3, 0, 0, 0, 40, 30, 30, 8, 1, 2, 1, 25, 0},
+    {120, 80, 60, 26, 20, 3, 0, 0, 0, 40, 34, 40, 8, 1, 2, 1, 25, 0},
 };
-#define TEXT_WIDE_COLS 120u /* text: from here the sidebar is 26 and the detail 34 wide */
-#define TEXT_SIDE_WIDE 26u
-#define TEXT_DETAIL_WIDE 34u
 #define SIDEBAR_RAIL_LABELLED 160u /* I526 D1: the bitmap tier rail, mini8 labels beside the icon */
 
 #define BAR_H k_metrics[SEL_UIM_TIER_DEFAULT].bar_h
@@ -199,10 +196,10 @@ void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t he
     add(l, "player", 0, 0, 0, (int32_t)(tb_h + body_h), width, bar_h);
 }
 
-/* I1222c: the text tier's layout in cells. Same region names as the desktop, no hints row. From 80 cols three columns (sidebar 20, main
- * the rest, detail 30; from 120 cols 26 and 34), 60 to 79 cols an icon rail, below that the player alone. The top bar is one row, kept
+/* I1222c: the text tier's layout in cells. Same region names as the desktop, no hints row. From 120 cols three columns (sidebar 26, main
+ * the rest, detail 34), 80 to 119 cols two columns (sidebar 20, no detail), 60 to 79 cols an icon rail, below that the player alone. The top bar is one row, kept
  * when the main region still has its minimum height. `expand` widens the sidebar to 40 percent of the columns, capped so the main
- * region keeps its minimum; `detail_hidden` drops the detail column. Returns 0, or 1 for an empty canvas. */
+ * region keeps its minimum, the detail column shrinking first and hiding when it would go under 20; `detail_hidden` drops it. Returns 0, or 1 for an empty canvas. */
 int sel_uim_layout_compute_text(sel_uim_layout* l, uint32_t cols, uint32_t rows, uint32_t expand, uint32_t detail_hidden) {
     const sel_uim_metrics* m = sel_uim_metrics_for(SEL_UIM_TIER_TEXT);
     uint32_t bar_h, tb_h, body_h, side = 0, detail = 0, main_w;
@@ -218,19 +215,27 @@ int sel_uim_layout_compute_text(sel_uim_layout* l, uint32_t cols, uint32_t rows,
     body_h = rows - bar_h - tb_h;
     if (cols >= (uint32_t)m->bp_three) {
         l->breakpoint = SEL_UIM_BP_THREE_COLUMN;
-        side = cols >= TEXT_WIDE_COLS ? TEXT_SIDE_WIDE : (uint32_t)m->side_wide;
-        detail = detail_hidden ? 0u : (cols >= TEXT_WIDE_COLS ? TEXT_DETAIL_WIDE : (uint32_t)m->detail_w);
+        side = (uint32_t)m->side_wide;
+        detail = detail_hidden ? 0u : (uint32_t)m->detail_w;
+    } else if (cols >= (uint32_t)m->bp_two) {
+        l->breakpoint = SEL_UIM_BP_TWO_COLUMN;
+        side = (uint32_t)m->side_narrow;
     } else if (cols >= (uint32_t)m->bp_icons) {
         l->breakpoint = SEL_UIM_BP_ICON_SIDEBAR;
         side = (uint32_t)m->side_icons;
     } else {
         l->breakpoint = SEL_UIM_BP_MINI_SUGGESTION;
     }
-    if (expand && l->breakpoint == SEL_UIM_BP_THREE_COLUMN) {
+    if (expand && (l->breakpoint == SEL_UIM_BP_THREE_COLUMN || l->breakpoint == SEL_UIM_BP_TWO_COLUMN)) {
         uint32_t want = cols * (uint32_t)m->side_exp_pct / 100u;
-        uint32_t cap = cols > detail + (uint32_t)m->main_min_w ? cols - detail - (uint32_t)m->main_min_w : 0u;
+        uint32_t cap = cols > (uint32_t)m->main_min_w ? cols - (uint32_t)m->main_min_w : 0u;
         want = want > cap ? cap : want;
         side = want > side ? want : side;
+    }
+    if (detail > 0u) { /* the detail shrinks before main drops under its minimum, and hides under 20 */
+        uint32_t room = cols > side + (uint32_t)m->main_min_w ? cols - side - (uint32_t)m->main_min_w : 0u;
+        detail = detail > room ? room : detail;
+        detail = detail < 20u ? 0u : detail;
     }
     main_w = cols - side - detail;
     if (tb_h > 0u) {

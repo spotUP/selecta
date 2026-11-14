@@ -3,6 +3,7 @@
  * to a backend: `mem` (headless, no SDL, DUI-P2-6) or `sdl` (a window, DUI-P2-7), selected with `--backend`. */
 #include <ctype.h>
 #include <selecta/plugin.h>
+#include <selecta/registry.h>
 #include <selecta/engine.h>
 #include <selecta/library_item.h>
 #include <selecta/format_label.h>
@@ -293,6 +294,8 @@ typedef struct desk {
     uint32_t pls_briefed; /* I1198: 1 once the briefs answer filled pls_title/pls_meta of the current song set */
     uint32_t held_keys[16], held_n, held_replayed; /* I1290: list keys that arrived while the opened page had no rows yet, replayed when it has; keys replayed */
     uint32_t pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
+    uint32_t fr_txt[4];      /* I1164a: this frame's text draws inside the sidebar, main, detail and player regions (--stats only) */
+    uint32_t fr_pan;         /* I1164a: bit per region whose panel this frame painted (1 sidebar, 2 main, 4 detail, 8 player) */
     int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
     uint32_t local_icon_side, local_icon_head; /* I938: the icon the Local Files sidebar tile and the Local Files page header last drew (dump line localicon) */
     char hdr_count[64];      /* I910b: the count line the header drew last (the per-frame trace) */
@@ -752,6 +755,8 @@ static void desk_frame_begin(desk* d) {
         d->frame_t0 = ch->clock_ms(ch);
         d->frame_open = 1;
         d->frame_flow = 0;
+        memset(d->fr_txt, 0, sizeof d->fr_txt);
+        d->fr_pan = 0u;
         if (d->report && d->canvas != NULL) {
             memcpy(d->frame_prof0, d->canvas->prof_ms, sizeof d->frame_prof0);
         }
@@ -794,6 +799,7 @@ static uint32_t desk_flush(desk* d) {
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL) {
         desk_sdl_present(d->sdl, d->canvas);
+        desk_sdl_test_ready(d->sdl);
     }
 #endif
     {
@@ -811,9 +817,9 @@ static uint32_t desk_flush(desk* d) {
                     fprintf(stderr, " prof%u=%u", (unsigned)k, (unsigned)pk);
                 }
             }
-            fprintf(stderr, " page=%u colkind=%u colkey=[%.40s] pls_name=[%.40s] pls_n=%u pls_stale=%u col_ready=%d hdr_count=[%s]", (unsigned)d->page,
+            fprintf(stderr, " page=%u colkind=%u colkey=[%.40s] pls_name=[%.40s] pls_n=%u pls_stale=%u col_ready=%d hdr_count=[%s] pan=%u txt_side=%u txt_main=%u txt_detail=%u txt_player=%u", (unsigned)d->page,
                     (unsigned)d->col_kind, d->col_key, d->pls_name, (unsigned)d->pls_n, (unsigned)d->pls_stale, d->col_ready,
-                    d->hdr_count); /* I910b: what page this frame presented */
+                    d->hdr_count, (unsigned)d->fr_pan, (unsigned)d->fr_txt[0], (unsigned)d->fr_txt[1], (unsigned)d->fr_txt[2], (unsigned)d->fr_txt[3]); /* I910b: what page this frame presented; I1164a: the column oracle */
             fputc('\n', stderr);
         }
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
@@ -1041,7 +1047,27 @@ static const sel_gui_atlas* desk_text_atlas(desk* d, int semibold, int px, int32
     return at;
 }
 
+static const char* const k_oracle_region[4] = { "sidebar", "main", "detail", "player" };
+/* I1164a: the per-frame column oracle. region_rect of a region the layout lacks is empty, so it never matches. */
+static int oracle_region_of(const desk* d, sel_gui_rect box) {
+    int32_t cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    uint32_t k;
+    for (k = 0; k < 4u; k++) {
+        sel_gui_rect r = region_rect(d, k_oracle_region[k]);
+        if (r.w > 0 && r.h > 0 && cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h) {
+            return (int)k;
+        }
+    }
+    return -1;
+}
+
 static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+    if (d->report && s != NULL && *s != '\0') {
+        int k = oracle_region_of(d, box);
+        if (k >= 0) {
+            d->fr_txt[k]++;
+        }
+    }
     const sel_gui_atlas* at = desk_text_atlas(d, semibold, px, box.h);
     if (at != NULL) {
         sel_gui_clip_push(d->canvas, box);
@@ -1314,6 +1340,14 @@ static sel_gui_rect draw_panel(desk* d, const char* name) {
                            ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
         sel_gui_dirty_add(d->canvas, r);
         d->home_parts |= HP_PANELS;
+        if (d->report) {
+            uint32_t k;
+            for (k = 0; k < 4u; k++) {
+                if (strcmp(name, k_oracle_region[k]) == 0) {
+                    d->fr_pan |= 1u << k;
+                }
+            }
+        }
     }
     return pr;
 }
@@ -1444,7 +1478,7 @@ static sel_gui_rect dev_btn_rect(const desk* d) {
 /* I1039: reads the device list from the output plugin the shell opened (the registry hook SEL_OUT_DEVICES). */
 static void dev_load(desk* d) {
     const sel_tag* desc = d->find_plugin != NULL && d->output_id != NULL ? d->find_plugin(SEL_PLUGIN_KIND_OUTPUT, d->output_id) : NULL;
-    const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    const sel_tag* hooks = desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
     d->dev_fn = hooks != NULL ? (sel_out_devices_fn)sel_tag_find(hooks, SEL_OUT_DEVICES, 0) : NULL;
     d->dev_n = d->dev_fn != NULL ? d->dev_fn(d->dev, DESK_DEV_MAX) : 0u;
 }
@@ -3402,7 +3436,7 @@ static int nagdlg_pointer(desk* d, const sel_gui_input* ev) {
 
 /* I623: Escape with nothing open asks before it quits. */
 static void dlg_open_quit(desk* d) {
-    snprintf(d->dlg_text, sizeof d->dlg_text, "%s", "Quit Selecta?");
+    snprintf(d->dlg_text, sizeof d->dlg_text, "%s", sel_uim_dlg_text(SEL_UIM_DLG_QUIT));
     d->dlg_open = DLG_QUIT;
     d->dlg_opens++;
 }
@@ -3432,14 +3466,14 @@ static const char* dlg_title(const desk* d) {
     if (d->dlg_open == DLG_PLDEL) {
         return d->dlg_pl_folder ? "Delete Folder" : "Delete Playlist";
     }
-    return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove from Library";
+    return sel_uim_dlg_title(d->dlg_open == DLG_CLEAR ? SEL_UIM_DLG_CLEAR : d->dlg_open == DLG_QUIT ? SEL_UIM_DLG_QUIT : SEL_UIM_DLG_REMOVE);
 }
 
 static const char* dlg_confirm_label(const desk* d) {
     if (d->dlg_open == DLG_PLDEL) {
         return "Delete";
     }
-    return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove";
+    return sel_uim_dlg_confirm_label(d->dlg_open == DLG_CLEAR ? SEL_UIM_DLG_CLEAR : d->dlg_open == DLG_QUIT ? SEL_UIM_DLG_QUIT : SEL_UIM_DLG_REMOVE);
 }
 
 static int sysfile_pick(desk* d);
@@ -3498,7 +3532,7 @@ static void dlg_draw(desk* d) {
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1, &d->text);
     tr = rect_of(p.x + m, p.y + m + head->line_height + lpx(d, 10), p.w - 2 * m, body->line_height * 3);
     sel_gui_text_wrap(d->canvas, body, tr, d->dlg_text, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
-    draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Cancel", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), sel_uim_dlg_cancel_label(), 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     if (d->dlg_open == DLG_SYSFILE) {
         draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Retry Download", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         draw_button(d, dlg_button_rect(d, 2u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Pick File...", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
@@ -7095,7 +7129,7 @@ static void viz_load(desk* d) {
     d->viz_n = 0u;
     for (i = 0; d->find_plugin != NULL && i < VIZ_MAX; i++) {
         const sel_tag* desc = d->find_plugin(SEL_PLUGIN_KIND_VIZ, ids[i]);
-        const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+        const sel_tag* hooks = desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
         uintptr_t fn = hooks != NULL ? sel_tag_find(hooks, SEL_VIZ_FRAME, 0) : 0;
         if (fn == 0) {
             continue;
@@ -14114,6 +14148,24 @@ static void palette_pick(desk* d) {
     const char* verb = txt_palette_picked(&d->pal);
     char line[64];
     if (verb == NULL) {
+        return;
+    }
+    if (d->pal.items[d->pal.cursor].id >= SEL_CMD_COUNT + TXT_PAL_LOCAL_COUNT) {
+        /* I1211: an action row (label "Shuffle Queue") runs its line like its key; the label is not a command */
+        const char* act = txt_palette_picked_line(&d->pal);
+        if (act == NULL) {
+            return;
+        }
+        snprintf(line, sizeof line, "%s", act);
+        d->palette_runs++;
+        snprintf(d->last_verb, sizeof d->last_verb, "%s", line);
+        d->overlay = OV_NONE;
+        if (desk_send(d, line)) {
+            d->overlay_sends_ok++;
+            desk_toast(d, "Command sent");
+        } else {
+            desk_toast(d, "Not a command");
+        }
         return;
     }
     if (txt_palette_verb_needs_args(verb)) {

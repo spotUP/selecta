@@ -6,9 +6,12 @@ void sel_queue_default_sizes(uint32_t fast_ram, uint32_t* capacity, uint32_t* te
     if (fast_ram >= 64u * 1024u * 1024u) {
         *capacity = 8192u;
         *text_bytes = 2u * 1024u * 1024u;
-    } else if (fast_ram >= 8u * 1024u * 1024u) {
+    } else if (fast_ram >= 24u * 1024u * 1024u) {
         *capacity = 2048u;
         *text_bytes = 256u * 1024u;
+    } else if (fast_ram >= 8u * 1024u * 1024u) { /* I1373: the 16 MB baseline; every engine pool scales with these two, so the start need halves */
+        *capacity = 1024u;
+        *text_bytes = 128u * 1024u;
     } else {
         *capacity = 256u;
         *text_bytes = 32u * 1024u;
@@ -26,6 +29,38 @@ int sel_queue_init(sel_queue* q, const sel_host* host, uint32_t capacity, uint32
     q->capacity = capacity;
     q->text_bytes = text_bytes;
     q->next_id = 1;
+    return 1;
+}
+
+/* I1373-2: grow on demand. Doubles until both needs fit; the old tables are copied and freed. Nothing changes on failure. */
+int sel_queue_grow(sel_queue* q, const sel_host* host, uint32_t need_entries, uint32_t need_text) {
+    uint32_t cap = q->capacity, tb = q->text_bytes;
+    sel_queue_entry* ne;
+    char* nt;
+    while (cap < need_entries) {
+        cap = cap > 0x7FFFFFFFu / 2u ? need_entries : cap * 2u;
+    }
+    while (tb < need_text) {
+        tb = tb > 0x7FFFFFFFu / 2u ? need_text : tb * 2u;
+    }
+    if (cap == q->capacity && tb == q->text_bytes) {
+        return 1;
+    }
+    ne = host->mem_alloc(host, (size_t)cap * sizeof *ne, SEL_MEM_FAST);
+    nt = host->mem_alloc(host, tb, SEL_MEM_FAST);
+    if (ne == NULL || nt == NULL) {
+        if (ne) host->mem_free(host, ne);
+        if (nt) host->mem_free(host, nt);
+        return 0;
+    }
+    memcpy(ne, q->entries, (size_t)q->count * sizeof *ne);
+    memcpy(nt, q->text, q->text_used);
+    host->mem_free(host, q->entries);
+    host->mem_free(host, q->text);
+    q->entries = ne;
+    q->text = nt;
+    q->capacity = cap;
+    q->text_bytes = tb;
     return 1;
 }
 

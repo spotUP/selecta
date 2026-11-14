@@ -4,6 +4,8 @@
 
 #include "mui_map.h"
 
+#include <selecta/registry.h>
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,7 +18,7 @@ void mui_viz_palette_from_tokens(mui_viz* v, const uint32_t* tokens) {
 }
 
 int mui_viz_bind(mui_viz* v, const sel_tag* desc) {
-    const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    const sel_tag* hooks = desc != NULL ? sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)) : NULL; /* I1193b-M1 */
     uintptr_t fn = hooks != NULL ? sel_tag_find(hooks, SEL_VIZ_FRAME, 0) : 0;
     v->fn = (sel_viz_render_fn)fn;
     return fn != 0;
@@ -111,7 +113,7 @@ uint32_t mui_vizset_load(mui_vizset* s, mui_find_plugin_fn find, const char* pre
         if (desc == NULL || !mui_viz_bind(&probe, desc)) {
             continue;
         }
-        hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+        hooks = sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0));
         s->id[s->n] = k_viz_ids[i];
         s->fn[s->n] = probe.fn;
         s->name_[s->n] = (const char*)sel_tag_find(hooks, SEL_VIZ_NAME, 0);

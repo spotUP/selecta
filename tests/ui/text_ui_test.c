@@ -35,9 +35,10 @@ typedef struct ui_hooks {
 } ui_hooks;
 
 static const char* dump_path; /* --screen-dump target, "" when the run needs no dump */
+static const char* size_arg;  /* --size WxH for the next open_ui, NULL: the default grid */
 
 static void* open_ui(const sel_host* host, sel_engine* e, const ui_hooks* h, const char* keys) {
-    static const char* argv[6];
+    static const char* argv[8];
     sel_ui_open_args a;
     argv[0] = "text_ui_test";
     argv[1] = "--keys";
@@ -48,10 +49,16 @@ static void* open_ui(const sel_host* host, sel_engine* e, const ui_hooks* h, con
         argv[4] = dump_path;
         argv[5] = NULL;
     }
+    if (size_arg != NULL) {
+        uint32_t k = dump_path != NULL ? 5u : 3u;
+        argv[k] = "--size";
+        argv[k + 1u] = size_arg;
+        argv[k + 2u] = NULL;
+    }
     memset(&a, 0, sizeof a);
     a.engine = e;
     a.host = host;
-    a.argc = dump_path != NULL ? 5 : 3;
+    a.argc = (dump_path != NULL ? 5 : 3) + (size_arg != NULL ? 2 : 0);
     a.argv = argv;
     return h->open(&a);
 }
@@ -216,6 +223,99 @@ int main(int argc, char** argv) {
             CHECK(strstr(dump, "[Home]") != NULL && strstr(dump, "What do you want to play?") != NULL, "top bar labels missing");
             CHECK(strstr(dump, "Volume") != NULL && strstr(dump, "--:--") != NULL, "player bar volume or clock missing");
             CHECK(strstr(dump, "Up Down Move") == NULL && strstr(dump, "Quit") == NULL, "a hint row is still drawn");
+            h.close(ui);
+        }
+        dump_path = NULL;
+    }
+
+    /* I1222h: the sidebar is drawn from the shared side stack (sel_uim_side_stack over the door table, sel_uim_chips_flow for the chips).
+     * 120x40: the labelled sidebar (doors below the top bar's Home and Search, the Your Library header, the six chip labels);
+     * 60x24: the icon rail, letters only. The sentinel proves the draw ran. */
+    {
+        static char dump[16384], keys4[1024], dpath4[1024];
+        static const char* const sizes[2] = {"120x40", "60x24"};
+        uint32_t z, i;
+        snprintf(keys4, sizeof keys4, "%s/text_ui_side.keys", argv[1]);
+        snprintf(dpath4, sizeof dpath4, "%s/text_ui_side.dump", argv[1]);
+        f = fopen(keys4, "wb");
+        if (f == NULL) {
+            return 2;
+        }
+        fprintf(f, "Space\nwait 60\nq\n");
+        fclose(f);
+        for (z = 0; z < 2u; z++) {
+            remove(dpath4);
+            dump_path = dpath4;
+            size_arg = sizes[z];
+            ui = open_ui(host, e, &h, keys4);
+            size_arg = NULL;
+            CHECK(ui != NULL, "sidebar %s: open failed", sizes[z]);
+            if (ui != NULL) {
+                int r = 0;
+                for (i = 0; r >= 0 && i < 6u; i++) {
+                    r = h.wait(ui, TURN_MS);
+                }
+                read_dump(dump, sizeof dump);
+                {
+                    sel_ui_stats_fn stats = (sel_ui_stats_fn)sel_tag_find(tags, SEL_UI_STATS, 0);
+                    const sel_tag* st = stats != NULL ? stats(ui) : NULL;
+                    uintptr_t sb = st != NULL ? (uintptr_t)sel_tag_find(st, SEL_UI_STAT_SIDEBAR_DRAWS, 0) : 0u;
+                    CHECK(sb > 0u, "sidebar %s: the side stack was never drawn", sizes[z]);
+                }
+                if (z == 0u) {
+                    const char* const want[] = {"Playlists", "Queue", "Now Playing", "Song Information", "Your Library", "[Playlists]",
+                                                "[Albums]", "[Artists]", "[Composers]", "[Sources]", "[Local Files]"};
+                    for (i = 0; i < sizeof want / sizeof want[0]; i++) {
+                        CHECK(strstr(dump, want[i]) != NULL, "sidebar 120x40: '%s' missing", want[i]);
+                    }
+                } else {
+                    CHECK(strstr(dump, "Your Library") == NULL && strstr(dump, "Song Information") == NULL,
+                          "sidebar 60x24: the rail drew labels");
+                    CHECK(strstr(dump, "\n P") != NULL || strstr(dump, "\n F") != NULL || strstr(dump, "\n Q") != NULL,
+                          "sidebar 60x24: no door letters in the rail");
+                }
+                h.close(ui);
+            }
+            dump_path = NULL;
+        }
+    }
+
+    /* I1367 (twin of I623): Escape with nothing open asks "Quit Selecta?"; Escape cancels and keeps running, Enter quits. */
+    {
+        static char dump[8192], keys3[1024], dpath3[1024];
+        uint32_t i;
+        int r = 0, asked = 0, cancelled = 0;
+        snprintf(keys3, sizeof keys3, "%s/text_ui_esc.keys", argv[1]);
+        snprintf(dpath3, sizeof dpath3, "%s/text_ui_esc.dump", argv[1]);
+        f = fopen(keys3, "wb");
+        if (f == NULL) {
+            return 2;
+        }
+        fprintf(f, "Space\nwait 60\nEscape\nwait 60\nEscape\nwait 60\nEscape\nwait 60\nEnter\nwait 600\n");
+        fclose(f);
+        remove(dpath3);
+        dump_path = dpath3;
+        ui = open_ui(host, e, &h, keys3);
+        CHECK(ui != NULL, "esc quit: open failed");
+        if (ui != NULL) {
+            int quit_at = -1;
+            for (i = 0; r >= 0 && i < 120u; i++) {
+                r = h.wait(ui, TURN_MS);
+                read_dump(dump, sizeof dump);
+                if (strstr(dump, "Quit Selecta?") != NULL) {
+                    asked++;
+                } else if (asked > 0 && !cancelled) {
+                    cancelled = 1; /* the second Escape closed the prompt and the UI still runs */
+                    CHECK(r >= 0, "esc quit: Escape in the confirm quit the UI");
+                    CHECK(strstr(dump, "Enter Quit  Esc Cancel") == NULL, "esc quit: prompt text left after cancel");
+                }
+                if (r < 0) {
+                    quit_at = (int)i;
+                }
+            }
+            CHECK(asked > 0, "esc quit: Escape with nothing open showed no 'Quit Selecta?' prompt");
+            CHECK(cancelled, "esc quit: Escape did not cancel the prompt");
+            CHECK(quit_at >= 0, "esc quit: Enter on the prompt did not quit");
             h.close(ui);
         }
         dump_path = NULL;

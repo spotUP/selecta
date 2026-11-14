@@ -5,8 +5,10 @@
 #include <selecta/registry.h>
 
 #include "cli.h"
+#include "../../src/core/manifest_dump.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* --formats <plugin>: the plugin's SEL_RP_FORMATS list (comma separated ids)
@@ -48,6 +50,45 @@ static int formats(const char* plugin, uint32_t count) {
     return 1;
 }
 
+/* --manifest-c <out>: the registry's descriptors written as generated C (I1193b-M2, src/core/manifest_dump.c).
+ * A descriptor that already names a SEL_PLUGIN_MODULE is itself a manifest and is skipped. */
+static int manifest_c(const char* path, uint32_t count) {
+    const sel_tag** descs = (const sel_tag**)calloc(count + 1u, sizeof(*descs));
+    const char** modules = (const char**)calloc(count + 1u, sizeof(*modules));
+    uint32_t i, n = 0;
+    FILE* out;
+    int rc;
+    if (descs == NULL || modules == NULL) {
+        free((void*)descs);
+        free((void*)modules);
+        return 1;
+    }
+    for (i = 0; i < count; i++) {
+        const sel_tag* d = sel_registry_get(i);
+        const char* origin = sel_registry_origin(i);
+        const char* slash = origin != NULL ? strrchr(origin, '/') : NULL;
+        if (sel_tag_find(d, SEL_PLUGIN_MODULE, 0) != 0) {
+            continue;
+        }
+        descs[n] = d;
+        modules[n] = origin != NULL && strcmp(origin, "static") != 0 ? (slash != NULL ? slash + 1 : origin) : NULL;
+        n++;
+    }
+    out = fopen(path, "w");
+    if (out == NULL) {
+        fprintf(stderr, "cannot write %s\n", path);
+        rc = 1;
+    } else {
+        rc = sel_manifest_dump_c(out, descs, modules, n) == 0 ? 0 : 1;
+        if (fclose(out) != 0) {
+            rc = 1;
+        }
+    }
+    free((void*)descs);
+    free((void*)modules);
+    return rc;
+}
+
 int sel_cli_plugins(int argc, char** argv) {
     uint32_t i, n;
     const sel_tag* machine = NULL;
@@ -69,6 +110,9 @@ int sel_cli_plugins(int argc, char** argv) {
         }
     }
     n = sel_registry_init_machine(sel_host_default(), machine);
+    if (argc > 1 && strcmp(argv[0], "--manifest-c") == 0) {
+        return manifest_c(argv[1], n);
+    }
     if (argc > 0 && strcmp(argv[0], "--lint") == 0) {
         sel_lint_report r;
         sel_registry_lint(&r);

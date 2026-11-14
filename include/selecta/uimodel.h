@@ -124,6 +124,18 @@ void sel_uim_rate_line(uint32_t current, uint32_t star, char* out, size_t cap);
 /* Confirm texts of the library removals (DUI-P4-18). */
 void sel_uim_remove_text(const char* title, char* out, size_t cap);
 void sel_uim_clear_text(uint32_t songs, uint32_t playlists, char* out, size_t cap);
+/* I1368: the one table of the confirm dialogs shared by desktop, text and MUI: title, the confirm button label, the short confirm label
+ * of the MUI requester, and the fixed body text (NULL when the body is built by sel_uim_remove_text / sel_uim_clear_text). */
+typedef enum sel_uim_dlg_kind { SEL_UIM_DLG_REMOVE = 0, SEL_UIM_DLG_CLEAR, SEL_UIM_DLG_QUIT, SEL_UIM_DLG_COUNT } sel_uim_dlg_kind;
+const char* sel_uim_dlg_title(sel_uim_dlg_kind k);
+const char* sel_uim_dlg_confirm_label(sel_uim_dlg_kind k);
+const char* sel_uim_dlg_mui_confirm_label(sel_uim_dlg_kind k);
+const char* sel_uim_dlg_text(sel_uim_dlg_kind k);
+const char* sel_uim_dlg_cancel_label(void);
+/* The text UI hint line of a confirm: "Enter <confirm>  Esc <cancel>". */
+void sel_uim_dlg_hint(sel_uim_dlg_kind k, char* out, size_t cap);
+/* The MUI requester gadget string: "*<confirm>|<cancel>". */
+void sel_uim_dlg_mui_gadgets(sel_uim_dlg_kind k, char* out, size_t cap);
 /* View states (DUI-P4-21): the text of an empty, loading or error state of a view; NULL for an unknown pair. */
 typedef enum sel_uim_state_view { SEL_UIM_SV_LIBRARY = 0, SEL_UIM_SV_QUEUE, SEL_UIM_SV_SEARCH, SEL_UIM_SV_PLAYLISTS,
                                   SEL_UIM_SV_NOWPLAYING, SEL_UIM_SV_LYRICS, SEL_UIM_SV_LIKED, SEL_UIM_SV_COUNT } sel_uim_state_view;

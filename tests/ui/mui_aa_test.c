@@ -214,6 +214,33 @@ static int count_of(const char* hay, const char* needle) {
     return n;
 }
 
+/* I1368 dialog-source: the confirm texts and button labels live in the uimodel table (sel_uim_dlg_*); desktop, text and MUI read it and
+ * hold no literal of their own. Counted from the sources: the literals are gone, each UI calls the table accessors. */
+static void test_dialog_source(void) {
+    char* mui = slurp(UI_SOURCE);
+    char* dsk = slurp(DESKTOP_SOURCE);
+    char* txt = slurp(TEXT_UI_SOURCE);
+    char* tab = slurp(UIMODEL_FEATURES_SOURCE);
+    CHECK(mui != NULL && dsk != NULL && txt != NULL && tab != NULL, "sources readable");
+    if (mui == NULL || dsk == NULL || txt == NULL || tab == NULL) {
+        return;
+    }
+    CHECK(strstr(tab, "\"Quit Selecta?\"") != NULL && strstr(tab, "\"Clear Library\", \"Clear Library\", \"Clear\"") != NULL, "table lacks the dialog rows");
+    CHECK(count_of(mui, "Quit Selecta?\"") == 0 && count_of(mui, "\"*Quit|Cancel\"") == 0 && count_of(mui, "\"*Remove|Cancel\"") == 0 && count_of(mui, "\"*Clear|Cancel\"") == 0,
+          "MUI holds a dialog literal");
+    CHECK(count_of(mui, "SEL_UIM_DLG_QUIT") >= 2 && count_of(mui, "SEL_UIM_DLG_REMOVE") >= 1 && count_of(mui, "SEL_UIM_DLG_CLEAR") >= 1, "MUI does not read the table");
+    CHECK(count_of(dsk, "\"Quit Selecta?\"") == 0 && count_of(dsk, "\"Clear Library\" : d->dlg_open") == 0 && count_of(dsk, "\"Remove from Library\";") == 0 &&
+          count_of(dsk, "TOKEN_TRACK]), \"Cancel\", 14") == 0, "desktop holds a dialog literal");
+    CHECK(count_of(dsk, "sel_uim_dlg_text(") >= 1 && count_of(dsk, "sel_uim_dlg_title(") >= 1 && count_of(dsk, "sel_uim_dlg_confirm_label(") >= 1 && count_of(dsk, "sel_uim_dlg_cancel_label(") >= 1,
+          "desktop does not read the table");
+    CHECK(count_of(txt, "\"Quit Selecta?\"") == 0 && count_of(txt, "Enter Quit") == 0 && count_of(txt, "sel_uim_dlg_text(") >= 1 && count_of(txt, "sel_uim_dlg_hint(") >= 1,
+          "text UI holds a dialog literal or does not read the table");
+    free(mui);
+    free(dsk);
+    free(txt);
+    free(tab);
+}
+
 /* I667d mui-text-source: the MUI UI builds every text line through AAText: no MUIC_Text, TextObject or pen escape text left,
  * eight construction sites (counted from the source: the helper definition plus eight calls = 9 "mui_aatext(" spellings). */
 static void test_text_source(void) {
@@ -227,9 +254,10 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 23, "text constructor sites: %d (I1357 a5c72d0b: - the sync offer row label, now mui_aatext_whole, back to 23; I1313d 4ed3039e: + the Players Turned Off heading, the 24th; I1308 ef77642a: + the sync offer check row label, the 23rd; I1180 006760bb: + 5 in the About window, heading, credits heading and the credit title, copyright and licence lines, the 22nd; I1166b f1cf602d: + the expanded-sidebar table cell in mui_side_cells, the 17th; I960c: + the compact Now Playing page heading; definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    /* 4 at I667f3 (definition, the mui_aatext wrapper, the attribute label, the subsong label); I1181 2e217b3a + 2 (Statistics label and value cells), I1182 ea812382 + 1 (sync offer row): 7. */
+    CHECK(count_of(ui, "mui_aatext(") == 22, "text constructor sites: %d (I1369 dcc9b5ec: - the dialog header title, now mui_aatext_whole, 22; I1357 a5c72d0b: - the sync offer row label, now mui_aatext_whole, back to 23; I1313d 4ed3039e: + the Players Turned Off heading, the 24th; I1308 ef77642a: + the sync offer check row label, the 23rd; I1180 006760bb: + 5 in the About window, heading, credits heading and the credit title, copyright and licence lines, the 22nd; I1166b f1cf602d: + the expanded-sidebar table cell in mui_side_cells, the 17th; I960c: + the compact Now Playing page heading; definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    /* 4 at I667f3 (definition, the mui_aatext wrapper, the attribute label, the subsong label); I1181 2e217b3a + 2 (Statistics label and value cells), I1182 ea812382 + 1 (sync offer row): 7. */
     /* I1357 a5c72d0b: the sync offer title moved to mui_aatext_whole: 6 sized sites; whole = definition + offer title + offer row (3); cut = definition + sized + whole (3). */
-    CHECK(count_of(ui, "mui_aatext_whole(") == 3 && count_of(ui, "mui_aatext_cut(") == 3, "whole text sites: %d, cut sites %d", count_of(ui, "mui_aatext_whole("), count_of(ui, "mui_aatext_cut("));
+    /* I1369 dcc9b5ec: + the dialog header title: whole = 4. */
+    CHECK(count_of(ui, "mui_aatext_whole(") == 4 && count_of(ui, "mui_aatext_cut(") == 3, "whole text sites: %d, cut sites %d", count_of(ui, "mui_aatext_whole("), count_of(ui, "mui_aatext_cut("));
     CHECK(count_of(ui, "mui_aatext_sized(") == 6 && count_of(ui, "mui_attr_fixwidth(") == 1, "sized text sites: %d, fixwidth sites %d (labels sized through mui_attr_fixwidth)", count_of(ui, "mui_aatext_sized("), count_of(ui, "mui_attr_fixwidth("));
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
@@ -1216,6 +1244,8 @@ int main(int argc, char** argv) {
         test_text_fit();
     } else if (!strcmp(t, "text-tone")) {
         test_text_tone();
+    } else if (!strcmp(t, "dialog-source")) {
+        test_dialog_source();
     } else if (!strcmp(t, "text-source")) {
         test_text_source();
     } else if (!strcmp(t, "panel-source")) {

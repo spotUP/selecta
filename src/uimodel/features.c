@@ -91,6 +91,27 @@ void sel_uim_clear_text(uint32_t songs, uint32_t playlists, char* out, size_t ca
              (unsigned)songs, (unsigned)playlists);
 }
 
+typedef struct sel_uim_dlg_row { const char* title; const char* confirm; const char* mui_confirm; const char* text; } sel_uim_dlg_row;
+static const sel_uim_dlg_row g_dlg[SEL_UIM_DLG_COUNT] = {
+    [SEL_UIM_DLG_REMOVE] = {"Remove from Library", "Remove", "Remove", NULL},
+    [SEL_UIM_DLG_CLEAR] = {"Clear Library", "Clear Library", "Clear", NULL},
+    [SEL_UIM_DLG_QUIT] = {"Quit", "Quit", "Quit", "Quit Selecta?"},
+};
+
+const char* sel_uim_dlg_title(sel_uim_dlg_kind k) { return (unsigned)k < (unsigned)SEL_UIM_DLG_COUNT ? g_dlg[k].title : NULL; }
+const char* sel_uim_dlg_confirm_label(sel_uim_dlg_kind k) { return (unsigned)k < (unsigned)SEL_UIM_DLG_COUNT ? g_dlg[k].confirm : NULL; }
+const char* sel_uim_dlg_mui_confirm_label(sel_uim_dlg_kind k) { return (unsigned)k < (unsigned)SEL_UIM_DLG_COUNT ? g_dlg[k].mui_confirm : NULL; }
+const char* sel_uim_dlg_text(sel_uim_dlg_kind k) { return (unsigned)k < (unsigned)SEL_UIM_DLG_COUNT ? g_dlg[k].text : NULL; }
+const char* sel_uim_dlg_cancel_label(void) { return "Cancel"; }
+
+void sel_uim_dlg_hint(sel_uim_dlg_kind k, char* out, size_t cap) {
+    snprintf(out, cap, "Enter %s  Esc %s", sel_uim_dlg_confirm_label(k), sel_uim_dlg_cancel_label());
+}
+
+void sel_uim_dlg_mui_gadgets(sel_uim_dlg_kind k, char* out, size_t cap) {
+    snprintf(out, cap, "*%s|%s", sel_uim_dlg_mui_confirm_label(k), sel_uim_dlg_cancel_label());
+}
+
 const char* sel_uim_state_text(uint32_t view, uint32_t kind) {
     static const char* const empty[SEL_UIM_SV_COUNT] = {
         "The library is empty. Add a folder to scan.", "The queue is empty. Add songs from the Library.",

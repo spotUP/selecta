@@ -5,6 +5,7 @@
 #include "../core/count.h"
 
 #include <selecta/plugin.h>
+#include <selecta/registry.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -92,7 +93,7 @@ static void register_plugins(void) {
         if (desc == NULL || sel_tag_find(desc, SEL_PLUGIN_KIND, 0) != (uintptr_t)SEL_PLUGIN_KIND_SOURCE) {
             continue;
         }
-        hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+        hooks = sel_plugin_resolve((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0)); /* I1193b-M1: SRC_DESCRIPTOR is a pointer tag */
         src = hooks != NULL ? (const sel_source*)sel_tag_find(hooks, SEL_SRC_DESCRIPTOR, 0) : NULL;
         if (src == NULL || src->id == NULL) {
             reject(NULL, "no source descriptor");

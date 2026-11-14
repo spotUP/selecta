@@ -14,6 +14,9 @@
  * core does not link the registry, so this takes the same count/get pair the engine is configured with. */
 /* One replayer's hooks: true when its SEL_RP_EXTENSIONS names the prefix or the last extension of name. */
 int sel_hooks_claim_name(const sel_tag* hooks, const char* name);
+/* I1193b-M1: 1 when `hooks` (a descriptor's tag list, manifest or real) carries `tag`, without resolving the module. Use it
+ * for a "does this plugin have X" question; call sel_plugin_resolve before READING a pointer tag's value. */
+int sel_hooks_has(const sel_tag* hooks, uint32_t tag);
 int sel_registry_claims_name(uint32_t (*registry_count)(void), const sel_tag* (*registry_get)(uint32_t), const char* name);
 
 #endif

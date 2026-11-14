@@ -18,6 +18,37 @@ int sel_history_init(sel_history* h, const sel_host* host, uint32_t capacity, ui
     return 1;
 }
 
+/* I1373-2: re-lays the snapshots out for a bigger queue (stride = capacity); undo and redo steps are kept. 0: out of memory, unchanged. */
+int sel_history_grow(sel_history* h, const sel_host* host, uint32_t capacity, uint32_t text_bytes) {
+    sel_history n;
+    uint32_t i;
+    if (capacity <= h->capacity && text_bytes <= h->text_bytes) {
+        return 1;
+    }
+    if (capacity < h->capacity) capacity = h->capacity;
+    if (text_bytes < h->text_bytes) text_bytes = h->text_bytes;
+    if (!sel_history_init(&n, host, capacity, text_bytes)) {
+        return 0;
+    }
+    for (i = 0; i < SEL_HISTORY_DEPTH; i++) {
+        memcpy(n.ids + (size_t)i * capacity, h->ids + (size_t)i * h->capacity, (size_t)h->undo_len[i] * sizeof *h->ids);
+        memcpy(n.ids + (size_t)(SEL_HISTORY_DEPTH + i) * capacity, h->ids + (size_t)(SEL_HISTORY_DEPTH + i) * h->capacity,
+               (size_t)h->redo_len[i] * sizeof *h->ids);
+    }
+    memcpy(n.undo_len, h->undo_len, sizeof n.undo_len);
+    memcpy(n.redo_len, h->redo_len, sizeof n.redo_len);
+    n.undo_head = h->undo_head;
+    n.undo_count = h->undo_count;
+    n.redo_count = h->redo_count;
+    n.dead_count = h->dead_count;
+    n.dead_used = h->dead_used;
+    memcpy(n.dead, h->dead, (size_t)h->dead_count * sizeof *h->dead);
+    memcpy(n.dead_text, h->dead_text, h->dead_used);
+    sel_history_free(h, host);
+    *h = n;
+    return 1;
+}
+
 void sel_history_free(sel_history* h, const sel_host* host) {
     if (h->ids) {
         host->mem_free(host, h->ids);

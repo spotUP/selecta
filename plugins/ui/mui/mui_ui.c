@@ -113,7 +113,7 @@ static void mui_requester(const char* text); /* I1352b */
 #define CTL_OFFER_NOTNOW 0x280BL /* I1182: the first-start sync offer, Not now */
 #define CTL_OFFER_SYNC 0x280CL   /* its Sync now button */
 #define CTL_OFFER_NEVER 0x280DL  /* I1308c: its Never button */
-#define CTL_OFFER_ROW 0x2900L    /* its per-source checks, CTL_OFFER_ROW + k */
+#define CTL_OFFER_ROW 0x2C00L    /* its per-source checks, CTL_OFFER_ROW + k (I1362: was 0x2900 = CTL_SIDE_BASE, so the offer branch swallowed the Your Library + and > presses; keep every base 0x100 apart) */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
 /* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
@@ -167,6 +167,7 @@ typedef struct mui_state {
     Object* root;                   /* window contents: its MUIA_Width drives the breakpoint (MUI-P2-2) */
     Object* slot[MUI_SLOT_COUNT];   /* the five layout regions and the top bar, created once, shown or hidden */
     Object* balance[2];             /* sidebar|main and main|detail */
+    Object* close_spacer;           /* I1370: the Close row's spacer, shown while the top bar beside the button is hidden or empty */
     uint32_t open_layout_w; /* I973h: layout width of the ladder step that opened the window (cap for the resize check) */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
@@ -560,6 +561,12 @@ static Object* mui_menu_strip(void) {
 
 /* Sends one command line. The pool is decode scratch only: the engine copies string arguments into its command slot on
  * send (I1082b; before that a stack pool left "VIEW_SOURCE search" with an empty source, I569). */
+/* I1368: the requester gadget string of a confirm, from the shared uimodel dialog table. */
+static char* mui_dlg_gadgets(sel_uim_dlg_kind k, char* buf, size_t cap) {
+    sel_uim_dlg_mui_gadgets(k, buf, cap);
+    return buf;
+}
+
 static int mui_engine_line(mui_state* s, const char* line) {
     char pool[512];
     int ok = line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
@@ -601,6 +608,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
 #define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
 #define CTL_NAME_STR 0x280EL   /* I1337b: the name prompt's String (Rename, New Playlist, New Folder, Song Information notes) */
+#define CTL_WIN_CLOSE 0x280FL /* I1366: the close button of the borderless main window (no gadget there); asks to quit like Esc */
 #define CTL_DLG_CLOSE 0x2809L /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
@@ -1034,7 +1042,10 @@ static Object* mui_aatext(const char* contents, int tone, int align, int hidden)
 /* I730: the one constructor of every dialog window (Settings, Help, the Commands palette). The attributes come from
  * mui_dialog_attrs: on the own screen the window is borderless, untitled, centred and fixed, and the root gets our flat header
  * row (title text + close button; the button takes Esc); on Workbench it keeps the normal borders and title. No per-dialog copy. */
-static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
+/* I1365: the Commands palette takes this share of the screen width (the Mac palette is 560 px, 87% of a 640 px screen), so command names and hints are not cut. */
+#define MUI_PALETTE_W_PCT 88
+
+static Object* mui_dialog_window_w(const char* title, ULONG id, Object* root, int width_pct) {
     mui_window_attrs_t da;
     Object *win, *content = root;
     mui_dialog_attrs(g_scr != NULL, &da);
@@ -1059,7 +1070,7 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
         if (close == NULL || hdr == NULL || col == NULL) {
             return NULL;
         }
-        DoMethod(hdr, OM_ADDMEMBER, mui_aatext(title, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(hdr, OM_ADDMEMBER, mui_aatext_whole(title, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT)); /* I1369: a headline is never cut; the ellipsis text opens at three dots wide */
         DoMethod(hdr, OM_ADDMEMBER, close);
         DoMethod(col, OM_ADDMEMBER, hdr);
         DoMethod(col, OM_ADDMEMBER, root);
@@ -1067,7 +1078,8 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
         win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG)NULL, MUIA_Window_ID, id, MUIA_Window_Borderless, (ULONG)da.borderless,
                             MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget, MUIA_Window_SizeGadget, (ULONG)da.sizegadget,
                             MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered,
-                            MUIA_Window_TopEdge, MUIV_Window_TopEdge_Centered, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
+                            MUIA_Window_TopEdge, MUIV_Window_TopEdge_Centered, MUIA_Window_RootObject, (ULONG)content,
+                            width_pct > 0 ? MUIA_Window_Width : TAG_IGNORE, (ULONG)MUIV_Window_Width_Screen(width_pct), TAG_DONE);
         if (win != NULL) {
             DoMethod(close, MUIM_Notify, MUIA_Pressed, FALSE, win, 3, MUIM_Set, MUIA_Window_Open, FALSE);
         }
@@ -1075,7 +1087,12 @@ static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
     }
     return MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, da.titled ? (ULONG)mui_l1_keep(title) : (ULONG)NULL, MUIA_Window_ID, id,
                          MUIA_Window_Borderless, (ULONG)da.borderless, MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget,
-                         MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
+                         MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content,
+                         width_pct > 0 ? MUIA_Window_Width : TAG_IGNORE, (ULONG)MUIV_Window_Width_Screen(width_pct), TAG_DONE);
+}
+
+static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
+    return mui_dialog_window_w(title, id, root, 0);
 }
 
 static Object* mui_make_text_al(mui_state* s, uint32_t attr, const char* initial, mui_label label, int align) {
@@ -1569,6 +1586,45 @@ static Object* mui_topbar_group(mui_state* s) {
     return g;
 }
 
+/* I1366: the borderless main window (D-M4-3) has no close gadget, so a Close button sits in the upper left corner, left of the top bar.
+ * One row with the top bar on RTG; on the bitmap tier the top bar is hidden and the row holds the button alone. A press asks the quit confirm
+ * through the Esc requester (mui_io_new_input).
+ * I1370: the row is a child of the root VGroup, and MUI caps a vertical group's maximum width at its children's smallest maximum, so the row
+ * must stay unbounded or the window cannot open full width (D-M4-3). The top bar is unbounded only while it is shown and filled (RTG tier and
+ * lay.show[TOPBAR]); otherwise the row holds the lone button, MUI sized the window to its minimum (519 of 800, rig 8) and centred the button.
+ * The unbounded spacer after the top bar is shown exactly then (mui_close_spacer_sync), so a visible top bar keeps its own centring. */
+static Object* mui_close_row(mui_state* s, Object* top) {
+    Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* b = mui_make_button_i("Close", "Close", "close", NULL, CTL_WIN_CLOSE, 0, 1, MUI_AA_ROLE_NORMAL);
+    if (row == NULL || b == NULL) {
+        return top;
+    }
+    DoMethod(row, OM_ADDMEMBER, b);
+    DoMethod(row, OM_ADDMEMBER, top);
+    s->close_spacer = MUI_NewObject((char*)MUIC_Rectangle, MUIA_ShowMe, (ULONG)!g_screen_rtg, TAG_DONE);
+    if (s->close_spacer != NULL) {
+        DoMethod(row, OM_ADDMEMBER, s->close_spacer);
+    }
+    return row;
+}
+
+/* I1370: show the Close row's spacer while the top bar beside the button is hidden or empty (see mui_close_row). */
+static void mui_close_spacer_sync(mui_state* s) {
+    if (s->close_spacer != NULL) {
+        set(s->close_spacer, MUIA_ShowMe, (g_screen_rtg && s->lay.show[MUI_SLOT_TOPBAR]) ? FALSE : TRUE);
+    }
+}
+
+/* I1371: the gap between the buttons of one tool row. A plain MUI group takes its spacing from the MUI preferences (16 px with the UP-MCC
+ * theme), so the 7 buttons of a row were 96 px wider than the design: the main page asked 515 px and the open ladder refused step 0 on an
+ * 800 px screen. Buttons inside a card sit one spacing unit apart (mui_aa_panel_gap, role Raised), the same rule the card layout hook applies
+ * to the children it lays out itself. */
+static LONG mui_tool_row_gap(void) {
+    int gx, gy;
+    mui_aa_panel_gap(g_tokens, (int)g_pixel_aspect_q8, MUI_AA_PANEL_RAISED, &gx, &gy);
+    return (LONG)gx;
+}
+
 /* MUI-P4: the tool rows above the list: the search String (the command line is a popup, I1337), the like button, the rating and subsong Cycles,
  * the queue and playlist actions of the cursor row, and Clear Library (confirmed by a MUI_Request). */
 static Object* mui_tool_group(mui_state* s) {
@@ -1577,8 +1633,8 @@ static Object* mui_tool_group(mui_state* s) {
      * since I1337 moved the command line to a popup, r1 would be a Group with no children: MUI 3.8 cannot lay one out, the whole
      * window layout fails and every object keeps a 0x0 box at 0,0 (stray list header at the top left, empty panes). */
     Object* r1 = g_screen_rtg ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    Object* r3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)mui_tool_row_gap(), MUIA_UserData, UPV_Panel_KeepSpacing, TAG_DONE);
+    Object* r3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, (ULONG)mui_tool_row_gap(), MUIA_UserData, UPV_Panel_KeepSpacing, TAG_DONE);
     uint32_t i;
     if (g == NULL || (!g_screen_rtg && r1 == NULL) || r2 == NULL || r3 == NULL) {
         return NULL;
@@ -2277,7 +2333,14 @@ static Object* mui_main_pages(mui_state* s, Object* np_page) {
         DoMethod(viz_g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* I1307: unbounded page height */
     }
     DoMethod(trk_g, OM_ADDMEMBER, rows != NULL ? rows : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
-    DoMethod(pages, OM_ADDMEMBER, list_g);
+    /* I1358: the list page stacks the toolbar, crumb row, state line, mode, scope and facet rows and the list, and each row shows once data
+     * arrives (crumb row, facet row): its minimum grew 179 -> 207 -> 227 after the window opened, so on a 640x256 AGA screen the root minimum
+     * passed the screen and MUI 3.8 closed the window. The ladder only checks the minimum at open time. The page scrolls on a compact
+     * screen (mui_scroll_page, as the Now Playing page, I1350), so no later row can raise the window minimum. */
+    {
+        Object* list_wrap = mui_scroll_page(list_g, 0);
+        DoMethod(pages, OM_ADDMEMBER, list_wrap != NULL ? list_wrap : list_g);
+    }
     DoMethod(pages, OM_ADDMEMBER, viz_g);
     DoMethod(pages, OM_ADDMEMBER, trk_g);
     /* I960a/c: page MUI_PANE_NOWPLAYING is the compact Now Playing group; the full class keeps an empty page so the page index exists. */
@@ -3291,7 +3354,7 @@ static void mui_palette_show(mui_state* s) {
         }
         DoMethod(str_g, OM_ADDMEMBER, s->pal_str);
         DoMethod(str_g, OM_ADDMEMBER, lst_g);
-        s->pal_win = mui_dialog_window("Selecta Command Palette", 0x50414C54UL, str_g);
+        s->pal_win = mui_dialog_window_w("Selecta Command Palette", 0x50414C54UL, str_g, MUI_PALETTE_W_PCT);
         if (s->pal_win == NULL) {
             return;
         }
@@ -3366,9 +3429,9 @@ static void mui_song_menu_fire(mui_state* s, uint32_t item) {
         }
     }
     if (item == 4u && !on_queue) {
-        char msg[200];
+        char msg[200], gad[32];
         mui_confirm_text(0, mui_base_name(path), 0, 0, msg, sizeof msg);
-        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Remove|Cancel", "%s", (ULONG)msg) != 1) {
+        if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_REMOVE, gad, sizeof gad), "%s", (ULONG)msg) != 1) {
             return;
         }
     }
@@ -3702,9 +3765,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_CLEARLIB: {
         /* MUI-P4-12: the confirm text is shared; MUI_Request returns 1 for the first (Clear) button. */
-        char msg[200];
+        char msg[200], gad[32];
         mui_confirm_text(1, "Clear Library", 0, 0, msg, sizeof msg);
-        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Clear|Cancel", "%s", (ULONG)msg) == 1 && mui_engine_line(s, mui_confirm_line(1))) {
+        if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_CLEAR, gad, sizeof gad), "%s", (ULONG)msg) == 1 && mui_engine_line(s, mui_confirm_line(1))) {
             mui_p4_note(s, which, mui_confirm_line(1));
         }
         break;
@@ -3967,7 +4030,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_aabtn_set_alt(s->side_expand_btn, s->lay.side_wide != 0u);
             mui_sidebar_refresh(s);
         } else {
-            mui_engine_line(s, mui_door_line(3)); /* the header and the kind chips open the playlists page (I673) */
+            mui_control_fire(s, CTL_DOOR_BASE + 3); /* the header opens the playlists page through the Playlists door (I673); I1362: also shows the list pane, the bare engine line changed nothing visible from Queue or Now Playing */
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the history entry is the door's lines (I794) */
@@ -4096,6 +4159,7 @@ static void mui_apply_layout(mui_state* s) {
         /* I615d (design 8.2): the top bar takes the height of its children (VertWeight 0), the body the rest. */
         set(s->slot[i], MUIA_VertWeight, i == MUI_SLOT_TOPBAR ? 0 : s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
     }
+    mui_close_spacer_sync(s);
     if (s->np_btn != NULL) {
         set(s->np_btn, MUIA_ShowMe, mui_np_toggle_shown(&s->lay) ? TRUE : FALSE); /* the panel exists only at three columns (Mac R3) */
     }
@@ -4213,7 +4277,7 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_FONT TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
-                Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
+                Child, (s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s), wattr.borderless ? mui_close_row(s, s->slot[MUI_SLOT_TOPBAR]) : s->slot[MUI_SLOT_TOPBAR]),
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1),
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(s, g_screen_rtg),
@@ -4348,7 +4412,23 @@ static void mui_dbl_race_inject(mui_state* s) {
 
 static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     ULONG got = 0;
-    LONG id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
+    LONG id;
+    (void)mui_keys_esc_seen();
+    id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
+    if ((mui_keys_esc_seen() && id == (LONG)MUIV_Application_ReturnID_Quit) || id == CTL_WIN_CLOSE) {
+        /* I1359: the Quit is MUI's Esc-to-CloseRequest on the main window. Esc asks before it quits, as the desktop UI does
+         * (I623 dlg_open_quit, text from the uimodel dialog table). Cancel re-arms the close notify and drops the Quit.
+         * I1366: the Close button (CTL_WIN_CLOSE) takes the same path; Quit turns its id into the application Quit. */
+        LONG was_close = (id == CTL_WIN_CLOSE);
+        char gad[32];
+        mui_state* s = (mui_state*)ctx;
+        if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_QUIT, gad, sizeof gad), "%s", (ULONG)sel_uim_dlg_text(SEL_UIM_DLG_QUIT)) != 1) {
+            SetAttrs(s->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE);
+            id = 0;
+        } else if (was_close) {
+            id = (LONG)MUIV_Application_ReturnID_Quit;
+        }
+    }
     *sigs = (uint32_t)got;
     mui_check_resize((mui_state*)ctx);
     if (id >= MENU_ID_BASE && id < MENU_ID_BASE + (LONG)g_menu_n) {

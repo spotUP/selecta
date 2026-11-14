@@ -11,7 +11,7 @@
 
 static const char* const k_actions[] = {
     "quit",       "info",       "command",      "palette",       "help",         "add_file",
-    "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
+    "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",   "focus_region",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
     "library",    "search",       "show_list",    "folders",     "home",
     "stats",      "forward",    "lib_mode",   "queue_scope", "settings",
@@ -138,7 +138,7 @@ static const struct {
     {"Home", "VIEW_CURSOR top"}, {"End", "VIEW_CURSOR bottom"},
     {"Enter", "VIEW_ACTIVATE"}, {"y", "@next_style"},
     {"g", "@next_group"},      {"Backspace", "@back"},
-    {"Tab", "@switch_view"},   {"Space", "@play_pause"},
+    {"Tab", "@focus_region"}, {"V", "@switch_view"},   {"Space", "@play_pause"},
     {"s", "STOP"},             {"n", "NEXT"},
     {"p", "PREV"},             {"Left", "@page_up"},
     {"Right", "@page_down"},   {"[", "@subsong_prev"},

@@ -180,6 +180,19 @@ static void push_timed_events(const char* list) {
     SDL_free(buf);
 }
 
+/* I1164a: with SELECTA_SDL_TEST_READY set the timed list counts from the second presented frame (the first is the open-time frame; the first pump with a real db takes ~24 s),
+ * not from the window open; prints `ready` on stderr when it arms. */
+void desk_sdl_test_ready(desk_sdl* b) {
+    static int done, seen;
+    (void)b;
+    if (done || ++seen < 2 || getenv("SELECTA_SDL_TEST_READY") == NULL) {
+        return;
+    }
+    done = 1;
+    fprintf(stderr, "ready\n");
+    push_timed_events(getenv("SELECTA_SDL_TEST_TIMED"));
+}
+
 void desk_sdl_default_size(int32_t* w, int32_t* h) {
     const char* env = getenv("SELECTA_SDL_SCREEN");
     int ew, eh;
@@ -221,7 +234,9 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     }
     SDL_StartTextInput(b->window); /* typed characters arrive as SDL_EVENT_TEXT_INPUT, layout and shift already applied */
     push_test_events(getenv("SELECTA_SDL_TEST_EVENTS"));
-    push_timed_events(getenv("SELECTA_SDL_TEST_TIMED"));
+    if (getenv("SELECTA_SDL_TEST_READY") == NULL) {
+        push_timed_events(getenv("SELECTA_SDL_TEST_TIMED"));
+    } /* else desk_sdl_test_ready arms them at the second presented frame (I1164a) */
     return b;
 }
 

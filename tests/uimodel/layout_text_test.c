@@ -1,5 +1,5 @@
 /* I1222c: the text tier's layout (SEL_UIM_TIER_TEXT) in cells, per thoughts/shared/research/2026-11-09-text-frame-design.md sections 3
- * and 7: three columns from 80 cols up (sidebar 20, main the rest, detail 30; 26 and 34 from 120 cols), an icon rail from 60 cols, the
+ * and 7: three columns from 120 cols (sidebar 26, detail 34), two columns from 80 cols (sidebar 20, no detail), an icon rail from 60 cols, the
  * player alone below, a 1 row top bar, the player 2 rows (1 row at 25 rows and below), no hints region. */
 #include <selecta/uimodel.h>
 
@@ -79,18 +79,18 @@ static void size(const char* tag, uint32_t cols, uint32_t rows, uint32_t expand,
 int main(void) {
     uint32_t c, r;
     sel_uim_layout l;
-    const uint32_t T = SEL_UIM_BP_THREE_COLUMN, I = SEL_UIM_BP_ICON_SIDEBAR, M = SEL_UIM_BP_MINI_SUGGESTION;
+    const uint32_t T = SEL_UIM_BP_THREE_COLUMN, W = SEL_UIM_BP_TWO_COLUMN, I = SEL_UIM_BP_ICON_SIDEBAR, M = SEL_UIM_BP_MINI_SUGGESTION;
     /*   tag               cols rows exp hid bp  side main detail tb player main_h */
     size("160x50",         160, 50, 0, 0, T, 26, 100, 34, 1, 2, 47);
     size("120x40",         120, 40, 0, 0, T, 26, 60, 34, 1, 2, 37);
     size("120x40 hidden",  120, 40, 0, 1, T, 26, 94, 0, 1, 2, 37);
-    size("120x40 expanded", 120, 40, 1, 0, T, 48, 38, 34, 1, 2, 37);
-    size("100x30",         100, 30, 0, 0, T, 20, 50, 30, 1, 2, 27);
-    size("80x25",          80, 25, 0, 0, T, 20, 30, 30, 1, 1, 23);
-    size("80x24",          80, 24, 0, 0, T, 20, 30, 30, 1, 1, 22);
-    size("80x32 Amiga",    80, 32, 0, 0, T, 20, 30, 30, 1, 2, 29);
-    size("80x25 hidden",   80, 25, 0, 1, T, 20, 60, 0, 1, 1, 23);
-    size("80x25 expanded", 80, 25, 1, 0, T, 20, 30, 30, 1, 1, 23);
+    size("120x40 expanded", 120, 40, 1, 0, T, 48, 40, 32, 1, 2, 37);
+    size("100x30",         100, 30, 0, 0, W, 20, 80, 0, 1, 2, 27);
+    size("80x25",          80, 25, 0, 0, W, 20, 60, 0, 1, 1, 23);
+    size("80x24",          80, 24, 0, 0, W, 20, 60, 0, 1, 1, 22);
+    size("80x32 Amiga",    80, 32, 0, 0, W, 20, 60, 0, 1, 2, 29);
+    size("80x25 hidden",   80, 25, 0, 1, W, 20, 60, 0, 1, 1, 23);
+    size("80x25 expanded", 80, 25, 1, 0, W, 32, 48, 0, 1, 1, 23);
     size("60x24",          60, 24, 0, 0, I, 3, 57, 0, 1, 1, 22);
     size("50x20",          50, 20, 0, 0, M, 0, 0, 0, 0, 1, 0);
     /* The layout check holds at every size from 40x12 to 200x60, expanded or not, detail shown or hidden. */

@@ -3,6 +3,7 @@
 
 #include "dir.h"
 #include "md5.h"
+#include "../engine/claims.h"
 #include "net/net.h"
 #include "source.h"
 #include "zip_member.h"
@@ -10,6 +11,7 @@
 #include <selecta/engine.h>
 #include <selecta/machine.h>
 #include <selecta/plugin.h>
+#include <selecta/registry.h>
 #include <selecta/replayer.h>
 #include <selecta/tags.h>
 
@@ -520,9 +522,13 @@ unsigned sel_content_companion_names(sel_cache* c, const char* path, const uint8
     hn = c->registry_count();
     for (i = 0; i < hn && (data != NULL ? n < max : 1); i++) {
         const sel_tag* hooks = content_hook_list(c, i);
-        sel_rp_content_companions_fn fn =
-            hooks != NULL ? (sel_rp_content_companions_fn)sel_tag_find(hooks, SEL_RP_CONTENT_COMPANIONS, 0) : NULL;
+        sel_rp_content_companions_fn fn = NULL;
         unsigned got, k;
+
+        if (sel_hooks_has(hooks, SEL_RP_CONTENT_COMPANIONS)) {
+            hooks = sel_plugin_resolve(hooks); /* I1193b-M1: the hook pointer lives in the module */
+            fn = hooks != NULL ? (sel_rp_content_companions_fn)sel_tag_find(hooks, SEL_RP_CONTENT_COMPANIONS, 0) : NULL;
+        }
 
         if (fn == NULL || fn(base_c, NULL, 0, NULL, 0, c->hook_host) == 0) {
             continue;

@@ -1,7 +1,8 @@
 # dui-styles (DUI-P4-4): the engine view styles grid, coverflow and compact. -DSELECTA -DSONGS -DWORK
 # 1. VIEW_STYLE grid, coverflow and compact are accepted on the desktop UI (it offers them through SEL_UI_VIEW_STYLES).
 # 2. The rows carry artwork ids: albums.id of each fixture song's album (the songs fixture/1..5 (1.mod 2.mod 3.xm 4.it 5.sid) sit on albums 1,2,3,4,1).
-# 3. The text UI offers the classic three styles only: VIEW_STYLE grid is refused with the existing unsupported_style error.
+# 3. The text UI offers every style since I1186 (7e2e7884), so VIEW_STYLE grid is accepted there; an unknown style is refused with
+#    the unsupported_style error (a UI offering only the classic three is covered by tests/view/view_test.c).
 # The desktop draws grid and coverflow as artwork tiles (DUI-P4-5, test dui-grid-coverflow); compact stays a list.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -60,8 +61,12 @@ foreach(style grid coverflow compact)
 endforeach()
 
 style_run(text text grid)
-if(NOT text MATCHES "error unsupported_style grid")
-  message(FATAL_ERROR "text UI should refuse VIEW_STYLE grid with the existing unsupported_style error:\n${text}")
+if(text MATCHES "unsupported_style")
+  message(FATAL_ERROR "text UI should accept VIEW_STYLE grid since I1186:\n${text}")
+endif()
+style_run(textbad text nonsense)
+if(NOT textbad MATCHES "error unsupported_style nonsense")
+  message(FATAL_ERROR "text UI should refuse an unknown VIEW_STYLE with the unsupported_style error:\n${textbad}")
 endif()
 style_run(textok text tree)
 if(textok MATCHES "unsupported_style")
