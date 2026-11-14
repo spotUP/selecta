@@ -1532,6 +1532,7 @@ static void cmd_PREF_SET(sel_engine* e, const sel_message* m) {
         }
         sel_library_set_hide_duplicates(e->lib, e->prefs.value[SEL_PREF_LIBRARY_HIDE_DUPLICATES]);
         sel_library_scrape_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_LIBRARY_SCRAPE_ARTWORK], "on") == 0);
+        sel_library_demozoo_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_ART_DEMOZOO], "on") == 0);
     }
     emit_pref(e, sel_prefs_find(m->args[0].v.s));
 }
@@ -11421,6 +11422,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
             sel_library_set_sources_off(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
             sel_library_set_hide_duplicates(e->lib, e->prefs.value[SEL_PREF_LIBRARY_HIDE_DUPLICATES]);
             sel_library_scrape_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_LIBRARY_SCRAPE_ARTWORK], "on") == 0);
+        sel_library_demozoo_set_enabled(e->lib, strcmp(e->prefs.value[SEL_PREF_ART_DEMOZOO], "on") == 0);
         }
         sel_devilbox_set_config_dir(e->config_dir);
         sel_library_rating_push(e->lib); /* ratings left over from a run without the server (I173, I173c) */
@@ -11749,6 +11751,7 @@ static void refresh_snapshot(sel_engine* e) {
         e->panel_rows = 0;
         e->panel[0] = '\0';
         if (e->lib != NULL && sl->path != NULL) {
+            sel_library_demozoo_kick(e->lib, sl->path); /* I1303c: queued on the job thread, never a wait here */
             e->rdp_next_state = sl->rp_state; /* I906d: a posted read, never a wait on this thread */
             snprintf(e->rdp_next_path, sizeof e->rdp_next_path, "%s", sl->path);
             panel_post(e);

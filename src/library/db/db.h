@@ -609,6 +609,13 @@ typedef struct sel_scrape_stats {
     uint32_t errors;    /* passes ended by a network failure */
     uint32_t requests;  /* HTTP requests sent (the sentinel) */
 } sel_scrape_stats;
+/* I1303c: Demozoo screenshots as the cover of a Modland song without album art (design section "Demozoo slide show"). _demozoo_kick(ref)
+ * queues one lookup for the song (queue path or key; any non-modland song is ignored) on the same job thread: GET <hippoplayer.se>/api/demozoo/lookup,
+ * then the screenshots from media.demozoo.org, stored as artwork rows of sel_art_dz_id(key): 'cover' = first, 'dz1'... = the rest,
+ * 'dz_video' = the Watch demo link, 'dz_miss' = epoch seconds of a definite miss (retried after SEL_ART_SCRAPE_RETRY_DAYS). SEL_ART_FIND falls
+ * back to that id for a song with no album. Base URL SELECTA_ART_DZ_URL. Off when _demozoo_set_enabled(0) (pref art.demozoo) or SELECTA_ART_SCRAPE=off. */
+void sel_library_demozoo_set_enabled(sel_library* lib, int on);
+void sel_library_demozoo_kick(sel_library* lib, const char* ref);
 void sel_library_scrape_set_enabled(sel_library* lib, int on);
 void sel_library_scrape_kick(sel_library* lib);
 int sel_library_scrape_poll(sel_library* lib);
