@@ -1948,6 +1948,14 @@ static int cover_draw(desk* d, sel_gui_rect ar, const char* key, int32_t radius)
         return 0;
     }
     sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
+    if (ar.w > DESK_ART_TILE_EDGE) { /* I1384d: a big view draws the cover decoded at its own pixel size; the tile shows until it lands */
+        const uint32_t* big = art_big(d->art, key, ar.w);
+        if (big != NULL) {
+            sel_gui_blit_image_round(d->canvas, ar, big, ar.w, ar.w, ar.w, radius);
+            sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
+            return 1;
+        }
+    }
     sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, radius);
     sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
     return 1;

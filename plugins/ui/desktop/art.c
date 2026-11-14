@@ -35,7 +35,25 @@ typedef struct art_job {
     uint32_t gen; /* the table generation the job started in (art_forget_misses moves it) */
 } art_job;
 
+#define ART_BIG 4u /* big covers kept: one per view size (song panel, Now Playing) */
+/* I1384d: a cover decoded from the stored full image at the size a big view draws it (tiles stay 144). px NULL: decode failed. */
+typedef struct art_big_entry {
+    int64_t album;
+    int32_t edge;
+    uint32_t* px;
+} art_big_entry;
+typedef struct art_big_job {
+    const sel_ui_art* src;
+    int64_t album;
+    int32_t edge;
+    uint32_t* px;
+} art_big_job;
+
 struct desk_art {
+    art_big_entry big[ART_BIG];
+    uint32_t big_n, big_next;
+    art_big_job* bjob; /* the running big decode, NULL when idle */
+    void* bth;
     const sel_ui_art* src;
     sel_gui_art_cache* cache;
     art_entry entry[ART_TITLES];
@@ -89,6 +107,14 @@ void art_close(desk_art* a) {
     if (a == NULL) {
         return;
     }
+    if (a->bjob != NULL) {
+        art_thread_join(a->bth);
+        free(a->bjob->px);
+        free(a->bjob);
+    }
+    for (i = 0; i < a->big_n; i++) {
+        free(a->big[i].px);
+    }
     if (a->job != NULL) {
         art_thread_join(a->th); /* shutdown: the batch is dropped, not merged */
         job_free(a->job);
@@ -136,6 +162,31 @@ static uint8_t* fetch(const sel_ui_art* src, int64_t album, const char* kind, ui
     return buf;
 }
 
+/* I1384c: the whole picture fits the edge x edge square `px`, aspect kept, black bars on the short side: Demozoo screenshots are wide
+ * (360x284) and a centre crop cut off their sides. Square album covers fill it. 0 on out of memory. */
+static int fit_square(const uint32_t* img, int32_t w, int32_t h, uint32_t* px, int32_t edge) {
+    int32_t fw = w >= h ? edge : (int32_t)((int64_t)edge * w / h);
+    int32_t fh = w >= h ? (int32_t)((int64_t)edge * h / w) : edge;
+    uint32_t* sq;
+    int32_t y, x;
+
+    if (fw < 1) fw = 1;
+    if (fh < 1) fh = 1;
+    sq = (uint32_t*)malloc((size_t)fw * (size_t)fh * sizeof *sq);
+    if (sq == NULL) {
+        return 0;
+    }
+    sel_gui_image_scale(img, w, h, sq, fw, fh);
+    for (y = 0; y < edge * edge; y++) px[y] = 0xFF000000u;
+    for (y = 0; y < fh; y++) {
+        for (x = 0; x < fw; x++) {
+            px[(size_t)(y + (edge - fh) / 2) * (size_t)edge + (size_t)(x + (edge - fw) / 2)] = sq[(size_t)y * (size_t)fw + (size_t)x];
+        }
+    }
+    free(sq);
+    return 1;
+}
+
 /* Worker side. Thumb row first; else decode the cover, scale it to the tile size and write the thumb row back. Fills `px`
  * (DESK_ART_TILE_EDGE squared); 0 when the album has no usable cover. */
 static int load_album(art_job* j, int64_t album, const char* thumb_kind, uint32_t* px) {
@@ -157,31 +208,14 @@ static int load_album(art_job* j, int64_t album, const char* thumb_kind, uint32_
         uint32_t* img = desk_image_decode(blob, len, &w, &h);
         free(blob);
         if (img != NULL) {
-            /* I1384c: the whole picture fits the square, aspect kept, black bars on the short side: Demozoo screenshots are
-             * wide (360x284) and a centre crop cut off their sides. Square album covers fill the tile as before. */
-            int32_t fw = w >= h ? DESK_ART_TILE_EDGE : (int32_t)((int64_t)DESK_ART_TILE_EDGE * w / h);
-            int32_t fh = w >= h ? (int32_t)((int64_t)DESK_ART_TILE_EDGE * h / w) : DESK_ART_TILE_EDGE;
-            uint32_t* sq = (uint32_t*)malloc((size_t)(fw > 0 ? fw : 1) * (size_t)(fh > 0 ? fh : 1) * sizeof *sq);
             uint8_t* out = (uint8_t*)malloc(ART_THUMB_MAX);
-            int32_t y, x;
             j->decodes++;
-            if (fw < 1) fw = 1;
-            if (fh < 1) fh = 1;
-            if (sq != NULL && out != NULL) {
-                sel_gui_image_scale(img, w, h, sq, fw, fh);
-                for (y = 0; y < DESK_ART_TILE_EDGE * DESK_ART_TILE_EDGE; y++) px[y] = 0xFF000000u;
-                for (y = 0; y < fh; y++) {
-                    for (x = 0; x < fw; x++) {
-                        px[(size_t)(y + (DESK_ART_TILE_EDGE - fh) / 2) * DESK_ART_TILE_EDGE + (size_t)(x + (DESK_ART_TILE_EDGE - fw) / 2)] =
-                            sq[(size_t)y * (size_t)fw + (size_t)x];
-                    }
-                }
+            if (out != NULL && fit_square(img, w, h, px, DESK_ART_TILE_EDGE)) {
                 len = sel_gui_thumb_pack(px, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, out, ART_THUMB_MAX);
                 if (len > 0u) {
                     j->src->put(j->src->ctx, album, thumb_kind, out, len);
                 }
             }
-            free(sq);
             free(out);
             free(img);
             return 1;
@@ -365,9 +399,76 @@ void art_load(desk_art* a, const char* const* titles, uint32_t n) {
     job_start(a);
 }
 
+/* Caller side: files the finished big decode (a failure too, so it is not retried every frame). */
+static void big_merge(desk_art* a) {
+    art_big_job* b = a->bjob;
+    art_big_entry* e = &a->big[a->big_n < ART_BIG ? a->big_n++ : a->big_next++ % ART_BIG];
+
+    free(e->px);
+    e->album = b->album;
+    e->edge = b->edge;
+    e->px = b->px;
+    free(b);
+    a->bjob = NULL;
+    a->bth = NULL;
+}
+
+static void big_worker(void* ctx) {
+    art_big_job* b = (art_big_job*)ctx;
+    uint32_t len = 0u;
+    uint8_t* blob = fetch(b->src, b->album, "cover", &len);
+
+    if (blob != NULL) {
+        int32_t w = 0, h = 0;
+        uint32_t* img = desk_image_decode(blob, len, &w, &h);
+        free(blob);
+        if (img != NULL) {
+            b->px = (uint32_t*)malloc((size_t)b->edge * (size_t)b->edge * sizeof *b->px);
+            if (b->px != NULL && !fit_square(img, w, h, b->px, b->edge)) {
+                free(b->px);
+                b->px = NULL;
+            }
+            free(img);
+        }
+    }
+}
+
+const uint32_t* art_big(desk_art* a, const char* title, int32_t edge) {
+    art_entry* e;
+    art_big_job* b;
+    uint32_t i;
+
+    if (a == NULL || edge <= DESK_ART_TILE_EDGE || edge > 2048 || (e = find_entry(a, title)) == NULL || e->album == 0) {
+        return NULL;
+    }
+    for (i = 0; i < a->big_n; i++) {
+        if (a->big[i].album == e->album && a->big[i].edge == edge) {
+            return a->big[i].px;
+        }
+    }
+    if (a->bjob == NULL && (b = (art_big_job*)calloc(1, sizeof *b)) != NULL) {
+        b->src = a->src;
+        b->album = e->album;
+        b->edge = edge;
+        a->bjob = b;
+        a->bth = art_thread_start(big_worker, b);
+        if (a->bth == NULL) { /* no thread (Amiga): ran inline */
+            big_merge(a);
+            return art_big(a, title, edge);
+        }
+    }
+    return NULL;
+}
+
 int art_pump(desk_art* a) {
+    int got = 0;
+    if (a != NULL && a->bjob != NULL && art_thread_done(a->bth)) {
+        art_thread_join(a->bth);
+        big_merge(a);
+        got = 1;
+    }
     if (a == NULL || a->job == NULL || !art_thread_done(a->th)) {
-        return 0;
+        return got;
     }
     art_thread_join(a->th); /* finished: returns at once */
     job_merge(a);
@@ -376,7 +477,7 @@ int art_pump(desk_art* a) {
 }
 
 int art_busy(const desk_art* a) {
-    return a != NULL && (a->job != NULL || a->pend_n > 0u);
+    return a != NULL && (a->job != NULL || a->pend_n > 0u || a->bjob != NULL);
 }
 
 uint32_t art_batches(const desk_art* a) {
