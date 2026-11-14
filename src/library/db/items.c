@@ -448,6 +448,8 @@ static const char* drill_sql(uint32_t level) {
         return DRILL_SONG " WHERE s.source=?1 AND s.artist IS NULLIF(?2,'') ORDER BY s.name COLLATE NOCASE, s.id LIMIT ?5 OFFSET ?4";
     case SEL_DRILL_FORMAT_SAMPLE: /* one path of the format, for the family fold: a single index seek */
         return "SELECT IFNULL(path,''),1,NULL,'','' FROM songs WHERE source=?1 AND format IS NULLIF(?2,'') LIMIT 1";
+    case SEL_DRILL_ARTIST_COUNT: /* covering index songs_source_artist; 74 ms warm on 516k Modland songs, once per page open */
+        return "SELECT '',COUNT(*),NULL,'','' FROM (SELECT 1 FROM songs WHERE source=?1 AND artist<>'' GROUP BY artist)";
     case SEL_DRILL_NEW:
         return "SELECT day,n,NULL,'','' FROM source_new WHERE source=?1 ORDER BY day DESC LIMIT ?5 OFFSET ?4";
     default: return NULL;

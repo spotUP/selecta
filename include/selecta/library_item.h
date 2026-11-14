@@ -39,7 +39,8 @@ enum {
     SEL_DRILL_ARTISTS,        /* every artist of the source, A-Z */
     SEL_DRILL_ARTIST_SONGS,   /* songs of artist a */
     SEL_DRILL_NEW,            /* source_new: day, songs added that day, newest day first */
-    SEL_DRILL_FORMAT_SAMPLE   /* one song path of format a (the Platforms fold resolves its family from it) */
+    SEL_DRILL_FORMAT_SAMPLE,  /* one song path of format a (the Platforms fold resolves its family from it) */
+    SEL_DRILL_ARTIST_COUNT    /* I1244: one row, count = distinct non-empty artists of the source (the root page's Artists value) */
 };
 
 /* One row of the list. `key` is the stable id a click routes on (playlist id, album id, artist name, composer canon, source id,
