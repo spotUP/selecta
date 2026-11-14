@@ -1,6 +1,6 @@
 # builtin-modules (I427f, design 2026-10-30-plugin-loader-sdk D6): with SELECTA_PLUGIN_LINK=MODULE the desktop app links
 # no plugin and loads every built-in as a module. -DSELECTA -DNM -DSONG -DMODDIR -DWORK.
-# 1. nm on the selecta binary lists no sel_plugin_* symbol (the plugins are not in the executable).
+# 1. nm on the selecta binary lists no defined sel_plugin_* symbol (the plugins are not in the executable).
 # 2. Modules from MODDIR (SELECTA_BUILTIN_MODULES_DIR): the song opens, a module replayer renders it
 #    (replayer_render_calls >= 1, rendered_frames > 0), no module is reported missing.
 # 3. A MODDIR copy without sel_nowplaying.dylib/.so: the app starts, and the missing module is reported through the
@@ -12,7 +12,9 @@ execute_process(COMMAND "${NM}" -g "${SELECTA}" OUTPUT_VARIABLE syms RESULT_VARI
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "nm failed on ${SELECTA}")
 endif()
-string(REGEX MATCHALL "[^\n]*sel_plugin_[^\n]*" hits "${syms}")
+# Only defined symbols count: the binary calls the core's registry API (sel_plugin_resolve, sel_plugin_owner_id, ...) through
+# the shared selecta_core, which nm lists as undefined ("U", no address). A plugin linked into the executable defines one.
+string(REGEX MATCHALL "[^\n]*[0-9a-fA-F]+ [A-Za-z] _?sel_plugin_[^\n]*" hits "${syms}")
 list(LENGTH hits nhits)
 if(NOT nhits EQUAL 0)
   message(FATAL_ERROR "the selecta binary still links ${nhits} sel_plugin_* symbols:\n${hits}")

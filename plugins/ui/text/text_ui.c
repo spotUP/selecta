@@ -105,6 +105,7 @@ typedef struct tui {
     uint32_t pv_w;      /* I1222i: columns of the main region; pages never draw past it */
     uint32_t ov_x, ov_y, ov_w, ov_h; /* I1222i: overlays (Settings, menu, palette, help) draw inside the main region */
     int detail_off;     /* I1222i: the detail region (Now Playing panel) is closed; `i` toggles it */
+    int info_main;      /* I1382a: without a detail region (80-119 columns) `i` shows the song info in the main area; i or Esc closes */
     uint32_t focus, focus_moves, detail_draws; /* I1222i: region focus (Tab): 0 sidebar, 1 main, 2 detail, 3 player */
     uint32_t player_draws, player_rows, topbar_draws, sidebar_draws;
     uint32_t frames;    /* flushes that wrote bytes */
@@ -1139,7 +1140,13 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     } else if (strcmp(name, "remove_entry") == 0) {
         tui_remove_cursor_entry(u);
     } else if (strcmp(name, "info") == 0) {
-        u->detail_off = !u->detail_off;
+        sel_uim_layout lay;
+        tui_layout(u, &lay);
+        if (tui_region(&lay, "detail") == NULL && !u->detail_off) {
+            u->info_main = !u->info_main;
+        } else {
+            u->detail_off = !u->detail_off;
+        }
     } else if (strcmp(name, "nowplaying") == 0 || strcmp(name, "songinfo") == 0) {
         int want = name[0] == 'n' ? TUI_INFO_NOWPLAYING : TUI_INFO_SONGINFO;
         u->page = u->page == want ? TUI_INFO_NONE : want;
@@ -1147,6 +1154,7 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         u->viz = 0;
     } else if (strcmp(name, "page_close") == 0) {
         u->page = TUI_INFO_NONE;
+        u->info_main = 0;
     } else if (strcmp(name, "si_wrong") == 0 || strcmp(name, "si_skip") == 0 || strcmp(name, "si_save") == 0) {
         /* Mark Wrong, Skip Song, Save Note: the same lines the desktop and MUI buttons send (sel_uim_flag_line). */
         if (u->page == TUI_INFO_SONGINFO) {
@@ -1301,7 +1309,7 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
 
 /* The binding context: the pattern and viz panels replace the list pane. */
 static uint32_t tui_bind_ctx(const tui* u) {
-    if (u->page != TUI_INFO_NONE) {
+    if (u->page != TUI_INFO_NONE || u->info_main) {
         return TXT_CTX_PAGE;
     }
     return (u->pattern || u->viz || u->layout == SEL_UIM_LAYOUT_MINI || u->layout == SEL_UIM_LAYOUT_VISUAL) ? TXT_CTX_PLAYER
@@ -2401,6 +2409,8 @@ static void tui_draw(tui* u) {
         tui_nowplaying_page(u, s);
     } else if (u->page == TUI_INFO_SONGINFO) {
         tui_songinfo_page(u, s);
+    } else if (u->info_main && dr == NULL) {
+        tui_songinfo_tags(u, s, 1u, 2u);
     } else if (u->pattern) {
         tui_pattern_panel(u, s, width);
     } else if (u->viz) {

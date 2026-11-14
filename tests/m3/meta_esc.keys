@@ -1,0 +1,6 @@
+# I1382a metadata-panel: i opens the info panel in the main area (80-119 columns), Escape returns to the list.
+wait 500
+i
+wait 300
+Escape
+wait 300

@@ -19,7 +19,7 @@ void sel_machine_probe_platform(sel_machine_raw* raw) {
     raw->cpu = SEL_CPU_DESKTOP;
     raw->fpu = 1;
     raw->fast_ram = physical_memory();
-    raw->chip_ram = 0;
+    raw->chip_ram = raw->fast_ram; /* I1382b: no chip/fast split on a desktop; chip-RAM sizes (SEL_OUT_MEM_CHIP) fit in any RAM */
     raw->free_ram = raw->fast_ram; /* I1313: physical memory stands in; desktop players never run short */
     raw->tier = SEL_TIER_GPU;
     raw->audio = "coreaudio";

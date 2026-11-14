@@ -2267,6 +2267,7 @@ if(NOT SEL_AMIGA)
       "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_empty.sel"
       "-DSQLITE3=${SEL_SQLITE3_META}"
       "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta.keys"
+      "-DKEYS_ESC=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_esc.keys"
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_screen.screen"
       "-DGOLDEN_LOCAL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_local.screen"
       "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
