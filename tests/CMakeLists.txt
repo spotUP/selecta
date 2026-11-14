@@ -1371,8 +1371,10 @@ add_test(NAME composer-unit COMMAND composer_test)
 
 # I406: the Modules.pl search page parser over the recorded response.
 add_executable(modulespl_parse_test library/modulespl_parse_test.c
-  "${PROJECT_SOURCE_DIR}/plugins/sources/modulespl/modulespl_parse.c")
-target_include_directories(modulespl_parse_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/modulespl)
+  "${PROJECT_SOURCE_DIR}/plugins/sources/modulespl/modulespl_parse.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/xml_scan.c")
+target_include_directories(modulespl_parse_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/modulespl
+  ${PROJECT_SOURCE_DIR}/plugins/shared)
 target_compile_definitions(modulespl_parse_test PRIVATE
   SEL_MODULESPL_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/www.modules.pl/search_chip.html")
 add_test(NAME modulespl-parse COMMAND modulespl_parse_test)
