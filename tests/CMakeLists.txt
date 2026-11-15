@@ -1414,14 +1414,28 @@ add_test(NAME composer-unit COMMAND composer_test)
 add_executable(modulespl_parse_test library/modulespl_parse_test.c
   "${PROJECT_SOURCE_DIR}/plugins/sources/modulespl/modulespl_parse.c"
   "${PROJECT_SOURCE_DIR}/plugins/shared/source/xml_scan.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/uhc_parse.c"
   "${PROJECT_SOURCE_DIR}/plugins/shared/source/json_scan.c")
 target_include_directories(modulespl_parse_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/modulespl
-  ${PROJECT_SOURCE_DIR}/plugins/shared)
+  ${PROJECT_SOURCE_DIR}/plugins/shared ${PROJECT_SOURCE_DIR}/include)
 target_compile_definitions(modulespl_parse_test PRIVATE
   SEL_MODULESPL_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/www.modules.pl/search_chip.html"
   SEL_MODULESPL_UHC_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/uhc.megaburken.net/modulessearch_chip.json")
 add_test(NAME modulespl-parse COMMAND modulespl_parse_test)
 set_tests_properties(modulespl-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "modulespl_parse_ok")
+
+# I1407: the shared UHC remix helper (AmigaRemix, Remix.Kwed.org) over the recorded answers.
+add_executable(uhc_remix_test library/uhc_remix_test.c
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/uhc_remix.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/uhc_parse.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/json_scan.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/url_path.c")
+target_include_directories(uhc_remix_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/shared ${PROJECT_SOURCE_DIR}/include)
+target_compile_definitions(uhc_remix_test PRIVATE
+  SEL_UHC_AR_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/uhc.megaburken.net/amigaremixsearch_turrican.json"
+  SEL_UHC_RKO_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/uhc.megaburken.net/rkosearch_turrican.json")
+add_test(NAME uhc-remix-parse COMMAND uhc_remix_test)
+set_tests_properties(uhc-remix-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "uhc_remix_ok")
 
 # I710ga2: system-file store (resolve by sha256, install raw or from a zip, .part then rename).
 add_executable(sysfile_store_test library/sysfile_store_test.c)
