@@ -137,6 +137,16 @@ uint32_t sel_platform_of_ext(const char* ext) {
     return row >= 0 ? k_chips[row].family : SEL_PLATFORM_FAMILY_MUSIC;
 }
 
+int sel_platform_ext_known(const char* ext) {
+    char f[16];
+
+    if (ext == NULL) {
+        return 0;
+    }
+    sel_platform_lower(f, ext, sizeof f);
+    return ext_row(f) >= 0;
+}
+
 const char* sel_platform_path_ext(const char* name) {
     const char *base, *p, *dot = NULL;
 

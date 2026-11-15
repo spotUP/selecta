@@ -1437,6 +1437,18 @@ target_compile_definitions(uhc_remix_test PRIVATE
 add_test(NAME uhc-remix-parse COMMAND uhc_remix_test)
 set_tests_properties(uhc-remix-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "uhc_remix_ok")
 
+# I1407: the Turran FTP row filter (extension table) over a recorded answer.
+add_executable(turran_row_test library/turran_row_test.c
+  "${PROJECT_SOURCE_DIR}/plugins/sources/turran/turran_row.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/uhc_parse.c"
+  "${PROJECT_SOURCE_DIR}/plugins/shared/source/json_scan.c")
+target_link_libraries(turran_row_test PRIVATE selecta_platform)
+target_include_directories(turran_row_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/shared ${PROJECT_SOURCE_DIR}/plugins/sources/turran ${PROJECT_SOURCE_DIR}/include)
+target_compile_definitions(turran_row_test PRIVATE
+  SEL_TURRAN_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/uhc.megaburken.net/turransearch_mod.json")
+add_test(NAME turran-row COMMAND turran_row_test)
+set_tests_properties(turran-row PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "turran_row_ok")
+
 # I710ga2: system-file store (resolve by sha256, install raw or from a zip, .part then rename).
 add_executable(sysfile_store_test library/sysfile_store_test.c)
 target_link_libraries(sysfile_store_test PRIVATE selecta_shared_cast selecta_library)
