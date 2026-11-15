@@ -40,9 +40,9 @@ static int uhc_read_row(FILE* f, uhc_row* u) {
         if (c == '"') {
             if (strcmp(key, "filename") == 0) {
                 dst = u->file, cap = sizeof u->file;
-            } else if (strcmp(key, "path") == 0) {
+            } else if (strcmp(key, "path") == 0 || strcmp(key, "destfilename") == 0) { /* AMP rows have no path */
                 dst = u->dir, cap = sizeof u->dir;
-            } else if (strcmp(key, "author(s)") == 0 || strcmp(key, "artist(s)") == 0) {
+            } else if (strcmp(key, "author(s)") == 0 || strcmp(key, "artist(s)") == 0 || strcmp(key, "author") == 0) {
                 dst = u->artist, cap = sizeof u->artist;
             } else if (strcmp(key, "title") == 0) {
                 dst = u->title, cap = sizeof u->title;
