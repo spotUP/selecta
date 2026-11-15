@@ -700,6 +700,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-list-regular COMMAND mui_contract_test list-regular)
   add_test(NAME mui-list-tree COMMAND mui_contract_test list-tree)
   add_test(NAME mui-list-drill COMMAND mui_contract_test list-drill)
+  add_test(NAME mui-list-search-fold COMMAND mui_contract_test list-search-fold)
   add_test(NAME mui-columns COMMAND mui_contract_test columns)
   add_test(NAME mui-style-mask COMMAND mui_contract_test style-mask)
   add_test(NAME mui-list-pending COMMAND mui_contract_test list-pending)
@@ -867,7 +868,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-toolrows COMMAND mui_contract_test toolrows)
   add_test(NAME mui-live-guard COMMAND mui_contract_test live-guard)
   add_test(NAME mui-cycle-initial COMMAND mui_contract_test cycle-initial)
-  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-route-keep mui-flag-guard mui-siflags mui-tiles-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-libfilter mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-play-selected mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-sidebar mui-sidebar-bullet-latin1 mui-panes mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-open-compact-reach mui-window-borderless mui-player-bar mui-sidebar-icons mui-compact-rail mui-compact-player mui-player-bar-reach mui-player-band-sizes mui-icon-square mui-subsong-bar mui-viz-chooser mui-overlays mui-dialog-windows mui-tooltip-flat mui-ctxmenu mui-statistics mui-sync-offer PROPERTIES TIMEOUT 30 LABELS mui)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-route-keep mui-flag-guard mui-siflags mui-tiles-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-libfilter mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-search-fold mui-list-pending mui-list-dbl-row mui-play-selected mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-sidebar mui-sidebar-bullet-latin1 mui-panes mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-open-compact-reach mui-window-borderless mui-player-bar mui-sidebar-icons mui-compact-rail mui-compact-player mui-player-bar-reach mui-player-band-sizes mui-icon-square mui-subsong-bar mui-viz-chooser mui-overlays mui-dialog-windows mui-tooltip-flat mui-ctxmenu mui-statistics mui-sync-offer PROPERTIES TIMEOUT 30 LABELS mui)
   # I792: the MUI-vs-Mac parity guard runs in the pre-push gate: nice -n 19 ctest --test-dir build/host -L push-gate
   set_tests_properties(mui-weights mui-doors mui-panes PROPERTIES LABELS "mui;push-gate")
   set(_mui_has_ui 0)
@@ -3498,6 +3499,18 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/library_screen"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/library_screen.cmake")
   set_tests_properties(text-ui-library-screen PROPERTIES LABELS m3)
+endif()
+
+# I1406: text UI search fold (3 rows + Show all / Show less).
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-search-fold
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_fold.tsv"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/search_fold.keys"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/search_fold"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/search_fold.cmake")
+  set_tests_properties(text-ui-search-fold PROPERTIES LABELS m3 TIMEOUT 30)
 endif()
 
 # M3 Phase 4 (I160): T71 rescan and watcher part. A file added to one subdirectory of a fixture copy after

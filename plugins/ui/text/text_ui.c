@@ -413,6 +413,21 @@ static void tui_library_search(tui* u, const char* query) {
     u->lib_empty_query = query[0] == '\0';
 }
 
+/* The search prompt: on the Library screen, or with an empty line, it filters the Library tree; elsewhere a query lists the categorized results (the desktop's Songs, Albums, Artists sections). */
+static void tui_search_submit(tui* u, const char* query) {
+    char line[TXT_CMD_LINE * 2 + 32];
+    if (u->lib_screen || query[0] == '\0' || sel_uim_search_line(query, line, sizeof line) == 0u) {
+        tui_library_search(u, query);
+        return;
+    }
+    u->lib_screen = 0;
+    u->lib_mode_on = 0;
+    tui_send(u, line);
+    tui_send(u, "VIEW_SOURCE search");
+    tui_send(u, "VIEW_WINDOW 256");
+    u->lib_searches++;
+}
+
 static void tui_library_open(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
     if (!u->lib_screen || v == NULL || v->source != SEL_VIEW_QUERY) {
@@ -837,6 +852,90 @@ static int tui_shelf_header_enter(tui* u) {
     return 0;
 }
 
+/* I1406: the categorized search results fold like the desktop's (sel_uim_search_row_folded): each category lists its first rows, then a Show all (n) line.
+ * Enter on the heading toggles it; the cursor steps over the hidden rows. */
+static const sel_view_state* tui_search_view(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    return v != NULL && v->source == SEL_VIEW_SEARCH ? v : NULL;
+}
+
+/* Up or Down in the search results: the cursor goes to the next row a fold leaves visible. 0 when the action is not a one-row step. */
+static int tui_search_step(tui* u, const char* action) {
+    const sel_view_state* v = tui_search_view(u);
+    int dir = strcmp(action, "VIEW_CURSOR +1") == 0 ? 1 : strcmp(action, "VIEW_CURSOR -1") == 0 ? -1 : 0;
+    int64_t at;
+    if (v == NULL || dir == 0 || v->cursor < v->window_start) {
+        return 0;
+    }
+    for (at = (int64_t)(v->cursor - v->window_start) + dir; at >= 0 && at < (int64_t)v->row_n; at += dir) {
+        if (!sel_uim_search_row_folded(v->rows, v->row_n, (uint32_t)at)) {
+            char buf[48];
+            snprintf(buf, sizeof buf, "VIEW_CURSOR %u", (unsigned)(v->window_start + (uint32_t)at));
+            tui_send(u, buf);
+            break;
+        }
+    }
+    return 1;
+}
+
+/* Enter with the cursor on a result category heading toggles Show all / Show less. */
+static int tui_search_fold_enter(tui* u) {
+    const sel_view_state* v = tui_search_view(u);
+    const sel_view_row* r;
+    if (v == NULL || v->cursor < v->window_start || v->cursor - v->window_start >= v->row_n) {
+        return 0;
+    }
+    r = &v->rows[v->cursor - v->window_start];
+    if (r->kind != SEL_ROW_HEADING || sel_uim_search_section_rows(v->rows, v->row_n, v->cursor - v->window_start) <= SEL_UIM_SEARCH_FOLD_ROWS) {
+        return 0;
+    }
+    sel_uim_search_fold_toggle(r->text);
+    return 1;
+}
+
+/* The results list: headings, the unfolded rows, and under a category with more rows than the fold shows its Show all (n) / Show less line. */
+static void tui_search_draw(tui* u, const sel_state* s, uint32_t width) {
+    const sel_view_state* v = s->view;
+    uint32_t i, y = 3u, rows = tui_main_rows(u), head = 0, have_head = 0;
+    char buf[300];
+    for (i = 0; i <= v->row_n && y - 3u < rows; i++) {
+        int end = i == v->row_n;
+        const sel_view_row* r = end ? NULL : &v->rows[i];
+        if ((end || r->kind == SEL_ROW_HEADING) && have_head) {
+            uint32_t n = sel_uim_search_section_rows(v->rows, v->row_n, head);
+            if (n > SEL_UIM_SEARCH_FOLD_ROWS) {
+                if (sel_uim_search_expanded(v->rows[head].text)) {
+                    snprintf(buf, sizeof buf, "    Show less");
+                } else {
+                    snprintf(buf, sizeof buf, "    Show all (%u)", (unsigned)n);
+                }
+                tui_pfill(u, 0, y, width, 1, ' ', tui_style(u, TXT_ROLE_DIM));
+                tui_ptext(u, 1, y++, buf, width - 1u, tui_style(u, TXT_ROLE_DIM));
+            }
+        }
+        if (end || y - 3u >= rows) {
+            break;
+        }
+        if (r->kind == SEL_ROW_HEADING) {
+            head = i;
+            have_head = 1;
+        } else if (sel_uim_search_row_folded(v->rows, v->row_n, i)) {
+            continue;
+        }
+        {
+            int at = v->window_start + i == v->cursor;
+            txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : r->kind == SEL_ROW_HEADING ? TXT_ROLE_LABEL : TXT_ROLE_FILE);
+            if (r->kind == SEL_ROW_HEADING) {
+                snprintf(buf, sizeof buf, "%s", r->text);
+            } else {
+                snprintf(buf, sizeof buf, "  %s%s%s", r->text, r->artist != NULL && r->artist[0] ? "  - " : "", r->artist != NULL ? r->artist : "");
+            }
+            tui_pfill(u, 0, y, width, 1, ' ', st);
+            tui_ptext(u, 1, y++, buf, width - 1u, st);
+        }
+    }
+}
+
 static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
     char buf[320];
     uint32_t i, n, drawn = 0, rows = tui_main_rows(u);
@@ -1251,7 +1350,7 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
     if (u->cmd_mode == 2) { /* the search prompt: an empty line lists all songs */
         u->cmd_mode = 0;
         if (r == TXT_CMD_SUBMIT) {
-            tui_library_search(u, txt_cmdline_text(&u->cmd));
+            tui_search_submit(u, txt_cmdline_text(&u->cmd));
         }
         return;
     }
@@ -1410,7 +1509,7 @@ static void tui_key(tui* u, const txt_key* k) {
         u->dirty = 1;
         return;
     }
-    if (u->pg == TUI_PAGE_NONE && k->code == 13u && k->mods == 0 && (tui_shelf_header_enter(u) || tui_home_tile_enter(u))) {
+    if (u->pg == TUI_PAGE_NONE && k->code == 13u && k->mods == 0 && (tui_shelf_header_enter(u) || tui_home_tile_enter(u) || tui_search_fold_enter(u))) {
         u->key_count++;
         u->dirty = 1;
         return;
@@ -1431,6 +1530,9 @@ static void tui_key(tui* u, const txt_key* k) {
     /* I1222i-2: Tab focus routes the movement keys. The sidebar lists the same view as main (its cursor is the view cursor), so
      * focus 0 and 1 move it; the detail panel and the player have nothing to scroll, so focus 2 and 3 keep these keys. */
     if (u->focus >= 2u && (strncmp(action, "VIEW_CURSOR", 11) == 0 || strcmp(action, "@page_up") == 0 || strcmp(action, "@page_down") == 0)) {
+        return;
+    }
+    if (tui_search_step(u, action)) {
         return;
     }
     if (action[0] == '@') {
@@ -1750,6 +1852,11 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     }
     if (tui_queue_view(v) && v->style >= SEL_VIEW_STYLE_GRID && v->style < SEL_VIEW_STYLE_COUNT) {
         tui_styled_rows(u, s, width);
+        return;
+    }
+    if (v->source == SEL_VIEW_SEARCH) {
+        u->style_drawn = v->style;
+        tui_search_draw(u, s, width);
         return;
     }
     u->style_drawn = v->style;

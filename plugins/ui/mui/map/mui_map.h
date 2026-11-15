@@ -283,6 +283,7 @@ typedef struct mui_list_backend {
 const mui_list_backend* mui_list_backend_pick(int nlist_present, int listtree_present);
 
 #define MUI_LIST_TEXT 160
+#define MUI_ROW_FOLD 0x7fffu /* I1406: kind of the Show all / Show less entry of a folded search category */
 typedef struct mui_list_entry {
     uint32_t index;    /* index in the whole list (window_start + position) */
     uint32_t kind;     /* sel_row_kind */

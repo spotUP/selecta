@@ -81,6 +81,21 @@ uint32_t sel_uim_search_section_rows(const sel_view_row* rows, uint32_t row_n, u
     return k - heading - 1u;
 }
 
+int sel_uim_search_row_folded(const sel_view_row* rows, uint32_t row_n, uint32_t i) {
+    uint32_t h = i;
+    if (rows == NULL || i >= row_n || rows[i].kind == SEL_ROW_HEADING) {
+        return 0;
+    }
+    while (h > 0u && rows[h].kind != SEL_ROW_HEADING) {
+        h--;
+    }
+    if (rows[h].kind != SEL_ROW_HEADING) {
+        return 0; /* rows before any heading */
+    }
+    return i - h > SEL_UIM_SEARCH_FOLD_ROWS && sel_uim_search_section_rows(rows, row_n, h) > SEL_UIM_SEARCH_FOLD_ROWS &&
+           !sel_uim_search_expanded(rows[h].text);
+}
+
 /* The expanded categories of this session: the heading text before its " (n)" count. Full table: further categories stay folded. */
 enum { FOLD_KEYS = 16, FOLD_KEY_LEN = 72 };
 static char fold_open[FOLD_KEYS][FOLD_KEY_LEN];

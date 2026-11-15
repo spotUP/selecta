@@ -123,6 +123,8 @@ int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint
 /* Rows under the heading row at `heading` up to the next heading. */
 uint32_t sel_uim_search_section_rows(const sel_view_row* rows, uint32_t row_n, uint32_t heading);
 int sel_uim_search_expanded(const char* heading);
+/* 1 when row `i` is a result row a folded category hides (past SEL_UIM_SEARCH_FOLD_ROWS under a heading that is not expanded); headings never fold. The text and MUI lists skip these rows. */
+int sel_uim_search_row_folded(const sel_view_row* rows, uint32_t row_n, uint32_t i);
 /* Flips the category of `heading` between folded and expanded. */
 void sel_uim_search_fold_toggle(const char* heading);
 /* Song context menu (DUI-P4-16): five items on every page; item 4 is Remove from Queue on the Queue page. */
