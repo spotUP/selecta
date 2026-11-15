@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "amiga": {
+      "type": "stdio",
+      "command": "/Users/spot/Code/MusicPlayer/scripts/replay-mcp.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}
