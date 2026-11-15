@@ -1092,8 +1092,18 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             }
             t[len] = '\0';
             if (kind == 'S' && !album && !composer && !item) { /* I1387b: a song row's title is shown tidy; its key and artist stay raw */
-                char tidy[SEL_VIEW_FOLDER_NAME];
+                /* a search hit row is "<title>  <artist>": tidy each part alone, else the gap turns off the split of the title */
+                char tidy[SEL_VIEW_FOLDER_NAME], *gap = strstr(t, "  ");
+                size_t tl;
+                if (gap != NULL) {
+                    *gap = '\0';
+                }
                 sel_uim_tidy_title(t, tidy, sizeof tidy);
+                tl = strlen(tidy);
+                if (gap != NULL && tl + 2u < sizeof tidy) {
+                    memcpy(tidy + tl, "  ", 2u);
+                    sel_uim_tidy_title(gap + 2, tidy + tl + 2u, sizeof tidy - tl - 2u);
+                }
                 memcpy(t, tidy, strlen(tidy) + 1u);
             }
             v->frows[n].key = key[0] != '\0' ? key : NULL;

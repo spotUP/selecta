@@ -163,6 +163,21 @@ static void album_id(const sel_host* host) {
     sel_library_close(lib);
 }
 
+/* I1387b: a search hit row is "<title>  <artist>"; the gap must not turn off the split of a run-together title. */
+static void search_hit_tidy(const sel_host* host) {
+    sel_view v;
+    uint32_t i, seen = 0;
+    memset(&v, 0, sizeof v);
+    check(sel_view_init(&v, host, 20u), "search tidy view init");
+    snprintf(v.htext, SEL_VIEW_HOME_TEXT_MAX, "H From Modland (1)\nS modland:x/ThatsALotOfStuff.dmf\tThatsALotOfStuff  CaptainWaffles\n");
+    sel_view_set_home(&v, v.htext);
+    for (i = 0; i < v.frow_n; i++) {
+        seen += v.frows[i].text != NULL && strcmp(v.frows[i].text, "Thats A Lot Of Stuff  CaptainWaffles") == 0;
+    }
+    check(seen == 1u, "search hit title and artist tidied apart");
+    sel_view_free(&v, host);
+}
+
 int main(void) {
     const sel_host* host = sel_host_default();
     sel_library* lib = sel_library_open(host, sel_machine_fake("a060"), 0, ":memory:");
@@ -217,6 +232,7 @@ int main(void) {
     long_artist(host);
     album_id(host);
     play_format_chips(host);
+    search_hit_tidy(host);
     printf(fails ? "home-key: %d failure(s)\n" : "home-key: ok\n", fails);
     return fails ? 1 : 0;
 }
