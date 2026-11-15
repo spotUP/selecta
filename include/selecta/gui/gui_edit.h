@@ -15,7 +15,7 @@ int sel_gui_edit_has(const sel_gui_edit* e);                   /* 1 when a range
 void sel_gui_edit_range(const sel_gui_edit* e, size_t* lo, size_t* hi);
 void sel_gui_edit_set(sel_gui_edit* e, size_t anchor, size_t caret, size_t len);
 void sel_gui_edit_all(sel_gui_edit* e, size_t len);
-void sel_gui_edit_word(sel_gui_edit* e, const char* buf, size_t len, size_t pos); /* double-click: the word at pos */
+void sel_gui_edit_word(sel_gui_edit* e, const char* buf, size_t len, size_t pos); /* word at pos, for a two-click select */
 void sel_gui_edit_move(sel_gui_edit* e, size_t len, int dir, int extend);         /* Left/Right; a plain move collapses a selection to its edge */
 /* Replaces the selection (or inserts at the caret) with text; bytes outside 32..126 and `reject` are dropped, the buffer
  * never passes cap - 1. Returns 1 when the buffer changed. */
