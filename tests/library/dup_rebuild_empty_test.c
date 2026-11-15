@@ -15,7 +15,8 @@
  * rebuild also stepped its slice-edge SELECT (counted by g_slice, which must now be 0). */
 /* I1231b: the step back to v17 now also runs v19 (search_cache) in its own transaction: BEGIN, the table, its index, the source_songs
  * trigger, the user_version write and COMMIT = 6 more statements, none of them on songs. */
-#define MAX_STMTS_EMPTY (14 + 6)
+/* I1400c: the step back also runs v20 in its own transaction: BEGIN, the songs(added) index, the user_version write and COMMIT = 4 more. */
+#define MAX_STMTS_EMPTY (14 + 6 + 4)
 
 static int g_fail;
 static int g_stmts;
