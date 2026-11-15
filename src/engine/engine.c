@@ -7922,8 +7922,12 @@ static void coll_build_run(sel_engine* e) {
          * (artist groups). Module archives keep the drill root. */
         if (sel_source_is_stream(id) && (sel_source_find(id)->flags & SEL_SOURCE_SHOWS) != 0u) {
             char shows[sizeof id + 16];
-            snprintf(shows, sizeof shows, "%s\x1f" "artists", id);
-            drill_build(e, shows, &b);
+            if (strchr(key, 0x1f) != NULL) { /* I1398: a clicked show carries its drill path (source US artist US show): its episodes, not the show list again */
+                drill_build(e, key, &b);
+            } else {
+                snprintf(shows, sizeof shows, "%s\x1f" "artists", id);
+                drill_build(e, shows, &b);
+            }
         } else if (sel_source_is_stream(id)) {
             if (sel_library_collection(e->lib, kind, id, SEL_COLL_SONGS, coll_song_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
         } else {

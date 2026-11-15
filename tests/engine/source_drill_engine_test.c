@@ -168,6 +168,8 @@ int main(void) {
         CHECK(pg != NULL && pg->kind == SEL_LIB_ITEM_SOURCE);
         CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_GROUPS); /* no facet tiles: the list of shows */
         CHECK(pg != NULL && pg->songs == 7u);                    /* 7 shows (artist groups), not 617 episodes */
+        pg = open_page(e, "podcast\x1f" "artist\x1f" "Show 3"); /* I1398: a clicked show lists its episodes, not the show list again */
+        CHECK(pg != NULL && pg->drill == SEL_DRILL_PAGE_SONGS && pg->songs > 0u);
         CHECK(sel_source_register(&station) == 1);
         db_enter(lib);
         CHECK(sqlite3_exec(lib->db,
