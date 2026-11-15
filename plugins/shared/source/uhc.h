@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 
-/* One UHC row. `dir` is the row's "path" field, `file` its "filename"; `artist` is "author(s)" or "artist(s)"; fields the
+/* One UHC row. `dir` is the row's "path" field (AMP rows: "destfilename"), `file` its "filename"; `artist` is "author(s)", "artist(s)" or "author"; fields the
  * answer lacks are "". Return 1 for a row taken, -1 for a row skipped (not counted), 0 to stop. */
 typedef int (*sel_uhc_row_fn)(void* ctx, const char* dir, const char* file, const char* title, const char* artist,
                               const char* format);
