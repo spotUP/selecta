@@ -334,7 +334,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 20
+#define SEL_LIB_SCHEMA_VERSION 21
 /* I625a8e: file name of the prebuilt empty database (tools/library_template_bake.c). sel_library_open copies it, from the directory
  * of the database path, when that database does not exist, instead of running the 65 DDL statements of SCHEMA_FINAL. */
 #define SEL_LIBTEMPLATE_NAME "library-template.db"
@@ -620,7 +620,11 @@ void sel_library_demozoo_set_enabled(sel_library* lib, int on);
 void sel_library_demozoo_kick(sel_library* lib, const char* ref);
 /* I1401: the lookup query for a song of any source. A Modland key goes as key=<key>; every other song goes as title=<title>&author=<artist> and
  * needs both non-empty. Writes the query (no leading '?') into out; 0 when there is nothing to ask (no title or artist) or it does not fit. */
-int sel_dz_query(const char* key, const char* title, const char* artist, char* out, size_t cap);
+int sel_dz_query(const char* key, const char* title, const char* artist, const char* platform, char* out, size_t cap);
+/* I1267: a title lookup of a song with a machine (family token from sel_dz_family, NULL = none) appends &platform=<token>; the answer is read with
+ * sel_dz_pick, which only takes a production whose "families" holds the token. Modland keys, and families with no machine, are unfiltered. */
+const char* sel_dz_family(uint32_t family);
+const char* sel_dz_pick(const char* js, const char* fam, const char** end);
 void sel_library_scrape_set_enabled(sel_library* lib, int on);
 void sel_library_scrape_kick(sel_library* lib);
 int sel_library_scrape_poll(sel_library* lib);

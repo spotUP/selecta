@@ -14,6 +14,7 @@
 #include "../net/net.h"
 #include "../../core/pal.h"
 #include "../song_key.h"
+#include "selecta/platform.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -306,7 +307,51 @@ static void dz_put(sel_library* lib, int id, const char* kind, const void* data,
     art_request(lib, &op);
 }
 
-int sel_dz_query(const char* key, const char* title, const char* artist, char* out, size_t cap) {
+/* I1267: the family token the Demozoo lookup takes (hippoplayer.se demozooPlatforms.ts is the table behind it); NULL for a family with no machine. */
+const char* sel_dz_family(uint32_t family) {
+    switch (family) {
+    case SEL_PLATFORM_FAMILY_AMIGA: return "amiga";
+    case SEL_PLATFORM_FAMILY_COMMODORE_64: return "c64";
+    case SEL_PLATFORM_FAMILY_ATARI: return "atari";
+    case SEL_PLATFORM_FAMILY_ZX_SPECTRUM: return "zx";
+    case SEL_PLATFORM_FAMILY_NES: return "nes";
+    case SEL_PLATFORM_FAMILY_GAME_BOY: return "gb";
+    case SEL_PLATFORM_FAMILY_SNES: return "snes";
+    case SEL_PLATFORM_FAMILY_PC_ENGINE: return "pce";
+    case SEL_PLATFORM_FAMILY_MSX: return "msx";
+    case SEL_PLATFORM_FAMILY_MEGA_DRIVE: return "md";
+    case SEL_PLATFORM_FAMILY_SEGA_MASTER_SYSTEM: return "sms";
+    default: return NULL;
+    }
+}
+
+/* I1267: the first production of an answer that is on the platform `fam` (its "families" array holds the token); with fam NULL the first
+ * one. Returns the start of its "screenshots" key and sets *end to its "video_url" key (NULL when absent), or NULL when none matches. An
+ * older server that ignores platform= sends no "families": nothing matches, so no image rather than a wrong platform. */
+const char* sel_dz_pick(const char* js, const char* fam, const char** end) {
+    const char* p = strstr(js, "\"production_id\"");
+    char tok[16];
+
+    if (fam != NULL && snprintf(tok, sizeof tok, "\"%s\"", fam) >= (int)sizeof tok) return NULL;
+    while (p != NULL) {
+        const char* next = strstr(p + 1, "\"production_id\"");
+        const char* f = strstr(p, "\"families\"");
+        const char *shots, *close;
+
+        if (fam == NULL || (f != NULL && (next == NULL || f < next) && (close = strchr(f, ']')) != NULL && (shots = strstr(f, tok)) != NULL && shots < close)) {
+            shots = strstr(p, "\"screenshots\"");
+            if (shots != NULL && (next == NULL || shots < next)) {
+                *end = strstr(shots, "\"video_url\"");
+                if (*end != NULL && next != NULL && *end > next) *end = NULL;
+                return shots;
+            }
+        }
+        p = next;
+    }
+    return NULL;
+}
+
+int sel_dz_query(const char* key, const char* title, const char* artist, const char* platform, char* out, size_t cap) {
     char a[600], b[600];
 
     if (strncmp(key, "modland:pub/modules/", 20) == 0) {
@@ -314,6 +359,7 @@ int sel_dz_query(const char* key, const char* title, const char* artist, char* o
         return snprintf(out, cap, "key=%s", a) < (int)cap;
     }
     if (title == NULL || artist == NULL || title[0] == '\0' || artist[0] == '\0' || !sel_url_encode(title, a, sizeof a) || !sel_url_encode(artist, b, sizeof b)) return 0;
+    if (platform != NULL && platform[0] != '\0') return snprintf(out, cap, "title=%s&author=%s&platform=%s", a, b, platform) < (int)cap;
     return snprintf(out, cap, "title=%s&author=%s", a, b) < (int)cap;
 }
 
@@ -322,7 +368,7 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     uint8_t seen[24];
     scrape_buf js, img;
     sel_art_op op;
-    const char *p, *end;
+    const char *p, *end = NULL, *fam = NULL;
     int id, alb, n = 0, r, shots_max = DZ_SHOTS_MAX;
     const char* cap_env = getenv("SELECTA_ART_DZ_SHOTS"); /* test knob: a live check fetches one image */
 
@@ -354,7 +400,8 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
         return -1;
     }
     base_url("SELECTA_ART_DZ_URL", "https://hippoplayer.se", base, sizeof base);
-    if (!sel_dz_query(key, meta, meta + strlen(meta) + 1, ke, sizeof ke)) {
+    if (strncmp(key, "modland:pub/modules/", 20) != 0) fam = sel_dz_family(sel_platform_of_name(key)); /* I1267: Modland keys stay as they were */
+    if (!sel_dz_query(key, meta, meta + strlen(meta) + 1, fam, ke, sizeof ke)) {
         free(js.data);
         free(img.data);
         return 1;
@@ -368,9 +415,8 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
         p = p != NULL ? json_value(p + 7) : NULL;
         if (p == NULL || strncmp(p, "true", 4) != 0) r = 0;
     }
-    if (r == 1) { /* the first production (earliest release) only: its screenshots end where its video_url starts */
-        p = strstr((const char*)js.data, "\"screenshots\"");
-        end = p != NULL ? strstr(p, "\"video_url\"") : NULL;
+    if (r == 1) { /* the first production (earliest release) on the song's platform only: its screenshots end where its video_url starts */
+        p = sel_dz_pick((const char*)js.data, fam, &end);
         while (p != NULL && n < shots_max && !SCR_QUIT(lib) && (p = json_str(p, "url", shot, sizeof shot)) != NULL && (end == NULL || p < end)) {
             if (strncmp(shot, "http", 4) != 0) continue;
             r = scrape_get(shot, &img, st);
