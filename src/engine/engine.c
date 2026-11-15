@@ -223,6 +223,8 @@ typedef struct sel_search_hit { /* one SOURCE_SEARCH hit; tags point into the sa
     char format[SEL_SEARCH_FORMAT_MAX];
     sel_tag tags[7];
 } sel_search_hit;
+#define SEARCH_TIMEOUT_MS 6000u /* online sources answer in 0.5-2.9 s (I1400); modulespl took 9.7 s */
+
 enum { SEARCH_NONE = 0, SEARCH_QUEUED, SEARCH_RUNNING, SEARCH_DONE, SEARCH_FAILED, SEARCH_NOT_SYNCED }; /* bucket states; NOT_SYNCED (I1053b): a catalogue source with no synced rows */
 struct sel_engine;
 static int search_queued(const struct sel_engine* e);
@@ -680,6 +682,7 @@ struct sel_engine {
     /* I406a: SOURCE_SEARCH runs on the library job thread (I782: the network never blocks the command thread). The task
      * owns search_* while search_running; one request that arrives while the slot is busy waits in search_wait_*. */
     int search_running;
+    uint32_t search_timeout_ms;              /* I1400b: a network search source still silent after this lands failed (default SEARCH_TIMEOUT_MS) */
     int search_rc;
     char search_query[SEL_SEARCH_QUERY_MAX];
     char search_wait_source[SEL_SOURCE_ID_MAX]; /* I1086b: the source argument of the current SOURCE_SEARCH ("*" or one id), so a library change can run it again */
@@ -5239,6 +5242,10 @@ void sel_engine_sync_cancel(sel_engine* e) {
     }
 }
 
+void sel_engine_set_search_timeout_ms(sel_engine* e, uint32_t ms) {
+    e->search_timeout_ms = ms;
+}
+
 int sel_engine_scan_busy(const sel_engine* e) {
     /* Idle test: a threaded search holds no library slot but still counts as busy here (tests and quit wait on it). */
     return e->scan_running || e->sync_running || e->search_running || search_queued(e); /* the scan and the sync share the one library task slot (I527) */
@@ -8467,6 +8474,8 @@ struct sel_search_job {
     sel_engine* e;
     uint32_t gen, b, n, ms;
     int rc, started;
+    uint64_t t0_ms;
+    int timed_out; /* I1400b: the bucket already landed as failed; the thread is joined when it ends, its answer dropped */
     volatile unsigned cancel; /* the thread's net cancel generation: supersede moves it, a wait ends within one poll slice */
     volatile int done;
     pthread_t th;
@@ -8723,6 +8732,7 @@ static void search_start_next(sel_engine* e) {
         j->e = e;
         j->gen = e->search_gen;
         j->b = b;
+        j->t0_ms = search_now_ms();
         snprintf(j->id, sizeof j->id, "%s", e->search_bucket[b].id);
         j->cache = search_cache_wanted(e, b);
         if (j->cache && !e->search_bucket[b].held) {
@@ -9013,6 +9023,14 @@ static void search_collect(sel_engine* e) {
         struct sel_search_job* j = *pj;
 
         if (!__atomic_load_n(&j->done, __ATOMIC_ACQUIRE)) {
+            /* I1400b: one slow source (modulespl, ~10 s) must not hold the whole search open. Past the timeout its section lands as
+             * failed; the thread is cancelled (net waits end) and joined later without landing. Grouped catalogue jobs are local. */
+            if (j->nb == 0u && !j->timed_out && j->gen == e->search_gen && search_now_ms() - j->t0_ms >= e->search_timeout_ms) {
+                j->timed_out = 1;
+                j->cancel++;
+                search_land_bucket(e, j->b, j->id, -1, 0u, NULL, (uint32_t)(search_now_ms() - j->t0_ms));
+                landed = 1;
+            }
             if (j->chit != NULL && !j->cached_landed && j->gen == e->search_gen && __atomic_load_n(&j->cached, __ATOMIC_ACQUIRE)) {
                 j->cached_landed = 1; /* I1231b: the stored answer shows now; the network answer replaces it when it lands */
                 search_land_cached(e, j->b, j->cn, j->chit);
@@ -9023,7 +9041,9 @@ static void search_collect(sel_engine* e) {
         }
         *pj = j->next;
         pthread_join(j->th, NULL);
-        if (j->gen != e->search_gen) {
+        if (j->timed_out) {
+            /* already landed as failed */
+        } else if (j->gen != e->search_gen) {
             e->search_stale_drops++; /* a superseded query: no events, its buckets are gone */
         } else {
             search_land(e, j);
@@ -9031,7 +9051,10 @@ static void search_collect(sel_engine* e) {
         }
         search_job_free(e, j);
     }
-    e->search_running = e->search_jobs != NULL;
+    e->search_running = 0;
+    for (pj = &e->search_jobs; *pj != NULL; pj = &(*pj)->next) {
+        e->search_running |= !(*pj)->timed_out;
+    }
     if (search_queued(e)) {
         search_start_next(e); /* a bucket held back behind its source's superseded search starts now */
     }
@@ -11385,6 +11408,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     }
     memset(e, 0, sizeof *e);
     e->ui_view_styles = SEL_VIEW_STYLES_CLASSIC;
+    e->search_timeout_ms = SEARCH_TIMEOUT_MS;
     e->sf_wait = -1;
     e->host = host;
     e->rp_host = *host;
