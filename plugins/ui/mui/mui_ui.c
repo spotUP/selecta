@@ -21,6 +21,7 @@
 #include "map/mui_route.h"
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/briefs.h>
 #include <selecta/uimodel/title.h>
@@ -2814,9 +2815,9 @@ static void mui_on_event(void* state, const sel_message* evt) {
     if (s != NULL && evt != NULL && evt->id == SEL_EVT_ERROR && evt->argc > 0u && evt->args[0].type == SEL_ARG_STR) {
         const char* code = evt->args[0].v.s;
         const char* detail = evt->argc > 1u && evt->args[1].type == SEL_ARG_STR ? evt->args[1].v.s : "";
-        if (strcmp(code, "open_failed") == 0 || strcmp(code, "no_replayer") == 0 || strcmp(code, "unsupported_kind") == 0 ||
-            strcmp(code, "replayer_incomplete") == 0 || strcmp(code, "replayer_load_failed") == 0) { /* same set as the desktop UI (I695b) */
-            snprintf(s->fail_pending, sizeof s->fail_pending, "Cannot play: %s %.100s", code, detail);
+        char text[96];
+        if (sel_uim_open_fail_text(code, detail, text, sizeof text)) { /* I1383b: same words as the desktop toast */
+            snprintf(s->fail_pending, sizeof s->fail_pending, "%s", text);
         }
     }
     if (s != NULL && evt != NULL) {

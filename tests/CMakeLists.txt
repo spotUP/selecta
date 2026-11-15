@@ -1298,6 +1298,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_library_subtitle_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-library-subtitle COMMAND uim_library_subtitle_test)
   set_tests_properties(uim-library-subtitle PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_library_subtitle_ok")
+  # I1383b: the shared failed-open words (Mac toast, text UI and MUI status line).
+  add_executable(uim_failtext_test uimodel/failtext_test.c)
+  target_link_libraries(uim_failtext_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-failtext COMMAND uim_failtext_test)
+  set_tests_properties(uim-failtext PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_failtext_ok")
   # I1079a: the shared column splitter for row text widths.
   add_executable(uim_cols_test uimodel/cols_test.c)
   target_link_libraries(uim_cols_test PRIVATE selecta_uimodel selecta_core)
