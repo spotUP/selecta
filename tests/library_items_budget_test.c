@@ -126,6 +126,38 @@ int main(void) {
         check(strstr(home, "Recently Played") != NULL && strstr(home, "Your Albums") != NULL && strstr(home, "Your Composers") != NULL,
               "home shelves listed");
     }
+    {
+        /* I1400c: the Home date lists (New This Week, From your library, More Like) filter and order songs on `added`; without songs_added each
+         * scanned every song on the one library worker, which delayed a search typed during the first seconds. The plan must use the index. */
+        static const char* const q[] = {
+            "SELECT COALESCE(name, key) FROM songs WHERE added >= CAST(strftime('%s','now') AS INTEGER) - 604800 ORDER BY added DESC, key LIMIT 10",
+            "SELECT key FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s','now') AS INTEGER) - 604800"
+            " ORDER BY added DESC, key LIMIT 10"};
+        uint32_t qi;
+
+        for (qi = 0; qi < sizeof q / sizeof q[0]; qi++) {
+            char plan[1024], text[1200];
+            sqlite3_stmt* st = NULL;
+            double t0 = now_ms();
+
+            plan[0] = '\0';
+            snprintf(text, sizeof text, "EXPLAIN QUERY PLAN %s", q[qi]);
+            check(sqlite3_prepare_v2(lib->db, text, -1, &st, NULL) == SQLITE_OK, "plan prepare");
+            while (st != NULL && sqlite3_step(st) == SQLITE_ROW) {
+                strncat(plan, (const char*)sqlite3_column_text(st, 3), sizeof plan - strlen(plan) - 2u);
+                strcat(plan, "\n");
+            }
+            sqlite3_finalize(st);
+            check(strstr(plan, "songs_added") != NULL, "date list uses songs_added");
+            if (strstr(plan, "songs_added") == NULL) printf("plan %u:\n%s", (unsigned)qi, plan);
+            st = NULL;
+            check(sqlite3_prepare_v2(lib->db, q[qi], -1, &st, NULL) == SQLITE_OK, "date list prepare");
+            while (st != NULL && sqlite3_step(st) == SQLITE_ROW) {}
+            sqlite3_finalize(st);
+            printf("items_budget date list %u: %.0f ms\n", (unsigned)qi, now_ms() - t0);
+            check(now_ms() - t0 < SEL_BUDGET_MS, "date list under budget");
+        }
+    }
     sel_library_close(lib);
     {
         char cmd[300];
