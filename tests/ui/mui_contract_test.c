@@ -987,6 +987,31 @@ static void test_list_tree(void) {
     CHECK(strcmp(out[1].text, "one.mod") == 0, "Listtree draws depth itself: '%s'", out[1].text);
 }
 
+/* I1406: a search category folds to its first rows plus a Show all (n) entry; the toggle shows every row plus Show less. */
+static void test_list_search_fold(void) {
+    static sel_view_row rows[8];
+    static mui_list_entry out[16];
+    sel_view_state v;
+    int32_t active = -9;
+    uint32_t n, k;
+    memset(rows, 0, sizeof rows);
+    rows[0].kind = SEL_ROW_HEADING; rows[0].text = "Foldtest (5)";
+    for (k = 1; k < 6; k++) {
+        rows[k].kind = SEL_ROW_QUEUE; rows[k].text = "song"; rows[k].id = k;
+    }
+    rows[6].kind = SEL_ROW_HEADING; rows[6].text = "Other (1)";
+    rows[7].kind = SEL_ROW_QUEUE; rows[7].text = "one"; rows[7].id = 9;
+    memset(&v, 0, sizeof v);
+    v.source = SEL_VIEW_SEARCH; v.style = SEL_VIEW_STYLE_REGULAR; v.row_count = 8; v.window_rows = 16; v.row_n = 8; v.rows = rows; v.cursor = 7;
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 16, &v, &active);
+    CHECK(n == 7 && out[4].kind == MUI_ROW_FOLD && strcmp(out[4].text, "    Show all (5)") == 0, "folded: %u entries, entry 4 '%s'", n, out[4].text);
+    CHECK(out[3].index == 3 && out[5].index == 6 && active == 6, "rows 4 and 5 hidden, cursor row now %d", (int)active);
+    sel_uim_search_fold_toggle("Foldtest (5)");
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 16, &v, &active);
+    CHECK(n == 9 && out[6].kind == MUI_ROW_FOLD && strcmp(out[6].text, "    Show less") == 0, "expanded: %u entries, entry 6 '%s'", n, out[6].text);
+    sel_uim_search_fold_toggle("Foldtest (5)");
+}
+
 static void test_list_drill(void) {
     sel_view_state v;
     char buf[160];
@@ -4020,6 +4045,8 @@ int main(int argc, char** argv) {
         test_list_regular();
     } else if (strcmp(argv[1], "list-tree") == 0) {
         test_list_tree();
+    } else if (strcmp(argv[1], "list-search-fold") == 0) {
+        test_list_search_fold();
     } else if (strcmp(argv[1], "list-drill") == 0) {
         test_list_drill();
     } else if (strcmp(argv[1], "columns") == 0) {

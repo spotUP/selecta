@@ -52,18 +52,54 @@ int32_t mui_list_dbl_row(int32_t picked, int32_t active) {
     return picked >= 0 ? picked : active;
 }
 
+/* I1406: the Show all (n) / Show less entry under a search category with more rows than the fold shows. index = the heading's window position. */
+static void mui_fold_entry(mui_list_entry* e, const sel_view_state* v, uint32_t head, uint32_t rows) {
+    int open = sel_uim_search_expanded(v->rows[head].text);
+    memset(e, 0, sizeof *e);
+    e->index = v->window_start + head;
+    e->kind = MUI_ROW_FOLD;
+    snprintf(e->label, sizeof e->label, "%s", open ? "Show less" : "Show all");
+    if (open) {
+        snprintf(e->text, sizeof e->text, "    Show less");
+    } else {
+        snprintf(e->text, sizeof e->text, "    Show all (%u)", (unsigned)rows);
+    }
+}
+
 uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active) {
-    uint32_t i, n = v->row_n;
+    uint32_t i, o = 0, n = v->row_n, head = 0, have_head = 0;
+    int fold = v->source == SEL_VIEW_SEARCH && mui_style_kind(v->style) == MUI_STYLE_LIST;
+    int32_t act = -1;
     if (n > v->window_rows) {
         n = v->window_rows;
     }
-    if (n > cap) {
-        n = cap;
-    }
-    for (i = 0; i < n; i++) {
-        const sel_view_row* r = &v->rows[i];
-        mui_list_entry* e = &out[i];
+    for (i = 0; i <= n && o < cap; i++) {
+        const sel_view_row* r = i < n ? &v->rows[i] : NULL;
+        mui_list_entry* e;
         size_t used = 0;
+        if (fold && have_head && (r == NULL || r->kind == (uint32_t)SEL_ROW_HEADING)) {
+            uint32_t rows = sel_uim_search_section_rows(v->rows, v->row_n, head);
+            if (rows > SEL_UIM_SEARCH_FOLD_ROWS) {
+                mui_fold_entry(&out[o++], v, head, rows);
+                if (o >= cap) {
+                    break;
+                }
+            }
+        }
+        if (r == NULL) {
+            break;
+        }
+        if (fold && r->kind == (uint32_t)SEL_ROW_HEADING) {
+            head = i;
+            have_head = 1;
+        } else if (fold && sel_uim_search_row_folded(v->rows, v->row_n, i)) {
+            continue;
+        }
+        e = &out[o];
+        if (v->cursor == v->window_start + i) {
+            act = (int32_t)o;
+        }
+        o++;
         e->index = v->window_start + i;
         e->kind = r->kind;
         e->depth = r->depth;
@@ -86,9 +122,9 @@ uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_
         }
     }
     if (active != NULL) {
-        *active = (v->cursor >= v->window_start && v->cursor - v->window_start < n) ? (int32_t)(v->cursor - v->window_start) : -1;
+        *active = act;
     }
-    return n;
+    return o;
 }
 
 void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap) {

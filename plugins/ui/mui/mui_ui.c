@@ -3027,19 +3027,26 @@ static void mui_refresh(mui_state* s) {
             long playing = -1; /* the row whose title draws in ACCENT */
             s->list_sig = sig;
             for (i = 0; i < n; i++) {
+                uint32_t ri = packed ? i : s->entries[i].index - v->window_start; /* I1406: a folded search list skips rows, the entry knows its row */
                 snprintf(s->cell[i].title, sizeof s->cell[i].title, "%s", s->entries[i].text);
-                snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", packed ? "" : mui_row_cell(&v->rows[i], MUI_COL_ARTIST));
+                if (!packed && s->entries[i].kind == MUI_ROW_FOLD) { /* the Show all / Show less entry has no row */
+                    s->cell[i].artist[0] = '\0';
+                    memset(&s->cell[i].extra, 0, sizeof s->cell[i].extra);
+                    s->entry_ptr[i] = (const char*)&s->cell[i];
+                    continue;
+                }
+                snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", packed ? "" : mui_row_cell(&v->rows[ri], MUI_COL_ARTIST));
                 if (packed) {
                     memset(&s->cell[i].extra, 0, sizeof s->cell[i].extra);
                 } else {
                     char rpath[256], grp[64];
                     grp[0] = '\0';
-                    if (sel_engine_view_row_path(s->engine, i, rpath, sizeof rpath)) {
+                    if (sel_engine_view_row_path(s->engine, ri, rpath, sizeof rpath)) {
                         (void)sel_engine_song_group(s->engine, rpath, grp, sizeof grp);
                     }
-                    mui_row_extra_fill(st, &v->rows[i], grp, &s->cell[i].extra);
+                    mui_row_extra_fill(st, &v->rows[ri], grp, &s->cell[i].extra);
                 }
-                if (!packed && v->rows[i].kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && v->rows[i].id == st->song.queue_id) {
+                if (!packed && v->rows[ri].kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && v->rows[ri].id == st->song.queue_id) {
                     playing = (long)i;
                 }
                 s->entry_ptr[i] = (const char*)&s->cell[i];
@@ -4161,6 +4168,16 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (s->style_kind != MUI_STYLE_LIST) { /* I1174: a packed row stands for several window rows */
             v = mui_style_row_index(view->style, s->style_cols, (uint32_t)v, s->style_cursor);
             s->style_cursor = v;
+        } else if (view->source == SEL_VIEW_SEARCH && (uint32_t)v < s->cell_n) { /* I1406: a folded search list skips rows; Show all toggles its category */
+            const mui_list_entry* en = &s->entries[v];
+            uint32_t ri = en->index - view->window_start;
+            if (ri < view->row_n && (en->kind == MUI_ROW_FOLD || (id == CTL_LIST_DBL && en->kind == (uint32_t)SEL_ROW_HEADING &&
+                                                                     sel_uim_search_section_rows(view->rows, view->row_n, ri) > SEL_UIM_SEARCH_FOLD_ROWS))) {
+                sel_uim_search_fold_toggle(view->rows[ri].text);
+                s->list_sig = 0u; /* the fold changed what the list shows */
+                return;
+            }
+            v = (long)ri;
         }
         if (id == CTL_LIST_DBL && view->style == SEL_VIEW_STYLE_TREE && (uint32_t)v < view->row_n && view->rows[v].kind == SEL_ROW_NODE) {
             /* MUI-P3-2: a node row of the tree style toggles; the engine line is VIEW_EXPAND or VIEW_COLLAPSE <node id>. */
