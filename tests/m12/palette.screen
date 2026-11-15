@@ -1,24 +1,24 @@
  [Home]  [What do you want to play?]  [Browse]
- Browse  songs                                    │ Information
-   ..                                             │ Title       selecta test
-   selecta-test-mk.mod                            │ Format      ProTracker MOD
-                                                  │ Channels    4
-                                                  │ Patterns    4
-                                                  │ Samples     31
-                                                  │ Subsongs    1
-                                                  │ Duration ms 30080
-                                                  │ Message     test sample 1 t
-                                                  │ Size        6076
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
- selecta test                         ||  00:02 / 00:30              Volume 100
+ Playlists         │ Information
+ Queue             │ Title       Selecta Test
+ Now Playing       │ Format      ProTracker MOD (M.K.)
+ Song Information  │ Channels    4
+ Your Library  [+] │ Patterns    4
+ [Playlists]       │ Samples     31
+ [Albums]          │ Subsongs    1
+ [Artists]         │ Duration ms 30080
+ [Composers]       │ Message     test sample 1 test sample 2 test sample 3 test
+ [Sources]         │ Size        6076
+ [Local Files]     │
+ ..                │
+ selecta-test-mk.mo│
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
+                   │
+ Selecta Test                         ||  00:02 / 00:30              Volume 100
