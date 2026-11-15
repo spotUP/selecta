@@ -223,7 +223,7 @@ typedef struct sel_search_hit { /* one SOURCE_SEARCH hit; tags point into the sa
     char format[SEL_SEARCH_FORMAT_MAX];
     sel_tag tags[7];
 } sel_search_hit;
-#define SEARCH_TIMEOUT_MS 6000u /* online sources answer in 0.5-2.9 s (I1400); modulespl took 9.7 s */
+#define SEARCH_TIMEOUT_MS 12000u /* safety net: online sources answer in 0.5-2.9 s (I1400), but modules.pl answered after 10-11 s when it worked (I816) */
 
 enum { SEARCH_NONE = 0, SEARCH_QUEUED, SEARCH_RUNNING, SEARCH_DONE, SEARCH_FAILED, SEARCH_NOT_SYNCED }; /* bucket states; NOT_SYNCED (I1053b): a catalogue source with no synced rows */
 struct sel_engine;
