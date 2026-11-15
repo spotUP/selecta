@@ -13,6 +13,7 @@ set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
 set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},fixture.test=${fx}")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
+set(ENV{SELECTA_MODULESPL_UHC} "http://127.0.0.1:1") # I1405: the UHC request fails, so the search falls back to the HTML page below
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/") # the built-in mirror is https; the fixture is plain http
 set(cache "${WORK}/i406-cache")

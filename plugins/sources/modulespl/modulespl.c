@@ -3,7 +3,10 @@
  * search source (SOURCE_SEARCH, D-OS-3). A search is one GET of
  *   https://www.modules.pl/?id=search&q=<url-encoded query>
  * (the site's own search form is a GET form with the hidden field id=search and the field q; the answer lists all
- * hits in one page, no paging). The hits are parsed by modulespl_parse.c. A song key is
+ * hits in one page, no paging) and takes 9-11 s, so the search first asks the UHC index HippoPlayer uses
+ * (I1405): GET https://uhc.megaburken.net/uhcsearch?format=json&searchtype=modulessearch&searchwords=<q>, 0.2 s;
+ * the site page is only the fallback when that request fails. SELECTA_MODULESPL_UHC replaces the UHC base. Both
+ * answers are parsed by modulespl_parse.c. A song key is
  * `modulespl:<author dir>/<file>.zip`: the file lives at https://www.modules.pl/modules/<path> (the mirror base in
  * src/library/net/mirrors.c) and holds one module, which the engine unpacks after the fetch.
  * SELECTA_MODULESPL_SITE replaces the site base (default https://www.modules.pl; tests point it at a fixture). */
@@ -24,6 +27,7 @@
 #define PAGE_MAX (4u * 1024u * 1024u)
 /* www.modules.pl starts answering a search after 10-11 s; the client default of 3 s fails it (I816). */
 #define SEARCH_FIRST_BYTE_MS 30000u
+#define UHC_ROWS 500 /* HippoPlayer's default UHC search limit */
 
 static const sel_tag g_tags[] = {
     {SEL_TAG_END, 0},
@@ -63,7 +67,8 @@ static int forward(void* ctx, const char* path, const char* title, const char* a
     return out->row(out->ctx, path, title, artist, format);
 }
 
-static int ms_search(const sel_host* host, const char* query, sel_search_sink* out) {
+/* Fallback: the site's own search page (9-11 s). */
+static int html_search(const sel_host* host, const char* query, sel_search_sink* out) {
     const sel_net* net = host->net != NULL ? host->net(host) : NULL;
     const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
     char dir[512];
@@ -94,6 +99,51 @@ static int ms_search(const sel_host* host, const char* query, sel_search_sink* o
     rows = sel_modulespl_parse(page, n, forward, out);
     free(page);
     return rows;
+}
+
+/* The UHC search index answers in about 0.2 s. Returns the row count, or -1 when the request or the JSON failed
+ * (the caller then falls back to the site page); an empty answer is 0 rows and final. */
+static int uhc_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    const sel_net* net = host->net != NULL ? host->net(host) : NULL;
+    const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
+    const char* env = getenv("SELECTA_MODULESPL_UHC");
+    char dir[512];
+    char path[600];
+    char enc[384];
+    char url[1000];
+    uint32_t rq = 0;
+    unsigned long got = 0;
+    FILE* f;
+    int rows;
+
+    if (net == NULL || cat == NULL || !sel_url_query_encode(query, enc, sizeof enc) ||
+        !cat->cache_dir(host, "modulespl", dir, sizeof dir)) {
+        return -1;
+    }
+    snprintf(path, sizeof path, "%s/uhc.json", dir);
+    snprintf(url, sizeof url, "%s/uhcsearch?format=json&searchtype=modulessearch&searchlimit=%d&searchwords=%s",
+             env != NULL && env[0] != '\0' ? env : "https://uhc.megaburken.net", UHC_ROWS, enc);
+    if (net->get_file_wait(host, url, path, SEARCH_FIRST_BYTE_MS, &rq, &got) != 200) {
+        remove(path);
+        return -1;
+    }
+    f = fopen(path, "rb");
+    rows = f != NULL ? sel_modulespl_parse_uhc(f, forward, out) : -1;
+    if (f != NULL) {
+        fclose(f);
+    }
+    remove(path);
+    return rows;
+}
+
+static int ms_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    int rows;
+
+    if (query == NULL || query[0] == '\0') {
+        return -1;
+    }
+    rows = uhc_search(host, query, out);
+    return rows >= 0 ? rows : html_search(host, query, out);
 }
 
 /* The file name without ".zip", underscores as spaces, is the display name; the format column names the source. */
