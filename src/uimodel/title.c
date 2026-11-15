@@ -1,6 +1,9 @@
 /* I1387: see include/selecta/uimodel/title.h. */
 #include <selecta/uimodel/title.h>
 
+#include <stdio.h>
+#include <string.h>
+
 static int is_up(char c) { return c >= 'A' && c <= 'Z'; }
 static int is_lo(char c) { return c >= 'a' && c <= 'z'; }
 
@@ -68,4 +71,17 @@ void sel_uim_tidy_title(const char* in, char* out, size_t cap) {
             }
         }
     }
+}
+
+/* I1387b: a Song Information value that is a name (labels "Title", "Author", "Release", "STIL title") is tidied in place; other rows stay. */
+void sel_uim_tidy_info(const char* label, char* val, size_t cap) {
+    char tidy[256];
+    if (label == NULL || val == NULL || cap == 0u || strlen(val) >= sizeof tidy / 2u) {
+        return;
+    }
+    if (strcmp(label, "Title") != 0 && strcmp(label, "Author") != 0 && strcmp(label, "Release") != 0 && strcmp(label, "STIL title") != 0) {
+        return;
+    }
+    sel_uim_tidy_title(val, tidy, sizeof tidy);
+    snprintf(val, cap, "%s", tidy);
 }

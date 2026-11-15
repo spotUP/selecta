@@ -1802,6 +1802,7 @@ static void tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32_t t
             snprintf(val, sizeof val, "%lu", (unsigned long)v);
         }
         sel_uim_tag_label(tag, label, sizeof label);
+        sel_uim_tidy_info(label, val, sizeof val); /* I1387b */
         tui_ptext(u, x, y, label, w, tui_style(u, TXT_ROLE_LABEL));
         tui_ptext(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
         y++;
@@ -1820,6 +1821,7 @@ static void tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32_t t
                     val[i] = ' ';
                 }
             }
+            sel_uim_tidy_info(p, val, sizeof val); /* I1387b */
             tui_ptext(u, x, y, p, w, tui_style(u, TXT_ROLE_LABEL));
             tui_ptext(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
             y++;

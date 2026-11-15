@@ -39,7 +39,7 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
         title = basename_of(st->song.path);
     }
     sel_uim_tidy_title(title, n.title, sizeof n.title);
-    snprintf(n.artist, sizeof n.artist, "%s", artist != NULL ? artist : "");
+    sel_uim_tidy_title(artist, n.artist, sizeof n.artist); /* I1387b */
     sel_format_label(format, n.format, sizeof n.format); /* I819: "Protracker (mod)" */
     sel_uim_clock(n.clock, sizeof n.clock, pos, st->song.path != NULL);
     if (dur != 0u) {

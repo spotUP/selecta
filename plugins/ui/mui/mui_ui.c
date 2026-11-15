@@ -2449,7 +2449,16 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     }
     mui_flat(s->np_buf[0], sizeof s->np_buf[0], title != NULL && title[0] != '\0' ? title : " ");
     mui_flat(s->np_buf[1], sizeof s->np_buf[1], artist != NULL && artist[0] != '\0' ? artist : " ");
+    if (s->np_buf[0][0] != ' ') { /* I1387b: a blank placeholder stays one space */
+        sel_uim_tidy_info("Title", s->np_buf[0], sizeof s->np_buf[0]);
+    }
+    if (s->np_buf[1][0] != ' ') {
+        sel_uim_tidy_info("Author", s->np_buf[1], sizeof s->np_buf[1]);
+    }
     mui_flat(s->np_buf[2], sizeof s->np_buf[2], album != NULL && album[0] != '\0' ? album : " ");
+    if (s->np_buf[2][0] != ' ') {
+        sel_uim_tidy_info("Release", s->np_buf[2], sizeof s->np_buf[2]);
+    }
     mui_text_set(s->np_title, s->np_buf[0]);
     mui_text_set(s->np_artist, s->np_buf[1]);
     mui_text_set(s->np_album, s->np_buf[2]);
@@ -2511,6 +2520,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             } else {
                 continue;
             }
+            sel_uim_tidy_info(lab, val, sizeof val); /* I1387b */
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", lab, val);
             s->info_ptr[rows] = s->info_buf[rows];
             rows++;

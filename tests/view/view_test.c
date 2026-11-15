@@ -166,7 +166,7 @@ static void test_cursor(void) {
           id2, view()->cursor);
     run("QUEUE_PLAY_NEXT d.mod");
     CHECK(view()->cursor_id == id2, "cursor id moved on insert");
-    CHECK(strcmp(row_text(view()->cursor), "b.mod") == 0, "queue row text '%s'", row_text(view()->cursor));
+    CHECK(strcmp(row_text(view()->cursor), "B.mod") == 0, "queue row text '%s'", row_text(view()->cursor));
 }
 
 static void test_activate(void) {
@@ -352,7 +352,7 @@ static void test_tree(void) {
     run("VIEW_EXPAND 2");
     CHECK(strstr(evlog, "ERROR") == NULL, "expand: %s", evlog);
     CHECK(view()->row_count == 4u, "expanded rows %u", view()->row_count);
-    CHECK(strcmp(row_text(2), "three.mod") == 0 && row_depth(2) == 1u, "child row '%s' depth %u", row_text(2),
+    CHECK(strcmp(row_text(2), "Three.mod") == 0 && row_depth(2) == 1u, "child row '%s' depth %u", row_text(2),
           row_depth(2));
     CHECK(view()->cursor == 2u && view()->cursor_id == song, "cursor on the song: %u id %u", view()->cursor,
           view()->cursor_id);
@@ -373,7 +373,7 @@ static void test_tree(void) {
     run("VIEW_DRILL 0 /m/a");
     CHECK(strstr(evlog, "ERROR") == NULL, "drill: %s", evlog);
     CHECK(view()->drill_n == 1u && view()->row_count == 2u, "drilled: n %u rows %u", view()->drill_n, view()->row_count);
-    CHECK(strcmp(row_text(0), "one.mod") == 0 && strcmp(row_text(1), "two.xm") == 0, "songs '%s' '%s'", row_text(0),
+    CHECK(strcmp(row_text(0), "One.mod") == 0 && strcmp(row_text(1), "Two.xm") == 0, "songs '%s' '%s'", row_text(0),
           row_text(1));
     run("VIEW_DRILL 0 /m/nowhere");
     CHECK(strstr(evlog, "ERROR range VIEW_DRILL") != NULL, "drill to nothing: %s", evlog);
@@ -388,7 +388,7 @@ static void test_tree(void) {
     run("VIEW_DRILL 0 mod");
     CHECK(view()->row_count == 3u && is_node(0) && strcmp(row_text(2), "/m/c") == 0, "format > folder: %u rows", view()->row_count);
     run("VIEW_DRILL 1 /m/c");
-    CHECK(view()->row_count == 1u && strcmp(row_text(0), "five.mod") == 0, "format > folder > song: %u rows '%s'",
+    CHECK(view()->row_count == 1u && strcmp(row_text(0), "Five.mod") == 0, "format > folder > song: %u rows '%s'",
           view()->row_count, row_text(0));
     run("VIEW_STYLE tree");
     CHECK(view()->row_count == 3u && view()->drill_n == 0u, "tree by format: %u rows", view()->row_count);

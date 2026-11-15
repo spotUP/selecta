@@ -6965,6 +6965,7 @@ static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const 
         }
         si_clean(val);
         sel_uim_tag_label(tag, label, sizeof label);
+        sel_uim_tidy_info(label, val, sizeof val);
         emit(d, label, val, n++);
     }
     if (st->panel != NULL) {
@@ -6973,6 +6974,7 @@ static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const 
             const char* value = p + strlen(p) + 1;
             snprintf(val, sizeof val, "%s", value);
             si_clean(val);
+            sel_uim_tidy_info(p, val, sizeof val);
             if (strcmp(p, "Composer") == 0) { /* I678h3: the catalogue's Composer row links to the composer the db row names */
                 si_composer_load(d, st);
                 d->si_composer_row = d->si_composer_key[0] != '\0' ? (int32_t)n : -1;
@@ -9835,8 +9837,8 @@ static int online_event(desk* d, const sel_tag* t) {
         if (d->on_n < sizeof d->on_row / sizeof d->on_row[0]) {
             uint32_t n = d->on_n++;
             snprintf(d->on_row[n].key, sizeof d->on_row[n].key, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
-            snprintf(d->on_row[n].title, sizeof d->on_row[n].title, "%s", (const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""));
-            snprintf(d->on_row[n].artist, sizeof d->on_row[n].artist, "%s", (const char*)sel_tag_find(t, SEL_SRC_ARTIST, (uintptr_t)""));
+            sel_uim_tidy_title((const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""), d->on_row[n].title, sizeof d->on_row[n].title); /* I1387b */
+            sel_uim_tidy_title((const char*)sel_tag_find(t, SEL_SRC_ARTIST, (uintptr_t)""), d->on_row[n].artist, sizeof d->on_row[n].artist);
             snprintf(d->on_row[n].format, sizeof d->on_row[n].format, "%s", (const char*)sel_tag_find(t, SEL_SRC_FORMAT, (uintptr_t)""));
         }
         d->repaint = 1;
