@@ -68,7 +68,8 @@ enum {
  * raw image bytes as its `kind` artwork row, replying 1 when stored. */
 enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */,
        SEL_ART_NEXT_MISSING /* I1003a: the first albums row after `album` with a name, an artist, no 'cover' artwork and no scrape_miss row newer than `len` (epoch seconds); data = "name\0artist\0"; reply = its id, 0 = none */,
-       SEL_ART_KINDS /* I1384b: which stills the artwork of `album` holds: reply = mask, bit 0 = 'cover', bit n = 'dz<n>' (n 1..7), SEL_ART_KIND_VIDEO = a 'dz_video' link row */ };
+       SEL_ART_KINDS /* I1384b: which stills the artwork of `album` holds: reply = mask, bit 0 = 'cover', bit n = 'dz<n>' (n 1..7), SEL_ART_KIND_VIDEO = a 'dz_video' link row */,
+       SEL_ART_SONG_META /* I1401: songs.name and songs.artist of the song `ref` into data/cap as "name\0artist\0"; reply 1 when both are non-empty */ };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
     const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */
@@ -617,6 +618,9 @@ typedef struct sel_scrape_stats {
  * back to that id for a song with no album. Base URL SELECTA_ART_DZ_URL. Off when _demozoo_set_enabled(0) (pref art.demozoo) or SELECTA_ART_SCRAPE=off. */
 void sel_library_demozoo_set_enabled(sel_library* lib, int on);
 void sel_library_demozoo_kick(sel_library* lib, const char* ref);
+/* I1401: the lookup query for a song of any source. A Modland key goes as key=<key>; every other song goes as title=<title>&author=<artist> and
+ * needs both non-empty. Writes the query (no leading '?') into out; 0 when there is nothing to ask (no title or artist) or it does not fit. */
+int sel_dz_query(const char* key, const char* title, const char* artist, char* out, size_t cap);
 void sel_library_scrape_set_enabled(sel_library* lib, int on);
 void sel_library_scrape_kick(sel_library* lib);
 int sel_library_scrape_poll(sel_library* lib);

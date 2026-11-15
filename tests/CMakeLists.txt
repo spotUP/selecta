@@ -3835,6 +3835,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_album_rows_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-album-rows COMMAND library_album_rows_test)
   set_tests_properties(library-album-rows PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_album_rows_ok")
+  # I1401: the Demozoo query of a song of any source (key= for Modland, title + author for the rest).
+  add_executable(library_dz_query_test library_dz_query_test.c)
+  target_include_directories(library_dz_query_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_dz_query_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-dz-query COMMAND library_dz_query_test)
+  set_tests_properties(library-dz-query PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_dz_query_ok")
   # I336: the library job thread runs the folder scan task off the caller's thread.
   add_executable(library_task_test library_task_test.c)
   target_include_directories(library_task_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
