@@ -306,8 +306,19 @@ static void dz_put(sel_library* lib, int id, const char* kind, const void* data,
     art_request(lib, &op);
 }
 
+int sel_dz_query(const char* key, const char* title, const char* artist, char* out, size_t cap) {
+    char a[600], b[600];
+
+    if (strncmp(key, "modland:pub/modules/", 20) == 0) {
+        if (!sel_url_encode(key, a, sizeof a)) return 0;
+        return snprintf(out, cap, "key=%s", a) < (int)cap;
+    }
+    if (title == NULL || artist == NULL || title[0] == '\0' || artist[0] == '\0' || !sel_url_encode(title, a, sizeof a) || !sel_url_encode(artist, b, sizeof b)) return 0;
+    return snprintf(out, cap, "title=%s&author=%s", a, b) < (int)cap;
+}
+
 static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
-    char base[256], url[SCRAPE_URL_MAX], ke[1500], shot[SCRAPE_URL_MAX], kind[12], stamp[24];
+    char base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], kind[12], stamp[24];
     uint8_t seen[24];
     scrape_buf js, img;
     sel_art_op op;
@@ -316,13 +327,21 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     const char* cap_env = getenv("SELECTA_ART_DZ_SHOTS"); /* test knob: a live check fetches one image */
 
     if (cap_env != NULL && atoi(cap_env) > 0 && atoi(cap_env) < shots_max) shots_max = atoi(cap_env);
-    if (strncmp(key, "modland:pub/modules/", 20) != 0) return 1;
     id = sel_art_dz_id(key);
     memset(&op, 0, sizeof op);
     op.op = SEL_ART_FIND;
     op.ref = key;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) return 1; /* real art, or screenshots already cached */
+    memset(meta, 0, sizeof meta);
+    if (strncmp(key, "modland:pub/modules/", 20) != 0) { /* I1401: any other source is asked by title + artist from the songs row */
+        memset(&op, 0, sizeof op);
+        op.op = SEL_ART_SONG_META;
+        op.ref = key;
+        op.data = (uint8_t*)meta;
+        op.cap = sizeof meta;
+        if (art_request(lib, &op) <= 0) return 1; /* no title or no artist: nothing to ask */
+    }
     memset(seen, 0, sizeof seen);
     if (dz_has(lib, id, "dz_miss", seen, sizeof seen - 1u) > 0 && (time_t)atol((const char*)seen) > time(NULL) - (time_t)SEL_ART_SCRAPE_RETRY_DAYS * 86400) return 1;
     js.data = malloc(SCRAPE_JSON_MAX);
@@ -335,8 +354,12 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
         return -1;
     }
     base_url("SELECTA_ART_DZ_URL", "https://hippoplayer.se", base, sizeof base);
-    sel_url_encode(key, ke, sizeof ke);
-    snprintf(url, sizeof url, "%s/api/demozoo/lookup?key=%s", base, ke);
+    if (!sel_dz_query(key, meta, meta + strlen(meta) + 1, ke, sizeof ke)) {
+        free(js.data);
+        free(img.data);
+        return 1;
+    }
+    snprintf(url, sizeof url, "%s/api/demozoo/lookup?%s", base, ke);
     st->albums++;
     r = scrape_get(url, &js, st);
     if (r == 1) {
@@ -458,7 +481,7 @@ void sel_library_scrape_kick(sel_library* lib) {
 void sel_library_demozoo_kick(sel_library* lib, const char* ref) {
     char key[sizeof lib->dz_key];
 
-    if (lib == NULL || ref == NULL || lib->dz_off || scrape_disabled(lib) || !sel_song_key_of(ref, key, sizeof key) || strncmp(key, "modland:", 8) != 0 || !sel_job_start(lib)) return;
+    if (lib == NULL || ref == NULL || lib->dz_off || scrape_disabled(lib) || !sel_song_key_of(ref, key, sizeof key) || !sel_job_start(lib)) return;
     pthread_mutex_lock(&lib->job_lock);
     memcpy(lib->dz_key, key, sizeof key);
     lib->job_scrape = 1;
@@ -486,7 +509,7 @@ void sel_library_scrape_kick(sel_library* lib) {
 void sel_library_demozoo_kick(sel_library* lib, const char* ref) {
     char key[sizeof lib->dz_key];
 
-    if (lib != NULL && ref != NULL && !lib->dz_off && !scrape_disabled(lib) && sel_song_key_of(ref, key, sizeof key) && strncmp(key, "modland:", 8) == 0) {
+    if (lib != NULL && ref != NULL && !lib->dz_off && !scrape_disabled(lib) && sel_song_key_of(ref, key, sizeof key)) {
         memcpy(lib->dz_key, key, sizeof key);
     }
 }
