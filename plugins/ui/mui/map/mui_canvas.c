@@ -71,7 +71,7 @@ static void mui_platform_cover(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind,
         }
         ready = 1;
     }
-    sel_gui_cover_draw_kind(c, r, kind, sel_platform_of_ext(format), sel_gui_str_hash(title != NULL ? title : ""), tokens, NULL,
+    sel_gui_cover_draw_kind(c, r, kind, sel_platform_of_ext(format), sel_gui_str_hash(title != NULL ? title : ""), title, tokens, NULL, NULL,
                             mui_cover_icons(edge / 2));
 }
 
