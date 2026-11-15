@@ -29,6 +29,7 @@ typedef struct mui_tile {
     const char* title;
     const char* format; /* file extension; its platform family colours the cover (NULL = Music) */
     int64_t art_id;
+    uint32_t kind; /* SEL_COVER_KIND_* (include/selecta/platform.h, I1399a); 0 = FORMAT: the family of `format` */
 } mui_tile;
 
 /* Cover lookup: tile-edge square words of the cover with `art_id`, NULL on a miss (the tile then shows the platform cover).
@@ -56,6 +57,6 @@ mui_art_path mui_art_path_for(int screen_is_rtg);
 /* Draws one cover into `r` by path: DATATYPE scales the decoded words `src` (sw x sh) to r and blits them, COVER (or a
  * NULL src) draws the platform cover. Returns the path actually used. */
 mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path want, const uint32_t* src, int32_t sw,
-                                 int32_t sh, const char* format, const char* title);
+                                 int32_t sh, uint32_t kind, const char* format, const char* title);
 
 #endif /* MUI_CANVAS_H */
