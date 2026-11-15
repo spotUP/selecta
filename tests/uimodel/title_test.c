@@ -10,9 +10,11 @@ static const struct { const char* in; const char* want; } T[] = {
     {"ProTracker", "ProTracker"},
     {"McDonald", "McDonald"},
     {"McDonaldBurgerKing", "McDonald Burger King"},
+    {"ThatsALotOfStuff", "Thats A Lot Of Stuff"}, /* capital run before a word */
+    {"DJsMix", "DJsMix"},
     {"MacDonaldBurgerKing", "MacDonald Burger King"},
     {"DJ", "DJ"},
-    {"DJShadowMusicBox", "DJShadow Music Box"},
+    {"DJShadowMusicBox", "DJ Shadow Music Box"},
     {"Music Like This", "Music Like This"},
     {"Music LikeThisToo", "Music LikeThisToo"},
     {"__a__b__", "A B"},

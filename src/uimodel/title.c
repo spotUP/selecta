@@ -7,8 +7,12 @@
 static int is_up(char c) { return c >= 'A' && c <= 'Z'; }
 static int is_lo(char c) { return c >= 'a' && c <= 'z'; }
 
-/* 1 when w[i] (0 < i < n) starts a new hump: lower then upper, and not the "Mc" / "Mac" prefix of a name. */
+/* 1 when w[i] (0 < i < n) starts a new hump: lower then upper (not the "Mc" / "Mac" prefix of a name),
+   or the last capital of a capital run that starts a word of 2+ lower letters ("ALot" -> "A Lot", "DJs" stays). */
 static int hump(const char* w, size_t i) {
+    if (is_up(w[i - 1]) && is_up(w[i]) && is_lo(w[i + 1]) && is_lo(w[i + 2])) {
+        return 1;
+    }
     return is_lo(w[i - 1]) && is_up(w[i]) && !(i == 2 && w[0] == 'M' && w[1] == 'c') && !(i == 3 && w[0] == 'M' && w[1] == 'a' && w[2] == 'c');
 }
 
