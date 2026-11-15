@@ -3823,7 +3823,7 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_scan_composers_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-scan-composers COMMAND library_scan_composers_test)
   set_tests_properties(library-scan-composers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_scan_composers_ok")
-  # I787: every Your Library category read answers in under 200 ms warm on a 600 000-song library.
+  # I787: every Your Library category read answers in under 200 ms warm on a 600 000-song library. I1400a: Home under 2 s.
   add_executable(library_items_budget_test library_items_budget_test.c)
   target_include_directories(library_items_budget_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_items_budget_test PRIVATE selecta_library selecta_core)
