@@ -17,6 +17,7 @@
 #include <selecta/source.h>
 #include "modulespl_parse.h"
 #include "source/descriptor.h"
+#include "source/uhc.h"
 #include "source/url_path.h"
 
 #include <stdio.h>
@@ -27,9 +28,6 @@
 #define PAGE_MAX (4u * 1024u * 1024u)
 /* www.modules.pl starts answering a search after 10-11 s; the client default of 3 s fails it (I816). */
 #define SEARCH_FIRST_BYTE_MS 30000u
-#define UHC_ROWS 500 /* HippoPlayer's default UHC search limit */
-/* UHC answers in about 0.2 s; give up early so a dead index costs 5 s before the site fallback, not 30 s. */
-#define UHC_FIRST_BYTE_MS 5000u
 
 static const sel_tag g_tags[] = {
     {SEL_TAG_END, 0},
@@ -103,48 +101,14 @@ static int html_search(const sel_host* host, const char* query, sel_search_sink*
     return rows;
 }
 
-/* The UHC search index answers in about 0.2 s. Returns the row count, or -1 when the request or the JSON failed
- * (the caller then falls back to the site page); an empty answer is 0 rows and final. */
-static int uhc_search(const sel_host* host, const char* query, sel_search_sink* out) {
-    const sel_net* net = host->net != NULL ? host->net(host) : NULL;
-    const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
-    const char* env = getenv("SELECTA_MODULESPL_UHC");
-    char dir[512];
-    char path[600];
-    char enc[384];
-    char url[1000];
-    uint32_t rq = 0;
-    unsigned long got = 0;
-    FILE* f;
-    int rows;
-
-    if (net == NULL || cat == NULL || !sel_url_query_encode(query, enc, sizeof enc) ||
-        !cat->cache_dir(host, "modulespl", dir, sizeof dir)) {
-        return -1;
-    }
-    snprintf(path, sizeof path, "%s/uhc.json", dir);
-    snprintf(url, sizeof url, "%s/uhcsearch?format=json&searchtype=modulessearch&searchlimit=%d&searchwords=%s",
-             env != NULL && env[0] != '\0' ? env : "https://uhc.megaburken.net", UHC_ROWS, enc);
-    if (net->get_file_wait(host, url, path, UHC_FIRST_BYTE_MS, &rq, &got) != 200) {
-        remove(path);
-        return -1;
-    }
-    f = fopen(path, "rb");
-    rows = f != NULL ? sel_modulespl_parse_uhc(f, forward, out) : -1;
-    if (f != NULL) {
-        fclose(f);
-    }
-    remove(path);
-    return rows;
-}
-
 static int ms_search(const sel_host* host, const char* query, sel_search_sink* out) {
+    sel_modulespl_uhc_ctx uc = {forward, out};
     int rows;
 
     if (query == NULL || query[0] == '\0') {
         return -1;
     }
-    rows = uhc_search(host, query, out);
+    rows = sel_uhc_search(host, "modulespl", "SELECTA_MODULESPL_UHC", "modulessearch", query, sel_modulespl_uhc_row, &uc);
     return rows >= 0 ? rows : html_search(host, query, out);
 }
 
