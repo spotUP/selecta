@@ -76,7 +76,7 @@ static int art_find_dz(sqlite3* db, const char* ref) {
     sqlite3_stmt* st = NULL;
     int id = 0;
 
-    if (!sel_song_key_of(ref, key, sizeof key) || strncmp(key, "modland:", 8) != 0) return 0;
+    if (!sel_song_key_of(ref, key, sizeof key)) return 0;
     id = sel_art_dz_id(key);
     if (sqlite3_prepare_v2(db, "SELECT 1 FROM artwork c JOIN artwork k ON k.album_id = c.album_id AND k.kind = 'dz_key' AND k.data = ?2"
                            " WHERE c.album_id = ?1 AND c.kind = 'cover'", -1, &st, NULL) != SQLITE_OK) return 0;
@@ -91,6 +91,21 @@ static int art_find(sqlite3* db, const sel_art_op* op) {
     int id = art_find_id(db, op->ref);
 
     if (id == 0) id = art_find_song(db, op);
+    if (id > 0) { /* I1401: an album row without a cover yields to the song's Demozoo stills */
+        sqlite3_stmt* st = NULL;
+        int has = 0;
+
+        if (sqlite3_prepare_v2(db, "SELECT 1 FROM artwork WHERE album_id = ?1 AND kind = 'cover'", -1, &st, NULL) == SQLITE_OK) {
+            sqlite3_bind_int64(st, 1, id);
+            has = sqlite3_step(st) == SQLITE_ROW;
+            sqlite3_finalize(st);
+        }
+        if (!has) {
+            int dz = art_find_dz(db, op->ref);
+
+            if (dz != 0) id = dz;
+        }
+    }
     if (id == 0) id = art_find_dz(db, op->ref);
     return id != 0 ? id : art_find_album(db, op->ref);
 }
@@ -193,6 +208,26 @@ static int art_next_missing(sqlite3* db, const sel_art_op* op) {
     return id;
 }
 
+static int art_song_meta(sqlite3* db, const sel_art_op* op) {
+    char key[1024];
+    sqlite3_stmt* st = NULL;
+    int ok = 0;
+
+    if (op->data == NULL || op->cap < 4u || !sel_song_key_of(op->ref, key, sizeof key)) return 0;
+    if (sqlite3_prepare_v2(db, "SELECT name, artist FROM songs WHERE key = ?1", -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_bytes(st, 0) > 0 && sqlite3_column_bytes(st, 1) > 0) {
+        int n = snprintf((char*)op->data, op->cap, "%s%c%s", (const char*)sqlite3_column_text(st, 0), '\0', (const char*)sqlite3_column_text(st, 1));
+
+        if (n > 0 && (uint32_t)n + 2u < op->cap) {
+            op->data[n + 1] = '\0';
+            ok = 1;
+        }
+    }
+    sqlite3_finalize(st);
+    return ok;
+}
+
 /* I1384b: the single place that knows which artwork kinds make a song's slide show (the UIs only ask this). */
 static int art_kinds(sqlite3* db, const sel_art_op* op) {
     sqlite3_stmt* st = NULL;
@@ -225,6 +260,8 @@ void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* rep
         v = art_put(lib->db, op);
     } else if (op->op == SEL_ART_NEXT_MISSING) {
         v = art_next_missing(lib->db, op);
+    } else if (op->op == SEL_ART_SONG_META && op->ref != NULL) {
+        v = art_song_meta(lib->db, op);
     } else if (op->op == SEL_ART_KINDS) {
         v = art_kinds(lib->db, op);
     } else if (op->op == SEL_ART_STORE && op->kind != NULL && op->data != NULL) {

@@ -680,6 +680,7 @@ static int library_scan(int argc, char** argv) {
         sel_library_scrape_wait(lib);
         sel_library_scrape_stats(lib, &ss);
         dz_requests = (unsigned)ss.requests;
+        (void)dz_requests; /* printed on desktop only */
     }
     memset(&st, 0, sizeof st);
     if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {

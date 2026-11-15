@@ -231,6 +231,9 @@ int32_t sel_gui_text_wrap(sel_gui_canvas* c, const sel_gui_atlas* at, sel_gui_re
             i += used;
         }
         if (!fits && line == max_lines - 1) {
+            if (c == NULL) {
+                return line + 1; /* count only: sel_gui_text_draw's profiler needs a canvas */
+            }
             sel_gui_text_draw(c, at, box.x, box.y + line * at->line_height, s + start, argb, box.w, st);
             return line + 1;
         }

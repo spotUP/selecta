@@ -3,6 +3,8 @@
  * drawing, each checked where it lives. Not a reachability test: the call sites switch in I691b-e, which carry the
  * one wiring test per surface. */
 #include <selecta/gui/gui_genart.h>
+#include <selecta/gui/gui_icons.h>
+#include <selecta/library_item.h>
 #include <selecta/uimodel/tokens.h>
 #include <source.h>
 
@@ -229,6 +231,56 @@ static void test_contrast(void) {
     }
 }
 
+static double hue_of(uint32_t rgb) { /* degrees 0..360 */
+    double r = (double)((rgb >> 16) & 255u), g = (double)((rgb >> 8) & 255u), b = (double)(rgb & 255u);
+    double mx = fmax(r, fmax(g, b)), d = mx - fmin(r, fmin(g, b)), h;
+    if (d == 0.0) return 0.0;
+    h = mx == r ? fmod((g - b) / d, 6.0) : mx == g ? (b - r) / d + 2.0 : (r - g) / d + 4.0;
+    return h < 0.0 ? h * 60.0 + 360.0 : h * 60.0;
+}
+
+static void test_kinds(void) {
+    uint32_t k;
+    double lt = lum(g_tokens[SEL_GUI_TOKEN_COVER_TEXT]);
+
+    if (sel_cover_kind_of_source("DLNA") != SEL_COVER_KIND_DLNA || sel_cover_kind_of_source("local") != SEL_COVER_KIND_LOCAL ||
+        sel_cover_kind_of_source("radio") != SEL_COVER_KIND_RADIO || sel_cover_kind_of_source("podcast") != SEL_COVER_KIND_PODCAST ||
+        sel_cover_kind_of_source("modulespl") != SEL_COVER_KIND_MODULES_PL || sel_cover_kind_of_source("hippo") != SEL_COVER_KIND_HIPPO ||
+        sel_cover_kind_of_source("modland") != SEL_COVER_KIND_ARCHIVE) {
+        printf("FAIL source to kind\n");
+        g_fail++;
+    }
+    if (sel_cover_kind_of_item(0u, 0, 0, "") != SEL_COVER_KIND_FORMAT ||
+        sel_cover_kind_of_item((uint32_t)SEL_LIB_ITEM_PLAYLIST + 1u, 0, 0, "") != SEL_COVER_KIND_PLAYLIST ||
+        sel_cover_kind_of_item(0u, 1, 0, "") != SEL_COVER_KIND_ALBUM || sel_cover_kind_of_item(0u, 0, 1, "") != SEL_COVER_KIND_ARTIST) {
+        printf("FAIL item to kind\n");
+        g_fail++;
+    }
+    for (k = 1u; k < SEL_COVER_KIND_COUNT; k++) { /* every kind: an icon, a tint token in the theme, a label, a glyph; text on the tint reads */
+        double lb = lum(g_tokens[sel_cover_kind_token(k)]);
+        if (sel_cover_kind_icon(k) >= SEL_GUI_ICON_COUNT || sel_cover_kind_token(k) == 0u || sel_cover_kind_label(k)[0] == '\0' ||
+            sel_cover_kind_glyph(k)[0] != '[') {
+            printf("FAIL kind %u table row\n", (unsigned)k);
+            g_fail++;
+        }
+        if ((lt + 0.05) / (lb + 0.05) < 4.5) {
+            printf("FAIL contrast of kind %s tint is %.2f\n", sel_cover_kind_label(k), (lt + 0.05) / (lb + 0.05));
+            g_fail++;
+        }
+    }
+    for (k = 1u; k < SEL_COVER_KIND_COUNT; k++) { /* I1403: every kind its own hue, at least 20 degrees from every other kind */
+        uint32_t j;
+        for (j = k + 1u; j < SEL_COVER_KIND_COUNT; j++) {
+            double dh = fabs(hue_of(g_tokens[sel_cover_kind_token(k)]) - hue_of(g_tokens[sel_cover_kind_token(j)]));
+            if (dh > 180.0) dh = 360.0 - dh;
+            if (dh < 20.0) {
+                printf("FAIL hue of kinds %s and %s differs by only %.0f degrees\n", sel_cover_kind_label(k), sel_cover_kind_label(j), dh);
+                g_fail++;
+            }
+        }
+    }
+}
+
 static void test_aga_palette(void) {
     uint32_t pal[32], tones, f, t, text = g_tokens[SEL_GUI_TOKEN_COVER_TEXT] & 0xFFFFFFu;
     uint32_t used;
@@ -241,6 +293,9 @@ static void test_aga_palette(void) {
     printf("aga palette: %u families x %u tone(s) + text = %u of 32 slots\n", (unsigned)SEL_PLATFORM_FAMILY_COUNT, tones, used);
     CHECK(used <= 32u); /* the palette fits the free artwork slots (entries 32..63) */
     CHECK(pal[used - 1u] == text);
+    for (f = 1u; f < SEL_COVER_KIND_COUNT; f++) { /* I1399a: the kind tints follow the text slot */
+        CHECK(pal[used - 1u + f] == (g_tokens[sel_cover_kind_token(f)] & 0xFFFFFFu));
+    }
     sel_gui_set_palette(c, pal, 32u, 32u);
     for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         for (t = 0u; t < tones; t++) {
@@ -323,6 +378,7 @@ int main(void) {
     test_majority();
     test_tones();
     test_contrast();
+    test_kinds();
     test_aga_palette();
     test_draw();
     if (g_fail == 0) {

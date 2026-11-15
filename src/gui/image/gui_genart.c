@@ -1,5 +1,6 @@
 /* Platform covers and generated artwork (design doc 2.7, DUI-P2-5; I691 platform-covers design). Integer only. */
 #include <selecta/gui/gui_genart.h>
+#include <selecta/gui/gui_icons.h>
 #include <selecta/uimodel/tokens.h>
 
 #include <string.h>
@@ -31,8 +32,8 @@ uint32_t sel_gui_cover_aga_tones(void) {
     return (SEL_PLATFORM_FAMILY_COUNT * COVER_TONES + 1u <= ART_SLOTS) ? COVER_TONES : 1u;
 }
 
-uint32_t sel_gui_cover_tone(const uint32_t* tokens, uint32_t family, uint32_t tone) {
-    uint32_t base = family_base(tokens, family), out = 0u, sh;
+static uint32_t tone_shade(uint32_t base, uint32_t tone) {
+    uint32_t out = 0u, sh;
 
     if (tone == 0u || tone >= COVER_TONES) {
         return base;
@@ -43,6 +44,10 @@ uint32_t sel_gui_cover_tone(const uint32_t* tokens, uint32_t family, uint32_t to
         out |= ch << sh;
     }
     return out;
+}
+
+uint32_t sel_gui_cover_tone(const uint32_t* tokens, uint32_t family, uint32_t tone) {
+    return tone_shade(family_base(tokens, family), tone);
 }
 
 uint32_t sel_gui_cover_tone_of(uint32_t title_hash) {
@@ -58,8 +63,12 @@ uint32_t sel_gui_cover_palette(uint32_t out[32], const uint32_t* tokens) {
             out[n++] = sel_gui_cover_tone(tokens, f, t);
         }
     }
+    out[n++] = text; /* first spare slot holds the mark and word colour */
+    for (f = 1u; f < SEL_COVER_KIND_COUNT && n < ART_SLOTS; f++) {
+        out[n++] = tokens[sel_cover_kind_token(f)] & 0xFFFFFFu; /* I1399a: the kind tints, so an INDEX8 kind cover is an exact match */
+    }
     while (n < ART_SLOTS) {
-        out[n++] = text; /* first spare slot holds the mark and word colour; the rest repeat it */
+        out[n++] = text;
     }
     return tones;
 }
@@ -232,6 +241,75 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
     if (label_font != NULL && edge >= 64) {
         sel_gui_text_draw(c, label_font, r.x + margin, r.y + r.h - margin - label_font->line_height,
                           sel_platform_label(family), text, r.w - 2 * margin, NULL);
+    }
+    c->region = region;
+    sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);
+}
+
+/* I1399: a cover by kind. A kind other than FORMAT is the kind's tint token (RGBA32: gradient; INDEX8: flat, the tint sits in the
+ * cover palette slots, I1399a) with the kind label and the item title (two lines at most) bottom left and, with `icons`, the kind's
+ * flat icon centred; FORMAT on RGBA32 draws the family tint with the family's icon. FORMAT on INDEX8 (AGA, 32 palette slots) keeps
+ * the family mark of sel_gui_cover_draw. */
+void sel_gui_cover_draw_kind(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, uint32_t family, uint32_t title_hash,
+                             const char* title, const uint32_t* tokens, const sel_gui_atlas* title_font,
+                             const sel_gui_atlas* kind_font, const sel_gui_icons* icons) {
+    uint32_t t0, region, field, text, tok;
+    int32_t edge, margin, px, text_top, lines;
+    sel_gui_rect box, tbox;
+
+    if (r.w <= 0 || r.h <= 0 || (c->format == SEL_GUI_INDEX8 && sel_cover_kind_token(kind) == 0u)) {
+        sel_gui_cover_draw(c, r, family, title_hash, tokens, title_font);
+        return;
+    }
+    if (family >= SEL_PLATFORM_FAMILY_COUNT) {
+        family = SEL_PLATFORM_FAMILY_MUSIC;
+    }
+    tok = sel_cover_kind_token(kind);
+    t0 = sel_gui_prof_begin(c);
+    region = c->region;
+    c->region = SEL_GUI_RGN_ART;
+    field = 0xFF000000u | (tok != 0u ? tone_shade(tokens[tok] & 0xFFFFFFu, sel_gui_cover_tone_of(title_hash))
+                                      : sel_gui_cover_tone(tokens, family, sel_gui_cover_tone_of(title_hash)));
+    text = 0xFF000000u | (tokens[SEL_GUI_TOKEN_COVER_TEXT] & 0xFFFFFFu);
+    if (c->format == SEL_GUI_INDEX8) {
+        field = 0xFF000000u | (tokens[tok] & 0xFFFFFFu); /* the palette holds the untoned kind tint; flat, like the family cover */
+        sel_gui_fill_rect(c, r, field);
+    } else {
+        sel_gui_gradient(c, r, 1, cover_dark(field), field);
+    }
+    edge = r.w < r.h ? r.w : r.h;
+    margin = edge / 10;
+    text_top = r.y + r.h; /* I1399c: the text block (kind label above the title, two title lines at most) sits bottom left */
+    if (title_font != NULL && edge >= 64) {
+        tbox.x = r.x + margin;
+        tbox.w = r.w - 2 * margin;
+        tbox.h = 2 * title_font->line_height;
+        tbox.y = 0;
+        lines = (title != NULL && title[0] != '\0') ? sel_gui_text_wrap(NULL, title_font, tbox, title, text, 2, NULL) : 0;
+        text_top = r.y + r.h - margin - lines * title_font->line_height;
+        tbox.y = text_top;
+        tbox.h = lines * title_font->line_height;
+        if (lines > 0) {
+            sel_gui_text_wrap(c, title_font, tbox, title, text, 2, NULL);
+        }
+        if (kind_font != NULL) {
+            text_top -= kind_font->line_height;
+            sel_gui_text_draw(c, kind_font, r.x + margin, text_top, tok != 0u ? sel_cover_kind_label(kind) : sel_platform_label(family),
+                              text, r.w - 2 * margin, NULL);
+        }
+    }
+    if (icons != NULL) {
+        px = edge / 2;
+        if (px > text_top - r.y - margin) {
+            px = text_top - r.y - margin; /* the icon centres in the area above the text */
+        }
+        box.w = px;
+        box.h = px;
+        box.x = r.x + (r.w - px) / 2;
+        box.y = r.y + (text_top - r.y - px) / 2;
+        if (px >= 8) {
+            sel_gui_icon_draw(c, icons, tok != 0u ? sel_cover_kind_icon(kind) : sel_cover_family_icon(family), box, px, text);
+        }
     }
     c->region = region;
     sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);

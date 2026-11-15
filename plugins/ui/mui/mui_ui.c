@@ -12,6 +12,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <selecta/platform.h>
+
 #include "map/mui_map.h"
 #include "map/mui_theme.h"
 #include "map/mui_fontprobe.h"
@@ -242,6 +244,8 @@ typedef struct mui_state {
     Object* set_ctl[MUI_PREF_MAX];
     char set_choice[MUI_PREF_MAX][80];
     const char* set_entry[MUI_PREF_MAX][10];
+    Object* np_cover;               /* I1399d: Now Playing art canvas, detail slot (NULL: placeholder) */
+    Object* bar_cover;              /* I1399d: the same cover in the player bar */
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
     Object* np_artist;
     Object* np_album;
@@ -1387,7 +1391,8 @@ static Object* mui_player_group(mui_state* s) {
         if (art == NULL || titles == NULL || left == NULL) {
             return NULL;
         }
-        DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child; the cover itself is the Now Playing art */
+        s->bar_cover = mui_canvas_cover_new(g_screen_rtg); /* I1399d: a group needs one child; the cover canvas is the art */
+        DoMethod(art, OM_ADDMEMBER, s->bar_cover != NULL ? s->bar_cover : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
         DoMethod(titles, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song", MUI_LBL_TITLE));
         DoMethod(titles, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
         DoMethod(left, OM_ADDMEMBER, art);
@@ -2176,7 +2181,8 @@ static Object* mui_detail_group(mui_state* s, int compact) {
     /* I1125 (design I973 6a Q6): the Like heart sits on the Now Playing panel like the Mac np_like, not in the player bar. */
     like = mui_make_button_icon("Like", "Like", CTL_P4_BASE + (LONG)P4_LIKE);
     if (art != NULL) {
-        DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child */
+        s->np_cover = mui_canvas_cover_new(g_screen_rtg); /* I1399d */
+        DoMethod(art, OM_ADDMEMBER, s->np_cover != NULL ? s->np_cover : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child */
     }
     if (compact && top != NULL && txt != NULL) {
         DoMethod(g, OM_ADDMEMBER, mui_aatext("Now Playing", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_LEFT, 0));
@@ -2458,6 +2464,18 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     mui_flat(s->np_buf[2], sizeof s->np_buf[2], album != NULL && album[0] != '\0' ? album : " ");
     if (s->np_buf[2][0] != ' ') {
         sel_uim_tidy_info("Release", s->np_buf[2], sizeof s->np_buf[2]);
+    }
+    {   /* I1399d: the song's generated cover (kind FORMAT: its format family), label and title bottom left */
+        const char* base = so->path != NULL ? mui_base_name(so->path) : NULL;
+        const char* dot = base != NULL ? strrchr(base, '.') : NULL;
+        const char* ttl = so->path != NULL ? s->np_buf[0] : "";
+        uint32_t tint = g_tokens[sel_cover_kind_token(SEL_COVER_KIND_FORMAT)] & 0xFFFFFFu;
+        if (s->np_cover != NULL) {
+            mui_canvas_set_cover(s->np_cover, SEL_COVER_KIND_FORMAT, tint, dot != NULL ? dot + 1 : NULL, ttl);
+        }
+        if (s->bar_cover != NULL) {
+            mui_canvas_set_cover(s->bar_cover, SEL_COVER_KIND_FORMAT, tint, dot != NULL ? dot + 1 : NULL, ttl);
+        }
     }
     mui_text_set(s->np_title, s->np_buf[0]);
     mui_text_set(s->np_artist, s->np_buf[1]);
@@ -4550,6 +4568,7 @@ static void mui_close(void* state) {
         s->app = NULL;
         s->win = NULL;
         s->canvas = NULL;
+        s->np_cover = s->bar_cover = NULL;
         mui_canvas_class_free();
         mui_vizarea_class_free();
         mui_aawrap_free(); /* I685f: the list hooks, after the objects are gone */

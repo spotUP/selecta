@@ -9,6 +9,8 @@
 #include <selecta/platform.h>
 #include <selecta/gui/gui_text.h>
 
+struct sel_gui_icons;
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -33,6 +35,12 @@ uint32_t sel_gui_cover_palette(uint32_t out[32], const uint32_t* tokens);
 /* Draws the cover of `family` into `r`. `label_font` NULL draws no name. */
 void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint32_t title_hash, const uint32_t* tokens,
                         const sel_gui_atlas* label_font);
+
+/* I1399: the cover of a kind (SEL_COVER_KIND_*, include/selecta/platform.h): the kind's tint, flat icon (`icons` NULL: none) and
+ * label (`kind_font`, smaller) above the item `title` (`title_font`, two lines at most), bottom left; FORMAT uses `family`. INDEX8 draws as sel_gui_cover_draw. */
+void sel_gui_cover_draw_kind(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, uint32_t family, uint32_t title_hash,
+                             const char* title, const uint32_t* tokens, const sel_gui_atlas* title_font,
+                             const sel_gui_atlas* kind_font, const struct sel_gui_icons* icons);
 
 #ifdef __cplusplus
 }

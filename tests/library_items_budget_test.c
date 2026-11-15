@@ -108,6 +108,24 @@ int main(void) {
         if (cat[k].kind == SEL_LIB_ITEM_ALBUM) check(total == 40000u, "40000 album rows");
     }
     printf("items_budget worst warm %.0f ms (budget %.0f)\n", worst, SEL_BUDGET_MS);
+    /* I1400a: Home's shelves (Recently Played, Your Albums, Your Composers) count each album's and composer's plays. With history
+     * driving that per-row count, Home held the library worker 11 s at start on Johan's library and the first search waited behind it. */
+    {
+        static char home[65536];
+        uint32_t lines = 0;
+        double t[2];
+
+        for (i = 0; i < 2; i++) {
+            double t0 = now_ms();
+
+            check(sel_library_home_chip(lib, SEL_HOME_CHIP_ALL, 10, home, sizeof home, &lines) != 0, "home read");
+            t[i] = now_ms() - t0;
+        }
+        printf("items_budget home lines=%u cold=%.0f ms warm=%.0f ms (budget %.0f)\n", (unsigned)lines, t[0], t[1], 10.0 * SEL_BUDGET_MS);
+        check(t[1] < 10.0 * SEL_BUDGET_MS, "home under budget");
+        check(strstr(home, "Recently Played") != NULL && strstr(home, "Your Albums") != NULL && strstr(home, "Your Composers") != NULL,
+              "home shelves listed");
+    }
     sel_library_close(lib);
     {
         char cmd[300];
