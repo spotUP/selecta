@@ -5,6 +5,7 @@
 #define MUI_CANVAS_H
 
 #include <selecta/gui/gui_draw.h>
+#include <selecta/gui/gui_icons.h>
 
 #include <stdint.h>
 
@@ -56,6 +57,9 @@ typedef enum mui_art_path { MUI_ART_COVER = 0, MUI_ART_DATATYPE = 1 } mui_art_pa
 mui_art_path mui_art_path_for(int screen_is_rtg);
 /* Draws one cover into `r` by path: DATATYPE scales the decoded words `src` (sw x sh) to r and blits them, COVER (or a
  * NULL src) draws the platform cover. Returns the path actually used. */
+/* The baked icon set the cover kind icons come from (I1399a); the UI plugin passes its table, NULL draws tint only. */
+void mui_canvas_set_icons(const sel_gui_icons_packed* baked);
+
 mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path want, const uint32_t* src, int32_t sw,
                                  int32_t sh, uint32_t kind, const char* format, const char* title);
 

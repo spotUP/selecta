@@ -12,6 +12,12 @@
 
 /* One size of the baked icon set, unpacked on first use (I1399a): the largest baked size not above `px`. The kind icons are a
  * handful of masks, so the whole set at one cover-sized edge is small (about 40 KB at 32 px); a later larger edge rebuilds it. */
+static const sel_gui_icons_packed* mui_icon_src; /* set by the UI plugin; NULL draws covers without the icon */
+
+void mui_canvas_set_icons(const sel_gui_icons_packed* baked) {
+    mui_icon_src = baked;
+}
+
 static const sel_gui_icons* mui_cover_icons(int32_t px) {
     static sel_gui_icons ic;
     static int32_t size;
@@ -19,27 +25,31 @@ static const sel_gui_icons* mui_cover_icons(int32_t px) {
     static uint8_t* buf;
     uint32_t s, best = 0u, k;
     size_t sz;
+    const sel_gui_icons_packed* b = mui_icon_src;
 
-    for (s = 0u; s < sel_gui_icons_baked.size_n; s++) {
-        if (sel_gui_icons_baked.sizes[s] <= px) {
+    if (b == NULL || b->size_n == 0u) {
+        return NULL;
+    }
+    for (s = 0u; s < b->size_n; s++) {
+        if (b->sizes[s] <= px) {
             best = s;
         }
     }
-    if (buf != NULL && size == sel_gui_icons_baked.sizes[best]) {
+    if (buf != NULL && size == b->sizes[best]) {
         return &ic;
     }
-    size = sel_gui_icons_baked.sizes[best];
+    size = b->sizes[best];
     sz = (size_t)size * (size_t)size;
     free(buf);
-    buf = malloc(sz * sel_gui_icons_baked.count);
+    buf = malloc(sz * b->count);
     if (buf == NULL) {
         return NULL; /* no icon: the cover keeps its tint */
     }
-    for (k = 0u; k < sel_gui_icons_baked.count; k++) {
-        sel_gui_icon_unpack(&sel_gui_icons_baked, best, k, buf + k * sz);
+    for (k = 0u; k < b->count; k++) {
+        sel_gui_icon_unpack(b, best, k, buf + k * sz);
     }
     alpha = buf;
-    ic.count = sel_gui_icons_baked.count;
+    ic.count = b->count;
     ic.size_n = 1u;
     ic.sizes = &size;
     ic.alpha = &alpha;
