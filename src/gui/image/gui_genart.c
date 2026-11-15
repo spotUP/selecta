@@ -23,7 +23,7 @@ static uint32_t family_base(const uint32_t* tokens, uint32_t family) {
         family = SEL_PLATFORM_FAMILY_MUSIC;
     }
     if (family == SEL_PLATFORM_FAMILY_MUSIC) {
-        return tokens[SEL_GUI_TOKEN_ACCENT] & 0xFFFFFFu;
+        return tokens[SEL_GUI_TOKEN_COVER_MUSIC] & 0xFFFFFFu; /* I1403b: own hue, not the blue UI accent */
     }
     return tokens[SEL_GUI_TOKEN_COVER_AMIGA + (family - 1u)] & 0xFFFFFFu;
 }
