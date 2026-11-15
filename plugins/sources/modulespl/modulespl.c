@@ -28,6 +28,8 @@
 /* www.modules.pl starts answering a search after 10-11 s; the client default of 3 s fails it (I816). */
 #define SEARCH_FIRST_BYTE_MS 30000u
 #define UHC_ROWS 500 /* HippoPlayer's default UHC search limit */
+/* UHC answers in about 0.2 s; give up early so a dead index costs 5 s before the site fallback, not 30 s. */
+#define UHC_FIRST_BYTE_MS 5000u
 
 static const sel_tag g_tags[] = {
     {SEL_TAG_END, 0},
@@ -123,7 +125,7 @@ static int uhc_search(const sel_host* host, const char* query, sel_search_sink* 
     snprintf(path, sizeof path, "%s/uhc.json", dir);
     snprintf(url, sizeof url, "%s/uhcsearch?format=json&searchtype=modulessearch&searchlimit=%d&searchwords=%s",
              env != NULL && env[0] != '\0' ? env : "https://uhc.megaburken.net", UHC_ROWS, enc);
-    if (net->get_file_wait(host, url, path, SEARCH_FIRST_BYTE_MS, &rq, &got) != 200) {
+    if (net->get_file_wait(host, url, path, UHC_FIRST_BYTE_MS, &rq, &got) != 200) {
         remove(path);
         return -1;
     }
