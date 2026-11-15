@@ -33,6 +33,8 @@ enum {
 
 /* The family of a file extension without the dot, any case; SEL_PLATFORM_FAMILY_MUSIC when unknown. */
 uint32_t sel_platform_of_ext(const char* ext);
+/* 1 when `ext` (no dot, any case) is a row of the extension table (a file the player can play), 0 for NULL or an unknown one. */
+int sel_platform_ext_known(const char* ext);
 /* The last extension of a file name without the dot, original case ("x.Mod" gives "Mod"); NULL without one. The one
  * extension extractor of the desktop UI: the family resolver and the format column both use it. */
 const char* sel_platform_path_ext(const char* name);

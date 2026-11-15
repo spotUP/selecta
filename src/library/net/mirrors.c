@@ -39,6 +39,7 @@ static const builtin BUILTIN[] = {
     {"keygenmusic", "https://keygenmusic.tk/kgm/"},
     {"modulespl", "https://www.modules.pl/modules/"},
     {"aminet", "https://aminet.net/"},
+    {"turran", "https://uhc.megaburken.net/turran/"},
 };
 
 static int add_base(sel_mirror_set* s, const char* base, size_t n) {
