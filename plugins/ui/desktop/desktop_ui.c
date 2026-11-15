@@ -387,7 +387,7 @@ typedef struct desk {
     uint32_t np_fade;        /* fade strips over the Now Playing artwork last draw: 0 on a platform cover, whose word sits in the faded third (I693b) */
     uint32_t pc_np, pc_bar, pc_page, pc_tile0, pc_draws, pc_shelf, pc_grid, pc_flow, pc_side, pc_header; /* I691d: shelf, grid, flow, sidebar and page header */ /* I691b: family + 1 of the last platform cover per song site, 0 = real art won; draws = all fallback draws */
     char slide_key[512];     /* I1384b: slide show of the playing song's stills: song, shown still, previous still, ms played on this still, clock of the last step */
-    uint32_t slide_idx, slide_prev, slide_acc, slide_last, slide_switches, slide_hash, slide_of;
+    uint32_t slide_idx, slide_prev, slide_acc, slide_last, slide_switches, slide_hash, slide_of, slide_live_until, slide_tick;
     uint32_t* slide_mix;     /* crossfade scratch, slide_mix_px pixels */
     int32_t slide_mix_px;
     sel_gui_rect np_watch;   /* the Watch demo button (Now Playing page), w = 0 when the song has no video link */
@@ -2003,6 +2003,7 @@ static uint32_t slide_step(desk* d, const char* key, uint32_t n) {
     }
     if (d->slide_idx >= n) d->slide_idx = 0u;
     d->slide_of = n;
+    d->slide_live_until = n > 1u ? d->now_ms + 2500u : 0u;
     return d->slide_idx;
 }
 
@@ -13627,6 +13628,9 @@ static uint32_t desk_timers_wait(const desk* d) {
     if (s > 0u && (w == 0u || s < w)) {
         w = s;
     }
+    if (d->slide_live_until > d->now_ms && (w == 0u || w > 1000u)) { /* I1384b: a shown slide show wakes once a second to count its interval */
+        w = 1000u - d->now_ms % 1000u;
+    }
     return w;
 }
 
@@ -13638,6 +13642,12 @@ static int desk_timers_tick(desk* d) {
     if (d->viz_close_on && d->now_ms >= d->viz_close_until) { /* I1248 */
         d->viz_close_on = 0;
         d->viz_close_hot = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        hid = 1;
+    }
+    if (d->slide_live_until > d->now_ms && d->now_ms / 1000u != d->slide_tick) { /* I1384b: redraw the cover so slide_step counts the second */
+        d->slide_tick = d->now_ms / 1000u;
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         hid = 1;
@@ -13739,6 +13749,8 @@ static void desk_side_settle(desk* d) {
     }
 }
 
+static void desk_art_follow(desk* d);
+
 static void desk_advance(desk* d, uint32_t ms) {
     uint32_t end = d->now_ms + ms;
     while (d->now_ms < end) {
@@ -13761,6 +13773,10 @@ static void desk_advance(desk* d, uint32_t ms) {
         desk_side_step(d);
         sel_uim_update(&d->uim, sel_engine_state(d->engine));
         desk_timers_tick(d);
+        if (d->slide_live_until > d->now_ms && d->art != NULL) { /* I1384b: the still a switch asked for lands before the next virtual second, as on a live clock */
+            uint32_t spins = 0u;
+            do desk_art_follow(d); while (art_busy(d->art) && spins++ < 20000u && (desk_nap(), 1));
+        }
         if (!desk_should_draw(d, animated)) {
             continue;
         }

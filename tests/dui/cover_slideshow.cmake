@@ -33,7 +33,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "fixture sql failed: ${err}")
 endif()
 # the song of the album that now holds the stills: the first album by id is the one the sql used; find which fixture song it is
-execute_process(COMMAND "${SQLITE3}" "${db}" "SELECT s.path FROM songs s JOIN albums a ON a.id = s.album_id WHERE a.id = (SELECT album_id FROM artwork WHERE kind = 'cover' ORDER BY album_id LIMIT 1) ORDER BY s.path LIMIT 1"
+execute_process(COMMAND "${SQLITE3}" "${db}" "SELECT s.path FROM songs s JOIN albums a ON a.name = s.album AND a.artist IS NULLIF(s.artist, '') WHERE a.id = (SELECT album_id FROM artwork WHERE kind = 'cover' ORDER BY album_id LIMIT 1) ORDER BY s.path LIMIT 1"
   OUTPUT_VARIABLE song RESULT_VARIABLE rc ERROR_VARIABLE err OUTPUT_STRIP_TRAILING_WHITESPACE)
 if(NOT rc EQUAL 0 OR "${song}" STREQUAL "")
   message(FATAL_ERROR "no song for the stills album (rc=${rc}): ${err}")
@@ -57,10 +57,10 @@ function(run_at tag waits)
   set(${tag}_last "${CMAKE_MATCH_9}" PARENT_SCOPE)
 endfunction()
 
-run_at(t0 "wait 400\n")
-run_at(t1 "wait 2400\n")
-run_at(t2 "wait 4400\n")
-run_at(t3 "wait 6400\n")
+run_at(t0 "wait 400\nwait 100\n")
+run_at(t1 "wait 2400\nwait 100\n")
+run_at(t2 "wait 4400\nwait 100\n")
+run_at(t3 "wait 6400\nwait 100\n")
 message(STATUS "frames of=${t0_of} f0=${t0_frame}/${t0_hash} f1=${t1_frame}/${t1_hash} f2=${t2_frame}/${t2_hash} f3=${t3_frame}/${t3_hash}")
 if(NOT t0_of EQUAL 3)
   message(FATAL_ERROR "the album holds 3 stills, the slide show counted ${t0_of}")
