@@ -1646,6 +1646,9 @@ static void draw_textsheet(desk* d) {
             sel_gui_text_wrap(c, reg, rect_of(740, 8 + row * 60, 140, 3 * reg->line_height), name, text, 3, &d->text);
         }
     }
+    if (desk_font(d, 0, 13) != NULL) { /* a count-only wrap whose last line overflows crashed on the NULL canvas (I1399c cover titles) */
+        (void)sel_gui_text_wrap(NULL, desk_font(d, 0, 13), rect_of(0, 0, 40, 0), "a count only wrap that overflows", 0u, 1, NULL);
+    }
     sel_gui_dirty_add(c, rect_of(0, 0, c->w, c->h));
 }
 
