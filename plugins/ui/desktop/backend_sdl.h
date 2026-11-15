@@ -66,6 +66,8 @@ int desk_sdl_open_file_dialog(desk_sdl* b);
 /* I999: copies the first line of the system clipboard text into out (NUL-terminated, at most cap - 1 bytes). Returns the
  * byte count, 0 when the clipboard holds no text. */
 size_t desk_sdl_clipboard(desk_sdl* b, char* out, size_t cap);
+/* I1243: puts text on the system clipboard (Copy and Cut in a text field). */
+void desk_sdl_set_clipboard(desk_sdl* b, const char* text);
 int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev);
 
 #endif

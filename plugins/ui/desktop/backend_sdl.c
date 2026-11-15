@@ -440,6 +440,12 @@ size_t desk_sdl_clipboard(desk_sdl* b, char* out, size_t cap) {
     return n;
 }
 
+void desk_sdl_set_clipboard(desk_sdl* b, const char* text) {
+    if (b != NULL && !b->headless) {
+        SDL_SetClipboardText(text);
+    }
+}
+
 int desk_sdl_open_file_dialog(desk_sdl* b) {
     static const SDL_DialogFileFilter filters[] = {{"Playlists", "m3u;m3u8;pls"}};
     if (b == NULL || b->window == NULL || b->headless) {
