@@ -71,8 +71,14 @@ static void mui_platform_cover(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind,
         }
         ready = 1;
     }
-    sel_gui_cover_draw_kind(c, r, kind, sel_platform_of_ext(format), sel_gui_str_hash(title != NULL ? title : ""), title, tokens, NULL, NULL,
-                            mui_cover_icons(edge / 2));
+    const sel_gui_icons* ic = mui_cover_icons(edge / 2);
+    uint32_t family = sel_platform_of_ext(format), hash = sel_gui_str_hash(title != NULL ? title : "");
+
+    if (ic == NULL && kind == 0u) { /* no icon set: the family mark cover, as before I1399a */
+        sel_gui_cover_draw(c, r, family, hash, tokens, NULL);
+        return;
+    }
+    sel_gui_cover_draw_kind(c, r, kind, family, hash, title, tokens, NULL, NULL, ic);
 }
 
 int mui_canvas_fit(mui_canvas* m, sel_gui_rect obj) {
