@@ -53,12 +53,12 @@ extern "C" {
     X(COVER_CONSOLE, "gui.cover.console", 0x52525Bu, 0u, 0xFFFFFFu) \
     X(COVER_TEXT, "gui.cover.text", 0xFFFFFFu, 0u, 0xFFFFFFu) \
     X(COVER_KIND_PLAYLIST, "gui.cover.kind_playlist", 0x7C3AEDu, 0u, 0xFFFFFFu) \
-    X(COVER_KIND_ALBUM, "gui.cover.kind_album", 0x9A3412u, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_ALBUM, "gui.cover.kind_album", 0xB45309u, 0u, 0xFFFFFFu) \
     X(COVER_KIND_ARTIST, "gui.cover.kind_artist", 0xBE185Du, 0u, 0xFFFFFFu) \
     X(COVER_KIND_DLNA, "gui.cover.kind_dlna", 0x1E40AFu, 0u, 0xFFFFFFu) \
-    X(COVER_KIND_LOCAL, "gui.cover.kind_local", 0x3F3F46u, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_LOCAL, "gui.cover.kind_local", 0x786C09u, 0u, 0xFFFFFFu) \
     X(COVER_KIND_RADIO, "gui.cover.kind_radio", 0xB91C1Cu, 0u, 0xFFFFFFu) \
-    X(COVER_KIND_PODCAST, "gui.cover.kind_podcast", 0x6D28D9u, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_PODCAST, "gui.cover.kind_podcast", 0xA21CAFu, 0u, 0xFFFFFFu) \
     X(COVER_KIND_MODULES_PL, "gui.cover.kind_modules_pl", 0x0E7490u, 0u, 0xFFFFFFu) \
     X(COVER_KIND_HIPPO, "gui.cover.kind_hippo", 0x15803Du, 0u, 0xFFFFFFu) \
     X(COVER_KIND_ARCHIVE, "gui.cover.kind_archive", 0x4D7C0Fu, 0u, 0xFFFFFFu)

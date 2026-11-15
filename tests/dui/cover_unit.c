@@ -231,6 +231,14 @@ static void test_contrast(void) {
     }
 }
 
+static double hue_of(uint32_t rgb) { /* degrees 0..360 */
+    double r = (double)((rgb >> 16) & 255u), g = (double)((rgb >> 8) & 255u), b = (double)(rgb & 255u);
+    double mx = fmax(r, fmax(g, b)), d = mx - fmin(r, fmin(g, b)), h;
+    if (d == 0.0) return 0.0;
+    h = mx == r ? fmod((g - b) / d, 6.0) : mx == g ? (b - r) / d + 2.0 : (r - g) / d + 4.0;
+    return h < 0.0 ? h * 60.0 + 360.0 : h * 60.0;
+}
+
 static void test_kinds(void) {
     uint32_t k;
     double lt = lum(g_tokens[SEL_GUI_TOKEN_COVER_TEXT]);
@@ -258,6 +266,17 @@ static void test_kinds(void) {
         if ((lt + 0.05) / (lb + 0.05) < 4.5) {
             printf("FAIL contrast of kind %s tint is %.2f\n", sel_cover_kind_label(k), (lt + 0.05) / (lb + 0.05));
             g_fail++;
+        }
+    }
+    for (k = 1u; k < SEL_COVER_KIND_COUNT; k++) { /* I1403: every kind its own hue, at least 20 degrees from every other kind */
+        uint32_t j;
+        for (j = k + 1u; j < SEL_COVER_KIND_COUNT; j++) {
+            double dh = fabs(hue_of(g_tokens[sel_cover_kind_token(k)]) - hue_of(g_tokens[sel_cover_kind_token(j)]));
+            if (dh > 180.0) dh = 360.0 - dh;
+            if (dh < 20.0) {
+                printf("FAIL hue of kinds %s and %s differs by only %.0f degrees\n", sel_cover_kind_label(k), sel_cover_kind_label(j), dh);
+                g_fail++;
+            }
         }
     }
 }
