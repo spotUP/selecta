@@ -202,7 +202,7 @@ static void test_tones(void) {
             CHECK(((dark >> sh) & 255u) == b * 88u / 100u);
             CHECK(((light >> sh) & 255u) == b + (255u - b) * 12u / 100u);
         }
-        CHECK(base == (i == 0u ? g_tokens[SEL_GUI_TOKEN_ACCENT] : g_tokens[SEL_GUI_TOKEN_COVER_AMIGA + i - 1u]));
+        CHECK(base == (i == 0u ? g_tokens[SEL_GUI_TOKEN_COVER_MUSIC] : g_tokens[SEL_GUI_TOKEN_COVER_AMIGA + i - 1u]));
     }
 }
 
@@ -220,8 +220,7 @@ static void test_contrast(void) {
     uint32_t f;
     double lt = lum(g_tokens[SEL_GUI_TOKEN_COVER_TEXT]);
 
-    /* The platform families only: the Music family is the accent colour, whose contrast is the theme's own. */
-    for (f = 1u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
+    for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         double lb = lum(sel_gui_cover_tone(g_tokens, f, 0u));
         double ratio = (lt + 0.05) / (lb + 0.05);
         if (ratio < 4.5) {
@@ -237,6 +236,28 @@ static double hue_of(uint32_t rgb) { /* degrees 0..360 */
     if (d == 0.0) return 0.0;
     h = mx == r ? fmod((g - b) / d, 6.0) : mx == g ? (b - r) / d + 2.0 : (r - g) / d + 4.0;
     return h < 0.0 ? h * 60.0 + 360.0 : h * 60.0;
+}
+
+static double sat_of(uint32_t rgb) {
+    double r = (rgb >> 16) & 255u, g = (rgb >> 8) & 255u, b = rgb & 255u, mx = fmax(r, fmax(g, b)), mn = fmin(r, fmin(g, b));
+    return mx == 0.0 ? 0.0 : (mx - mn) / mx;
+}
+
+static void test_family_hues(void) { /* I1403b: every coloured family its own hue, 18+ degrees apart; MSX and Console are the neutrals */
+    uint32_t f, j;
+    for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
+        uint32_t a = sel_gui_cover_tone(g_tokens, f, 0u);
+        for (j = f + 1u; j < SEL_PLATFORM_FAMILY_COUNT; j++) {
+            uint32_t b = sel_gui_cover_tone(g_tokens, j, 0u);
+            double dh = fabs(hue_of(a) - hue_of(b));
+            if (sat_of(a) < 0.5 || sat_of(b) < 0.5) continue;
+            if (dh > 180.0) dh = 360.0 - dh;
+            if (dh < 18.0) {
+                printf("FAIL hue of families %s and %s differs by only %.0f degrees\n", sel_platform_label(f), sel_platform_label(j), dh);
+                g_fail++;
+            }
+        }
+    }
 }
 
 static void test_kinds(void) {
@@ -379,6 +400,7 @@ int main(void) {
     test_tones();
     test_contrast();
     test_kinds();
+    test_family_hues();
     test_aga_palette();
     test_draw();
     if (g_fail == 0) {
