@@ -70,6 +70,67 @@ int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint
            (strcmp(next->text, "Searching") == 0 || strcmp(next->text, "No results") == 0 || strcmp(next->text, "Not synced yet") == 0);
 }
 
+uint32_t sel_uim_search_section_rows(const sel_view_row* rows, uint32_t row_n, uint32_t heading) {
+    uint32_t k = heading + 1u;
+    if (rows == NULL || heading >= row_n) {
+        return 0u;
+    }
+    while (k < row_n && rows[k].kind != SEL_ROW_HEADING) {
+        k++;
+    }
+    return k - heading - 1u;
+}
+
+/* The expanded categories of this session: the heading text before its " (n)" count. Full table: further categories stay folded. */
+enum { FOLD_KEYS = 16, FOLD_KEY_LEN = 72 };
+static char fold_open[FOLD_KEYS][FOLD_KEY_LEN];
+static uint32_t fold_open_n;
+
+/* The key of a heading: its text before the " (n)" count. Returns its length. */
+static size_t fold_key(const char* heading, char* key) {
+    const char* par = heading != NULL ? strrchr(heading, '(') : NULL;
+    size_t n = heading == NULL ? 0u : par != NULL ? (size_t)(par - heading) : strlen(heading);
+    while (n > 0u && heading[n - 1u] == ' ') {
+        n--;
+    }
+    n = n < FOLD_KEY_LEN - 1u ? n : FOLD_KEY_LEN - 1u;
+    if (n > 0u) {
+        memcpy(key, heading, n);
+    }
+    key[n] = '\0';
+    return n;
+}
+
+static int fold_find(const char* key) {
+    uint32_t i;
+    for (i = 0; i < fold_open_n; i++) {
+        if (strcmp(fold_open[i], key) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+int sel_uim_search_expanded(const char* heading) {
+    char key[FOLD_KEY_LEN];
+    return fold_key(heading, key) > 0u && fold_find(key) >= 0;
+}
+
+void sel_uim_search_fold_toggle(const char* heading) {
+    char key[FOLD_KEY_LEN];
+    int i;
+    if (fold_key(heading, key) == 0u) {
+        return;
+    }
+    i = fold_find(key);
+    if (i >= 0) {
+        memcpy(fold_open[i], fold_open[fold_open_n - 1u], FOLD_KEY_LEN);
+        fold_open_n--;
+    } else if (fold_open_n < FOLD_KEYS) {
+        memcpy(fold_open[fold_open_n++], key, FOLD_KEY_LEN);
+    }
+}
+
 const char* sel_uim_song_menu_label(uint32_t item, int on_queue) {
     static const char* const items[SEL_UIM_SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Add to Playlist", "Remove from Library"};
     if (item >= SEL_UIM_SONG_MENU_ITEMS) {

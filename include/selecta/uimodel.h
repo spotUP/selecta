@@ -116,6 +116,15 @@ uint32_t sel_uim_search_group(const char* heading);
 /* I1206: whether the search view heading row at `heading` is a zero-hit category the UIs leave out (its rows too): "Songs/Albums/Artists (0)" and a
  * "From <source> (0)" whose only row is the keyless Searching or No results state. 0 for anything else, a failed or unsynced source included. */
 int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t heading);
+/* I1406: search categories fold to their first SEL_UIM_SEARCH_FOLD_ROWS rows with a Show all control. The fold state is per session (process
+ * memory, never stored): a category the user expanded stays expanded on the next search. `heading` text is "Songs (12)" or "From X (3)"; the count is
+ * ignored when keying, so the state outlives a changing count. */
+#define SEL_UIM_SEARCH_FOLD_ROWS 3u
+/* Rows under the heading row at `heading` up to the next heading. */
+uint32_t sel_uim_search_section_rows(const sel_view_row* rows, uint32_t row_n, uint32_t heading);
+int sel_uim_search_expanded(const char* heading);
+/* Flips the category of `heading` between folded and expanded. */
+void sel_uim_search_fold_toggle(const char* heading);
 /* Song context menu (DUI-P4-16): five items on every page; item 4 is Remove from Queue on the Queue page. */
 #define SEL_UIM_SONG_MENU_ITEMS 5u
 const char* sel_uim_song_menu_label(uint32_t item, int on_queue);
