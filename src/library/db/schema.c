@@ -307,11 +307,16 @@ static const char SCHEMA_V19[] =
  * them. One plain index: range scan in 30 ms, built once in 3.7 s on 672k songs, about 10 MB. */
 static const char SCHEMA_V20[] = "CREATE INDEX IF NOT EXISTS songs_added ON songs(added);";
 
+/* I1267: Demozoo stills cached before the platform filter may show another platform's production. Drop every song-keyed Demozoo row (they hang
+ * off the id of a 'dz_key' row, no albums row) so the songs resolve again, now with the platform asked. Data only: SCHEMA_FINAL is unchanged. */
+static const char SCHEMA_V21[] =
+    "DELETE FROM artwork WHERE album_id IN (SELECT album_id FROM artwork WHERE kind = 'dz_key');";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19, SCHEMA_V20};
+                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

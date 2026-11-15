@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
     check(scalar(db, "SELECT count(*) FROM sqlite_master WHERE name IN ('songs_dup_of','dup_pick','source_state','songs_fts')") >= 3,
           "fresh: v1 to v19 objects exist");
 
-    /* Existing v16: v17, v18 and v19 still run as one transaction each (v19 search_cache is created IF NOT EXISTS). */
+    /* Existing v16: every version after v16 still runs as one transaction each (v19 search_cache is created IF NOT EXISTS). */
     check(sqlite3_exec(db,
                        "DROP TRIGGER source_songs_state_ad; DROP TABLE source_state;"
                        "DROP INDEX songs_dup_of; DROP TABLE dup_pick; ALTER TABLE songs DROP COLUMN dup_of;"
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     check(sel_schema_migrate(db, host) == 1, "v16 migrate succeeds");
     check(sel_schema_version(db) == SEL_LIB_SCHEMA_VERSION, "v16: user_version is current");
     printf("v16: begin=%d commit=%d rollback=%d hook=%d\n", n_begin, n_commit, n_rollback, n_hook);
-    check(n_begin == 3 && n_commit == 3 && n_hook == 3, "v16: one transaction per missing version (3)");
+    check(n_begin == SEL_LIB_SCHEMA_VERSION - 16 && n_commit == n_begin && n_hook == n_begin, "v16: one transaction per missing version");
     check(n_rollback == 0, "v16: no ROLLBACK");
 
     sqlite3_close(db);
