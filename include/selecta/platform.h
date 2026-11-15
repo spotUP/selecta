@@ -61,6 +61,38 @@ void sel_platform_lower(char* dst, const char* src, size_t cap);
 const char* sel_platform_label(uint32_t family);
 const char* sel_platform_id(uint32_t family);
 
+/* I1399: cover kinds. The one table of what a generated cover shows: a flat icon (a sel_gui_icon id, the sidebar's icon set) on a
+ * gradient of a theme tint (a sel_gui_token id, gui.cover.kind_*), a full-word label and an ASCII glyph for the text UI.
+ * SEL_COVER_KIND_FORMAT is a song, or an album/person/playlist majority, covered by its format family: the tint is the family's
+ * (existing gui.cover.* tokens) and the icon comes from sel_cover_family_icon (MP3, module, SID, chip). */
+enum {
+    SEL_COVER_KIND_FORMAT = 0,
+    SEL_COVER_KIND_PLAYLIST,
+    SEL_COVER_KIND_ALBUM,
+    SEL_COVER_KIND_ARTIST,
+    SEL_COVER_KIND_DLNA,
+    SEL_COVER_KIND_LOCAL,
+    SEL_COVER_KIND_RADIO,
+    SEL_COVER_KIND_PODCAST,
+    SEL_COVER_KIND_MODULES_PL,
+    SEL_COVER_KIND_HIPPO,
+    SEL_COVER_KIND_ARCHIVE,
+    SEL_COVER_KIND_COUNT
+};
+/* The kind of a source id ("local", "radio", "hippo", "dlna", "podcast", "modulespl"; any other remote archive is _ARCHIVE). */
+uint32_t sel_cover_kind_of_source(const char* source_id);
+/* The kind of a view row: `item_kind` is sel_view_row.item_kind (1 + SEL_LIB_ITEM_*, 0 none), `album` and `composer` its flags,
+ * `key` its source id. The one mapping every UI uses. */
+uint32_t sel_cover_kind_of_item(uint32_t item_kind, int is_album, int is_composer, const char* key);
+/* Per kind (an id out of range reads as FORMAT): the icon (sel_gui_icon), the tint (sel_gui_token, 0 for FORMAT), the label
+ * ("Playlist"), the text UI glyph ("[PL]"). */
+uint32_t sel_cover_kind_icon(uint32_t kind);
+uint32_t sel_cover_kind_token(uint32_t kind);
+const char* sel_cover_kind_label(uint32_t kind);
+const char* sel_cover_kind_glyph(uint32_t kind);
+/* The icon (sel_gui_icon) of a format family: MP3 (music), module (Amiga, PC tracker), SID (Commodore 64), chip (every console). */
+uint32_t sel_cover_family_icon(uint32_t family);
+
 #ifdef __cplusplus
 }
 #endif

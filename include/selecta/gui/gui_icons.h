@@ -40,7 +40,16 @@
     X(SQUARE, "square") \
     X(INFO, "info") \
     X(FOLDER, "folder") \
-    X(AIRPLAY, "airplay")
+    X(AIRPLAY, "airplay") \
+    X(LIST_MUSIC, "list-music") \
+    X(RADIO, "radio") \
+    X(PODCAST, "podcast") \
+    X(CPU, "cpu") \
+    X(SERVER, "server") \
+    X(HARD_DRIVE, "hard-drive") \
+    X(GLOBE, "globe") \
+    X(AUDIO_LINES, "audio-lines") \
+    X(PIANO, "piano")
 
 typedef enum sel_gui_icon {
 #define X(id, file) SEL_GUI_ICON_##id,
