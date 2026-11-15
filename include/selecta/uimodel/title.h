@@ -11,5 +11,7 @@
 #include <stddef.h>
 
 void sel_uim_tidy_title(const char* in, char* out, size_t cap);
+/* I1387b: tidies val in place when its Song Information row label names a song, artist or album ("Title", "Author", "Release", "STIL title"); values of 128+ bytes stay. */
+void sel_uim_tidy_info(const char* label, char* val, size_t cap);
 
 #endif /* SELECTA_UIMODEL_TITLE_H */

@@ -53,6 +53,12 @@ int main(void) {
     }
     sel_uim_tidy_title(NULL, buf, sizeof buf);
     fail += buf[0] != '\0';
+    snprintf(buf, sizeof buf, "%s", "page_1_x"); /* I1387b: only name rows are tidied */
+    sel_uim_tidy_info("Title", buf, sizeof buf);
+    fail += strcmp(buf, "Page 1 X") != 0;
+    snprintf(buf, sizeof buf, "%s", "page_1_x");
+    sel_uim_tidy_info("Format", buf, sizeof buf);
+    fail += strcmp(buf, "page_1_x") != 0;
     if (fail == 0) {
         printf("uim_title_ok\n");
     }

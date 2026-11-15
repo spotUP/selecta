@@ -1091,6 +1091,11 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                 t[len++] = *p++;
             }
             t[len] = '\0';
+            if (kind == 'S' && !album && !composer && !item) { /* I1387b: a song row's title is shown tidy; its key and artist stay raw */
+                char tidy[SEL_VIEW_FOLDER_NAME];
+                sel_uim_tidy_title(t, tidy, sizeof tidy);
+                memcpy(t, tidy, strlen(tidy) + 1u);
+            }
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
             v->frows[n].format = fmtp;
