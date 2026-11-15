@@ -302,11 +302,16 @@ static const char SCHEMA_V19[] =
     "DELETE FROM search_cache WHERE source = old.source;"
     "END;";
 
+/* I1400c: Home's Recently Played / New This Week / From your library lists filter and order songs on `added` alone; without an index
+ * each scanned all 672k rows on the single library worker (0.8 s warm per list), and a search typed in the first seconds waited behind
+ * them. One plain index: range scan in 30 ms, built once in 3.7 s on 672k songs, about 10 MB. */
+static const char SCHEMA_V20[] = "CREATE INDEX IF NOT EXISTS songs_added ON songs(added);";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19};
+                                           SCHEMA_V19, SCHEMA_V20};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -461,6 +466,7 @@ static const char* const SCHEMA_FINAL[] = {
     "CREATE TRIGGER songs_album_ad AFTER DELETE ON songs BEGIN DELETE FROM artwork WHERE old.album IS NOT NULL AND album_id IN (SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'') AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')));DELETE FROM albums WHERE old.album IS NOT NULL AND id IN (SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'') AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')));END;",
     "CREATE INDEX songs_album ON songs(album, artist, added);",
     "CREATE INDEX songs_artist_added ON songs(artist, added);",
+    "CREATE INDEX songs_added ON songs(added);",
     "CREATE INDEX songs_source_format ON songs(source, format, artist, size);",
     "CREATE INDEX songs_source_artist ON songs(source, artist, format, size);",
     "CREATE TABLE source_new(source TEXT NOT NULL, day INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(source, day)) WITHOUT ROWID;",
