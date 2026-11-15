@@ -28,6 +28,7 @@
 #include <selecta/gui/gui_text.h>
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
+#include <selecta/gui/gui_edit.h>
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/cols.h>
@@ -459,6 +460,10 @@ typedef struct desk {
     struct { char name[96]; sel_gui_rect rect; } search_art[48]; uint32_t search_art_n, search_art_opens; /* I1207: the Artists rows/tiles the last Search frame drew; a click opens that artist's page */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
+    sel_gui_edit qsel;       /* I1243: the search field's caret and selection (anchor to caret) */
+    int32_t query_x;         /* I1243: where the query text starts, for a click's caret place */
+    char clip_out[128];      /* I1243: the last text copied or cut (a test has no system clipboard) */
+    uint32_t copies, sel_mouse;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
     uint32_t nav_clicks, nav_keys; /* sidebar door clicks and page keys handled (I262) */
     int songs;               /* --view songs: the queue as a sortable list with a header row (DUI-P3-2) */
@@ -2392,14 +2397,31 @@ static void desk_draw_query(desk* d, sel_gui_rect sr, const char* hint) {
         tb.w -= topbar_part(d, TOPBAR_BROWSE).w;
     }
     d->field = sr; /* the field as last drawn, for the stats line */
+    d->query_x = tb.x;
+    sel_gui_edit_sync(&d->qsel, d->qlen);
     if (d->qlen > 0u) { /* the typed query (I239); a caret follows it while the field has the focus */
-        draw_text(d, tb, d->query, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        const sel_gui_atlas* at = desk_font(d, 0, 14);
+        size_t lo, hi;
+        sel_gui_edit_range(&d->qsel, &lo, &hi);
+        if (at != NULL && lo != hi && d->focus == (int32_t)d->layout.count) { /* I1243: the selection, drawn in the accent with accent text over it */
+            int32_t x0 = sel_gui_text_width(at, d->query, lo), x1 = sel_gui_text_width(at, d->query, hi), ch = lpx(d, 18);
+            sel_gui_fill_rect(d->canvas, rect_of(tb.x + x0, sr.y + (sr.h - ch) / 2, x1 - x0, ch), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            draw_text(d, tb, d->query, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            {
+                char mid[sizeof d->query];
+                memcpy(mid, d->query + lo, hi - lo);
+                mid[hi - lo] = '\0';
+                draw_text(d, rect_of(tb.x + x0, tb.y, tb.w - x0, tb.h), mid, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+            }
+        } else {
+            draw_text(d, tb, d->query, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
     } else {
         draw_text(d, tb, hint, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     }
     if (d->focus == (int32_t)d->layout.count) { /* the caret: a thin bar at the text end, also in the empty field */
         const sel_gui_atlas* at = desk_font(d, 0, 14);
-        int32_t tw = at != NULL ? sel_gui_text_width(at, d->query, d->qlen) : 0;
+        int32_t tw = at != NULL ? sel_gui_text_width(at, d->query, d->qsel.caret) : 0; /* I1243: the caret sits at the edit point */
         int32_t ch = lpx(d, 18), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
         d->caret = rect_of(tb.x + tw, sr.y + (sr.h - ch) / 2, cw, ch);
         sel_gui_fill_rect(d->canvas, d->caret, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
@@ -6933,10 +6955,25 @@ static size_t desk_clipboard(desk* d, char* out, size_t cap) {
         return desk_sdl_clipboard(d->sdl, out, cap);
     }
 #endif
+    if (d->clip_out[0] != '\0') { /* I1243: no system clipboard (a test): what Copy or Cut stored */
+        snprintf(out, cap, "%s", d->clip_out);
+        return strlen(out);
+    }
     if (cap > 0u) {
         out[0] = '\0';
     }
     return 0u;
+}
+
+/* I1243: Copy and Cut put the text on the system clipboard (the live window) and keep it in clip_out. */
+static void desk_clipboard_set(desk* d, const char* text) {
+    snprintf(d->clip_out, sizeof d->clip_out, "%s", text);
+    d->copies++;
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL) {
+        desk_sdl_set_clipboard(d->sdl, text);
+    }
+#endif
 }
 
 /* I999: the edit rules every one-line text field shares. Backspace deletes, a printable key (no Control, Option or
@@ -6946,41 +6983,56 @@ static size_t desk_clipboard(desk* d, char* out, size_t cap) {
 /* The keys field_edit owns: Backspace (any modifier), the paste chord, a printable key without Control or Option. A focused
  * field gives these to field_edit before any binding, so a binding on one of them (Backspace @back) never steals an edit. */
 static int field_edit_key(const sel_gui_input* ev) {
-    return ev->code == 127u || ((ev->code == 'v' || ev->code == 'V') && (ev->mods & ~TXT_MOD_SHIFT) == TXT_MOD_CTRL) ||
+    uint32_t cmd = (ev->mods & ~TXT_MOD_SHIFT) == TXT_MOD_CTRL;
+    return ev->code == 127u || (cmd && (ev->code == 'v' || ev->code == 'V' || ev->code == 'a' || ev->code == 'A' || ev->code == 'c' || ev->code == 'C' || ev->code == 'x' || ev->code == 'X')) ||
+           ((ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT) && (ev->mods & ~TXT_MOD_SHIFT) == 0u) ||
            (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u);
 }
 
-static int field_edit(desk* d, char* buf, size_t* len, size_t cap, char reject, const sel_gui_input* ev) {
-    if (ev->code == 127u) {
-        if (*len == 0u) {
-            return 1;
-        }
-        buf[--*len] = '\0';
-        return 2;
+/* I1243: `es` is the field's caret and selection (the search field keeps one); NULL edits at the end of the text only, as
+ * the other fields always did. With one: Left/Right move the caret (Shift extends), Command+A selects all, Command+C copies,
+ * Command+X cuts, and typing, paste or Backspace replace or delete the selection. The byte logic is sel_gui_edit_*. */
+static int field_edit(desk* d, char* buf, size_t* len, size_t cap, char reject, sel_gui_edit* es, const sel_gui_input* ev) {
+    sel_gui_edit end;
+    int cmd = (ev->mods & ~TXT_MOD_SHIFT) == TXT_MOD_CTRL;
+    char key = (char)(ev->code < 128u ? ev->code | 32u : 0u);
+    if (es == NULL) {
+        sel_gui_edit_set(&end, *len, *len, *len);
+        es = &end;
+    } else {
+        sel_gui_edit_sync(es, *len);
     }
-    if ((ev->code == 'v' || ev->code == 'V') && (ev->mods & ~TXT_MOD_SHIFT) == TXT_MOD_CTRL) {
+    if (ev->code == 127u) {
+        return sel_gui_edit_backspace(es, buf, len) ? 2 : 1;
+    }
+    if (cmd && key == 'v') {
         char clip[512];
-        size_t n = desk_clipboard(d, clip, sizeof clip), i, before = *len;
+        size_t n = desk_clipboard(d, clip, sizeof clip), i;
         for (i = 0u; i < n && clip[i] != '\n' && clip[i] != '\r'; i++) {
-            unsigned char c = (unsigned char)clip[i];
-            if (c >= 32u && c < 127u && (char)c != reject && *len + 1u < cap) {
-                buf[(*len)++] = (char)c;
-            }
         }
-        buf[*len] = '\0';
-        if (*len == before) {
+        if (!sel_gui_edit_insert(es, buf, len, cap, reject, clip, i)) {
             return 1;
         }
         d->pastes++;
         return 2;
     }
-    if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
-        if ((char)ev->code == reject || *len + 1u >= cap) {
-            return 1;
+    if (es != &end && cmd && (key == 'a' || key == 'c' || key == 'x')) {
+        char sel[sizeof d->clip_out];
+        if (key == 'a') {
+            sel_gui_edit_all(es, *len);
+        } else if (sel_gui_edit_copy(es, buf, sel, sizeof sel) > 0u) {
+            desk_clipboard_set(d, sel);
+            return key == 'x' && sel_gui_edit_backspace(es, buf, len) ? 2 : 1;
         }
-        buf[(*len)++] = (char)ev->code;
-        buf[*len] = '\0';
-        return 2;
+        return 1;
+    }
+    if (es != &end && (ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT) && (ev->mods & ~TXT_MOD_SHIFT) == 0u) {
+        sel_gui_edit_move(es, *len, ev->code == TXT_KEY_LEFT ? -1 : 1, (ev->mods & TXT_MOD_SHIFT) != 0u);
+        return 1;
+    }
+    if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
+        char c = (char)ev->code;
+        return sel_gui_edit_insert(es, buf, len, cap, reject, &c, 1u) ? 2 : 1;
     }
     return 0;
 }
@@ -6993,7 +7045,7 @@ static int col_key(desk* d, const sel_gui_input* ev) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
     }
-    switch (field_edit(d, d->col_q, &d->col_qlen, sizeof d->col_q, '"', ev)) {
+    switch (field_edit(d, d->col_q, &d->col_qlen, sizeof d->col_q, '"', NULL, ev)) {
     case 0:
         return 0;
     case 2:
@@ -7014,7 +7066,7 @@ static int pl_key(desk* d, const sel_gui_input* ev) {
         pl_send(d, line);
     } else if (ev->code == 13u || ev->code == 27u) {
         d->pl_edit = 0;
-    } else if (field_edit(d, d->pl_name, &d->pl_nlen, sizeof d->pl_name, '"', ev) == 0) {
+    } else if (field_edit(d, d->pl_name, &d->pl_nlen, sizeof d->pl_name, '"', NULL, ev) == 0) {
         return 0;
     }
     d->repaint = 1;
@@ -7980,7 +8032,7 @@ static int si_pointer(desk* d, const sel_gui_input* ev) {
 static int si_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == 13u || ev->code == 27u) {
         d->si_edit = 0;
-    } else if (field_edit(d, d->si_note, &d->si_nlen, sizeof d->si_note, '"', ev) == 0) {
+    } else if (field_edit(d, d->si_note, &d->si_nlen, sizeof d->si_note, '"', NULL, ev) == 0) {
         return 0;
     }
     d->repaint = 1;
@@ -8263,6 +8315,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "pastes %u\n", (unsigned)d->pastes); /* I999 */
+    o = dump_put(d, o, "qsel anchor %u caret %u copies %u mouse %u clip %s\n", (unsigned)d->qsel.anchor, (unsigned)d->qsel.caret, (unsigned)d->copies, (unsigned)d->sel_mouse, d->clip_out); /* I1243 */
     o = dump_put(d, o, "online_filter filtered=%d queries=%u\n", d->scope_filtered, (unsigned)d->searches); /* I1224 */
     o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u saves=%u\n", d->scope[0] != '\0' ? d->scope : "-",
                  (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays, (unsigned)d->on_saves);
@@ -10863,7 +10916,7 @@ static int settings_key(desk* d, const sel_gui_input* ev) {
         set_commit(d);
     } else if (ev->code == 27u) {
         d->set_focus = -1;
-    } else if (field_edit(d, d->set_buf, &len, sizeof d->set_buf, '"', ev) == 0) {
+    } else if (field_edit(d, d->set_buf, &len, sizeof d->set_buf, '"', NULL, ev) == 0) {
         return 0;
     }
     d->repaint = 1;
@@ -12503,7 +12556,7 @@ static int lf_key(desk* d, const sel_gui_input* ev) {
         d->lf_edit = 0;
     } else {
         size_t n = d->lf_len;
-        int r = field_edit(d, d->lf_text, &n, sizeof d->lf_text, 0, ev);
+        int r = field_edit(d, d->lf_text, &n, sizeof d->lf_text, 0, NULL, ev);
         d->lf_len = (uint32_t)n;
         if (r == 0) {
             return 0;
@@ -14882,7 +14935,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
             desk_search_fire(d);
             /* I1009: Enter runs the search and the field keeps the keyboard, so typing goes on; Escape or a click leaves it */
         } else {
-            int r = field_edit(d, d->query, &d->qlen, sizeof d->query, 0, ev);
+            int r = field_edit(d, d->query, &d->qlen, sizeof d->query, 0, &d->qsel, ev);
             if (r == 0) {
                 return 0;
             }
@@ -15254,11 +15307,53 @@ static int song_row_dblclick(desk* d, const sel_gui_input* ev) {
     return 0;
 }
 
+/* I1243: the byte index nearest to a pixel x in the query text. */
+static size_t query_index_at(desk* d, int32_t x) {
+    const sel_gui_atlas* at = desk_font(d, 0, 14);
+    size_t i;
+    if (at == NULL) {
+        return d->qlen;
+    }
+    for (i = 0u; i < d->qlen; i++) {
+        int32_t a = sel_gui_text_width(at, d->query, i), b = sel_gui_text_width(at, d->query, i + 1u);
+        if (x < d->query_x + (a + b) / 2) {
+            return i;
+        }
+    }
+    return d->qlen;
+}
+
+/* I1243: the mouse in the Search page's field: a click puts the caret, a double click selects the word, a drag from inside the
+ * field selects from where it began to where the button came up. 1 when the field took the event. */
+static int query_mouse(desk* d, const sel_gui_input* ev) {
+    if (d->overlay != OV_NONE || d->page != SEL_UIM_PG_SEARCH || d->field.w <= 0 || !in_rect(d->field, ev->x, ev->y) || ev->button != 0u ||
+        (ev->kind != SEL_GUI_IN_CLICK && ev->kind != SEL_GUI_IN_DRAG)) {
+        return 0;
+    }
+    d->focus = (int32_t)d->layout.count;
+    sel_gui_edit_sync(&d->qsel, d->qlen);
+    if (ev->kind == SEL_GUI_IN_DRAG) {
+        sel_gui_edit_set(&d->qsel, query_index_at(d, ev->x), query_index_at(d, ev->x2), d->qlen);
+    } else if (ev->clicks >= 2u) {
+        sel_gui_edit_word(&d->qsel, d->query, d->qlen, query_index_at(d, ev->x));
+    } else {
+        size_t at = query_index_at(d, ev->x);
+        sel_gui_edit_set(&d->qsel, at, at, d->qlen);
+    }
+    d->sel_mouse++;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return desk_present(d);
+}
+
 static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int region = sel_uim_hit(&d->layout, px_to_logical(d, ev->x), px_to_logical(d, ev->y));
     const char* rname = region >= 0 ? d->layout.regions[region].name : "";
     int in_main = strcmp(rname, "main") == 0;
     if (dlg_pointer(d, ev)) {
+        return 1;
+    }
+    if (query_mouse(d, ev)) { /* I1243 */
         return 1;
     }
     if (d->overlay != OV_NONE) { /* a click with an overlay open picks a palette row or closes it */
