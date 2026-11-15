@@ -113,6 +113,48 @@ int main(void) {
     IS("title 2", r.title[2], "Chip-chop");
     free(page);
 
+    {
+        FILE* uf = fopen(SEL_MODULESPL_UHC_FIX, "rb");
+
+        if (uf == NULL) {
+            printf("FAIL cannot read %s\n", SEL_MODULESPL_UHC_FIX);
+            return 1;
+        }
+        memset(&r, 0, sizeof r);
+        EQ("UHC rows", sel_modulespl_parse_uhc(uf, take, &r), 4);
+        fclose(uf);
+        IS("uhc path 0", r.path[0], "jazz/Jazz_-_!6581-Wildwestworld.zip");
+        IS("uhc title 0", r.title[0], "!6581-Wildwestworld");
+        IS("uhc artist 0", r.artist[0], "Jazz");
+        IS("uhc format 1", r.format[1], "ahx");
+        IS("uhc path 3", r.path[3], "xtd/XTD_-_Shaky.zip");
+        IS("uhc title 3", r.title[3], "## Shaky ##");
+    }
+    {
+        const char* empty = "[\n]\n";
+        const char* bad = "[{\"filename\":\"a.zip\",\"path\":\"modules/../x\",\"title\":\"t\"},"
+                          "{\"filename\":\"b.zip\",\"path\":\"other/x\"},"
+                          "{\"filename\":\"c.zip\",\"path\":\"modules/x\",\"title\":\"ok\"}]";
+        FILE* tf = tmpfile();
+
+        fputs(empty, tf);
+        rewind(tf);
+        EQ("UHC empty array is 0 rows", sel_modulespl_parse_uhc(tf, take, &r), 0);
+        fclose(tf);
+        tf = tmpfile();
+        fputs("<html>", tf);
+        rewind(tf);
+        EQ("UHC non-JSON is -1", sel_modulespl_parse_uhc(tf, take, &r), -1);
+        fclose(tf);
+        tf = tmpfile();
+        fputs(bad, tf);
+        rewind(tf);
+        memset(&r, 0, sizeof r);
+        EQ("UHC unsafe paths skipped", sel_modulespl_parse_uhc(tf, take, &r), 1);
+        fclose(tf);
+        IS("UHC missing fields stay empty", r.artist[0], "");
+    }
+
     EQ("page without the result line", sel_modulespl_parse("<html></html>", 13, take, &r), 0);
 
     EQ("plain row", one_row("a/b.zip", &r), 1);
