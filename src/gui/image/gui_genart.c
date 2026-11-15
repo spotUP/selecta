@@ -247,16 +247,18 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
 }
 
 /* I1399: a cover by kind. A kind other than FORMAT is the kind's tint token (RGBA32: gradient; INDEX8: flat, the tint sits in the
- * cover palette slots, I1399a) with its label bottom left and, with `icons`, the kind's flat icon centred; FORMAT on RGBA32 draws
- * the family tint with the family's icon. FORMAT on INDEX8 (AGA, 32 palette slots) keeps the family mark of sel_gui_cover_draw. */
+ * cover palette slots, I1399a) with the kind label and the item title (two lines at most) bottom left and, with `icons`, the kind's
+ * flat icon centred; FORMAT on RGBA32 draws the family tint with the family's icon. FORMAT on INDEX8 (AGA, 32 palette slots) keeps
+ * the family mark of sel_gui_cover_draw. */
 void sel_gui_cover_draw_kind(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, uint32_t family, uint32_t title_hash,
-                             const uint32_t* tokens, const sel_gui_atlas* label_font, const sel_gui_icons* icons) {
+                             const char* title, const uint32_t* tokens, const sel_gui_atlas* title_font,
+                             const sel_gui_atlas* kind_font, const sel_gui_icons* icons) {
     uint32_t t0, region, field, text, tok;
-    int32_t edge, margin, px;
-    sel_gui_rect box;
+    int32_t edge, margin, px, text_top, lines;
+    sel_gui_rect box, tbox;
 
     if (r.w <= 0 || r.h <= 0 || (c->format == SEL_GUI_INDEX8 && sel_cover_kind_token(kind) == 0u)) {
-        sel_gui_cover_draw(c, r, family, title_hash, tokens, label_font);
+        sel_gui_cover_draw(c, r, family, title_hash, tokens, title_font);
         return;
     }
     if (family >= SEL_PLATFORM_FAMILY_COUNT) {
@@ -277,19 +279,37 @@ void sel_gui_cover_draw_kind(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, u
     }
     edge = r.w < r.h ? r.w : r.h;
     margin = edge / 10;
+    text_top = r.y + r.h; /* I1399c: the text block (kind label above the title, two title lines at most) sits bottom left */
+    if (title_font != NULL && edge >= 64) {
+        tbox.x = r.x + margin;
+        tbox.w = r.w - 2 * margin;
+        tbox.h = 2 * title_font->line_height;
+        tbox.y = 0;
+        lines = (title != NULL && title[0] != '\0') ? sel_gui_text_wrap(NULL, title_font, tbox, title, text, 2, NULL) : 0;
+        text_top = r.y + r.h - margin - lines * title_font->line_height;
+        tbox.y = text_top;
+        tbox.h = lines * title_font->line_height;
+        if (lines > 0) {
+            sel_gui_text_wrap(c, title_font, tbox, title, text, 2, NULL);
+        }
+        if (kind_font != NULL) {
+            text_top -= kind_font->line_height;
+            sel_gui_text_draw(c, kind_font, r.x + margin, text_top, tok != 0u ? sel_cover_kind_label(kind) : sel_platform_label(family),
+                              text, r.w - 2 * margin, NULL);
+        }
+    }
     if (icons != NULL) {
         px = edge / 2;
+        if (px > text_top - r.y - margin) {
+            px = text_top - r.y - margin; /* the icon centres in the area above the text */
+        }
         box.w = px;
         box.h = px;
         box.x = r.x + (r.w - px) / 2;
-        box.y = r.y + (r.h - px) / 2;
+        box.y = r.y + (text_top - r.y - px) / 2;
         if (px >= 8) {
             sel_gui_icon_draw(c, icons, tok != 0u ? sel_cover_kind_icon(kind) : sel_cover_family_icon(family), box, px, text);
         }
-    }
-    if (label_font != NULL && edge >= 64) {
-        sel_gui_text_draw(c, label_font, r.x + margin, r.y + r.h - margin - label_font->line_height,
-                          tok != 0u ? sel_cover_kind_label(kind) : sel_platform_label(family), text, r.w - 2 * margin, NULL);
     }
     c->region = region;
     sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);
