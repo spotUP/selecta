@@ -17,6 +17,8 @@ typedef struct art_entry {
     int64_t album; /* 0 = no such album */
     uint32_t dominant; /* I678e: the cover's dominant colour, 0xAARRGGBB */
     uint8_t dominant_ready;
+    uint32_t kmask;    /* I1384b: stills the album holds (sel_ui_art.kinds), bit 0 = cover, bits 1..7 = dz1..dz7 */
+    char* video;       /* I1384b: the 'dz_video' link, malloc'd, NULL = none */
 } art_entry;
 
 /* I906c: one background batch. The worker reads `src`, `title` and writes only the result arrays; the caller thread owns the entry
@@ -27,6 +29,8 @@ typedef struct art_job {
     char* title[ART_BATCH];
     int64_t album[ART_BATCH]; /* 0: no album, or one without a usable cover */
     uint32_t* px[ART_BATCH];  /* the tile of album[i] (DESK_ART_TILE_EDGE squared), shared by the titles of one album */
+    uint32_t kmask[ART_BATCH]; /* I1384b: per title, read on the worker beside the album */
+    char* video[ART_BATCH];
     uint8_t owns[ART_BATCH];  /* px[i] is this title's own allocation */
     uint32_t n;
     int64_t bad[ART_TITLES + ART_BATCH]; /* albums without a usable cover: the table at the start plus the ones found here */
@@ -40,12 +44,14 @@ typedef struct art_job {
 typedef struct art_big_entry {
     int64_t album;
     int32_t edge;
+    int32_t frame; /* I1384b: 0 = 'cover', n = 'dz<n>' */
     uint32_t* px;
 } art_big_entry;
 typedef struct art_big_job {
     const sel_ui_art* src;
     int64_t album;
     int32_t edge;
+    int32_t frame;
     uint32_t* px;
 } art_big_job;
 
@@ -95,6 +101,7 @@ static void job_free(art_job* j) {
     uint32_t i;
     for (i = 0; i < j->n; i++) {
         free(j->title[i]);
+        free(j->video[i]);
         if (j->owns[i]) {
             free(j->px[i]);
         }
@@ -114,6 +121,9 @@ void art_close(desk_art* a) {
     }
     for (i = 0; i < a->big_n; i++) {
         free(a->big[i].px);
+    }
+    for (i = 0; i < a->count; i++) {
+        free(a->entry[i].video);
     }
     if (a->job != NULL) {
         art_thread_join(a->th); /* shutdown: the batch is dropped, not merged */
@@ -262,6 +272,22 @@ static void worker(void* ctx) {
             }
         }
     }
+    for (i = 0; i < j->n; i++) { /* I1384b: the stills and the video link of each album found, read here so the UI thread never asks the library */
+        uint32_t len = 0u;
+        uint8_t* v;
+        if (j->album[i] == 0 || j->src->kinds == NULL) {
+            continue;
+        }
+        j->kmask[i] = j->src->kinds(j->src->ctx, j->album[i]);
+        if ((j->kmask[i] & SEL_ART_KIND_VIDEO) != 0u && (v = fetch(j->src, j->album[i], "dz_video", &len)) != NULL) {
+            j->video[i] = (char*)realloc(v, (size_t)len + 1u);
+            if (j->video[i] != NULL) {
+                j->video[i][len] = '\0';
+            } else {
+                free(v);
+            }
+        }
+    }
 }
 
 /* Caller side: moves the finished batch into the entry table and the cache. */
@@ -281,6 +307,9 @@ static void job_merge(desk_art* a) {
         memset(e, 0, sizeof *e);
         strcpy(e->title, j->title[i]);
         e->album = j->album[i];
+        e->kmask = j->kmask[i];
+        e->video = j->video[i];
+        j->video[i] = NULL;
         if (e->album != 0 && sel_gui_art_cache_get(a->cache, SEL_GUI_ART_TILE, e->album) == NULL) {
             uint32_t* dst = sel_gui_art_cache_put(a->cache, SEL_GUI_ART_TILE, e->album);
             if (dst != NULL) {
@@ -407,6 +436,7 @@ static void big_merge(desk_art* a) {
     free(e->px);
     e->album = b->album;
     e->edge = b->edge;
+    e->frame = b->frame;
     e->px = b->px;
     free(b);
     a->bjob = NULL;
@@ -416,7 +446,12 @@ static void big_merge(desk_art* a) {
 static void big_worker(void* ctx) {
     art_big_job* b = (art_big_job*)ctx;
     uint32_t len = 0u;
-    uint8_t* blob = fetch(b->src, b->album, "cover", &len);
+    char kind[8];
+    uint8_t* blob;
+
+    if (b->frame > 0) snprintf(kind, sizeof kind, "dz%d", b->frame);
+    else strcpy(kind, "cover");
+    blob = fetch(b->src, b->album, kind, &len);
 
     if (blob != NULL) {
         int32_t w = 0, h = 0;
@@ -433,16 +468,43 @@ static void big_worker(void* ctx) {
     }
 }
 
-const uint32_t* art_big(desk_art* a, const char* title, int32_t edge) {
+uint32_t art_frames(desk_art* a, const char* title) {
+    art_entry* e = a != NULL ? find_entry(a, title) : NULL;
+    uint32_t n = 0u, k;
+
+    if (e == NULL || e->album == 0) {
+        return 0u;
+    }
+    for (k = 0; k < 8u; k++) {
+        n += (e->kmask >> k) & 1u;
+    }
+    return n > 0u ? n : 1u; /* a source without kinds holds just the cover */
+}
+
+const char* art_video(desk_art* a, const char* title) {
+    art_entry* e = a != NULL ? find_entry(a, title) : NULL;
+    return e != NULL ? e->video : NULL;
+}
+
+const uint32_t* art_big_frame(desk_art* a, const char* title, int32_t edge, uint32_t n) {
     art_entry* e;
     art_big_job* b;
-    uint32_t i;
+    uint32_t i, k;
+    int32_t frame = 0;
 
     if (a == NULL || edge <= DESK_ART_TILE_EDGE || edge > 2048 || (e = find_entry(a, title)) == NULL || e->album == 0) {
         return NULL;
     }
+    if (e->kmask != 0u) { /* the n-th present still */
+        for (k = 0; k < 8u; k++) {
+            if (((e->kmask >> k) & 1u) != 0u && n-- == 0u) {
+                frame = (int32_t)k;
+                break;
+            }
+        }
+    }
     for (i = 0; i < a->big_n; i++) {
-        if (a->big[i].album == e->album && a->big[i].edge == edge) {
+        if (a->big[i].album == e->album && a->big[i].edge == edge && a->big[i].frame == frame) {
             return a->big[i].px;
         }
     }
@@ -450,14 +512,19 @@ const uint32_t* art_big(desk_art* a, const char* title, int32_t edge) {
         b->src = a->src;
         b->album = e->album;
         b->edge = edge;
+        b->frame = frame;
         a->bjob = b;
         a->bth = art_thread_start(big_worker, b);
         if (a->bth == NULL) { /* no thread (Amiga): ran inline */
             big_merge(a);
-            return art_big(a, title, edge);
+            return art_big_frame(a, title, edge, n);
         }
     }
     return NULL;
+}
+
+const uint32_t* art_big(desk_art* a, const char* title, int32_t edge) {
+    return art_big_frame(a, title, edge, 0u);
 }
 
 int art_pump(desk_art* a) {

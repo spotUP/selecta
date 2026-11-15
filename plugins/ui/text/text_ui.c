@@ -140,6 +140,9 @@ typedef struct tui {
     uint32_t mn_id, mn_folder, mn_parent, mn_qid; /* playlist or folder under the cursor; folder to create in; queue entry id */
     char mn_title[96], mn_key[256], mn_log[192];
     int lib_empty_query;                   /* the last library query was empty (all songs) */
+    const sel_ui_art* art;                 /* I1384b: the library art source, NULL without a library */
+    char stills_key[256], stills_video[256]; /* song the cached still count and Demozoo video link belong to */
+    uint32_t stills_n;
 } tui;
 
 /* ---- commands ---- */
@@ -2319,6 +2322,24 @@ static void tui_sidebar(tui* u, const sel_state* s, const sel_uim_region* r, int
 
 /* I1222i: the detail region, the desktop Now Playing panel: the lines come from sel_uim_np_lines (src/uimodel/nppanel.c), the same ones
  * the desktop draws. Cover art is the text exemption (no image in cells). The first column is the separator. */
+/* I1384b: the cell grid cannot draw the Demozoo stills (cover exemption, RULES.md item 9): say how many the song has and where its video is.
+ * Asked once per song; the library answers by album. */
+static void tui_stills(tui* u, const char* path) {
+    if (strcmp(u->stills_key, path) == 0) return;
+    snprintf(u->stills_key, sizeof u->stills_key, "%s", path);
+    u->stills_n = 0u;
+    u->stills_video[0] = '\0';
+    if (u->art != NULL && u->art->find != NULL && u->art->kinds != NULL) {
+        int64_t album = u->art->find(u->art->ctx, path);
+        uint32_t m = album != 0 ? u->art->kinds(u->art->ctx, album) : 0u, k;
+        for (k = 0u; k < 8u; k++) u->stills_n += (m >> k) & 1u;
+        if ((m & SEL_ART_KIND_VIDEO) != 0u && u->art->get != NULL) {
+            uint32_t n = u->art->get(u->art->ctx, album, "dz_video", (uint8_t*)u->stills_video, sizeof u->stills_video - 1u);
+            u->stills_video[n < sizeof u->stills_video ? n : sizeof u->stills_video - 1u] = '\0';
+        }
+    }
+}
+
 static void tui_detail(tui* u, const sel_state* s, const sel_uim_region* r) {
     sel_uim_np_line ln[SEL_UIM_NP_LINES_MAX];
     uint32_t n = sel_uim_np_lines(&u->uim, s, ln, SEL_UIM_NP_LINES_MAX), i, y = (uint32_t)r->y, x = (uint32_t)r->x + 2u;
@@ -2359,6 +2380,18 @@ static void tui_detail(tui* u, const sel_state* s, const sel_uim_region* r) {
             break;
         default:
             break;
+        }
+    }
+    if (s->song.path != NULL) {
+        char buf[300];
+        tui_stills(u, s->song.path);
+        if (u->stills_n > 1u && y < bottom) {
+            snprintf(buf, sizeof buf, "%u screenshots", (unsigned)u->stills_n);
+            txt_grid_text(&u->grid, x, y++, buf, w, dim);
+        }
+        if (u->stills_video[0] != '\0' && y < bottom) {
+            snprintf(buf, sizeof buf, "Demo %s", u->stills_video);
+            txt_grid_text(&u->grid, x, y++, buf, w, dim);
         }
     }
     u->detail_draws++;
@@ -2637,6 +2670,7 @@ static void* tui_open(const sel_ui_open_args* a) {
     memset(u, 0, sizeof *u);
     u->engine = a->engine;
     u->host = a->host;
+    u->art = a->art;
     u->splash_wanted = 1; /* a scripted --exec run starts on the player, not the start screen (row I355) */
     {
         int i;

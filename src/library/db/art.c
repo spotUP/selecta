@@ -193,6 +193,24 @@ static int art_next_missing(sqlite3* db, const sel_art_op* op) {
     return id;
 }
 
+/* I1384b: the single place that knows which artwork kinds make a song's slide show (the UIs only ask this). */
+static int art_kinds(sqlite3* db, const sel_art_op* op) {
+    sqlite3_stmt* st = NULL;
+    uint32_t mask = 0u;
+
+    if (sqlite3_prepare_v2(db, "SELECT kind FROM artwork WHERE album_id = ?1 AND (kind = 'cover' OR kind = 'dz_video' OR kind GLOB 'dz[1-7]')", -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_int64(st, 1, op->album);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* k = (const char*)sqlite3_column_text(st, 0);
+
+        if (strcmp(k, "cover") == 0) mask |= 1u;
+        else if (strcmp(k, "dz_video") == 0) mask |= SEL_ART_KIND_VIDEO;
+        else mask |= 1u << (k[2] - '0');
+    }
+    sqlite3_finalize(st);
+    return (int)mask;
+}
+
 void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* reply) {
     int v = 0;
 
@@ -207,6 +225,8 @@ void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* rep
         v = art_put(lib->db, op);
     } else if (op->op == SEL_ART_NEXT_MISSING) {
         v = art_next_missing(lib->db, op);
+    } else if (op->op == SEL_ART_KINDS) {
+        v = art_kinds(lib->db, op);
     } else if (op->op == SEL_ART_STORE && op->kind != NULL && op->data != NULL) {
         v = art_store(lib->db, op);
     }
@@ -261,6 +281,15 @@ static int prov_put(void* ctx, int64_t album, const char* kind, const uint8_t* d
     return art_call((sel_library*)ctx, &op);
 }
 
+static uint32_t prov_kinds(void* ctx, int64_t album) {
+    sel_art_op op;
+
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_KINDS;
+    op.album = album;
+    return (uint32_t)art_call((sel_library*)ctx, &op);
+}
+
 int sel_library_album_artist(sel_library* lib, int64_t album, char* out, uint32_t cap) {
     sel_art_op op;
 
@@ -277,4 +306,5 @@ void sel_library_art_provider(sel_library* lib, sel_ui_art* out) {
     out->find = prov_find;
     out->get = prov_get;
     out->put = prov_put;
+    out->kinds = prov_kinds;
 }

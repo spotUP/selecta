@@ -2,6 +2,10 @@
  * (include/selecta/uimodel.h): one widget per region, redrawn only when the region's dirty bit is set. Drawing goes
  * to a backend: `mem` (headless, no SDL, DUI-P2-6) or `sdl` (a window, DUI-P2-7), selected with `--backend`. */
 #include <ctype.h>
+#if defined(__APPLE__) || (defined(__unix__) && !defined(__amigaos__) && !defined(AMIGA))
+#include <spawn.h>
+#include <sys/wait.h>
+#endif
 #include <selecta/plugin.h>
 #include <selecta/registry.h>
 #include <selecta/engine.h>
@@ -382,6 +386,13 @@ typedef struct desk {
     uint32_t np_genart;      /* platform cover draws by the Now Playing panel: one per draw (DUI-P4-7, I691b) */
     uint32_t np_fade;        /* fade strips over the Now Playing artwork last draw: 0 on a platform cover, whose word sits in the faded third (I693b) */
     uint32_t pc_np, pc_bar, pc_page, pc_tile0, pc_draws, pc_shelf, pc_grid, pc_flow, pc_side, pc_header; /* I691d: shelf, grid, flow, sidebar and page header */ /* I691b: family + 1 of the last platform cover per song site, 0 = real art won; draws = all fallback draws */
+    char slide_key[512];     /* I1384b: slide show of the playing song's stills: song, shown still, previous still, ms played on this still, clock of the last step */
+    uint32_t slide_idx, slide_prev, slide_acc, slide_last, slide_switches, slide_hash, slide_of;
+    uint32_t* slide_mix;     /* crossfade scratch, slide_mix_px pixels */
+    int32_t slide_mix_px;
+    sel_gui_rect np_watch;   /* the Watch demo button (Now Playing page), w = 0 when the song has no video link */
+    uint32_t watch_clicks;
+    char watch_last[256];
     uint32_t cover_np, cover_bar, cover_side; /* I692: real covers (art_tile) drawn by the Now Playing panel and page, the player bar, the sidebar rows */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
@@ -741,7 +752,7 @@ static sel_gui_rect sync_bar_rect(desk* d);
 static int desk_toast_tick(desk* d);
 static int overlay_refresh(desk* d);
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5, ANIM_KEY_NAV_FADE = 6, ANIM_KEY_NAV_SCROLL = 7, ANIM_KEY_NAV_SCALE = 8 /* +1 per direction */, ANIM_KEY_SIDE = 10 /* I668: sidebar width */ };
+enum { ANIM_KEY_SLIDE = 12, ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5, ANIM_KEY_NAV_FADE = 6, ANIM_KEY_NAV_SCROLL = 7, ANIM_KEY_NAV_SCALE = 8 /* +1 per direction */, ANIM_KEY_SIDE = 10 /* I668: sidebar width */ };
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 static int in_rect(sel_gui_rect r, int32_t x, int32_t y);
@@ -1944,6 +1955,84 @@ static void load_tile_art(desk* d, const char* const* keys, uint32_t n) {
 /* I692: the real cover of the song (queue path) or album ("<album>" or "<album>\x1f<artist>", art.h) that `key` names, drawn through the same
  * art_tile blit as the album grid and the queue cards. Looks it up on first ask (art_known). Returns 0 when it has no cover: the caller draws
  * the generated art then. */
+enum { SLIDE_FADE_MS = 400 };
+static const char* desk_pref(const desk* d, const char* key, const char* def);
+static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease);
+
+/* I1384b: hands an http(s) link to the system browser. SELECTA_NO_OPEN=1 (tests) only records the click. */
+static void desk_open_url(const char* url) {
+#if defined(__APPLE__) || (defined(__unix__) && !defined(__amigaos__) && !defined(AMIGA))
+    extern char** environ;
+    pid_t pid;
+#if defined(__APPLE__)
+    char* const argv[] = {(char*)"open", (char*)url, NULL};
+#else
+    char* const argv[] = {(char*)"xdg-open", (char*)url, NULL};
+#endif
+    if (strncmp(url, "http", 4) != 0 || getenv("SELECTA_NO_OPEN") != NULL) return;
+    if (posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ) == 0) waitpid(pid, NULL, WNOHANG); /* shortcut: the child is never reaped, a few zombies per session */
+#else
+    (void)url;
+#endif
+}
+
+/* I1384b: the slide show clock, advanced once per distinct UI clock value (several big covers may draw in a frame). Only the playing song's
+ * covers cycle; the clock runs while playback plays, so a pause freezes the shown still. Returns the still to show (0 = cover). */
+static uint32_t slide_step(desk* d, const char* key, uint32_t n) {
+    const sel_state* st = sel_engine_state(d->engine);
+    const char* v = desk_pref(d, "art.slideshow_seconds", "6");
+    uint32_t every = (uint32_t)atoi(v != NULL ? v : "6") * 1000u;
+
+    if (strcmp(d->slide_key, key) != 0) {
+        snprintf(d->slide_key, sizeof d->slide_key, "%s", key);
+        d->slide_idx = d->slide_prev = d->slide_acc = 0u;
+        d->slide_last = d->now_ms;
+    }
+    if (every < 1000u) every = 6000u;
+    if (d->now_ms != d->slide_last) {
+        uint32_t dt = d->now_ms - d->slide_last;
+        d->slide_last = d->now_ms;
+        if (st->play == SEL_PLAYING) d->slide_acc += dt > 5000u ? 5000u : dt;
+        if (n > 1u && d->slide_acc >= every) {
+            d->slide_acc = 0u;
+            d->slide_prev = d->slide_idx;
+            d->slide_idx = (d->slide_idx + 1u) % n;
+            d->slide_switches++;
+            desk_tween(d, ANIM_KEY_SLIDE, SLIDE_FADE_MS, 0u);
+        }
+    }
+    if (d->slide_idx >= n) d->slide_idx = 0u;
+    d->slide_of = n;
+    return d->slide_idx;
+}
+
+/* The big view pixels of the still `idx` of `key`, crossfaded from the previous still while the tween runs. NULL until decoded. */
+static const uint32_t* slide_pixels(desk* d, const char* key, int32_t edge, uint32_t idx, uint32_t n) {
+    const uint32_t* cur = art_big_frame(d->art, key, edge, idx);
+    int32_t t = sel_gui_tween_value(&d->tl, ANIM_KEY_SLIDE, 65536);
+    const uint32_t* prev;
+    int32_t i, px = edge * edge;
+
+    if (cur != NULL && t < 65536 && d->slide_prev != idx && d->slide_prev < n && (prev = art_big_frame(d->art, key, edge, d->slide_prev)) != NULL) {
+        if (d->slide_mix_px < px) {
+            uint32_t* m = (uint32_t*)realloc(d->slide_mix, (size_t)px * sizeof *m);
+            if (m == NULL) return cur;
+            d->slide_mix = m;
+            d->slide_mix_px = px;
+        }
+        for (i = 0; i < px; i++) {
+            uint32_t a = prev[i], b = cur[i], o = 0xFF000000u, s;
+            for (s = 0u; s < 24u; s += 8u) {
+                int32_t x = (int32_t)((a >> s) & 255u), y = (int32_t)((b >> s) & 255u);
+                o |= (uint32_t)(x + (int32_t)(((int64_t)(y - x) * t) >> 16)) << s;
+            }
+            d->slide_mix[i] = o;
+        }
+        return d->slide_mix;
+    }
+    return cur;
+}
+
 static int cover_draw(desk* d, sel_gui_rect ar, const char* key, int32_t radius) {
     const uint32_t* art;
     if (d->art == NULL || key == NULL || key[0] == '\0') {
@@ -1958,7 +2047,20 @@ static int cover_draw(desk* d, sel_gui_rect ar, const char* key, int32_t radius)
     }
     sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
     if (ar.w > DESK_ART_TILE_EDGE) { /* I1384d: a big view draws the cover decoded at its own pixel size; the tile shows until it lands */
-        const uint32_t* big = art_big(d->art, key, ar.w);
+        const sel_state* ps = sel_engine_state(d->engine);
+        uint32_t n = ps->song.path != NULL && strcmp(ps->song.path, key) == 0 ? art_frames(d->art, key) : 0u; /* I1384b: only the playing song cycles */
+        const uint32_t* big;
+        if (n > 1u) {
+            uint32_t idx = slide_step(d, key, n);
+            big = slide_pixels(d, key, ar.w, idx, n);
+            if (big != NULL) {
+                uint32_t h = 2166136261u, k;
+                for (k = 0u; k < (uint32_t)ar.w * (uint32_t)ar.w; k += 97u) h = (h ^ big[k]) * 16777619u;
+                d->slide_hash = h;
+            }
+        } else {
+            big = art_big(d->art, key, ar.w);
+        }
         if (big != NULL) {
             sel_gui_blit_image_round(d->canvas, ar, big, ar.w, ar.w, ar.w, radius);
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
@@ -8051,6 +8153,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
     o = dump_put(d, o, "cover_tiles np=%u bar=%u side=%u\n", (unsigned)d->cover_np, (unsigned)d->cover_bar, (unsigned)d->cover_side);
+    o = dump_put(d, o, "cover_slide of=%u frame=%u switches=%u hash=%08x watch=%d,%d,%d clicks=%u last=%s\n", (unsigned)d->slide_of, (unsigned)d->slide_idx,
+                 (unsigned)d->slide_switches, (unsigned)d->slide_hash, (int)d->np_watch.x + (int)d->np_watch.w / 2, (int)d->np_watch.y + (int)d->np_watch.h / 2, (int)d->np_watch.w, (unsigned)d->watch_clicks, d->watch_last);
     o = dump_put(d, o, "nowplaying fade %u\n", (unsigned)d->np_fade);
     o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u shelf=%s grid=%s flow=%s side=%s header=%s\n", pc_name(d->pc_np), pc_name(d->pc_bar),
                  pc_name(d->pc_page), pc_name(d->pc_tile0), (unsigned)d->pc_draws, pc_name(d->pc_shelf), pc_name(d->pc_grid), pc_name(d->pc_flow),
@@ -11509,6 +11613,15 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         dlg_open_sysfile(d, sel_engine_state(d->engine)->song.sysfile_label);
         return 1;
     }
+    if (d->np_page && d->np_watch.w > 0 && in_rect(d->np_watch, x, y)) { /* I1384b: Watch demo */
+        const char* link = art_video(d->art, sel_engine_state(d->engine)->song.path);
+        if (link != NULL) {
+            snprintf(d->watch_last, sizeof d->watch_last, "%s", link);
+            d->watch_clicks++;
+            desk_open_url(link);
+        }
+        return 1;
+    }
     if (d->np_draws > 0u && in_rect(d->np_like, x, y)) { /* Now Playing: like the playing song, or set its rating */
         return desk_send(d, "LIKE");
     }
@@ -13120,6 +13233,12 @@ static void draw_nowplaypage(desk* d) {
         draw_text(d, rect_of(x, y + lpx(d, 66), mn.x + mn.w - x - mg, lpx(d, 20)), f->format, 0, 13, muted);
     } else {
         draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 36)), "Nothing is playing", 1, 22, muted);
+    }
+    d->np_watch = rect_of(0, 0, 0, 0);
+    if (st->song.path != NULL && art_video(d->art, st->song.path) != NULL) { /* I1384b: Watch demo opens the Demozoo video link */
+        d->np_watch = rect_of(x, y + lpx(d, 92), lpx(d, 132), lpx(d, 28));
+        draw_button(d, d->np_watch, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Watch demo", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        y += lpx(d, 32);
     }
     y += lpx(d, 104);
     draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 20)), "Next in Queue", 1, 13, muted);
@@ -16788,6 +16907,7 @@ static void desk_close(void* state) {
         free(d->qg.name);
         free(d->qg.pool);
         art_close(d->art);
+        free(d->slide_mix);
         desk_free_icons(d);
         for (i = 0; i < 2 * DESK_SIZES; i++) {
             desk_atlas_free(d->atlas[i / DESK_SIZES][i % DESK_SIZES]);
