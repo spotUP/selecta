@@ -106,7 +106,7 @@ static void push_test_events(const char* list) {
 
 /* Test hook: SELECTA_SDL_TEST_TIMED is a space separated list of events pushed from an SDL timer thread while the live
  * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `d<btn>,<x>,<y>@<ms>` a mouse button down, `u<btn>,<x>,<y>@<ms>` a button up (1 left, 3 right; a C or G after d/u, `dC1,..`, holds Control or Command),
- * `w<dx>,<dy>@<ms>` a wheel notch, `k<keycode hex>@<ms>` a key down, `t<text>@<ms>` typed text, `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
+ * `w<dx>,<dy>@<ms>` a wheel notch, `k<keycode hex>@<ms>` a key down, `t<text>@<ms>` typed text (`_` types a space), `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
  * dummy driver count as a live display, so a test runs the real live loop (I341). */
 typedef struct {
     SDL_Event ev; /* first: the timer parameter is the event */
@@ -169,7 +169,9 @@ static void push_timed_events(const char* list) {
             ev->key.down = true;
             ev->key.key = (SDL_Keycode)btn;
         } else if (tok[0] == 't' && strrchr(tok, '@') != NULL && sscanf(strrchr(tok, '@'), "@%u", &ms) == 1) { /* typed text */
+            char* sp;
             *strrchr(tok, '@') = '\0';
+            for (sp = tok; (sp = strchr(sp, '_')) != NULL;) *sp = ' '; /* `_` types a space: the list itself splits on spaces (I1400) */
             ev->type = SDL_EVENT_TEXT_INPUT;
             ev->text.text = SDL_strdup(tok + 1);
         } else {

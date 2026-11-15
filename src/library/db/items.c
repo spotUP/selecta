@@ -622,9 +622,12 @@ int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uin
  * `agg` is the aggregate, `cond` an extra condition on h. HOME_PLAYS counts every play, a skipped one included, as the Recents recency of
  * section 5. HOME_FIN counts finished plays only and HOME_FIN_LAST is the time of the last one: Recently Played and Your Albums use
  * these (Johan 2026-10-29; an album with only skipped plays stays on Jump Back In). */
+/* I1400a: here the item's songs drive (songs_album, song_composers_canon) and history is probed by key. This runs once per item row, so
+ * the I787 order (history drives) walked all of history for each of ~35 000 albums and composers: 11 s of Home on Johan's library,
+ * holding the library worker while the first search waited behind it. The CTE aggregates above run once and keep history driving. */
 #define HOME_HIST(agg, cond) \
-    "(CASE k WHEN 4 THEN (SELECT " agg " FROM history h CROSS JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,'')" cond ")" \
-    " WHEN 6 THEN (SELECT " agg " FROM history h CROSS JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik" cond ")" \
+    "(CASE k WHEN 4 THEN (SELECT " agg " FROM songs s CROSS JOIN history h ON h.key=s.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,'')" cond ")" \
+    " WHEN 6 THEN (SELECT " agg " FROM song_composers c CROSS JOIN history h ON h.key=c.song_key WHERE c.canon=ik" cond ")" \
     " WHEN 3 THEN (SELECT " agg " FROM history h JOIN playlist_entries e ON e.key=h.key WHERE e.playlist_id=CAST(ik AS INTEGER)" cond ")" \
     " ELSE 0 END)"
 #define HOME_PLAYS HOME_HIST("COUNT(*)", "")
