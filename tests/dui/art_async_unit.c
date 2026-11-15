@@ -71,7 +71,7 @@ int main(void) {
     static uint32_t px[DESK_ART_TILE_EDGE * DESK_ART_TILE_EDGE], want[DESK_ART_TILE_EDGE * DESK_ART_TILE_EDGE];
     static char names[TITLES][12];
     const char* keys[TITLES];
-    sel_ui_art src = {NULL, fx_find, fx_get, fx_put};
+    sel_ui_art src = {NULL, fx_find, fx_get, fx_put, NULL};
     struct timespec t0;
     desk_art* a;
     long ms, worst_pump = 0, load_ms;

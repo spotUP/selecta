@@ -36,6 +36,11 @@ const uint32_t* art_tile(desk_art* a, const char* title);
 /* I1384d: the cover of the album of `title` decoded from the stored full image into edge x edge pixels (aspect kept, black bars), for views
  * that draw bigger than the tile. NULL until the background decode lands (art_pump repaints); the caller draws art_tile meanwhile. */
 const uint32_t* art_big(desk_art* a, const char* title, int32_t edge);
+/* I1384b: slide show. art_frames = stills the song's album holds (0 = no cover yet, 1 = just the cover); art_big_frame is art_big for the n-th
+ * still (n < art_frames, in cover, dz1..dz7 order); art_video = the Demozoo video link or NULL. All answer from the batch that loaded the title. */
+uint32_t art_frames(desk_art* a, const char* title);
+const uint32_t* art_big_frame(desk_art* a, const char* title, int32_t edge, uint32_t n);
+const char* art_video(desk_art* a, const char* title);
 /* I678e: the dominant colour (0xAARRGGBB) of the cover of the album of the song at `title`; 0 when it has no artwork. Computed once per art
  * entry and cached; art_dominants counts the computations. */
 int art_dominant(desk_art* a, const char* title, uint32_t* argb);

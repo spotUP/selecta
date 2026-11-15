@@ -67,7 +67,8 @@ enum {
  * SEL_ART_STORE (I437, embedded cover found by the scan) finds or creates the albums row (`album`, `artist`, source local) and stores the
  * raw image bytes as its `kind` artwork row, replying 1 when stored. */
 enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */,
-       SEL_ART_NEXT_MISSING /* I1003a: the first albums row after `album` with a name, an artist, no 'cover' artwork and no scrape_miss row newer than `len` (epoch seconds); data = "name\0artist\0"; reply = its id, 0 = none */ };
+       SEL_ART_NEXT_MISSING /* I1003a: the first albums row after `album` with a name, an artist, no 'cover' artwork and no scrape_miss row newer than `len` (epoch seconds); data = "name\0artist\0"; reply = its id, 0 = none */,
+       SEL_ART_KINDS /* I1384b: which stills the artwork of `album` holds: reply = mask, bit 0 = 'cover', bit n = 'dz<n>' (n 1..7), SEL_ART_KIND_VIDEO = a 'dz_video' link row */ };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
     const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */

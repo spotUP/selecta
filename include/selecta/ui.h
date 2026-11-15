@@ -15,7 +15,9 @@ typedef struct sel_ui_art {
     int64_t (*find)(void* ctx, const char* song_ref);                                          /* album id of the song a queue path (or song key) names, 0 = none */
     uint32_t (*get)(void* ctx, int64_t album, const char* kind, uint8_t* out, uint32_t cap);   /* blob size, 0 = none */
     int (*put)(void* ctx, int64_t album, const char* kind, const uint8_t* data, uint32_t len); /* 1 = stored */
+    uint32_t (*kinds)(void* ctx, int64_t album); /* I1384b: stills of the album: bit 0 'cover', bit n 'dz<n>' (n 1..7), bit 8 a 'dz_video' link; NULL or 0 = just the cover */
 } sel_ui_art;
+#define SEL_ART_KIND_VIDEO (1u << 8) /* I1384b: bit of sel_ui_art.kinds: the album holds a 'dz_video' link row */
 
 /* Passed to UI_OPEN. `library` is reserved and NULL until M3 creates
  * sel_library. `argv` carries the UI's own options. */

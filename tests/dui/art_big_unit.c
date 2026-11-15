@@ -53,7 +53,7 @@ static void drain(desk_art* a) {
 
 int main(void) {
     enum { EDGE = 200 };
-    sel_ui_art src = {NULL, fx_find, fx_get, fx_put};
+    sel_ui_art src = {NULL, fx_find, fx_get, fx_put, NULL};
     const char* keys[1] = {"song"};
     desk_art* a = art_open(&src);
     const uint32_t* big;
