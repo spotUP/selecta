@@ -455,6 +455,7 @@ typedef struct desk {
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
     struct { char id[64]; sel_gui_rect rect; } search_sync[16]; uint32_t search_sync_n, search_sync_clicks; /* I1053b: the Sync buttons of the Not synced sections the last frame drew */
     uint32_t search_hidden; /* I1206: the zero-hit categories the last list frame left out (the dump's sentinel that the shared predicate ran) */
+    struct { char head[72]; sel_gui_rect rect; } search_fold[16]; uint32_t search_fold_n, search_fold_clicks; /* I1406: the Show all / Show less links the last list frame drew */
     char search_sec_head[16][72]; uint32_t search_sec_rows[16], search_sec_n; int32_t search_sec_y[16]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
     struct { char name[96]; sel_gui_rect rect; } search_art[48]; uint32_t search_art_n, search_art_opens; /* I1207: the Artists rows/tiles the last Search frame drew; a click opens that artist's page */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
@@ -8367,6 +8368,10 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "search_section %u rows=%u %s\n", (unsigned)si, (unsigned)d->search_sec_rows[si], d->search_sec_head[si]);
             o = dump_put(d, o, "search_section_y %u %d\n", (unsigned)si, (int)d->search_sec_y[si]); /* I1041: heading top */
         }
+        for (si = 0; si < d->search_fold_n; si++) { /* I1406: one line per Show all link drawn */
+            o = dump_put(d, o, "search_fold %u expanded=%d clicks=%u %s\n", (unsigned)si, sel_uim_search_expanded(d->search_fold[si].head),
+                         (unsigned)d->search_fold_clicks, d->search_fold[si].head);
+        }
     }
     if (d->pl_page) { /* the Playlists page geometry and tree rows (DUI-P4-9) */
         const sel_view_state* pv = pl_view(st);
@@ -10319,7 +10324,7 @@ static int desk_search_out(const desk* d) {
 static int32_t search_rows_h(desk* d, uint32_t upto) {
     const sel_state* st = sel_engine_state(d->engine);
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
-    uint32_t k, group = 0;
+    uint32_t k, group = 0, ord = 0, lim = UINT32_MAX;
     int32_t h = 0;
     int show = 0, heads = 0;
     if (desk_scope_online(d)) {
@@ -10338,7 +10343,10 @@ static int32_t search_rows_h(desk* d, uint32_t upto) {
                 h += lpx(d, SEARCH_SECTION_GAP);
             }
             h += show ? lpx(d, 32) : 0;
-        } else if (show) {
+            ord = 0;
+            lim = show && sel_uim_search_section_rows(v->rows, v->row_n, k) > SEL_UIM_SEARCH_FOLD_ROWS && !sel_uim_search_expanded(t)
+                      ? SEL_UIM_SEARCH_FOLD_ROWS : UINT32_MAX; /* I1406 */
+        } else if (show && ord++ < lim) {
             h += lpx(d, SEARCH_ROW_H);
         }
     }
@@ -10432,6 +10440,7 @@ static void draw_search(desk* d) {
     sel_gui_clip_push(d->canvas, rect_of(mn.x, y, mn.w, mn.y + mn.h - y));
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
     d->search_sec_n = 0;
+    d->search_fold_n = 0;
     memset(&d->search_plain_row, 0, sizeof d->search_plain_row);
     d->search_hidden = 0;
     d->search_sync_n = 0;
@@ -10499,11 +10508,15 @@ static void draw_search(desk* d) {
         uint32_t group = 0, drawn_all = 0, heads = 0;
         int32_t top = y, bottom = mn.y + mn.h, rh = lpx(d, SEARCH_ROW_H);
         int show = 0, hid = 0;
+        uint32_t ord = 0, lim = UINT32_MAX; /* I1406: rows of the category drawn so far, and how many it may draw */
         char src[72] = "Library"; /* I1020: the source name the rows under the current heading carry as their badge */
         y -= lpx_q16(d, search_scroll_q16(d)); /* the groups scroll inside the body under the chips; rows outside it are skipped */
         for (k = 0; k < v->row_n; k++) {
             const sel_view_row* r = &v->rows[k];
             const char* t = r->text != NULL ? r->text : "";
+            if (r->kind != SEL_ROW_HEADING && show && ord++ >= lim) {
+                continue; /* I1406: a folded category draws its first rows only */
+            }
             if (r->kind != SEL_ROW_HEADING && group == 4u && show && d->search_sec_n > 0u) {
                 d->search_sec_rows[d->search_sec_n - 1u]++;
             }
@@ -10542,6 +10555,22 @@ static void draw_search(desk* d) {
                 if (show && y + lpx(d, 32) > top && y < bottom) {
                     draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, 28)), t, 1, 18, text);
                     drawn_all++;
+                }
+                ord = 0;
+                lim = show && sel_uim_search_section_rows(v->rows, v->row_n, k) > SEL_UIM_SEARCH_FOLD_ROWS && !sel_uim_search_expanded(t)
+                          ? SEL_UIM_SEARCH_FOLD_ROWS : UINT32_MAX;
+                if (show && sel_uim_search_section_rows(v->rows, v->row_n, k) > SEL_UIM_SEARCH_FOLD_ROWS && d->search_fold_n < 16u &&
+                    y + lpx(d, 32) > top && y < bottom) { /* I1406: the grey link at the right end of the heading folds or unfolds the category */
+                    const char* lab = lim == UINT32_MAX ? "Show less" : SHOW_ALL_LABEL;
+                    const sel_gui_atlas* at = desk_font(d, 1, SHOW_ALL_PX);
+                    int32_t tw = at != NULL ? sel_gui_text_width(at, lab, strlen(lab)) : 0;
+                    sel_gui_rect lk = rect_of(mn.x + mn.w - mg - tw, y, tw, lpx(d, 28));
+                    if (tw > 0) {
+                        draw_text(d, lk, lab, 1, SHOW_ALL_PX, ARGB(d->theme.token[in_rect(lk, d->ptr_x, d->ptr_y) ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+                        hover_reg(d, lk);
+                        snprintf(d->search_fold[d->search_fold_n].head, sizeof d->search_fold[0].head, "%s", t);
+                        d->search_fold[d->search_fold_n++].rect = lk;
+                    }
                 }
                 y += show ? lpx(d, 32) : 0;
             } else if (show && (y + rh <= top || y >= bottom)) {
@@ -11555,6 +11584,17 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
                 if (search_sync_start(d, d->search_sync[i].id)) {
                     return 1;
                 }
+            }
+        }
+    }
+    if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* I1406: Show all / Show less on a category heading */
+        for (i = 0; i < d->search_fold_n; i++) {
+            if (in_rect(d->search_fold[i].rect, x, y)) {
+                sel_uim_search_fold_toggle(d->search_fold[i].head);
+                d->search_fold_clicks++;
+                d->repaint = 1;
+                d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+                return 1;
             }
         }
     }
@@ -16240,6 +16280,15 @@ static int desk_replay_lines(desk* d, char* line) {
             opened |= desk_route_input(d, &mv);
         } else if (sscanf(line, "door %u", &n) == 1 && n < DOOR_COUNT) { /* a click on the centre of door n */
             sel_gui_rect r = sidebar_door_rect(d, n);
+            sel_gui_input ck;
+            memset(&ck, 0, sizeof ck);
+            ck.kind = SEL_GUI_IN_CLICK;
+            ck.x = r.x + r.w / 2;
+            ck.y = r.y + r.h / 2;
+            opened |= desk_route_input(d, &ck);
+            pointer_sent = d->sends != sent;
+        } else if (sscanf(line, "searchfold %u", &n) == 1 && n < d->search_fold_n) { /* I1406: a click on the centre of the Show all link of the nth folded category */
+            sel_gui_rect r = d->search_fold[n].rect;
             sel_gui_input ck;
             memset(&ck, 0, sizeof ck);
             ck.kind = SEL_GUI_IN_CLICK;
