@@ -22,4 +22,11 @@ int sel_modulespl_parse(const char* html, size_t len, sel_modulespl_row_fn row, 
  * delivered (0 for the empty array), -1 when the text is not a JSON array. */
 int sel_modulespl_parse_uhc(FILE* f, sel_modulespl_row_fn row, void* ctx);
 
+/* The same mapping as a shared-client row callback (source/uhc.h): ctx is a sel_modulespl_uhc_ctx. -1 for an unsafe path. */
+typedef struct {
+    sel_modulespl_row_fn row;
+    void* ctx;
+} sel_modulespl_uhc_ctx;
+int sel_modulespl_uhc_row(void* ctx, const char* dir, const char* file, const char* title, const char* artist, const char* format);
+
 #endif

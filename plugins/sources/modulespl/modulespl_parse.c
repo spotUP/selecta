@@ -7,7 +7,7 @@
  * The modPlayer argument is the direct file under /modules/. A format the site cannot play has
  * `play-disabled.png` and no such argument. */
 #include "modulespl_parse.h"
-#include "source/json_scan.h"
+#include "source/uhc.h"
 #include "source/xml_scan.h"
 
 #include <stdio.h>
@@ -174,93 +174,21 @@ int sel_modulespl_parse(const char* html, size_t len, sel_modulespl_row_fn row, 
     return delivered;
 }
 
-/* One UHC row object (the '{' is consumed). */
-typedef struct {
-    char file[PATH_CAP];
-    char dir[PATH_CAP];
-    char artist[TEXT_MAX];
-    char title[TEXT_MAX];
-    char format[24];
-} uhc_row;
+int sel_modulespl_uhc_row(void* ctx, const char* dir, const char* file, const char* title, const char* artist, const char* format) {
+    static const char prefix[] = "modules/";
+    const sel_modulespl_uhc_ctx* w = ctx;
+    char path[PATH_CAP];
 
-static int uhc_read_row(FILE* f, uhc_row* u) {
-    char key[24];
-    int c;
-
-    memset(u, 0, sizeof *u);
-    for (;;) {
-        char* dst = NULL;
-        size_t cap = 0;
-        int end = 0;
-
-        c = sel_json_skip_ws(f);
-        if (c == '}') {
-            return 1;
-        }
-        if (c == ',') {
-            continue;
-        }
-        if (c != '"' || !sel_json_read_string(f, key, sizeof key) || sel_json_skip_ws(f) != ':') {
-            return 0;
-        }
-        c = sel_json_skip_ws(f);
-        if (c == '"') {
-            if (strcmp(key, "filename") == 0) {
-                dst = u->file, cap = sizeof u->file;
-            } else if (strcmp(key, "path") == 0) {
-                dst = u->dir, cap = sizeof u->dir;
-            } else if (strcmp(key, "author(s)") == 0) {
-                dst = u->artist, cap = sizeof u->artist;
-            } else if (strcmp(key, "title") == 0) {
-                dst = u->title, cap = sizeof u->title;
-            } else if (strcmp(key, "format") == 0) {
-                dst = u->format, cap = sizeof u->format;
-            }
-            if (!sel_json_read_string(f, dst, cap)) {
-                return 0;
-            }
-            c = sel_json_skip_ws(f);
-            if (c == '}') {
-                return 1;
-            }
-        } else {
-            if (!sel_json_skip_value(f, c, &end)) {
-                return 0;
-            }
-            if (end == '}') {
-                return 1;
-            }
-        }
+    /* UHC path "modules/<author dir>" + filename -> the key "<author dir>/<file>.zip" the HTML parser made. */
+    if (strncmp(dir, prefix, sizeof prefix - 1u) != 0 ||
+        (size_t)snprintf(path, sizeof path, "%s/%s", dir + sizeof prefix - 1u, file) >= sizeof path || !path_ok(path)) {
+        return -1;
     }
+    return w->row(w->ctx, path, title, artist, format);
 }
 
 int sel_modulespl_parse_uhc(FILE* f, sel_modulespl_row_fn row, void* ctx) {
-    static const char prefix[] = "modules/";
-    uhc_row u;
-    char path[PATH_CAP];
-    int delivered = 0;
-    int c;
+    sel_modulespl_uhc_ctx w = {row, ctx};
 
-    if (sel_json_skip_ws(f) != '[') {
-        return -1;
-    }
-    while ((c = sel_json_skip_ws(f)) != EOF && c != ']') {
-        if (c == ',') {
-            continue;
-        }
-        if (c != '{' || !uhc_read_row(f, &u)) {
-            return delivered > 0 ? delivered : -1;
-        }
-        /* UHC path "modules/<author dir>" + filename -> the key "<author dir>/<file>.zip" the HTML parser made. */
-        if (strncmp(u.dir, prefix, sizeof prefix - 1u) != 0 ||
-            (size_t)snprintf(path, sizeof path, "%s/%s", u.dir + sizeof prefix - 1u, u.file) >= sizeof path ||
-            !path_ok(path)) {
-            continue;
-        }
-        delivered++;
-        if (!row(ctx, path, u.title, u.artist, u.format)) {
-            break;
-        }
-    }
-    return delivered;
+    return sel_uhc_parse(f, sel_modulespl_uhc_row, &w);
 }
