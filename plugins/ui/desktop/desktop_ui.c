@@ -27,6 +27,7 @@
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/cols.h>
+#include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/nppanel.h>
 #include <selecta/uimodel/select.h>
@@ -17314,28 +17315,8 @@ static void* desk_open(const sel_ui_open_args* a) {
  * put in front of its detail ("http_status=404 <url>"). */
 static void desk_open_fail_toast(desk* d, const char* code, const char* detail) {
     char msg[sizeof d->open_fail_text];
-    int status = 0, used = 0;
 
-    if (strcmp(code, "no_replayer") == 0) {
-        /* I1383: the engine's "format=<ext> <key>"; never the source id of the key. */
-        char fmt[16];
-        size_t i;
-
-        if (sscanf(detail, "format=%15s", fmt) != 1 || strcmp(fmt, "unknown") == 0) {
-            snprintf(msg, sizeof msg, "No player for that file type yet");
-        } else {
-            for (i = 0; fmt[i] != '\0'; i++) {
-                fmt[i] = (char)toupper((unsigned char)fmt[i]);
-            }
-            snprintf(msg, sizeof msg, "No player for %s yet", fmt);
-        }
-    } else if (sscanf(detail, "http_status=%d %n", &status, &used) >= 1 && used > 0 &&
-               strstr(detail + used, "blocks downloads of this song") != NULL) {
-        /* I1072d: the engine names the source that refuses the download (report_open_failed, I1072c): show its words. */
-        snprintf(msg, sizeof msg, "That song could not be downloaded: %s (HTTP %d)", detail + used, status);
-    } else if (sscanf(detail, "http_status=%d", &status) == 1) {
-        snprintf(msg, sizeof msg, "That song could not be downloaded (HTTP %d)", status);
-    } else {
+    if (!sel_uim_open_fail_text(code, detail, msg, sizeof msg)) {
         snprintf(msg, sizeof msg, "That song cannot be played");
     }
     memcpy(d->open_fail_text, msg, sizeof msg);

@@ -22,6 +22,7 @@
 static const sel_uim_side_kind TUI_SIDE_KIND_CHIPS = SEL_UIM_SIDE_CHIPS;
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/keybind.h>
@@ -2704,8 +2705,13 @@ static void tui_on_event(void* state, const sel_message* evt) {
     tui* u = (tui*)state;
     if (evt->id == SEL_EVT_ERROR && evt->argc > 0) {
         /* I195g: an engine error (for example "open_failed http_status=404 <url>") shows on the status line. */
-        snprintf(u->cmd.status, sizeof u->cmd.status, "Error: %s%s%s", evt->args[0].v.s, evt->argc > 1 ? " " : "",
-                 evt->argc > 1 ? evt->args[1].v.s : "");
+        char text[96];
+        if (sel_uim_open_fail_text(evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : NULL, text, sizeof text)) {
+            snprintf(u->cmd.status, sizeof u->cmd.status, "%s", text); /* I1383b: same words as the desktop toast */
+        } else {
+            snprintf(u->cmd.status, sizeof u->cmd.status, "Error: %s%s%s", evt->args[0].v.s, evt->argc > 1 ? " " : "",
+                     evt->argc > 1 ? evt->args[1].v.s : "");
+        }
     }
     u->dirty = 1; /* every event can change what the snapshot shows */
 }
