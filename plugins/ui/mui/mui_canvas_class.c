@@ -259,9 +259,16 @@ Object* mui_canvas_cover_new(int screen_is_rtg) {
 
 void mui_canvas_set_cover(Object* obj, uint32_t kind, uint32_t tint, const char* ext, const char* title) {
     canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    char e[sizeof d->ext], t[sizeof d->title];
+    snprintf(e, sizeof e, "%s", ext != NULL ? ext : "");
+    snprintf(t, sizeof t, "%s", title != NULL ? title : "");
+    /* the Now Playing refresh runs on every pattern row: redraw only when the cover changed */
+    if (d->kind == kind && d->tint == tint && strcmp(d->ext, e) == 0 && strcmp(d->title, t) == 0) {
+        return;
+    }
     d->kind = kind;
     d->tint = tint;
-    snprintf(d->ext, sizeof d->ext, "%s", ext != NULL ? ext : "");
-    snprintf(d->title, sizeof d->title, "%s", title != NULL ? title : "");
+    memcpy(d->ext, e, sizeof e);
+    memcpy(d->title, t, sizeof t);
     MUI_Redraw(obj, MADF_DRAWOBJECT);
 }
