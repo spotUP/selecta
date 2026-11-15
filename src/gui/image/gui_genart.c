@@ -63,8 +63,12 @@ uint32_t sel_gui_cover_palette(uint32_t out[32], const uint32_t* tokens) {
             out[n++] = sel_gui_cover_tone(tokens, f, t);
         }
     }
+    out[n++] = text; /* first spare slot holds the mark and word colour */
+    for (f = 1u; f < SEL_COVER_KIND_COUNT && n < ART_SLOTS; f++) {
+        out[n++] = tokens[sel_cover_kind_token(f)] & 0xFFFFFFu; /* I1399a: the kind tints, so an INDEX8 kind cover is an exact match */
+    }
     while (n < ART_SLOTS) {
-        out[n++] = text; /* first spare slot holds the mark and word colour; the rest repeat it */
+        out[n++] = text;
     }
     return tones;
 }
@@ -242,9 +246,10 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
     sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);
 }
 
-/* I1399: a cover by kind. A kind other than FORMAT on an RGBA32 canvas is a gradient of the kind's tint token with the kind label and the item title (two lines at most) bottom
- * left and, with `icons`, the kind's flat icon centred; FORMAT draws the family tint with the family's icon. INDEX8 (AGA, 32 palette
- * slots) and a NULL `icons` keep the family mark and flat field of sel_gui_cover_draw (a kind then only changes the tint on RGBA32). */
+/* I1399: a cover by kind. A kind other than FORMAT is the kind's tint token (RGBA32: gradient; INDEX8: flat, the tint sits in the
+ * cover palette slots, I1399a) with the kind label and the item title (two lines at most) bottom left and, with `icons`, the kind's
+ * flat icon centred; FORMAT on RGBA32 draws the family tint with the family's icon. FORMAT on INDEX8 (AGA, 32 palette slots) keeps
+ * the family mark of sel_gui_cover_draw. */
 void sel_gui_cover_draw_kind(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, uint32_t family, uint32_t title_hash,
                              const char* title, const uint32_t* tokens, const sel_gui_atlas* title_font,
                              const sel_gui_atlas* kind_font, const sel_gui_icons* icons) {
@@ -252,7 +257,7 @@ void sel_gui_cover_draw_kind(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, u
     int32_t edge, margin, px, text_top, lines;
     sel_gui_rect box, tbox;
 
-    if (c->format == SEL_GUI_INDEX8 || r.w <= 0 || r.h <= 0) {
+    if (r.w <= 0 || r.h <= 0 || (c->format == SEL_GUI_INDEX8 && sel_cover_kind_token(kind) == 0u)) {
         sel_gui_cover_draw(c, r, family, title_hash, tokens, title_font);
         return;
     }
@@ -266,7 +271,12 @@ void sel_gui_cover_draw_kind(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, u
     field = 0xFF000000u | (tok != 0u ? tone_shade(tokens[tok] & 0xFFFFFFu, sel_gui_cover_tone_of(title_hash))
                                       : sel_gui_cover_tone(tokens, family, sel_gui_cover_tone_of(title_hash)));
     text = 0xFF000000u | (tokens[SEL_GUI_TOKEN_COVER_TEXT] & 0xFFFFFFu);
-    sel_gui_gradient(c, r, 1, cover_dark(field), field);
+    if (c->format == SEL_GUI_INDEX8) {
+        field = 0xFF000000u | (tokens[tok] & 0xFFFFFFu); /* the palette holds the untoned kind tint; flat, like the family cover */
+        sel_gui_fill_rect(c, r, field);
+    } else {
+        sel_gui_gradient(c, r, 1, cover_dark(field), field);
+    }
     edge = r.w < r.h ? r.w : r.h;
     margin = edge / 10;
     text_top = r.y + r.h; /* I1399c: the text block (kind label above the title, two title lines at most) sits bottom left */

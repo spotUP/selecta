@@ -2,6 +2,7 @@
 #include "mui_canvas.h"
 
 #include <selecta/gui/gui_genart.h>
+#include <selecta/gui/gui_icons.h>
 #include <selecta/gui/gui_image.h>
 
 #include <selecta/platform.h>
@@ -9,11 +10,59 @@
 
 #include <stdlib.h>
 
-/* The platform cover of a tile or art object (I691e): the family of the format extension, drawn in the default theme's cover
- * tokens (the MUI canvas carries no theme of its own). No word: the MUI covers are tile sized. */
-static void mui_platform_cover(sel_gui_canvas* c, sel_gui_rect r, const char* format, const char* title) {
+/* One size of the baked icon set, unpacked on first use (I1399a): the largest baked size not above `px`. The kind icons are a
+ * handful of masks, so the whole set at one cover-sized edge is small (about 40 KB at 32 px); a later larger edge rebuilds it. */
+static const sel_gui_icons_packed* mui_icon_src; /* set by the UI plugin; NULL draws covers without the icon */
+
+void mui_canvas_set_icons(const sel_gui_icons_packed* baked) {
+    mui_icon_src = baked;
+}
+
+static const sel_gui_icons* mui_cover_icons(int32_t px) {
+    static sel_gui_icons ic;
+    static int32_t size;
+    static const uint8_t* alpha;
+    static uint8_t* buf;
+    uint32_t s, best = 0u, k;
+    size_t sz;
+    const sel_gui_icons_packed* b = mui_icon_src;
+
+    if (b == NULL || b->size_n == 0u) {
+        return NULL;
+    }
+    for (s = 0u; s < b->size_n; s++) {
+        if (b->sizes[s] <= px) {
+            best = s;
+        }
+    }
+    if (buf != NULL && size == b->sizes[best]) {
+        return &ic;
+    }
+    size = b->sizes[best];
+    sz = (size_t)size * (size_t)size;
+    free(buf);
+    buf = malloc(sz * b->count);
+    if (buf == NULL) {
+        return NULL; /* no icon: the cover keeps its tint */
+    }
+    for (k = 0u; k < b->count; k++) {
+        sel_gui_icon_unpack(b, best, k, buf + k * sz);
+    }
+    alpha = buf;
+    ic.count = b->count;
+    ic.size_n = 1u;
+    ic.sizes = &size;
+    ic.alpha = &alpha;
+    return &ic;
+}
+
+/* The cover of a tile or art object (I691e, I1399a): the kind's icon on its per-kind tint (SEL_COVER_KIND_FORMAT: the family of the
+ * format extension), in the default theme's cover tokens (the MUI canvas carries no theme of its own). The MUI canvas has no text
+ * atlas (the MUI side draws text with TrueType), so the kind label and title are the caller's MUI text, not drawn here. */
+static void mui_platform_cover(sel_gui_canvas* c, sel_gui_rect r, uint32_t kind, const char* format, const char* title) {
     static uint32_t tokens[SEL_GUI_TOKEN_COUNT];
     static int ready;
+    int32_t edge = r.w < r.h ? r.w : r.h;
 
     if (!ready) {
         int t;
@@ -22,7 +71,14 @@ static void mui_platform_cover(sel_gui_canvas* c, sel_gui_rect r, const char* fo
         }
         ready = 1;
     }
-    sel_gui_cover_draw(c, r, sel_platform_of_ext(format), sel_gui_str_hash(title != NULL ? title : ""), tokens, NULL);
+    const sel_gui_icons* ic = mui_cover_icons(edge / 2);
+    uint32_t family = sel_platform_of_ext(format), hash = sel_gui_str_hash(title != NULL ? title : "");
+
+    if (ic == NULL && kind == 0u) { /* no icon set: the family mark cover, as before I1399a */
+        sel_gui_cover_draw(c, r, family, hash, tokens, NULL);
+        return;
+    }
+    sel_gui_cover_draw_kind(c, r, kind, family, hash, title, tokens, NULL, NULL, ic);
 }
 
 int mui_canvas_fit(mui_canvas* m, sel_gui_rect obj) {
@@ -93,7 +149,7 @@ uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_
         if (px != NULL) {
             sel_gui_blit_image(&m->c, ar, px, s->edge, s->edge, s->edge, 0);
         } else {
-            mui_platform_cover(&m->c, ar, tiles[i].format, tiles[i].title);
+            mui_platform_cover(&m->c, ar, tiles[i].kind, tiles[i].format, tiles[i].title);
         }
         sel_gui_dirty_add(&m->c, t);
         drawn++;
@@ -107,7 +163,7 @@ mui_art_path mui_art_path_for(int screen_is_rtg) {
 }
 
 mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path want, const uint32_t* src, int32_t sw,
-                                 int32_t sh, const char* format, const char* title) {
+                                 int32_t sh, uint32_t kind, const char* format, const char* title) {
     if (want == MUI_ART_DATATYPE && src != NULL && sw > 0 && sh > 0 && r.w > 0 && r.h > 0) {
         uint32_t* scaled = malloc((size_t)r.w * (size_t)r.h * sizeof *scaled);
         if (scaled != NULL) {
@@ -117,6 +173,6 @@ mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path wan
             return MUI_ART_DATATYPE;
         }
     }
-    mui_platform_cover(&m->c, r, format, title);
+    mui_platform_cover(&m->c, r, kind, format, title);
     return MUI_ART_COVER;
 }

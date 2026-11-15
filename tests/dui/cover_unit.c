@@ -274,6 +274,9 @@ static void test_aga_palette(void) {
     printf("aga palette: %u families x %u tone(s) + text = %u of 32 slots\n", (unsigned)SEL_PLATFORM_FAMILY_COUNT, tones, used);
     CHECK(used <= 32u); /* the palette fits the free artwork slots (entries 32..63) */
     CHECK(pal[used - 1u] == text);
+    for (f = 1u; f < SEL_COVER_KIND_COUNT; f++) { /* I1399a: the kind tints follow the text slot */
+        CHECK(pal[used - 1u + f] == (g_tokens[sel_cover_kind_token(f)] & 0xFFFFFFu));
+    }
     sel_gui_set_palette(c, pal, 32u, 32u);
     for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         for (t = 0u; t < tones; t++) {
