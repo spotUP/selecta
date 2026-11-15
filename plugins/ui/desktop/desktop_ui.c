@@ -1838,7 +1838,7 @@ static uint32_t pc_word(uint32_t slot) {
  * cover on every dirty frame. Only the live RGBA32 canvas is cached (INDEX8 is a flat fill already; offscreen tiles cache
  * themselves). cv_generated counts the misses, cv_hits the blits. */
 static void cover_cached_draw(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint32_t kind, uint32_t family, uint32_t title,
-                              const sel_gui_atlas* word, uint32_t label_px) {
+                              const char* name, const sel_gui_atlas* word, const sel_gui_atlas* kword, uint32_t label_px) {
     struct cover_ent* e = NULL;
     uint32_t tk = 2166136261u;
     uint32_t i, lru = 0u;
@@ -1846,7 +1846,7 @@ static void cover_cached_draw(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint
 
     if (cv != d->canvas || cv->format != SEL_GUI_RGBA32 || ar.w <= 0 || ar.h <= 0 || ar.x < 0 || ar.y < 0 || ar.x + ar.w > cv->w ||
         ar.y + ar.h > cv->h) { /* a partly clipped cover would cache the clipped part: draw it directly */
-        sel_gui_cover_draw_kind(cv, ar, kind, family, title, d->theme.token, word, &d->icons);
+        sel_gui_cover_draw_kind(cv, ar, kind, family, title, name, d->theme.token, word, kword, &d->icons);
         return;
     }
     for (i = 0; i < (uint32_t)SEL_GUI_TOKEN_COUNT; i++) {
@@ -1868,11 +1868,11 @@ static void cover_cached_draw(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint
         free(e->px);
         e->px = (uint32_t*)calloc((size_t)ar.w * (size_t)ar.h, sizeof *e->px);
         if (e->px == NULL) {
-            sel_gui_cover_draw_kind(cv, ar, kind, family, title, d->theme.token, word, &d->icons);
+            sel_gui_cover_draw_kind(cv, ar, kind, family, title, name, d->theme.token, word, kword, &d->icons);
             return;
         }
         sel_gui_canvas_init(&tile, SEL_GUI_RGBA32, ar.w, ar.h, e->px);
-        sel_gui_cover_draw_kind(&tile, rect_of(0, 0, ar.w, ar.h), kind, family, title, d->theme.token, word, &d->icons);
+        sel_gui_cover_draw_kind(&tile, rect_of(0, 0, ar.w, ar.h), kind, family, title, name, d->theme.token, word, kword, &d->icons);
         e->w = ar.w;
         e->h = ar.h;
         e->family = family;
@@ -1893,8 +1893,9 @@ static void cover_cached_draw(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint
  * fallback branch. Covers under 64 logical px draw the field and mark only. */
 static void kind_platform_cover(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint32_t kind, uint32_t family, const char* title, uint32_t* slot) {
     int32_t edge = px_to_logical(d, ar.w < ar.h ? ar.w : ar.h); /* logical: a 2x canvas shows a 56 px bar thumb at 112 px */
-    int32_t want = edge / 7, px = 0, i;
+    int32_t want = edge / 7, px = 0, kpx = 0, i;
     const sel_gui_atlas* word = NULL;
+    const sel_gui_atlas* kword = NULL;
 
     if (edge >= 64) { /* design section 2: the word only on covers of 64 logical px and up, semibold, sized edge/7 */
         for (i = 0; i < DESK_SIZES; i++) { /* the largest type scale size not above edge/7, the smallest when none fits */
@@ -1903,8 +1904,14 @@ static void kind_platform_cover(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, ui
             }
         }
         word = desk_font(d, 1, px);
+        for (i = 0; i < DESK_SIZES; i++) { /* I1399c: the kind label one step of the type scale below the title */
+            if (g_sizes[i] < px && g_sizes[i] > kpx) {
+                kpx = g_sizes[i];
+            }
+        }
+        kword = kpx != 0 ? desk_font(d, 1, kpx) : word;
     }
-    cover_cached_draw(d, cv, ar, kind, family, sel_gui_str_hash(title != NULL ? title : ""), word, (uint32_t)px);
+    cover_cached_draw(d, cv, ar, kind, family, sel_gui_str_hash(title != NULL ? title : ""), title, word, kword, (uint32_t)px);
     if (slot != NULL) {
         *slot = (family + 1u) | (word != NULL ? (uint32_t)px << 8 : 0u);
     }
