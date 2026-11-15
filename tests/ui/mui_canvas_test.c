@@ -106,10 +106,10 @@ static int test_art_path(void) {
     mui_canvas_fit(&m, (sel_gui_rect){0, 0, 64, 64});
     CHECK(mui_art_path_for(1) == MUI_ART_DATATYPE, "RTG selects the datatype path");
     CHECK(mui_art_path_for(0) == MUI_ART_COVER, "planar selects generated art");
-    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, mui_art_path_for(1), src, 16, 16, "mod", "x") == MUI_ART_DATATYPE &&
+    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, mui_art_path_for(1), src, 16, 16, 0u, "mod", "x") == MUI_ART_DATATYPE &&
               sel_gui_pixel(&m.c, 10, 10) == 0x2040C0u,
           "RTG art blits the scaled cover");
-    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){32, 32, 32, 32}, mui_art_path_for(0), src, 16, 16, "mod", "x") == MUI_ART_COVER &&
+    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){32, 32, 32, 32}, mui_art_path_for(0), src, 16, 16, 0u, "mod", "x") == MUI_ART_COVER &&
               sel_gui_pixel(&m.c, 42, 52) != 0x2040C0u,
           "planar ignores the cover and draws the platform cover");
     /* I691e, I691f: the field is a gradient ending in (bottom row)  the Amiga family tone the title "x" picks, in the default theme's tokens (not the grey placeholder). */
@@ -119,12 +119,42 @@ static int test_art_path(void) {
     CHECK((sel_gui_pixel(&m.c, 34, 63) & 0xFFFFFFu) ==
               sel_gui_cover_tone(tokens, SEL_PLATFORM_FAMILY_AMIGA, sel_gui_cover_tone_of(sel_gui_str_hash("x"))),
           "the cover of \"mod\" is the Amiga tone, got %06x", (unsigned)(sel_gui_pixel(&m.c, 34, 63) & 0xFFFFFFu));
-    mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_COVER, NULL, 0, 0, "sid", "x");
+    mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_COVER, NULL, 0, 0, 0u, "sid", "x");
     CHECK((sel_gui_pixel(&m.c, 2, 31) & 0xFFFFFFu) ==
               sel_gui_cover_tone(tokens, SEL_PLATFORM_FAMILY_COMMODORE_64, sel_gui_cover_tone_of(sel_gui_str_hash("x"))),
           "the cover of \"sid\" is the Commodore 64 tone");
-    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_DATATYPE, NULL, 0, 0, "mod", "x") == MUI_ART_COVER,
+    /* I1399a: a synthetic icon set (every mask solid) stands in for the generated baked table the desktop plugin owns. */
+    {
+        static uint8_t stream[SEL_GUI_ICON_COUNT * 8u];
+        static uint32_t off[SEL_GUI_ICON_COUNT + 1u];
+        static const uint32_t* offs[1] = {off};
+        static const uint8_t* streams[1] = {stream};
+        static const int32_t sizes[1] = {8};
+        static sel_gui_icons_packed pk;
+        uint8_t solid[64];
+        uint32_t k, at = 0u;
+
+        memset(solid, 255, sizeof solid);
+        for (k = 0u; k < SEL_GUI_ICON_COUNT; k++) {
+            off[k] = at;
+            at += (uint32_t)sel_gui_icon_pack(solid, sizeof solid, stream + at);
+        }
+        off[SEL_GUI_ICON_COUNT] = at;
+        pk.count = SEL_GUI_ICON_COUNT;
+        pk.size_n = 1u;
+        pk.sizes = sizes;
+        pk.stream = streams;
+        pk.off = offs;
+        mui_canvas_set_icons(&pk);
+    }
+    /* I1399a: a playlist kind covers in its kind tint with the icon, not the family tone. */
+    mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 64, 64}, MUI_ART_COVER, NULL, 0, 0, SEL_COVER_KIND_PLAYLIST, "mod", "x");
+    CHECK((sel_gui_pixel(&m.c, 2, 63) & 0xFFFFFFu) != sel_gui_cover_tone(tokens, SEL_PLATFORM_FAMILY_AMIGA, sel_gui_cover_tone_of(sel_gui_str_hash("x"))),
+          "a kind cover does not use the family tone");
+    CHECK((sel_gui_pixel(&m.c, 32, 32) & 0xFFFFFFu) != (sel_gui_pixel(&m.c, 2, 32) & 0xFFFFFFu), "the kind icon is drawn in the middle");
+    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_DATATYPE, NULL, 0, 0, 0u, "mod", "x") == MUI_ART_COVER,
           "RTG without a decoded cover falls back to generated art");
+    mui_canvas_set_icons(NULL);
     mui_canvas_release(&m);
     return failures;
 }

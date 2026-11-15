@@ -5,6 +5,7 @@
  * writes the last frame as UTF-8 text. --frame-dump appends every flushed frame's terminal bytes, so a
  * test sees exactly what the console is sent (row I218d2). */
 #include <selecta/format_label.h>
+#include <selecta/platform.h>
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/plugin.h>
@@ -1769,7 +1770,10 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         } else if (r->kind == SEL_ROW_FOLDER || r->kind == SEL_ROW_PLAYLIST) {
             snprintf(buf, sizeof buf, "%*s%s %s", (int)(2u * r->depth), "", r->kind == SEL_ROW_FOLDER ? "[-]" : " - ", r->text);
         } else if (r->kind == SEL_ROW_HEADING || r->kind == SEL_ROW_HOME) {
-            snprintf(buf, sizeof buf, "%*s%s", (int)(2u * r->depth), "", r->text);
+            uint32_t ck = r->kind == SEL_ROW_HOME ? sel_cover_kind_of_item(r->item_kind, r->album != 0u, r->composer != 0u, r->key)
+                                                  : SEL_COVER_KIND_FORMAT; /* I1399: the ASCII glyph of the cover kind */
+            snprintf(buf, sizeof buf, "%*s%s%s%s", (int)(2u * r->depth), "", ck != SEL_COVER_KIND_FORMAT ? sel_cover_kind_glyph(ck) : "",
+                     ck != SEL_COVER_KIND_FORMAT ? " " : "", r->text);
         } else {
             snprintf(buf, sizeof buf, "%*s%c %s%s", (int)(2u * r->depth), "", playing ? '>' : ' ', r->text,
                      r->kind == SEL_ROW_DIR && strcmp(r->text, "..") != 0 ? "/" : "");

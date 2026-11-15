@@ -144,9 +144,12 @@ static ULONG __attribute__((used)) canvas_dispatch_c(struct IClass* cl, Object* 
     return DoSuperMethodA(cl, obj, msg);
 }
 
+extern const sel_gui_icons_packed mui_cover_icons_baked; /* mui_cover_icons_baked.c, built by plugins/ui/mui/CMakeLists.txt */
+
 Object* mui_canvas_new(const mui_grid_style* style, int screen_is_rtg) {
     Object* o;
     canvas_data* d;
+    mui_canvas_set_icons(&mui_cover_icons_baked);
     if (g_class == NULL) {
         g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(canvas_data), (APTR)(uintptr_t)canvas_dispatch);
     }

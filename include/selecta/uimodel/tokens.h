@@ -51,7 +51,17 @@ extern "C" {
     X(COVER_MEGA_DRIVE, "gui.cover.mega_drive", 0x1D4ED8u, 0u, 0xFFFFFFu) \
     X(COVER_SEGA_MASTER_SYSTEM, "gui.cover.sega_master_system", 0x0F766Eu, 0u, 0xFFFFFFu) \
     X(COVER_CONSOLE, "gui.cover.console", 0x52525Bu, 0u, 0xFFFFFFu) \
-    X(COVER_TEXT, "gui.cover.text", 0xFFFFFFu, 0u, 0xFFFFFFu)
+    X(COVER_TEXT, "gui.cover.text", 0xFFFFFFu, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_PLAYLIST, "gui.cover.kind_playlist", 0x7C3AEDu, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_ALBUM, "gui.cover.kind_album", 0x9A3412u, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_ARTIST, "gui.cover.kind_artist", 0xBE185Du, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_DLNA, "gui.cover.kind_dlna", 0x1E40AFu, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_LOCAL, "gui.cover.kind_local", 0x3F3F46u, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_RADIO, "gui.cover.kind_radio", 0xB91C1Cu, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_PODCAST, "gui.cover.kind_podcast", 0x6D28D9u, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_MODULES_PL, "gui.cover.kind_modules_pl", 0x0E7490u, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_HIPPO, "gui.cover.kind_hippo", 0x15803Du, 0u, 0xFFFFFFu) \
+    X(COVER_KIND_ARCHIVE, "gui.cover.kind_archive", 0x4D7C0Fu, 0u, 0xFFFFFFu)
 
 /* Layer 1 (D-DUI-9): base tokens. A theme swaps these and the role tokens above follow. X(id, file key, default, min,
  * max). A value may be written as `@gui.base.<name>` (a reference to another base token). Widgets read roles only. */

@@ -101,7 +101,7 @@ if(NOT album_screen MATCHES "album  Hardcore Heroes")
 endif()
 # I1306: the song row shows the catalogued title (songs.name "mk tune"), which only the posted song_briefs read carries; the key's file
 # name on the row means the titles never reached the text UI.
-if(NOT album_out MATCHES "songs_opened=0 " OR NOT album_songs EQUAL 1 OR NOT album_screen MATCHES "mk tune  0 plays"
+if(NOT album_out MATCHES "songs_opened=0 " OR NOT album_songs EQUAL 1 OR NOT album_screen MATCHES "Mk Tune  0 plays"
    OR album_screen MATCHES "selecta-test-mk.mod")
   message(FATAL_ERROR "album view wrong (songs in album ${album_songs}):\n${album_out}\n${album_screen}")
 endif()
@@ -115,7 +115,7 @@ sql("UPDATE songs SET album = 'The \"Quoted\" Album \\ Two' WHERE key = 'local:s
 file(WRITE "${WORK}/renamed.keys" "H\nwait 300\nDown\nDown\nDown\nDown\nEnter\nwait 500\n")
 run_keys("${WORK}/renamed.keys" "${WORK}/quoted.txt" quoted_out)
 file(READ "${WORK}/quoted.txt" quoted_screen)
-if(NOT quoted_out MATCHES "songs_opened=0 " OR NOT quoted_screen MATCHES "mk tune  0 plays")
+if(NOT quoted_out MATCHES "songs_opened=0 " OR NOT quoted_screen MATCHES "Mk Tune  0 plays")
   message(FATAL_ERROR "album name with quotes did not list its songs:\n${quoted_out}\n${quoted_screen}")
 endif()
 if(quoted_screen MATCHES "test tune")
@@ -133,7 +133,7 @@ endif()
 sql("UPDATE songs SET album = '${long_name}' WHERE key = 'local:selecta-test-mk.mod';" ignore)
 run_keys("${KEYS_ALBUM}" "${WORK}/long.txt" long_out)
 file(READ "${WORK}/long.txt" long_screen)
-if(NOT long_out MATCHES "songs_opened=0 " OR NOT long_screen MATCHES "mk tune  0 plays")
+if(NOT long_out MATCHES "songs_opened=0 " OR NOT long_screen MATCHES "Mk Tune  0 plays")
   message(FATAL_ERROR "127-byte album name did not list its songs:\n${long_out}\n${long_screen}")
 endif()
 message(STATUS "home_rows=${want} album_row=Hardcore Heroes")
