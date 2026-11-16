@@ -75,6 +75,7 @@ static int test_grid(void) {
     for (i = 0; i < 12; i++) {
         t[i].title = g_titles[i];
         t[i].format = NULL;
+        t[i].kind = 0u; /* FORMAT; left uninitialised, the hash followed stack garbage and moved per build */
         t[i].art_id = i == 2 ? 7 : 0; /* one tile with a cover through the art cache */
     }
     CHECK(mui_grid_cols(&s, 360) == 4u, "cols %u", (unsigned)mui_grid_cols(&s, 360));
