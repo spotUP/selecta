@@ -354,22 +354,6 @@ static sqlite3_stmt* prepare_arm(sel_library* lib, const char* sql, const char* 
     return st;
 }
 
-/* Adds the hits of `arm` after `after` to job->truncated: the rows of a search whose keys did not fit. */
-static void count_rest(sel_library* lib, const char* arm, const char* match, const char* after, sel_lib_job* job) {
-    sqlite3_stmt* st = prepare_arm(lib, "SELECT count(*) FROM (%s) WHERE key > :after", arm, match, job);
-
-    if (st == NULL) {
-        return;
-    }
-    sqlite3_bind_text(st, sqlite3_bind_parameter_index(st, ":after"), after, -1, SQLITE_STATIC);
-    if (sqlite3_step(st) == SQLITE_ROW) {
-        job->truncated += (uint32_t)sqlite3_column_int64(st, 0);
-    } else {
-        set_sql_error(job, lib->db);
-    }
-    sqlite3_finalize(st);
-}
-
 /* One paged statement over one schema. `after` is the last key taken from it (a copy in job->out). */
 typedef struct {
     const char* arm;
@@ -509,10 +493,9 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
                 break;
             }
             if (used + n > job->out_cap) {
-                /* the rest of each arm after its last key taken, this key included */
-                for (i = 0; i < narms; i++) {
-                    count_rest(lib, arms[i].arm, match, arms[i].after, job);
-                }
+                /* This key did not fit: at least one more, not counted. Counting the rest was a second full scan
+                 * of every hit (60 s on 672259 songs for "mod", I1416s). */
+                job->truncated = 1;
                 break;
             }
             memcpy(job->out + used, k, n);
