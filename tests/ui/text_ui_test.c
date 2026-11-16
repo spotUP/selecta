@@ -321,6 +321,36 @@ int main(int argc, char** argv) {
         dump_path = NULL;
     }
 
+    /* I1423: Backspace at the root steps back or does nothing; it never asks to quit (only Escape at the root does). */
+    {
+        static char dump[8192], keys4[1024], dpath4[1024];
+        uint32_t i;
+        int r = 0, asked = 0;
+        snprintf(keys4, sizeof keys4, "%s/text_ui_bksp.keys", argv[1]);
+        snprintf(dpath4, sizeof dpath4, "%s/text_ui_bksp.dump", argv[1]);
+        f = fopen(keys4, "wb");
+        if (f == NULL) {
+            return 2;
+        }
+        fprintf(f, "Space\nwait 60\nBackspace\nwait 60\nBackspace\nwait 300\n");
+        fclose(f);
+        remove(dpath4);
+        dump_path = dpath4;
+        ui = open_ui(host, e, &h, keys4);
+        CHECK(ui != NULL, "backspace root: open failed");
+        if (ui != NULL) {
+            for (i = 0; r >= 0 && i < 40u; i++) {
+                r = h.wait(ui, TURN_MS);
+                read_dump(dump, sizeof dump);
+                asked += strstr(dump, "Quit Selecta?") != NULL;
+            }
+            CHECK(asked == 0, "backspace root: Backspace asked to quit");
+            CHECK(r >= 0, "backspace root: Backspace quit the UI");
+            h.close(ui);
+        }
+        dump_path = NULL;
+    }
+
     sel_engine_destroy(e);
     printf("%s text-ui-keys-wait\n", failures ? "FAIL" : "ok");
     return failures ? 1 : 0;

@@ -1535,6 +1535,11 @@ static void tui_key(tui* u, const txt_key* k) {
             tui_send(u, "CANCEL_OPEN");
             return;
         }
+        if (k->code == 27u && k->mods == 0 && tui_drill_back(u, sel_engine_state(u->engine)->view)) { /* I1423: Escape steps a drilldown back before it can reach quit (a page already backs in tui_page_key) */
+            u->key_count++;
+            u->dirty = 1;
+            return;
+        }
         if (k->code == 27u && k->mods == 0) { /* I1367 / I623: Escape with nothing open asks before quitting; text from the uimodel dialog table (I1368) */
             u->key_count++;
             u->dirty = 1;
