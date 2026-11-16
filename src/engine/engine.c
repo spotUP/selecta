@@ -383,6 +383,10 @@ typedef struct sel_play_meta {
     uint8_t* module;
     size_t module_size;
     char member[SEL_ARCHIVE_MEMBER_NAME_MAX];
+    /* I1416c: the whole local file the read thread read (not an archive); read_song takes it so the pump never reads the disk. */
+    uint8_t* file;
+    size_t file_size;
+    char file_src[SEL_BROWSE_PATH_MAX];
 } sel_play_meta;
 #define SEL_PLAY_META_N 4u
 enum { SEL_VOTE_CACHE = 256, SEL_VOTE_BATCH = 64, SEL_VOTE_BLK = 8192 };
@@ -2265,6 +2269,12 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         }
         return data;
     }
+    if (pm != NULL && pm->valid && pm->file != NULL && strcmp(pm->file_src, path) == 0) {
+        uint8_t* f = pm->file; /* I1416c: read on rd_play; a streaming replayer gets the whole file in memory (fs stays NULL) */
+        *size = pm->file_size;
+        ((sel_play_meta*)pm)->file = NULL;
+        return f;
+    }
     if (fs != NULL) {
         uint8_t* head = NULL;
         size_t headn = 0;
@@ -3170,12 +3180,19 @@ static void play_meta_run(sel_engine* e) {
         /* I1415: a folder archive is unpacked here too, so the pump only starts the replayer. */
         if (!sel_cache_watch_cancelled(&e->op_watch) && (m->fetched ? m->fetch_rc > 0 : !sel_cache_is_remote(target) && !sel_stream_is_url(target))) {
             size_t fsz = 0;
-            uint8_t* file = read_whole_file(e, m->fetched ? m->cached : target, &fsz);
+            const char* src = m->fetched ? m->cached : target;
+            uint8_t* file = read_whole_file(e, src, &fsz);
 
             if (file != NULL) {
                 if (sel_archive_is_folder(sel_archive_kind(file, fsz))) e->op_phase = SEL_OPEN_UNPACKING;
                 m->module = archive_pick_module(e, file, fsz, &e->op_watch, m->member, &m->module_size);
-                e->host->mem_free(e->host, file);
+                if (m->module == NULL && strlen(src) < sizeof m->file_src) {
+                    m->file = file; /* I1416c: read_song takes it instead of reading the file again on the pump */
+                    m->file_size = fsz;
+                    snprintf(m->file_src, sizeof m->file_src, "%s", src);
+                } else {
+                    e->host->mem_free(e->host, file);
+                }
             }
         }
     }
@@ -3201,6 +3218,8 @@ static int play_meta_ready(sel_engine* e, const char* path) {
 static void play_meta_free_module(sel_engine* e, sel_play_meta* m) {
     if (m->module != NULL) e->host->mem_free(e->host, m->module);
     m->module = NULL;
+    if (m->file != NULL) e->host->mem_free(e->host, m->file);
+    m->file = NULL;
 }
 
 static void play_meta_publish(sel_engine* e) {
@@ -3209,6 +3228,7 @@ static void play_meta_publish(sel_engine* e) {
     if (e->pm_job.fetched) e->open_fetch_reads++;
     if (e->pm_job.module != NULL) e->open_unpack_reads++;
     e->pm_job.module = NULL; /* the entry owns it now */
+    e->pm_job.file = NULL;
     e->pm_next++;
     e->play_meta_reads++;
 }
@@ -11724,6 +11744,7 @@ void sel_engine_destroy(sel_engine* e) {
             e->host->mem_free(e->host, e->snap);
             e->snap = NULL;
         }
+        SEL_ATOMIC_INC_REL(&e->open_cancel); /* I1415m: ends the read thread's in-flight song download; lib_read_end(&e->rd_play) below waits for it */
         sel_viz_tap_free(&e->viz);
         if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) { /* I787: end the in-flight sidebar read */
 #if defined(SEL_LI_THREAD)
@@ -12089,7 +12110,7 @@ static int sources_pending_live(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_radio) || !lib_read_idle(&e->rd_flags) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->pm_wait && e->deferred) || (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
+    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_radio) || !lib_read_idle(&e->rd_flags) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->deferred && (e->pm_wait || (e->op_active && e->op_phase == SEL_OPEN_STARTING))) || /* I1415: the Starting pump still owes the open */ (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }

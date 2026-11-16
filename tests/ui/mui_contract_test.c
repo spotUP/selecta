@@ -781,7 +781,7 @@ static void test_open_no_suggestion(void) {
 /* mui-transport-map (MUI-P2-5): the buttons reach exactly the action rows whose icon is a transport icon. */
 static int is_transport_icon(const sel_uim_action* a) {
     const char* icon = a->icon;
-    static const char* const icons[] = {"play", "pause", "square", "skip-forward", "skip-back", "repeat", "shuffle"};
+    static const char* const icons[] = {"play", "pause", "square", "skip-forward", "skip-back", "repeat", "shuffle", "rotate-ccw"};
     uint32_t i;
     if (strncmp(a->menu, "Playback/", 9) != 0) { /* the queue shuffle shares the icon but is not transport */
         return 0;
@@ -2400,7 +2400,7 @@ static void test_aabtn_wired(const char* src) {
               fn_body(src, "static void mui_caption_set(", body, sizeof body) != NULL && strstr(body, "mui_aabtn_set_caption(") != NULL,
           "transport labels do not reach the class"); /* I1139 2872c942: the call goes through mui_caption_set (Latin-1 wrap), which ends in mui_aabtn_set_caption */
     total = MUI_BTN_COUNT + MUI_EXTRA_COUNT + SEL_UIM_DOOR_COUNT + MUI_TOOL_BTNS + crumbs;
-    CHECK(crumbs == 6u && total == 38u, "button families add up to %u (crumbs %u), design lists 38 (37 + New Folder, I1177)", total, crumbs);
+    CHECK(crumbs == 6u && total == 39u, "button families add up to %u (crumbs %u), design lists 39 (37 + New Folder I1177 + Replay I1424)", total, crumbs);
 }
 
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
@@ -3139,7 +3139,7 @@ static int bar_send(void* ctx, const char* line) {
 }
 
 static void test_player_bar(void) {
-    static const uint32_t mac[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
+    static const uint32_t mac[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_REPLAY, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
     char *src = ui_source(), *grp, *end, *ord, *tool, *tend, saved;
     sel_uim_frame f;
     uint32_t k, base = mui_action_fires();
@@ -3335,7 +3335,7 @@ static void test_player_band_sizes(void) {
     icon_box = (uint32_t)(tm.icon_h + 2 * tm.pad_y);
     CHECK(c.btn_px == (icon_box > (uint32_t)tm.height ? icon_box : (uint32_t)tm.height) && c.btn_px >= 12u, "640x256 btn_px %u", (unsigned)c.btn_px);
     CHECK(c.btn_w == c.btn_px * 2u, "tall pixels: a square on screen is twice as wide in px, got %u x %u", (unsigned)c.btn_w, (unsigned)c.btn_px);
-    CHECK(c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H && c.art_h == 28u && c.extras == 0 && c.right_rows == 1 && c.n_transport == 5u && c.compact == 1,
+    CHECK(c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H && c.art_h == 28u && c.extras == 0 && c.right_rows == 1 && c.n_transport == 6u && c.compact == 1,
           "640x256 band: height %u art_h %u extras %d transport %u", (unsigned)c.height, (unsigned)c.art_h, (int)c.extras, (unsigned)c.n_transport);
     CHECK(mui_player_min_width(&c) <= 600u, "640x256 minimum width %u > 600", (unsigned)mui_player_min_width(&c));
     CHECK(c.show_left == 0u && r.show_left == 0u && w.show_left == 1u, "art and titles only from %d px: %u %u %u", (int)MUI_PLAYER_LEFT_MIN_W, (unsigned)c.show_left, (unsigned)r.show_left, (unsigned)w.show_left);
@@ -3446,7 +3446,7 @@ static void test_player_bar_reach(void) {
     mui_player_band(&r, 0, 256, 800, 15);
     CHECK(mui_player_bar_builds() == b0 + 2u, "the bar sentinel ran: %u (want %u)", (unsigned)mui_player_bar_builds(), (unsigned)(b0 + 2u));
     CHECK(t.band_n == 1 && t.right_rows == 1 && t.extras == 0 && r.band_n == 1 && r.right_rows == 1 && r.extras == 0, "one row, no extras row, in both classes");
-    CHECK(t.n_transport == 5u && r.n_transport == 5u, "five transport icons, got %u and %u", (unsigned)t.n_transport, (unsigned)r.n_transport);
+    CHECK(t.n_transport == 6u && r.n_transport == 6u, "six transport icons, got %u and %u", (unsigned)t.n_transport, (unsigned)r.n_transport);
     for (k = 0; k < t.n_transport; k++) {
         CHECK(mui_transport_icon_only(mui_player_transport_at(k)) == 1, "transport slot %u is icon-only", (unsigned)k);
     }
@@ -3783,6 +3783,8 @@ static void test_route_reach(void) {
     CHECK(src != NULL, "mui_ui.c source readable");
     CHECK(strstr(src, "#include \"map/mui_route.h\"") != NULL && strstr(src, "mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1") != NULL,
           "Back and Forward are wired to the history walk");
+    CHECK(strstr(src, "!was_close && mui_route_can(&s->route, -1)") != NULL && strstr(src, "I1423: Esc backs up one page") != NULL,
+          "I1423: Esc walks the history back before it asks to quit");
     CHECK(strstr(src, "\"nav_back\", NULL, CTL_NAV_BACK") != NULL && strstr(src, "mui_route_can(&s->route, -1)") != NULL, "Back button is built and enabled from the history");
     CHECK(strstr(src, "mui_route_door(&s->route") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL") != NULL &&
               strstr(src, "mui_route_click(&s->route, SEL_ROUTE_HOME_TILE") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_META_ARTIST") != NULL,

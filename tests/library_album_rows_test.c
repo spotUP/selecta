@@ -55,6 +55,11 @@ static int listed(sel_library* lib, const char* name, unsigned* songs) {
     return found;
 }
 
+static void count_row(void* ctx, const char* const* f) {
+    (void)f;
+    (*(int*)ctx)++;
+}
+
 int main(void) {
     const sel_host* host = sel_host_default();
     char dir[] = "/tmp/selecta_albumrows_XXXXXX";
@@ -80,6 +85,15 @@ int main(void) {
     check(scalar(db, "SELECT COUNT(*) FROM albums WHERE name='ANThology' AND artist='Ant Farm' AND source='local'") == 1, "one row for two songs");
     check(scalar(db, "SELECT COUNT(*) FROM albums") == 1, "no row for NULL or empty album");
     check(listed(lib, "ANThology", &songs) == 1 && songs == 2u, "album listed once with 2 songs");
+
+    /* I1417: the artist page lists every case spelling of the artist (search dedupes artists case-folded). */
+    sql(db, "INSERT INTO songs(key, source, path, name, artist, added) VALUES('amp:c1','amp','c1','c1','ANT FARM',50),('amp:c2','amp','c2','c2','ant farm',60)");
+    {
+        int rows = 0;
+
+        check(sel_library_collection(lib, SEL_LIB_ITEM_ARTIST, "Ant Farm", SEL_COLL_SONGS, count_row, &rows) == 6 && rows == 6,
+              "artist page lists all case spellings");
+    }
 
     /* A cover store (what the scan sends) finds the trigger's row: still one row, now with artwork. */
     memset(&op, 0, sizeof op);

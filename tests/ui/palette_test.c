@@ -74,6 +74,8 @@ int main(void) {
     /* the current binding is shown */
     it = find("NEXT");
     CHECK(it != NULL && strcmp(it->key, "n") == 0);
+    it = find("Replay"); /* I1424: the shared action table row is a palette entry */
+    CHECK(it != NULL);
     it = find("COMMANDS");
     CHECK(it != NULL && it->key[0] == 0);
     it = find("settings"); /* I1188: a local entry shows its @settings key */

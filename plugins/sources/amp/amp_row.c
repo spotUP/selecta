@@ -58,6 +58,10 @@ int sel_amp_row(void* ctx, const char* dir, const char* file, const char* title,
     if (n < 0 || (size_t)n >= sizeof key || key_name(key) == NULL) {
         return -1;
     }
+    /* AMP JSON has no title: show the module name (the key's name without its Amiga prefix, "MOD.flr_deephouse" -> "flr_deephouse") */
+    if (title == NULL || title[0] == '\0') {
+        title = strchr(key_name(key), '.') + 1;
+    }
     return out->row(out->ctx, key, title, artist, "amp");
 }
 

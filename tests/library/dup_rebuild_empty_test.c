@@ -16,7 +16,8 @@
 /* I1231b: the step back to v17 now also runs v19 (search_cache) in its own transaction: BEGIN, the table, its index, the source_songs
  * trigger, the user_version write and COMMIT = 6 more statements, none of them on songs. */
 /* I1400c: the step back also runs v20 in its own transaction: BEGIN, the songs(added) index, the user_version write and COMMIT = 4 more. */
-#define MAX_STMTS_EMPTY (14 + 6 + 4)
+/* I1417: v21 (4 more, already over the old bound) and v22 (BEGIN, index, search_cache delete, user_version write, COMMIT = 5). */
+#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5)
 
 static int g_fail;
 static int g_stmts;
@@ -79,7 +80,7 @@ int main(int argc, char** argv) {
     CHECK(sel_schema_migrate(db, NULL) != 0);
     sqlite3_trace_v2(db, 0, NULL, NULL);
     CHECK(g_alter_dup == 0);
-    CHECK(sel_schema_version(db) == 20);
+    CHECK(sel_schema_version(db) == SEL_LIB_SCHEMA_VERSION);
     run(db,
         "DROP TRIGGER IF EXISTS source_songs_state_ad; DROP TABLE source_state; DROP INDEX songs_dup_of; DROP TABLE dup_pick;"
         "ALTER TABLE songs DROP COLUMN dup_of; ALTER TABLE songs DROP COLUMN dup_members; PRAGMA user_version=17;");
@@ -90,7 +91,7 @@ int main(int argc, char** argv) {
     rb0 = sel_db_dup_rebuilds();
     g_stmts = 0;
     CHECK(sel_schema_migrate(db, NULL) != 0);
-    CHECK(sel_schema_version(db) == 20);
+    CHECK(sel_schema_version(db) == SEL_LIB_SCHEMA_VERSION);
     printf("v18 on an empty table: %d statements\n", g_stmts);
     CHECK(sel_db_dup_rebuilds() == rb0 + 1); /* the rebuild ran (sentinel) */
     CHECK(g_stmts <= MAX_STMTS_EMPTY);

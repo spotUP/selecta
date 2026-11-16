@@ -23,6 +23,8 @@ const char* mui_transport_action(uint32_t button, const sel_uim_frame* f) {
         return f->repeat_mode == 0 ? "repeat_all" : f->repeat_mode == 1 ? "repeat_one" : "repeat_off";
     case MUI_BTN_RANDOM:
         return f->random_on != 0 ? "random_off" : "random_on";
+    case MUI_BTN_REPLAY: /* I1424: the current song from the start */
+        return "replay";
     default:
         return NULL;
     }
@@ -68,7 +70,7 @@ int mui_transport_icon_only(uint32_t button) {
 }
 
 uint32_t mui_player_transport_at(uint32_t k) {
-    static const uint8_t order[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
+    static const uint8_t order[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_REPLAY, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
     return k < MUI_BTN_COUNT ? order[k] : MUI_BTN_COUNT;
 }
 

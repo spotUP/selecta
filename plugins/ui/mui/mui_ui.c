@@ -4577,7 +4577,11 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
         LONG was_close = (id == CTL_WIN_CLOSE);
         char gad[32];
         mui_state* s = (mui_state*)ctx;
-        if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_QUIT, gad, sizeof gad), "%s", (ULONG)sel_uim_dlg_text(SEL_UIM_DLG_QUIT)) != 1) {
+        if (!was_close && mui_route_can(&s->route, -1)) { /* I1423: Esc backs up one page; only the root reaches the quit question */
+            SetAttrs(s->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE);
+            mui_route_walk(&s->route, -1, mui_route_send, s);
+            id = 0;
+        } else if (MUI_Request(s->app, s->win, 0, "Selecta", mui_dlg_gadgets(SEL_UIM_DLG_QUIT, gad, sizeof gad), "%s", (ULONG)sel_uim_dlg_text(SEL_UIM_DLG_QUIT)) != 1) {
             SetAttrs(s->win, MUIA_NoNotify, TRUE, MUIA_Window_CloseRequest, FALSE, TAG_DONE);
             id = 0;
         } else if (was_close) {

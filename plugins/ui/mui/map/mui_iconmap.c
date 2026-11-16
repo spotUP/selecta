@@ -13,7 +13,7 @@ static const struct {
     int icon;
 } k_icons[] = {
     /* transport and extra actions (uimodel action ids) */
-    {"prev", SEL_GUI_ICON_SKIP_BACK}, {"play", SEL_GUI_ICON_PLAY}, {"pause", SEL_GUI_ICON_PAUSE}, {"next", SEL_GUI_ICON_SKIP_FORWARD},
+    {"prev", SEL_GUI_ICON_SKIP_BACK}, {"replay", SEL_GUI_ICON_ROTATE_CCW}, {"play", SEL_GUI_ICON_PLAY}, {"pause", SEL_GUI_ICON_PAUSE}, {"next", SEL_GUI_ICON_SKIP_FORWARD},
     {"stop", SEL_GUI_ICON_SQUARE}, {"repeat_all", SEL_GUI_ICON_REPEAT}, {"repeat_one", SEL_GUI_ICON_REPEAT}, {"repeat_off", SEL_GUI_ICON_REPEAT},
     {"random_on", SEL_GUI_ICON_SHUFFLE}, {"random_off", SEL_GUI_ICON_SHUFFLE}, {"next_album", SEL_GUI_ICON_CHEVRON_RIGHT},
     {"prev_album", SEL_GUI_ICON_CHEVRON_LEFT}, {"pitch_up", SEL_GUI_ICON_CHEVRON_UP}, {"pitch_down", SEL_GUI_ICON_CHEVRON_DOWN},

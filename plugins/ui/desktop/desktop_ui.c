@@ -282,6 +282,7 @@ typedef struct desk {
     uint32_t col_popular;    /* artist page: Popular rows shown (5, or 10 after Show more) */
     sel_engine_collection_row col_shelf[4][24]; /* the shelves of a kind page, index = shelf - 1: Albums, Appears On, More by, Spellings */
     uint32_t col_shelf_n[4], col_shelf_total[4];
+    uint32_t col_shelf_draws; /* I1421: shelves the last col_draw_shelves frame drew (any slot inside the list) */
     uint32_t pls_id;         /* I633: the saved playlist the Playlists page shows as a page of songs (0 = the tree) */
     char pls_name[96];
     char* pls_buf;           /* its song keys, NUL separated, in playlist order */
@@ -409,6 +410,7 @@ typedef struct desk {
     int sysfile_wait;                 /* a file dialog is open for the system file dialog; its answer arrives as a drop */
     char sysfile_name[64], sysfile_reason[48], sysfile_toast[96]; /* store name of the waiting file; last SYSFILE_FAILED reason; last toast text */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
+    uint32_t np_msgpg, np_msgpg_pages, np_msgpg_until, np_msgpg_tick; /* I1422: page shown of the widest cut-off message line, its page count, clock the paging keeps waking until, last page step drawn */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
@@ -767,7 +769,7 @@ enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 static int in_rect(sel_gui_rect r, int32_t x, int32_t y);
 static int pointer_on_song_menu(const desk* d);
-enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
+enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_REPLAY, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
 static const char* desk_slot_action(const desk* d, uint32_t i);
 
@@ -1524,7 +1526,24 @@ static void dev_load(desk* d) {
 static void song_menu_draw(desk* d);
 static void dlg_draw(desk* d);
 static void desk_draw_notices(desk* d);
+/* I1415: the clicked row shows the load on its bottom edge. Drawn here, after the page, so no row fill or text of the page can cover it. */
+static void desk_draw_open_row_bars(desk* d) {
+    uint32_t i;
+    if (!d->open_shown) {
+        return;
+    }
+    for (i = 0; i < d->sm_n; i++) {
+        sel_gui_rect r = d->sm_rows[i].r;
+        int32_t bh = lpx(d, 2), w = (int32_t)((uint64_t)open_bar_q16(d) * (uint32_t)r.w >> 16);
+        if (strcmp(d->sm_rows[i].ref.path, d->open_ui.path) == 0) {
+            sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - bh, w, bh), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            d->open_row_bars++;
+        }
+    }
+}
+
 static void desk_draw_window_overlays(desk* d) {
+    desk_draw_open_row_bars(d);
     song_menu_draw(d);
     dlg_draw(d);
     desk_draw_notices(d); /* I806: the sync card and the toast stay in front of whatever region a partial repaint just drew */
@@ -3282,11 +3301,6 @@ static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_
         return NULL;
     }
     hover_reg(d, r);
-    if (d->open_shown && strcmp(path, d->open_ui.path) == 0) { /* I1415: the clicked row shows the load on its bottom edge, every list and grid drawer registers through here */
-        int32_t bh = lpx(d, 2), w = (int32_t)((uint64_t)open_bar_q16(d) * (uint32_t)r.w >> 16);
-        sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - bh, w, bh), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        d->open_row_bars++;
-    }
     if (add_mode(d) && e->more.w > 0) { /* I652b: the Library page adds to a playlist: every song row ends in Add, the same control as the empty playlist's results */
         sel_gui_rect ab = add_btn_rect(d, r);
         draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Add", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
@@ -5963,6 +5977,7 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
     char buf[160];
     sel_gui_rect top = pls_row_rect(d, mn, 0u), lst = rect_of(mn.x, top.y, mn.w, mn.y + mn.h - top.y);
     d->col_more_drawn = rect_of(0, 0, 0, 0);
+    d->col_shelf_draws = 0u;
     sel_gui_clip_push(d->canvas, lst); /* I1065: Show more and the shelves scroll under the header like the Popular rows, never over it */
     if (col_show_more(d)) {
         sel_gui_rect r = col_more_rect(d, mn);
@@ -5975,13 +5990,17 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
         int32_t abs_slot = col_shelf_slot(d, sh);
         int32_t slot = abs_slot - (int32_t)d->pls_scroll;
         sel_gui_rect hr;
-        if (abs_slot < 0 || slot < 0) {
+        sel_gui_rect nr;
+        /* I1421: a shelf is COL_SHELF_SLOTS slots tall (heading, cards): draw it while any slot meets the list, the clip trims the rest. */
+        if (abs_slot < 0 || slot + (sh == 3u ? 2 : COL_SHELF_SLOTS) <= 0) {
             continue;
         }
-        hr = pls_row_rect(d, mn, (uint32_t)slot);
-        if (hr.y + hr.h > mn.y + mn.h) {
+        hr = pls_row_rect(d, mn, 0u);
+        hr.y += slot * lpx(d, SONG_ROW_H);
+        if (hr.y >= mn.y + mn.h) {
             continue;
         }
+        d->col_shelf_draws++;
         draw_text(d, hr, col_shelf_title(d, sh, buf, sizeof buf), 1, 18, text);
         if (sh == 3u) { /* Spellings: one note line, the names the composer is written under */
             size_t o = 0;
@@ -5989,7 +6008,9 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
             for (i = 0; i < d->col_shelf_n[sh] && o + 2u < sizeof buf; i++) {
                 o += (size_t)snprintf(buf + o, sizeof buf - o, "%s%s", i ? ", " : "", d->col_shelf[sh][i].name);
             }
-            draw_text(d, pls_row_rect(d, mn, (uint32_t)slot + 1u), buf, 0, 13, muted);
+            nr = hr;
+            nr.y += lpx(d, SONG_ROW_H);
+            draw_text(d, nr, buf, 0, 13, muted);
             continue;
         }
         for (i = 0; i < d->col_shelf_n[sh] && i < col_cards_fit(d, mn); i++) {
@@ -8234,6 +8255,7 @@ static const char* library_dump_build(desk* d) {
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, sel_uim_np_note(&st->song) != NULL ? sel_uim_np_note(&st->song) : "", (unsigned)d->np_notes, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines, (unsigned)d->np_pair_lines, (int)d->np_pair_view.x, (int)d->np_pair_view.y, (int)d->np_pair_view.h, (int)(d->np_pair_max_q16 >> 16), (int)(d->np_pair_y_q16 >> 16),
                  (unsigned)d->np_bar_draws, (int)d->np_bar_handle.x, (int)d->np_bar_handle.y, (int)d->np_bar_handle.w, (int)d->np_bar_handle.h);
+    o = dump_put(d, o, "nowplaying msgpage %u of %u\n", (unsigned)d->np_msgpg, (unsigned)d->np_msgpg_pages);
     o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
@@ -8531,6 +8553,7 @@ static const char* library_dump_build(desk* d) {
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
                 o = dump_put(d, o, "kindscroll scroll=%u max=%u listtop=%d moredrawn=%d,%d,%d,%d\n", (unsigned)d->pls_scroll, (unsigned)col_scroll_max(d, pmn),
                              (int)pls_row_rect(d, pmn, 0u).y, (int)d->col_more_drawn.x, (int)d->col_more_drawn.y, (int)d->col_more_drawn.w, (int)d->col_more_drawn.h);
+                o = dump_put(d, o, "kindshelfdraw n=%u\n", (unsigned)d->col_shelf_draws);
                 o = dump_put(d, o, "kindpage label=%s key=[%s] sub=[%s] queries=%u popular=%u rows=%u shelf albums=%u appears=%u more=%u spellings=%u showmore=%d,%d,%d,%d albumcard=%d,%d,%d,%d morecard=%d,%d,%d,%d name=[%s] year=%u shuffle=%d,%d,%d,%d\n",
                              col_kind_label(d), d->col_key, d->col_sub, (unsigned)cst.collection_queries, (unsigned)d->col_popular, (unsigned)col_song_rows(d),
                              (unsigned)d->col_shelf_total[0], (unsigned)d->col_shelf_total[1], (unsigned)d->col_shelf_total[2], (unsigned)d->col_shelf_total[3],
@@ -11890,6 +11913,8 @@ static const char* desk_slot_action(const desk* d, uint32_t i) {
         return st->song.subsong_count > 1u ? "subsong_prev" : NULL;
     case SLOT_SHUFFLE:
         return strcmp(st->options[SEL_OPT_RANDOM], "on") == 0 ? "random_off" : "random_on";
+    case SLOT_REPLAY: /* I1424: the current song from the start, Repeat untouched */
+        return "replay";
     case SLOT_PREV:
         return "prev";
     case SLOT_PLAY:
@@ -13056,11 +13081,13 @@ static void draw_player_left(desk* d) {
     }
     d->home_parts |= HP_PLAYER_ART;
     if (d->open_shown) { /* I1415: the clicked song's name and the phase until the sound starts */
-        const char* base = strrchr(d->open_ui.path, '/');
-        char phase[64];
+        char phase[64], name[256], shown[96];
         sel_open_progress_text(&d->open_ui, phase, sizeof phase);
-        draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), base != NULL ? base + 1 : d->open_ui.path, 1, 14,
-                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        if (sel_engine_song_text(d->engine, SEL_SONG_TEXT_TITLE, d->open_ui.path, name, sizeof name) != 1) { /* the library title, as the rows show it; a miss falls back to the file name */
+            snprintf(name, sizeof name, "%s", path_base(d->open_ui.path));
+        }
+        sel_uim_tidy_title(name, shown, sizeof shown);
+        draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), shown, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         draw_text(d, rect_of(box.x, box.y + lpx(d, 30), box.w, lpx(d, 16)), phase, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     } else {
         draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), f->title, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
@@ -13075,6 +13102,7 @@ static void draw_player_left(desk* d) {
  * artwork, the artwork, title and artist, the catalogue pairs the engine reports for the song (the text UI's information
  * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
 #define NP_MESSAGE_LINES 6
+#define NP_PAGE_MS 2000u /* I1422: a message line wider than the panel jumps one panel width left every NP_PAGE_MS */
 #define NP_TAIL_H 120 /* I1274: logical pixels kept under the metadata pairs for the lyrics and the queue */
 enum { NP_PAIR_MIN_LINES = 8, NP_BAR_W = 6 }; /* I1277: a scrolling metadata block shows at least this many lines; its scrollbar width */
 static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
@@ -13240,6 +13268,8 @@ static void draw_nowplaying(desk* d) {
     d->np_bar_track = rect_of(0, 0, 0, 0);
     d->np_bar_handle = rect_of(0, 0, 0, 0);
     d->np_msg_lines = 0;
+    d->np_msgpg = 0;
+    d->np_msgpg_pages = 0;
     d->np_key_end = 0;
     d->np_val_x = 0;
     if (st->panel != NULL) {
@@ -13350,8 +13380,33 @@ static void draw_nowplaying(desk* d) {
         const sel_gui_atlas* at = desk_font(d, 0, 12);
         if (at != NULL) {
             sel_gui_rect box = rect_of(pn.x + sp, y, side, NP_MESSAGE_LINES * at->line_height);
+            const char* p = ml->ref;
+            /* I1422: one row per message line; a line wider than the panel pages left by one panel width every NP_PAGE_MS and
+             * returns to its start after the last page, so no sample name is cut off. */
             sel_gui_clip_push(d->canvas, box);
-            d->np_msg_lines = (uint32_t)sel_gui_text_wrap(d->canvas, at, box, ml->ref, muted, NP_MESSAGE_LINES, &d->text);
+            while (p != NULL && *p != '\0' && d->np_msg_lines < NP_MESSAGE_LINES) {
+                const char* e = strchr(p, '\n');
+                size_t n = e != NULL ? (size_t)(e - p) : strlen(p);
+                int32_t tw = sel_gui_text_width(at, p, n), pages = side > 0 ? (tw + side - 1) / side : 1, pg = 0;
+                if (pages > 1) {
+                    pg = (int32_t)(d->now_ms / NP_PAGE_MS % (uint32_t)pages);
+                    d->np_msgpg_pages = (uint32_t)pages > d->np_msgpg_pages ? (uint32_t)pages : d->np_msgpg_pages;
+                    d->np_msgpg = (uint32_t)pg;
+                    d->np_msgpg_until = d->now_ms + 2u * NP_PAGE_MS;
+                }
+                {
+                    sel_gui_rect row = rect_of(box.x, box.y + (int32_t)d->np_msg_lines * at->line_height, side, at->line_height);
+                    char one[256];
+                    size_t m = n < sizeof one - 1u ? n : sizeof one - 1u;
+                    memcpy(one, p, m);
+                    one[m] = '\0';
+                    sel_gui_clip_push(d->canvas, row);
+                    sel_gui_text_draw(d->canvas, at, row.x - pg * side, row.y, one, muted, tw + 1, &d->text); /* no ellipsis: the clip row cuts the page */
+                    sel_gui_clip_pop(d->canvas);
+                }
+                d->np_msg_lines++;
+                p = e != NULL ? e + 1 : NULL;
+            }
             sel_gui_clip_pop(d->canvas);
             y += (int32_t)d->np_msg_lines * at->line_height + lpx(d, 6);
         }
@@ -13470,6 +13525,10 @@ static void draw_transport(desk* d) {
         case SLOT_SHUFFLE:
             icon = SEL_GUI_ICON_SHUFFLE;
             ink = f->random_on ? on : mute;
+            break;
+        case SLOT_REPLAY:
+            icon = SEL_GUI_ICON_ROTATE_CCW;
+            ink = sel_engine_state(d->engine)->song.path != NULL ? ink : off;
             break;
         case SLOT_PREV:
             icon = SEL_GUI_ICON_SKIP_BACK;
@@ -13702,6 +13761,9 @@ static void desk_tip_tick(desk* d) {
             return;
         }
         sel_uim_action_tip_text(a, d->tip_text, sizeof d->tip_text);
+        if (d->tip_btn - 1 == (int32_t)SLOT_PLAY && d->open_shown) { /* I1415: the button is Cancel while the open shows */
+            snprintf(d->tip_text, sizeof d->tip_text, "Cancel");
+        }
     }
     d->tip_shown = d->tip_btn;
     d->tooltips++;
@@ -13804,6 +13866,10 @@ static uint32_t desk_timers_wait(const desk* d) {
     if (s > 0u && (w == 0u || s < w)) {
         w = s;
     }
+    if (d->np_msgpg_until > d->now_ms) { /* I1422: a paged message line wakes at the next page step */
+        uint32_t pw = NP_PAGE_MS - d->now_ms % NP_PAGE_MS;
+        w = w == 0u || pw < w ? pw : w;
+    }
     if (d->slide_live_until > d->now_ms && (w == 0u || w > 1000u)) { /* I1384b: a shown slide show wakes once a second to count its interval */
         w = 1000u - d->now_ms % 1000u;
     }
@@ -13818,6 +13884,12 @@ static int desk_timers_tick(desk* d) {
     if (d->viz_close_on && d->now_ms >= d->viz_close_until) { /* I1248 */
         d->viz_close_on = 0;
         d->viz_close_hot = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        hid = 1;
+    }
+    if (d->np_msgpg_until > d->now_ms && d->now_ms / NP_PAGE_MS != d->np_msgpg_tick) { /* I1422: redraw so the cut-off message line shows its next page */
+        d->np_msgpg_tick = d->now_ms / NP_PAGE_MS;
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         hid = 1;
@@ -14167,6 +14239,9 @@ static int desk_transport_click(desk* d, uint32_t i) {
     if (i == SLOT_PLAY && d->open_shown) { /* I1415: the button is Cancel while the open shows */
         d->open_cancels++;
         return desk_send(d, "CANCEL_OPEN");
+    }
+    if (i == SLOT_REPLAY && sel_engine_state(d->engine)->song.path == NULL) {
+        return 0; /* disabled: no song loaded */
     }
     if (i == SLOT_SUB_PREV || i == SLOT_SUB_NEXT) {
         uint32_t to = i == SLOT_SUB_PREV ? f->subsong - 2u : f->subsong;
@@ -15016,10 +15091,15 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         draw_home(d);
         return 1;
     }
-    if (ev->code == 27u && ev->mods == 0u && d->open_ui.active && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
-        d->focus != (int32_t)d->layout.count) { /* I1415: Escape with nothing else open cancels the song open before it asks to quit */
+    if (ev->code == 27u && ev->mods == 0u && d->open_ui.active && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit)) {
+        /* I1415: Escape cancels the song open before anything else, also with the search field focused (a result clicked from Search leaves it there; the first Escape used to only leave the field) */
         d->open_cancels++;
         return desk_send(d, "CANCEL_OPEN");
+    }
+    if (ev->code == 27u && ev->mods == 0u && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
+        d->focus != (int32_t)d->layout.count && sel_route_hist_can(&d->rh, -1)) { /* I1423: Escape backs up one page; only the root reaches the quit question */
+        d->nav_keys++;
+        return desk_page_walk(d, -1);
     }
     if (ev->code == 27u && ev->mods == 0u && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
         d->focus != (int32_t)d->layout.count) { /* Escape with nothing open asks whether to quit (I623) */

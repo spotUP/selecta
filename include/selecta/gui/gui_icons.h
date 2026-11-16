@@ -49,7 +49,8 @@
     X(HARD_DRIVE, "hard-drive") \
     X(GLOBE, "globe") \
     X(AUDIO_LINES, "audio-lines") \
-    X(PIANO, "piano")
+    X(PIANO, "piano") \
+    X(ROTATE_CCW, "rotate-ccw")
 
 typedef enum sel_gui_icon {
 #define X(id, file) SEL_GUI_ICON_##id,

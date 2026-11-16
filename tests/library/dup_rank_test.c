@@ -87,7 +87,7 @@ int main(void) {
 
     CHECK(sqlite3_open(":memory:", &db) == SQLITE_OK);
     CHECK(sel_schema_migrate(db, NULL) != 0);
-    CHECK(sel_schema_version(db) == 20);
+    CHECK(sel_schema_version(db) == SEL_LIB_SCHEMA_VERSION);
 
     song(db, 1, "local", "a", 50);
     song(db, 2, "modland", "a", 50);

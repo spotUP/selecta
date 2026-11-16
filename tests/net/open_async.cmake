@@ -81,9 +81,55 @@ run_leg(a "modland:Protracker/test/slowplay.mod" oa)
 set(ENV{SELECTA_PLUGIN_PATH} "${PLUGINS}")
 need("${oa}" "open_phases open_fetch_reads=[1-9]" "(a) the remote fetch ran on the song-start read slot")
 need("${oa}" "songs_opened=1 " "(a) the song started once the file landed")
-# I1415: the open_ui dump line exists. NOT YET ASSERTED (open row follow-up): bar_draws, btn_draws and the Esc cancel. The --exec OPEN
-# finishes in the engine (about 2 s) before the desktop loop takes its first turn, so the UI never sees the open in flight here.
 need("${oa}" "open_ui shown=[01] phase=[0-9]+ bar_draws=[0-9]+ btn_draws=[0-9]+ row_bars=[0-9]+ cancels=0" "(a) the open progress sentinels are dumped")
 run_leg(b "${root}/probe.sfp" ob)
 need("${ob}" "sysfile missing_reports=[0-9]+ fetches=1 installed=1 reopens=1 " "(b) the slow system file landed and the song re-opened")
+
+# I1415m leg (c): the open is sent from the --input script, after the live loop is up, so the UI sees it in flight.
+# bigslow.mod answers its body after 3 s. The previous song (slowplay.mod) plays; bigslow.mod is queued (QUEUE_ADD of a remote song) so its row is in the Songs list.
+# Expect: load bar and Cancel button drawn, the row's own bar drawn, Esc cancels (cancels=1, nothing active), slowplay.mod keeps playing.
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "open-async leg c needs the sqlite3 command line tool")
+endif()
+unset(ENV{SELECTA_PLUGIN_PATH})
+set(cdb "${root}/c.db")
+set(ccfg "${root}/c-cfg")
+file(MAKE_DIRECTORY "${ccfg}")
+file(WRITE "${ccfg}/prefs.conf" "library.sync_stale_days=0\n")
+set(ENV{SELECTA_CACHE_DIR} "${root}/c-cache")
+execute_process(COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${ccfg}" --db "${cdb}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats
+  RESULT_VARIABLE rc ERROR_VARIABLE e OUTPUT_QUIET)
+file(WRITE "${root}/c.sql" "INSERT INTO songs(id, key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES(1, 'modland:Protracker/test/bigslow.mod', 'modland', 'Protracker/test/bigslow.mod', 'Big Slow', 'Nobody', 'Nowhere', 'mod', 1992, 'Chiptune', 120000, 1700000000);\n")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${cdb}" INPUT_FILE "${root}/c.sql" RESULT_VARIABLE rc ERROR_VARIABLE e)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "open-async c: inserting the row failed: ${e}")
+endif()
+file(WRITE "${root}/c-in.txt" "wait 100\nexec OPEN modland:Protracker/test/slowplay.mod\nexec PLAY\nsleep 3500\nexec OPEN modland:Protracker/test/bigslow2.mod\nsleep 1000\nkey escape\nsleep 800\n")
+set(ENV{SELECTA_SDL_TEST_TIMED} "q@7500")
+execute_process(COMMAND "${SELECTA}" --output null --config-dir "${ccfg}" --db "${cdb}" --ui desktop --backend sdl
+  --view songs --canvas 1280x800 --clock fixed --stats --exec "QUEUE_ADD modland:Protracker/test/bigslow.mod" --input "${root}/c-in.txt"
+  OUTPUT_VARIABLE oc ERROR_VARIABLE ec RESULT_VARIABLE rc TIMEOUT 60)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "open-async c: selecta exited ${rc}\n${oc}${ec}")
+endif()
+need("${oc}" "open_ui shown=0 phase=[0-9]+ bar_draws=[1-9][0-9]* btn_draws=[1-9][0-9]* row_bars=[1-9][0-9]* cancels=1" "(c) bar, Cancel button and row bar drawn while in flight; Esc cancelled once; nothing active after")
+need("${oc}" "songs_opened=1[^0-9]" "(c) only the first song opened; the cancelled open never started, the previous song keeps playing")
+message(STATUS "open-async c: ok")
+
+# I1415m: closing the app while a song download is in flight must not wait for the download (bigslow.mod body takes 3 s).
+find_program(PYTHON3 python3)
+file(WRITE "${root}/d-in.txt" "wait 100\nsleep 300\nexec OPEN modland:Protracker/test/bigslow2.mod\nsleep 600\n")
+set(ENV{SELECTA_SDL_TEST_TIMED} "q@1000")
+set(ENV{SELECTA_CACHE_DIR} "${root}/d-cache")
+execute_process(COMMAND "${PYTHON3}" -I -c "import subprocess, sys, time\nt = time.time()\nr = subprocess.run(sys.argv[1:], capture_output=True, timeout=60)\nprint('exit_ms=%d rc=%d' % ((time.time() - t) * 1000, r.returncode))"
+  "${SELECTA}" --output null --config-dir "${ccfg}" --db "${cdb}" --ui desktop --backend sdl --view home --canvas 1280x800 --clock fixed --input "${root}/d-in.txt"
+  OUTPUT_VARIABLE od RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0 OR NOT "${od}" MATCHES "exit_ms=([0-9]+) rc=0")
+  message(FATAL_ERROR "open-async d: no clean exit: ${od}")
+endif()
+if(CMAKE_MATCH_1 GREATER 2500)
+  message(FATAL_ERROR "open-async d: exit took ${CMAKE_MATCH_1} ms with a 3 s download in flight (shutdown waited for the transfer)")
+endif()
+message(STATUS "open-async d: exit ${CMAKE_MATCH_1} ms")
 message(STATUS "open_async_ok")
