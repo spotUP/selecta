@@ -106,7 +106,7 @@ enum { MUI_PLAYER_COMPACT_MAX_H = 36, MUI_PLAYER_COMPACT_PAD = 4 };
 /* I973 (design 2026-11-02-I973-mui-player-bar-design.md sections 3, 4, 6a): the bar is ONE row in both classes: [subsong] transport
  * clock | seek | length speaker volume, every child on one centre line; art + title/artist only from MUI_PLAYER_LEFT_MIN_W px (the Mac
  * rule). No Stop, no remaining time, no status or format text, no heart, no album/speed extras on the bar (menu only). */
-enum { MUI_PLAYER_LEFT_MIN_W = 900, MUI_PLAYER_CLOCK_W = 64 /* "00:00:00" at MUI_FONT_W */, MUI_PLAYER_SUB_LABEL_W = 56, MUI_PLAYER_TITLES_W = 160, MUI_VOLUME_FIX_W = 96, MUI_BAR_TRANSPORT_N = 5 };
+enum { MUI_PLAYER_LEFT_MIN_W = 900, MUI_PLAYER_CLOCK_W = 64 /* "00:00:00" at MUI_FONT_W */, MUI_PLAYER_SUB_LABEL_W = 56, MUI_PLAYER_TITLES_W = 160, MUI_VOLUME_FIX_W = 96, MUI_BAR_TRANSPORT_N = 6 };
 typedef struct mui_player_band_t {
     uint8_t compact;      /* 1 = the compact class (640x256 class screen) */
     uint8_t band_n;       /* bands: always 1 */
@@ -118,7 +118,7 @@ typedef struct mui_player_band_t {
     uint32_t btn_w;       /* width in pixels of the same button: btn_px x aspect / 256, so it is a square on screen (tall pixels: wider in px) */
     uint32_t btn_gap;     /* spacing inside the transport group */
     uint32_t gap;         /* spacing between the bar groups */
-    uint32_t n_transport; /* 5: Shuffle, Previous, Play, Next, Repeat (no Stop) */
+    uint32_t n_transport; /* 6: Shuffle, Replay, Previous, Play, Next, Repeat (no Stop) */
     uint32_t show_left;   /* 1 = art and title/artist are children of the bar (bar_w >= MUI_PLAYER_LEFT_MIN_W) */
     uint32_t sub_w;       /* width of the subsong group (label + minus + plus); the group is shown only when the song has subsongs */
     uint32_t track_h;     /* seek and volume track height (centred in the slider box) */
@@ -191,8 +191,8 @@ uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t heigh
 /* MUI-P2-5: the transport row. Six buttons; the action each sends depends on the frame (Play/Pause on the play state,
  * Repeat cycles off, all, one, Random toggles). Labels and ids come from the action table, so the text is the full
  * English words of the desktop UI. Seek is a Slider 0..MUI_SEEK_MAX bound to progress_q16, volume 0..MUI_VOLUME_MAX. */
-#define MUI_TRANSPORT_ROW1 6u /* I667b5: Previous, Play, Next, Repeat and Random are icon-only, so all six buttons share the first row with the volume (row 1 is empty) */
-enum { MUI_BTN_PREV = 0, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_STOP, MUI_BTN_REPEAT, MUI_BTN_RANDOM, MUI_BTN_COUNT };
+#define MUI_TRANSPORT_ROW1 7u /* I667b5: Previous, Play, Next, Repeat and Random are icon-only, so all six buttons share the first row with the volume (row 1 is empty) */
+enum { MUI_BTN_PREV = 0, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_STOP, MUI_BTN_REPEAT, MUI_BTN_RANDOM, MUI_BTN_REPLAY, MUI_BTN_COUNT };
 #define MUI_SEEK_MAX 65536
 #define MUI_VOLUME_MAX 100
 /* Action id the button sends for this frame; NULL for an unknown button. */
@@ -203,7 +203,7 @@ const char* mui_transport_label(uint32_t button, const sel_uim_frame* f);
 const char* mui_transport_widest(uint32_t button);
 /* I667b5 (owner 2026-10-29): 1 when the transport button shows only its icon (all six, Stop too); the label is the tooltip. */
 int mui_transport_icon_only(uint32_t button);
-/* I796 (drift B3): the transport buttons left to right as the Mac player bar draws them (draw_transport: Shuffle, Previous, Play, Next,
+/* I796 (drift B3): the transport buttons left to right as the Mac player bar draws them (draw_transport: Shuffle, Replay, Previous, Play, Next,
  * Repeat); Stop has no Mac button and follows Repeat. Position k in 0..MUI_BTN_COUNT-1 gives the MUI_BTN_* index. */
 uint32_t mui_player_transport_at(uint32_t k);
 /* I796 (drift B1, B2): the player bar's three columns. Weights follow the Mac's 300 px player-left of a 900 px bar; the art frame is the
