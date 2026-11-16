@@ -9736,6 +9736,7 @@ static void txt_run(sel_engine* e) {
 
         buf[0] = '\0';
         if (t->job_kind[i] == (uint8_t)SEL_SONG_TEXT_TITLE) ok = sel_library_song_title(e->lib, p, buf, 256u);
+        else if (t->job_kind[i] == (uint8_t)SEL_SONG_TEXT_GROUP) ok = sel_library_song_group(e->lib, p, buf, 160u);
         else ok = sel_library_song_meta(e->lib, p, buf, sizeof buf);
         memset(r, 0, sizeof *r);
         r->key = t->job_key[i];

@@ -3019,7 +3019,7 @@ static void mui_refresh(mui_state* s) {
         } else {
             s->style_kind = MUI_STYLE_LIST;
         }
-        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id ^ (s->prog_pct * 40503u);
+        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id ^ (sel_engine_song_text_generation(s->engine) * 40503u) ^ (s->prog_pct * 2654435761u);
         const char* c;
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
@@ -3109,7 +3109,7 @@ static void mui_refresh(mui_state* s) {
                     char rpath[256], grp[64];
                     grp[0] = rpath[0] = '\0';
                     if (sel_engine_view_row_path(s->engine, ri, rpath, sizeof rpath)) {
-                        (void)sel_engine_song_group(s->engine, rpath, grp, sizeof grp);
+                        (void)sel_engine_song_text(s->engine, SEL_SONG_TEXT_GROUP, rpath, grp, sizeof grp); /* I1416e: cached, batched; -1 pending, the list redraws when the generation moves */
                     }
                     mui_row_extra_fill(st, &v->rows[ri], grp, &s->cell[i].extra);
                     if (s->prog_path[0] != '\0' && strcmp(rpath, s->prog_path) == 0) { /* I1415: the clicked row shows the percent in its Format cell */
