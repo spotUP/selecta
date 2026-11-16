@@ -147,12 +147,8 @@ static int op_apply(sqlite3* db, const sel_genre_op* op, int* found) {
 
 static int op_composer_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
-    int rc = sqlite3_prepare_v2(db,
-                                "SELECT songs.id, songs.key, COALESCE(songs.name, ''), COALESCE(c.display, '"
-                                SEL_COMPOSER_UNKNOWN_DISPLAY "') FROM songs"
-                                " LEFT JOIN song_composers c ON c.song_key = songs.key"
-                                " WHERE (c.canon = ?1 OR (?1 = '" SEL_COMPOSER_UNKNOWN_CANON "' AND c.song_key IS NULL))"
-                                " AND songs.id > ?2 ORDER BY songs.id LIMIT 1",
+    /* I1420: a named composer drives from the song_composers_canon index; the unknown group is the songs without a row. */
+    int rc = sqlite3_prepare_v2(db, strcmp(op->key, SEL_COMPOSER_UNKNOWN_CANON) == 0 ? SEL_COMPOSER_NEXT_UNKNOWN_SQL : SEL_COMPOSER_NEXT_SQL,
                                 -1, &st, NULL);
 
     *id = 0;

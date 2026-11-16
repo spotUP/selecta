@@ -246,6 +246,14 @@ int sel_json_string(const char* json, const char* name, char* out, size_t cap);
 
 /* songdb.c (I182): worker half of the SEL_SONGDB_* / SEL_COMPOSER_NEXT genre ops, and the caller half that
  * resolves one song (cache or endpoint, then song_composers). 0 on a library error. */
+/* I1420: SEL_COMPOSER_NEXT queries (?1 canon, ?2 after id). The old single query OR-ed the unknown branch into one LEFT JOIN from songs,
+ * so SQLite scanned the whole songs table once per page (5.6 s for 532 songs on 672k); the canon index drives the named one (0.3 s). */
+#define SEL_COMPOSER_NEXT_SQL \
+    "SELECT songs.id, songs.key, COALESCE(songs.name, ''), c.display FROM song_composers c" \
+    " JOIN songs ON songs.key = c.song_key WHERE c.canon = ?1 AND songs.id > ?2 ORDER BY songs.id LIMIT 1"
+#define SEL_COMPOSER_NEXT_UNKNOWN_SQL \
+    "SELECT songs.id, songs.key, COALESCE(songs.name, ''), '" SEL_COMPOSER_UNKNOWN_DISPLAY "' FROM songs" \
+    " LEFT JOIN song_composers c ON c.song_key = songs.key WHERE c.song_key IS NULL AND songs.id > ?2 ORDER BY songs.id LIMIT 1"
 int sel_library_tag_composer(sqlite3* db, const char* key, const char* author); /* I296: scan's author tag row */
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id); /* I678a, items.c */
