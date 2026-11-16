@@ -13258,11 +13258,22 @@ static void draw_nowplaying(desk* d) {
     for (k = 0; k < 5u; k++) {
         int32_t m = lpx(d, 12);
         d->np_rate[k] = rect_of(pn.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);
-        /* A rating mark lights under the pointer (I357): a set mark brightens like an accent fill, an empty one warms to muted. */
-        hover_reg(d, d->np_rate[k]);
-        sel_gui_round_rect(d->canvas, d->np_rate[k], m / 2,
-                           (int32_t)k < rating ? hover_fill_of(d, d->np_rate[k], accent)
-                                               : hover_ink_of(d, d->np_rate[k], ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]), muted));
+    }
+    {
+        /* I1388: hovering mark N previews the rating N, so marks 1..N light together; leaving restores the stored rating. */
+        int32_t hot = -1;
+        for (k = 0; k < 5u; k++) {
+            if (d->hover_box.w > 0 && rect_same(d->hover_box, d->np_rate[k])) hot = (int32_t)k;
+        }
+        for (k = 0; k < 5u; k++) {
+            int32_t m = d->np_rate[k].w;
+            /* A rating mark lights under the pointer (I357): a lit mark brightens like an accent fill, an empty one warms to muted. */
+            hover_reg(d, d->np_rate[k]);
+            sel_gui_round_rect(d->canvas, d->np_rate[k], m / 2,
+                               (int32_t)k <= hot ? hover_fill_of(d, d->np_rate[hot], accent)
+                               : (int32_t)k < rating ? accent
+                                                     : ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        }
     }
     y += ic + sp;
     /* The visualizer strip (DUI-P4-11): the selected viz plugin's picture of the newest frame. */

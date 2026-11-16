@@ -1,0 +1,7 @@
+# I1429: REPEAT one restarts the song at its end; RATE and LIKE afterwards must still address it (hist_key kept).
+REPEAT one
+QUEUE_ADD selecta-short.mod
+PLAY
+@render 400000
+RATE 4
+LIKE

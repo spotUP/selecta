@@ -5815,6 +5815,14 @@ static int target_key(sel_engine* e, const sel_message* m, uint32_t idx, const c
             sel_engine_report_error(e, "range", who);
             return 0;
         }
+    } else if (e->deferred == SEL_BEGIN_OPEN) {
+        /* I1429: a song open still waiting for its library read or a slot is the song the user means; hist_key names
+         * the old song or nothing until the deferred open completes. */
+        song_key(e->deferred_path, key, cap);
+        if (key[0] == '\0') {
+            sel_engine_report_error(e, "no_song", who);
+            return 0;
+        }
     } else if (e->hist_key[0] == '\0') {
         sel_engine_report_error(e, "no_song", who);
         return 0;
@@ -12272,10 +12280,12 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
             uint32_t reason = sl->pol.reason != SEL_END_NONE ? sl->pol.reason : (uint32_t)SEL_END_END;
             uint32_t next;
             sl->reported = 1;
-            if (e->repeat == 1u && reason == SEL_END_END && e->q_playing != 0 &&
-                queue_start(e, sel_queue_index_of(&e->queue, e->q_playing))) {
-                /* REPEAT one: the song restarts without ending; the finished round counts as a play. */
-                hist_end(e, 0);
+            int again = e->repeat == 1u && reason == SEL_END_END && e->q_playing != 0;
+            /* REPEAT one: the song restarts without ending; the finished round counts as a play. It is closed BEFORE
+             * queue_start, which opens the next round's history: closing after it wiped hist_key, so RATE and LIKE
+             * answered no_song for the whole repeated song. */
+            if (again) hist_end(e, 0);
+            if (again && queue_start(e, sel_queue_index_of(&e->queue, e->q_playing))) {
                 advanced = 1;
             } else {
                 next = queue_next_index(e);
