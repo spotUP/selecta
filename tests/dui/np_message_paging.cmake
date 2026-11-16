@@ -1,6 +1,6 @@
-# dui-np-message-paging (I1422): a song message line (a MOD's sample name) wider than the Now Playing panel pages left by one panel
-# width every 2 s and returns to its start after the last page. -DSELECTA -DSONGS -DWORK
-#   Fixture: tests/m3/message_long/message_long.it, whose second line is wider than the panel. The dump line `nowplaying msgpage <page> of <pages>`.
+# dui-np-message-paging (I1422): a song message with more rows (a MOD's sample names) than the box holds pages by one box of rows
+# every 2 s and returns to page 1 after the last page. -DSELECTA -DSONGS -DWORK
+#   Fixture: tests/m3/message_long/message_rows.it, a 15 row message. The dump line `nowplaying msgpage <page> of <pages>`.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 dui_require_sdl()
@@ -11,7 +11,7 @@ function(np_page_run tag ms)
   file(WRITE "${WORK}/${tag}.txt" "wait ${ms}\n")
   file(REMOVE_RECURSE "${WORK}/cfg" "${WORK}/${tag}.db")
   dui_run(o --db "${WORK}/${tag}.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
-    --exec "LIBRARY_SCAN ${lyr}" --exec "OPEN ${lyr}/message_long.it" --input "${WORK}/${tag}.txt")
+    --exec "LIBRARY_SCAN ${lyr}" --exec "OPEN ${lyr}/message_rows.it" --input "${WORK}/${tag}.txt")
   if(NOT "${o}" MATCHES "nowplaying msgpage ([0-9]+) of ([0-9]+)")
     message(FATAL_ERROR "no msgpage line in:\n${o}")
   endif()
@@ -20,7 +20,7 @@ function(np_page_run tag ms)
 endfunction()
 np_page_run(p0 300)
 if(p0_pages LESS 2)
-  message(FATAL_ERROR "no message line is wider than the panel (pages=${p0_pages}); the test needs a narrower canvas")
+  message(FATAL_ERROR "message has too few rows to page (pages=${p0_pages})")
 endif()
 np_page_run(p1 2300)
 math(EXPR full "${p0_pages} * 2000 + 300")
