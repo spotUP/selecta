@@ -51,3 +51,5 @@ sel_view_style_label
 malloc
 free
 realloc
+# I1415: the open progress snapshot the text UI module polls for its load bar.
+sel_engine_open_progress

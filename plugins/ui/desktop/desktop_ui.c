@@ -6983,7 +6983,7 @@ static size_t desk_clipboard(desk* d, char* out, size_t cap) {
 static void desk_clipboard_set(desk* d, const char* text) {
     snprintf(d->clip_out, sizeof d->clip_out, "%s", text);
     d->copies++;
-#if defined(SELECTA_DESKTOP_SDL) && !defined(SELECTA_DESKTOP_AGA)
+#if defined(SELECTA_DESKTOP_SDL) && !defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_AGA)
     if (d->sdl != NULL) {
         desk_sdl_set_clipboard(d->sdl, text);
     }
