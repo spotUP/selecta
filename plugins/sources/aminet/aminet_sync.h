@@ -22,7 +22,7 @@
 #define SEL_AMINET_LIST "INDEX"
 #define SEL_AMINET_PATH_MAX 512u
 #define SEL_AMINET_TEXT_MAX 192u
-#define SEL_AMINET_FORMAT "Aminet module"
+#define SEL_AMINET_FORMAT "" /* I1414: no format text; lists show the artist only (Johan 2026-11-16) */
 #define SEL_AMINET_DESC_COLS 40u /* INDEX description column width; longer descriptions are cut there */
 
 typedef struct sel_aminet_row {

@@ -35,8 +35,8 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "I1024g: script rc=${rc}\n${raw}")
 endif()
 need("sentinel: the search ran" "${raw}" "SOURCESEARCH runs=[1-9]")
-need("row in the sync key shape, with name, artist, format" "${raw}"
-  "aminet:mods/chip/AbsolutChips1.lha[^\n]*AbsolutChips1[^\n]*Sapphire[^\n]*Aminet module")
+need("row in the sync key shape, with name, artist" "${raw}"
+  "aminet:mods/chip/AbsolutChips1.lha[^\n]*AbsolutChips1[^\n]*Sapphire")
 need("second row" "${raw}" "aminet:mods/chip/[A-Za-z0-9_-]+\\.(lha|lzh|zip)[^\n]*Cubik")
 need("done event with the count" "${raw}" "search_done[^\n]*2")
 string(REGEX MATCHALL "aminet:mods/[a-z]+/[A-Za-z0-9_.-]+" rows "${raw}")
