@@ -66,3 +66,10 @@ fold_run(second "${typed}searchfold 0\nwait 100\n${again}")
 expect("${second_out}" "search_fold 0 expanded=1 clicks=1 Songs" "the second search keeps Songs expanded")
 fold_run(back "${typed}searchfold 0\nwait 100\nsearchfold 0\nwait 100\n")
 expect("${back_out}" "search_fold 0 expanded=0 clicks=2 Songs" "the link folds Songs again")
+
+# I1409: Down walks the visible rows across categories. Songs is folded to 3 rows: Down x3 stays in Songs, Down x4 reaches
+# the next category (the 4th..7th Songs rows are hidden, not keyboard stops).
+fold_run(k3 "${typed}key down\nkey down\nkey down\nwait 100\n")
+expect("${k3_out}" "search cursor=[0-9]+ in=Songs " "three Downs stay in Songs")
+fold_run(k4 "${typed}key down\nkey down\nkey down\nkey down\nwait 100\n")
+expect("${k4_out}" "search cursor=[0-9]+ in=Albums " "the fourth Down moves into Albums, past the folded Songs rows")
