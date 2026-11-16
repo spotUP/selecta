@@ -105,7 +105,7 @@ execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${cdb}" IN
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "open-async c: inserting the row failed: ${e}")
 endif()
-file(WRITE "${root}/c-in.txt" "wait 100\nexec OPEN modland:Protracker/test/slowplay.mod\nexec PLAY\nsleep 3500\nexec OPEN modland:Protracker/test/bigslow2.mod\nsleep 1000\nkey escape\nsleep 300\nkey escape\nsleep 800\n")
+file(WRITE "${root}/c-in.txt" "wait 100\nexec OPEN modland:Protracker/test/slowplay.mod\nexec PLAY\nsleep 3500\nexec OPEN modland:Protracker/test/bigslow2.mod\nsleep 1000\nkey escape\nsleep 800\n")
 set(ENV{SELECTA_SDL_TEST_TIMED} "q@7500")
 execute_process(COMMAND "${SELECTA}" --output null --config-dir "${ccfg}" --db "${cdb}" --ui desktop --backend sdl
   --view songs --canvas 1280x800 --clock fixed --stats --exec "QUEUE_ADD modland:Protracker/test/bigslow.mod" --input "${root}/c-in.txt"
