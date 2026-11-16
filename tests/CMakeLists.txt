@@ -4015,6 +4015,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME zxart-unit COMMAND zxart_unit_test)
   set_tests_properties(zxart-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "zxart_unit_ok")
 
+  # I1410: the DLNA artist fallback (title split, never the server name).
+  add_executable(dlna_artist_test dlna_artist_test.c)
+  target_include_directories(dlna_artist_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/dlna)
+  add_test(NAME dlna-artist COMMAND dlna_artist_test)
+  set_tests_properties(dlna-artist PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "dlna_artist_ok")
   # I416: the keygenmusic list reader, path decoding, format and group rules and source descriptor.
   add_executable(keygenmusic_unit_test keygenmusic_unit_test.c)
   target_sources(keygenmusic_unit_test PRIVATE

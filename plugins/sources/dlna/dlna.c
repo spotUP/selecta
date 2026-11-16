@@ -25,6 +25,7 @@
 #include "source/descriptor.h"
 #include "source/sync_stat.h"
 #include "upnp/upnp.h"
+#include "dlna_artist.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -179,8 +180,7 @@ static void add_item(run* r, const sel_upnp_entry* e) {
         r->dups++;
         return;
     }
-    snprintf(artist, sizeof artist, "%s", e->artist[0] != '\0' ? e->artist : r->server);
-    snprintf(title, sizeof title, "%s", e->title);
+    sel_dlna_artist(e->artist, e->title, artist, title, sizeof artist);
     clean_part(artist);
     clean_part(title);
     for (i = 0; e->res_url[i] != '\0' && j + 4u < sizeof url; i++) { /* '|' separates catalogue fields: escape it */
