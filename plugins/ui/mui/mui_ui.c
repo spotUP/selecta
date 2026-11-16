@@ -3834,8 +3834,6 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     }
 }
 
-/* A Home row of the engine view is activated (list double click, quick tile, shelf entry): a shelf heading opens its Show all page, a
- * library tile its collection page (I794), a song plays and an album opens (MUI-P4-1). 1 when it was one of those. */
 /* I1408: a Search Albums hit (album row with an albums.id) opens that album's page, the route a Home album tile takes (desk_item_open). */
 static int mui_album_row_open(mui_state* s, const sel_view_state* view, uint32_t v) {
     sel_uim_tile t;
@@ -3846,6 +3844,8 @@ static int mui_album_row_open(mui_state* s, const sel_view_state* view, uint32_t
     return mui_route_click(&s->route, SEL_ROUTE_HOME_TILE, t.kind, t.id, t.key, t.name, t.sub, mui_route_send, s);
 }
 
+/* A Home row of the engine view is activated (list double click, quick tile, shelf entry): a shelf heading opens its Show all page, a
+ * library tile its collection page (I794), a song plays and an album opens (MUI-P4-1). 1 when it was one of those. */
 static int mui_home_row_fire(mui_state* s, const sel_view_state* view, uint32_t v) {
     char hl[3][48];
     const sel_view_row* row = &view->rows[v];
