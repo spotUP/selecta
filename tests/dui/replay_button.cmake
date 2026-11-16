@@ -1,8 +1,9 @@
 # dui-replay-button (I1424): the Replay button left of Previous restarts the current song from the start, same song,
 # and leaves Repeat alone; with no song loaded a click sends nothing.
 #   -DSELECTA -DSONGS -DWORK
-# The layout output (`button id=replay`) gives the click point. The song plays for 3 s, then the click: one second later
-# the clock reads 0:00 or 0:01 (without the click it reads 0:04), the song line is unchanged and repeat_mode stays 0.
+# The layout output (`button id=replay`) gives the click point. The mem backend has no clock of its own: `--ticks 150` replays
+# about 3 s of playback (50 turns a second) before the script runs, so the click lands after 3 s. The clock then reads 00:00 or
+# 00:01 (without the click 00:03), the song line is unchanged and repeat_mode stays 0.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -19,12 +20,12 @@ function(replay_run outvar input)
   file(REMOVE_RECURSE "${WORK}/cfg")
   file(WRITE "${WORK}/in.txt" "${input}")
   dui_run(o --ui desktop --backend mem --view songs --canvas 1280x800 --stats --exec "QUEUE_ADD ${WORK}/banana.mod"
-    --exec "PLAY" ${ARGN} --input "${WORK}/in.txt")
+    --exec "PLAY" --ticks 150 ${ARGN} --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
 endfunction()
 
-replay_run(plain "wait 4\n")
-replay_run(replayed "wait 3\nclick ${rx} ${ry}\nwait 1\n")
+replay_run(plain "wait 1\n")
+replay_run(replayed "click ${rx} ${ry}\nwait 1\n")
 if(NOT plain MATCHES "closed [^\n]* clock=([0-9:]+) ")
   message(FATAL_ERROR "no clock after plain play:\n${plain}")
 endif()
@@ -33,10 +34,10 @@ if(NOT replayed MATCHES "closed [^\n]* clock=([0-9:]+) ")
   message(FATAL_ERROR "no clock after replay:\n${replayed}")
 endif()
 set(clock_replayed "${CMAKE_MATCH_1}")
-if(NOT clock_replayed MATCHES "^0:0[01]$")
+if(NOT clock_replayed MATCHES "^00:0[01]$")
   message(FATAL_ERROR "replay did not restart the song: clock ${clock_replayed} (plain run ${clock_plain})")
 endif()
-if(clock_plain MATCHES "^0:0[01]$")
+if(clock_plain MATCHES "^00:0[01]$")
   message(FATAL_ERROR "the plain run never advanced (clock ${clock_plain}): the test proves nothing")
 endif()
 if(NOT plain MATCHES "song=([^\n]*)\n" )
