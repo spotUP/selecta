@@ -410,6 +410,7 @@ typedef struct desk {
     int sysfile_wait;                 /* a file dialog is open for the system file dialog; its answer arrives as a drop */
     char sysfile_name[64], sysfile_reason[48], sysfile_toast[96]; /* store name of the waiting file; last SYSFILE_FAILED reason; last toast text */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
+    int32_t np_msg_bottom;            /* I1422: y under the message box, the same on every page */
     uint32_t np_msgpg, np_msgpg_pages, np_msgpg_until, np_msgpg_tick; /* I1422: page shown of the widest cut-off message line, its page count, clock the paging keeps waking until, last page step drawn */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
@@ -8255,7 +8256,7 @@ static const char* library_dump_build(desk* d) {
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, sel_uim_np_note(&st->song) != NULL ? sel_uim_np_note(&st->song) : "", (unsigned)d->np_notes, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines, (unsigned)d->np_pair_lines, (int)d->np_pair_view.x, (int)d->np_pair_view.y, (int)d->np_pair_view.h, (int)(d->np_pair_max_q16 >> 16), (int)(d->np_pair_y_q16 >> 16),
                  (unsigned)d->np_bar_draws, (int)d->np_bar_handle.x, (int)d->np_bar_handle.y, (int)d->np_bar_handle.w, (int)d->np_bar_handle.h);
-    o = dump_put(d, o, "nowplaying msgpage %u of %u\n", (unsigned)d->np_msgpg, (unsigned)d->np_msgpg_pages);
+    o = dump_put(d, o, "nowplaying msgpage %u of %u bottom %d\n", (unsigned)d->np_msgpg, (unsigned)d->np_msgpg_pages, (int)d->np_msg_bottom);
     o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
@@ -13270,6 +13271,7 @@ static void draw_nowplaying(desk* d) {
     d->np_msg_lines = 0;
     d->np_msgpg = 0;
     d->np_msgpg_pages = 0;
+    d->np_msg_bottom = 0;
     d->np_key_end = 0;
     d->np_val_x = 0;
     if (st->panel != NULL) {
@@ -13410,7 +13412,9 @@ static void draw_nowplaying(desk* d) {
                 p = e != NULL ? e + 1 : NULL;
             }
             sel_gui_clip_pop(d->canvas);
-            y += (int32_t)d->np_msg_lines * at->line_height + lpx(d, 6);
+            /* a paging message keeps the full box height so a short last page does not pull the queue up */
+            y += (int32_t)(d->np_msgpg_pages > 1u ? NP_MESSAGE_LINES : d->np_msg_lines) * at->line_height + lpx(d, 6);
+            d->np_msg_bottom = y;
         }
     }
     /* Up next: the queue entries after the playing one. */
