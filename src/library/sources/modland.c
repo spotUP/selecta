@@ -138,6 +138,13 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
             slash = deeper;
         }
     }
+    if ((size_t)(artist - 1 - fmt) == 4u && memcmp(fmt, "HVSC", 4) == 0) { /* I1411: HVSC/<MUSICIANS|GAMES|DEMOS>/<L>/<Artist>/x.sid, the hvsc source rule */
+        const char* l = strncmp(artist, "MUSICIANS/", 10) == 0 ? strchr(artist + 10, '/') : NULL;
+        const char* e = l != NULL ? strchr(l + 1, '/') : NULL;
+
+        artist = e != NULL ? l + 1 : slash; /* GAMES, DEMOS: no artist */
+        slash = e != NULL ? e : slash;
+    }
     file = strrchr(path, '/') + 1;
     if (file[0] == '\0') {
         return 0;
@@ -157,6 +164,11 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     }
     memcpy(a, artist, len);
     a[len] = '\0';
+    if (strncmp(fmt, "HVSC/", 5) == 0) { /* "Twang_Mortimer" style folder names, as the hvsc source shows them */
+        for (char* u = a; *u != '\0'; u++) {
+            *u = *u == '_' ? ' ' : *u;
+        }
+    }
     used += len + 1u;
     nm = scratch + used;
     dot = strrchr(file, '.');

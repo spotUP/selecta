@@ -36,6 +36,8 @@ static void expect(const char* path, const char* format, const char* artist) {
 int main(void) {
     expect("pub/modules/Ad Lib/Surprise! AdLib Tracker 2.0/Hydra/virgill.sa2", "Ad Lib", "Hydra");
     expect("pub/modules/Spectrum/Pro Tracker 3/Some Artist/x.pt3", "Spectrum", "Some Artist");
+    expect("pub/modules/HVSC/MUSICIANS/M/Mortimer_Twang/x.sid", "HVSC", "Mortimer Twang"); /* I1411 */
+    expect("pub/modules/HVSC/GAMES/A/Arkanoid.sid", "HVSC", "");
     expect("pub/modules/Video Game Music/Sega Megadrive/Some Artist/Some Game/x.vgz", "Video Game Music", "Some Artist");
     expect("pub/modules/Ad Lib/Lonely/file.ext", "Ad Lib", "Lonely");
     expect("pub/modules/Protracker/Virgill/1000-baud.mod", "Protracker", "Virgill");
