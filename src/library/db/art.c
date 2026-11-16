@@ -221,6 +221,30 @@ static void hvsc_folder_artist(const char* key, char* out, size_t cap) {
     out[n] = '\0';
 }
 
+/* I1440h: the song's DeepSID key. The songs row gives source, path and md5; a key with no row is split at its first colon (md5 unknown). */
+static int art_ds_key(sqlite3* db, const sel_art_op* op) {
+    char key[1024], src[64], path[1024], md5[64];
+    sqlite3_stmt* st = NULL;
+    const char* colon;
+
+    if (op->data == NULL || op->cap < 8u || !sel_song_key_of(op->ref, key, sizeof key)) return 0;
+    src[0] = path[0] = md5[0] = '\0';
+    if (sqlite3_prepare_v2(db, "SELECT source, path, COALESCE(md5, '') FROM songs WHERE key = ?1", -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            snprintf(src, sizeof src, "%s", (const char*)sqlite3_column_text(st, 0));
+            snprintf(path, sizeof path, "%s", (const char*)sqlite3_column_text(st, 1));
+            snprintf(md5, sizeof md5, "%s", (const char*)sqlite3_column_text(st, 2));
+        }
+        sqlite3_finalize(st);
+    }
+    if (path[0] == '\0' && (colon = strchr(key, ':')) != NULL && (size_t)(colon - key) < sizeof src) {
+        snprintf(src, sizeof src, "%.*s", (int)(colon - key), key);
+        snprintf(path, sizeof path, "%s", colon + 1);
+    }
+    return sel_deepsid_key(db, src, path, md5, (char*)op->data, op->cap) != SEL_DEEPSID_NONE;
+}
+
 static int art_song_meta(sqlite3* db, const sel_art_op* op) {
     char key[1024], fold[256];
     sqlite3_stmt* st = NULL;
@@ -279,6 +303,8 @@ void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* rep
         v = art_put(lib->db, op);
     } else if (op->op == SEL_ART_NEXT_MISSING) {
         v = art_next_missing(lib->db, op);
+    } else if (op->op == SEL_ART_DS_KEY && op->ref != NULL) {
+        v = art_ds_key(lib->db, op);
     } else if (op->op == SEL_ART_SONG_META && op->ref != NULL) {
         v = art_song_meta(lib->db, op);
     } else if (op->op == SEL_ART_KINDS) {

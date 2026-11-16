@@ -571,6 +571,93 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     return r < 0 ? -1 : 1;
 }
 
+/* I1440h: DeepSID. One GET into `js` (NUL-terminated), the artwork row `kind` of `key` filled with the body. 1 = stored, 0 = definite no, -1 = try later. */
+#define DS_JSON_MAX 65536u /* a longer body is cut by buf_sink: the tags and ids come first */
+
+static int ds_fetch(sel_library* lib, const char* key, const char* kind, const char* url, scrape_buf* js, sel_scrape_stats* st) {
+    int r = scrape_get(url, js, st);
+
+    if (r != 1) return r;
+    js->data[js->len] = '\0';
+    dz_put(lib, sel_art_dz_id(key), kind, js->data, js->len);
+    return 1;
+}
+
+/* The names of the "tags" array of a file answer, joined by ", ", into the sticker "deepsid.tags" of the key (an emptied list clears it). */
+static void ds_tags(sel_library* lib, const char* key, const char* json) {
+    char all[512], name[96];
+    const char *p = strstr(json, "\"tags\""), *end;
+    size_t n = 0;
+
+    all[0] = '\0';
+    p = p != NULL ? json_value(p + 6) : NULL;
+    end = p != NULL && *p == '[' ? strchr(p, ']') : NULL;
+    while (end != NULL && (p = json_str(p, "name", name, sizeof name)) != NULL && p < end) {
+        n += (size_t)snprintf(all + n, sizeof all - n, "%s%s", n > 0 ? ", " : "", name);
+        if (n >= sizeof all) break; /* shortcut: tags past 511 bytes are dropped, the list is a few names */
+    }
+    sel_library_sticker_set(lib, key, "deepsid.tags", all);
+}
+
+/* One song. Returns 1 done (stored, cached or nothing to ask), -1 network trouble (nothing recorded). */
+static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
+    char base[256], key[1100], fkey[1100], enc[1100], url[SCRAPE_URL_MAX], stamp[24];
+    uint8_t seen[24];
+    scrape_buf js;
+    sel_art_op op;
+    const char *p, *slash;
+    int id, r;
+
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_DS_KEY;
+    op.ref = ref;
+    op.data = (uint8_t*)key;
+    op.cap = sizeof key;
+    if (art_request(lib, &op) <= 0) return 1; /* not a SID of HVSC/CGSC: no DeepSID data */
+    id = sel_art_dz_id(key);
+    if (dz_has(lib, id, "ds_file", NULL, 0) > 0) return 1;
+    memset(seen, 0, sizeof seen);
+    if (dz_has(lib, id, "ds_miss", seen, sizeof seen - 1u) > 0 && (time_t)atol((const char*)seen) > time(NULL) - (time_t)SEL_ART_SCRAPE_RETRY_DAYS * 86400) return 1;
+    js.data = malloc(DS_JSON_MAX);
+    js.cap = DS_JSON_MAX - 1u;
+    if (js.data == NULL) return -1;
+    base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+    sel_url_encode(strchr(key, ':') + 1, enc, sizeof enc);
+    snprintf(url, sizeof url, "%s/api/deepsid/file-by-path?path=%s&full=1", base, enc);
+    st->albums++;
+    r = ds_fetch(lib, key, "ds_file", url, &js, st);
+    if (r == 1) {
+        ds_tags(lib, key, (const char*)js.data);
+        p = strstr((const char*)js.data, "\"csdbId\"");
+        p = p != NULL ? json_value(p + 8) : NULL;
+        if (p != NULL && *p >= '1' && *p <= '9') { /* null or 0: the file has no CSDb release */
+            p = strstr((const char*)js.data, "\"id\"");
+            p = p != NULL ? json_value(p + 4) : NULL;
+            if (p != NULL && atoi(p) > 0) {
+                snprintf(url, sizeof url, "%s/api/deepsid/csdb/%d", base, atoi(p));
+                ds_fetch(lib, key, "ds_csdb", url, &js, st); /* a failure here is retried never: the file row is the cache gate; shortcut, upgrade when CSDb flaps */
+            }
+        }
+        slash = strrchr(key, '/');
+        if (slash != NULL && (size_t)(slash - key) < sizeof fkey) {
+            snprintf(fkey, sizeof fkey, "%.*s", (int)(slash - key), key);
+            if (dz_has(lib, sel_art_dz_id(fkey), "ds_composer", NULL, 0) <= 0 && sel_url_encode(strchr(fkey, ':') + 1, enc, sizeof enc)) {
+                snprintf(url, sizeof url, "%s/api/deepsid/composer?path=%s", base, enc);
+                ds_fetch(lib, fkey, "ds_composer", url, &js, st);
+            }
+        }
+        st->scraped++;
+    } else if (r == 0) {
+        snprintf(stamp, sizeof stamp, "%lu", (unsigned long)time(NULL));
+        dz_put(lib, id, "ds_miss", stamp, strlen(stamp));
+        st->misses++;
+    } else {
+        st->errors++;
+    }
+    free(js.data);
+    return r < 0 ? -1 : 1;
+}
+
 static int scrape_disabled(sel_library* lib) {
     const char* e = getenv("SELECTA_ART_SCRAPE");
 
@@ -625,6 +712,18 @@ void sel_scrape_job_run(sel_library* lib) {
         lib->job_scrape = 1; /* the album pass (if one is running) goes on after it */
         return;
     }
+    if (lib->ds_key[0] != '\0') { /* I1440h: same turn rules as the Demozoo song above */
+        char ref[sizeof lib->ds_key];
+
+        memcpy(ref, lib->ds_key, sizeof ref);
+        lib->ds_key[0] = '\0';
+        pthread_mutex_unlock(&lib->job_lock);
+        ds_step(lib, ref, &d);
+        pthread_mutex_lock(&lib->job_lock);
+        add_stats(&lib->scrape_stats, &d);
+        lib->job_scrape = 1;
+        return;
+    }
     if (lib->scrape_pending) {
         lib->scrape_pending = 0;
         lib->scrape_after = 0;
@@ -658,6 +757,17 @@ void sel_library_demozoo_kick(sel_library* lib, const char* ref) {
     pthread_mutex_unlock(&lib->job_lock);
 }
 
+void sel_library_deepsid_kick(sel_library* lib, const char* ref) {
+    char key[sizeof lib->ds_key];
+
+    if (lib == NULL || ref == NULL || scrape_disabled(lib) || !sel_song_key_of(ref, key, sizeof key) || !sel_job_start(lib)) return;
+    pthread_mutex_lock(&lib->job_lock);
+    memcpy(lib->ds_key, key, sizeof key);
+    lib->job_scrape = 1;
+    sel_job_wake(lib);
+    pthread_mutex_unlock(&lib->job_lock);
+}
+
 int sel_library_scrape_poll(sel_library* lib) {
     (void)lib;
     return 0;
@@ -683,9 +793,26 @@ void sel_library_demozoo_kick(sel_library* lib, const char* ref) {
     }
 }
 
+void sel_library_deepsid_kick(sel_library* lib, const char* ref) {
+    char key[sizeof lib->ds_key];
+
+    if (lib != NULL && ref != NULL && !scrape_disabled(lib) && sel_song_key_of(ref, key, sizeof key)) memcpy(lib->ds_key, key, sizeof key);
+}
+
 int sel_library_scrape_poll(sel_library* lib) {
     sel_scrape_stats d;
     int r;
+
+    if (lib != NULL && lib->ds_key[0] != '\0') {
+        char ref[sizeof lib->ds_key];
+
+        memcpy(ref, lib->ds_key, sizeof ref);
+        lib->ds_key[0] = '\0';
+        memset(&d, 0, sizeof d);
+        ds_step(lib, ref, &d);
+        add_stats(&lib->scrape_stats, &d);
+        return 1;
+    }
 
     if (lib != NULL && lib->dz_key[0] != '\0') {
         char key[sizeof lib->dz_key];

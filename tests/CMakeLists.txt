@@ -4347,6 +4347,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(demozoo-art PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 120 PASS_REGULAR_EXPRESSION "demozoo_art_ok")
 
+  # I1440h: the DeepSID fetcher (file, composer, CSDb rows, tags to a sticker, miss cache) over a local hippoplayer.se fixture.
+  add_test(NAME deepsid-fetch
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/deepsid_fetch.cmake")
+  set_tests_properties(deepsid-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "deepsid_fetch_ok")
+
   # I1024d: SOURCE_SEARCH radiobrowser over a local /json/stations/search fixture: codec filter, sink rows, -1 when unreachable.
   add_test(NAME radiobrowser-search
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/radiobrowser_search.cmake")

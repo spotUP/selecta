@@ -69,6 +69,7 @@ enum {
 enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */,
        SEL_ART_NEXT_MISSING /* I1003a: the first albums row after `album` with a name, an artist, no 'cover' artwork and no scrape_miss row newer than `len` (epoch seconds); data = "name\0artist\0"; reply = its id, 0 = none */,
        SEL_ART_KINDS /* I1384b: which stills the artwork of `album` holds: reply = mask, bit 0 = 'cover', bit n = 'dz<n>' (n 1..7), SEL_ART_KIND_VIDEO = a 'dz_video' link row */,
+       SEL_ART_DS_KEY /* I1440h: the DeepSID key (`hvsc:<path>`, sel_deepsid_key) of the song `ref` into data/cap; reply 1 when it has one */,
        SEL_ART_SONG_META /* I1401: songs.name and songs.artist of the song `ref` into data/cap as "name\0artist\0"; reply 1 when both are non-empty */ };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
@@ -623,6 +624,11 @@ typedef struct sel_scrape_stats {
 void sel_library_demozoo_set_enabled(sel_library* lib, int on);
 void sel_library_demozoo_kick(sel_library* lib, const char* ref);
 /* I1401d: remember the cover URL a source offers for song source:path (http/https only); dz_step fetches it as the song's cover. */
+/* I1440h: DeepSID data for a song on the same job thread (design 2026-11-16-i1440-deepsid.md 2.2). _deepsid_kick(ref) resolves the song to its `hvsc:<path>`
+ * key, then GET <base>/api/deepsid/file-by-path?path=<p>&full=1 (and /composer, /csdb/<id>), cached as artwork rows of sel_art_dz_id(key): 'ds_file' (server JSON),
+ * 'ds_composer' (on the folder key), 'ds_csdb', 'ds_miss' (epoch seconds, retried after SEL_ART_SCRAPE_RETRY_DAYS). The tags also go to the sticker "deepsid.tags"
+ * of the key. Base URL SELECTA_DEEPSID_URL (default https://hippoplayer.se); off like Demozoo (SELECTA_ART_SCRAPE=off). */
+void sel_library_deepsid_kick(sel_library* lib, const char* ref);
 void sel_library_cover_url_put(sel_library* lib, const char* source, const char* path, const char* url);
 /* I1401: the lookup query for a song of any source. A Modland key goes as key=<key>; every other song goes as title=<title>&author=<artist> and
  * needs both non-empty. Writes the query (no leading '?') into out; 0 when there is nothing to ask (no title or artist) or it does not fit. */
