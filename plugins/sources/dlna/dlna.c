@@ -47,7 +47,7 @@ static const sel_tag g_tags[] = {
 #define LINE_BYTES 2700u
 #define MAX_SUBS 512u
 #define MAX_CHANGED 256u
-#define STATE_MAGIC "selecta-dlna-state 1"
+#define STATE_MAGIC "selecta-dlna-state 2" /* I1410: v1 states predate the artist re-key; one full walk moves their rows */
 #define DLNA_HOME "http://www.upnp.org/"
 
 typedef struct hset {

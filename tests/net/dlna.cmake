@@ -266,6 +266,12 @@ c.execute('UPDATE songs SET key=?, path=? WHERE key=?', ('dlna:' + op, op, k))
 c.execute(\"UPDATE files SET path=? WHERE source='dlna' AND path=?\", (op, p))
 c.execute('INSERT INTO history(key, played_at) VALUES(?, 1)', ('dlna:' + op,))
 c.execute('INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1, 0, ?)', ('dlna:' + op,))
+# a library synced before the re-key holds a v1 state with the same SystemUpdateID
+st = c.execute(\"SELECT key, value FROM source_state WHERE source='dlna'\").fetchall()
+assert st, 'no dlna state stored'
+for (sk, v) in st:
+    v = v.encode() if isinstance(v, str) else bytes(v)
+    c.execute(\"UPDATE source_state SET value=? WHERE source='dlna' AND key=?\", (v.replace(b'selecta-dlna-state 2', b'selecta-dlna-state 1', 1), sk))
 c.commit()
 " "${LDB}" RESULT_VARIABLE lseed ERROR_VARIABLE lseede)
 if(NOT lrc EQUAL 0 OR NOT lseed EQUAL 0)
