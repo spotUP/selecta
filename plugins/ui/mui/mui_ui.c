@@ -4442,7 +4442,7 @@ static void* mui_open(const sel_ui_open_args* a) {
                     Child, s->slot[MUI_SLOT_DETAIL] = np_compact ? (Object*)MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE) : np_detail,
                 End,
                 Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
-                Child, s->keys = mui_keys_new((ULONG)CTL_KEY_BASE, (ULONG)CTL_DOOR_BASE, (ULONG)CTL_PANE_BASE), /* I1165, I1171 */
+                Child, s->keys = mui_keys_new((ULONG)CTL_KEY_BASE, (ULONG)CTL_DOOR_BASE, (ULONG)CTL_PANE_BASE, (ULONG)CTL_NAV_BACK), /* I1165, I1171 */
             End, End, End;
     if (s->app == NULL) {
         if (strip != NULL) {

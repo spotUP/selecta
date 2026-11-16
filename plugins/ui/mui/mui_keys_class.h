@@ -6,9 +6,9 @@
 #include <libraries/mui.h>
 
 /* Creates the class (once) and one instance; NULL when MUI refuses the class. key_base: ReturnID of action key row 0
- * (mui_key_row_at index added); door_base / pane_base: the ReturnIDs the sidebar door and main pane buttons already send.
+ * (mui_key_row_at index added); back_id: the ReturnID of the Back button, sent by Backspace outside a text gadget (I1423); door_base / pane_base: the ReturnIDs the sidebar door and main pane buttons already send.
  */
-Object* mui_keys_new(ULONG key_base, ULONG door_base, ULONG pane_base);
+Object* mui_keys_new(ULONG key_base, ULONG door_base, ULONG pane_base, ULONG back_id);
 /* Sets the Search string gadget and the results list; call once the window tree exists (argument order inside the tree is unspecified). */
 void mui_keys_targets(Object* search, Object* list);
 /* I1359: nonzero (and cleared) when the keys handler has seen an Esc key-down since the last call. MUI's own Window class turns an
