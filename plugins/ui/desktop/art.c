@@ -359,6 +359,9 @@ static void job_start(desk_art* a) {
             return;
         }
         take = a->pend_n < ART_BATCH ? a->pend_n : ART_BATCH;
+        if (!art_threaded()) {
+            take = 1u; /* I1416f: no thread (Amiga): one cover per UI turn, art_pump starts the next */
+        }
         j->src = a->src;
         j->gen = a->gen;
         for (i = 0; i < take; i++) {
@@ -373,6 +376,9 @@ static void job_start(desk_art* a) {
         a->th = art_thread_start(worker, j);
         if (a->th == NULL) { /* no thread (Amiga): the batch ran inline */
             job_merge(a);
+            if (!art_threaded()) {
+                return; /* I1416f: the next cover waits for the next turn (art_pump) */
+            }
         }
     }
 }
@@ -425,7 +431,9 @@ void art_load(desk_art* a, const char* const* titles, uint32_t n) {
         strcpy(c, titles[i]);
         a->pend[a->pend_n++] = c;
     }
-    job_start(a);
+    if (art_threaded()) { /* I1416f: without a thread the covers decode in art_pump, one per turn, not inside this call */
+        job_start(a);
+    }
 }
 
 /* Caller side: files the finished big decode (a failure too, so it is not retried every frame). */
@@ -514,8 +522,11 @@ const uint32_t* art_big_frame(desk_art* a, const char* title, int32_t edge, uint
         b->edge = edge;
         b->frame = frame;
         a->bjob = b;
+        if (!art_threaded()) { /* I1416f: no thread (Amiga): art_pump decodes it on its own turn, not inside the draw */
+            return NULL;
+        }
         a->bth = art_thread_start(big_worker, b);
-        if (a->bth == NULL) { /* no thread (Amiga): ran inline */
+        if (a->bth == NULL) { /* a thread failed to start: ran inline */
             big_merge(a);
             return art_big_frame(a, title, edge, n);
         }
@@ -529,6 +540,19 @@ const uint32_t* art_big(desk_art* a, const char* title, int32_t edge) {
 
 int art_pump(desk_art* a) {
     int got = 0;
+    if (a != NULL && !art_threaded()) { /* I1416f: one decode per turn: the big cover first (it is on screen), else the next tile */
+        if (a->bjob != NULL) {
+            big_worker(a->bjob);
+            big_merge(a);
+            return 1;
+        }
+        if (a->job == NULL && a->pend_n > 0u) {
+            uint32_t before = a->merged;
+            job_start(a);
+            return a->merged != before;
+        }
+        return 0;
+    }
     if (a != NULL && a->bjob != NULL && art_thread_done(a->bth)) {
         art_thread_join(a->bth);
         big_merge(a);

@@ -57,5 +57,7 @@ void* art_thread_start(void (*fn)(void*), void* ctx);
 void art_thread_join(void* handle);
 /* I906c: 1 when fn has returned on the thread of `handle` (art_thread_join then returns at once); never blocks. */
 int art_thread_done(void* handle);
+/* I1416f: 1 when art_thread_start runs fn on a real thread; 0 on the Amiga, where it runs inline and art.c decodes one cover per art_pump turn. */
+int art_threaded(void);
 
 #endif /* DESKTOP_ART_H */
