@@ -3301,6 +3301,11 @@ if(NOT SEL_AMIGA)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-ksm-decode)
       set_tests_properties(adplug-ksm-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_ksm_decode_ok" SKIP_RETURN_CODE 77
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+      add_executable(adplug_ksm_companion_test m3/adplug_ksm_companion_test.c)
+      target_include_directories(adplug_ksm_companion_test PRIVATE ${PROJECT_SOURCE_DIR}/include)
+      target_link_libraries(adplug_ksm_companion_test PRIVATE selecta_core ${CMAKE_DL_LIBS})
+      add_test(NAME adplug-ksm-companion COMMAND adplug_ksm_companion_test $<TARGET_FILE:sel_module_adplug>)
+      set_tests_properties(adplug-ksm-companion PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_ksm_companion_ok")
     endif()
 
     # I697: Megatracker plays through the render entry point (libxmp module); the format list is reported.
