@@ -19,5 +19,23 @@
     "headers": {
       "Content-Type": "application/json"
     }
+  },
+  "/api/deepsid/file-by-path?path=MUSICIANS%2FH%2FHubbard_Rob%2FCommando.sid&full=1": {
+    "body": "{\"id\": 42, \"name\": \"Commando.sid\", \"tags\": [{\"name\": \"Cover\", \"type\": 0}, {\"name\": \"Remix\", \"type\": 1}], \"csdbId\": 7, \"csdbType\": \"release\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "/api/deepsid/composer?path=MUSICIANS%2FH%2FHubbard_Rob": {
+    "body": "{\"fullname\": \"Rob Hubbard\", \"photo\": \"Rob_Hubbard.jpg\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "/api/deepsid/csdb/42": {
+    "body": "{\"csdbId\": 7, \"releases\": [{\"id\": 7, \"name\": \"Commando\", \"screenshot\": \"http://fixture.test/dz/shot1.png\"}]}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
   }
 }

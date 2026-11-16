@@ -586,6 +586,7 @@ static int library_scan(int argc, char** argv) {
     int use_poll = 0, dump = 0, scrape = 0;
     const char* dz_key = NULL;
     unsigned dz_requests = 0;
+    const char* ds_ref = NULL;
     int i;
 
     memset(&rs, 0, sizeof rs);
@@ -596,6 +597,8 @@ static int library_scan(int argc, char** argv) {
             scrape = 1; /* I1003a: look up the covers of the scanned albums online and print the scraper stats */
         } else if (strcmp(argv[i], "--demozoo") == 0 && i + 1 < argc) {
             dz_key = argv[++i]; /* I1303c: look the Modland song up on hippoplayer.se and cache its Demozoo screenshots */
+        } else if (strcmp(argv[i], "--deepsid") == 0 && i + 1 < argc) {
+            ds_ref = argv[++i]; /* I1440h: fetch the DeepSID data of the song key from hippoplayer.se and cache it */
         } else if (strcmp(argv[i], "--machine") == 0 && i + 1 < argc) {
             machine = sel_machine_fake(argv[++i]);
             if (machine == NULL) {
@@ -644,9 +647,9 @@ static int library_scan(int argc, char** argv) {
         return 1;
     }
     /* The scan kicks the cover scraper; only `--scrape` lets it reach the network, so no other scan run (tests) sends a request. */
-    sel_library_scrape_set_enabled(lib, scrape || dz_key != NULL);
+    sel_library_scrape_set_enabled(lib, scrape || dz_key != NULL || ds_ref != NULL);
 #ifndef __amigaos__
-    if (!scrape && dz_key == NULL) {
+    if (!scrape && dz_key == NULL && ds_ref == NULL) {
         setenv("SELECTA_ART_SCRAPE", "off", 1);
     }
 #endif
@@ -672,6 +675,14 @@ static int library_scan(int argc, char** argv) {
         sel_library_scrape_stats(lib, &ss);
         printf("artwork_scraped=%u scrape_albums=%u scrape_misses=%u scrape_errors=%u scrape_requests=%u\n", (unsigned)ss.scraped,
                (unsigned)ss.albums, (unsigned)ss.misses, (unsigned)ss.errors, (unsigned)ss.requests);
+    }
+    if (ds_ref != NULL) {
+        sel_scrape_stats ss;
+
+        sel_library_deepsid_kick(lib, ds_ref);
+        sel_library_scrape_wait(lib);
+        sel_library_scrape_stats(lib, &ss);
+        dz_requests = (unsigned)ss.requests;
     }
     if (dz_key != NULL) {
         sel_scrape_stats ss;
@@ -713,6 +724,24 @@ static int library_scan(int argc, char** argv) {
         sqlite3_finalize(q);
         sqlite3_close(h);
         printf("demozoo_shots=%d demozoo_miss=%d demozoo_requests=%u\n", shots, miss, dz_requests);
+    }
+    if (ds_ref != NULL) { /* I1440h: counted from the file after close, like the Demozoo rows */
+        sqlite3* h = NULL;
+        sqlite3_stmt* q = NULL;
+        int n[4] = {0, 0, 0, 0}, tags = 0;
+
+        if (sqlite3_open_v2(db_path, &h, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK &&
+            sqlite3_prepare_v2(h, "SELECT sum(kind='ds_file'), sum(kind='ds_composer'), sum(kind='ds_csdb'), sum(kind='ds_miss'),"
+                                  " (SELECT count(*) FROM stickers WHERE name = 'deepsid.tags' AND value = 'Cover, Remix') FROM artwork WHERE album_id < 0",
+                               -1, &q, NULL) == SQLITE_OK &&
+            sqlite3_step(q) == SQLITE_ROW) {
+            for (i = 0; i < 4; i++) n[i] = sqlite3_column_int(q, i);
+            tags = sqlite3_column_int(q, 4);
+        }
+        sqlite3_finalize(q);
+        sqlite3_close(h);
+        printf("deepsid_file=%d deepsid_composer=%d deepsid_csdb=%d deepsid_miss=%d deepsid_tags=%d deepsid_requests=%u\n", n[0], n[1], n[2], n[3], tags,
+               dz_requests);
     }
     if (dump) {
         library_dump_local(db_path);
