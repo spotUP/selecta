@@ -141,6 +141,8 @@ typedef struct tui {
     char mn_lab[TUI_MENU_MAX][64];
     uint32_t mn_id, mn_folder, mn_parent, mn_qid; /* playlist or folder under the cursor; folder to create in; queue entry id */
     char mn_title[96], mn_key[256], mn_log[192];
+    uint32_t mn_plwant, mn_plflight;       /* I1416g: the Add to Playlist read is wanted / posted and not yet taken */
+    sel_engine_library_item mn_pls[TUI_MENU_MAX - 1u];
     int lib_empty_query;                   /* the last library query was empty (all songs) */
     const sel_ui_art* art;                 /* I1384b: the library art source, NULL without a library */
     char stills_key[256], stills_video[256]; /* song the cached still count and Demozoo video link belong to */
@@ -1069,16 +1071,35 @@ static void tui_menu_open(tui* u) {
     u->overlay = 4;
 }
 
-/* The playlists a song can join: New Playlist, then the saved ones (the desktop Add to Playlist submenu, read synchronously). */
+/* I1416g: the playlists a song can join come from a posted read (the desktop sm_lib_want / sm_lib_take pattern), never a synchronous
+ * query on the screen thread. The menu opens with New Playlist at once; the saved ones are appended when the read is taken. */
+static void tui_menu_playlists_follow(tui* u) {
+    uint32_t m = 0u, got = 0u, i;
+    if (u->mn_plwant && !u->mn_plflight && !sel_engine_library_items_busy(u->engine)) {
+        u->mn_plwant = 0u;
+        if (sel_engine_library_items_post(u->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), TUI_MENU_MAX - 1u)) {
+            u->mn_plflight = 1u;
+        }
+    }
+    if (!u->mn_plflight || !sel_engine_library_items_take(u->engine, &m, u->mn_pls, TUI_MENU_MAX - 1u, &got, NULL)) {
+        return;
+    }
+    u->mn_plflight = 0u;
+    if (u->overlay != 4 || u->mn_act[0] != (uint32_t)MN_PLPICK) {
+        return; /* the menu closed meanwhile: the answer is dropped */
+    }
+    for (i = 0; i < got && u->mn_n < TUI_MENU_MAX; i++) {
+        tui_menu_add(u, MN_PLPICK, u->mn_pls[i].name, u->mn_pls[i].id);
+    }
+    u->dirty = 1;
+}
+
 static void tui_menu_playlists(tui* u) {
-    sel_engine_library_item items[TUI_MENU_MAX - 1u];
-    uint32_t n = sel_engine_library_items(u->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0, items, TUI_MENU_MAX - 1u, NULL), i;
     u->mn_n = 0;
     u->mn_cur = 0;
     tui_menu_add(u, MN_PLPICK, sel_uim_plbtn_label(1), 0);
-    for (i = 0; i < n; i++) {
-        tui_menu_add(u, MN_PLPICK, items[i].name, items[i].id);
-    }
+    u->mn_plwant = 1u;
+    tui_menu_playlists_follow(u);
 }
 
 /* A prompt answered: the name for Rename, New Folder, New Playlist. */
@@ -2959,6 +2980,7 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
         }
     }
     tui_briefs_follow(u);
+    tui_menu_playlists_follow(u);
     {
         sel_open_progress op;
         if (tui_loading(u, &op)) {

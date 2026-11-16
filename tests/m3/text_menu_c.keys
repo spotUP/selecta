@@ -1,0 +1,38 @@
+# I1416g c: make playlist MM, then song menu > Add to Playlist; the posted read fills the list, Down to MM, Enter.
+wait 400
+f
+wait 300
+w
+wait 200
+Down
+wait 100
+Down
+wait 100
+Down
+wait 100
+Enter
+wait 200
+M
+M
+Enter
+wait 400
+l
+wait 800
+Enter
+wait 500
+Down
+wait 300
+w
+wait 300
+Down
+wait 200
+Down
+wait 200
+Down
+wait 200
+Enter
+wait 600
+Down
+wait 200
+Enter
+wait 500

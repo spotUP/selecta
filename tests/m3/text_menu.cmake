@@ -1,6 +1,6 @@
 # I1190 text-ui-menu: the text UI song menu and playlist menu (key w, overlay) over the uimodel label and line builders. The exit report
 # prints text_menu opens / picks / answers / log (the sentinel only the menu code moves). Real content: --db filled by --exec LIBRARY_SCAN.
-#   -DSELECTA=<exe> -DSONGS=<dir with .mod files> -DKEYS_<A,B>=<keys files> -DWORK=<dir>
+#   -DSELECTA=<exe> -DSONGS=<dir with .mod files> -DKEYS_<A,B,C>=<keys files> -DWORK=<dir>
 # Exemption: Save to Library for online rows is not in the text UI (no online rows there); no Amiga text UI check (no rig runs).
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
@@ -42,3 +42,8 @@ expect(a out_a "PLAYLIST_CREATE \"MM\" 0|PLAYLIST_RENAME 1 \"Z\"")
 run(b "${KEYS_B}")
 expect(b out_b "text_menu opens=1 picks=1 answers=0")
 expect(b out_b "QUEUE_PLAY_NEXT")
+
+# c (I1416g): the Add to Playlist list is filled by the posted library read: the saved playlist MM is listed and picked.
+run(c "${KEYS_C}")
+expect(c out_c "text_menu opens=2 picks=3 answers=1")
+expect(c out_c "PLAYLIST_ADD_SONG 1 \"")
