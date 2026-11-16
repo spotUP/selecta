@@ -411,7 +411,7 @@ typedef struct desk {
     char sysfile_name[64], sysfile_reason[48], sysfile_toast[96]; /* store name of the waiting file; last SYSFILE_FAILED reason; last toast text */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_msg_bottom;            /* I1422: y under the message box, the same on every page */
-    uint32_t np_msgpg, np_msgpg_pages, np_msgpg_until, np_msgpg_tick; /* I1422: page shown of the widest cut-off message line, its page count, clock the paging keeps waking until, last page step drawn */
+    uint32_t np_msgpg, np_msgpg_pages, np_msgpg_until, np_msgpg_alpha; /* I1422: page shown of the widest cut-off message line, its page count, clock the paging keeps waking until, last page step drawn */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
@@ -8256,7 +8256,7 @@ static const char* library_dump_build(desk* d) {
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, sel_uim_np_note(&st->song) != NULL ? sel_uim_np_note(&st->song) : "", (unsigned)d->np_notes, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines, (unsigned)d->np_pair_lines, (int)d->np_pair_view.x, (int)d->np_pair_view.y, (int)d->np_pair_view.h, (int)(d->np_pair_max_q16 >> 16), (int)(d->np_pair_y_q16 >> 16),
                  (unsigned)d->np_bar_draws, (int)d->np_bar_handle.x, (int)d->np_bar_handle.y, (int)d->np_bar_handle.w, (int)d->np_bar_handle.h);
-    o = dump_put(d, o, "nowplaying msgpage %u of %u bottom %d\n", (unsigned)d->np_msgpg, (unsigned)d->np_msgpg_pages, (int)d->np_msg_bottom);
+    o = dump_put(d, o, "nowplaying msgpage %u of %u bottom %d alpha %u\n", (unsigned)d->np_msgpg, (unsigned)d->np_msgpg_pages, (int)d->np_msg_bottom, (unsigned)d->np_msgpg_alpha);
     o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
@@ -13103,7 +13103,22 @@ static void draw_player_left(desk* d) {
  * artwork, the artwork, title and artist, the catalogue pairs the engine reports for the song (the text UI's information
  * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
 #define NP_MESSAGE_LINES 6
-#define NP_PAGE_MS 2000u /* I1422: message rows beyond the box page every NP_PAGE_MS */
+#define NP_PAGE_MS 5000u /* I1422: message rows beyond the box page every NP_PAGE_MS */
+#define NP_FADE_MS 200u  /* the old page fades out over the last NP_FADE_MS of its slot, the next fades in over the first: 400 ms in all */
+#define NP_FADE_FRAME_MS 16u
+/* Opacity 0..255 of the paged message at clock ms: stateless, so every frame (and the fixed test clock) gets its own value. */
+static uint32_t np_page_alpha(uint32_t ms) {
+    uint32_t ph = ms % NP_PAGE_MS;
+    if (ph < NP_FADE_MS) {
+        return 255u * ph / NP_FADE_MS;
+    }
+    return ph > NP_PAGE_MS - NP_FADE_MS ? 255u * (NP_PAGE_MS - ph) / NP_FADE_MS : 255u;
+}
+/* Ms until the paged message next needs a frame: a frame step inside a fade, else the start of the next fade-out. */
+static uint32_t np_page_wait(uint32_t ms) {
+    uint32_t ph = ms % NP_PAGE_MS;
+    return ph <= NP_FADE_MS || ph >= NP_PAGE_MS - NP_FADE_MS ? NP_FADE_FRAME_MS - ms % NP_FADE_FRAME_MS : NP_PAGE_MS - NP_FADE_MS - ph;
+}
 #define NP_TAIL_H 120 /* I1274: logical pixels kept under the metadata pairs for the lyrics and the queue */
 enum { NP_PAIR_MIN_LINES = 8, NP_BAR_W = 6 }; /* I1277: a scrolling metadata block shows at least this many lines; its scrollbar width */
 static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
@@ -13394,6 +13409,7 @@ static void draw_nowplaying(desk* d) {
                 page = d->now_ms / NP_PAGE_MS % d->np_msgpg_pages;
                 d->np_msgpg = page;
                 d->np_msgpg_until = d->now_ms + 2u * NP_PAGE_MS;
+                d->np_msgpg_alpha = np_page_alpha(d->now_ms);
             }
             for (skip = page * NP_MESSAGE_LINES; skip > 0u && p != NULL; skip--) {
                 p = strchr(p, '\n');
@@ -13404,10 +13420,11 @@ static void draw_nowplaying(desk* d) {
                 const char* e = strchr(p, '\n');
                 size_t n = e != NULL ? (size_t)(e - p) : strlen(p);
                 char one[256];
+                uint32_t ink = d->np_msgpg_pages > 1u ? (muted & 0xFFFFFFu) | (((muted >> 24) * d->np_msgpg_alpha / 255u) << 24) : muted;
                 size_t m = n < sizeof one - 1u ? n : sizeof one - 1u;
                 memcpy(one, p, m);
                 one[m] = '\0';
-                sel_gui_text_draw(d->canvas, at, box.x, box.y + (int32_t)d->np_msg_lines * at->line_height, one, muted, side, &d->text);
+                sel_gui_text_draw(d->canvas, at, box.x, box.y + (int32_t)d->np_msg_lines * at->line_height, one, ink, side, &d->text);
                 d->np_msg_lines++;
                 p = e != NULL ? e + 1 : NULL;
             }
@@ -13873,7 +13890,7 @@ static uint32_t desk_timers_wait(const desk* d) {
         w = s;
     }
     if (d->np_msgpg_until > d->now_ms) { /* I1422: a paged message line wakes at the next page step */
-        uint32_t pw = NP_PAGE_MS - d->now_ms % NP_PAGE_MS;
+        uint32_t pw = np_page_wait(d->now_ms);
         w = w == 0u || pw < w ? pw : w;
     }
     if (d->slide_live_until > d->now_ms && (w == 0u || w > 1000u)) { /* I1384b: a shown slide show wakes once a second to count its interval */
@@ -13894,8 +13911,7 @@ static int desk_timers_tick(desk* d) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         hid = 1;
     }
-    if (d->np_msgpg_until > d->now_ms && d->now_ms / NP_PAGE_MS != d->np_msgpg_tick) { /* I1422: redraw so the cut-off message line shows its next page */
-        d->np_msgpg_tick = d->now_ms / NP_PAGE_MS;
+    if (d->np_msgpg_until > d->now_ms && np_page_alpha(d->now_ms) != d->np_msgpg_alpha) { /* I1422: redraw while the cut-off message line fades between pages */
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         hid = 1;
