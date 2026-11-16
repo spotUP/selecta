@@ -310,3 +310,17 @@ if(NOT ks_mh EQUAL 0)
     message(FATAL_ERROR "I1065: Show more drew over the header (y=${ks_my} above the list top ${ks_top}):\n${ks3}")
   endif()
 endif()
+
+# I1421: a shelf scrolled past the top by its heading slot still draws (its cards sit in the slots below): the Albums heading is slot 6 (5 Popular rows
+# and Show more), 7 notches put it at slot -1. `kindshelfdraw n=` counts the shelves the last frame drew; before the fix it was 0.
+set(wheels7 "")
+foreach(n RANGE 1 7)
+  string(APPEND wheels7 "wheel 0 -200\nwait 30\n")
+endforeach()
+open_run(ks4 ks4 5 "Chris Huelsbeck" "resize 1280 520\nwait 200\nmove 640 400\n${wheels7}")
+if(NOT "${ks4}" MATCHES "kindscroll scroll=7 max=[0-9]+ .*kindshelfdraw n=([0-9]+)\n")
+  message(FATAL_ERROR "I1421: no scroll=7 / kindshelfdraw lines:\n${ks4}")
+endif()
+if(CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "I1421: the Albums shelf scrolled one slot past the top was not drawn:\n${ks4}")
+endif()
