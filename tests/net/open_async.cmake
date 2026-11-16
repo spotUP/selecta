@@ -34,11 +34,14 @@ file(MAKE_DIRECTORY "${root}")
 file(WRITE "${root}/probe.sfp" "SFP\n")
 
 function(run_leg tag song out)
+  if(NOT DEFINED TIMED)
+    set(TIMED "q@8000")
+  endif()
   set(cfg "${root}/${tag}-cfg")
   file(MAKE_DIRECTORY "${cfg}")
   file(WRITE "${cfg}/prefs.conf" "library.sync_stale_days=0\n")
   set(ENV{SELECTA_CACHE_DIR} "${root}/${tag}-cache")
-  set(ENV{SELECTA_SDL_TEST_TIMED} "q@8000")
+  set(ENV{SELECTA_SDL_TEST_TIMED} "${TIMED}")
   execute_process(COMMAND "${SELECTA}" --output null --config-dir "${cfg}" --db "${root}/${tag}.db" --ui desktop --backend sdl
     --view home --canvas 1280x800 --clock fixed --stats --exec "OPEN ${song}" --exec PLAY
     OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 60)
@@ -78,6 +81,9 @@ run_leg(a "modland:Protracker/test/slowplay.mod" oa)
 set(ENV{SELECTA_PLUGIN_PATH} "${PLUGINS}")
 need("${oa}" "open_phases open_fetch_reads=[1-9]" "(a) the remote fetch ran on the song-start read slot")
 need("${oa}" "songs_opened=1 " "(a) the song started once the file landed")
+# I1415: the open_ui dump line exists. NOT YET ASSERTED (open row follow-up): bar_draws, btn_draws and the Esc cancel. The --exec OPEN
+# finishes in the engine (about 2 s) before the desktop loop takes its first turn, so the UI never sees the open in flight here.
+need("${oa}" "open_ui shown=[01] phase=[0-9]+ bar_draws=[0-9]+ btn_draws=[0-9]+ row_bars=[0-9]+ cancels=0" "(a) the open progress sentinels are dumped")
 run_leg(b "${root}/probe.sfp" ob)
 need("${ob}" "sysfile missing_reports=[0-9]+ fetches=1 installed=1 reopens=1 " "(b) the slow system file landed and the song re-opened")
 message(STATUS "open_async_ok")

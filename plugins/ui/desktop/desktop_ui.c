@@ -31,6 +31,7 @@
 #include <selecta/gui/gui_edit.h>
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/open_progress.h>
 #include <selecta/uimodel/cols.h>
 #include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
@@ -684,6 +685,9 @@ typedef struct desk {
     char open_fail_text[96]; /* I695b: the text of the last one */
     uint32_t module_missing_toasts; /* I427f sentinel: built-in modules the loader could not load, each reported with a toast */
     char module_missing_text[96];   /* I427f: the text of the last one */
+    sel_open_progress open_ui; /* I1415: the song open in progress as the last poll saw it */
+    int open_shown;            /* I1415: 1 once the open ran OPEN_SHOW_MS: the load bar, cancel button and row bars show */
+    uint32_t open_bar_draws, open_btn_draws, open_row_bars, open_cancels; /* I1415 test sentinels (dump line open_ui) */
     sel_sync_progress sync_ui; /* I782: the running sync as the last frame drew it; the card shows while active */
     uint32_t sync_ui_draws, sync_ui_shown, sync_ui_cancels; /* test sentinels: cards drawn, times it appeared, Cancel clicks */
     uint32_t sync_ui_phase;  /* I1026: the indeterminate sweep step (UI clock / SYNC_SWEEP_STEP_MS); 0 while the bar is determinate */
@@ -1310,6 +1314,19 @@ static void draw_frame_text(desk* d, sel_gui_rect box, const char* s, int px, in
  * whole bar is repainted into the canvas (the result is the same pixels wherever it did not change), but only the span
  * between the previous and the new fill, plus one bar height of rounded cap on each side, is marked dirty (plan 2.11).
  * *prev is the fill drawn last, or -1 when the bar was not drawn since the last full repaint. */
+/* I1415: the open shows after this long, so a fast local or cached open never flashes a bar (Johan 2026-11-16). */
+#define OPEN_SHOW_MS 300u
+/* The load bar's fill: the download fraction, or a sweep back and forth (1.6 s a pass) while the total is unknown. */
+static uint32_t open_bar_q16(const desk* d) {
+    int32_t q = sel_open_progress_fraction(&d->open_ui);
+    uint32_t t;
+    if (q >= 0) {
+        return (uint32_t)q;
+    }
+    t = (d->open_ui.elapsed_ms % 1600u) * 65536u / 800u;
+    return t > 65536u ? 131072u - t : t;
+}
+
 static void draw_bar(desk* d, sel_gui_rect box, uint32_t q16, int32_t* prev) {
     int32_t fill = (int32_t)(((uint64_t)q16 * (uint32_t)box.w) >> 16);
     int32_t m = lpx(d, 2), lo = 0, hi = box.w;
@@ -1555,7 +1572,10 @@ static void draw_widget(desk* d, uint32_t bit) {
         seek_span(d, &x0, &tw);
         int len_changed = strncmp(d->seek_length, f->length, sizeof d->seek_length) != 0;
         draw_frame_text(d, rect_of(x0, y0, lw, lpx(d, 16)), f->clock, 12, 1);
-        draw_bar(d, seek_bar_rect(d), f->progress_q16, &d->seek_fill);
+        if (d->open_shown) { /* I1415: the seek bar is the load bar until the sound starts */
+            d->open_bar_draws++;
+        }
+        draw_bar(d, seek_bar_rect(d), d->open_shown ? open_bar_q16(d) : f->progress_q16, &d->seek_fill);
         draw_frame_text(d, rect_of(x0 + tw - lw, y0, lw, lpx(d, 16)), f->length, 12, len_changed);
         snprintf(d->seek_length, sizeof d->seek_length, "%s", f->length);
         d->home_parts |= HP_SEEK;
@@ -3262,6 +3282,11 @@ static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_
         return NULL;
     }
     hover_reg(d, r);
+    if (d->open_shown && strcmp(path, d->open_ui.path) == 0) { /* I1415: the clicked row shows the load on its bottom edge, every list and grid drawer registers through here */
+        int32_t bh = lpx(d, 2), w = (int32_t)((uint64_t)open_bar_q16(d) * (uint32_t)r.w >> 16);
+        sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - bh, w, bh), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        d->open_row_bars++;
+    }
     if (add_mode(d) && e->more.w > 0) { /* I652b: the Library page adds to a playlist: every song row ends in Add, the same control as the empty playlist's results */
         sel_gui_rect ab = add_btn_rect(d, r);
         draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Add", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
@@ -8775,6 +8800,8 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)lib_touch_calls(d));
         o = dump_put(d, o, "sync_bar kind=%u done=%u total=%u fill=%d width=%d steps=%u\n", (unsigned)d->sync_bar_kind, (unsigned)d->sync_ui.done,
                      (unsigned)d->sync_ui.total, (int)d->sync_bar_fill, (int)sync_bar_rect(d).w, (unsigned)d->sync_bar_steps);
+        o = dump_put(d, o, "open_ui shown=%d phase=%u bar_draws=%u btn_draws=%u row_bars=%u cancels=%u\n", d->open_shown, (unsigned)d->open_ui.phase,
+                     (unsigned)d->open_bar_draws, (unsigned)d->open_btn_draws, (unsigned)d->open_row_bars, (unsigned)d->open_cancels);
         o = dump_put(d, o, "sync_ui active=%u rows=%u queued=%u source=%s shown=%u draws=%u cancels=%u lib_deferred=%u\n", (unsigned)d->sync_ui.active,
                      (unsigned)d->sync_ui.rows, (unsigned)d->sync_ui.queued, d->sync_ui.source, (unsigned)d->sync_ui_shown, (unsigned)d->sync_ui_draws,
                      (unsigned)d->sync_ui_cancels, (unsigned)sel_engine_lib_deferred());
@@ -13028,9 +13055,18 @@ static void draw_player_left(desk* d) {
         song_platform_cover(d, ar, sel_engine_state(d->engine)->song.path, f->title, &d->pc_bar);
     }
     d->home_parts |= HP_PLAYER_ART;
-    draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), f->title, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-    draw_text(d, rect_of(box.x, box.y + lpx(d, 30), box.w, lpx(d, 16)), f->artist, 0, 12,
-              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    if (d->open_shown) { /* I1415: the clicked song's name and the phase until the sound starts */
+        const char* base = strrchr(d->open_ui.path, '/');
+        char phase[64];
+        sel_open_progress_text(&d->open_ui, phase, sizeof phase);
+        draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), base != NULL ? base + 1 : d->open_ui.path, 1, 14,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        draw_text(d, rect_of(box.x, box.y + lpx(d, 30), box.w, lpx(d, 16)), phase, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    } else {
+        draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), f->title, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        draw_text(d, rect_of(box.x, box.y + lpx(d, 30), box.w, lpx(d, 16)), f->artist, 0, 12,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    }
     d->home_parts |= HP_PLAYER_TITLE;
     sel_gui_dirty_add(d->canvas, all);
 }
@@ -13441,6 +13477,10 @@ static void draw_transport(desk* d) {
             break;
         case SLOT_PLAY:
             icon = f->play == SEL_PLAYING ? SEL_GUI_ICON_PAUSE : SEL_GUI_ICON_PLAY;
+            if (d->open_shown) { /* I1415: Cancel where Play is */
+                icon = SEL_GUI_ICON_X;
+                d->open_btn_draws++;
+            }
             fill = d->theme.token[SEL_GUI_TOKEN_TEXT];
             ink = d->theme.token[SEL_GUI_TOKEN_FRAME];
             isz = lpx(d, 24);
@@ -14124,6 +14164,10 @@ static int desk_transport_click(desk* d, uint32_t i) {
     if (a == NULL) {
         return 0;
     }
+    if (i == SLOT_PLAY && d->open_shown) { /* I1415: the button is Cancel while the open shows */
+        d->open_cancels++;
+        return desk_send(d, "CANCEL_OPEN");
+    }
     if (i == SLOT_SUB_PREV || i == SLOT_SUB_NEXT) {
         uint32_t to = i == SLOT_SUB_PREV ? f->subsong - 2u : f->subsong;
         if (i == SLOT_SUB_PREV ? f->subsong < 2u : f->subsong >= f->subsong_count) {
@@ -14325,6 +14369,22 @@ static int desk_sync_follow(desk* d) {
     d->sync_ui_phase = phase;
     overlay_refresh(d); /* a full frame, so a card that ends leaves no pixels behind */
     return 1;
+}
+
+/* I1415: polls the song open snapshot like the sync progress; a change of what the open shows repaints the full frame. */
+static void desk_open_follow(desk* d) {
+    sel_open_progress p;
+    int shown, changed;
+    sel_engine_open_progress(d->engine, &p);
+    shown = p.active && p.elapsed_ms >= OPEN_SHOW_MS;
+    changed = shown != d->open_shown || (shown && (p.phase != d->open_ui.phase || p.done != d->open_ui.done || p.file != d->open_ui.file
+        || p.elapsed_ms / 100u != d->open_ui.elapsed_ms / 100u || strcmp(p.path, d->open_ui.path) != 0));
+    d->open_ui = p;
+    d->open_shown = shown;
+    if (changed) {
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        d->repaint = 1;
+    }
 }
 
 static void desk_draw_overlay(desk* d) {
@@ -14955,6 +15015,11 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->sm_open = 0;
         draw_home(d);
         return 1;
+    }
+    if (ev->code == 27u && ev->mods == 0u && d->open_ui.active && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
+        d->focus != (int32_t)d->layout.count) { /* I1415: Escape with nothing else open cancels the song open before it asks to quit */
+        d->open_cancels++;
+        return desk_send(d, "CANCEL_OPEN");
     }
     if (ev->code == 27u && ev->mods == 0u && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
         d->focus != (int32_t)d->layout.count) { /* Escape with nothing open asks whether to quit (I623) */
@@ -17822,6 +17887,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     desk_art_follow(d);
     desk_playlist_job_follow(d);
     desk_sync_follow(d);
+    desk_open_follow(d);
     desk_search_spin_follow(d);
     desk_side_follow(d);
     if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
