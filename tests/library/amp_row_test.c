@@ -15,6 +15,7 @@ typedef struct {
     int n;
     char path[8][160];
     char artist[8][64];
+    char title[8][64];
 } rows;
 
 static int g_fail;
@@ -22,11 +23,11 @@ static int g_fail;
 static int take(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
     rows* r = ctx;
 
-    (void)title;
     (void)format;
     if (r->n < 8) {
         snprintf(r->path[r->n], sizeof r->path[0], "%s", path);
         snprintf(r->artist[r->n], sizeof r->artist[0], "%s", artist);
+        snprintf(r->title[r->n], sizeof r->title[0], "%s", title);
     }
     r->n++;
     return 1;
@@ -55,6 +56,15 @@ static int one_row(const char* dest, const char* file) {
 
     memset(&r, 0, sizeof r);
     return sel_amp_row(&sink, dest, file, "t", "a", "");
+}
+
+static void title_of(const char* title, char* out, size_t n) {
+    rows r;
+    sel_search_sink sink = {&r, take};
+
+    memset(&r, 0, sizeof r);
+    sel_amp_row(&sink, "MOD.flr_deephouse.gz", "downmod.php?index=44259", title, "", "");
+    snprintf(out, n, "%s", r.title[0]);
 }
 
 int main(void) {
@@ -96,6 +106,14 @@ int main(void) {
     EQ("query char", one_row("MOD.a?b.gz", "downmod.php?index=5"), -1);
     EQ("no prefix", one_row("readme.gz", "downmod.php?index=5"), -1);
     EQ("ten digits", one_row("MOD.a.gz", "downmod.php?index=1234567890"), -1);
+    {
+        char t[64];
+
+        title_of("", t, sizeof t);
+        IS("empty title -> module name", t, "flr_deephouse");
+        title_of("Real Title", t, sizeof t);
+        IS("title kept", t, "Real Title");
+    }
     EQ("empty name", one_row(".gz", "downmod.php?index=5"), -1);
 
     if (g_fail == 0) {

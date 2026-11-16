@@ -312,11 +312,17 @@ static const char SCHEMA_V20[] = "CREATE INDEX IF NOT EXISTS songs_added ON song
 static const char SCHEMA_V21[] =
     "DELETE FROM artwork WHERE album_id IN (SELECT album_id FROM artwork WHERE kind = 'dz_key');";
 
+/* I1417: the artist page matches s.artist = ?1 COLLATE NOCASE (search dedupes artists case-folded, so "Mortimer Twang" and "mortimer twang"
+ * are one page); this index serves that lookup. I1418: AMP hits cached with an empty title are dropped so they refetch with the module name. */
+static const char SCHEMA_V22[] =
+    "CREATE INDEX IF NOT EXISTS songs_artist_nocase ON songs(artist COLLATE NOCASE, added);"
+    "DELETE FROM search_cache WHERE source = 'amp';";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21};
+                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -471,6 +477,7 @@ static const char* const SCHEMA_FINAL[] = {
     "CREATE TRIGGER songs_album_ad AFTER DELETE ON songs BEGIN DELETE FROM artwork WHERE old.album IS NOT NULL AND album_id IN (SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'') AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')));DELETE FROM albums WHERE old.album IS NOT NULL AND id IN (SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'') AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')));END;",
     "CREATE INDEX songs_album ON songs(album, artist, added);",
     "CREATE INDEX songs_artist_added ON songs(artist, added);",
+    "CREATE INDEX songs_artist_nocase ON songs(artist COLLATE NOCASE, added);",
     "CREATE INDEX songs_added ON songs(added);",
     "CREATE INDEX songs_source_format ON songs(source, format, artist, size);",
     "CREATE INDEX songs_source_artist ON songs(source, artist, format, size);",

@@ -158,7 +158,7 @@ static const char* format_sql(uint32_t kind) {
     switch (kind) {
     case SEL_LIB_ITEM_ALBUM:
         return "SELECT s.path FROM songs s JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist";
-    case SEL_LIB_ITEM_ARTIST: return "SELECT path FROM songs WHERE artist=?1";
+    case SEL_LIB_ITEM_ARTIST: return "SELECT path FROM songs WHERE artist=?1 COLLATE NOCASE";
     case SEL_LIB_ITEM_COMPOSER: /* I787: two branches; a CASE in one WHERE made every composer scan the whole songs table (600 000 rows each) */
         return "SELECT s.path FROM songs s WHERE ?1='" SEL_COMPOSER_UNKNOWN_CANON "' AND NOT EXISTS"
                " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
@@ -210,7 +210,7 @@ static const char* stamp_sql(uint32_t kind) {
     switch (kind) {
     case SEL_LIB_ITEM_SOURCE: return "SELECT coalesce((SELECT n FROM source_songs WHERE source=?1),0)";
     case SEL_LIB_ITEM_LOCAL: return "SELECT coalesce((SELECT n FROM source_songs WHERE source='local'),0)";
-    case SEL_LIB_ITEM_ARTIST: return "SELECT " FMT_SONGS_GEN "+(SELECT count(*) FROM songs WHERE artist=?1)";
+    case SEL_LIB_ITEM_ARTIST: return "SELECT " FMT_SONGS_GEN "+(SELECT count(*) FROM songs WHERE artist=?1 COLLATE NOCASE)";
     case SEL_LIB_ITEM_COMPOSER: return "SELECT " FMT_SONGS_GEN "+coalesce((SELECT songs FROM composers WHERE canon=?1),0)";
     case SEL_LIB_ITEM_ALBUM: return "SELECT " FMT_SONGS_GEN "+(SELECT count(*) FROM songs s JOIN albums a ON a.id=CAST(?1 AS INTEGER)"
                                     " AND s.album=a.name AND s.artist IS a.artist)";
@@ -387,7 +387,7 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
         if (kind == SEL_LIB_ITEM_ALBUM) {
             return SONG_COLS " JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist ORDER BY s.id";
         }
-        if (kind == SEL_LIB_ITEM_ARTIST) return SONG_COLS " WHERE s.artist=?1" BY_PLAYS;
+        if (kind == SEL_LIB_ITEM_ARTIST) return SONG_COLS " WHERE s.artist=?1 COLLATE NOCASE" BY_PLAYS;
         if (kind == SEL_LIB_ITEM_COMPOSER) {
             return SONG_COLS " WHERE CASE WHEN ?1='" SEL_COMPOSER_UNKNOWN_CANON "' THEN NOT EXISTS"
                              " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
@@ -408,10 +408,10 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
                    " FROM playlist_entries pe LEFT JOIN songs s ON s.key IN (pe.key,'local:'||pe.key) WHERE pe.playlist_id=CAST(?1 AS INTEGER) ORDER BY pe.pos";
         }
         return NULL;
-    case SEL_COLL_ALBUMS: return kind == SEL_LIB_ITEM_ARTIST ? ALBUM_COLS " WHERE a.artist=?1" NEWEST : NULL;
+    case SEL_COLL_ALBUMS: return kind == SEL_LIB_ITEM_ARTIST ? ALBUM_COLS " WHERE a.artist=?1 COLLATE NOCASE" NEWEST : NULL;
     case SEL_COLL_APPEARS:
         return kind == SEL_LIB_ITEM_ARTIST
-                   ? ALBUM_COLS " WHERE IFNULL(a.artist,'')<>?1 AND EXISTS (SELECT 1 FROM songs s WHERE s.album IS a.name AND s.artist=?1)" NEWEST
+                   ? ALBUM_COLS " WHERE IFNULL(a.artist,'')<>?1 COLLATE NOCASE AND EXISTS (SELECT 1 FROM songs s WHERE s.album IS a.name AND s.artist=?1 COLLATE NOCASE)" NEWEST
                    : NULL;
     case SEL_COLL_MORE:
         return kind == SEL_LIB_ITEM_ALBUM
