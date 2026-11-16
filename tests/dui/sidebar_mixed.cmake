@@ -61,7 +61,7 @@ set(want_kinds "3;3;4;4;4;5;5;5;6;6;6")
 foreach(i RANGE 1 ${nsrc})
   list(APPEND want_kinds 7)
 endforeach()
-set(want_names "Liked Songs;Recently Played;Local Files")
+set(want_names "Top Rated;Recently Played;Local Files")
 # Recents (the default sort, I678c) orders the unpinned rows by time, so the kinds are checked as a set; I678c's own test checks the order.
 set(got_kinds "")
 foreach(i RANGE 0 ${last})

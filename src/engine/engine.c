@@ -5832,60 +5832,6 @@ static int target_key(sel_engine* e, const sel_message* m, uint32_t idx, const c
     return 1;
 }
 
-static int vote_token_ensure(sel_engine* e);
-
-/* I306: the like (r 5) or unlike (r 0) of `key` goes to DEViLBOX /api/hip/vote through the pending_push queue. The song
- * is named there by its UADE key, which needs the file: the playing song's file, or the file of a local song. A song
- * with no readable file stays a local like. */
-static void like_sync(sel_engine* e, const char* key, int r) {
-    const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
-    char mkey[SEL_UADE_KEY_CHARS + 1u];
-    char source[16], path[SEL_SONG_KEY_MAX];
-
-    if (cur != NULL && cur->path[0] != '\0' && strcmp(key, e->hist_key) == 0) {
-        if (!sel_uade_key_file(cur->path, mkey)) return;
-    } else if (sel_song_key_split(key, source, sizeof source, path, sizeof path) && strcmp(source, "local") == 0) {
-        if (!sel_uade_key_file(path, mkey)) return;
-    } else {
-        return;
-    }
-    if (vote_token_ensure(e)) {
-        sel_library_like_push(e->lib, key, e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN], mkey, r);
-    }
-}
-
-/* LIKE [key]: toggles the like of the song `key`, the one being played without it (I306). */
-static void wq_like_run(sel_library* lib, sel_wq_op* op) {
-    op->u1 = (uint32_t)sel_library_liked(lib, op->s[0]);
-    op->rc = op->u1 ? sel_library_unlike(lib, op->s[0], op->n1) : sel_library_like(lib, op->s[0], op->n1);
-}
-
-static void wq_like_done(sel_engine* e, sel_wq_op* op) {
-    if (!op->rc) {
-        sel_engine_report_error(e, "library_failed", "LIKE");
-    } else {
-        panel_reload(e); /* the Now Playing heart reads the liked state from the panel (I306) */
-        like_sync(e, op->s[0], op->u1 ? 0 : 5);
-    }
-}
-
-/* I906f: the toggle runs on the writer thread; the heart reload and the vote sync follow in the done callback. */
-static void cmd_LIKE(sel_engine* e, const sel_message* m) {
-    char key[SEL_SONG_KEY_MAX];
-    if (e->lib == NULL) {
-        sel_engine_report_error(e, "no_library", "LIKE");
-    } else if (target_key(e, m, 0, "LIKE", key, sizeof key)) {
-        sel_wq_op* op = wq_new(e, wq_like_run, wq_like_done, key, NULL, NULL);
-
-        if (op == NULL) {
-            sel_engine_report_error(e, "library_busy", "LIKE");
-        } else {
-            op->n1 = (int64_t)time(NULL);
-            wq_submit(e);
-        }
-    }
-}
-
 /* KEEP [on|off]: no argument is on. */
 static void cmd_KEEP(sel_engine* e, const sel_message* m) {
     int on = 1;
@@ -5974,26 +5920,34 @@ static void wq_rate_done(sel_engine* e, sel_wq_op* op) {
 }
 
 /* I906f: the rating is written on the writer thread. */
-static void cmd_RATE(sel_engine* e, const sel_message* m) {
-    uint32_t stars = m->args[0].v.u;
+static void rate_song(sel_engine* e, const sel_message* m, uint32_t stars, uint32_t key_idx, const char* who) {
     char source[16];
     char key[SEL_SONG_KEY_MAX];
     const char* path;
     sel_wq_op* op;
 
     if (stars > 5u) {
-        sel_engine_report_error(e, "range", "RATE");
+        sel_engine_report_error(e, "range", who);
     } else if (e->lib == NULL) {
-        sel_engine_report_error(e, "no_library", "RATE");
-    } else if (target_key(e, m, 1, "RATE", key, sizeof key)) {
+        sel_engine_report_error(e, "no_library", who);
+    } else if (target_key(e, m, key_idx, who, key, sizeof key)) {
         if ((op = wq_new(e, wq_rate_run, wq_rate_done, key, NULL, NULL)) == NULL) {
-            sel_engine_report_error(e, "library_busy", "RATE");
+            sel_engine_report_error(e, "library_busy", who);
         } else {
             op->u1 = stars;
             op->u2 = (uint32_t)sel_devilbox_item(key, source, sizeof source, &path);
             wq_submit(e);
         }
     }
+}
+
+static void cmd_RATE(sel_engine* e, const sel_message* m) {
+    rate_song(e, m, m->args[0].v.u, 1, "RATE");
+}
+
+/* LIKE [key]: I1432, ratings replace likes: the same as RATE 5 [key]. */
+static void cmd_LIKE(sel_engine* e, const sel_message* m) {
+    rate_song(e, m, 5u, 0, "LIKE");
 }
 
 /* The device token of the vote service: 128 random bits as 32 hex digits, made once and kept in the pref
@@ -8162,7 +8116,7 @@ static void coll_build_run(sel_engine* e) {
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* the most used spelling is the display name */
         snprintf(pg->title, sizeof pg->title, "%s", pg->shelf_n[3] > 0u ? pg->shelf[3][0].name : key);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_LIKED) { /* I678g: the pinned rows and a source page have a fixed or keyed title */
-        snprintf(pg->title, sizeof pg->title, "Liked Songs");
+        snprintf(pg->title, sizeof pg->title, "Top Rated");
     } else if (kind == (uint32_t)SEL_LIB_ITEM_RECENT) {
         snprintf(pg->title, sizeof pg->title, "Recently Played");
     } else if (kind == (uint32_t)SEL_LIB_ITEM_LOCAL) {

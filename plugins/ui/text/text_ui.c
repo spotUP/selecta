@@ -2593,7 +2593,7 @@ static void tui_detail(tui* u, const sel_state* s, const sel_uim_region* r) {
             }
             break;
         case SEL_UIM_NP_LIKE:
-            snprintf(buf, sizeof buf, "%s  Rating %d/5", ln[i].liked ? "Liked" : "Like", (int)ln[i].rating);
+            snprintf(buf, sizeof buf, "Rating %d/5%s", (int)ln[i].rating, ln[i].liked ? "  Top Rated" : "");
             txt_grid_text(&u->grid, x, y++, buf, w, dim);
             break;
         default:

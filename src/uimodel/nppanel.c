@@ -61,12 +61,11 @@ uint32_t sel_uim_np_lines(const sel_uim* m, const sel_state* st, sel_uim_np_line
             const char* v = p + strlen(p) + 1;
             if (strcmp(p, "Rating") == 0) {
                 rating = atoi(v);
-            } else if (strcmp(p, "Liked") == 0) {
-                liked = 1;
             }
             p = v + strlen(v) + 1;
         }
     }
+    liked = rating >= 4; /* I1432: the heart shows a rating of 4 or 5 */
     l = add(out, max, &n, SEL_UIM_NP_LIKE, "", "");
     if (l != NULL) {
         l->liked = liked;

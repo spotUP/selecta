@@ -8,5 +8,5 @@ INSERT INTO albums(name, artist) VALUES('Alb3','Cy');
 INSERT INTO song_composers(song_key, canon, display) VALUES('local:a.mod','x','X'),('local:b.mod','x','X'),('local:c.mod','y','Y');
 INSERT INTO playlists(name) VALUES('Mix'),('Chill');
 INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1,0,'local:a.mod'),(1,1,'local:b.mod');
-INSERT INTO liked(key, at) VALUES('local:a.mod',50);
+INSERT INTO ratings(key, rating, synced) VALUES('local:a.mod',5,1);
 INSERT INTO history(key, played_at) VALUES('local:a.mod',500),('local:c.mod',700),('local:a.mod',600);

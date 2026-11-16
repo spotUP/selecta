@@ -39,7 +39,7 @@ static const key_def KEYS[] = {
     {"played", K_TIME, LAST_PLAYED, 1},
     {"lastplayed", K_TIME, LAST_PLAYED, 1},
     {"added", K_TIME, "songs.added", 0},
-    {"liked", K_BOOL, "liked", 0},
+    {"liked", K_BOOL, "ratings.rating >= 4", 0}, /* I1432: the heart is a rating of 4 or 5 */
     {"kept", K_BOOL, "kept", 0},
     {"wrong", K_BOOL, "flags.wrong = 1", 0},
     {"skip", K_BOOL, "flags.skip = 1", 0},
@@ -270,8 +270,8 @@ static void bool_cond(pq* s, const key_def* kd, const char* v, size_t n) {
         return;
     }
     put(s, yes ? "EXISTS (SELECT 1 FROM " : "NOT EXISTS (SELECT 1 FROM ");
-    if (strchr(kd->expr, '.') != NULL) { /* "flags.wrong = 1" */
-        put(s, "flags WHERE flags.key = songs.key AND ");
+    if (strchr(kd->expr, '.') != NULL) { /* "flags.wrong = 1", "ratings.rating >= 4" */
+        put(s, strncmp(kd->expr, "ratings.", 8) == 0 ? "ratings WHERE ratings.key = songs.key AND " : "flags WHERE flags.key = songs.key AND ");
         put(s, kd->expr);
     } else {
         put(s, kd->expr);

@@ -20,7 +20,7 @@ dui_run(lay --ui desktop --backend mem --canvas 1280x800 --resize 1280x800)
 function(expected_text id outvar)
   # I619: the Now Playing add button and panel toggle are not engine actions; their texts depend on the panel state.
   if(id STREQUAL "np_add")
-    set(${outvar} "Add to Liked Songs" PARENT_SCOPE)
+    set(${outvar} "Rate 5 stars" PARENT_SCOPE)
     return()
   elseif(id STREQUAL "np_panel")
     set(${outvar} "Hide Now Playing Panel" PARENT_SCOPE)

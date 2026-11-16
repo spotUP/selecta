@@ -47,7 +47,7 @@ expect(a scr_a "New This Week  Show all  4 rows")
 expect(a scr_a "Ambient Drift  - Zed Artist")
 expect(a scr_a "Techno Pulse  - Zed Artist")
 
-# b: Enter on the Liked Songs tile opens a Collection page.
+# b: Enter on the Top Rated tile opens a Collection page.
 run(b "${KEYS_B}")
 expect(b out_b "shelf_opens=0 collection_opens=1")
 expect(b out_b "page=2")

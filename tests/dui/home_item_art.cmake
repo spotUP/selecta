@@ -34,7 +34,7 @@ endif()
 dui_stat(draws "${m1}" desktop shelf_album_art_draws)
 message(STATUS "shelf_album_art_draws=${draws}")
 # 11 = quick grid album tiles Alb5 Alb4 Alb2 (3) + Recently Played album cards in view Alb5 Alb4 Alb2 (3) + Your Albums Alb1..Alb5 (5);
-# the playlist, composer and Liked Songs cards draw generated art, and the Recently Played cards past the canvas edge are not painted.
+# the playlist, composer and Top Rated cards draw generated art, and the Recently Played cards past the canvas edge are not painted.
 set(EXPECTED_DRAWS 11)
 if(NOT draws EQUAL EXPECTED_DRAWS)
   message(FATAL_ERROR "album item cards drew ${draws} library covers, expected ${EXPECTED_DRAWS} (placeholders instead of the cover):\n${m1}")

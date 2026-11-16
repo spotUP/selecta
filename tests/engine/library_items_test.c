@@ -134,7 +134,7 @@ int main(void) {
         "('local:c.mod','y','Y');"
         "INSERT INTO playlists(name) VALUES('Mix'),('Chill');"
         "INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1,0,'local:a.mod'),(1,1,'local:b.mod');"
-        "INSERT INTO liked(key, at) VALUES('local:a.mod',50);"
+        "INSERT INTO ratings(key, rating, synced) VALUES('local:a.mod',5,1);"
         "INSERT INTO history(key, played_at) VALUES('local:a.mod',500),('local:c.mod',700),('local:a.mod',600);");
 
     /* Counts of each kind, measured from the tables that produce them. */
@@ -164,8 +164,8 @@ int main(void) {
     CHECK(all[0].pinned && all[1].pinned && all[2].pinned && !all[3].pinned);
     for (i = 1; i < n; i++) CHECK(all[i - 1].kind <= all[i].kind); /* grouped by kind, pinned first */
 
-    it = find(all, n, SEL_LIB_ITEM_LIKED, "Liked Songs");
-    CHECK(it != NULL && it->songs == 1u && it->last_played == 50u);
+    it = find(all, n, SEL_LIB_ITEM_LIKED, "Top Rated");
+    CHECK(it != NULL && it->songs == 1u && it->last_played == 0u);
     it = find(all, n, SEL_LIB_ITEM_RECENT, "Recently Played");
     CHECK(it != NULL && it->songs == 2u && it->last_played == 700u); /* distinct songs, newest play */
     it = find(all, n, SEL_LIB_ITEM_LOCAL, "Local Files");

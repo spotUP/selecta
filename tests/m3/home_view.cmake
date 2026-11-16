@@ -5,7 +5,7 @@
 # newer play and the modland "new this week" count a changelog sync stores. The real selecta binary opens that file and
 # key H shows the home view. home_rows= must equal the sum counted from the database here with separate queries:
 # distinct songs played + albums with an unfinished play + the new-this-week count + the never-played library songs +
-# the Quick access tiles (I678j: Liked Songs plus one artist item per distinct played artist, at most 8; the fixture has no albums rows).
+# the Quick access tiles (I678j: Top Rated plus one artist item per distinct played artist, at most 8; the fixture has no albums rows).
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 # I980b: never read the user's real config dir (a live app's prefs.conf puts "Stereo Width 99" on the status line, I945): an empty XDG_CONFIG_HOME.
@@ -43,8 +43,8 @@ sql("${jumpq}" jump)
 sql("SELECT value FROM meta WHERE key = 'modland.new_this_week';" fresh)
 # I370: the library fill shelf lists the never-played songs older than a week (at most 10).
 sql("SELECT COUNT(*) FROM (SELECT 1 FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s', 'now') AS INTEGER) - 604800 LIMIT 10);" fill)
-# I678j: Quick access leads Home with Liked Songs (always) and the Recents items (any play, skipped included); this fixture has no
-# playlists or composers, so the items are Liked Songs, one artist per distinct played artist and one album per distinct played album
+# I678j: Quick access leads Home with Top Rated (always) and the Recents items (any play, skipped included); this fixture has no
+# playlists or composers, so the items are Top Rated, one artist per distinct played artist and one album per distinct played album
 # (the I687 trigger files the seeded album), at most 8.
 string(CONCAT quickq
   "SELECT MIN(8, 1 + (SELECT COUNT(DISTINCT s.artist) FROM history h JOIN songs s ON s.key = h.key WHERE s.artist IS NOT NULL AND s.artist <> '')"
