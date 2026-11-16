@@ -169,7 +169,7 @@ desk:actions-c:shuffle-queue	Shuffle Queue	in code: actions.c k_actions	MUI-P2-3
 desk:actions-c:reshuffle-queue	Reshuffle Queue	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
 desk:actions-c:undo	Undo	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
 desk:actions-c:redo	Redo	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
-desk:actions-c:like-song	Like Song	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-7
+desk:actions-c:like-song	Rate 5 Stars	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-7
 desk:actions-c:cursor-up	Cursor Up	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7
 desk:actions-c:cursor-down	Cursor Down	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7
 desk:actions-c:cursor-to-top	Cursor to Top	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7

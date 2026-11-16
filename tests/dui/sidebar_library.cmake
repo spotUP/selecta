@@ -50,7 +50,7 @@ sl_parse(w1 "${w1}")
 if(w1_draws LESS 1)
   message(FATAL_ERROR "the sidebar library list never drew (draws=${w1_draws}) in:\n${w1}")
 endif()
-# I678b: three pinned rows (Liked Songs, Recently Played, Local Files) lead the three playlists; I678m: then every
+# I678b: three pinned rows (Top Rated, Recently Played, Local Files) lead the three playlists; I678m: then every
 # registered source, none synced.
 dui_registered_sources(nsrc "${w1}")
 math(EXPR want "6 + ${nsrc}")

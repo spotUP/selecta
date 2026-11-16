@@ -225,9 +225,9 @@ foreach(gone "Back to all composers" "\ndrill " "\nback ")
   endif()
 endforeach()
 
-# 5. I678g: the pinned rows and a source. Liked Songs, Recently Played and Local Files show the wordmark header, a source page the
+# 5. I678g: the pinned rows and a source. Top Rated, Recently Played and Local Files show the wordmark header, a source page the
 # status block (design doc section 8). Seed: two liked songs (12 newer than 7), two songs of an unregistered source "hvsc".
-string(CONCAT seed2 "INSERT INTO liked(key, at) VALUES('local:fixture/7.mod', 10),('local:fixture/12.mod', 50); "
+string(CONCAT seed2 "INSERT INTO ratings(key, rating, synced) VALUES('local:fixture/7.mod', 4, 1),('local:fixture/12.mod', 5, 1); "
   "INSERT INTO songs(key, source, path, name, artist, album, format, year, added) VALUES"
   "('hvsc:a.sid','hvsc','a.sid','HvscA','Rob Hubbard','','sid',1986,1),('hvsc:b.sid','hvsc','b.sid','HvscB','Rob Hubbard','','sid',1986,1)")
 execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "${seed2}" RESULT_VARIABLE rc ERROR_VARIABLE err)
@@ -259,10 +259,10 @@ function(expect_pinned tag kind rowname pkind label wordmark played source count
   expect_eq("${tag} first song" "${f}" "${first}")
   set(pg "${pg}" PARENT_SCOPE)
 endfunction()
-expect_pinned(liked 0 "Liked Songs" liked Playlist 1 0 0 "SELECT COUNT(*) FROM liked" "local:fixture/12.mod")
+expect_pinned(liked 0 "Top Rated" liked Playlist 1 0 0 "SELECT COUNT(*) FROM ratings WHERE rating>=4" "local:fixture/12.mod")
 expect_pinned(recent 1 "Recently Played" recent Playlist 1 1 0 "SELECT COUNT(DISTINCT h.key) FROM history h JOIN songs s ON s.key=h.key" "local:fixture/1.mod")
 expect_pinned(local 2 "Local Files" local Source 1 0 0 "SELECT COUNT(*) FROM songs WHERE source='local'" "local:fixture/1.mod")
-# I938: the Local Files sidebar tile and page header both draw the Lucide folder mark (dump line localicon); the Liked Songs and Recently Played headers keep the wordmark
+# I938: the Local Files sidebar tile and page header both draw the Lucide folder mark (dump line localicon); the Top Rated and Recently Played headers keep the wordmark
 if(NOT "${pg}" MATCHES "localicon side=([0-9]+) head=([0-9]+) folder=([0-9]+)")
   message(FATAL_ERROR "no localicon line in:\n${pg}")
 endif()

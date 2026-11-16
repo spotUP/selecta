@@ -22,7 +22,7 @@
 
 /* Columns of every part: 1 kind, 2 key, 3 name, 4 sub, 5 songs, 6 added, 7 last_played, 8 art_id, 9 pinned, 10 sort name, 11 tie, 12 opened (opened table, I678c). */
 #define PART_LIKED \
-    "SELECT 0,'liked','Liked Songs','',(SELECT COUNT(*) FROM liked),0,IFNULL((SELECT MAX(at) FROM liked),0),0,1,'',0,0"
+    "SELECT 0,'liked','Top Rated','',(SELECT COUNT(*) FROM ratings WHERE rating>=4),0,0,0,1,'',0,0"
 #define PART_RECENT \
     "SELECT 1,'recent','Recently Played','',(SELECT COUNT(DISTINCT key) FROM history),0," \
     "IFNULL((SELECT MAX(played_at) FROM history),0),0,1,'',0,0"
@@ -169,7 +169,7 @@ static const char* format_sql(uint32_t kind) {
         return "SELECT e.key FROM playlist_entries e WHERE e.playlist_id=CAST(?1 AS INTEGER)";
     case SEL_LIB_ITEM_LIKED: /* I1193: liked drives the join. Without ANALYZE statistics the planner scanned all of songs (600 000 rows, 5-8 s cold on the real library)
      * to probe three liked rows; CROSS JOIN pins the order. */
-    return "SELECT s.path FROM liked l CROSS JOIN songs s ON s.key=l.key";
+    return "SELECT s.path FROM ratings l CROSS JOIN songs s ON s.key=l.key WHERE l.rating>=4";
     case SEL_LIB_ITEM_RECENT: return "SELECT s.path FROM songs s WHERE s.key IN (SELECT key FROM history)";
     case SEL_LIB_ITEM_LOCAL: return "SELECT path FROM songs WHERE source='local'";
     case SEL_LIB_ITEM_SOURCE: return "SELECT path FROM songs WHERE source=?1";
@@ -393,7 +393,7 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
                              " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
                              " ELSE s.key IN (SELECT song_key FROM song_composers WHERE canon=?1) END" BY_PLAYS;
         }
-        if (kind == SEL_LIB_ITEM_LIKED) return SONG_COLS " WHERE s.key IN (SELECT key FROM liked) ORDER BY (SELECT l.at FROM liked l WHERE l.key=s.key) DESC, s.id"; /* I1193: seek songs by liked key, no songs scan */
+        if (kind == SEL_LIB_ITEM_LIKED) return SONG_COLS " WHERE s.key IN (SELECT key FROM ratings WHERE rating>=4) ORDER BY (SELECT l.rating FROM ratings l WHERE l.key=s.key) DESC, s.id"; /* I1193: seek songs by rated key, no songs scan; I1432: Top Rated, 5 stars first */
         if (kind == SEL_LIB_ITEM_RECENT) { /* I678g: newest play first; the number column is the time of the last play, not a play count */
             return "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),h.t FROM songs s"
                    " JOIN (SELECT key, MAX(played_at) AS t FROM history GROUP BY key) h ON h.key=s.key ORDER BY h.t DESC, s.id";

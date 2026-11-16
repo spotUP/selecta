@@ -659,17 +659,17 @@ quick_db(few "INSERT INTO history(key, played_at, skipped) VALUES('fixture:1', 1
 set(few_db "${QUICK_DB}")
 quick_run(few_out "${few_db}" 700x800 "wait 1\n")
 quick_count(few_n "${few_out}")
-# Quick access (section 11): Liked Songs pinned first, then the newest items of every kind (3 albums and their 3 composers here).
+# Quick access (section 11): Top Rated pinned first, then the newest items of every kind (3 albums and their 3 composers here).
 expect_eq("quick access with 3 played albums" "${few_n}" 7)
-if(NOT "${few_out}" MATCHES "quick 0 cols=2 liked\\|Liked Songs\\|[^\n]*\nquick 1 cols=2 [^\n]*\nquick 2 cols=2 3\\|Strange Sounds from Beyond\\|")
-  message(FATAL_ERROR "quick access must pin Liked Songs first, then the newest item in:\n${few_out}")
+if(NOT "${few_out}" MATCHES "quick 0 cols=2 liked\\|Top Rated\\|[^\n]*\nquick 1 cols=2 [^\n]*\nquick 2 cols=2 3\\|Strange Sounds from Beyond\\|")
+  message(FATAL_ERROR "quick access must pin Top Rated first, then the newest item in:\n${few_out}")
 endif()
 # Wide canvas: 4 columns.
 quick_run(wide_out "${few_db}" 1280x800 "wait 1\n")
 if(NOT "${wide_out}" MATCHES "quick 0 cols=4 ")
   message(FATAL_ERROR "a wide canvas must lay the quick picks out in 4 columns:\n${wide_out}")
 endif()
-# No history: Liked Songs alone.
+# No history: Top Rated alone.
 quick_run(none_out "${edb}" 700x800 "wait 1\n")
 quick_count(none_n "${none_out}")
 expect_eq("quick access without history" "${none_n}" 1)
@@ -678,11 +678,11 @@ quick_run(qact "${few_db}" 1000x1400 "quicktile 4\nwait 300\n")
 if(NOT "${qact}" MATCHES "page=collection" OR NOT "${qact}" MATCHES "collection kind=album ")
   message(FATAL_ERROR "quick tile 4 did not open the album collection page in:\n${qact}")
 endif()
-# I678j4: quick tile 0 (Liked Songs) opens the Liked page: the collection page of kind liked, built by the engine from the liked table
+# I678j4: quick tile 0 (Top Rated) opens the Liked page: the collection page of kind liked, built by the engine from the liked table
 # (no Recents touch), listing the liked songs through the shared song-list rows. The dump names the page "collection" and the kind "liked".
 quick_run(qliked "${few_db}" 1000x1400 "quicktile 0\nwait 300\n")
 if(NOT "${qliked}" MATCHES "page=collection" OR NOT "${qliked}" MATCHES "collection kind=liked ")
-  message(FATAL_ERROR "quick tile 0 (Liked Songs) did not open the liked page in:\n${qliked}")
+  message(FATAL_ERROR "quick tile 0 (Top Rated) did not open the liked page in:\n${qliked}")
 endif()
 # I490: the pointer over quick-pick tile 1 lights that card like a hovered shelf card: the dump carries quick_hover with the
 # lit fill (the panel mixed to the surface token), and no such line while no quick tile is hovered.
@@ -731,7 +731,7 @@ file(WRITE "${live}/home.txt" "wait 2\n")
 dui_run(live_home --db "${live_db}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
   --input "${live}/home.txt")
 quick_count(live_quick "${live_home}")
-expect_eq("live-scanned library: Quick access tiles (Liked Songs first, the played album, its artist and composer)" "${live_quick}" 4)
+expect_eq("live-scanned library: Quick access tiles (Top Rated first, the played album, its artist and composer)" "${live_quick}" 4)
 if(NOT "${live_home}" MATCHES "quick 1 cols=4 [^\n]*Iron Garden")
   message(FATAL_ERROR "the played scanned album must be quick pick 0 in:\n${live_home}")
 endif()

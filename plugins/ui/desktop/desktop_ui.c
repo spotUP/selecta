@@ -11810,9 +11810,6 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         }
         return 1;
     }
-    if (d->np_draws > 0u && in_rect(d->np_like, x, y)) { /* Now Playing: like the playing song, or set its rating */
-        return desk_send(d, "LIKE");
-    }
     for (i = 0; d->np_draws > 0u && i < 5u; i++) {
         if (in_rect(d->np_rate[i], x, y)) {
             char line[16];

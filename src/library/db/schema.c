@@ -318,11 +318,17 @@ static const char SCHEMA_V22[] =
     "CREATE INDEX IF NOT EXISTS songs_artist_nocase ON songs(artist COLLATE NOCASE, added);"
     "DELETE FROM search_cache WHERE source = 'amp';";
 
+/* I1432: ratings replace likes. Every liked song without a rating becomes 5 stars (synced 1: a migrated rating is not pushed to
+ * DEViLBOX), a rated one keeps its rating; the liked rows go. Data only: the empty `liked` table stays, SCHEMA_FINAL is unchanged. */
+static const char SCHEMA_V23[] =
+    "INSERT OR IGNORE INTO ratings(key, rating, synced) SELECT key, 5, 1 FROM liked;"
+    "DELETE FROM liked;";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22};
+                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

@@ -6,7 +6,7 @@ INSERT INTO history(key, played_at) VALUES('local:a.mod',1000),('local:a.mod',11
 ('local:c.mod',1300),('local:c.mod',1400),('local:b.mod',1500);
 INSERT INTO playlists(id, name) VALUES(1,'Mix');
 INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1,0,'local:b.mod');
-INSERT INTO liked(key, at) VALUES('local:a.mod',900);
+INSERT INTO ratings(key, rating, synced) VALUES('local:a.mod',5,1);
 -- I678j chips: one SID song and one tracker song, each its own album, played once (the other three songs have no format: Music).
 INSERT INTO songs(key, source, path, name, artist, album, format, added) VALUES
 ('local:d.sid','local','d.sid','d','Dee','Alb4','sid',400),('local:e.mod','local','e.mod','e','Eve','Alb5','mod',500);

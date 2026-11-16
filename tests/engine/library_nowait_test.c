@@ -158,7 +158,7 @@ int main(void) {
         char fmt[16];
         long steps = 0;
 
-        CHECK(sqlite3_exec(lib->db, "INSERT OR IGNORE INTO liked(key, at) VALUES('big:1', 1), ('big:2', 2), ('big2:3', 3);", NULL, NULL, NULL) == SQLITE_OK);
+        CHECK(sqlite3_exec(lib->db, "INSERT OR IGNORE INTO ratings(key, rating, synced) VALUES('big:1', 5, 1), ('big:2', 5, 1), ('big2:3', 5, 1);", NULL, NULL, NULL) == SQLITE_OK);
         sqlite3_progress_handler(lib->db, 100, count_step, &steps);
         sel_db_majority_format(lib->db, SEL_LIB_ITEM_LIKED, "", fmt, sizeof fmt);
         sqlite3_progress_handler(lib->db, 0, NULL, NULL);

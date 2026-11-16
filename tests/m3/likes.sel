@@ -1,4 +1,4 @@
-# I306: LIKE toggles the playing song, LIKE <key> likes a song that is not playing, RATE <n> <key> rates any song and
+# I306/I1432: LIKE rates the playing song 5 stars (it no longer toggles), LIKE <key> rates a song that is not playing, RATE <n> <key> rates any song and
 # RATE 0 <key> clears it. Every step is read back through LIBRARY_SEARCH (liked:yes, rating:3).
 OPEN selecta-test.mod
 PLAY
@@ -6,13 +6,13 @@ PLAY
 LIKE
 LIBRARY_SEARCH liked:yes
 @results
-LIKE
+RATE 0
 LIBRARY_SEARCH liked:yes
 @results
 LIKE local:selecta-test-mk.mod
 LIBRARY_SEARCH liked:yes
 @results
-LIKE local:selecta-test-mk.mod
+RATE 0 local:selecta-test-mk.mod
 LIBRARY_SEARCH liked:yes
 @results
 RATE 3 local:selecta-test-mk.mod

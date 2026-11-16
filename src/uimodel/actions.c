@@ -49,7 +49,7 @@ static const sel_uim_action k_actions[] = {
      "RESHUFFLE"},
     {"undo", "Undo", "Undo the last queue change", "undo-2", "Edit/Undo", "u", "UNDO"},
     {"redo", "Redo", "Redo the undone queue change", "redo-2", "Edit/Redo", "C-r", "REDO"},
-    {"like", "Like Song", "Like the playing song, or take the like back when it is liked (a song key names another song)", "heart", "Library/Like Song", "M-h", "LIKE"},
+    {"like", "Rate 5 Stars", "Rate the playing song 5 stars (a song key names another song)", "heart", "Library/Rate 5 Stars", "M-h", "LIKE"},
     {"cursor_up", "Cursor Up", "Move the cursor up one row", "chevron-up", "View/Cursor Up", "k", "VIEW_CURSOR -1"},
     {"cursor_down", "Cursor Down", "Move the cursor down one row", "chevron-down", "View/Cursor Down", "j",
      "VIEW_CURSOR +1"},
@@ -166,7 +166,7 @@ void sel_uim_help_row(uint32_t i, char* out, size_t cap) {
 }
 
 const char* sel_uim_tip_like(int liked) {
-    return liked ? "Remove from Liked Songs" : "Add to Liked Songs";
+    return liked ? "Rated 5 stars" : "Rate 5 stars"; /* I1432 */
 }
 
 /* I1127c: the one-line note under the open song's metadata, shared by both Now Playing panels. NULL: no note. */

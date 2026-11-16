@@ -697,12 +697,12 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
                          " VALUES(?1, ?2, ?3, ?4, COALESCE((SELECT format FROM songs WHERE key = ?1), ?5))", op, 1);
     } else if (op->op == SEL_USER_LIKE) {
         sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS"); /* I906f test knob: a library write on a busy worker */
-        rc = user_exec(lib->db, "INSERT OR REPLACE INTO liked(key, at) VALUES(?1, ?2)", op, 2);
+        rc = user_exec(lib->db, "INSERT INTO ratings(key, rating, synced) VALUES(?1, 5, 0) ON CONFLICT(key) DO UPDATE SET rating = 5", op, 0); /* I1432: a like is 5 stars */
     } else if (op->op == SEL_USER_UNLIKE) {
-        rc = user_exec(lib->db, "DELETE FROM liked WHERE key = ?1", op, 0);
+        rc = user_exec(lib->db, "DELETE FROM ratings WHERE key = ?1 AND rating >= 4", op, 0);
     } else if (op->op == SEL_USER_LIKE_GET) {
         sqlite3_stmt* st = NULL;
-        rc = sqlite3_prepare_v2(lib->db, "SELECT 1 FROM liked WHERE key = ?1", -1, &st, NULL);
+        rc = sqlite3_prepare_v2(lib->db, "SELECT 1 FROM ratings WHERE key = ?1 AND rating >= 4", -1, &st, NULL);
         if (rc == SQLITE_OK) {
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
             found = sqlite3_step(st) == SQLITE_ROW;
@@ -711,7 +711,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
     } else if (op->op == SEL_USER_KEPT_GET) {
         sqlite3_stmt* st = NULL;
         rc = sqlite3_prepare_v2(lib->db,
-                                "SELECT 1 FROM kept WHERE key = ?1 UNION ALL SELECT 1 FROM liked WHERE key = ?1 LIMIT 1", -1,
+                                "SELECT 1 FROM kept WHERE key = ?1 UNION ALL SELECT 1 FROM ratings WHERE key = ?1 AND rating >= 4 LIMIT 1", -1,
                                 &st, NULL);
         if (rc == SQLITE_OK) {
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
@@ -784,7 +784,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             "  ORDER BY display)),"
             " s.album, s.year, s.genre, (SELECT rating FROM ratings WHERE key = ?1),"
             " (SELECT COUNT(*) FROM history WHERE key = ?1 AND skipped = 0),"
-            " (SELECT 'Yes' FROM liked WHERE key = ?1)" /* I306: the heart of Now Playing; absent when not liked */
+            " (SELECT 'Yes' FROM ratings WHERE key = ?1 AND rating >= 4)" /* I306, I1432: the heart of Now Playing; absent below 4 stars */
             " FROM (SELECT ?1 AS k) q LEFT JOIN songs s ON s.key = q.k",
             -1, &st, NULL);
         if (rc == SQLITE_OK) {

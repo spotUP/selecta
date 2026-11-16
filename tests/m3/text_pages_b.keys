@@ -1,4 +1,4 @@
-# I1189: H, Enter on the first quick tile (Liked Songs) opens its Collection page.
+# I1189: H, Enter on the first quick tile (Top Rated) opens its Collection page.
 wait 400
 H
 wait 500

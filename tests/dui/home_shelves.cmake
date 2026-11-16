@@ -1,7 +1,7 @@
 # dui-home-shelves (I678j): the Home feed's item shelves of design doc section 11, through the real desktop UI entry. -DSELECTA -DWORK
 # Fixture fixture_home_shelves.sql: three albums with 3 / 1 / 2 plays, one playlist, one liked song.
 # 1. The heading order of the item shelves is Recently played items, Your albums, Your playlists (only those with rows).
-# 2. Quick access holds 8 tiles (liked, playlist, 3 albums, 3 artists = the cap) and tile 0 is "Liked Songs".
+# 2. Quick access holds 8 tiles (liked, playlist, 3 albums, 3 artists = the cap) and tile 0 is "Top Rated".
 # 3. Your albums lists Alb1, Alb3, Alb2 (most played first).
 # 4. A click on the Your albums card Alb1 opens `page=collection`, `collection kind=album`, the page named Alb1.
 # 5. Sentinel: home_item_shelves > 0 (the engine sent item shelves).
@@ -46,8 +46,8 @@ string(REGEX MATCHALL "\nquick [0-9]+ cols=[0-9]+ [^\n]*" quick "${m1}")
 list(LENGTH quick nq)
 expect_eq("quick access tiles" "${nq}" "8")
 list(GET quick 0 q0)
-if(NOT q0 MATCHES "\\|Liked Songs\\|")
-  message(FATAL_ERROR "quick tile 0 is not Liked Songs: ${q0}")
+if(NOT q0 MATCHES "\\|Top Rated\\|")
+  message(FATAL_ERROR "quick tile 0 is not Top Rated: ${q0}")
 endif()
 
 # 3. Your albums order.
