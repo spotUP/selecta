@@ -201,6 +201,18 @@ static void add_item(run* r, const sel_upnp_entry* e) {
     song.name = title;
     song.md5 = "";
     song.duration_ms = (int32_t)e->duration_ms;
+    { /* I1410: rows synced before the title split sat at "<server or upnp artist>/<title>/<url>"; re-key them so history and playlists keep them */
+        char la[SEL_UPNP_TEXT_BYTES], lt[SEL_UPNP_TEXT_BYTES], lpath[URL_BYTES + 2u * SEL_UPNP_TEXT_BYTES];
+        snprintf(la, sizeof la, "%s", e->artist[0] ? e->artist : r->server);
+        snprintf(lt, sizeof lt, "%s", e->title);
+        clean_part(la);
+        clean_part(lt);
+        snprintf(lpath, sizeof lpath, "%s/%s/%s", la, lt, url);
+        /* shortcut: one move transaction per affected item on every walk, also after the old row is gone; drop this block once old libraries are re-synced */
+        if (strcmp(lpath, path) != 0 && r->cat->move != NULL) {
+            (void)r->cat->move(r->host, lpath, &song);
+        }
+    }
     if (!r->cat->song(r->host, &song)) {
         r->skipped++;
         return;

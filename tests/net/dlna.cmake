@@ -249,4 +249,43 @@ file(READ "${WORK}/dlna.raw" hex HEX)
 if(NOT hex MATCHES "[1-9a-f]")
   message(FATAL_ERROR "I894a3: the render is silent (played samples = 0)")
 endif()
+# I1410: rows synced before the title split sat under the server name ("Fixture Media & Music/<title>/<url>"). A walk
+# re-keys such a row to "Legacy Band/Old Tune/<url>", and its history and playlist rows follow (no orphans, one song row).
+delta_fixture(legacy lport lreq)
+set(LDB "${WORK}/dlna-legacy.db")
+file(REMOVE "${LDB}")
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/l1")
+execute_process(COMMAND "${CLI}" library sync --db "${LDB}" --now 2000 dlna "http://127.0.0.1:${lport}/desc.xml"
+  OUTPUT_VARIABLE lo ERROR_VARIABLE le RESULT_VARIABLE lrc TIMEOUT 60)
+execute_process(COMMAND python3 -I -c "
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+(k, p) = c.execute(\"SELECT key, path FROM songs WHERE source='dlna' AND path LIKE 'Legacy Band/Old Tune/%'\").fetchone()
+op = 'Fixture Media & Music/Legacy_Band_-_Old_Tune/' + p.split('/', 2)[2]
+c.execute('UPDATE songs SET key=?, path=? WHERE key=?', ('dlna:' + op, op, k))
+c.execute(\"UPDATE files SET path=? WHERE source='dlna' AND path=?\", (op, p))
+c.execute('INSERT INTO history(key, played_at) VALUES(?, 1)', ('dlna:' + op,))
+c.execute('INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1, 0, ?)', ('dlna:' + op,))
+c.commit()
+" "${LDB}" RESULT_VARIABLE lseed ERROR_VARIABLE lseede)
+if(NOT lrc EQUAL 0 OR NOT lseed EQUAL 0)
+  message(FATAL_ERROR "I1410: legacy seed failed rc=${lrc} seed=${lseed}\n${lo}${le}${lseede}")
+endif()
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/dlna-cache/l2")
+execute_process(COMMAND "${CLI}" library sync --db "${LDB}" --now 2001 dlna "http://127.0.0.1:${lport}/desc.xml"
+  OUTPUT_VARIABLE lo2 ERROR_VARIABLE le2 RESULT_VARIABLE lrc2 TIMEOUT 60)
+execute_process(COMMAND python3 -I -c "
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+n = c.execute(\"SELECT COUNT(*) FROM songs WHERE source='dlna' AND name LIKE '%Old Tune%'\").fetchone()[0]
+h = c.execute(\"SELECT key FROM history\").fetchall()
+e = c.execute(\"SELECT key FROM playlist_entries\").fetchall()
+want = [r[0] for r in c.execute(\"SELECT key FROM songs WHERE path LIKE 'Legacy Band/Old Tune/%'\").fetchall()]
+print('songs=%d history=%s entries=%s want=%s' % (n, h, e, want))
+sys.exit(0 if n == 1 and len(want) == 1 and h == [(want[0],)] and e == [(want[0],)] else 1)
+" "${LDB}" OUTPUT_VARIABLE lchk RESULT_VARIABLE lrc3)
+if(NOT lrc2 EQUAL 0 OR NOT lrc3 EQUAL 0)
+  message(FATAL_ERROR "I1410: legacy rows were not re-keyed rc=${lrc2}\n${lchk}\n${lo2}${le2}")
+endif()
+
 message(STATUS "dlna_ok")

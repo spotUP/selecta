@@ -77,8 +77,11 @@ def item(n, parent="1"):
     title = f"Song {n:03d} & More" if n == 42 else (f"Track-{n:03d}" if n >= 200 else f"Track {n:03d}")
     album = "Album <A>" if n == 42 else "Album"
     url = f"http://127.0.0.1:{http_port}/media/{n:03d}.mp3?a=1&b=2"
+    artist = f'<upnp:artist>{"Artist-" if n >= 200 else "Artist "}{n:03d}</upnp:artist>'
+    if TREE == "legacy" and n == 5:  # I1410: no artist, "Artist - Title" in the title (a NAS file name)
+        title, artist = "Legacy_Band_-_Old_Tune", ""
     return (f'<item id="{parent}${n:03d}" parentID="{parent}" restricted="1"><dc:title>{escape(title)}</dc:title>'
-            f'<upnp:artist>{"Artist-" if n >= 200 else "Artist "}{n:03d}</upnp:artist><upnp:album>{escape(album)}</upnp:album>'
+            f'{artist}<upnp:album>{escape(album)}</upnp:album>'
             f'<upnp:class>object.item.audioItem.musicTrack</upnp:class>'
             f'<res protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3" duration="0:03:25.500" size="1234567">'
             f'{escape(url)}</res></item>')
