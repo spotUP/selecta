@@ -6,7 +6,7 @@
 # and the QUERY view walked the result with sel_engine_result_key(i), which rescans from the start, O(n^2).
 # This test drives the real SDL loop with timed mouse events on a 50000 song Modland fixture (the old walk took seconds here; the linear
 # search_reload work costs about 0.35 ms per 1000 songs, 73 ms at 200000: open item in agent-reports/I959.md):
-# 1. Sources chip (five right-chevron steps), then the Modland sidebar row; 2. topbar Browse, then the Impulsetracker format tile;
+# 1. Sources chip (one direct click, I1297), then the Modland sidebar row; 2. topbar Browse, then the Impulsetracker format tile;
 # 3. topbar Browse, then the Modland source tile.
 # Per run: turn_ms_max < 50 and pump_ms_max < 50. Sentinels: the chip is in force and the page really opened, so a missed click cannot pass.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -95,14 +95,16 @@ function(check_turns label events sentinel)
   message(STATUS "dui-nav-turn-cost ${label} ok (turn_ms_max=${best_turn} pump_ms_max=${best_pump})")
 endfunction()
 
-# 1. Sources chip (five right-chevron steps), then the Modland sidebar row. Both targets are read from idle dumps of the same
-# library at the live canvas (the sidebar moves with every layout change; I1010b): the right chevron from a plain idle run, the
-# Modland row (kind source) from a run that has stepped the chip five times, since the chip filters the list.
+# 1. Sources chip (one direct click, I1297), then the Modland sidebar row. Both targets are read from idle dumps of the same
+# library at the live canvas (the sidebar moves with every layout change; I1010b): the Sources chip (index 4) from a plain idle run, the
+# Modland row (kind source) from a run that has clicked the chip, since the chip filters the list.
 set(common_idle --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1000)
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
 dui_run(idle0 ${common_idle} --input "${WORK}/idle.txt")
-if(NOT "${idle0}" MATCHES "sidechev L [0-9]+ [0-9]+ [0-9]+ [0-9]+ R ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
-  message(FATAL_ERROR "no sidechev line in:\n${idle0}")
+# I1297: since I1221 every chip stays in view at this canvas and the chevrons only exist in the overflow layout, so the Sources chip
+# (the fifth, chip=5) is clicked directly: one click puts it in force, a second would clear it.
+if(NOT "${idle0}" MATCHES "sidechip 4 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) ")
+  message(FATAL_ERROR "no sidechip 4 line in:\n${idle0}")
 endif()
 math(EXPR chip_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR chip_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
@@ -115,25 +117,20 @@ math(EXPR browse_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 string(REGEX MATCH "field ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) browse" fld "${idle0}")
 math(EXPR field_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR field_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
-set(chip_steps "")
-foreach(k RANGE 1 5)
-  string(APPEND chip_steps "click ${chip_x} ${chip_y}\nwait 100\n")
-endforeach()
-file(WRITE "${WORK}/chip5.txt" "${chip_steps}")
+file(WRITE "${WORK}/chip5.txt" "click ${chip_x} ${chip_y}\nwait 100\n")
 dui_run(idle5 ${common_idle} --input "${WORK}/chip5.txt")
 # The centre of the sidebar row of kind `kind` called `name` (copy of side_row in kind_pages.cmake, 0fadc05b).
 if(NOT "${idle5}" MATCHES "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=7 Modland\n")
   message(FATAL_ERROR "no Modland sidebar row after the Sources chip in:\n${idle5}")
 endif()
 math(EXPR row_x "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
-math(EXPR row_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+# Modland is the last row and its centre lies at the clipped bottom edge of the sidebar list (y 920 at 1000 px): click its upper quarter.
+math(EXPR row_y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 4")
 set(ev "")
 set(t 4000)
-foreach(k RANGE 1 5)
-  click(c ${chip_x} ${chip_y} ${t})
-  string(APPEND ev "${c} ")
-  math(EXPR t "${t} + 1500")
-endforeach()
+click(c ${chip_x} ${chip_y} ${t})
+string(APPEND ev "${c} ")
+math(EXPR t "${t} + 1500")
 click(c ${row_x} ${row_y} ${t})
 math(EXPR tq "${t} + 4000")
 check_turns("sources-chip-then-row" "${ev}${c} q@${tq}" "sidechips chip=5;collection kind=source opens=1 ")
