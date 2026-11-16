@@ -246,6 +246,36 @@ int main(int argc, char** argv) {
     }
     sel_library_close(lib);
 
+    /* (f) I1416b: LIBRARY_FETCH is a read-thread job: the pump never stalls on the download, STOP ends it, and a library key still opens */
+    e = make(argv[1], "f", &lib);
+    {
+        struct timespec a, b;
+        long worst = 0, closing;
+        int t2;
+        uint32_t opened0 = g_opened_evt;
+
+        cmd(e, "LIBRARY_FETCH modland:Protracker/test/bigslow.mod");
+        for (t2 = 0; t2 < 10; t2++) {
+            clock_gettime(CLOCK_MONOTONIC, &a);
+            sel_engine_pump(e, sink, NULL);
+            clock_gettime(CLOCK_MONOTONIC, &b);
+            if ((b.tv_sec - a.tv_sec) * 1000L + (b.tv_nsec - a.tv_nsec) / 1000000L > worst) worst = (b.tv_sec - a.tv_sec) * 1000L + (b.tv_nsec - a.tv_nsec) / 1000000L;
+            usleep(20000);
+        }
+        printf("library fetch: worst pump %ld ms\n", worst);
+        CHECK(worst < 500);
+        cmd(e, "STOP");
+        clock_gettime(CLOCK_MONOTONIC, &a);
+        pump_ms(e, 200);
+        sel_engine_destroy(e);
+        clock_gettime(CLOCK_MONOTONIC, &b);
+        closing = (b.tv_sec - a.tv_sec) * 1000L + (b.tv_nsec - a.tv_nsec) / 1000000L;
+        printf("library fetch: STOP then destroy %ld ms\n", closing);
+        CHECK(closing < 2500); /* the download is 3 s long: cancelled, not waited out */
+        CHECK(g_opened_evt == opened0);
+    }
+    sel_library_close(lib);
+
     if (g_fail == 0) printf("open_progress_engine_ok\n");
     return g_fail != 0;
 }

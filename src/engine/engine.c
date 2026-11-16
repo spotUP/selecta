@@ -855,6 +855,14 @@ struct sel_engine {
     /* I906d: view artwork ids on rd_art. art_want is filled by the view callback on the pump, copied to art_job when the read is posted. */
     sel_lib_read rd_art;
     sel_lib_read rd_txt;
+    /* I1416b: LIBRARY_FETCH runs on rd_fetch (a whole mirror download). STOP, CANCEL_OPEN, a newer OPEN and destroy bump fetch_cancel, which ends it. */
+    sel_lib_read rd_fetch;
+    volatile unsigned fetch_cancel;
+    unsigned fetch_start;
+    sel_cache_watch fetch_watch;
+    char fetch_key[SEL_BROWSE_PATH_MAX], fetch_rules[512], fetch_out[SEL_BROWSE_PATH_MAX];
+    uint32_t fetch_files;
+    int fetch_rc;
     sel_txt* txt;
     uint32_t txt_generation, txt_reads;
     /* I906e: the Queue page album groups are a function of the whole queue, read in one posted read keyed by the queue hash the UI computes.
@@ -1210,6 +1218,7 @@ static void cmd_PAUSE_PLAYBACK(sel_engine* e, const sel_message* m) {
 /* I1415: ends the open in progress; the playing slot is not touched, so the previous song keeps playing. */
 static void cmd_CANCEL_OPEN(sel_engine* e, const sel_message* m) {
     (void)m;
+    if (!lib_read_idle(&e->rd_fetch)) SEL_ATOMIC_INC_REL(&e->fetch_cancel); /* I1416b: a LIBRARY_FETCH in flight ends too */
     if (!e->op_active) return;
     SEL_ATOMIC_INC_REL(&e->open_cancel);
     if (e->deferred == SEL_BEGIN_OPEN) {
@@ -2291,23 +2300,9 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         path = cached;
         snprintf(file_path, SEL_BROWSE_PATH_MAX, "%s", cached);
     } else if (e->lib != NULL && sel_cache_is_remote(path)) {
-        /* Remote key: the file cache serves it (a hit when the prefetch got there first), I168. Only a path no
-         * song-start read covered lands here (I1225); open_fetch_ms_max measures what it cost the pump. */
-        char rules[512];
-        uint32_t files = 0;
-        uint32_t t0 = e->host->clock_ms(e->host);
-        int fr;
-        sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
-        fr = sel_library_fetch(e->lib, path, rules, cached, sizeof cached, &files);
-        t0 = e->host->clock_ms(e->host) - t0;
-        if (t0 > e->open_fetch_ms_max) e->open_fetch_ms_max = t0;
-        if (fr <= 0) {
-            e->open_status = sel_library_fetch_status(e->lib); /* I695b: the 404 of a file the mirror does not serve */
-            return NULL;
-        }
-        e->open_bank_missing = sel_library_fetch_banks_missing(e->lib);
-        path = cached;
-        snprintf(file_path, SEL_BROWSE_PATH_MAX, "%s", cached); /* I1127b: the replayer looks for companion banks beside this file */
+        /* I1416b: play_meta_run fetches every remote key a start can reach (the path, its best source, a station's resolved URL), so none lands
+         * here; the pump never downloads. open_fetch_ms_max stays 0 and a stray key fails the open. */
+        return NULL;
     }
     if (!nr->streamed) net_stream(e, path, live != NULL, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served), 0, nr);
     if (nr->cancelled) e->net_cancels++; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
@@ -3240,7 +3235,14 @@ static void play_meta_run(sel_engine* e) {
              * and a newer OPEN bump open_cancel, which ends these waits. A live stream is cancelled against cancel_gen from `pm_served`. */
             sel_net_set_cancel(&e->open_cancel, e->pm_cancel_start);
             net_station(e, target, &m->net);
-            if (!m->net.fail && !(m->net.station && sel_cache_is_remote(m->net.path))) {
+            if (!m->net.fail && m->net.station && sel_cache_is_remote(m->net.path) && strlen(m->net.path) < sizeof m->fetch_key) {
+                /* I1416b: a station that resolves to a library key is fetched here, so read_song never fetches on the pump */
+                snprintf(m->fetch_key, sizeof m->fetch_key, "%s", m->net.path);
+                m->fetch_rc = sel_library_fetch_ex(e->lib, m->net.path, e->pm_rules, m->cached, sizeof m->cached, &m->files, &e->op_watch);
+                if (m->fetch_rc <= 0) m->fetch_status = sel_library_fetch_status(e->lib);
+                else m->banks_missing = sel_library_fetch_banks_missing(e->lib);
+                m->fetched = 1;
+            } else if (!m->net.fail && !(m->net.station && sel_cache_is_remote(m->net.path))) {
                 net_stream(e, m->net.station ? m->net.path : target, 1, e->pm_served, 1, &m->net);
             }
             sel_net_set_cancel(NULL, 0);
@@ -3330,6 +3332,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         const char* o = strncmp(e->op_path, "local:", 6) == 0 ? e->op_path + 6 : e->op_path;
 
         if (!e->op_active || strcmp(p, o) != 0) {
+            if (!lib_read_idle(&e->rd_fetch)) SEL_ATOMIC_INC_REL(&e->fetch_cancel); /* I1416b */
             if (!lib_read_idle(&e->rd_play) && strcmp(e->pm_want, p) != 0) {
                 SEL_ATOMIC_INC_REL(&e->open_cancel); /* the click on another song ends the old download at once */
             }
@@ -9499,27 +9502,30 @@ static void sync_collect(sel_engine* e) {
 /* LIBRARY_FETCH <source>:<path>[#md5=<hex>]: fetches the file and its companions into the library's
  * file cache through cfg.library (I165, I166, I166a). The answer is a LIBRARY_RESULT carrying the cache
  * path and the number of files delivered; a wrong md5 on every mirror answers ERROR md5_mismatch. */
-static void cmd_LIBRARY_FETCH(sel_engine* e, const sel_message* m) {
-    char out[SEL_BROWSE_PATH_MAX];
-    uint32_t files = 0;
-    char rules[512];
-    int rc;
+static void fetch_run(sel_engine* e) {
+    sel_net_set_cancel(&e->fetch_cancel, e->fetch_start);
+    e->fetch_rc = sel_library_fetch_ex(e->lib, e->fetch_key, e->fetch_rules, e->fetch_out, sizeof e->fetch_out, &e->fetch_files, &e->fetch_watch);
+    sel_net_set_cancel(NULL, 0);
+}
 
+/* I1416b: the download runs on rd_fetch, not the pump; the pump takes the answer (see the rd_fetch take in the pass). */
+static void cmd_LIBRARY_FETCH(sel_engine* e, const sel_message* m) {
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_FETCH");
         return;
     }
-    sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
-    rc = sel_library_fetch(e->lib, m->args[0].v.s, rules, out, sizeof out, &files);
-    if (rc < 0) {
-        sel_engine_report_error(e, "md5_mismatch", m->args[0].v.s);
+    if (!lib_read_idle(&e->rd_fetch) || strlen(m->args[0].v.s) >= sizeof e->fetch_key) {
+        sel_engine_report_error(e, "library_busy", "LIBRARY_FETCH");
         return;
     }
-    if (rc == 0) {
-        sel_engine_report_error(e, "fetch_failed", m->args[0].v.s);
-        return;
-    }
-    emit_library_path(e, out, files);
+    snprintf(e->fetch_key, sizeof e->fetch_key, "%s", m->args[0].v.s);
+    sel_companion_rules(e->registry_count, e->registry_get, e->fetch_rules, sizeof e->fetch_rules);
+    e->fetch_start = e->fetch_cancel;
+    memset(&e->fetch_watch, 0, sizeof e->fetch_watch);
+    e->fetch_watch.gen = &e->fetch_cancel;
+    e->fetch_watch.start = e->fetch_start;
+    e->fetch_files = 0;
+    lib_read_post(e, &e->rd_fetch, fetch_run);
 }
 
 /* ---- view ------------------------------------------------------------ */
@@ -10235,6 +10241,15 @@ static void lib_reads_collect(sel_engine* e) {
         e->songs_counted_at = e->rdt_at;
         e->state.library_songs = e->rdt_rc == SEL_FOLDER_OK ? e->rdt_total : 0u;
         e->state.library_playlists = e->rdt_playlists;
+    }
+    if (lib_read_take(&e->rd_fetch)) { /* I1416b: the answer of a LIBRARY_FETCH */
+        if (e->fetch_rc < 0) {
+            sel_engine_report_error(e, "md5_mismatch", e->fetch_key);
+        } else if (e->fetch_rc == 0) {
+            if (!sel_cache_watch_cancelled(&e->fetch_watch)) sel_engine_report_error(e, "fetch_failed", e->fetch_key);
+        } else {
+            emit_library_path(e, e->fetch_out, e->fetch_files);
+        }
     }
     art_post(e);
     if (lib_read_take(&e->rd_txt)) {
@@ -11820,6 +11835,7 @@ void sel_engine_destroy(sel_engine* e) {
             e->host->mem_free(e->host, e->snap);
             e->snap = NULL;
         }
+        SEL_ATOMIC_INC_REL(&e->fetch_cancel); /* I1416b */
         SEL_ATOMIC_INC_REL(&e->open_cancel); /* I1415m: ends the read thread's in-flight song download; lib_read_end(&e->rd_play) below waits for it */
         sel_viz_tap_free(&e->viz);
         if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) { /* I787: end the in-flight sidebar read */
@@ -11859,6 +11875,7 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_vote);
         lib_read_end(&e->rd_art);
         lib_read_end(&e->rd_txt);
+        lib_read_end(&e->rd_fetch);
         lib_read_end(&e->rd_grp);
         free(e->grp_snap);
         free(e->skc_tab);
@@ -12186,7 +12203,7 @@ static int sources_pending_live(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_radio) || !lib_read_idle(&e->rd_flags) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->deferred && (e->pm_wait || (e->op_active && e->op_phase == SEL_OPEN_STARTING))) || /* I1415: the Starting pump still owes the open */ (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
+    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_radio) || !lib_read_idle(&e->rd_flags) || !lib_read_idle(&e->rd_vote) || !lib_read_idle(&e->rd_fetch) || e->vw_n > 0u || (e->deferred && (e->pm_wait || (e->op_active && e->op_phase == SEL_OPEN_STARTING))) || /* I1415: the Starting pump still owes the open */ (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
