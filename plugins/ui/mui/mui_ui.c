@@ -3836,6 +3836,16 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
 
 /* A Home row of the engine view is activated (list double click, quick tile, shelf entry): a shelf heading opens its Show all page, a
  * library tile its collection page (I794), a song plays and an album opens (MUI-P4-1). 1 when it was one of those. */
+/* I1408: a Search Albums hit (album row with an albums.id) opens that album's page, the route a Home album tile takes (desk_item_open). */
+static int mui_album_row_open(mui_state* s, const sel_view_state* view, uint32_t v) {
+    sel_uim_tile t;
+    if (v >= view->row_n || !view->rows[v].album || view->rows[v].art_id == 0u || !sel_uim_tile_route(&view->rows[v], &t)) {
+        return 0;
+    }
+    mui_list_pending_clear(&s->list_pending);
+    return mui_route_click(&s->route, SEL_ROUTE_HOME_TILE, t.kind, t.id, t.key, t.name, t.sub, mui_route_send, s);
+}
+
 static int mui_home_row_fire(mui_state* s, const sel_view_state* view, uint32_t v) {
     char hl[3][48];
     const sel_view_row* row = &view->rows[v];
@@ -4118,6 +4128,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_KEY_BASE && id < CTL_KEY_BASE + (LONG)mui_key_row_count()) {
         const mui_key_row* kr = mui_key_row_at((uint32_t)(id - CTL_KEY_BASE)); /* I1171: the action rows; door and pane rows send their own ids */
+        const sel_view_state* kv = sel_engine_state(s->engine)->view;
+        if (kr != NULL && kr->kind == MUI_KEYROW_ACTION && strcmp(kr->id, "activate") == 0 && kv != NULL && kv->cursor >= kv->window_start &&
+            mui_album_row_open(s, kv, kv->cursor - kv->window_start)) { /* I1408: Enter on an Albums hit */
+            return;
+        }
         if (kr != NULL && kr->kind == MUI_KEYROW_ACTION) {
             mui_action_fire(kr->id, mui_p8_send, s);
         } else if (kr != NULL && kr->kind == MUI_KEYROW_OVERLAY) {
@@ -4186,6 +4201,9 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_engine_line(s, line);
             mui_list_toggle_line(&view->rows[v], line, sizeof line);
             mui_engine_line(s, line);
+            return;
+        }
+        if (id == CTL_LIST_DBL && mui_album_row_open(s, view, (uint32_t)v)) {
             return;
         }
         if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n && mui_home_row_fire(s, view, (uint32_t)v)) {

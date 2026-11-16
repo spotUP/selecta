@@ -825,7 +825,11 @@ static void tui_open_field(tui* u, int album) {
 static int tui_home_tile_enter(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
     sel_uim_tile tile;
-    if (v == NULL || v->source != SEL_VIEW_HOME || v->cursor < v->window_start || v->cursor - v->window_start >= v->row_n) {
+    if (v == NULL || (v->source != SEL_VIEW_HOME && v->source != SEL_VIEW_SEARCH) || v->cursor < v->window_start ||
+        v->cursor - v->window_start >= v->row_n) {
+        return 0;
+    }
+    if (v->source == SEL_VIEW_SEARCH && !v->rows[v->cursor - v->window_start].album) { /* I1408: only a Search Albums hit opens its page */
         return 0;
     }
     if (!sel_uim_tile_route(&v->rows[v->cursor - v->window_start], &tile)) {
