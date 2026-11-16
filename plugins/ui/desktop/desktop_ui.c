@@ -8413,6 +8413,17 @@ static const char* library_dump_build(desk* d) {
     }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
     o = dump_put(d, o, "search scroll y=%d max=%d wheels=%u follows=%u\n", d->search_q16, search_max_q16(d), (unsigned)d->search_wheels, (unsigned)d->search_follows);
+    { /* I1409: the category the keyboard cursor stands in (the heading above its row), for the key-walk test */
+        const sel_view_state* cv = sel_engine_state(d->engine)->view;
+        const char* ch = "";
+        uint32_t ck;
+        for (ck = 0; cv != NULL && cv->source == SEL_VIEW_SEARCH && ck < cv->row_n && cv->window_start + ck <= cv->cursor; ck++) {
+            if (cv->rows[ck].kind == SEL_ROW_HEADING && cv->rows[ck].text != NULL) {
+                ch = cv->rows[ck].text;
+            }
+        }
+        o = dump_put(d, o, "search cursor=%u in=%s\n", cv != NULL ? (unsigned)cv->cursor : 0u, ch);
+    }
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
@@ -14815,7 +14826,7 @@ static int view_first_down(desk* d, const sel_gui_input* ev) {
  * known from the headings above it. Returns 1 when it sent a move. */
 static int search_list_step(desk* d, const sel_view_state* v, int first, int dir) {
     int64_t from = first ? -1 : (int64_t)v->cursor, to = -1;
-    uint32_t k, group = 0;
+    uint32_t k, group = 0, ord = 0, lim = UINT32_MAX;
     int show = 0;
     char line[32];
     if (v->window_start != 0u) {
@@ -14828,10 +14839,13 @@ static int search_list_step(desk* d, const sel_view_state* v, int first, int dir
         const sel_view_row* r = &v->rows[k];
         if (r->kind == SEL_ROW_HEADING) {
             group = sel_uim_search_group(r->text != NULL ? r->text : "");
-            show = search_group_shown(d, group, r->text != NULL ? r->text : "");
+            show = search_group_shown(d, group, r->text != NULL ? r->text : "") && !sel_uim_search_section_hidden(v->rows, v->row_n, k);
+            ord = 0;
+            lim = show && sel_uim_search_section_rows(v->rows, v->row_n, k) > SEL_UIM_SEARCH_FOLD_ROWS && !sel_uim_search_expanded(r->text != NULL ? r->text : "")
+                      ? SEL_UIM_SEARCH_FOLD_ROWS : UINT32_MAX; /* I1409: a folded category's hidden rows are not keyboard stops (Show all reveals them) */
             continue;
         }
-        if (!show) {
+        if (!show || ord++ >= lim) {
             continue;
         }
         if (dir > 0 && (int64_t)k > from) {
