@@ -64,6 +64,8 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-font-roles PROPERTIES LABELS font-roles TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
   # dui-art-async (I906c): art_load does not join; a busy library worker costs the UI thread no time.
   add_test(NAME dui-art-async COMMAND dui_art_async_unit)
+  add_test(NAME dui-art-per-turn COMMAND dui_art_per_turn_unit)
+  set_tests_properties(dui-art-per-turn PROPERTIES LABELS lib-ui-art TIMEOUT 60 PASS_REGULAR_EXPRESSION "art_per_turn_ok")
   set_tests_properties(dui-art-async PROPERTIES LABELS lib-ui-art TIMEOUT 60 PASS_REGULAR_EXPRESSION "art_async_ok") # ledger row, not a plan item: no dui label
 endif()
 if(NOT SEL_AMIGA)

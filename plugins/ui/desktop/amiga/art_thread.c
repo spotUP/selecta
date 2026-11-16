@@ -8,6 +8,8 @@ void* art_thread_start(void (*fn)(void*), void* ctx) {
 
 void art_thread_join(void* handle) { (void)handle; }
 
+int art_threaded(void) { return 0; }
+
 int art_thread_done(void* handle) {
     (void)handle;
     return 1;

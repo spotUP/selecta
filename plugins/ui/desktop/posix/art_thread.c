@@ -34,6 +34,8 @@ void* art_thread_start(void (*fn)(void*), void* ctx) {
     return NULL;
 }
 
+int art_threaded(void) { return 1; }
+
 int art_thread_done(void* handle) {
     job* j = (job*)handle;
     return j == NULL || atomic_load(&j->done) != 0;
