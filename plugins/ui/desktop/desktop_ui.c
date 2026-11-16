@@ -15048,6 +15048,11 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return desk_send(d, "CANCEL_OPEN");
     }
     if (ev->code == 27u && ev->mods == 0u && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
+        d->focus != (int32_t)d->layout.count && sel_route_hist_can(&d->rh, -1)) { /* I1423: Escape backs up one page; only the root reaches the quit question */
+        d->nav_keys++;
+        return desk_page_walk(d, -1);
+    }
+    if (ev->code == 27u && ev->mods == 0u && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
         d->focus != (int32_t)d->layout.count) { /* Escape with nothing open asks whether to quit (I623) */
         dlg_open_quit(d);
         draw_home(d);

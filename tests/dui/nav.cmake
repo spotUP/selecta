@@ -138,6 +138,22 @@ nav_run(fw home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\nkey backspace\nwa
 expect_eq("Alt+Right goes forward" "${fw_page}" "queue")
 nav_run(al home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\nkey alt+left\nwait 100\n")
 expect_eq("Alt+Left goes back" "${al_page}" "playlists")
+# I1423: Escape backs up one page at a time; only the root asks to quit. Two doors, Escape twice returns to the first page, the third opens the quit dialog.
+nav_run(e1 home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\nkey escape\nwait 100\n")
+expect_eq("Escape goes back one page" "${e1_page}" "playlists")
+nav_run(e2 home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\nkey escape\nwait 100\nkey escape\nwait 100\n")
+expect_eq("second Escape returns to the first page" "${e2_page}" "home")
+nav_run(e3 home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\nkey escape\nwait 100\nkey escape\nwait 100\nkey escape\nwait 100\n")
+string(REGEX MATCH "dialog [^\n]*open=([0-9]+)" _m "${e2_out}")
+expect_eq("no quit dialog while a page is left to go back to" "${CMAKE_MATCH_1}" "0")
+string(REGEX MATCH "dialog [^\n]*open=([0-9]+)" _m "${e3_out}")
+expect_eq("third Escape at the root opens the quit dialog" "${CMAKE_MATCH_1}" "4")
+# Backspace in the focused search field deletes a character and does not navigate
+nav_run(bs home "wait 100\ndoor 3\nwait 100\nkey /\nkey a\nkey b\nwait 100\nkey backspace\nwait 100\n")
+expect_eq("Backspace in the search field stays on Search" "${bs_page}" "search")
+if(NOT "${bs_out}" MATCHES "query a\n")
+  message(FATAL_ERROR "Backspace in the search field must delete one character (query a):\n${bs_out}")
+endif()
 # the history is bounded and walking it adds no entry
 nav_run(wl home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\nkey backspace\nwait 100\nkey alt+right\nwait 100\n")
 expect_eq("walking back and forward keeps the history" "${wl_hist}" "${bk_hist}")
