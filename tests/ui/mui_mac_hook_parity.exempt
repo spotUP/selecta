@@ -40,7 +40,6 @@ sel_uim_np_lines gap I1329e: Now Playing panel lines from the shared model (I122
 sel_uim_np_find gap I1329e: Now Playing panel lines
 sel_uim_np_note_action gap I1329e: Now Playing note action (click on the note line)
 sel_engine_queue_groups gap I1329f: Queue page group dividers (album / source runs)
-sel_engine_song_text_generation gap I1329f: Queue group titles refresh when song texts resolve
 sel_engine_sample_get gap I1329g: Tracker page sample list
 sel_engine_tracker_info gap I1329g: tracker position for the visualizer host (pattern viz)
 sel_uim_rate_line differs I1329j: MUI rating builds its own line; desktop uses the shared rate line (toggle-off on same mark, I306)
@@ -50,7 +49,6 @@ sel_uim_plremove_label differs I1329j: Remove from Playlist label not from the s
 sel_uim_plremove_line differs I1329j: Remove from Playlist command line not from the shared model
 sel_uim_plrename_line differs I1329j: playlist Rename command line not from the shared model
 sel_uim_sysfile_text gap I1329j: missing system file dialog (sample bank / ROM a player needs) has no MUI twin
-sel_engine_song_text gap I1329j: song titles in confirm dialogs, song menu header, composer info come from the engine cache
 sel_uim_home_shelves differs I1329k: Home shelves split ("the one split every UI shares", I1189); MUI splits its own
 sel_uim_tile_route differs I1329k: a Home tile click routes through the shared tile route
 sel_uim_tip_viz_close gap I1173: Visual layout close button (I1248); MUI has no Visual layout
