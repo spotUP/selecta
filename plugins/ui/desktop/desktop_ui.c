@@ -6096,18 +6096,6 @@ static const sel_view_row* pls_find_result(desk* d, uint32_t slot) {
     return NULL;
 }
 
-/* A result row's text is "<title>  <artist>" (two spaces): copies the title and points *artist at the rest. */
-static void pls_find_split(const char* text, char* title, size_t cap, const char** artist) {
-    const char* sep = strstr(text, "  ");
-    size_t n = sep != NULL ? (size_t)(sep - text) : strlen(text);
-    if (n >= cap) {
-        n = cap - 1u;
-    }
-    memcpy(title, text, n);
-    title[n] = '\0';
-    *artist = sep != NULL ? sep + 2 : "";
-}
-
 /* I1079e: a result row of the empty playlist's search is Title, Artist and the fixed Add button on the shared splitter sel_uim_cols_split (design
  * 2026-11-05-I1079 section 3.2). Title and Artist weigh 1 each; the Artist column is absent when no shown result has an artist. */
 enum { PFC_TITLE, PFC_ARTIST, PFC_ADD, PFC_N };
@@ -6121,10 +6109,8 @@ static void pls_find_cols(desk* d, sel_gui_rect mn, int32_t* x, int32_t* w) {
     c[PFC_ARTIST].weight = 1;
     c[PFC_ADD].fixed = lpx(d, PLS_FIND_ADD_W);
     for (slot = 0; pls_find_row_visible(d, mn, slot) && pls_find_result(d, slot) != NULL; slot++) {
-        char title[96];
-        const char* artist;
-        pls_find_split(pls_find_result(d, slot)->text != NULL ? pls_find_result(d, slot)->text : "", title, sizeof title, &artist);
-        any_artist |= artist[0] != '\0';
+        const sel_view_row* fr = pls_find_result(d, slot);
+        any_artist |= fr->artist != NULL && fr->artist[0] != '\0';
     }
     if (!any_artist) {
         c[PFC_ARTIST].weight = 0;
@@ -6152,12 +6138,11 @@ static void draw_playlist_find(desk* d, sel_gui_rect mn) {
     for (slot = 0; pls_find_row_visible(d, mn, slot); slot++) {
         const sel_view_row* r = pls_find_result(d, slot);
         sel_gui_rect rr = pls_find_row_rect(d, mn, slot);
-        char title[96];
-        const char* artist;
+        const char* title = r != NULL && r->text != NULL ? r->text : "";
+        const char* artist = r != NULL && r->artist != NULL ? r->artist : "";
         if (r == NULL) {
             break;
         }
-        pls_find_split(r->text != NULL ? r->text : "", title, sizeof title, &artist);
         draw_text(d, rect_of(rr.x + lpx(d, 12), rr.y, fw[PFC_TITLE] > lpx(d, 12) ? fw[PFC_TITLE] - lpx(d, 12) : 0, rr.h), title, 0, 14, text);
         if (fw[PFC_ARTIST] > 0) {
             draw_text(d, rect_of(rr.x + fx[PFC_ARTIST], rr.y, fw[PFC_ARTIST] > lpx(d, 16) ? fw[PFC_ARTIST] - lpx(d, 16) : 0, rr.h), artist, 0, 13, muted);
@@ -10698,7 +10683,17 @@ static void draw_search(desk* d) {
                         bw = search_badge_w(d, src) + lpx(d, 16);
                         search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), src);
                     }
-                    draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg - bw, lpx(d, SEARCH_ROW_H)), t, pl, 14, pl ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
+                    {   /* I1412: "Title - Author": the title in the row colour, the divider and the author in the muted text token */
+                        sel_gui_rect tr = rect_of(mn.x + mg, y, mn.w - 2 * mg - bw, lpx(d, SEARCH_ROW_H));
+                        const sel_gui_atlas* ta = desk_text_atlas(d, pl, 14, tr.h);
+                        int32_t tw = ta != NULL ? sel_gui_text_width(ta, t, strlen(t)) : 0;
+                        draw_text(d, tr, t, pl, 14, pl ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
+                        if (r->artist != NULL && r->artist[0] != '\0' && tw < tr.w) {
+                            char sub[256];
+                            snprintf(sub, sizeof sub, SEL_UIM_AUTHOR_SEP "%s", r->artist);
+                            draw_text(d, rect_of(tr.x + tw, tr.y, tr.w - tw, tr.h), sub, 0, 14, muted);
+                        }
+                    }
                 }
                 if ((group == 1u || group == 4u) && !r->album && r->key != NULL) {
                     song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),

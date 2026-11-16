@@ -3035,7 +3035,7 @@ static void mui_refresh(mui_state* s) {
                     s->entry_ptr[i] = (const char*)&s->cell[i];
                     continue;
                 }
-                snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", packed ? "" : mui_row_cell(&v->rows[ri], MUI_COL_ARTIST));
+                snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", packed || v->source == SEL_VIEW_SEARCH ? "" : mui_row_cell(&v->rows[ri], MUI_COL_ARTIST)); /* I1412: a search row carries its author in the title cell */
                 if (packed) {
                     memset(&s->cell[i].extra, 0, sizeof s->cell[i].extra);
                 } else {

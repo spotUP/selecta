@@ -982,7 +982,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
         char* key = v->fkey + pool;
         size_t len = 0, klen = 0;
         uint32_t count = 1, album = 0, composer = 0, album_id = 0, item = 0;
-        char *art = NULL, *sart = NULL, *fmtp = NULL;
+        char *art = NULL, *sart = NULL, *fmtp = NULL, *eart = NULL;
         key[0] = '\0';
         if ((kind == 'H' || kind == 'Q' || kind == 'S' || kind == 'C') && p[1] == ' ') {
             p += 2;
@@ -1091,20 +1091,28 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                 t[len++] = *p++;
             }
             t[len] = '\0';
-            if (kind == 'S' && !album && !composer && !item) { /* I1387b: a song row's title is shown tidy; its key and artist stay raw */
-                /* a search hit row is "<title>  <artist>": tidy each part alone, else the gap turns off the split of the title */
-                char tidy[SEL_VIEW_FOLDER_NAME], *gap = strstr(t, "  ");
-                size_t tl;
-                if (gap != NULL) {
-                    *gap = '\0';
+            if (kind == 'S') { /* I1412: a search row entry is "<title>\x1f<author>"; the author is its own row field, no UI re-splits a joined text */
+                char* us2 = strchr(t, '\x1f');
+                if (us2 != NULL) {
+                    size_t al = strlen(us2 + 1u), base = pool + (key[0] == '\0' ? 1u : 0u); /* a keyless row's key slot is the byte at pool */
+                    *us2 = '\0';
+                    if (al > 0u && base + al + 1u <= SEL_VIEW_HOME_TEXT_MAX) {
+                        eart = v->fkey + base;
+                        memcpy(eart, us2 + 1, al + 1u);
+                        pool = base + al + 1u;
+                    }
                 }
+            }
+            if (kind == 'S' && !album && !composer && !item) { /* I1387b: a song row's title is shown tidy; its key stays raw */
+                char tidy[SEL_VIEW_FOLDER_NAME];
                 sel_uim_tidy_title(t, tidy, sizeof tidy);
-                tl = strlen(tidy);
-                if (gap != NULL && tl + 2u < sizeof tidy) {
-                    memcpy(tidy + tl, "  ", 2u);
-                    sel_uim_tidy_title(gap + 2, tidy + tl + 2u, sizeof tidy - tl - 2u);
-                }
                 memcpy(t, tidy, strlen(tidy) + 1u);
+                if (eart != NULL) {
+                    sel_uim_tidy_title(eart, tidy, sizeof tidy);
+                    if (strlen(tidy) <= strlen(eart)) {
+                        memcpy(eart, tidy, strlen(tidy) + 1u);
+                    }
+                }
             }
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
@@ -1121,6 +1129,9 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             }
             if (album && key[0] != '\0' && art != key && strchr(art, '\x1f') != NULL && strchr(art, '\x1f')[1] != '\0') {
                 v->frows[n].artist = strchr(art, '\x1f') + 1;
+            }
+            if (eart != NULL && v->frows[n].artist == NULL) {
+                v->frows[n].artist = eart;
             }
             v->frows[n].kind = kind == 'H' || kind == 'Q' ? SEL_ROW_HEADING : SEL_ROW_HOME;
             v->frows[n].id = n;
