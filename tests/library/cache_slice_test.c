@@ -278,6 +278,60 @@ static void foreground_fetch_adopts_partial_prefetch(const char* dir) {
     }
 }
 
+static void* bump_gen(void* arg) {
+    usleep(150 * 1000);
+    ++*(volatile unsigned*)arg;
+    return NULL;
+}
+
+/* I1415: the watch reports done/total, a bumped generation stops the fetch and keeps the .part, the next fetch resumes by Range. */
+static void watch_reports_progress_and_cancel_keeps_part(const char* dir) {
+    sel_cache c;
+    sel_cache_watch w;
+    volatile unsigned gen = 0;
+    char out[SEL_CACHE_PATH_MAX], part[SEL_CACHE_PATH_MAX + 8];
+    unsigned rg0;
+    unsigned long from;
+    sel_cache_result r;
+    pthread_t t;
+    FILE* f;
+
+    new_cache(&c, dir);
+    memset(&w, 0, sizeof w);
+    w.gen = &gen;
+    w.start = gen;
+    c.watch = &w;
+    pthread_mutex_lock(&mu);
+    rg0 = ranged;
+    pthread_mutex_unlock(&mu);
+    pthread_create(&t, NULL, bump_gen, (void*)&gen);
+    r = sel_cache_fetch(&c, "modland", "cancel.bin", NULL, out, sizeof out);
+    pthread_join(t, NULL);
+    CHECK(r != SEL_CACHE_OK);
+    CHECK(sel_cache_watch_cancelled(&w));
+    CHECK(w.body == 1 && w.total == BODY_LEN);
+    CHECK(w.done > 0 && w.done < BODY_LEN);
+    snprintf(part, sizeof part, "%s/files/modland/cancel.bin.part", dir);
+    f = fopen(part, "rb");
+    CHECK(f != NULL); /* the partial download stays for the next click */
+    if (f != NULL) {
+        fclose(f);
+    }
+    from = w.done;
+    /* second click: a new generation, same file resumes with Range and finishes */
+    memset(&w, 0, sizeof w);
+    w.gen = &gen;
+    w.start = gen;
+    r = sel_cache_fetch(&c, "modland", "cancel.bin", NULL, out, sizeof out);
+    CHECK(r == SEL_CACHE_OK);
+    CHECK(body_ok(out));
+    CHECK(w.done == BODY_LEN && w.total == BODY_LEN);
+    pthread_mutex_lock(&mu);
+    printf("cancel: stopped at %lu; ranged requests %u; resumed from %lu\n", from, ranged - rg0, last_from);
+    CHECK(ranged - rg0 == 1);
+    pthread_mutex_unlock(&mu);
+}
+
 int main(void) {
     char dir[64];
 
@@ -287,6 +341,7 @@ int main(void) {
     pump_tick_stays_short_during_slow_download(dir);
     stalled_prefetch_tick_returns_within_bound(dir);
     foreground_fetch_adopts_partial_prefetch(dir);
+    watch_reports_progress_and_cancel_keeps_part(dir);
     {
         char cmd[100];
         snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);

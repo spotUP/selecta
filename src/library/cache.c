@@ -115,12 +115,18 @@ static int file_exists(const char* path) {
     return 1;
 }
 
+int sel_cache_watch_cancelled(const sel_cache_watch* w) {
+    return w != NULL && w->gen != NULL && *w->gen != w->start;
+}
+
 typedef struct sink {
     FILE* f;
     const char* part;
     sel_md5 md5;
     const char* want;
     volatile int* cancel;
+    sel_cache_watch* watch;    /* I1415: progress and cancel of the foreground fetch, or NULL */
+    volatile long length;      /* I1415: Content-Length of the running response, filled at its first body byte */
     unsigned long offset;      /* body bytes written to the part file */
     unsigned long deadline;    /* sel_net_now_ms() at which a sliced fetch yields, 0 = never */
     volatile int yielded;      /* the sink stopped the transfer at the deadline */
@@ -132,11 +138,24 @@ static int on_body(void* ctx, const void* data, size_t len) {
     if (s->cancel != NULL && *s->cancel) {
         return 0;
     }
+    if (sel_cache_watch_cancelled(s->watch)) {
+        if (s->resumable && s->f != NULL) {
+            s->yielded = 1; /* I1415: keep the .part file like a slice end, so the next click resumes by Range */
+        }
+        return 0;
+    }
+    if (s->watch != NULL && s->watch->body == 0) {
+        s->watch->total = s->length > 0 ? (uint32_t)(s->offset + (unsigned long)s->length) : 0;
+        s->watch->body = 1;
+    }
     sel_md5_update(&s->md5, data, len);
     if (s->f == NULL || fwrite(data, 1, len, s->f) != len) {
         return 0;
     }
     s->offset += len;
+    if (s->watch != NULL) {
+        s->watch->done = (uint32_t)s->offset;
+    }
     if (s->deadline != 0 && s->resumable && sel_net_now_ms() >= s->deadline) {
         s->yielded = 1; /* chunk boundary: the bytes are on disk and hashed, the next call resumes after them */
         return 0;
@@ -149,9 +168,13 @@ static void on_restart(void* ctx) {
     if (s->f != NULL) {
         fclose(s->f);
     }
-    s->f = (s->cancel != NULL && *s->cancel) ? NULL : fopen(s->part, "wb");
+    s->f = ((s->cancel != NULL && *s->cancel) || sel_cache_watch_cancelled(s->watch)) ? NULL : fopen(s->part, "wb");
     sel_md5_init(&s->md5);
     s->offset = 0;
+    if (s->watch != NULL) {
+        s->watch->done = 0;
+        s->watch->total = 0;
+    }
     s->yielded = 0;
 }
 
@@ -244,6 +267,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     memset(&s, 0, sizeof s);
     s.part = part;
     s.cancel = c->cancel;
+    s.watch = c->watch;
     s.want = (md5 != NULL && strlen(md5) == 32u) ? md5 : NULL;
     if (c->slice.active && strcmp(c->slice.key, out) != 0) {
         sel_cache_slice_drop(c); /* a partial download of another file is not wanted any more */
@@ -265,6 +289,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     o.from = from;
     o.yielded = &s.yielded;
     o.resumable = &s.resumable;
+    o.length = &s.length;
     if (c->slice_ms > 0) {
         s.deadline = sel_net_now_ms() + c->slice_ms;
         o.stall_ms = SEL_CACHE_SLICE_STALL_MS;
@@ -310,7 +335,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     c->slice.fails = 0;
     c->slice.active = 0;
     remove(part);
-    if (res.rejected == 0 && !(c->cancel != NULL && *c->cancel) && zip_fallback(c, source, path, out, part)) {
+    if (res.rejected == 0 && !(c->cancel != NULL && *c->cancel) && !sel_cache_watch_cancelled(c->watch) && zip_fallback(c, source, path, out, part)) {
         c->stats.fetches++;
         return SEL_CACHE_OK;
     }
@@ -661,6 +686,11 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
     unsigned missing0 = c->stats.content_missing + c->stats.companion_missing;
 
     c->last_banks_missing = 0;
+    if (c->watch != NULL) {
+        c->watch->file = 1u;
+        c->watch->files = 1u;
+        c->watch->body = 0;
+    }
     r = sel_cache_fetch(c, source, path, md5, out, cap);
     if (r != SEL_CACHE_OK || (rules == NULL && c->registry_get == NULL)) {
         return r;
@@ -668,8 +698,17 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
     if (rules != NULL) {
         n = sel_companion_paths(rules, path, comp, SEL_CACHE_COMPANIONS_MAX);
     }
-    for (i = 0; i < n && !(c->cancel != NULL && *c->cancel); i++) {
-        sel_cache_result cr = sel_cache_fetch(c, source, comp[i], NULL, cpath, sizeof cpath);
+    if (c->watch != NULL) {
+        c->watch->files = 1u + n;
+    }
+    for (i = 0; i < n && !(c->cancel != NULL && *c->cancel) && !sel_cache_watch_cancelled(c->watch); i++) {
+        sel_cache_result cr;
+
+        if (c->watch != NULL) {
+            c->watch->file = i + 2u;
+            c->watch->body = 0;
+        }
+        cr = sel_cache_fetch(c, source, comp[i], NULL, cpath, sizeof cpath);
         if (cr == SEL_CACHE_PENDING) {
             return SEL_CACHE_PENDING; /* the next call finds the song cached and resumes this companion */
         }
@@ -679,7 +718,7 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
             c->stats.companion_missing++;
         }
     }
-    if (c->registry_get != NULL && !(c->cancel != NULL && *c->cancel) &&
+    if (c->registry_get != NULL && !(c->cancel != NULL && *c->cancel) && !sel_cache_watch_cancelled(c->watch) &&
         fetch_content_companions(c, source, path, out, comp, n) == SEL_CACHE_PENDING) {
         return SEL_CACHE_PENDING;
     }

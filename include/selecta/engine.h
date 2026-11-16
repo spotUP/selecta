@@ -348,6 +348,28 @@ typedef struct sel_sync_progress {
     char source[40];
 } sel_sync_progress;
 void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out);
+
+/* I1415: the song being opened (OPEN until SONG_OPENED), for the now-playing bar and the clicked row. Polled like the sync
+ * progress, no event. active 0 = no open in progress. done/total are bytes of the current file (total 0 = unknown: an
+ * indeterminate bar); file/files count the song and its companions (files 0 = unknown). elapsed_ms runs since the OPEN: the
+ * UIs show nothing below their own show threshold. path is the path of the OPEN, the row the user clicked. CANCEL_OPEN ends
+ * it and the song playing before keeps playing. */
+#define SEL_OPEN_PATH_MAX 1024u
+typedef enum sel_open_phase {
+    SEL_OPEN_IDLE = 0,
+    SEL_OPEN_CONNECTING,
+    SEL_OPEN_DOWNLOADING,
+    SEL_OPEN_UNPACKING,
+    SEL_OPEN_STARTING
+} sel_open_phase;
+typedef struct sel_open_progress {
+    uint32_t active, phase;
+    uint32_t done, total;
+    uint32_t file, files;
+    uint32_t elapsed_ms;
+    char path[SEL_OPEN_PATH_MAX];
+} sel_open_progress;
+void sel_engine_open_progress(const sel_engine* e, sel_open_progress* out);
 void sel_engine_sync_cancel(sel_engine* e);
 
 /* Counters of the last LIBRARY_SYNC (I161; test sentinels: listing_rows > 0 proves the sync code ran). */

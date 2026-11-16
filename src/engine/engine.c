@@ -107,6 +107,7 @@
     X(PAUSE)                                                                                  \
     X(PAUSE_PLAYBACK)                                                                         \
     X(STOP)                                                                                   \
+    X(CANCEL_OPEN)                                                                            \
     X(VOLUME)                                                                                 \
     X(MUTE)                                                                                   \
     X(PITCH)                                                                                  \
@@ -196,7 +197,7 @@
 /* ids of the internal ring messages (not commands, not in commands.def) */
 #define SEL_RING_SWAP 1u
 #define SEL_RING_RETURN 2u
-#define SEL_DEFERRED_PATH_MAX 1024u
+#define SEL_DEFERRED_PATH_MAX SEL_OPEN_PATH_MAX
 /* I1274: the catalogue rows of the song panel. A STIL entry alone is up to 2048 bytes in the importer (STIL_POOL), so the old 1024 dropped
  * a long STIL note whole (panel_put adds no row that does not fit). */
 #define SEL_PANEL_BYTES 4096u
@@ -816,6 +817,12 @@ struct sel_engine {
     sel_play_meta pm[4], pm_job;
     char pm_want[SEL_DEFERRED_PATH_MAX];
     uint32_t pm_next, pm_wait, play_meta_reads;
+    /* I1415: the open in progress. open_cancel is a generation (bumped on the pump) that ends the read thread's download; pm_cancel_start
+     * is its value when the read was posted. op_* are written by the pump (op_watch by the read thread) and polled by the UIs. */
+    volatile unsigned open_cancel, pm_cancel_start;
+    volatile uint32_t op_active, op_phase, op_start_ms;
+    sel_cache_watch op_watch;
+    char op_path[SEL_OPEN_PATH_MAX];
     char pm_rules[512]; /* I1225: companion rules for the read's remote fetch, built on the pump before the post */
     char rdp_path[SEL_DEFERRED_PATH_MAX], rdp_next_path[SEL_DEFERRED_PATH_MAX];
     char rdp_buf[SEL_PANEL_BYTES];
@@ -1174,6 +1181,18 @@ static void cmd_PAUSE_PLAYBACK(sel_engine* e, const sel_message* m) {
     } else {
         sel_engine_report_error(e, "argument_type", "PAUSE_PLAYBACK");
     }
+}
+
+/* I1415: ends the open in progress; the playing slot is not touched, so the previous song keeps playing. */
+static void cmd_CANCEL_OPEN(sel_engine* e, const sel_message* m) {
+    (void)m;
+    if (!e->op_active) return;
+    SEL_ATOMIC_INC_REL(&e->open_cancel);
+    if (e->deferred == SEL_BEGIN_OPEN) {
+        e->deferred = 0;
+        e->pm_wait = 0;
+    }
+    e->op_active = 0;
 }
 
 static void cmd_STOP(sel_engine* e, const sel_message* m) {
@@ -3099,7 +3118,9 @@ static void play_meta_run(sel_engine* e) {
         const char* target = m->has_best ? m->best : m->path;
         if (sel_cache_is_remote(target) && strlen(target) < sizeof m->fetch_key) {
             snprintf(m->fetch_key, sizeof m->fetch_key, "%s", target);
-            m->fetch_rc = sel_library_fetch(e->lib, target, e->pm_rules, m->cached, sizeof m->cached, &m->files);
+            sel_net_set_cancel(&e->open_cancel, e->pm_cancel_start); /* I1415: CANCEL_OPEN or a newer OPEN ends this download */
+            m->fetch_rc = sel_library_fetch_ex(e->lib, target, e->pm_rules, m->cached, sizeof m->cached, &m->files, &e->op_watch);
+            sel_net_set_cancel(NULL, 0);
             if (m->fetch_rc <= 0) {
                 m->fetch_status = sel_library_fetch_status(e->lib);
             } else {
@@ -3108,7 +3129,7 @@ static void play_meta_run(sel_engine* e) {
             m->fetched = 1;
         }
     }
-    m->valid = 1;
+    m->valid = !sel_cache_watch_cancelled(&e->op_watch); /* I1415: a cancelled run publishes nothing, so no song starts late */
 }
 
 /* 1 when the start of `path` may run now. Otherwise posts the read (one at a time) and returns 0: the caller retries on the next pump. */
@@ -3116,6 +3137,10 @@ static int play_meta_ready(sel_engine* e, const char* path) {
     if (e->lib == NULL || play_meta_find(e, path) != NULL) return 1;
     if (lib_read_idle(&e->rd_play) && strlen(path) < sizeof e->pm_want) {
         snprintf(e->pm_want, sizeof e->pm_want, "%s", path);
+        e->pm_cancel_start = e->open_cancel;
+        memset(&e->op_watch, 0, sizeof e->op_watch); /* I1415: the read thread is idle, so the counters restart here */
+        e->op_watch.gen = &e->open_cancel;
+        e->op_watch.start = e->open_cancel;
         sel_companion_rules(e->registry_count, e->registry_get, e->pm_rules, sizeof e->pm_rules);
         lib_read_post(e, &e->rd_play, play_meta_run);
     }
@@ -3136,10 +3161,37 @@ static void play_meta_drop(sel_engine* e, const char* path) {
     }
 }
 
+static int begin_song_run(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong, uint32_t seek_to);
+
+/* I1415: tracks the open in progress around begin_song_run and lets a newer OPEN end the download of an older one. */
+static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong, uint32_t seek_to) {
+    int r;
+
+    if (kind == SEL_BEGIN_OPEN && path != NULL) {
+        const char* p = strncmp(path, "local:", 6) == 0 ? path + 6 : path;
+        const char* o = strncmp(e->op_path, "local:", 6) == 0 ? e->op_path + 6 : e->op_path;
+
+        if (!e->op_active || strcmp(p, o) != 0) {
+            if (!lib_read_idle(&e->rd_play) && strcmp(e->pm_want, p) != 0) {
+                SEL_ATOMIC_INC_REL(&e->open_cancel); /* the click on another song ends the old download at once */
+            }
+            snprintf(e->op_path, sizeof e->op_path, "%s", path);
+            e->op_start_ms = e->host->clock_ms(e->host);
+            e->op_phase = SEL_OPEN_CONNECTING;
+            e->op_active = 1;
+        }
+    }
+    r = begin_song_run(e, kind, path, subsong, seek_to);
+    if (kind == SEL_BEGIN_OPEN && !(r && e->deferred)) {
+        e->op_active = 0;
+    }
+    return r;
+}
+
 /* One song change (SEL_BEGIN_*). Both slots busy means the audio thread has
  * not yet returned the old one: the request waits for the next pump. Returns
  * 0 when the song could not be started (an ERROR was reported). */
-static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong, uint32_t seek_to) {
+static int begin_song_run(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong, uint32_t seek_to) {
     uint32_t idx;
     sel_message ev;
 
@@ -3177,6 +3229,19 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         e->song_over = 0;
         e->pm_wait = 1;
         return 1;
+    }
+    if (kind == SEL_BEGIN_OPEN && e->op_active && e->op_phase != SEL_OPEN_STARTING) {
+        const sel_play_meta* got = play_meta_find(e, path);
+
+        if (got != NULL && got->fetched && strlen(path) < sizeof e->deferred_path) {
+            e->op_phase = SEL_OPEN_STARTING; /* I1415: one pump shows "Starting" before the replayer open blocks it */
+            memcpy(e->deferred_path, path, strlen(path) + 1u);
+            e->deferred = kind;
+            e->deferred_subsong = subsong;
+            e->deferred_seek = seek_to;
+            e->pm_wait = 0;
+            return 1;
+        }
     }
     e->pm_wait = 0;
     e->deferred = 0;
@@ -5222,6 +5287,19 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
         out->total = e->scan_total;
         memcpy(out->file, e->scan_file, sizeof out->file);
     } while ((a & 1u) != 0u || a != e->scan_seq);
+}
+
+static void open_progress_live(const sel_engine* e, sel_open_progress* out) {
+    memset(out, 0, sizeof *out);
+    if (!e->op_active) return;
+    out->active = 1;
+    out->phase = e->op_phase == SEL_OPEN_CONNECTING && e->op_watch.body ? SEL_OPEN_DOWNLOADING : e->op_phase;
+    out->done = e->op_watch.done;
+    out->total = e->op_watch.total;
+    out->file = e->op_watch.file;
+    out->files = e->op_watch.files;
+    out->elapsed_ms = e->host->clock_ms(e->host) - e->op_start_ms;
+    snprintf(out->path, sizeof out->path, "%s", e->op_path);
 }
 
 static void sync_progress_live(const sel_engine* e, sel_sync_progress* out) {
@@ -12109,6 +12187,7 @@ static void publish_aux(sel_engine* e, sel_snap_aux* a) {
         aux_str(a->s_src[k], sizeof a->s_src[k], &a->has_src[k], a->stats.search_src_id[k]);
     }
     sync_progress_live(e, &a->sync);
+    open_progress_live(e, &a->open);
     a->sources_pending = sources_pending_live(e);
     if (e->aux_off_cap < n + 1u) {
         uint32_t* o = (uint32_t*)realloc(e->aux_off, (size_t)(n + 1u) * sizeof *o);
@@ -12136,6 +12215,14 @@ void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out) {
         return;
     }
     sync_progress_live(e, out);
+}
+
+void sel_engine_open_progress(const sel_engine* e, sel_open_progress* out) {
+    if (e->snap != NULL && e->snap_mode == 1u) {
+        *out = sel_snap_aux_get(e->snap)->open;
+        return;
+    }
+    open_progress_live(e, out);
 }
 
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {

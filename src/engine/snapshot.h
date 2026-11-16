@@ -27,6 +27,7 @@ typedef struct sel_snap_aux {
     char s_replayer[64], s_dup[256], s_member[256], s_loud[24], s_src[SEL_STATS_SEARCH_SRC][48];
     uint8_t has_replayer, has_dup, has_member, has_loud, has_src[SEL_STATS_SEARCH_SRC];
     sel_sync_progress sync;
+    sel_open_progress open; /* I1415 */
     int sources_pending;
     uint32_t path_rows, path_bytes;
     const uint32_t* path_off;

@@ -70,6 +70,15 @@ typedef struct sel_cache_slice {
 
 #define SEL_CACHE_SLICE_STALL_MS 1000u /* connect and first-byte limit of one sliced attempt */
 
+/* I1415: what a foreground fetch shows the UI and how it is cancelled without touching the shared cancel flag. The
+ * download ends at its next body chunk once *gen differs from start; done/total are bytes of the current file
+ * (total 0 = unknown), file/files count the song and its companions, body is 1 from the first body byte. */
+typedef struct sel_cache_watch {
+    const volatile unsigned* gen;
+    unsigned start;
+    volatile uint32_t done, total, file, files, body;
+} sel_cache_watch;
+
 typedef struct sel_cache {
     char dir[SEL_CACHE_DIR_MAX];
     int amiga_route;
@@ -89,7 +98,11 @@ typedef struct sel_cache {
     const sel_tag* (*registry_get)(uint32_t);
     const sel_host* hook_host;              /* scratch memory for the hooks */
     volatile int* cancel;   /* non-NULL: a download stops at its next body chunk once *cancel is set (I168a) */
+    sel_cache_watch* watch; /* non-NULL: progress out and cancel in for the running foreground fetch (I1415), set under the cache lock */
 } sel_cache;
+
+/* 1 when the watch's cancel generation moved since start (a NULL watch never cancels). */
+int sel_cache_watch_cancelled(const sel_cache_watch* w);
 
 /* dir NULL or empty: $SELECTA_CACHE_DIR, else $XDG_CACHE_HOME/selecta, else $HOME/.cache/selecta. */
 void sel_cache_init(sel_cache* c, const char* dir, int amiga_route);

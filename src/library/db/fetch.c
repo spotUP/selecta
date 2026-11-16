@@ -517,6 +517,11 @@ int sel_library_fetch_banks_missing(sel_library* lib) {
 }
 
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files) {
+    return sel_library_fetch_ex(lib, spec, rules, out, cap, files, NULL);
+}
+
+int sel_library_fetch_ex(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files,
+                         sel_cache_watch* watch) {
     char source[24];
     char path[SEL_CACHE_PATH_MAX];
     char md5[33];
@@ -550,12 +555,14 @@ int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, cha
     }
     before = c->stats.companions;
     fetched = c->stats.fetches;
+    c->watch = watch;
     r = sel_cache_fetch_song(c, source, path, md5[0] != '\0' ? md5 : NULL, rules, out, cap);
     if (r == SEL_CACHE_OK && c->stats.fetches != fetched) {
         sel_cache_trim_result tr;
         library_trim_protect(lib, 0, out, &tr);
     }
     *files = 1u + (c->stats.companions - before);
+    c->watch = NULL;
     cache_unlock(lib);
     if (r != SEL_CACHE_OK) {
         return r == SEL_CACHE_MD5 ? -1 : 0;

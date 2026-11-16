@@ -88,6 +88,7 @@ typedef struct sel_mirror_opts {
     unsigned max_tries;
     const volatile int* yielded;
     volatile int* resumable;
+    volatile long* length; /* I1415: receives the Content-Length of the response (-1 chunked) at its first body byte */
 } sel_mirror_opts;
 
 int sel_mirrors_fetch_opts(sel_mirror_set* set, const char* path, const sel_mirror_opts* opts, sel_mirror_sink sink,

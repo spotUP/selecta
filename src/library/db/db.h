@@ -381,6 +381,10 @@ int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job);
 int sel_library_fetch_status(sel_library* lib); /* HTTP status of the last failed sel_library_fetch, 0 when none (I695b) */
 int sel_library_fetch_banks_missing(sel_library* lib); /* I1127c: 1 when the last sel_library_fetch found a companion bank on no mirror */
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files);
+/* I1415: the same with a watch (progress out, cancel in); a cancelled fetch returns 0 and leaves the .part file for a Range resume. */
+struct sel_cache_watch;
+int sel_library_fetch_ex(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files,
+                         struct sel_cache_watch* watch);
 /* Cache counters; 0 when the handle served no fetch. */
 struct sel_cache_stats;
 /* Trim the file cache to `budget` bytes (0 = the machine's default, sel_cache_budget) by last access.

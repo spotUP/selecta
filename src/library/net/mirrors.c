@@ -194,6 +194,7 @@ typedef struct attempt {
     const sel_http_res* hr;      /* final status, readable once the body flows */
     int checked;                 /* the resume answer was looked at */
     int status;                  /* HTTP status of this attempt, 0 when no response came (ftp or a refused connect) */
+    volatile long* length;       /* I1415: where the body length goes, or NULL */
 } attempt;
 
 static int on_body(void* c, const void* data, size_t len) {
@@ -207,6 +208,9 @@ static int on_body(void* c, const void* data, size_t len) {
     if (a->bytes == 0 && len > 0) {
         unsigned long d = sel_net_now_ms() - a->start;
         a->ttfb = d > 0 ? (unsigned)d : 1u;
+    }
+    if (a->bytes == 0 && len > 0 && a->length != NULL) {
+        *a->length = a->hr != NULL ? a->hr->content_length : -1;
     }
     a->bytes += len;
     return a->sink(a->ctx, data, len);
@@ -298,6 +302,7 @@ int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror
         a.hr = NULL;
         a.checked = 0;
         a.status = 0;
+        a.length = o != NULL ? o->length : NULL;
         res->tries++;
         ok = try_one(res->url, &a, o);
         /* 503 means "fetching from the upstream, try again" (hippoplayer.se mirror fill, row I1059): retry the same
