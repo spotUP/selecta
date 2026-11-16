@@ -13,6 +13,7 @@
 #include "../net/http.h"
 #include "../net/net.h"
 #include "../../core/pal.h"
+#include "../dir.h"
 #include "../song_key.h"
 #include "selecta/platform.h"
 
@@ -371,6 +372,81 @@ int sel_dz_query(const char* key, const char* title, const char* artist, const c
     return n < (int)cap;
 }
 
+/* I1401c: folder art for a local song. The first of cover / folder / front (.jpg .jpeg .png, any case) in the song's directory, else the
+ * only image there. Free and local, so it goes before any request. shortcut: files over DZ_IMAGE_MAX are skipped; a song without album
+ * gets no MusicBrainz step (the album pass already covers songs that have one). */
+typedef struct folder_pick {
+    char best[512];
+    char only[512];
+    int images;
+    int named;
+} folder_pick;
+
+static int folder_each(void* ctx, const char* name, int is_dir) {
+    folder_pick* f = ctx;
+    size_t n = strlen(name), i, stem;
+    const char* dot = strrchr(name, '.');
+    char low[512];
+
+    if (is_dir || dot == NULL || n >= sizeof low) return 1;
+    for (i = 0; i < n; i++) low[i] = (char)((name[i] >= 'A' && name[i] <= 'Z') ? name[i] + 32 : name[i]);
+    low[n] = '\0';
+    stem = (size_t)(dot - name);
+    if (strcmp(low + stem, ".jpg") != 0 && strcmp(low + stem, ".jpeg") != 0 && strcmp(low + stem, ".png") != 0) return 1;
+    f->images++;
+    snprintf(f->only, sizeof f->only, "%s", name);
+    low[stem] = '\0';
+    if (!f->named && (strcmp(low, "cover") == 0 || strcmp(low, "folder") == 0 || strcmp(low, "front") == 0)) {
+        f->named = 1;
+        snprintf(f->best, sizeof f->best, "%s", name);
+    }
+    return 1;
+}
+
+/* 1 = cover stored under the song's key, 0 = none found. */
+static int folder_art(sel_library* lib, const char* key, int id) {
+    char source[32], path[SCRAPE_URL_MAX], dir[SCRAPE_URL_MAX], full[SCRAPE_URL_MAX + 520];
+    folder_pick f;
+    FILE* fp;
+    uint8_t* buf;
+    size_t n, cut;
+    scrape_buf b;
+
+    if (!sel_song_key_split(key, source, sizeof source, path, sizeof path) || strcmp(source, "local") != 0) return 0;
+    for (cut = strlen(path); cut > 0 && path[cut - 1] != '/' && path[cut - 1] != ':'; cut--) {
+    }
+    if (cut == 0) return 0;
+    memset(&f, 0, sizeof f);
+    memcpy(dir, path, cut);
+    dir[cut] = '\0';
+    if (cut > 1u && dir[cut - 1] == '/') dir[cut - 1] = '\0'; /* a trailing '/' ends the directory; an Amiga "Vol:" keeps its colon */
+    if (!sel_dir_each(dir, folder_each, &f)) return 0;
+    if (!f.named && f.images == 1) snprintf(f.best, sizeof f.best, "%s", f.only);
+    if (f.best[0] == '\0') return 0;
+    snprintf(full, sizeof full, "%.*s%s", (int)cut, path, f.best);
+    fp = fopen(full, "rb");
+    if (fp == NULL) return 0;
+    buf = malloc(DZ_IMAGE_MAX);
+    if (buf == NULL) {
+        fclose(fp);
+        return 0;
+    }
+    n = fread(buf, 1, DZ_IMAGE_MAX, fp);
+    fclose(fp);
+    b.data = buf;
+    b.cap = DZ_IMAGE_MAX;
+    b.len = n;
+    if (n < DZ_IMAGE_MAX && is_image(&b)) {
+        dz_put(lib, id, "cover", buf, n);
+        dz_put(lib, id, "dz_key", key, strlen(key));
+        n = 1;
+    } else {
+        n = 0;
+    }
+    free(buf);
+    return (int)n;
+}
+
 static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     char base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], kind[12], stamp[24];
     uint8_t seen[24];
@@ -387,6 +463,10 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     op.ref = key;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) return 1; /* real art, or screenshots already cached */
+    if (folder_art(lib, key, id)) {
+        st->scraped++;
+        return 1;
+    }
     memset(meta, 0, sizeof meta);
     if (strncmp(key, "modland:pub/modules/", 20) != 0) { /* I1401: any other source is asked by title + artist from the songs row */
         memset(&op, 0, sizeof op);
