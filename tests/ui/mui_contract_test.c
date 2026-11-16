@@ -3783,6 +3783,8 @@ static void test_route_reach(void) {
     CHECK(src != NULL, "mui_ui.c source readable");
     CHECK(strstr(src, "#include \"map/mui_route.h\"") != NULL && strstr(src, "mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1") != NULL,
           "Back and Forward are wired to the history walk");
+    CHECK(strstr(src, "!was_close && mui_route_can(&s->route, -1)") != NULL && strstr(src, "I1423: Esc backs up one page") != NULL,
+          "I1423: Esc walks the history back before it asks to quit");
     CHECK(strstr(src, "\"nav_back\", NULL, CTL_NAV_BACK") != NULL && strstr(src, "mui_route_can(&s->route, -1)") != NULL, "Back button is built and enabled from the history");
     CHECK(strstr(src, "mui_route_door(&s->route") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL") != NULL &&
               strstr(src, "mui_route_click(&s->route, SEL_ROUTE_HOME_TILE") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_META_ARTIST") != NULL,
