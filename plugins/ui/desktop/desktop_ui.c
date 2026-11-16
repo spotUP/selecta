@@ -1524,7 +1524,24 @@ static void dev_load(desk* d) {
 static void song_menu_draw(desk* d);
 static void dlg_draw(desk* d);
 static void desk_draw_notices(desk* d);
+/* I1415: the clicked row shows the load on its bottom edge. Drawn here, after the page, so no row fill or text of the page can cover it. */
+static void desk_draw_open_row_bars(desk* d) {
+    uint32_t i;
+    if (!d->open_shown) {
+        return;
+    }
+    for (i = 0; i < d->sm_n; i++) {
+        sel_gui_rect r = d->sm_rows[i].r;
+        int32_t bh = lpx(d, 2), w = (int32_t)((uint64_t)open_bar_q16(d) * (uint32_t)r.w >> 16);
+        if (strcmp(d->sm_rows[i].ref.path, d->open_ui.path) == 0) {
+            sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - bh, w, bh), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            d->open_row_bars++;
+        }
+    }
+}
+
 static void desk_draw_window_overlays(desk* d) {
+    desk_draw_open_row_bars(d);
     song_menu_draw(d);
     dlg_draw(d);
     desk_draw_notices(d); /* I806: the sync card and the toast stay in front of whatever region a partial repaint just drew */
@@ -3282,11 +3299,6 @@ static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_
         return NULL;
     }
     hover_reg(d, r);
-    if (d->open_shown && strcmp(path, d->open_ui.path) == 0) { /* I1415: the clicked row shows the load on its bottom edge, every list and grid drawer registers through here */
-        int32_t bh = lpx(d, 2), w = (int32_t)((uint64_t)open_bar_q16(d) * (uint32_t)r.w >> 16);
-        sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - bh, w, bh), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        d->open_row_bars++;
-    }
     if (add_mode(d) && e->more.w > 0) { /* I652b: the Library page adds to a playlist: every song row ends in Add, the same control as the empty playlist's results */
         sel_gui_rect ab = add_btn_rect(d, r);
         draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Add", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
@@ -13056,11 +13068,13 @@ static void draw_player_left(desk* d) {
     }
     d->home_parts |= HP_PLAYER_ART;
     if (d->open_shown) { /* I1415: the clicked song's name and the phase until the sound starts */
-        const char* base = strrchr(d->open_ui.path, '/');
-        char phase[64];
+        char phase[64], name[256], shown[96];
         sel_open_progress_text(&d->open_ui, phase, sizeof phase);
-        draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), base != NULL ? base + 1 : d->open_ui.path, 1, 14,
-                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        if (sel_engine_song_text(d->engine, SEL_SONG_TEXT_TITLE, d->open_ui.path, name, sizeof name) != 1) { /* the library title, as the rows show it; a miss falls back to the file name */
+            snprintf(name, sizeof name, "%s", path_base(d->open_ui.path));
+        }
+        sel_uim_tidy_title(name, shown, sizeof shown);
+        draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), shown, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         draw_text(d, rect_of(box.x, box.y + lpx(d, 30), box.w, lpx(d, 16)), phase, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     } else {
         draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), f->title, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
@@ -13702,6 +13716,9 @@ static void desk_tip_tick(desk* d) {
             return;
         }
         sel_uim_action_tip_text(a, d->tip_text, sizeof d->tip_text);
+        if (d->tip_btn - 1 == (int32_t)SLOT_PLAY && d->open_shown) { /* I1415: the button is Cancel while the open shows */
+            snprintf(d->tip_text, sizeof d->tip_text, "Cancel");
+        }
     }
     d->tip_shown = d->tip_btn;
     d->tooltips++;
@@ -15016,8 +15033,8 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         draw_home(d);
         return 1;
     }
-    if (ev->code == 27u && ev->mods == 0u && d->open_ui.active && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
-        d->focus != (int32_t)d->layout.count) { /* I1415: Escape with nothing else open cancels the song open before it asks to quit */
+    if (ev->code == 27u && ev->mods == 0u && d->open_ui.active && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit)) {
+        /* I1415: Escape cancels the song open before anything else, also with the search field focused (a result clicked from Search leaves it there; the first Escape used to only leave the field) */
         d->open_cancels++;
         return desk_send(d, "CANCEL_OPEN");
     }
