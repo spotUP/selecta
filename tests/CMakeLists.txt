@@ -3700,6 +3700,18 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "sysfile_engine_ok")
 endif()
 
+# Row I1415: engine open progress, CANCEL_OPEN, second OPEN and the read-thread unpack over the net fixture.
+if(NOT SEL_AMIGA)
+  add_executable(open_progress_engine_test engine/open_progress_engine_test.c)
+  target_include_directories(open_progress_engine_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(open_progress_engine_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
+  add_test(NAME open-progress-engine
+    COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:open_progress_engine_test>" "-DWORK=${SEL_NET_WORK}"
+      "-DFIXDIR=${SEL_NET_DIR}/fixtures" "-DMOD=${PROJECT_SOURCE_DIR}/tests/m3/genre/down.mod" -P "${SEL_NET_DIR}/open_progress_engine.cmake")
+  set_tests_properties(open-progress-engine PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "open_progress_engine_ok")
+endif()
+
 # Row I710ga6: the desktop UI's system-file flow (toast, note + dialog, pick) with the loadable test-only sysfile_probe.
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32 AND SELECTA_UI_DESKTOP)
   add_test(NAME sysfile-desktop

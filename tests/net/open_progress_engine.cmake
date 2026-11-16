@@ -1,0 +1,25 @@
+# I1415: engine open progress, cancel and read-thread unpack over the net fixture.
+# -DTEST=<open_progress_engine_test> -DWORK=<fixture work dir> -DFIXDIR=<tests/net/fixtures> -DMOD=<a .mod file>
+file(READ "${WORK}/port" port)
+string(STRIP "${port}" port)
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_NET_MAP} "slow.mirror.test=http://127.0.0.1:${port}")
+set(ENV{SELECTA_MIRRORS_MODLAND} "http://slow.mirror.test/mods/")
+unset(ENV{SELECTA_MIRROR})
+set(dir "${WORK}/open-progress-engine")
+file(REMOVE_RECURSE "${dir}")
+file(MAKE_DIRECTORY "${dir}/pack")
+set(ENV{SELECTA_CACHE_DIR} "${dir}/cache")
+file(COPY "${MOD}" DESTINATION "${dir}/pack")
+get_filename_component(modname "${MOD}" NAME)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E tar cf "${dir}/song.zip" --format=zip "${modname}"
+  WORKING_DIRECTORY "${dir}/pack" RESULT_VARIABLE zrc)
+if(NOT zrc EQUAL 0)
+  message(FATAL_ERROR "open-progress-engine: zip failed")
+endif()
+execute_process(COMMAND "${TEST}" "${dir}" "${dir}/cache" "${dir}/song.zip"
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 90)
+message(STATUS "${o}${e}")
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "open-progress-engine: test failed (rc ${rc})")
+endif()

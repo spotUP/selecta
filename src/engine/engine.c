@@ -379,6 +379,10 @@ typedef struct sel_play_meta {
     int32_t cdb;
     char lengths[SEL_STICKER_VALUE_MAX]; /* I434f: the song's lengths_ms sticker, so the catalogue length needs no UI-thread round trip */
     int has_best, loud_ok, provisional, has_lengths, valid;
+    /* I1415: a folder archive is unpacked by the same read; the chosen member is owned here (freed with the entry). */
+    uint8_t* module;
+    size_t module_size;
+    char member[SEL_ARCHIVE_MEMBER_NAME_MAX];
 } sel_play_meta;
 #define SEL_PLAY_META_N 4u
 enum { SEL_VOTE_CACHE = 256, SEL_VOTE_BATCH = 64, SEL_VOTE_BLK = 8192 };
@@ -915,6 +919,7 @@ struct sel_engine {
     char sf_wait_path[SEL_DEFERRED_PATH_MAX]; /* the requested song while sf_wait >= 0 */
     char sf_err[160];
     uint32_t sf_missing_reports, sf_fetches, sf_installed, sf_reopens;
+    uint32_t open_unpack_reads; /* I1415: song-start reads that unpacked a folder archive on the read thread */
     uint32_t open_fetch_reads, open_fetch_ms_max, open_rp_ms_max, open_prepare_ms_max; /* I1225: wall ms of the open phases run on the pump thread */
     uint32_t route_direct;        /* routing of the song started last: 1 = voice_sink, 0 = mixer (sel_engine_voice_route) */
     /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
@@ -2757,6 +2762,8 @@ typedef struct unpack_ctx {
     sel_engine* e;
     uint8_t* module; /* host copy of the member found, NULL: none yet */
     size_t module_size;
+    char member[SEL_ARCHIVE_MEMBER_NAME_MAX]; /* I1415: kept here, not in e, so the walk can run on the read thread */
+    const sel_cache_watch* watch; /* NULL on the pump; the read thread passes the open's watch to end the walk on cancel */
 } unpack_ctx;
 
 /* The first member some replayer takes becomes the module (I405: Aminet songs are LHA archives). */
@@ -2764,6 +2771,9 @@ static int on_archive_member(void* vctx, const char* name, const uint8_t* data, 
     unpack_ctx* u = vctx;
     uint8_t* copy;
 
+    if (u->watch != NULL && sel_cache_watch_cancelled(u->watch)) {
+        return 0;
+    }
     if (size == 0 || find_replayer(u->e, data, size, name) == NULL) {
         return 1;
     }
@@ -2775,31 +2785,58 @@ static int on_archive_member(void* vctx, const char* name, const uint8_t* data, 
     copy[size] = 0;
     u->module = copy;
     u->module_size = size;
-    snprintf(u->e->archive_member, sizeof u->e->archive_member, "%s", name);
+    snprintf(u->member, sizeof u->member, "%s", name);
     return 0;
 }
 
-/* `data` is the file read for OPEN. When it is a folder archive (LHA, zip) holding a member some replayer takes, replaces
- * it with that member (the old buffer is freed) and returns the member's replayer; otherwise leaves `data` alone and
- * returns NULL. */
-static const sel_tag* unpack_archived_module(sel_engine* e, uint8_t** data, size_t* size) {
+/* I1415: the walk both threads share (pump fallback, rd_play read). Returns the host copy of the first member some replayer
+ * takes (its name in `member`), or NULL when `data` is no folder archive or holds none. Touches no pump-only state. */
+static uint8_t* archive_pick_module(sel_engine* e, const uint8_t* data, size_t size, const sel_cache_watch* watch, char* member,
+                                    size_t* msize) {
     unpack_ctx u;
-    int kind = sel_archive_kind(*data, *size);
+    int kind = sel_archive_kind(data, size);
 
     if (kind == SEL_ARCHIVE_NONE || !sel_archive_is_folder(kind)) {
         return NULL;
     }
     memset(&u, 0, sizeof u);
     u.e = e;
-    sel_archive_each(e->host, kind, *data, *size, SEL_ARCHIVE_MEMBER_MAX, on_archive_member, &u);
+    u.watch = watch;
+    sel_archive_each(e->host, kind, data, size, SEL_ARCHIVE_MEMBER_MAX, on_archive_member, &u);
     if (u.module == NULL) {
         return NULL;
     }
+    snprintf(member, SEL_ARCHIVE_MEMBER_NAME_MAX, "%s", u.member);
+    *msize = u.module_size;
+    return u.module;
+}
+
+/* `data` is the file read for OPEN. When it is a folder archive (LHA, zip) holding a member some replayer takes, replaces
+ * it with that member (the old buffer is freed) and returns the member's replayer; otherwise leaves `data` alone and
+ * returns NULL. */
+static const sel_tag* unpack_archived_module(sel_engine* e, const char* path, uint8_t** data, size_t* size) {
+    size_t msize = 0;
+    char member[SEL_ARCHIVE_MEMBER_NAME_MAX];
+    sel_play_meta* pm = (sel_play_meta*)play_meta_find(e, path);
+    uint8_t* module;
+
+    if (pm != NULL && pm->module != NULL && pm->valid) { /* I1415: the song-start read already unpacked it */
+        module = pm->module;
+        msize = pm->module_size;
+        snprintf(member, sizeof member, "%s", pm->member);
+        pm->module = NULL;
+    } else {
+        module = archive_pick_module(e, *data, *size, NULL, member, &msize);
+    }
+    if (module == NULL) {
+        return NULL;
+    }
+    snprintf(e->archive_member, sizeof e->archive_member, "%s", member);
     e->host->mem_free(e->host, *data);
-    *data = u.module;
-    *size = u.module_size;
+    *data = module;
+    *size = msize;
     e->archive_unpacks++;
-    return find_replayer(e, u.module, u.module_size, e->archive_member);
+    return find_replayer(e, module, msize, e->archive_member);
 }
 
 /* I710ga4: the engine entry for system file `name`, created from `decl` on first use; NULL when the table is full. */
@@ -2942,7 +2979,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     if (live == NULL && fs == NULL) {
         /* I405: a folder archive (LHA, zip) holding a module plays that module. Tried before the replayer that claimed
          * the archive itself: the YM probe takes every LHA (a .ym is LH5-packed), and a .mod inside would fail there. */
-        const sel_tag* inner = unpack_archived_module(e, &data, &size);
+        const sel_tag* inner = unpack_archived_module(e, path, &data, &size);
         if (inner != NULL) {
             hooks = inner;
         }
@@ -3102,6 +3139,8 @@ static const sel_play_meta* play_meta_find(const sel_engine* e, const char* path
 }
 
 /* I906g: runs on the read thread. */
+static void play_meta_free_module(sel_engine* e, sel_play_meta* m);
+
 static void play_meta_run(sel_engine* e) {
     sel_play_meta* m = &e->pm_job;
     char key[SEL_DEFERRED_PATH_MAX + 8];
@@ -3128,8 +3167,20 @@ static void play_meta_run(sel_engine* e) {
             }
             m->fetched = 1;
         }
+        /* I1415: a folder archive is unpacked here too, so the pump only starts the replayer. */
+        if (!sel_cache_watch_cancelled(&e->op_watch) && (m->fetched ? m->fetch_rc > 0 : !sel_cache_is_remote(target) && !sel_stream_is_url(target))) {
+            size_t fsz = 0;
+            uint8_t* file = read_whole_file(e, m->fetched ? m->cached : target, &fsz);
+
+            if (file != NULL) {
+                if (sel_archive_is_folder(sel_archive_kind(file, fsz))) e->op_phase = SEL_OPEN_UNPACKING;
+                m->module = archive_pick_module(e, file, fsz, &e->op_watch, m->member, &m->module_size);
+                e->host->mem_free(e->host, file);
+            }
+        }
     }
     m->valid = !sel_cache_watch_cancelled(&e->op_watch); /* I1415: a cancelled run publishes nothing, so no song starts late */
+    if (!m->valid) play_meta_free_module(e, m);
 }
 
 /* 1 when the start of `path` may run now. Otherwise posts the read (one at a time) and returns 0: the caller retries on the next pump. */
@@ -3147,17 +3198,28 @@ static int play_meta_ready(sel_engine* e, const char* path) {
     return 0;
 }
 
+static void play_meta_free_module(sel_engine* e, sel_play_meta* m) {
+    if (m->module != NULL) e->host->mem_free(e->host, m->module);
+    m->module = NULL;
+}
+
 static void play_meta_publish(sel_engine* e) {
+    play_meta_free_module(e, &e->pm[e->pm_next % SEL_PLAY_META_N]);
     e->pm[e->pm_next % SEL_PLAY_META_N] = e->pm_job;
+    if (e->pm_job.fetched) e->open_fetch_reads++;
+    if (e->pm_job.module != NULL) e->open_unpack_reads++;
+    e->pm_job.module = NULL; /* the entry owns it now */
     e->pm_next++;
     e->play_meta_reads++;
-    if (e->pm_job.fetched) e->open_fetch_reads++;
 }
 
 static void play_meta_drop(sel_engine* e, const char* path) {
     uint32_t i;
     for (i = 0; i < SEL_PLAY_META_N; i++) {
-        if (e->pm[i].valid && strcmp(e->pm[i].path, path) == 0) e->pm[i].valid = 0;
+        if (e->pm[i].valid && strcmp(e->pm[i].path, path) == 0) {
+            e->pm[i].valid = 0;
+            play_meta_free_module(e, &e->pm[i]);
+        }
     }
 }
 
@@ -11695,6 +11757,7 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_radio);
         lib_read_end(&e->rd_flags);
         lib_read_end(&e->rd_play);
+        for (i = 0; i < SEL_PLAY_META_N; i++) play_meta_free_module(e, &e->pm[i]);
         lib_read_end(&e->rd_vote);
         lib_read_end(&e->rd_art);
         lib_read_end(&e->rd_txt);
@@ -12535,6 +12598,7 @@ static void stats_get_live(const sel_engine* e, sel_engine_stats* out) {
     out->open_rp_ms_max = e->open_rp_ms_max;
     out->open_prepare_ms_max = e->open_prepare_ms_max;
     out->open_fetch_reads = e->open_fetch_reads;
+    out->open_unpack_reads = e->open_unpack_reads;
     out->vote_reads = e->vote_reads;
     out->art_reads = e->art_reads;
     out->total_reads = e->total_reads;
