@@ -4917,6 +4917,7 @@ if(NOT SEL_AMIGA)
       "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
       "-DKEYS_A=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu_a.keys"
       "-DKEYS_B=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu_b.keys"
+      "-DKEYS_C=${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu_c.keys"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_menu"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_menu.cmake")
   set_tests_properties(text-ui-menu PROPERTIES LABELS m3)
