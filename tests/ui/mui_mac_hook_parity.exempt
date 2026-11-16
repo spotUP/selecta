@@ -50,7 +50,6 @@ sel_uim_plremove_line differs I1329j: Remove from Playlist command line not from
 sel_uim_plrename_line differs I1329j: playlist Rename command line not from the shared model
 sel_uim_sysfile_text gap I1329j: missing system file dialog (sample bank / ROM a player needs) has no MUI twin
 sel_uim_home_shelves differs I1329k: Home shelves split ("the one split every UI shares", I1189); MUI splits its own
-sel_uim_tile_route differs I1329k: a Home tile click routes through the shared tile route
 sel_uim_tip_viz_close gap I1173: Visual layout close button (I1248); MUI has no Visual layout
 sel_uim_set_layout gap I1173: desktop layout mode apply (Full, Window, Mini, Visual)
 

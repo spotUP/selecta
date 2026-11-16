@@ -25,6 +25,7 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
+#include <selecta/uimodel/open_progress.h>
 #include <selecta/uimodel/briefs.h>
 #include <selecta/uimodel/title.h>
 #include <selecta/uimodel/pages.h>
@@ -249,6 +250,10 @@ typedef struct mui_state {
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
     Object* np_artist;
     Object* np_album;
+    Object* np_prog;                /* I1415: Gauge + Cancel while a slow open runs, hidden otherwise */
+    Object* np_gauge;
+    uint32_t prog_on, prog_pct;     /* I1415: shown now / last percent written (also the list signature) */
+    char prog_path[SEL_OPEN_PATH_MAX]; /* I1415: the OPEN path of the shown progress, the list row that gets the percent */
     Object* np_note;                /* I1127c: "Sample bank not found" under the album line */
     Object* np_tabs;                /* I960d: the Now Playing page's tab strip (Lyrics, Info, Tracks) */
     Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
@@ -626,6 +631,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SRC_LIST 0x2AC1L        /* I1175: a row of the Sources page was picked */
 #define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
 #define CTL_SCOPE 0x2AC4L           /* I1176: the Queue scope Cycle */
+#define CTL_OPEN_CANCEL 0x2AC5L     /* I1415: the now-playing Cancel button, posts CANCEL_OPEN */
 #define CTL_SRC_SYNC 0x2AC3L        /* I1175: the Sources page Sync button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
@@ -2163,6 +2169,13 @@ static Object* mui_detail_group(mui_state* s, int compact) {
     s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ", MUI_LBL_ARTIST);
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ", MUI_LBL_ALBUM);
     s->np_note = mui_np_text(s->np_buf[3], sizeof s->np_buf[3], " ", MUI_LBL_UPCOMING);
+    /* I1415: the load bar (MUI 3.8 Gauge) and its Cancel button, shown by mui_open_sync after 300 ms of loading. */
+    s->np_gauge = MUI_NewObject((char*)MUIC_Gauge, MUIA_Gauge_Horiz, (ULONG)TRUE, MUIA_Gauge_Max, 100, MUIA_Gauge_Current, 0, TAG_DONE);
+    s->np_prog = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, MUIA_ShowMe, (ULONG)FALSE, TAG_DONE);
+    if (s->np_prog != NULL && s->np_gauge != NULL) {
+        DoMethod(s->np_prog, OM_ADDMEMBER, s->np_gauge);
+        DoMethod(s->np_prog, OM_ADDMEMBER, mui_make_button_w("Cancel", NULL, CTL_OPEN_CANCEL, 0));
+    }
     {
         mui_aalist_spec sp;
         memset(&sp, 0, sizeof sp);
@@ -2193,6 +2206,9 @@ static Object* mui_detail_group(mui_state* s, int compact) {
         DoMethod(txt, OM_ADDMEMBER, s->np_artist);
         DoMethod(txt, OM_ADDMEMBER, s->np_album);
         DoMethod(txt, OM_ADDMEMBER, s->np_note);
+        if (s->np_prog != NULL) {
+            DoMethod(txt, OM_ADDMEMBER, s->np_prog);
+        }
         DoMethod(top, OM_ADDMEMBER, txt);
         if (like != NULL) {
             DoMethod(top, OM_ADDMEMBER, like);
@@ -2206,6 +2222,9 @@ static Object* mui_detail_group(mui_state* s, int compact) {
         DoMethod(g, OM_ADDMEMBER, s->np_artist);
         DoMethod(g, OM_ADDMEMBER, s->np_album);
         DoMethod(g, OM_ADDMEMBER, s->np_note);
+        if (s->np_prog != NULL) {
+            DoMethod(g, OM_ADDMEMBER, s->np_prog);
+        }
         if (like != NULL) {
             DoMethod(g, OM_ADDMEMBER, like);
         }
@@ -2853,6 +2872,53 @@ static void mui_on_event(void* state, const sel_message* evt) {
     }
 }
 
+/* I1415: poll the open progress on the refresh tick (a snapshot read, nothing blocks). Below 300 ms nothing shows. Shown: the phase
+ * text in the note line, the Gauge (empty while the total is unknown) and Cancel; the list row of the OPEN path gets the percent
+ * (mui_refresh reads prog_path and prog_pct). On the way out the note line is refilled by forcing mui_detail_refresh. */
+static void mui_open_sync(mui_state* s) {
+    sel_open_progress p;
+    int on;
+    if (s->np_prog == NULL) {
+        return;
+    }
+    sel_engine_open_progress(s->engine, &p);
+    on = p.active != 0u && p.elapsed_ms >= 300u;
+    if (on) {
+        char txt[sizeof s->np_buf[3]];
+        int32_t fr = sel_open_progress_fraction(&p);
+        uint32_t pct = fr < 0 ? 0u : (uint32_t)(((uint64_t)fr * 100u) >> 16);
+        sel_open_progress_text(&p, txt, sizeof txt);
+        if (strcmp(txt, s->np_buf[3]) != 0) {
+            snprintf(s->np_buf[3], sizeof s->np_buf[3], "%s", txt);
+            mui_text_set(s->np_note, s->np_buf[3]);
+        }
+        uint32_t key = fr < 0 ? 1000u : pct + 1u; /* 0 = none, 1000 = unknown total ("..." in the list) */
+        if (key != s->prog_pct) {
+            set(s->np_gauge, MUIA_Gauge_Current, (ULONG)pct);
+        }
+        s->prog_pct = key;
+        snprintf(s->prog_path, sizeof s->prog_path, "%s", p.path);
+    } else {
+        s->prog_pct = 0u;
+        s->prog_path[0] = '\0';
+    }
+    if (on != (int)s->prog_on) {
+        ULONG parent = 0;
+        s->prog_on = (uint32_t)on;
+        GetAttr(MUIA_Parent, s->np_prog, &parent);
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_InitChange);
+        }
+        set(s->np_prog, MUIA_ShowMe, on ? TRUE : FALSE);
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_ExitChange);
+        }
+        if (!on) {
+            s->detail_sig = ~s->detail_sig; /* mui_detail_refresh rewrites the note line */
+        }
+    }
+}
+
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
     const sel_uim_frame* f;
@@ -2928,6 +2994,7 @@ static void mui_refresh(mui_state* s) {
     }
     mui_subsong_sync(s, f);
     mui_palette_sync(s);
+    mui_open_sync(s);
     mui_detail_refresh(s, st);
     v = st->view;
     if (v != NULL) {
@@ -2952,7 +3019,7 @@ static void mui_refresh(mui_state* s) {
         } else {
             s->style_kind = MUI_STYLE_LIST;
         }
-        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id ^ (sel_engine_song_text_generation(s->engine) * 40503u);
+        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id ^ (sel_engine_song_text_generation(s->engine) * 40503u) ^ (s->prog_pct * 2654435761u);
         const char* c;
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
@@ -3040,11 +3107,18 @@ static void mui_refresh(mui_state* s) {
                     memset(&s->cell[i].extra, 0, sizeof s->cell[i].extra);
                 } else {
                     char rpath[256], grp[64];
-                    grp[0] = '\0';
+                    grp[0] = rpath[0] = '\0';
                     if (sel_engine_view_row_path(s->engine, ri, rpath, sizeof rpath)) {
                         (void)sel_engine_song_text(s->engine, SEL_SONG_TEXT_GROUP, rpath, grp, sizeof grp); /* I1416e: cached, batched; -1 pending, the list redraws when the generation moves */
                     }
                     mui_row_extra_fill(st, &v->rows[ri], grp, &s->cell[i].extra);
+                    if (s->prog_path[0] != '\0' && strcmp(rpath, s->prog_path) == 0) { /* I1415: the clicked row shows the percent in its Format cell */
+                        if (s->prog_pct >= 1000u) {
+                            snprintf(s->cell[i].extra.format, sizeof s->cell[i].extra.format, "...");
+                        } else {
+                            snprintf(s->cell[i].extra.format, sizeof s->cell[i].extra.format, "%u%%", (unsigned)(s->prog_pct - 1u));
+                        }
+                    }
                 }
                 if (!packed && v->rows[ri].kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && v->rows[ri].id == st->song.queue_id) {
                     playing = (long)i;
@@ -4016,6 +4090,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (s->src_pick >= 0) {
             mui_srcs_toggle(&s->srcs, (uint32_t)s->src_pick, mui_p8_send, s);
         }
+    } else if (id == CTL_OPEN_CANCEL) { /* I1415 */
+        (void)mui_engine_line(s, "CANCEL_OPEN");
     } else if (id == CTL_SRC_SYNC) {
         if (s->src_pick >= 0) {
             mui_srcs_sync(&s->srcs, (uint32_t)s->src_pick, mui_p8_send, s);
