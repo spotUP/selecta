@@ -282,6 +282,7 @@ typedef struct desk {
     uint32_t col_popular;    /* artist page: Popular rows shown (5, or 10 after Show more) */
     sel_engine_collection_row col_shelf[4][24]; /* the shelves of a kind page, index = shelf - 1: Albums, Appears On, More by, Spellings */
     uint32_t col_shelf_n[4], col_shelf_total[4];
+    uint32_t col_shelf_draws; /* I1421: shelves the last col_draw_shelves frame drew (any slot inside the list) */
     uint32_t pls_id;         /* I633: the saved playlist the Playlists page shows as a page of songs (0 = the tree) */
     char pls_name[96];
     char* pls_buf;           /* its song keys, NUL separated, in playlist order */
@@ -5976,6 +5977,7 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
     char buf[160];
     sel_gui_rect top = pls_row_rect(d, mn, 0u), lst = rect_of(mn.x, top.y, mn.w, mn.y + mn.h - top.y);
     d->col_more_drawn = rect_of(0, 0, 0, 0);
+    d->col_shelf_draws = 0u;
     sel_gui_clip_push(d->canvas, lst); /* I1065: Show more and the shelves scroll under the header like the Popular rows, never over it */
     if (col_show_more(d)) {
         sel_gui_rect r = col_more_rect(d, mn);
@@ -5988,13 +5990,17 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
         int32_t abs_slot = col_shelf_slot(d, sh);
         int32_t slot = abs_slot - (int32_t)d->pls_scroll;
         sel_gui_rect hr;
-        if (abs_slot < 0 || slot < 0) {
+        sel_gui_rect nr;
+        /* I1421: a shelf is COL_SHELF_SLOTS slots tall (heading, cards): draw it while any slot meets the list, the clip trims the rest. */
+        if (abs_slot < 0 || slot + (sh == 3u ? 2 : COL_SHELF_SLOTS) <= 0) {
             continue;
         }
-        hr = pls_row_rect(d, mn, (uint32_t)slot);
-        if (hr.y + hr.h > mn.y + mn.h) {
+        hr = pls_row_rect(d, mn, 0u);
+        hr.y += slot * lpx(d, SONG_ROW_H);
+        if (hr.y >= mn.y + mn.h) {
             continue;
         }
+        d->col_shelf_draws++;
         draw_text(d, hr, col_shelf_title(d, sh, buf, sizeof buf), 1, 18, text);
         if (sh == 3u) { /* Spellings: one note line, the names the composer is written under */
             size_t o = 0;
@@ -6002,7 +6008,9 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
             for (i = 0; i < d->col_shelf_n[sh] && o + 2u < sizeof buf; i++) {
                 o += (size_t)snprintf(buf + o, sizeof buf - o, "%s%s", i ? ", " : "", d->col_shelf[sh][i].name);
             }
-            draw_text(d, pls_row_rect(d, mn, (uint32_t)slot + 1u), buf, 0, 13, muted);
+            nr = hr;
+            nr.y += lpx(d, SONG_ROW_H);
+            draw_text(d, nr, buf, 0, 13, muted);
             continue;
         }
         for (i = 0; i < d->col_shelf_n[sh] && i < col_cards_fit(d, mn); i++) {
@@ -8545,6 +8553,7 @@ static const char* library_dump_build(desk* d) {
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
                 o = dump_put(d, o, "kindscroll scroll=%u max=%u listtop=%d moredrawn=%d,%d,%d,%d\n", (unsigned)d->pls_scroll, (unsigned)col_scroll_max(d, pmn),
                              (int)pls_row_rect(d, pmn, 0u).y, (int)d->col_more_drawn.x, (int)d->col_more_drawn.y, (int)d->col_more_drawn.w, (int)d->col_more_drawn.h);
+                o = dump_put(d, o, "kindshelfdraw n=%u\n", (unsigned)d->col_shelf_draws);
                 o = dump_put(d, o, "kindpage label=%s key=[%s] sub=[%s] queries=%u popular=%u rows=%u shelf albums=%u appears=%u more=%u spellings=%u showmore=%d,%d,%d,%d albumcard=%d,%d,%d,%d morecard=%d,%d,%d,%d name=[%s] year=%u shuffle=%d,%d,%d,%d\n",
                              col_kind_label(d), d->col_key, d->col_sub, (unsigned)cst.collection_queries, (unsigned)d->col_popular, (unsigned)col_song_rows(d),
                              (unsigned)d->col_shelf_total[0], (unsigned)d->col_shelf_total[1], (unsigned)d->col_shelf_total[2], (unsigned)d->col_shelf_total[3],
