@@ -276,9 +276,13 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
  * "tag.<col>") over the scanned value. Every songs upsert uses it, so the edit survives a rescan. */
 #define SEL_SONG_TAG_KEEP(col) SEL_SONG_TAG_KEEP_AT(col, "excluded.key", "excluded." #col)
 /* I1314a, I1314a2: true when the title expression `name` is empty or the scan's file-name placeholder (the last component of `path`
- * after '/' or ':', src/library/sources/local.c sel_browse_basename). The play-time fill and the scan upsert share it. */
+ * after '/' or ':', src/library/sources/local.c sel_browse_basename). The play-time fill and the scan upsert share it.
+ * I1414: that file name without its last extension counts too: synced sources (Aminet "m_jazz" for m_jazz.lha) store the stem, and
+ * the module's own title must replace it on the first play and survive the next sync. */
+#define SEL_SONG_NAME_LEAF(path) "substr(" path ", length(rtrim(" path ", replace(replace(" path ", '/', ''), ':', ''))) + 1)"
 #define SEL_SONG_NAME_PLACEHOLDER(name, path)                                                                                  \
-    "(COALESCE(" name ", '') = '' OR " name " = substr(" path ", length(rtrim(" path ", replace(replace(" path ", '/', ''), ':', ''))) + 1))"
+    "(COALESCE(" name ", '') = '' OR " name " = " SEL_SONG_NAME_LEAF(path) " OR (substr(" SEL_SONG_NAME_LEAF(path) ", 1, length(" name \
+    ") + 1) = " name " || '.' AND instr(substr(" SEL_SONG_NAME_LEAF(path) ", length(" name ") + 2), '.') = 0))"
 /* The same rule with the sticker key and the scanned value as SQL expressions, for a plain UPDATE (the MOVE
  * rekey, where the stickers still sit under the old key). */
 #define SEL_SONG_TAG_KEEP_AT(col, key, value) \

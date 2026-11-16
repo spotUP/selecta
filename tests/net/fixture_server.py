@@ -18,7 +18,8 @@ plus query is looked up in fixtures/<host>/routes.json first (exact key
 "<path>?<query>" then "<path>"), else the file fixtures/<host>/<path> (a
 directory serves index.json, else index.html). Route entry keys:
   file, status, headers{}, redirect (Location), chunked (bool),
-  fail_first (N requests answer fail_status, default 503, before the route serves), delay_first_byte (s), delay_body (s, sleep between body halves), body (inline str).
+  fail_first (N requests answer fail_status, default 503, before the route serves), delay_first_byte (s), delay_body (s, sleep between body halves), body (inline str),
+  cut_whole (N: a GET without Range announces the full length, sends N bytes, then closes).
 Range: single "bytes=a-b" ranges answer 206. Control endpoints (never logged):
   GET /__fixture/log    JSON array of logged requests
   POST /__fixture/reset clears the log
@@ -318,6 +319,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             headers["Content-Range"] = "bytes %d-%d/%d" % (start, end, len(data))
             data, status = data[start:end + 1], 206
         headers["Accept-Ranges"] = "bytes"
+        cut = route.get("cut_whole", 0)
+        if cut and status == 200 and self.command == "GET" and len(data) > cut:
+            # I1413: announce the whole body, send only `cut` bytes, then drop the link (aminet.net does this).
+            self.send_head(status, headers)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data[:cut])
+            self.wfile.flush()
+            self.close_connection = True
+            self.connection.shutdown(socket.SHUT_RDWR)
+            return status
         if route.get("chunked"):
             return self.send_chunked(status, data, headers, route.get("delay_body", 0))
         if route.get("delay_body"):

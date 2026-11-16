@@ -14,11 +14,20 @@
 typedef struct net_ctx {
     FILE* f;
     unsigned long bytes;
+    const sel_http_res* res; /* the response being filled, for `only` */
+    int only;                /* nonzero: refuse body bytes unless the status is this (a resume must answer 206) */
 } net_ctx;
+
+/* I1413: resumes of a whole-file GET cut mid-body. Each resume gets a fresh total deadline, so a big listing
+ * (aminet.net INDEX, 7.3 MB) passes on a slow link too; the loop stops as soon as a resume brings no bytes. */
+#define RESUME_MAX 20
 
 static int file_sink(void* ctx, const void* data, size_t len) {
     net_ctx* c = ctx;
 
+    if (c->only != 0 && c->res->status != c->only) {
+        return 0;
+    }
     c->bytes += (unsigned long)len;
     return fwrite(data, 1, len, c->f) == len;
 }
@@ -31,10 +40,13 @@ static int get_file(const char* url, const char* path, int has_range, unsigned l
     sel_http_res res;
     net_ctx c;
     sel_http_err err;
+    int resumes = 0;
 
     memset(&req, 0, sizeof req);
     memset(&res, 0, sizeof res);
     c.bytes = 0;
+    c.res = &res;
+    c.only = 0;
     c.f = fopen(path, "wb");
     if (c.f == NULL) {
         return 0;
@@ -46,6 +58,25 @@ static int get_file(const char* url, const char* path, int has_range, unsigned l
     req.first_byte_ms = first_byte_ms; /* 0: the client default */
     err = sel_http_request(&req, file_sink, &c, &res);
     *requests += res.requests;
+    /* A 200 body cut by the server or the total deadline: ask for the rest with a Range from the bytes kept. */
+    while (!has_range && want == 200 && (err == SEL_HTTP_E_IO || err == SEL_HTTP_E_TOTAL_TIMEOUT) &&
+           (res.status == 200 || res.status == 206) && c.bytes > 0 && resumes < RESUME_MAX) {
+        unsigned long before = c.bytes;
+
+        resumes++;
+        req.has_range = 1;
+        req.range_from = c.bytes;
+        req.range_to = -1;
+        c.only = 206;
+        err = sel_http_request(&req, file_sink, &c, &res);
+        *requests += res.requests;
+        if (err == SEL_HTTP_OK && res.status == 206) {
+            res.status = 200; /* the whole file is now on disk */
+        }
+        if (c.bytes == before) {
+            break;
+        }
+    }
     fclose(c.f);
     *bytes = c.bytes;
     if (err != SEL_HTTP_OK || res.status != want) {

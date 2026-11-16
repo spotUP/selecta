@@ -249,6 +249,28 @@ int main(void) {
         CHECK(rc != 2);
         CHECK(sel_library_write_gen(lib) == wg0);
     }
+    /* I1414: a synced source stores the file name without its extension (Aminet "m_jazz" for m_jazz.lha); that stem is a
+     * placeholder too, so the player's title replaces it. A real title that is only a prefix of the file name stays. */
+    {
+        char key[512], orig[512], sql[640];
+
+        read_field(lib, "key", "null.chp", key, sizeof key);
+        read_field(lib, "name", "null.chp", orig, sizeof orig);
+        db_enter(lib);
+        CHECK(sqlite3_exec(lib->db, "UPDATE songs SET name = 'nul' WHERE path LIKE '%/null.chp'", NULL, NULL, NULL) == SQLITE_OK);
+        db_leave(lib);
+        sel_library_song_meta_fill(lib, key, "Stem Title", NULL, 0);
+        check_field(lib, "name", "null.chp", "nul");
+        db_enter(lib);
+        CHECK(sqlite3_exec(lib->db, "UPDATE songs SET name = 'null' WHERE path LIKE '%/null.chp'", NULL, NULL, NULL) == SQLITE_OK);
+        db_leave(lib);
+        sel_library_song_meta_fill(lib, key, "Stem Title", NULL, 0);
+        check_field(lib, "name", "null.chp", "Stem Title");
+        snprintf(sql, sizeof sql, "UPDATE songs SET name = '%s' WHERE path LIKE '%%/null.chp'", orig); /* restore for the rescan checks */
+        db_enter(lib);
+        CHECK(sqlite3_exec(lib->db, sql, NULL, NULL, NULL) == SQLITE_OK);
+        db_leave(lib);
+    }
     /* I1314a2 (3): a title the user set by a tag edit (sticker tag.name) that equals the file name is a real title, not the
      * scan's placeholder; the player does not retitle it. (1): the artist the play fills gets its composer row, as a scan's
      * author tag does. */
