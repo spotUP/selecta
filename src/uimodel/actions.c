@@ -13,6 +13,7 @@ static const sel_uim_action k_actions[] = {
     {"stop", "Stop", "Stop playback", "square", "Playback/Stop", "s", "STOP"},
     {"next", "Next Track", "Skip to the next track", "skip-forward", "Playback/Next Track", "n", "NEXT"},
     {"prev", "Previous Track", "Return to the previous track", "skip-back", "Playback/Previous Track", "p", "PREV"},
+    {"replay", "Replay", "Replay", "rotate-ccw", "Playback/Replay", "", "SEEK 0"},
     {"random_on", "Turn Shuffle On", "Play the queue in random order", "shuffle", "Playback/Turn Shuffle On", "M-4",
      "OPTION random on"},
     {"random_off", "Turn Shuffle Off", "Play the queue in order", "shuffle", "Playback/Turn Shuffle Off", "M-5",

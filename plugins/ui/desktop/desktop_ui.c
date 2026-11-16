@@ -767,7 +767,7 @@ enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 static int in_rect(sel_gui_rect r, int32_t x, int32_t y);
 static int pointer_on_song_menu(const desk* d);
-enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
+enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_REPLAY, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
 static const char* desk_slot_action(const desk* d, uint32_t i);
 
@@ -11902,6 +11902,8 @@ static const char* desk_slot_action(const desk* d, uint32_t i) {
         return st->song.subsong_count > 1u ? "subsong_prev" : NULL;
     case SLOT_SHUFFLE:
         return strcmp(st->options[SEL_OPT_RANDOM], "on") == 0 ? "random_off" : "random_on";
+    case SLOT_REPLAY: /* I1424: the current song from the start, Repeat untouched */
+        return "replay";
     case SLOT_PREV:
         return "prev";
     case SLOT_PLAY:
@@ -13485,6 +13487,10 @@ static void draw_transport(desk* d) {
             icon = SEL_GUI_ICON_SHUFFLE;
             ink = f->random_on ? on : mute;
             break;
+        case SLOT_REPLAY:
+            icon = SEL_GUI_ICON_ROTATE_CCW;
+            ink = sel_engine_state(d->engine)->song.path != NULL ? ink : off;
+            break;
         case SLOT_PREV:
             icon = SEL_GUI_ICON_SKIP_BACK;
             ink = f->can_prev ? ink : off;
@@ -14184,6 +14190,9 @@ static int desk_transport_click(desk* d, uint32_t i) {
     if (i == SLOT_PLAY && d->open_shown) { /* I1415: the button is Cancel while the open shows */
         d->open_cancels++;
         return desk_send(d, "CANCEL_OPEN");
+    }
+    if (i == SLOT_REPLAY && sel_engine_state(d->engine)->song.path == NULL) {
+        return 0; /* disabled: no song loaded */
     }
     if (i == SLOT_SUB_PREV || i == SLOT_SUB_NEXT) {
         uint32_t to = i == SLOT_SUB_PREV ? f->subsong - 2u : f->subsong;
