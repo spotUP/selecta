@@ -102,6 +102,24 @@ int main(void) {
     sel_library_set_hide_duplicates(lib, "on");
     n = search(lib, "tune", out, sizeof out);
     check(n == 2, "on again");
+    { /* I1416s2: a 1-3 letter query stops at 2000 hits and sets truncated */
+        static char big[2100 * 16];
+        sel_lib_job job;
+
+        run(lib, "WITH RECURSIVE c(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM c WHERE i < 2099)"
+                 " INSERT INTO songs(key, source, path, name, md5, format) SELECT 'local:z' || i, 'local', 'z' || i, 'zzq ' || i, '', 'mod' FROM c");
+        memset(&job, 0, sizeof job);
+        job.text = "zzq";
+        job.out = big;
+        job.out_cap = sizeof big;
+        check(sel_library_run(lib, SEL_LIB_REQ_SEARCH, &job) && job.error[0] == '\0' && job.count == 2000 && job.truncated == 1, "short query: 2000 hits, truncated");
+        memset(&job, 0, sizeof job);
+        job.text = "zzq 1";
+        job.out = big;
+        job.out_cap = sizeof big;
+        check(sel_library_run(lib, SEL_LIB_REQ_SEARCH, &job) && job.count > 0 && job.count < 2000 && job.truncated == 0, "longer query: not capped");
+        run(lib, "DELETE FROM songs WHERE key LIKE 'local:z%'");
+    }
 
     /* meta fill: the sixth field is the group size above 1, else empty */
     {
