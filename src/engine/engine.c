@@ -375,7 +375,7 @@ typedef struct sel_net_read {
 
 /* I906g: what a song start reads from the library (best source, per-song config, stored loudness), filled by the rd_play read before the
  * pump starts the song. A start that finds no entry posts the read and waits (play_meta_ready); read_song, song_config_load and
- * loudness_slot take the entry's answers and fall back to a library call only for a path nobody asked for. */
+ * loudness_slot take the entry's answers and call nothing (I1416d: no sync library fallback on the pump). */
 typedef struct sel_play_meta {
     char path[SEL_DEFERRED_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
@@ -2265,8 +2265,8 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     char resolved[SEL_BROWSE_PATH_MAX];
     /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
     const sel_play_meta* pm = play_meta_find(e, path);
-    int got_best = pm != NULL ? pm->has_best && snprintf(best, sizeof best, "%s", pm->best) > 0
-                              : e->lib != NULL && sel_library_best_source(e->lib, path, best, sizeof best);
+    /* I1416d: begin_song_run waits for the rd_play read (play_meta_ready), so a library song always has its entry: no library call here. */
+    int got_best = pm != NULL && pm->has_best && snprintf(best, sizeof best, "%s", pm->best) > 0;
     sel_net_read inl;
     sel_net_read* nr = &inl;
     if (got_best && strcmp(best, path) != 0) {
@@ -2513,11 +2513,7 @@ static const char* pl_config_get(const sel_host* h, const char* key, const char*
 static void song_config_load(sel_engine* e, const char* path) {
     const sel_play_meta* pm = play_meta_find(e, path);
     e->rp_song_config[0] = '\0';
-    if (pm != NULL) {
-        snprintf(e->rp_song_config, sizeof e->rp_song_config, "%s", pm->cfg);
-    } else if (e->lib != NULL) {
-        sel_library_song_config_get(e->lib, path, e->rp_song_config, sizeof e->rp_song_config);
-    }
+    if (pm != NULL) snprintf(e->rp_song_config, sizeof e->rp_song_config, "%s", pm->cfg); /* I1416d: no entry means no library: no sync call */
 }
 
 /* I906d: the catalogue rows of the open song, read off the pump thread. Runs on the read thread (inline without threads). */
@@ -2620,8 +2616,8 @@ static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
     song_key(path, key, sizeof key);
     {
         const sel_play_meta* pm = play_meta_find(e, path);
-        int found = pm != NULL ? pm->loud_ok : key[0] != '\0' && e->lib != NULL && sel_library_loudness_get_ex(e->lib, key, &cdb, &provisional);
-        if (pm != NULL && found) {
+        int found = pm != NULL && pm->loud_ok; /* I1416d: the entry is always there for a library song (play_meta_ready) */
+        if (found) {
             cdb = pm->cdb;
             provisional = pm->provisional;
         }

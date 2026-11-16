@@ -377,6 +377,15 @@ int main(int argc, char** argv) {
         }
         printf("i906g after release: play_meta_reads %u\n", (unsigned)(g_after.play_meta_reads - g_before.play_meta_reads));
         CHECK(g_after.play_meta_reads > g_before.play_meta_reads);
+        /* I1416d: the deferred start that follows the landed read (best source, config, loudness taken from the entry) makes no guarded wait either. */
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            if (sel_engine_state(e)->play == SEL_PLAYING || ms_since(&t0) > 1000) break;
+            usleep(2000);
+        }
+        printf("i1416d start: state %d, library waits since OPEN %u\n", (int)sel_engine_state(e)->play, (unsigned)(sel_library_watched_waits() - w0));
+        CHECK(sel_library_watched_waits() == w0);
     }
     /* I906f group 1: the history row and the cue point of the song being played are queued writes. A song is opened first (library free), then
      * the call lock is held: CUE_SET and the replacing OPEN (which ends the song, hence the history row) must return within the budget with no
