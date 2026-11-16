@@ -861,7 +861,7 @@ struct sel_engine {
     uint32_t sm_key;      /* smart download plan made for this queue version, playing entry and prefs generation (I169); 0 = none */
     char* res_text;       /* last query result: keys, each NUL terminated */
     uint32_t res_count;
-    char* res_meta;       /* last query result: title, artist, format, duration, album, copies per key, each NUL terminated */
+    char* res_meta;       /* last query result: title, artist, format, duration, album, copies, albums.id per key, each NUL terminated */
     uint32_t res_meta_used;
     char* qmeta;          /* snapshot of res_meta taken with qview (VIEW_SOURCE query) */
     uint32_t* qmeta_off;  /* qmeta offset of each qview row; UINT32_MAX: no metadata */
