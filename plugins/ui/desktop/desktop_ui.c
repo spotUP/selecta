@@ -409,6 +409,7 @@ typedef struct desk {
     int sysfile_wait;                 /* a file dialog is open for the system file dialog; its answer arrives as a drop */
     char sysfile_name[64], sysfile_reason[48], sysfile_toast[96]; /* store name of the waiting file; last SYSFILE_FAILED reason; last toast text */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
+    uint32_t np_page, np_page_pages, np_page_until, np_page_tick; /* I1422: page shown of the widest cut-off message line, its page count, clock the paging keeps waking until, last page step drawn */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
@@ -8246,6 +8247,7 @@ static const char* library_dump_build(desk* d) {
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, sel_uim_np_note(&st->song) != NULL ? sel_uim_np_note(&st->song) : "", (unsigned)d->np_notes, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines, (unsigned)d->np_pair_lines, (int)d->np_pair_view.x, (int)d->np_pair_view.y, (int)d->np_pair_view.h, (int)(d->np_pair_max_q16 >> 16), (int)(d->np_pair_y_q16 >> 16),
                  (unsigned)d->np_bar_draws, (int)d->np_bar_handle.x, (int)d->np_bar_handle.y, (int)d->np_bar_handle.w, (int)d->np_bar_handle.h);
+    o = dump_put(d, o, "nowplaying msgpage %u of %u\n", (unsigned)d->np_page, (unsigned)d->np_page_pages);
     o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
@@ -13091,6 +13093,7 @@ static void draw_player_left(desk* d) {
  * artwork, the artwork, title and artist, the catalogue pairs the engine reports for the song (the text UI's information
  * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
 #define NP_MESSAGE_LINES 6
+#define NP_PAGE_MS 2000u /* I1422: a message line wider than the panel jumps one panel width left every NP_PAGE_MS */
 #define NP_TAIL_H 120 /* I1274: logical pixels kept under the metadata pairs for the lyrics and the queue */
 enum { NP_PAIR_MIN_LINES = 8, NP_BAR_W = 6 }; /* I1277: a scrolling metadata block shows at least this many lines; its scrollbar width */
 static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
@@ -13256,6 +13259,8 @@ static void draw_nowplaying(desk* d) {
     d->np_bar_track = rect_of(0, 0, 0, 0);
     d->np_bar_handle = rect_of(0, 0, 0, 0);
     d->np_msg_lines = 0;
+    d->np_page = 0;
+    d->np_page_pages = 0;
     d->np_key_end = 0;
     d->np_val_x = 0;
     if (st->panel != NULL) {
@@ -13366,8 +13371,33 @@ static void draw_nowplaying(desk* d) {
         const sel_gui_atlas* at = desk_font(d, 0, 12);
         if (at != NULL) {
             sel_gui_rect box = rect_of(pn.x + sp, y, side, NP_MESSAGE_LINES * at->line_height);
+            const char* p = ml->ref;
+            /* I1422: one row per message line; a line wider than the panel pages left by one panel width every NP_PAGE_MS and
+             * returns to its start after the last page, so no sample name is cut off. */
             sel_gui_clip_push(d->canvas, box);
-            d->np_msg_lines = (uint32_t)sel_gui_text_wrap(d->canvas, at, box, ml->ref, muted, NP_MESSAGE_LINES, &d->text);
+            while (p != NULL && *p != '\0' && d->np_msg_lines < NP_MESSAGE_LINES) {
+                const char* e = strchr(p, '\n');
+                size_t n = e != NULL ? (size_t)(e - p) : strlen(p);
+                int32_t tw = sel_gui_text_width(at, p, n), pages = side > 0 ? (tw + side - 1) / side : 1, pg = 0;
+                if (pages > 1) {
+                    pg = (int32_t)(d->now_ms / NP_PAGE_MS % (uint32_t)pages);
+                    d->np_page_pages = (uint32_t)pages > d->np_page_pages ? (uint32_t)pages : d->np_page_pages;
+                    d->np_page = (uint32_t)pg;
+                    d->np_page_until = d->now_ms + 2u * NP_PAGE_MS;
+                }
+                {
+                    sel_gui_rect row = rect_of(box.x, box.y + (int32_t)d->np_msg_lines * at->line_height, side, at->line_height);
+                    char one[256];
+                    size_t m = n < sizeof one - 1u ? n : sizeof one - 1u;
+                    memcpy(one, p, m);
+                    one[m] = '\0';
+                    sel_gui_clip_push(d->canvas, row);
+                    sel_gui_text_draw(d->canvas, at, row.x - pg * side, row.y, one, muted, tw + 1, &d->text); /* no ellipsis: the clip row cuts the page */
+                    sel_gui_clip_pop(d->canvas);
+                }
+                d->np_msg_lines++;
+                p = e != NULL ? e + 1 : NULL;
+            }
             sel_gui_clip_pop(d->canvas);
             y += (int32_t)d->np_msg_lines * at->line_height + lpx(d, 6);
         }
@@ -13827,6 +13857,10 @@ static uint32_t desk_timers_wait(const desk* d) {
     if (s > 0u && (w == 0u || s < w)) {
         w = s;
     }
+    if (d->np_page_until > d->now_ms) { /* I1422: a paged message line wakes at the next page step */
+        uint32_t pw = NP_PAGE_MS - d->now_ms % NP_PAGE_MS;
+        w = w == 0u || pw < w ? pw : w;
+    }
     if (d->slide_live_until > d->now_ms && (w == 0u || w > 1000u)) { /* I1384b: a shown slide show wakes once a second to count its interval */
         w = 1000u - d->now_ms % 1000u;
     }
@@ -13841,6 +13875,12 @@ static int desk_timers_tick(desk* d) {
     if (d->viz_close_on && d->now_ms >= d->viz_close_until) { /* I1248 */
         d->viz_close_on = 0;
         d->viz_close_hot = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        hid = 1;
+    }
+    if (d->np_page_until > d->now_ms && d->now_ms / NP_PAGE_MS != d->np_page_tick) { /* I1422: redraw so the cut-off message line shows its next page */
+        d->np_page_tick = d->now_ms / NP_PAGE_MS;
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         hid = 1;
