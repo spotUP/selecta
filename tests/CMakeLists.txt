@@ -3293,6 +3293,16 @@ if(NOT SEL_AMIGA)
         ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
     endif()
 
+    # I1223h: Ken Silverman's AdLib Music (.ksm) plays through the render entry point (adplug ksm player) with insts.dat beside the song; fetched by checksum, exit 77 = skip.
+    if(TARGET sel_module_adplug)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-ksm-decode)
+      add_test(NAME adplug-ksm-decode
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/adplug_ksm_decode.sh $<TARGET_FILE:selecta-cli>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/adplug-ksm-decode)
+      set_tests_properties(adplug-ksm-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "adplug_ksm_decode_ok" SKIP_RETURN_CODE 77
+        ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+    endif()
+
     # I697: Megatracker plays through the render entry point (libxmp module); the format list is reported.
     if(TARGET sel_module_xmp)
       file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/xmp-decode)
