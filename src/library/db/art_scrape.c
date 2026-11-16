@@ -353,14 +353,22 @@ const char* sel_dz_pick(const char* js, const char* fam, const char** end) {
 
 int sel_dz_query(const char* key, const char* title, const char* artist, const char* platform, char* out, size_t cap) {
     char a[600], b[600];
+    int n;
 
     if (strncmp(key, "modland:pub/modules/", 20) == 0) {
         if (!sel_url_encode(key, a, sizeof a)) return 0;
         return snprintf(out, cap, "key=%s", a) < (int)cap;
     }
     if (title == NULL || artist == NULL || title[0] == '\0' || artist[0] == '\0' || !sel_url_encode(title, a, sizeof a) || !sel_url_encode(artist, b, sizeof b)) return 0;
-    if (platform != NULL && platform[0] != '\0') return snprintf(out, cap, "title=%s&author=%s&platform=%s", a, b, platform) < (int)cap;
-    return snprintf(out, cap, "title=%s&author=%s", a, b) < (int)cap;
+    n = snprintf(out, cap, "title=%s&author=%s", a, b);
+    if (n >= (int)cap) return 0;
+    /* I1401: link-first. The server matches the song's own Demozoo link (AMP id, HVSC path) before title + author; other sources have none. */
+    if ((strncmp(key, "amp:", 4) == 0 || strncmp(key, "hvsc:", 5) == 0) && sel_url_encode(key, a, sizeof a)) {
+        n += snprintf(out + n, cap - (size_t)n, "&link=%s", a);
+        if (n >= (int)cap) return 0;
+    }
+    if (platform != NULL && platform[0] != '\0') n += snprintf(out + n, cap - (size_t)n, "&platform=%s", platform);
+    return n < (int)cap;
 }
 
 static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {

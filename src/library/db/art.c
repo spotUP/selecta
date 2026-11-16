@@ -208,17 +208,36 @@ static int art_next_missing(sqlite3* db, const sel_art_op* op) {
     return id;
 }
 
+/* I1401: an HVSC song has no artist tag; the composer folder of its path (MUSICIANS/H/Hubbard_Rob/x.sid -> "Hubbard Rob") is the author to ask by. */
+static void hvsc_folder_artist(const char* key, char* out, size_t cap) {
+    const char *p, *e;
+    size_t n, i;
+
+    out[0] = '\0';
+    if (strncmp(key, "hvsc:MUSICIANS/", 15) != 0 || (p = strchr(key + 15, '/')) == NULL || (e = strchr(p + 1, '/')) == NULL || e == p + 1) return;
+    n = (size_t)(e - (p + 1));
+    if (n + 1u > cap) return;
+    for (i = 0; i < n; i++) out[i] = p[1 + i] == '_' ? ' ' : p[1 + i];
+    out[n] = '\0';
+}
+
 static int art_song_meta(sqlite3* db, const sel_art_op* op) {
-    char key[1024];
+    char key[1024], fold[256];
     sqlite3_stmt* st = NULL;
     int ok = 0;
 
     if (op->data == NULL || op->cap < 4u || !sel_song_key_of(op->ref, key, sizeof key)) return 0;
     if (sqlite3_prepare_v2(db, "SELECT name, artist FROM songs WHERE key = ?1", -1, &st, NULL) != SQLITE_OK) return 0;
     sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
-    if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_bytes(st, 0) > 0 && sqlite3_column_bytes(st, 1) > 0) {
-        int n = snprintf((char*)op->data, op->cap, "%s%c%s", (const char*)sqlite3_column_text(st, 0), '\0', (const char*)sqlite3_column_text(st, 1));
+    if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_bytes(st, 0) > 0) {
+        const char* artist = sqlite3_column_bytes(st, 1) > 0 ? (const char*)sqlite3_column_text(st, 1) : NULL;
+        int n;
 
+        if (artist == NULL) {
+            hvsc_folder_artist(key, fold, sizeof fold);
+            if (fold[0] != '\0') artist = fold;
+        }
+        n = artist != NULL ? snprintf((char*)op->data, op->cap, "%s%c%s", (const char*)sqlite3_column_text(st, 0), '\0', artist) : 0;
         if (n > 0 && (uint32_t)n + 2u < op->cap) {
             op->data[n + 1] = '\0';
             ok = 1;

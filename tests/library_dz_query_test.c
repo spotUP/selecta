@@ -35,6 +35,11 @@ int main(void) {
     CHECK(sel_dz_query("hvsc:MUSICIANS/H/Hubbard_Rob/Commando.sid", "Commando", "Rob Hubbard", NULL, q, sizeof q) && strncmp(q, "title=Commando&author=Rob", 25) == 0);
     CHECK(strchr(q, ' ') == NULL);
     CHECK(strstr(q, "platform") == NULL);
+    /* I1401: link-first. AMP and HVSC keys also send the key as &link=; other sources have no Demozoo link class. */
+    CHECK(strstr(q, "&link=hvsc%3AMUSICIANS%2FH%2FHubbard_Rob%2FCommando.sid") != NULL);
+    CHECK(sel_dz_query("amp:44259/MOD.flr_deephouse", "deephouse", "Mortimer Twang", NULL, q, sizeof q) && strstr(q, "&link=amp%3A44259%2FMOD.flr_deephouse") != NULL);
+    CHECK(sel_dz_query("aminet:mods/a.lha", "A", "B", NULL, q, sizeof q) && strstr(q, "link") == NULL);
+    CHECK(sel_dz_query("amp:1/x", "A", "B", "amiga", q, sizeof q) && strstr(q, "&link=amp") != NULL && strstr(q, "&platform=amiga") != NULL);
     CHECK(sel_dz_query("hvsc:a", "Turrican II", "Chris Huelsbeck", "c64", q, sizeof q) && strstr(q, "&platform=c64") != NULL);
     CHECK(sel_dz_query("modland:pub/modules/Protracker/Skope/a b.mod", NULL, NULL, "amiga", q, sizeof q) && strstr(q, "platform") == NULL);
     CHECK(!sel_dz_query("local:/m/x.mod", "Tune", "", NULL, q, sizeof q));
