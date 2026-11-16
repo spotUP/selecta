@@ -899,6 +899,7 @@ struct sel_engine {
     uint32_t sm_key;      /* smart download plan made for this queue version, playing entry and prefs generation (I169); 0 = none */
     char* res_text;       /* last query result: keys, each NUL terminated */
     uint32_t res_count;
+    uint32_t res_truncated; /* I1416s2: 1 when the last search stopped at its hit cap (a 1-3 letter query), so the Search page tells the user */
     char* res_meta;       /* last query result: title, artist, format, duration, album, copies, albums.id per key, each NUL terminated */
     uint32_t res_meta_used;
     char* qmeta;          /* snapshot of res_meta taken with qview (VIEW_SOURCE query) */
@@ -5180,6 +5181,7 @@ static int search_finish(sel_engine* e, const sel_lib_job* job, int ran, const c
         emit_log(e, "result_truncated", n);
     }
     e->res_count = job->count;
+    e->res_truncated = job->truncated != 0;
     e->res_meta_used = job->meta_used;
     *fts = job->used_fts;
     return 1;
@@ -6967,7 +6969,8 @@ static void search_reload(sel_engine* e) {
         albums[i] = artists[i] = UINT32_MAX;
     }
     alb[0] = art[0] = '\0';
-    o += (size_t)snprintf(text + o, cap - o, "H Songs (%u)\n", (unsigned)e->res_count);
+    o += (size_t)snprintf(text + o, cap - o, e->res_truncated && e->res_count > 0 ? "H Songs (%u, more available: type more letters)\n" : "H Songs (%u)\n",
+                          (unsigned)e->res_count);
     for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk, not O(n^2) result_key(i) */
         const char* name = "";
         const char* artist = "";

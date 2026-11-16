@@ -436,6 +436,7 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
     int rows = page_rows(lib), ok = 1;
     char* wrapped = NULL;
     char* wrapped_idx = NULL;
+    char* limited[2] = {NULL, NULL};
 
     memset(arms, 0, sizeof arms);
     /* I1094c: hide every copy but the best, in SQL before paging so a page stays full. An index arm (idx.songs) carries the
@@ -463,6 +464,22 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
     }
     arms[0].arm = wrapped != NULL ? wrapped : arm;
     arms[1].arm = wrapped_idx != NULL ? wrapped_idx : arm_idx;
+    if (max_hits > 0 && match != NULL) {
+        /* I1416s2: a capped FTS query takes the first max_hits+1 hits in index order (no sort), then the paging sorts only those:
+         * ORDER BY key over every hit of "mod*" walked hundreds of thousands of rows per page. The +1 is how the cap shows truncated. */
+        limited[0] = sqlite3_mprintf("SELECT key FROM (%s LIMIT %u)", arms[0].arm, (unsigned)max_hits + 1u);
+        limited[1] = arm_idx != NULL ? sqlite3_mprintf("SELECT key FROM (%s LIMIT %u)", arms[1].arm, (unsigned)max_hits + 1u) : NULL;
+        if (limited[0] == NULL || (arm_idx != NULL && limited[1] == NULL)) {
+            sqlite3_free(limited[0]);
+            sqlite3_free(limited[1]);
+            sqlite3_free(wrapped);
+            sqlite3_free(wrapped_idx);
+            set_error(job, "out_of_memory");
+            return;
+        }
+        arms[0].arm = limited[0];
+        arms[1].arm = limited[1];
+    }
     for (i = 0; i < narms && ok; i++) {
         arms[i].after = "";
         arms[i].st = prepare_arm(lib, PAGE, arms[i].arm, match, job);
@@ -511,6 +528,8 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
     for (i = 0; i < narms; i++) {
         sqlite3_finalize(arms[i].st);
     }
+    sqlite3_free(limited[0]);
+    sqlite3_free(limited[1]);
     sqlite3_free(wrapped);
     sqlite3_free(wrapped_idx);
 }
@@ -678,6 +697,8 @@ static void fts_match_build(sel_library* lib, const char* text, char* match, siz
     *nlong_out = nlong;
 }
 
+enum { SHORT_QUERY_LETTERS = 3, SHORT_QUERY_HITS = 2000 };
+
 void sel_library_search(sel_library* lib, sel_lib_job* job) {
     sel_library_test_slow("SELECTA_LIB_SEARCH_SLOW_MS"); /* I906g test knob: a search on a busy worker */
     lib->search_runs++;
@@ -715,7 +736,14 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             snprintf(arm_idx, sizeof arm_idx, "SELECT songs.key AS key FROM idx.songs AS songs WHERE 1%s", CHECK);
             job->used_fts = 0;
         }
-        collect(lib, arm, lib->has_index ? arm_idx : NULL, match, nterms == 0 ? job->scan_max : 0, job, 1);
+        {
+            /* I1416s2: a 1-3 letter search matches hundreds of thousands of rows; it returns the first SHORT_QUERY_HITS (truncated is set) */
+            uint32_t cap = nterms == 0 ? job->scan_max : 0;
+            size_t len = strlen(job->text);
+            while (len > 0 && job->text[len - 1] == ' ') len--;
+            if (len <= SHORT_QUERY_LETTERS && (cap == 0 || cap > SHORT_QUERY_HITS)) cap = SHORT_QUERY_HITS;
+            collect(lib, arm, lib->has_index ? arm_idx : NULL, match, cap, job, 1);
+        }
     } else {
         lib->view_used = 0;
         if (!sel_query_compile(job->text, job->now, view_lookup, lib, &lib->query)) {
