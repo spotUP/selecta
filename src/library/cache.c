@@ -317,7 +317,8 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
         c->stats.fetches++;
         return SEL_CACHE_OK;
     }
-    if (!ok && s.yielded) {
+    if (!ok && (s.yielded || (s.resumable && s.offset > 0 && ((c->cancel != NULL && *c->cancel) || sel_cache_watch_cancelled(c->watch))))) {
+        /* a cancelled open keeps its bytes like a yield (I1415p): the next fetch of this path adopts the slice and resumes by Range */
         c->slice.active = 1;
         snprintf(c->slice.key, sizeof c->slice.key, "%s", out);
         c->slice.offset = s.offset;

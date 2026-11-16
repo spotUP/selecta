@@ -23,3 +23,10 @@ message(STATUS "${o}${e}")
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "open-progress-engine: test failed (rc ${rc})")
 endif()
+
+# I1415p: the second OPEN of the cancelled song asked for the rest by Range
+file(DOWNLOAD "http://127.0.0.1:${port}/__fixture/log" "${dir}/log.json" TIMEOUT 10)
+file(READ "${dir}/log.json" fxlog)
+if(NOT fxlog MATCHES "bigslow.mod[^}]*\"range\": *\"bytes=[1-9][0-9]*-")
+  message(FATAL_ERROR "open-progress-engine: no Range request for bigslow.mod after the cancel\n${fxlog}")
+endif()

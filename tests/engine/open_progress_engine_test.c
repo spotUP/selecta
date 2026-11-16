@@ -84,6 +84,22 @@ static void cmd(sel_engine* e, const char* line) {
     sel_engine_send(e, &m);
 }
 
+/* the .part of bigslow.mod anywhere under the cache dir (the path layout is the cache's business) */
+static int find_part(const char* cache, long* size) {
+    char cmdl[900], buf[600];
+    FILE* f;
+    struct stat sb;
+    int ok = 0;
+    snprintf(cmdl, sizeof cmdl, "find '%s' -name 'bigslow.mod*.part' 2>/dev/null", cache);
+    f = popen(cmdl, "r");
+    if (f != NULL && fgets(buf, sizeof buf, f) != NULL) {
+        buf[strcspn(buf, "\n")] = '\0';
+        if (stat(buf, &sb) == 0) { *size = (long)sb.st_size; ok = 1; }
+    }
+    if (f != NULL) pclose(f);
+    return ok;
+}
+
 static sel_engine* make(const char* dir, const char* name, struct sel_library** lib) {
     sel_engine_config cfg;
     char db[600];
@@ -104,6 +120,7 @@ int main(int argc, char** argv) {
     struct sel_library* lib;
     int t, saw_conn = 0, saw_down = 0, rising = 0;
     uint32_t last_done = 0, evt0;
+    long part_size = 0;
     char line[900];
 
     if (argc < 4) {
@@ -145,7 +162,7 @@ int main(int argc, char** argv) {
     CHECK(pr.active == 0);
     CHECK(g_opened_evt == evt0 && st.songs_opened == 1); /* no SONG_OPENED for the cancelled path, quick1 still plays */
     pump_ms(e, 3500);                                    /* the server finishes its sleep; nothing may start late */
-    /* NOT asserted: after CANCEL_OPEN no .part stays in the cache (I1415 plan: resume by Range); open finding, see the agent report */
+    CHECK(find_part(argv[2], &part_size) && part_size > 0 && part_size < 6166); /* I1415p: the cancelled download keeps its .part */
     sel_engine_stats_get(e, &st);
     CHECK(g_opened_evt == evt0 && st.songs_opened == 1);
 
@@ -170,6 +187,27 @@ int main(int argc, char** argv) {
     sel_engine_stats_get(e, &st);
     CHECK(g_opened_evt == evt0 + 1);
     CHECK(st.open_unpack_reads == 1 && st.archive_unpacks == 1);
+    sel_engine_destroy(e);
+    sel_library_close(lib);
+
+    /* I1415p: cancel mid-body keeps the .part; the same path again resumes by Range (the cmake driver reads the
+     * fixture log) and finishes. A fresh engine so the playing slots are free. */
+    e = make(argv[1], "c", &lib);
+    evt0 = g_opened_evt;
+    cmd(e, "OPEN modland:Protracker/test/bigslow.mod");
+    for (t = 0; t < 150; t++) {
+        pump_ms(e, 20);
+        sel_engine_open_progress(e, &pr);
+        if (pr.active && pr.phase == SEL_OPEN_DOWNLOADING && pr.done > 0 && pr.done < pr.total) break;
+    }
+    CHECK(t < 150);
+    cmd(e, "CANCEL_OPEN");
+    pump_ms(e, 1500);
+    CHECK(find_part(argv[2], &part_size) && part_size > 0 && part_size < 6166);
+    cmd(e, "OPEN modland:Protracker/test/bigslow.mod");
+    for (t = 0; t < 400 && g_opened_evt < evt0 + 1; t++) pump_ms(e, 20);
+    CHECK(g_opened_evt == evt0 + 1);
+    CHECK(!find_part(argv[2], &part_size));
     sel_engine_destroy(e);
     sel_library_close(lib);
 
