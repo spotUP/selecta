@@ -18,6 +18,7 @@ typedef struct sel_catalogue_song {
     int64_t size;
     int32_t duration_ms; /* 0 = unknown */
     int32_t year;        /* 0 = unknown */
+    const char* cover_url; /* I1401d: http(s) image URL the song's source offers as its cover; NULL or "" = none */
 } sel_catalogue_song;
 
 /* Side data for a song that already has a row (HVSC Songlengths.md5 and STIL): stickers are name/value notes stored

@@ -52,6 +52,7 @@ typedef struct sel_upnp_entry {
     unsigned child_count;                    /* container@childCount; 0 when absent */
     char res_url[SEL_UPNP_URL_BYTES];        /* first <res> URL (items) */
     char protocol_info[SEL_UPNP_TEXT_BYTES]; /* first <res>@protocolInfo */
+    char art_url[SEL_UPNP_URL_BYTES];        /* first upnp:albumArtURI (profileID ignored); empty when absent */
 } sel_upnp_entry;
 
 /* "H:MM:SS" or "H:MM:SS.mmm" to milliseconds (a fraction like "F0/F1" is ignored). 1 on success. */

@@ -161,6 +161,40 @@ static void clean_part(char* s) {
     }
 }
 
+/* I1401d: copies the host of an http(s) URL (no port, no userinfo) into out; 0 when it is not one. */
+static int url_host(const char* url, char* out, size_t n) {
+    const char* p = strstr(url, "://");
+    size_t i = 0;
+
+    if (p == NULL || (strncmp(url, "http", 4) != 0)) {
+        return 0;
+    }
+    for (p += 3; *p != '\0' && *p != '/' && *p != ':' && *p != '?' && *p != '@' && i + 1u < n; p++) {
+        out[i++] = *p;
+    }
+    out[i] = '\0';
+    return i > 0 && (*p == '\0' || *p == '/' || *p == ':' || *p == '?');
+}
+
+static int lan_host(const char* h) {
+    unsigned a = 0, b = 0;
+
+    if (sscanf(h, "%u.%u.", &a, &b) != 2) {
+        return 0;
+    }
+    return a == 10u || a == 127u || (a == 192u && b == 168u) || (a == 172u && b >= 16u && b <= 31u) || (a == 169u && b == 254u);
+}
+
+/* Trust boundary: a server only gets to name a cover on itself (the host of its audio URL) or on a LAN address. */
+static int art_trusted(const sel_upnp_entry* e) {
+    char ah[SEL_UPNP_TEXT_BYTES], rh[SEL_UPNP_TEXT_BYTES];
+
+    if (!url_host(e->art_url, ah, sizeof ah)) {
+        return 0;
+    }
+    return (url_host(e->res_url, rh, sizeof rh) && strcmp(ah, rh) == 0) || lan_host(ah);
+}
+
 static int is_audio(const sel_upnp_entry* e) {
     return e->res_url[0] != '\0' &&
            (strstr(e->protocol_info, ":audio/") != NULL || strstr(e->protocol_info, ":application/ogg") != NULL);
@@ -201,6 +235,7 @@ static void add_item(run* r, const sel_upnp_entry* e) {
     song.name = title;
     song.md5 = "";
     song.duration_ms = (int32_t)e->duration_ms;
+    song.cover_url = art_trusted(e) ? e->art_url : "";
     { /* I1410: rows synced before the title split sat at "<server or upnp artist>/<title>/<url>"; re-key them so history and playlists keep them */
         char la[SEL_UPNP_TEXT_BYTES], lt[SEL_UPNP_TEXT_BYTES], lpath[URL_BYTES + 2u * SEL_UPNP_TEXT_BYTES];
         snprintf(la, sizeof la, "%s", e->artist[0] ? e->artist : r->server);

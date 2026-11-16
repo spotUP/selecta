@@ -207,6 +207,9 @@ static int cat_song(const sel_host* host, const sel_catalogue_song* s) {
             return 0;
         }
     }
+    if (s->cover_url != NULL && s->cover_url[0] != '\0' && s->path != NULL) {
+        sel_library_cover_url_put(c->scfg.lib, b->source, s->path, s->cover_url);
+    }
     return fill_row(b, &b->rows[b->count++], s);
 }
 

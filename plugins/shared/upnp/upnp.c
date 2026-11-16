@@ -302,6 +302,7 @@ int sel_upnp_parse_didl(const char* didl, sel_upnp_entry* out, size_t max) {
             (void)sel_xml_tag_text(p, close, "dc:creator", e->artist, sizeof e->artist);
         }
         (void)sel_xml_tag_text(p, close, "upnp:album", e->album, sizeof e->album);
+        (void)sel_xml_tag_text(p, close, "upnp:albumArtURI", e->art_url, sizeof e->art_url);
         if (cont) {
             if (sel_xml_tag_attr(p, close, "container", "childCount", num, sizeof num)) {
                 e->child_count = (unsigned)strtoul(num, NULL, 10);

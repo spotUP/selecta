@@ -4425,6 +4425,11 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DTEST=$<TARGET_FILE:upnp_browse_test>" "-DWORK=${SEL_NET_WORK}"
             "-DSRV=${SEL_NET_DIR}/upnp_server.py" -P "${SEL_NET_DIR}/upnp_browse.cmake")
   set_tests_properties(upnp-browse PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "upnp_browse_ok")
+  # I1401d: upnp:albumArtURI parses into the entry's art_url.
+  add_executable(upnp_didl_art_test net/upnp_didl_art_test.c)
+  target_link_libraries(upnp_didl_art_test PRIVATE selecta_shared_upnp selecta_library)
+  add_test(NAME upnp-didl-art COMMAND upnp_didl_art_test)
+  set_tests_properties(upnp-didl-art PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "upnp_didl_art_ok")
 
   # I725g: the ccMixter source: one query per sync, per-upload licence shown, User-Agent, streamed playback.
   add_test(NAME ccmixter

@@ -447,6 +447,41 @@ static int folder_art(sel_library* lib, const char* key, int id) {
     return (int)n;
 }
 
+/* I1401d: a source that names its cover (DLNA upnp:albumArtURI) has the URL stored next to the song's art under kind "cover_url" when the song is
+ * catalogued; dz_step fetches it like any other image (2 MB cap). Only http(s) is kept. shortcut: written again on every walk, one small row
+ * write per item; add a compare when a library is large enough to notice. */
+void sel_library_cover_url_put(sel_library* lib, const char* source, const char* path, const char* url) {
+    char key[1024];
+
+    if (lib == NULL || url == NULL || (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) || strlen(url) >= SCRAPE_URL_MAX) return;
+    if (snprintf(key, sizeof key, "%s:%s", source, path) >= (int)sizeof key) return;
+    dz_put(lib, sel_art_dz_id(key), "cover_url", url, strlen(url));
+}
+
+/* 1 = the stored cover URL answered with an image, now the song's cover. */
+static int url_art(sel_library* lib, const char* key, int id, sel_scrape_stats* st) {
+    char url[SCRAPE_URL_MAX];
+    uint8_t* buf;
+    scrape_buf b;
+    int ok = 0;
+    int n = dz_has(lib, id, "cover_url", (uint8_t*)url, sizeof url - 1u);
+
+    if (n <= 0) return 0;
+    url[n] = '\0';
+    buf = malloc(DZ_IMAGE_MAX);
+    if (buf == NULL) return 0;
+    b.data = buf;
+    b.cap = DZ_IMAGE_MAX;
+    b.len = 0;
+    if (scrape_get(url, &b, st) == 1 && b.len < DZ_IMAGE_MAX && is_image(&b)) {
+        dz_put(lib, id, "cover", buf, b.len);
+        dz_put(lib, id, "dz_key", key, strlen(key));
+        ok = 1;
+    }
+    free(buf);
+    return ok;
+}
+
 static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     char base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], kind[12], stamp[24];
     uint8_t seen[24];
@@ -463,7 +498,7 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     op.ref = key;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) return 1; /* real art, or screenshots already cached */
-    if (folder_art(lib, key, id)) {
+    if (folder_art(lib, key, id) || url_art(lib, key, id, st)) {
         st->scraped++;
         return 1;
     }

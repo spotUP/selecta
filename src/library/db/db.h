@@ -622,6 +622,8 @@ typedef struct sel_scrape_stats {
  * back to that id for a song with no album. Base URL SELECTA_ART_DZ_URL. Off when _demozoo_set_enabled(0) (pref art.demozoo) or SELECTA_ART_SCRAPE=off. */
 void sel_library_demozoo_set_enabled(sel_library* lib, int on);
 void sel_library_demozoo_kick(sel_library* lib, const char* ref);
+/* I1401d: remember the cover URL a source offers for song source:path (http/https only); dz_step fetches it as the song's cover. */
+void sel_library_cover_url_put(sel_library* lib, const char* source, const char* path, const char* url);
 /* I1401: the lookup query for a song of any source. A Modland key goes as key=<key>; every other song goes as title=<title>&author=<artist> and
  * needs both non-empty. Writes the query (no leading '?') into out; 0 when there is nothing to ask (no title or artist) or it does not fit. */
 int sel_dz_query(const char* key, const char* title, const char* artist, const char* platform, char* out, size_t cap);
