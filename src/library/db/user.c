@@ -152,6 +152,63 @@ void sel_stil_owner_key(const char* key, char* out, size_t cap) {
     }
 }
 
+/* I1440g: one SID song -> its DeepSID key `hvsc:<path>` (design 2.1), written to out. Returns the route that found it (SEL_DEEPSID_*) or
+ * SEL_DEEPSID_NONE with out empty. DeepSID joins on the HVSC path, never on md5. Routes in order: the hvsc source row itself; a Modland
+ * `pub/modules/HVSC/<p>` path (sel_stil_owner_key, the one mapper); the full-file md5 of an hvsc row (songs_md5); the
+ * `MUSICIANS|DEMOS|GAMES/...` tail of a path, kept only when an hvsc row has exactly that path.
+ * shortcut: no `cgsc:` keys, the db holds no CGSC source rows yet; add the route when a cgsc source exists. */
+static int hvsc_path_exists(sqlite3* db, const char* path) {
+    sqlite3_stmt* st = NULL;
+    int found = 0;
+
+    if (sqlite3_prepare_v2(db, "SELECT 1 FROM songs WHERE source = 'hvsc' AND path = ?1", -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, path, -1, SQLITE_STATIC);
+    found = sqlite3_step(st) == SQLITE_ROW;
+    sqlite3_finalize(st);
+    return found;
+}
+
+int sel_deepsid_key(sqlite3* db, const char* source, const char* path, const char* md5, char* out, size_t cap) {
+    static const char* const roots[] = {"MUSICIANS/", "DEMOS/", "GAMES/"};
+    char mk[SEL_SONG_KEY_MAX];
+    sqlite3_stmt* st = NULL;
+    size_t i;
+
+    if (cap == 0) return SEL_DEEPSID_NONE;
+    out[0] = '\0';
+    if (path == NULL) return SEL_DEEPSID_NONE;
+    if (source != NULL && strcmp(source, "hvsc") == 0) {
+        snprintf(out, cap, "hvsc:%s", path);
+        return SEL_DEEPSID_HVSC;
+    }
+    if (source != NULL && strcmp(source, "modland") == 0) {
+        snprintf(mk, sizeof mk, "modland:%s", path);
+        sel_stil_owner_key(mk, out, cap);
+        if (strncmp(out, "hvsc:", 5) == 0) return SEL_DEEPSID_MODLAND;
+        out[0] = '\0';
+    }
+    if (md5 != NULL && md5[0] != '\0' &&
+        sqlite3_prepare_v2(db, "SELECT path FROM songs WHERE md5 = ?1 AND source = 'hvsc' LIMIT 1", -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, md5, -1, SQLITE_STATIC);
+        if (sqlite3_step(st) == SQLITE_ROW) snprintf(out, cap, "hvsc:%s", (const char*)sqlite3_column_text(st, 0));
+        sqlite3_finalize(st);
+        if (out[0] != '\0') return SEL_DEEPSID_MD5;
+    }
+    for (i = 0; i < sizeof roots / sizeof roots[0]; i++) {
+        const char* tail = path;
+        size_t rl = strlen(roots[i]);
+
+        while ((tail = strstr(tail, roots[i])) != NULL) {
+            if ((tail == path || tail[-1] == '/') && hvsc_path_exists(db, tail)) {
+                snprintf(out, cap, "hvsc:%s", tail);
+                return SEL_DEEPSID_SUFFIX;
+            }
+            tail += rl;
+        }
+    }
+    return SEL_DEEPSID_NONE;
+}
+
 /* I185: appends one "label\0value\0" pair to a panel list unless the value is absent, empty or "0"; the list
  * always ends in an empty label. Returns 1 when a row was added. */
 static int panel_put(char* out, uint32_t cap, uint32_t* used, const char* label, const char* value) {
