@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "db/db.h"
@@ -209,6 +210,40 @@ int main(int argc, char** argv) {
     CHECK(g_opened_evt == evt0 + 1);
     CHECK(!find_part(argv[2], &part_size));
     sel_engine_destroy(e);
+    sel_library_close(lib);
+
+    /* (e) I1416a: a URL stream (first byte after 4 s) is read on the rd_play thread: the pump never stalls on it, STOP ends it, and the
+     * engine closes at once instead of waiting out the 4 s */
+    e = make(argv[1], "c", &lib);
+    {
+        struct timespec a, b;
+        long worst = 0, closing;
+        uint32_t opened0 = g_opened_evt;
+
+        cmd(e, "OPEN http://slow.mirror.test/mods/Protracker/test/song.mod");
+        for (t = 0; t < 15; t++) {
+            clock_gettime(CLOCK_MONOTONIC, &a);
+            sel_engine_pump(e, sink, NULL);
+            clock_gettime(CLOCK_MONOTONIC, &b);
+            if ((b.tv_sec - a.tv_sec) * 1000L + (b.tv_nsec - a.tv_nsec) / 1000000L > worst) worst = (b.tv_sec - a.tv_sec) * 1000L + (b.tv_nsec - a.tv_nsec) / 1000000L;
+            usleep(20000);
+        }
+        printf("url open: worst pump %ld ms\n", worst);
+        CHECK(worst < 500);
+        sel_engine_open_progress(e, &pr);
+        CHECK(pr.active == 1); /* still connecting: the first byte is 4 s away */
+        cmd(e, "STOP");
+        pump_ms(e, 100);
+        sel_engine_open_progress(e, &pr);
+        CHECK(pr.active == 0);
+        clock_gettime(CLOCK_MONOTONIC, &a);
+        sel_engine_destroy(e);
+        clock_gettime(CLOCK_MONOTONIC, &b);
+        closing = (b.tv_sec - a.tv_sec) * 1000L + (b.tv_nsec - a.tv_nsec) / 1000000L;
+        printf("url open: destroy after STOP %ld ms\n", closing);
+        CHECK(closing < 2000);
+        CHECK(g_opened_evt == opened0);
+    }
     sel_library_close(lib);
 
     if (g_fail == 0) printf("open_progress_engine_ok\n");
