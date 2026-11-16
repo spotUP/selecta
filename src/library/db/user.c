@@ -697,7 +697,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
                          " VALUES(?1, ?2, ?3, ?4, COALESCE((SELECT format FROM songs WHERE key = ?1), ?5))", op, 1);
     } else if (op->op == SEL_USER_LIKE) {
         sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS"); /* I906f test knob: a library write on a busy worker */
-        rc = user_exec(lib->db, "INSERT INTO ratings(key, rating, synced) VALUES(?1, 5, 0) ON CONFLICT(key) DO UPDATE SET rating = 5", op, 0); /* I1432: a like is 5 stars */
+        rc = user_exec(lib->db, "INSERT INTO ratings(key, rating, synced) VALUES(?1, 5, 0) ON CONFLICT(key) DO UPDATE SET rating = 5, synced = 0", op, 0); /* I1432: a like is 5 stars, pushed to DEViLBOX like any rating change */
     } else if (op->op == SEL_USER_UNLIKE) {
         rc = user_exec(lib->db, "DELETE FROM ratings WHERE key = ?1 AND rating >= 4", op, 0);
     } else if (op->op == SEL_USER_LIKE_GET) {
