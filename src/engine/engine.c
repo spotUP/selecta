@@ -362,6 +362,17 @@ static void wq_submit(sel_engine* e);
 static void wq_sticker_set_run(sel_library* lib, sel_wq_op* op);
 static void wq_cache_drop_run(sel_library* lib, sel_wq_op* op);
 
+/* I1416a: result of the network half of read_song. */
+typedef struct sel_net_read {
+    char path[SEL_BROWSE_PATH_MAX]; /* the station URL when station is set */
+    const char* source;             /* station source name, or NULL */
+    uint8_t* data;                  /* live head or whole stream; NULL when nothing was read */
+    size_t size;
+    sel_live* live;
+    int fail, status;               /* fail: the open failed with `status` */
+    int station, seekable, streamed, cancelled; /* streamed: net_stream ran; cancelled: a newer STOP or OPEN ended it */
+} sel_net_read;
+
 /* I906g: what a song start reads from the library (best source, per-song config, stored loudness), filled by the rd_play read before the
  * pump starts the song. A start that finds no entry posts the read and waits (play_meta_ready); read_song, song_config_load and
  * loudness_slot take the entry's answers and fall back to a library call only for a path nobody asked for. */
@@ -387,6 +398,10 @@ typedef struct sel_play_meta {
     uint8_t* file;
     size_t file_size;
     char file_src[SEL_BROWSE_PATH_MAX];
+    /* I1416a: the network half of read_song (station URL, .pls/.m3u resolve, live open and head, whole-stream read) ran on rd_play;
+     * read_song takes the answer. net_done 0: it did not run (fetched key, cancelled) and read_song does it itself. */
+    sel_net_read net;
+    int net_done;
 } sel_play_meta;
 #define SEL_PLAY_META_N 4u
 enum { SEL_VOTE_CACHE = 256, SEL_VOTE_BATCH = 64, SEL_VOTE_BLK = 8192 };
@@ -827,7 +842,7 @@ struct sel_engine {
     uint32_t pm_next, pm_wait, play_meta_reads;
     /* I1415: the open in progress. open_cancel is a generation (bumped on the pump) that ends the read thread's download; pm_cancel_start
      * is its value when the read was posted. op_* are written by the pump (op_watch by the read thread) and polled by the UIs. */
-    volatile unsigned open_cancel, pm_cancel_start;
+    volatile unsigned open_cancel, pm_cancel_start, pm_served; /* pm_served: cancel_served when the read was posted (live streams are cancelled against cancel_gen) */
     volatile uint32_t op_active, op_phase, op_start_ms;
     sel_cache_watch op_watch;
     char op_path[SEL_OPEN_PATH_MAX];
@@ -1205,7 +1220,7 @@ static void cmd_CANCEL_OPEN(sel_engine* e, const sel_message* m) {
 }
 
 static void cmd_STOP(sel_engine* e, const sel_message* m) {
-    (void)m;
+    cmd_CANCEL_OPEN(e, m); /* I1416a: STOP ends the open in progress (its rd_play download or stream head wait) too */
     e->sf_wait = -1; /* I710ga4: a stopped player does not re-open a song when a system file lands */
     set_play(e, SEL_STOPPED);
 }
@@ -2115,6 +2130,118 @@ static uint8_t* read_whole_file(sel_engine* e, const char* path, size_t* size) {
     return buf;
 }
 
+/* I1416a: the network half of read_song, split out so rd_play can run it (play_meta_run) and the pump only takes the answer. */
+static void net_station(sel_engine* e, const char* path, sel_net_read* r) {
+    /* I725c: a song of a streams source (radio-browser) plays its station URL through the stream path. */
+    sel_sync_ctx sctx;
+    sel_host shost;
+    int sr;
+
+    r->seekable = sel_source_key_seekable(path); /* I725f: the source answers HTTP Range (podcast) */
+    memset(&sctx, 0, sizeof sctx);
+    sctx.scfg.host = &e->pl_host;
+    sctx.scfg.lib = e->lib;
+    sel_sync_host_bind(&shost, &e->pl_host, &sctx); /* the source's play_url asks the host's net and cache folder */
+    sr = sel_source_stream_url(&shost, path, r->path, sizeof r->path);
+    if (sr < 0) {
+        r->fail = 1;
+        r->status = 0;
+    } else if (sr > 0) {
+        r->source = sel_source_stream_name(path);
+        r->station = 1;
+    }
+}
+
+/* `path` is the URL or pipe to read (after the station and file cache steps); `start` is the cancel_served value live streams are
+ * cancelled against; `in_rd` marks the rd_play thread, where open_cancel also ends the waits. Fills r->data / live / fail / status. */
+static void net_stream(sel_engine* e, const char* path, int want_live, unsigned start, int in_rd, sel_net_read* r) {
+    char resolved[SEL_BROWSE_PATH_MAX];
+    int seekable = r->seekable;
+    int station = r->station;
+    (void)station;
+    r->streamed = 1;
+#define NET_CANCELED() (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served) || (in_rd && e->open_cancel != e->pm_cancel_start))
+    if (sel_stream_is_url(path)) {
+        /* I725a: a .pls / .m3u URL names the real stream; play the first http(s) entry it lists. */
+        int rr = sel_stream_resolve(e->host, path, resolved, sizeof resolved);
+        if (rr < 0) {
+            r->fail = 1;
+            r->status = sel_stream_status();
+            return;
+        }
+        if (rr > 0) {
+            path = resolved;
+        }
+    }
+    if (want_live && sel_stream_is_url(path)) {
+        /* I195b: start the download and hand back only its head; the rest plays while it arrives. */
+        /* I196b/I196c: with OPTION record_to (a directory) set, the same single request also feeds the record sink (F36):
+         * a new file per OPEN and per ICY title change. */
+        const char* rec = e->state.options[SEL_OPT_RECORD_TO];
+        sel_live* st = NULL;
+        if (seekable && rec[0] == '\0') {
+            st = sel_live_open_seekable(e->host, path, &e->cancel_gen, start);
+        }
+        if (st == NULL) {
+            st = rec[0] != '\0' ? sel_live_open_record_dir(e->host, path, &e->cancel_gen, start, rec)
+                                : sel_live_open(e->host, path, &e->cancel_gen, start);
+        }
+        if (st != NULL) {
+            uint8_t first[10];
+            uint8_t head[SEL_STREAM_HEAD];
+            size_t n = 0, nfirst = 0, tag;
+            uint8_t* copy;
+            /* I1080: an ID3v2 tag too long to leave the probe its frames inside the head (podcast cover art, hundreds
+             * of KB) is skipped as it streams: the ring never holds it and the probe sees the first frames behind it.
+             * A short tag stays in the head (the title reader needs it). */
+            if (!sel_live_head(st, first, sizeof first, &nfirst)) {
+                if (NET_CANCELED()) r->cancelled = 1;
+                r->fail = 1;
+                r->status = sel_live_status(st);
+                sel_live_close(st);
+                return;
+            }
+            tag = sel_id3v2_len(first, nfirst);
+            if (tag + SEL_ID3_PROBE_ROOM > SEL_STREAM_HEAD && !sel_live_skip(st, tag)) {
+                if (NET_CANCELED()) r->cancelled = 1;
+                r->fail = 1;
+                r->status = sel_live_status(st);
+                sel_live_close(st);
+                return;
+            }
+            if (!sel_live_head(st, head, sizeof head, &n)) {
+                if (NET_CANCELED()) r->cancelled = 1;
+                r->fail = 1;
+                r->status = sel_live_status(st);
+                sel_live_close(st);
+                return;
+            }
+            copy = e->host->mem_alloc(e->host, n + 1u, SEL_MEM_FAST);
+            if (copy == NULL) {
+                sel_live_close(st);
+                r->fail = 1;
+                return;
+            }
+            memcpy(copy, head, n);
+            copy[n] = 0;
+            r->size = n;
+            r->live = st;
+            r->data = copy;
+            return;
+        }
+    }
+    if (sel_stream_is_url(path) || sel_stream_is_pipe(path)) {
+        r->data = sel_stream_read(e->host, path, &r->size); /* I195: URL or pipe, the whole stream in memory */
+        if (r->data == NULL) {
+            r->fail = 1;
+            r->status = sel_stream_is_url(path) ? sel_stream_status() : 0;
+            if (NET_CANCELED()) r->cancelled = 1; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
+        }
+    }
+#undef NET_CANCELED
+}
+
+
 /* Reads a song for prepare_slot. `file_path` (SEL_BROWSE_PATH_MAX bytes) gets the cached file of a remote key, else "". With `live` and an http(s) URL on the desktop only the head is read and *live gets
  * the running download (I195b). With `fs` a local file is opened as a file-backed stream and only its head is read (I184d); the caller keeps the
  * stream for a SEL_RP_STREAMING replayer and closes it before reading the whole file for any other. */
@@ -2127,38 +2254,31 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     char cached[SEL_BROWSE_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
     char resolved[SEL_BROWSE_PATH_MAX];
-    int station = 0; /* I1031: the song is a station of a streams source */
-    int seekable = 0; /* I725f: the song's source answers HTTP Range (podcast): the stream gets a length and seek */
     /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
     const sel_play_meta* pm = play_meta_find(e, path);
     int got_best = pm != NULL ? pm->has_best && snprintf(best, sizeof best, "%s", pm->best) > 0
                               : e->lib != NULL && sel_library_best_source(e->lib, path, best, sizeof best);
+    sel_net_read inl;
+    sel_net_read* nr = &inl;
     if (got_best && strcmp(best, path) != 0) {
         snprintf(e->dup_played, sizeof e->dup_played, "%s", best);
         e->dup_redirects++;
         path = best;
     }
-    {
-        /* I725c: a song of a streams source (radio-browser) plays its station URL through the stream path below. */
-        sel_sync_ctx sctx;
-        sel_host shost;
-        int sr;
-
-        seekable = sel_source_key_seekable(path);
-        memset(&sctx, 0, sizeof sctx);
-        sctx.scfg.host = &e->pl_host;
-        sctx.scfg.lib = e->lib;
-        sel_sync_host_bind(&shost, &e->pl_host, &sctx); /* the source's play_url asks the host's net and cache folder */
-        sr = sel_source_stream_url(&shost, path, resolved, sizeof resolved);
-        if (sr < 0) {
-            e->open_status = 0;
-            return NULL;
-        }
-        if (sr > 0) {
-            e->open_source = sel_source_stream_name(path);
-            path = resolved;
-            station = 1;
-        }
+    memset(&inl, 0, sizeof inl);
+    if (pm != NULL && pm->net_done) {
+        nr = (sel_net_read*)&pm->net; /* I1416a: rd_play already ran the station and stream steps */
+    } else {
+        net_station(e, path, &inl);
+    }
+    if (nr->fail) {
+        e->open_status = nr->status;
+        return NULL;
+    }
+    if (nr->station) {
+        e->open_source = nr->source;
+        snprintf(resolved, sizeof resolved, "%s", nr->path);
+        path = resolved;
     }
     if (e->lib != NULL && sel_cache_is_remote(path) && pm != NULL && pm->fetched && strcmp(pm->fetch_key, path) == 0) {
         /* I1225: the song-start read (play_meta_run) already fetched the file off the pump; take its answer. */
@@ -2189,84 +2309,22 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         path = cached;
         snprintf(file_path, SEL_BROWSE_PATH_MAX, "%s", cached); /* I1127b: the replayer looks for companion banks beside this file */
     }
-    if (sel_stream_is_url(path)) {
-        /* I725a: a .pls / .m3u URL names the real stream; play the first http(s) entry it lists. */
-        int rr = sel_stream_resolve(e->host, path, resolved, sizeof resolved);
-        if (rr < 0) {
-            e->open_status = sel_stream_status();
-            return NULL;
-        }
-        if (rr > 0) {
-            path = resolved;
-        }
+    if (!nr->streamed) net_stream(e, path, live != NULL, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served), 0, nr);
+    if (nr->cancelled) e->net_cancels++; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
+    if (nr->fail) {
+        e->open_status = nr->status;
+        return NULL;
     }
-    if (live != NULL && sel_stream_is_url(path)) {
-        /* I195b: start the download and hand back only its head; the rest plays while it arrives. */
-        /* I196b/I196c: with OPTION record_to (a directory) set, the same single request also feeds the record sink (F36):
-         * a new file per OPEN and per ICY title change. */
-        const char* rec = e->state.options[SEL_OPT_RECORD_TO];
-        sel_live* st = NULL;
-        if (seekable && rec[0] == '\0') {
-            st = sel_live_open_seekable(e->host, path, &e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served));
+    if (nr->data != NULL) {
+        uint8_t* data = nr->data;
+        e->open_status = 0;
+        *size = nr->size;
+        if (nr->live != NULL) {
+            *live = nr->live;
+            if (nr->station) sel_live_mark_station(nr->live);
         }
-        if (st == NULL) {
-            st = rec[0] != '\0' ? sel_live_open_record_dir(e->host, path, &e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served), rec)
-                                : sel_live_open(e->host, path, &e->cancel_gen, SEL_ATOMIC_LOAD_ACQ(&e->cancel_served));
-        }
-        if (st != NULL) {
-            uint8_t first[10];
-            uint8_t head[SEL_STREAM_HEAD];
-            size_t n = 0, nfirst = 0, tag;
-            uint8_t* copy;
-            /* I1080: an ID3v2 tag too long to leave the probe its frames inside the head (podcast cover art, hundreds
-             * of KB) is skipped as it streams: the ring never holds it and the probe sees the first frames behind it.
-             * A short tag stays in the head (the title reader needs it). */
-            if (!sel_live_head(st, first, sizeof first, &nfirst)) {
-                if (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
-                    e->net_cancels++;
-                }
-                e->open_status = sel_live_status(st);
-                sel_live_close(st);
-                return NULL;
-            }
-            tag = sel_id3v2_len(first, nfirst);
-            if (tag + SEL_ID3_PROBE_ROOM > SEL_STREAM_HEAD && !sel_live_skip(st, tag)) {
-                if (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
-                    e->net_cancels++;
-                }
-                e->open_status = sel_live_status(st);
-                sel_live_close(st);
-                return NULL;
-            }
-            if (!sel_live_head(st, head, sizeof head, &n)) {
-                if (SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
-                    e->net_cancels++;
-                }
-                e->open_status = sel_live_status(st);
-                sel_live_close(st);
-                return NULL;
-            }
-            copy = e->host->mem_alloc(e->host, n + 1u, SEL_MEM_FAST);
-            if (copy == NULL) {
-                sel_live_close(st);
-                return NULL;
-            }
-            memcpy(copy, head, n);
-            copy[n] = 0;
-            *size = n;
-            *live = st;
-            if (station) {
-                sel_live_mark_station(st);
-            }
-            return copy;
-        }
-    }
-    if (sel_stream_is_url(path) || sel_stream_is_pipe(path)) {
-        uint8_t* data = sel_stream_read(e->host, path, size); /* I195: URL or pipe, the whole stream in memory */
-        e->open_status = data == NULL && sel_stream_is_url(path) ? sel_stream_status() : 0;
-        if (data == NULL && SEL_ATOMIC_LOAD_ACQ(&e->cancel_gen) != SEL_ATOMIC_LOAD_ACQ(&e->cancel_served)) {
-            e->net_cancels++; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
-        }
+        nr->data = NULL;
+        nr->live = NULL;
         return data;
     }
     if (pm != NULL && pm->valid && pm->file != NULL && strcmp(pm->file_src, path) == 0) {
@@ -3177,8 +3235,19 @@ static void play_meta_run(sel_engine* e) {
             }
             m->fetched = 1;
         }
+        if (!m->fetched && !sel_cache_watch_cancelled(&e->op_watch)) {
+            /* I1416a: a station URL, a .pls/.m3u resolve, the live open and its head, or a whole stream read run here too; STOP, CANCEL_OPEN
+             * and a newer OPEN bump open_cancel, which ends these waits. A live stream is cancelled against cancel_gen from `pm_served`. */
+            sel_net_set_cancel(&e->open_cancel, e->pm_cancel_start);
+            net_station(e, target, &m->net);
+            if (!m->net.fail && !(m->net.station && sel_cache_is_remote(m->net.path))) {
+                net_stream(e, m->net.station ? m->net.path : target, 1, e->pm_served, 1, &m->net);
+            }
+            sel_net_set_cancel(NULL, 0);
+            m->net_done = 1;
+        }
         /* I1415: a folder archive is unpacked here too, so the pump only starts the replayer. */
-        if (!sel_cache_watch_cancelled(&e->op_watch) && (m->fetched ? m->fetch_rc > 0 : !sel_cache_is_remote(target) && !sel_stream_is_url(target))) {
+        if (!sel_cache_watch_cancelled(&e->op_watch) && (m->fetched ? m->fetch_rc > 0 : !m->net.station && !m->net.fail && !sel_cache_is_remote(target) && !sel_stream_is_url(target))) {
             size_t fsz = 0;
             const char* src = m->fetched ? m->cached : target;
             uint8_t* file = read_whole_file(e, src, &fsz);
@@ -3206,6 +3275,7 @@ static int play_meta_ready(sel_engine* e, const char* path) {
     if (lib_read_idle(&e->rd_play) && strlen(path) < sizeof e->pm_want) {
         snprintf(e->pm_want, sizeof e->pm_want, "%s", path);
         e->pm_cancel_start = e->open_cancel;
+        e->pm_served = SEL_ATOMIC_LOAD_ACQ(&e->cancel_served);
         memset(&e->op_watch, 0, sizeof e->op_watch); /* I1415: the read thread is idle, so the counters restart here */
         e->op_watch.gen = &e->open_cancel;
         e->op_watch.start = e->open_cancel;
@@ -3220,6 +3290,10 @@ static void play_meta_free_module(sel_engine* e, sel_play_meta* m) {
     m->module = NULL;
     if (m->file != NULL) e->host->mem_free(e->host, m->file);
     m->file = NULL;
+    if (m->net.data != NULL) e->host->mem_free(e->host, m->net.data);
+    if (m->net.live != NULL) sel_live_close(m->net.live);
+    m->net.data = NULL;
+    m->net.live = NULL;
 }
 
 static void play_meta_publish(sel_engine* e) {
@@ -3229,6 +3303,8 @@ static void play_meta_publish(sel_engine* e) {
     if (e->pm_job.module != NULL) e->open_unpack_reads++;
     e->pm_job.module = NULL; /* the entry owns it now */
     e->pm_job.file = NULL;
+    e->pm_job.net.data = NULL;
+    e->pm_job.net.live = NULL;
     e->pm_next++;
     e->play_meta_reads++;
 }
