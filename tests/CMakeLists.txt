@@ -3909,6 +3909,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_album_rows_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-album-rows COMMAND library_album_rows_test)
   set_tests_properties(library-album-rows PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_album_rows_ok")
+  # I1401c: folder art (cover.jpg / the only image) is a local song's cover.
+  add_executable(library_folder_art_test library_folder_art_test.c)
+  target_include_directories(library_folder_art_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_folder_art_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-folder-art COMMAND library_folder_art_test)
+  set_tests_properties(library-folder-art PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_folder_art_ok")
   # I1401: the Demozoo query of a song of any source (key= for Modland, title + author for the rest).
   add_executable(library_dz_query_test library_dz_query_test.c)
   target_include_directories(library_dz_query_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
