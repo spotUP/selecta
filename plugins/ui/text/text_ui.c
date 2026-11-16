@@ -18,6 +18,7 @@
 
 #include "grid.h"
 #include <selecta/uimodel/sidestack.h>
+#include <selecta/uimodel/open_progress.h>
 #include <selecta/uimodel/nppanel.h>
 /* browse.h #defines SEL_UIM_SIDE_CHIPS (the chip count) and shadows the side-stack kind of that name: take the kind first. */
 static const sel_uim_side_kind TUI_SIDE_KIND_CHIPS = SEL_UIM_SIDE_CHIPS;
@@ -149,6 +150,8 @@ typedef struct tui {
 /* ---- commands ---- */
 
 /* Sends one command line. The pool is decode scratch only: the engine copies string arguments on send (I1082b). */
+static int tui_loading(const tui* u, sel_open_progress* p);
+
 static void tui_send(tui* u, const char* line) {
     char pool[TUI_POOL_BYTES];
     sel_engine_send_line(u->engine, line, pool, sizeof pool);
@@ -1525,6 +1528,13 @@ static void tui_key(tui* u, const txt_key* k) {
     }
     action = txt_bindings_lookup(&u->binds, tui_bind_ctx(u), k->code, k->mods);
     if (action == NULL) {
+        sel_open_progress op;
+        if (k->code == 27u && k->mods == 0 && tui_loading(u, &op)) { /* I1415: Escape with nothing else open cancels the load instead of asking to quit */
+            u->key_count++;
+            u->dirty = 1;
+            tui_send(u, "CANCEL_OPEN");
+            return;
+        }
         if (k->code == 27u && k->mods == 0) { /* I1367 / I623: Escape with nothing open asks before quitting; text from the uimodel dialog table (I1368) */
             u->key_count++;
             u->dirty = 1;
@@ -1696,16 +1706,65 @@ static void tui_bar_text(tui* u, uint32_t y, const char* text, uint32_t x, uint3
     }
 }
 
+/* I1415: the open progress, shown after 300 ms of loading (same threshold as the desktop and MUI). 1 = show it now. */
+static int tui_loading(const tui* u, sel_open_progress* p) {
+    sel_engine_open_progress(u->engine, p);
+    return p->active != 0u && p->elapsed_ms >= 300u;
+}
+
+/* "[Downloading 42%] ######----  Esc cancels"; unknown total draws dots (no fill to read). */
+static void tui_load_text(const sel_open_progress* p, char* out, size_t n) {
+    char txt[64], bar[11];
+    int32_t fr = sel_open_progress_fraction(p);
+    uint32_t i, fill = fr < 0 ? 0u : (uint32_t)(((uint64_t)fr * 10u) >> 16);
+    sel_open_progress_text(p, txt, sizeof txt);
+    for (i = 0; i < 10u; i++) {
+        bar[i] = fr < 0 ? '.' : i < fill ? '#' : '-';
+    }
+    bar[10] = '\0';
+    snprintf(out, n, "[%s] %s  Esc cancels", txt, bar);
+}
+
+/* I1415: the clicked row (its path equals the open path) gets a * marker at x_mark and the percent (or "...") ending at x_end. */
+static void tui_row_prog(tui* u, const sel_open_progress* p, uint32_t ri, uint32_t x_mark, uint32_t x_end, uint32_t y, txt_style st) {
+    char rp[SEL_OPEN_PATH_MAX], tag[16];
+    int32_t fr;
+    uint32_t len;
+    if (!sel_engine_view_row_path(u->engine, ri, rp, sizeof rp) || strcmp(rp, p->path) != 0) {
+        return;
+    }
+    fr = sel_open_progress_fraction(p);
+    if (fr < 0) {
+        snprintf(tag, sizeof tag, "...");
+    } else {
+        snprintf(tag, sizeof tag, "%u%%", (unsigned)(((uint64_t)fr * 100u) >> 16));
+    }
+    len = (uint32_t)strlen(tag);
+    tui_ptext(u, x_mark, y, "*", 1, st);
+    if (x_end > x_mark + len + 1u) {
+        tui_ptext(u, x_end - len, y, tag, len, st);
+    }
+}
+
 static void tui_player_bar(tui* u, uint32_t y, uint32_t rows) {
     const sel_uim_frame* f = &u->uim.frame;
     uint32_t cols = u->grid.cols, bw, fill, i, vx;
-    char buf[256], vol[24], mid[96];
+    char buf[256], vol[24], mid[96], ld[160];
     txt_style hs = tui_style(u, TXT_ROLE_HEADER), nm = tui_style(u, TXT_ROLE_NORMAL), dim = tui_style(u, TXT_ROLE_DIM);
+    sel_open_progress op;
+    int loading = tui_loading(u, &op);
+    ld[0] = '\0';
+    if (loading) {
+        tui_load_text(&op, ld, sizeof ld);
+    }
     snprintf(vol, sizeof vol, "Volume %d", (int)f->volume);
     vx = cols > (uint32_t)strlen(vol) + 1u ? cols - (uint32_t)strlen(vol) - 1u : 0u;
     txt_grid_fill(&u->grid, 0, y, cols, rows, ' ', nm);
     snprintf(buf, sizeof buf, "%s%s%s", f->title[0] ? f->title : "-", f->artist[0] ? " - " : "", f->artist);
     snprintf(mid, sizeof mid, "%s %s %s", f->can_prev ? "|<" : "  ", f->play == SEL_PLAYING ? "||" : " >", f->can_next ? ">|" : "  ");
+    if (loading && rows == 1u) {
+        snprintf(buf, sizeof buf, "%s", ld); /* the one-row bar has no room beside the title: the load text takes it */
+    }
     if (rows == 1u) {
         txt_grid_fill(&u->grid, 0, y, cols, 1, ' ', hs);
         /* The state flags (shuffle, repeat, subsong) stay visible in the one-row form: they sit between the title and the clock. */
@@ -1749,7 +1808,7 @@ static void tui_player_bar(tui* u, uint32_t y, uint32_t rows) {
         txt_grid_put(&u->grid, 8u + i, y + 1u, i < fill ? 0x2588u : 0x2500u, f->no_seek ? dim : nm);
     }
     tui_bar_text(u, y + 1u, f->length[0] ? f->length : "-:--", 9u + bw, 8, nm);
-    tui_bar_text(u, y + 1u, f->status, 18u + bw, cols > 19u + bw ? cols - 19u - bw : 1u, dim);
+    tui_bar_text(u, y + 1u, loading ? ld : f->status, 18u + bw, cols > 19u + bw ? cols - 19u - bw : 1u, dim);
 }
 
 /* I1222g: the top bar row, the desktop's labels as text: [Home], the search field with its hint, [Browse]. */
@@ -1771,6 +1830,8 @@ static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
     const sel_view_state* v = s->view;
     uint32_t rows = tui_main_rows(u), i, cur = v->cursor >= v->window_start ? v->cursor - v->window_start : 0;
     char buf[300];
+    sel_open_progress op;
+    int loading = tui_loading(u, &op);
     if (v->style == SEL_VIEW_STYLE_GRID) {
         uint32_t cols = (width - 1u) / TUI_GRID_CELL;
         cols = cols == 0 ? 1u : cols;
@@ -1783,6 +1844,9 @@ static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
             snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
             tui_pfill(u, x, y, TUI_GRID_CELL - 1u, 1, ' ', st);
             tui_ptext(u, x, y, buf, TUI_GRID_CELL - 2u, st);
+            if (loading) {
+                tui_row_prog(u, &op, i, x, x + TUI_GRID_CELL - 2u, y, st);
+            }
         }
     } else if (v->style == SEL_VIEW_STYLE_COVERFLOW) {
         uint32_t mid = rows / 2u, d;
@@ -1804,6 +1868,9 @@ static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
             }
             tui_pfill(u, 0, 3u + d, width, 1, ' ', st);
             tui_ptext(u, 1, 3u + d, buf, width - 1u, st);
+            if (loading) {
+                tui_row_prog(u, &op, (uint32_t)idx, 0, width - 1u, 3u + d, st);
+            }
         }
     } else {
         for (i = 0; i < v->row_n && i < rows; i++) {
@@ -1814,6 +1881,9 @@ static void tui_styled_rows(tui* u, const sel_state* s, uint32_t width) {
             snprintf(buf, sizeof buf, "%c%s", playing ? '>' : ' ', r->text);
             tui_pfill(u, 0, 3u + i, width, 1, ' ', st);
             tui_ptext(u, 1, 3u + i, buf, width - 1u, st);
+            if (loading) {
+                tui_row_prog(u, &op, i, 0, width - 1u, 3u + i, st);
+            }
         }
     }
     u->style_drawn = v->style;
@@ -2889,6 +2959,12 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
         }
     }
     tui_briefs_follow(u);
+    {
+        sel_open_progress op;
+        if (tui_loading(u, &op)) {
+            u->dirty = 1; /* the load bar follows the download */
+        }
+    }
     if (u->dirty) {
         tui_present(u);
     }
