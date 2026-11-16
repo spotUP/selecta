@@ -321,7 +321,8 @@ int main(int argc, char** argv) {
         dump_path = NULL;
     }
 
-    /* I1423: Backspace at the root steps back or does nothing; it never asks to quit (only Escape at the root does). */
+    /* I1423: Backspace at the root steps back or does nothing; it never asks to quit (only Escape at the root does).
+     * The last wait outlasts the 40 turns: the end of a keys file ends the UI (r < 0), which is not a quit. */
     {
         static char dump[8192], keys4[1024], dpath4[1024];
         uint32_t i;
@@ -332,7 +333,7 @@ int main(int argc, char** argv) {
         if (f == NULL) {
             return 2;
         }
-        fprintf(f, "Space\nwait 60\nBackspace\nwait 60\nBackspace\nwait 300\n");
+        fprintf(f, "Space\nwait 60\nBackspace\nwait 60\nBackspace\nwait 5000\n");
         fclose(f);
         remove(dpath4);
         dump_path = dpath4;
