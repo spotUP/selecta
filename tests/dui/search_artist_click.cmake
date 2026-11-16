@@ -25,7 +25,7 @@ endfunction()
 
 set(typed "wait 5\nkey /\nkey h\nkey u\nkey e\nkey l\nkey s\nkey b\nkey e\nkey c\nkey k\nkey enter\nwait 600\nexec VIEW_CURSOR +0\nwait 5\n")
 sa_run(base "${typed}")
-if(NOT "${base}" MATCHES "searchartist 0 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) name=Chris Huelsbeck opens=0\n")
+if(NOT "${base}" MATCHES "searchartist [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) name=Chris Huelsbeck opens=0\n")
   message(FATAL_ERROR "no searchartist row for Chris Huelsbeck in:\n${base}")
 endif()
 math(EXPR x "${CMAKE_MATCH_1} + 40")

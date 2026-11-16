@@ -110,9 +110,11 @@ int main(void) {
         for (f = 0; f < 5; f++) m += strlen(m) + 1u; /* k1: title, artist, format, duration, album */
         check(strcmp(m, "2") == 0, "meta: k1 copies 2");
         m += strlen(m) + 1u;
+        m += strlen(m) + 1u; /* k1: albums.id (I1408) */
         for (f = 0; f < 5; f++) m += strlen(m) + 1u;
         check(m[0] == '\0', "meta: k3 copies empty");
-        check(m + 1u == meta + job.meta_used, "meta: two rows of six fields");
+        m += strlen(m) + 1u; /* k3: albums.id (I1408) */
+        check(m + strlen(m) + 1u == meta + job.meta_used, "meta: two rows of seven fields");
     }
 
     /* the index arm: an index exported from this catalogue carries dup_of, so a library that only has the index hides k2 too */
