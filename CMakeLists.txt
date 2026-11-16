@@ -5,8 +5,11 @@ cmake_minimum_required(VERSION 3.20)
 # the launcher applies to every enabled language, toolchain files included.
 find_program(SELECTA_CCACHE ccache)
 if(SELECTA_CCACHE AND NOT DEFINED CMAKE_C_COMPILER_LAUNCHER)
-  set(CMAKE_C_COMPILER_LAUNCHER "${SELECTA_CCACHE}" CACHE STRING "C compiler launcher")
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${SELECTA_CCACHE}" CACHE STRING "C++ compiler launcher")
+  # I1404: base_dir + no cwd hash make the cache key path-independent, so a worktree at a new
+  # absolute path hits objects built elsewhere; set here so it works without a global ccache.conf.
+  set(_selecta_cc "${CMAKE_COMMAND};-E;env;CCACHE_BASEDIR=${CMAKE_CURRENT_SOURCE_DIR};CCACHE_NOHASHDIR=1;${SELECTA_CCACHE}")
+  set(CMAKE_C_COMPILER_LAUNCHER "${_selecta_cc}" CACHE STRING "C compiler launcher")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${_selecta_cc}" CACHE STRING "C++ compiler launcher")
 endif()
 project(selecta VERSION 0.0.1 LANGUAGES C)
 
