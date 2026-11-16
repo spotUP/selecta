@@ -6734,12 +6734,15 @@ static void search_reload(sel_engine* e) {
         const char* name = "";
         const char* artist = "";
         const char* album = "";
+        const char* aid = "";
         if (i < e->qmeta_rows && e->qmeta_off[i] != UINT32_MAX) {
             name = e->qmeta + e->qmeta_off[i];
             artist = name + strlen(name) + 1u;
             album = artist + strlen(artist) + 1u; /* format */
             album += strlen(album) + 1u;           /* duration */
             album += strlen(album) + 1u;           /* album */
+            aid = album + strlen(album) + 1u;      /* copies */
+            aid += strlen(aid) + 1u;               /* albums.id */
         }
         int listed = at_pick < n_pick && pick[at_pick] == i;
         at_pick += (uint32_t)listed;
@@ -6747,9 +6750,10 @@ static void search_reload(sel_engine* e) {
             o += (size_t)snprintf(text + o, cap - o, "S %s\t%s  %s\n", key, name, artist);
         }
         if (album[0] != '\0' && search_distinct_album_add(e, albums, &n_album, i, artist, album) && listed_album < SEARCH_GROUP_ROWS &&
-            la + 2u * strlen(album) + 2u * strlen(artist) + 8u < sizeof alb) {
-            /* I473: the key carries the artist after 0x1f, like a Home shelf album key (I471) */
-            la += (size_t)snprintf(alb + la, sizeof alb - la, "S @%s%s%s\t%s  %s\n", album, artist[0] != '\0' ? "\x1f" : "", artist, album, artist);
+            la + 2u * strlen(album) + 2u * strlen(artist) + 32u < sizeof alb) {
+            /* I473: the key carries the artist after 0x1f, like a Home shelf album key (I471); I1408: then 0x1e and albums.id, so a click opens the album page */
+            la += (size_t)snprintf(alb + la, sizeof alb - la, "S @%s%s%s%s%s\t%s  %s\n", album, artist[0] != '\0' ? "\x1f" : "", artist,
+                                   aid[0] != '\0' ? "\x1e" : "", aid, album, artist);
             listed_album++;
         }
         if (artist[0] != '\0' && search_distinct_add(e->qmeta, artists, &n_artist, artist) && listed_artist < SEARCH_GROUP_ROWS &&
@@ -9796,10 +9800,10 @@ static void snapshot_meta(sel_engine* e) {
     e->qmeta_rows = rows;
     for (i = 0; i < rows; i++) {
         uint32_t f, start = at;
-        for (f = 0; f < 6u && at < e->res_meta_used; f++) {
+        for (f = 0; f < 7u && at < e->res_meta_used; f++) {
             at += (uint32_t)strlen(e->qmeta + at) + 1u;
         }
-        e->qmeta_off[i] = f == 6u ? start : UINT32_MAX;
+        e->qmeta_off[i] = f == 7u ? start : UINT32_MAX;
     }
 }
 

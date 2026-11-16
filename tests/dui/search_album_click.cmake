@@ -1,7 +1,7 @@
-# dui-search-album-click (I1408): a click on an Albums row of the Search results activates that album (Johan 2026-11-16:
+# dui-search-album-click (I1408): a click on an Albums row of the Search results opens that album's song list page (Johan 2026-11-16:
 # "i cant click into albums in search results"). Through the real shell and the scripted --input feeder. -DSELECTA -DWORK
-# The fixture library holds the album Lotus Turbo Challenge. Typing `/lotus` Enter lists it under Albums; the dump line `searchartist`
-# with a cursor is the registered Albums row. Sentinel: the click raises opens= from 0 (the row was hit and sent VIEW_ACTIVATE).
+# The fixture library holds the album Lotus Turbo Challenge. Typing `/huelsbeck` Enter lists it under Albums (the search matches the artist); the dump line `searchartist`
+# with a cursor is the registered Albums row. Sentinels: `nav page=collection` and `collection kind=album` (the album page by albums.id, not a new search).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -29,15 +29,18 @@ function(sa_run outvar input)
 endfunction()
 
 
-set(typed "wait 1500\nkey /\nkey l\nkey o\nkey t\nkey u\nkey s\nkey enter\nwait 3000\nexec VIEW_CURSOR +0\nwait 5\n")
+set(typed "wait 5\nkey /\nkey h\nkey u\nkey e\nkey l\nkey s\nkey b\nkey e\nkey c\nkey k\nkey enter\nwait 600\nexec VIEW_CURSOR +0\nwait 5\n")
 sa_run(base "${typed}")
-if(NOT "${base}" MATCHES "searchartist 0 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) name=Lotus Turbo Challenge[^\n]* opens=0\n")
+if(NOT "${base}" MATCHES "searchartist [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) name=Lotus Turbo Challenge[^\n]* opens=0\n")
   message(FATAL_ERROR "no searchartist row for the album Lotus Turbo Challenge in:\n${base}")
 endif()
 math(EXPR x "${CMAKE_MATCH_1} + 40")
 math(EXPR y "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 
 sa_run(clk "${typed}move ${x} ${y}\nclick ${x} ${y}\nwait 200\n")
-if(NOT "${clk}" MATCHES "view_source=search " OR NOT "${clk}" MATCHES "searches=([0-9]+)" OR CMAKE_MATCH_1 LESS 2)
-  message(FATAL_ERROR "a click on the Albums row must run the album search (VIEW_ACTIVATE route):\n${clk}")
+if(NOT "${clk}" MATCHES "nav page=collection ")
+  message(FATAL_ERROR "a click on the Albums row must open the album collection page:\n${clk}")
+endif()
+if(NOT "${clk}" MATCHES "collection kind=album ")
+  message(FATAL_ERROR "the opened collection page is not the album page:\n${clk}")
 endif()

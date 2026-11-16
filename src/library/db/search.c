@@ -532,8 +532,11 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
     sqlite3_free(wrapped_idx);
 }
 
-/* Fills job->meta with title, artist, format, duration and album for each key collected into job->out.
- * A row that does not fit, or has no match, gets five empty fields so the rows stay aligned. */
+/* I1408: albums.id of the song's album ("" when it has none), the seventh meta field; the Search Albums rows carry it so a click opens the album page. */
+#define ALB_ID(t) "(SELECT id FROM albums a WHERE a.name = " #t ".album AND a.artist IS " #t ".artist ORDER BY a.id LIMIT 1)"
+
+/* Fills job->meta with title, artist, format, duration, album, copies and albums.id for each key collected into job->out.
+ * A row that does not fit, or has no match, gets seven empty fields so the rows stay aligned. */
 static void collect_meta(sel_library* lib, sel_lib_job* job) {
     sqlite3_stmt* st = NULL;
     const char* key = job->out;
@@ -546,17 +549,17 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
     if (sqlite3_prepare_v2(lib->db,
                            lib->has_index
                                ? (lib->idx_dup
-                                      ? "SELECT name, artist, format, duration_ms, album, dup_members FROM songs WHERE key = ?1"
-                                        " UNION ALL SELECT name, artist, format, duration_ms, album, dup_members FROM idx.songs WHERE key = ?1"
-                                      : "SELECT name, artist, format, duration_ms, album, dup_members FROM songs WHERE key = ?1"
-                                        " UNION ALL SELECT name, artist, format, duration_ms, album, 0 FROM idx.songs WHERE key = ?1")
-                               : "SELECT name, artist, format, duration_ms, album, dup_members FROM songs WHERE key = ?1",
+                                      ? "SELECT name, artist, format, duration_ms, album, dup_members, "ALB_ID(songs)" FROM songs WHERE key = ?1"
+                                        " UNION ALL SELECT name, artist, format, duration_ms, album, dup_members, "ALB_ID(idx.songs)" FROM idx.songs WHERE key = ?1"
+                                      : "SELECT name, artist, format, duration_ms, album, dup_members, "ALB_ID(songs)" FROM songs WHERE key = ?1"
+                                        " UNION ALL SELECT name, artist, format, duration_ms, album, 0, "ALB_ID(idx.songs)" FROM idx.songs WHERE key = ?1")
+                               : "SELECT name, artist, format, duration_ms, album, dup_members, "ALB_ID(songs)" FROM songs WHERE key = ?1",
                            -1, &st, NULL) != SQLITE_OK) {
         st = NULL;
     }
     for (i = 0; i < job->count; i++) {
         const char* f[3] = {"", "", ""}, *album = "";
-        char dur[32] = "", copies[16] = ""; /* copies: the group size when the song has several copies, else empty (I1094c) */
+        char dur[32] = "", copies[16] = "", aid[24] = ""; /* copies: the group size when the song has several copies, else empty (I1094c) */
         /* two long long fields: 19 + 1 + 19 digits would not fit 16 */
         size_t need;
         int k;
@@ -577,16 +580,19 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
                 if (sqlite3_column_int64(st, 5) > 1) {
                     snprintf(copies, sizeof copies, "%lld", (long long)sqlite3_column_int64(st, 5));
                 }
+                if (sqlite3_column_int64(st, 6) > 0) {
+                    snprintf(aid, sizeof aid, "%lld", (long long)sqlite3_column_int64(st, 6));
+                }
             }
         }
-        need = strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + strlen(dur) + strlen(album) + strlen(copies) + 6u;
+        need = strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + strlen(dur) + strlen(album) + strlen(copies) + strlen(aid) + 7u;
         if (used + need > job->meta_cap) {
-            if (used + 6u > job->meta_cap) {
+            if (used + 7u > job->meta_cap) {
                 break;
             }
             f[0] = f[1] = f[2] = album = "";
-            dur[0] = copies[0] = '\0';
-            need = 6u;
+            dur[0] = copies[0] = aid[0] = '\0';
+            need = 7u;
         }
         for (k = 0; k < 3; k++) {
             size_t n = strlen(f[k]) + 1u;
@@ -599,6 +605,8 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
         used += (uint32_t)strlen(album) + 1u;
         memcpy(job->meta + used, copies, strlen(copies) + 1u);
         used += (uint32_t)strlen(copies) + 1u;
+        memcpy(job->meta + used, aid, strlen(aid) + 1u);
+        used += (uint32_t)strlen(aid) + 1u;
         key += strlen(key) + 1u;
         job->meta_used = used;
     }
