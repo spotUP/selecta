@@ -4,6 +4,7 @@
  * a finished library song with no album has no card, so the plays here are skips. */
 #include <selecta/host.h>
 #include <selecta/machine.h>
+#include <selecta/uimodel.h>
 #include "db.h"
 #include "view.h"
 #include <stdio.h>
@@ -163,18 +164,20 @@ static void album_id(const sel_host* host) {
     sel_library_close(lib);
 }
 
-/* I1387b: a search hit row is "<title>  <artist>"; the gap must not turn off the split of a run-together title. */
+/* I1387b, I1412: a search hit entry is "<title>\x1f<author>"; the row carries them as text and artist, each tidied alone, and the UIs join them with " - ". */
 static void search_hit_tidy(const sel_host* host) {
     sel_view v;
     uint32_t i, seen = 0;
     memset(&v, 0, sizeof v);
     check(sel_view_init(&v, host, 20u), "search tidy view init");
-    snprintf(v.htext, SEL_VIEW_HOME_TEXT_MAX, "H From Modland (1)\nS modland:x/ThatsALotOfStuff.dmf\tThatsALotOfStuff  CaptainWaffles\n");
+    snprintf(v.htext, SEL_VIEW_HOME_TEXT_MAX, "H From Modland (1)\nS modland:x/ThatsALotOfStuff.dmf\tThatsALotOfStuff\x1f" "CaptainWaffles\n");
     sel_view_set_home(&v, v.htext);
     for (i = 0; i < v.frow_n; i++) {
-        seen += v.frows[i].text != NULL && strcmp(v.frows[i].text, "Thats A Lot Of Stuff  CaptainWaffles") == 0;
+        seen += v.frows[i].text != NULL && strcmp(v.frows[i].text, "Thats A Lot Of Stuff") == 0 && v.frows[i].artist != NULL &&
+                strcmp(v.frows[i].artist, "CaptainWaffles") == 0;
     }
-    check(seen == 1u, "search hit title and artist tidied apart");
+    check(seen == 1u, "search hit title and author are separate row fields");
+    check(strcmp(SEL_UIM_AUTHOR_SEP, " - ") == 0, "the title author divider is ' - '");
     sel_view_free(&v, host);
 }
 

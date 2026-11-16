@@ -117,6 +117,8 @@ uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_
             snprintf(e->text + used, sizeof e->text - used, "%s %s (%u)", e->expanded ? "-" : "+", e->label, (unsigned)r->count);
         } else if (e->node) {
             snprintf(e->text + used, sizeof e->text - used, "%s (%u)", e->label, (unsigned)r->count);
+        } else if (v->source == SEL_VIEW_SEARCH && r->kind != (uint32_t)SEL_ROW_HEADING && r->artist != NULL && r->artist[0] != '\0') {
+            snprintf(e->text + used, sizeof e->text - used, "%s" SEL_UIM_AUTHOR_SEP "%s", e->label, r->artist); /* I1412: the MUI list has one pen per line, so the author is not dimmed */
         } else {
             snprintf(e->text + used, sizeof e->text - used, "%s", e->label);
         }

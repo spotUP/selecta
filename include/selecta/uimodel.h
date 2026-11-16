@@ -120,6 +120,8 @@ int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint
  * memory, never stored): a category the user expanded stays expanded on the next search. `heading` text is "Songs (12)" or "From X (3)"; the count is
  * ignored when keying, so the state outlives a changing count. */
 #define SEL_UIM_SEARCH_FOLD_ROWS 3u
+/* I1412: the divider between a result row title and its author (the row's artist field); every UI draws "Title - Author". */
+#define SEL_UIM_AUTHOR_SEP " - "
 /* Rows under the heading row at `heading` up to the next heading. */
 uint32_t sel_uim_search_section_rows(const sel_view_row* rows, uint32_t row_n, uint32_t heading);
 int sel_uim_search_expanded(const char* heading);

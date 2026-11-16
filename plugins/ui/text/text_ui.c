@@ -929,13 +929,18 @@ static void tui_search_draw(tui* u, const sel_state* s, uint32_t width) {
         {
             int at = v->window_start + i == v->cursor;
             txt_style st = tui_style(u, at ? TXT_ROLE_CURSOR : r->kind == SEL_ROW_HEADING ? TXT_ROLE_LABEL : TXT_ROLE_FILE);
-            if (r->kind == SEL_ROW_HEADING) {
-                snprintf(buf, sizeof buf, "%s", r->text);
-            } else {
-                snprintf(buf, sizeof buf, "  %s%s%s", r->text, r->artist != NULL && r->artist[0] ? "  - " : "", r->artist != NULL ? r->artist : "");
-            }
             tui_pfill(u, 0, y, width, 1, ' ', st);
-            tui_ptext(u, 1, y++, buf, width - 1u, st);
+            if (r->kind == SEL_ROW_HEADING) {
+                tui_ptext(u, 1, y, r->text, width - 1u, st);
+            } else {
+                uint32_t used = 1u + tui_ptext(u, 1, y, "  ", width - 1u, st); /* I1412: "Title - Author", the divider and author in the dim role off the cursor */
+                used += tui_ptext(u, used, y, r->text, width > used ? width - used : 0u, st);
+                if (r->artist != NULL && r->artist[0] != '\0' && width > used) {
+                    snprintf(buf, sizeof buf, SEL_UIM_AUTHOR_SEP "%s", r->artist);
+                    tui_ptext(u, used, y, buf, width - used, at ? st : tui_style(u, TXT_ROLE_DIM));
+                }
+            }
+            y++;
         }
     }
 }
