@@ -64,7 +64,9 @@ expect("db_songs" "${v}" "${want_rows}")
 counter(v skipped_rows)
 expect("skipped_rows" "${v}" "${want_skipped}")
 counter(v net_requests)
-expect("net_requests (sentinel: aminet network path ran)" "${v}" 1)
+# 2: the fixture cuts the whole-file INDEX GET after 500 bytes (routes.json cut_whole), the client resumes with one
+# Range request (I1413); listing_rows above prove the resumed file is complete.
+expect("net_requests (sentinel: aminet network path ran, cut INDEX resumed)" "${v}" 2)
 counter(v net_listing_bytes)
 expect("net_listing_bytes" "${v}" "${index_size}")
 if(NOT raw MATCHES "aminet_row=mods/4mat/AnarchyMenu10.lha\\|Aminet module\\|4mat\\|AnarchyMenu10\\|5120\\|https://aminet.net/mods/4mat/AnarchyMenu10.lha")
