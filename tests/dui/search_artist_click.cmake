@@ -41,3 +41,20 @@ endif()
 if(NOT "${clk}" MATCHES "hist=([0-9]+) pos=([0-9]+)" OR CMAKE_MATCH_2 LESS 1)
   message(FATAL_ERROR "the artist page has no back history:\n${clk}")
 endif()
+
+# I1411c: artist spellings that differ only in case are one Artists row (Johan 2026-11-16: "mortimer Twang" next to
+# "Mortimer Twang"). A song by "chris huelsbeck" joins the Chris Huelsbeck row; the first spelling seen is the one listed.
+execute_process(COMMAND "${SQLITE3}" "${db}" "INSERT INTO songs(id, key, source, path, name, artist, format, duration_ms, added) VALUES(900, 'fixture:900', 'local', 'fixture/900.mod', 'Lowercase Tune', 'chris huelsbeck', 'mod', 60000, 1700000100)"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the lowercase artist failed: ${err}")
+endif()
+sa_run(fold "${typed}")
+string(REGEX MATCHALL "searchartist [^\n]*name=[Cc]hris [Hh]uelsbeck " rows "${fold}")
+list(LENGTH rows n)
+if(NOT n EQUAL 1)
+  message(FATAL_ERROR "I1411c: want one Chris Huelsbeck Artists row, got ${n}:\n${fold}")
+endif()
+if(NOT "${fold}" MATCHES "Lowercase Tune")
+  message(WARNING "I1411c: the lowercase song is not in the dump, the fold case is not exercised")
+endif()

@@ -6551,12 +6551,15 @@ enum { SEARCH_GROUP_ROWS = 16, SEARCH_DISTINCT_MAX = 256 };
 static uint32_t search_hash(const char* s) {
     uint32_t h = 2166136261u;
     for (; *s != '\0'; s++) {
-        h = (h ^ (uint8_t)*s) * 16777619u;
+        h = (h ^ (uint8_t)tolower((unsigned char)*s)) * 16777619u; /* I1411c: case folded, so "mortimer Twang" joins "Mortimer Twang" */
     }
     return h;
 }
 
-/* Adds the value to the set (table of offsets into qmeta, UINT32_MAX empty). Returns 1 when it was new. */
+static int drill_format_cmp(const char* a, const char* b);
+
+/* Adds the value to the set (table of offsets into qmeta, UINT32_MAX empty), ignoring ASCII case; the first spelling seen is the one
+ * listed. Returns 1 when it was new. */
 static int search_distinct_add(const char* meta, uint32_t* table, uint32_t* used, const char* value) {
     uint32_t at = search_hash(value) % (2u * SEARCH_DISTINCT_MAX);
     uint32_t probes;
@@ -6569,7 +6572,7 @@ static int search_distinct_add(const char* meta, uint32_t* table, uint32_t* used
             (*used)++;
             return 1;
         }
-        if (strcmp(meta + table[at], value) == 0) {
+        if (drill_format_cmp(meta + table[at], value) == 0) {
             return 0;
         }
     }
