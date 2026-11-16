@@ -1,28 +1,29 @@
 # dui-np-message-paging (I1422): a song message line (a MOD's sample name) wider than the Now Playing panel pages left by one panel
 # width every 2 s and returns to its start after the last page. -DSELECTA -DSONGS -DWORK
-#   Fixture: message.it, whose first line is wider than the panel of a narrow canvas. The dump line `nowplaying msgpage <page> of <pages>`.
+#   Fixture: tests/m3/message_long/message_long.it, whose second line is wider than the panel. The dump line `nowplaying msgpage <page> of <pages>`.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 dui_require_sdl()
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
-set(lyr "${HERE}/../m3/lyrics")
+set(lyr "${HERE}/../m3/message_long")
 function(np_page_run tag ms)
   file(WRITE "${WORK}/${tag}.txt" "wait ${ms}\n")
-  dui_run(o --ui desktop --backend mem --view home --canvas 700x500 --clock fixed --stats
-    --exec "OPEN ${lyr}/message.it" --input "${WORK}/${tag}.txt")
+  file(REMOVE_RECURSE "${WORK}/cfg" "${WORK}/${tag}.db")
+  dui_run(o --db "${WORK}/${tag}.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+    --exec "LIBRARY_SCAN ${lyr}" --exec "OPEN ${lyr}/message_long.it" --input "${WORK}/${tag}.txt")
   if(NOT "${o}" MATCHES "nowplaying msgpage ([0-9]+) of ([0-9]+)")
     message(FATAL_ERROR "no msgpage line in:\n${o}")
   endif()
   set(${tag}_page "${CMAKE_MATCH_1}" PARENT_SCOPE)
   set(${tag}_pages "${CMAKE_MATCH_2}" PARENT_SCOPE)
 endfunction()
-np_page_run(p0 100)
+np_page_run(p0 300)
 if(p0_pages LESS 2)
   message(FATAL_ERROR "no message line is wider than the panel (pages=${p0_pages}); the test needs a narrower canvas")
 endif()
-np_page_run(p1 2100)
-math(EXPR full "${p0_pages} * 2000 + 100")
+np_page_run(p1 2300)
+math(EXPR full "${p0_pages} * 2000 + 300")
 np_page_run(pw ${full})
 if(NOT p1_page EQUAL 1 OR NOT pw_page EQUAL 0)
   message(FATAL_ERROR "page after 2.1 s is ${p1_page} (want 1), after ${full} ms is ${pw_page} (want 0, wrapped)")
