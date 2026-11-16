@@ -13102,7 +13102,7 @@ static void draw_player_left(desk* d) {
  * artwork, the artwork, title and artist, the catalogue pairs the engine reports for the song (the text UI's information
  * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
 #define NP_MESSAGE_LINES 6
-#define NP_PAGE_MS 2000u /* I1422: a message line wider than the panel jumps one panel width left every NP_PAGE_MS */
+#define NP_PAGE_MS 2000u /* I1422: message rows beyond the box page every NP_PAGE_MS */
 #define NP_TAIL_H 120 /* I1274: logical pixels kept under the metadata pairs for the lyrics and the queue */
 enum { NP_PAIR_MIN_LINES = 8, NP_BAR_W = 6 }; /* I1277: a scrolling metadata block shows at least this many lines; its scrollbar width */
 static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
@@ -13381,29 +13381,31 @@ static void draw_nowplaying(desk* d) {
         if (at != NULL) {
             sel_gui_rect box = rect_of(pn.x + sp, y, side, NP_MESSAGE_LINES * at->line_height);
             const char* p = ml->ref;
-            /* I1422: one row per message line; a line wider than the panel pages left by one panel width every NP_PAGE_MS and
-             * returns to its start after the last page, so no sample name is cut off. */
+            uint32_t rows = 1u, page = 0u, skip;
+            /* I1422: more message rows than the box holds are shown one page of NP_MESSAGE_LINES rows at a time, the page
+             * advancing every NP_PAGE_MS and wrapping to the first; fewer rows never page. */
+            for (const char* q = p; q != NULL && (q = strchr(q, '\n')) != NULL && q[1] != '\0'; q++) {
+                rows++;
+            }
+            d->np_msgpg_pages = (rows + NP_MESSAGE_LINES - 1u) / NP_MESSAGE_LINES;
+            if (d->np_msgpg_pages > 1u) {
+                page = d->now_ms / NP_PAGE_MS % d->np_msgpg_pages;
+                d->np_msgpg = page;
+                d->np_msgpg_until = d->now_ms + 2u * NP_PAGE_MS;
+            }
+            for (skip = page * NP_MESSAGE_LINES; skip > 0u && p != NULL; skip--) {
+                p = strchr(p, '\n');
+                p = p != NULL ? p + 1 : NULL;
+            }
             sel_gui_clip_push(d->canvas, box);
             while (p != NULL && *p != '\0' && d->np_msg_lines < NP_MESSAGE_LINES) {
                 const char* e = strchr(p, '\n');
                 size_t n = e != NULL ? (size_t)(e - p) : strlen(p);
-                int32_t tw = sel_gui_text_width(at, p, n), pages = side > 0 ? (tw + side - 1) / side : 1, pg = 0;
-                if (pages > 1) {
-                    pg = (int32_t)(d->now_ms / NP_PAGE_MS % (uint32_t)pages);
-                    d->np_msgpg_pages = (uint32_t)pages > d->np_msgpg_pages ? (uint32_t)pages : d->np_msgpg_pages;
-                    d->np_msgpg = (uint32_t)pg;
-                    d->np_msgpg_until = d->now_ms + 2u * NP_PAGE_MS;
-                }
-                {
-                    sel_gui_rect row = rect_of(box.x, box.y + (int32_t)d->np_msg_lines * at->line_height, side, at->line_height);
-                    char one[256];
-                    size_t m = n < sizeof one - 1u ? n : sizeof one - 1u;
-                    memcpy(one, p, m);
-                    one[m] = '\0';
-                    sel_gui_clip_push(d->canvas, row);
-                    sel_gui_text_draw(d->canvas, at, row.x - pg * side, row.y, one, muted, tw + 1, &d->text); /* no ellipsis: the clip row cuts the page */
-                    sel_gui_clip_pop(d->canvas);
-                }
+                char one[256];
+                size_t m = n < sizeof one - 1u ? n : sizeof one - 1u;
+                memcpy(one, p, m);
+                one[m] = '\0';
+                sel_gui_text_draw(d->canvas, at, box.x, box.y + (int32_t)d->np_msg_lines * at->line_height, one, muted, side, &d->text);
                 d->np_msg_lines++;
                 p = e != NULL ? e + 1 : NULL;
             }
