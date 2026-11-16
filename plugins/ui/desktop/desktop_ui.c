@@ -458,7 +458,7 @@ typedef struct desk {
     uint32_t search_hidden; /* I1206: the zero-hit categories the last list frame left out (the dump's sentinel that the shared predicate ran) */
     struct { char head[72]; sel_gui_rect rect; } search_fold[16]; uint32_t search_fold_n, search_fold_clicks; /* I1406: the Show all / Show less links the last list frame drew */
     char search_sec_head[16][72]; uint32_t search_sec_rows[16], search_sec_n; int32_t search_sec_y[16]; /* I1019e: the From sections the last list frame saw: heading text, rows under it */
-    struct { char name[96]; sel_gui_rect rect; } search_art[48]; uint32_t search_art_n, search_art_opens; /* I1207: the Artists rows/tiles the last Search frame drew; a click opens that artist's page */
+    struct { char name[96]; sel_gui_rect rect; uint32_t cursor; } search_art[48]; uint32_t search_art_n, search_art_opens; /* I1207: the Artists rows/tiles the last Search frame drew; a click opens that artist's page */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     sel_gui_edit qsel;       /* I1243: the search field's caret and selection (anchor to caret) */
@@ -9116,11 +9116,16 @@ static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_ro
 }
 
 /* I1207: remembers the rectangle an Artists row or tile of the Search page was drawn at, with the artist name it opens. */
-static void search_artist_reg(desk* d, sel_gui_rect r, const char* name) {
+static void search_artist_reg_at(desk* d, sel_gui_rect r, const char* name, uint32_t cursor) {
     if (d->search_art_n < sizeof d->search_art / sizeof d->search_art[0] && r.w > 0 && r.h > 0) {
         snprintf(d->search_art[d->search_art_n].name, sizeof d->search_art[0].name, "%s", name);
+        d->search_art[d->search_art_n].cursor = cursor;
         d->search_art[d->search_art_n++].rect = r;
     }
+}
+
+static void search_artist_reg(desk* d, sel_gui_rect r, const char* name) {
+    search_artist_reg_at(d, r, name, UINT32_MAX);
 }
 
 /* The tile grid over the rows of v from the absolute y y0 down. The Library draws the engine's view and registers its rows with
@@ -10686,6 +10691,10 @@ static void draw_search(desk* d) {
                     song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),
                                       SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
                 }
+                if (group == 2u && r->album && r->key != NULL) { /* I1408: an Albums row opens the album (the engine's VIEW_ACTIVATE album route) */
+                    search_artist_reg_at(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), t,
+                                         v->window_start + k);
+                }
                 if (group == 3u && r->key == NULL && t[0] != '\0') { /* I1207: an Artists row opens the artist's page */
                     search_artist_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), t);
                 }
@@ -11677,6 +11686,12 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
                 char artist[96]; /* copied first: the page change replaces the Search rows */
                 snprintf(artist, sizeof artist, "%s", d->search_art[i].name);
                 d->search_art_opens++;
+                if (d->search_art[i].cursor != UINT32_MAX) { /* I1408: an Albums hit activates its view row, as Enter does for Home albums */
+                    char line[32];
+                    snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)d->search_art[i].cursor);
+                    desk_send(d, line);
+                    return desk_send(d, "VIEW_ACTIVATE");
+                }
                 return desk_route(d, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, artist, artist, "");
             }
         }
