@@ -31,7 +31,7 @@ struct Library* KeymapBase; /* opened with the window, closed at cleanup */
 static struct MUI_CustomClass* g_k_class;
 static struct MUI_EventHandlerNode g_k_ehn;
 static int g_k_esc_seen;
-static ULONG g_k_key_base, g_k_door_base, g_k_pane_base;
+static ULONG g_k_key_base, g_k_door_base, g_k_pane_base, g_k_back_id;
 static Object* g_k_search;
 static Object* g_k_list;
 
@@ -129,6 +129,10 @@ static ULONG __attribute__((used)) k_dispatch_c(struct IClass* cl, Object* obj, 
                 DoMethod(_app(obj), MUIM_Application_ReturnID, id);
                 return MUI_EventHandlerRC_Eat;
             }
+            if (code == 127u && mods == 0u && !text_active && g_k_back_id != 0) { /* I1423: Backspace = the Back button (route history); a no-op at the root, as in the text UI. A text gadget eats its own Backspace first */
+                DoMethod(_app(obj), MUIM_Application_ReturnID, g_k_back_id);
+                return MUI_EventHandlerRC_Eat;
+            }
             if (code == 27u) { /* I1354, I1359: MUI closes the main window on Esc even when eaten; the flag lets the main loop drop that Quit */
                 g_k_esc_seen = 1;
                 return MUI_EventHandlerRC_Eat;
@@ -150,7 +154,8 @@ void mui_keys_targets(Object* search, Object* list) {
     g_k_list = list;
 }
 
-Object* mui_keys_new(ULONG key_base, ULONG door_base, ULONG pane_base) {
+Object* mui_keys_new(ULONG key_base, ULONG door_base, ULONG pane_base, ULONG back_id) {
+    g_k_back_id = back_id;
     g_k_key_base = key_base;
     g_k_door_base = door_base;
     g_k_pane_base = pane_base;
