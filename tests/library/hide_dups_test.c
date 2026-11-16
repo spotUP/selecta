@@ -88,6 +88,16 @@ int main(void) {
     check(n == 3, "off: bare words show all copies");
     n = search(lib, "bulk", out, sizeof out);
     check(n == 300, "off: 300 bulk rows");
+    { /* I1416s: keys that overflow the buffer report truncated=1 without a counting scan */
+        static char small[64];
+        sel_lib_job job;
+
+        memset(&job, 0, sizeof job);
+        job.text = "bulk";
+        job.out = small;
+        job.out_cap = sizeof small;
+        check(sel_library_run(lib, SEL_LIB_REQ_SEARCH, &job) && job.error[0] == '\0' && job.count > 0 && job.count < 300 && job.truncated == 1, "overflow: truncated is 1");
+    }
     check(sel_library_key_hidden_duplicate(lib, "local:k2") == 0, "radio check off");
     sel_library_set_hide_duplicates(lib, "on");
     n = search(lib, "tune", out, sizeof out);
