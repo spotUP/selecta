@@ -2233,6 +2233,13 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(user-data PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "userdata_ok")
 
+  # I1429: RATE and LIKE still find the song after REPEAT one restarted it.
+  add_test(NAME repeat-rate
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/repeat_rate.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/repeat_rate.sel
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(repeat-rate PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "repeat_rate_ok")
+
   # I306: LIKE toggles, LIKE <key> and RATE <n> <key> address any song, RATE 0 <key> clears; read back through LIBRARY_SEARCH.
   add_test(NAME likes
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/likes.sh $<TARGET_FILE:selecta-cli>
