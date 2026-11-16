@@ -48,3 +48,17 @@ Already known and not re-researched: archive unpack and replayer start in `prepa
 - MUI draw paths (render/canvas), text UI `tui_draw`: only grepped for I/O.
 - Output plugins' `so.pump` (audio device callbacks, AirPlay) and the SDL/AppKit event pump (I906k).
 - Real measurement: run a debug build with the guard in log mode and `--stats` (`pump_ms_max`, `turn_ms_max`, `watched_waits`) on the real library to confirm ranks 4, 5, 7, 9; none was run (read-only audit).
+
+## Measured 2026-11-16 (I1416m)
+
+Method: debug host build (`build/host`, text UI, `--output null`), `SELECTA_LIB_UI_GUARD=log`, `--stats` (`ui_stats_pump`), on a scratch copy of the real library (672259 songs, 872 MB; copy patched to user_version 21 because the live db is v22 and this branch supports v21). Report: thoughts/spot/agent-reports/I1416m.md.
+
+| Item | Scenario | Worst stall | Confirmed |
+|---|---|---|---|
+| 4 | not exercised (no song start reached in the headless text run, null output) | not measured | open; fallbacks still at engine.c:2131, :2456, :2560, :2883 |
+| 5 | MUI only (Amiga); `sel_engine_song_group` has no caller left, MUI uses `sel_engine_song_text(SEL_SONG_TEXT_GROUP)` (I1416e) | n/a | gone |
+| 7 | playlist menu (`w`, Add to Playlist) in the text UI: key script never reached a song row (menus=0) | not measured | open; code unchanged (text_ui.c:1075) |
+| 9 | not exercised (needs a playing song with cues, like, unstage) | not measured | open |
+| new | text UI: search "mod" then Enter | pump_ms_max 51902 and 58150 ms (two runs), guard hits 0, watched waits 0 | not a guarded library wait; a separate pump stall, needs its own row |
+
+Typing the search alone: pump_ms_max 598 ms; idle start: 63 ms; Home page: 282 ms.
