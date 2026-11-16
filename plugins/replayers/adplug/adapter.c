@@ -145,7 +145,27 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
-static sel_tag g_hooks[14];
+/* RP_CONTENT_COMPANIONS (I1223h2): Ken's AdLib Music (.ksm) reads its instruments from "insts.dat" in the song's directory
+ * (third_party/adplug ksm.cpp), so a song fetched alone must fetch that file beside it. The name needs no song bytes. */
+static unsigned rp_content_companions(const char* name, const uint8_t* data, size_t size, char out[][SEL_RP_COMPANION_NAME_MAX],
+                                      unsigned max, const sel_host* host) {
+    size_t nl = strlen(name);
+    (void)size;
+    (void)host;
+    if (nl < 5u || name[nl - 4u] != '.' || (name[nl - 3u] | 0x20) != 'k' || (name[nl - 2u] | 0x20) != 's' || (name[nl - 1u] | 0x20) != 'm') {
+        return 0;
+    }
+    if (data == NULL) {
+        return 1;
+    }
+    if (max < 1u) {
+        return 0;
+    }
+    memcpy(out[0], "insts.dat", 10u);
+    return 1;
+}
+
+static sel_tag g_hooks[15];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -171,7 +191,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     /* Below every native or content-probed player: AdPlug claims on extension alone. */
     set(&g_hooks[11], SEL_RP_PRIORITY, 0);
     set(&g_hooks[12], SEL_RP_FORMATS, (uintptr_t) AP_EXTENSIONS);
-    set(&g_hooks[13], SEL_TAG_END, 0);
+    set(&g_hooks[13], SEL_RP_CONTENT_COMPANIONS, SEL_TAG_FN(rp_content_companions));
+    set(&g_hooks[14], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "adplug");
