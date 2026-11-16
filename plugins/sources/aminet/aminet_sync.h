@@ -23,12 +23,14 @@
 #define SEL_AMINET_PATH_MAX 512u
 #define SEL_AMINET_TEXT_MAX 192u
 #define SEL_AMINET_FORMAT "Aminet module"
+#define SEL_AMINET_DESC_COLS 40u /* INDEX description column width; longer descriptions are cut there */
 
 typedef struct sel_aminet_row {
     char path[SEL_AMINET_PATH_MAX];
     char artist[SEL_AMINET_TEXT_MAX];
     char name[SEL_AMINET_TEXT_MAX];
     uint32_t size; /* archive bytes, from the size column ("5K", "2.3M"), 0 when unreadable */
+    uint8_t cut;   /* I1411: the artist ran into the end of a full description column, so it may be cut short */
 } sel_aminet_row;
 
 typedef struct sel_aminet_sync_stats {
