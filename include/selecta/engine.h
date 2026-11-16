@@ -735,7 +735,7 @@ int sel_engine_playlist_keys_take(sel_engine* e, uint32_t* id, char* out, size_t
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
 /* I906e: cached song text for the desktop UI, never a library call on the caller. 1: text in out; 0: the song has none; -1: pending (the
  * read is queued; sel_engine_song_text_generation moves when it lands). Kinds: title, metadata (NUL separated). */
-enum { SEL_SONG_TEXT_TITLE = 0, SEL_SONG_TEXT_META = 1, SEL_SONG_TEXT_KINDS = 2 };
+enum { SEL_SONG_TEXT_TITLE = 0, SEL_SONG_TEXT_META = 1, SEL_SONG_TEXT_GROUP = 2, SEL_SONG_TEXT_KINDS = 3 }; /* I1416e: GROUP = the song_group text (album, else source) */
 /* I906e: the Queue page album groups of the whole queue in one posted read keyed by `key` (the UI's queue hash). 1: ready, *pool holds the
  * NUL separated names and (*name)[i] is the offset+1 of entry i's name, 0 for none; -1: pending (sel_engine_song_text_generation moves when it
  * lands); 0: no library. The arrays belong to the engine until the next call. */
