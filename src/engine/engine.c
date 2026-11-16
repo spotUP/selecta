@@ -11724,6 +11724,7 @@ void sel_engine_destroy(sel_engine* e) {
             e->host->mem_free(e->host, e->snap);
             e->snap = NULL;
         }
+        SEL_ATOMIC_INC_REL(&e->open_cancel); /* I1415m: ends the read thread's in-flight song download; lib_read_end(&e->rd_play) below waits for it */
         sel_viz_tap_free(&e->viz);
         if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) { /* I787: end the in-flight sidebar read */
 #if defined(SEL_LI_THREAD)
