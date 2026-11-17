@@ -35,6 +35,7 @@ static const sel_uim_side_kind TUI_SIDE_KIND_CHIPS = SEL_UIM_SIDE_CHIPS;
 #include <selecta/uimodel/title.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/route.h>
+#include <selecta/uimodel/drill.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/library_item.h>
 #include "spawn.h"
@@ -133,6 +134,7 @@ typedef struct tui {
     int pg;                                /* I1189: page on screen, 0 none, 1 Shelf, 2 Collection */
     uint32_t pg_shelf, pg_cur, pg_serial, pg_kind, pg_opens_shelf, pg_opens_coll, pg_rows;
     char pg_key[128], pg_title[96];
+    char pg_find[64]; /* I1442b: the find text of the open source drill level (cmd_mode 6 types it) */
     /* I1306: the song titles of the open Collection page, from ONE posted song_briefs read (the shared model, I1306b). */
     sel_uim_briefs brf;
     /* I1190: the song and playlist menu (overlay 4), its name prompt (cmd_mode 3) and confirm prompt (cmd_mode 4) */
@@ -614,6 +616,7 @@ static void tui_page_enter(tui* u, const sel_route_entry* e, int restore) {
         u->pg_kind = e->kind;
         snprintf(u->pg_key, sizeof u->pg_key, "%s", e->key);
         snprintf(u->pg_title, sizeof u->pg_title, "%s", e->name);
+        u->pg_find[0] = '\0';
         u->pg_opens_coll++;
         tui_collection_open(u, e->kind, e->key, restore);
     } else if (e->page == (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE + (uint32_t)TUI_PAGE_TILES) { /* I1440p2: the tiles page is a history entry, so Back from a drill returns to it */
@@ -690,6 +693,15 @@ static int tui_coll_line(const sel_collection_page* pg, const sel_uim_briefs* br
                     tile->kind = (uint32_t)SEL_LIB_ITEM_SOURCE;
                     snprintf(tile->key, sizeof tile->key, "%s\x1f%s", pg->key, child);
                     snprintf(tile->name, sizeof tile->name, "%s", sel_uim_ds_label(first, r));
+                } else if (strcmp(pg->key, "deepsid") != 0) { /* I1442b: the shared source drill (formats, artists, platforms) */
+                    char lab[160];
+                    sel_uim_drill_label(pg->drill, pg->drill_path, r, lab, sizeof lab);
+                    snprintf(buf, cap, "%s  %s", lab, cnt);
+                    if (sel_uim_drill_child(pg->drill, pg->drill_path, r, child, sizeof child)) {
+                        tile->kind = (uint32_t)SEL_LIB_ITEM_SOURCE;
+                        snprintf(tile->key, sizeof tile->key, "%s\x1f%s", pg->key, child);
+                        snprintf(tile->name, sizeof tile->name, "%s", lab);
+                    }
                 }
                 return 1;
             }
@@ -803,6 +815,25 @@ static void tui_page_activate(tui* u) {
     }
 }
 
+/* I1442b: a source drill level the find text narrows: the group levels and the artist's songs of a non-deepsid source (the engine filters
+ * formats and artists before windowing, a04fe076). */
+static int tui_drill_filterable(const sel_collection_page* pg) {
+    return pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_SOURCE && pg->drill != (uint32_t)SEL_DRILL_PAGE_NONE && strcmp(pg->key, "deepsid") != 0;
+}
+
+/* I1442b: reopens the open drill level with `find` in the key (no history entry; Back still leaves the page). */
+static void tui_drill_find(tui* u, const char* find) {
+    const sel_collection_page* pg = sel_engine_state(u->engine)->collection;
+    char key[192];
+    if (!tui_drill_filterable(pg)) {
+        return;
+    }
+    snprintf(u->pg_find, sizeof u->pg_find, "%s", find);
+    sel_uim_drill_key(pg->key, pg->drill_path, 0u, u->pg_find, key, sizeof key);
+    u->pg_cur = 0u;
+    tui_collection_open(u, pg->kind, key, 1);
+}
+
 /* Keys of an open page. Returns 1 when the page took the key. */
 static int tui_page_key(tui* u, const txt_key* k) {
     uint32_t n = tui_page_count(u, sel_engine_state(u->engine));
@@ -813,6 +844,9 @@ static int tui_page_key(tui* u, const txt_key* k) {
         u->pg_cur -= u->pg_cur > 0u;
     } else if (k->code == TXT_KEY_DOWN || k->code == 'j') {
         u->pg_cur += u->pg_cur + 1u < n;
+    } else if (k->code == '/' && u->pg == TUI_PAGE_COLLECTION && tui_drill_filterable(sel_engine_state(u->engine)->collection)) { /* I1442b: filter this source level */
+        txt_cmdline_open(&u->cmd);
+        u->cmd_mode = 6;
     } else if ((k->code == 't' || k->code == 'x') && u->pg == TUI_PAGE_COLLECTION) { /* I1440n3: t = next tag (All Tags after the last), x = All Tags */
         const sel_collection_page* pg = sel_engine_state(u->engine)->collection;
         char tag[64], line[128];
@@ -1043,6 +1077,10 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
             size_t at = strlen(buf);
             sel_uim_tagchip_label(pg->tag, tl, sizeof tl);
             snprintf(buf + at, sizeof buf - at, "  [%s]", tl);
+        }
+        if (u->pg_find[0] != '\0') { /* I1442b: the active drill filter, / edits it */
+            size_t at = strlen(buf);
+            snprintf(buf + at, sizeof buf - at, "  [Filter: %s]", u->pg_find);
         }
         tui_ptext(u, 1, 2, buf, width - 1u, label);
         if (ready && pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* I1440o: the composer's DeepSID header, one "Label value" line each; Link rows are numbered */
@@ -1461,6 +1499,13 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
         }
         return;
     }
+    if (u->cmd_mode == 6) { /* I1442b: the drill filter prompt; an empty line clears the filter */
+        u->cmd_mode = 0;
+        if (r == TXT_CMD_SUBMIT) {
+            tui_drill_find(u, txt_cmdline_text(&u->cmd));
+        }
+        return;
+    }
     if (u->cmd_mode == 2) { /* the search prompt: an empty line lists all songs */
         u->cmd_mode = 0;
         if (r == TXT_CMD_SUBMIT) {
@@ -1474,6 +1519,8 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
         u->cmdline_runs++;
         if (line[0] == '!') {
             tui_run_program(u, line + 1);
+        } else if (strncmp(line, "source ", 7) == 0 && line[7] != '\0') { /* I1442b: opens a source's drill pages */
+            (void)tui_route(u, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, line + 7, line + 7, "");
         } else {
             tui_send(u, line);
         }
@@ -2798,7 +2845,7 @@ static void tui_draw(tui* u) {
             } else if (u->cmd_mode == 3) {
                 snprintf(line, sizeof line, "%s name: %s", u->mn_pending == (uint32_t)MN_RENAME ? "Rename" : u->mn_pending == (uint32_t)MN_NEWFOLDER ? "New Folder" : "New Playlist", txt_cmdline_text(&u->cmd));
             } else {
-                snprintf(line, sizeof line, "%c%s%s%s", u->cmd_mode == 2 ? '/' : ':', txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+                snprintf(line, sizeof line, "%c%s%s%s", u->cmd_mode == 2 || u->cmd_mode == 6 ? '/' : ':', txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
             }
         } else {
             snprintf(line, sizeof line, "%s", u->cmd.status);
