@@ -25,6 +25,10 @@ void sel_uim_tidy_title(const char* in, char* out, size_t cap) {
     if (in == NULL) {
         in = "";
     }
+    if (strstr(in, "://") != NULL) { /* a stream URL shown as its own name is an address, not a title: tidying made it "Http://..." */
+        snprintf(out, cap, "%s", in);
+        return;
+    }
     for (i = 0; in[i] != '\0'; i++) {
         had_space |= in[i] == ' ';
     }
