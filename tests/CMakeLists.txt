@@ -4245,7 +4245,7 @@ if(NOT SEL_AMIGA)
   # I774o R12: the UADE data set downloader against a stub server (download, md5 reject, old set kept).
   add_executable(uadedata_test library/uadedata_test.c)
   target_include_directories(uadedata_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(uadedata_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(uadedata_test PRIVATE selecta_library selecta_registry selecta_core ${CMAKE_THREAD_LIBS_INIT})
   add_test(NAME uadedata-download COMMAND uadedata_test)
   set_tests_properties(uadedata-download PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "uadedata_ok")
   # I1242f: the nuade companion name rules (seven families, one non-companion family), where the rule table lives.

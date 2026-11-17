@@ -3,8 +3,13 @@
  *   fresh_install            every file arrives and is installed
  *   unchanged_set_is_current a second run changes nothing
  *   wrong_md5_keeps_old_set  a body whose md5 differs from the manifest is rejected, the old files stay, no *.new left
- *   fixed_server_updates     the same update succeeds once the server serves the right bytes */
+ *   fixed_server_updates     the same update succeeds once the server serves the right bytes
+ *   kick_updates_in_background  sel_library_uadedata_kick (the app start trigger, R12b) installs a new set on the job thread */
 #include "cache.h"
+#include "db/db.h"
+#include <selecta/host.h>
+#include <selecta/machine.h>
+#include "sysfile_fetch.h"
 #include "uadedata.h"
 
 #include <arpa/inet.h>
@@ -185,6 +190,33 @@ int main(void) {
     CHECK(sel_uadedata_update(&c, dir) == SEL_UADEDATA_UPDATED); /* fixed_server_updates */
     for (i = 0; i < NFILES; i++) {
         CHECK(has(dir, NAMES[i], content[i]));
+    }
+
+    {   /* kick_updates_in_background: the start trigger of the app, on the library job thread */
+        sel_library* lib;
+        char db[160];
+        int st = SEL_SYSF_RUNNING;
+
+        pthread_mutex_lock(&mu);
+        snprintf(bake, sizeof bake, "3");
+        set_content("v3");
+        pthread_mutex_unlock(&mu);
+        setenv("SELECTA_CACHE_DIR", cdir, 1);
+        snprintf(db, sizeof db, "%s/library.db", dir);
+        lib = sel_library_open(sel_host_default(), sel_machine_probe(sel_host_default()), 0, db);
+        CHECK(lib != NULL);
+        if (lib != NULL) {
+            CHECK(sel_library_uadedata_kick(lib, dir) == 1);
+            for (i = 0; i < 100 && st == SEL_SYSF_RUNNING; i++) {
+                usleep(100000);
+                st = sel_library_sysfile_poll(lib, SEL_UADEDATA_SLOT);
+            }
+            CHECK(st == SEL_SYSF_OK);
+            for (i = 0; i < NFILES; i++) {
+                CHECK(has(dir, NAMES[i], content[i]));
+            }
+            sel_library_close(lib);
+        }
     }
 
     snprintf(tmp, sizeof tmp, "rm -rf %s", root);

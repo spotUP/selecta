@@ -59,8 +59,23 @@ otool -l "$C/MacOS/selecta-bin" | awk '/cmd LC_RPATH/ { getline; getline; print 
 done
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$C/MacOS/selecta-bin" 2>/dev/null || true
 
+# I774o R12b (D1): the baked UADE data set (<build-dir>/uadedata, the uadedata target) rides in Resources/uadedata; the first
+# start copies it into the config dir when the files are absent (the launcher below), the in-app downloader only updates.
+if [ -d "$BUILD_DIR/uadedata" ]; then
+    mkdir -p "$C/Resources/uadedata"
+    cp "$BUILD_DIR/uadedata/"*.bin "$C/Resources/uadedata/"
+fi
+
 cat > "$C/MacOS/Selecta" <<'EOF'
 #!/bin/sh
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/selecta"
+SEED="$(dirname "$0")/../Resources/uadedata"
+if [ -d "$SEED" ]; then
+    mkdir -p "$CFG"
+    for f in "$SEED"/*.bin; do
+        [ -e "$CFG/$(basename "$f")" ] || cp "$f" "$CFG/"
+    done
+fi
 exec "$(dirname "$0")/selecta-bin" --ui desktop --backend sdl "$@"
 EOF
 chmod +x "$C/MacOS/Selecta"
