@@ -292,7 +292,7 @@ int main(void) {
         const char* hv = "hvsc:MUSICIANS/H/Hubbard_Rob/Commando.sid";
         sel_art_op op;
         uint32_t before;
-        char* slash;
+        char* slash = NULL;
 
         snprintf(sqltext, sizeof sqltext,
                  "INSERT INTO songs(key, source, path, name, added) VALUES('%s','hvsc','MUSICIANS/H/Hubbard_Rob/Commando.sid','Commando',1);"
@@ -321,7 +321,7 @@ int main(void) {
         }
         sel_engine_pump_reads(e, sink, NULL, 60000u);
         pg = sel_engine_state(e)->collection;
-        CHECK(pg != NULL && pg->serial > before && strstr(pg->about, "Rob Hubbard") != NULL);
+        CHECK(pg != NULL && pg->serial > before && strcmp(pg->about + strlen(pg->about) + 1u, "Rob Hubbard") == 0);
     }
 
     sel_engine_destroy(e);
