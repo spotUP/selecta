@@ -8091,6 +8091,43 @@ static void drill_deepsid(sel_engine* e, sel_collection_page* pg, const char* ki
     }
 }
 
+/* I1442: a group level (artists, a format's artists) narrowed by the find text before it is windowed, like the format list: pages the level
+ * from the library, keeps the rows whose name has `find`, skips `skip` of them and stops after a full window. */
+typedef struct drill_find {
+    coll_build* b;
+    const char* find;
+    uint32_t skip, taken;
+} drill_find;
+
+static void drill_find_row(void* ctx, const char* const* f) {
+    drill_find* d = (drill_find*)ctx;
+    if (d->taken >= (uint32_t)SEL_DRILL_WINDOW || !drill_name_has(f[0], d->find)) return;
+    if (d->skip > 0u) {
+        d->skip--;
+        return;
+    }
+    drill_group_row(d->b, f);
+    d->taken++;
+}
+
+static void drill_query_find(sel_engine* e, const char* source, uint32_t level, const char* a, uint32_t skip, const char* find, coll_build* b) {
+    drill_find d;
+    uint32_t raw = 0u;
+    int got;
+    if (find[0] == '\0') {
+        drill_query(e, source, level, a, "", skip, drill_group_row, b);
+        return;
+    }
+    d.b = b;
+    d.find = find;
+    d.skip = skip;
+    d.taken = 0u;
+    do {
+        got = drill_query(e, source, level, a, "", raw, drill_find_row, &d);
+        if (got > 0) raw += (uint32_t)got;
+    } while (got >= (int)SEL_DRILL_WINDOW && d.taken < (uint32_t)SEL_DRILL_WINDOW);
+}
+
 /* key = source [US kind [US a [US b]]] [RS skip [GS find]]. Builds the level into b and pg->drill. The find text (I1235) narrows the format list
  * before it is windowed, so a list longer than SEL_DRILL_WINDOW filters over all of it, not only the loaded window. */
 static void drill_build(sel_engine* e, const char* key, coll_build* b) {
@@ -8144,12 +8181,12 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
             b->n++;
         }
     } else if (strcmp(kind, "format") == 0 && part[2] != NULL && part[3] == NULL) {
-        drill_query(e, source, SEL_DRILL_FORMAT_ARTISTS, part[2], "", skip, drill_group_row, b);
+        drill_query_find(e, source, SEL_DRILL_FORMAT_ARTISTS, part[2], skip, find, b);
     } else if (strcmp(kind, "format") == 0 && part[3] != NULL) {
         pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
         drill_query(e, source, SEL_DRILL_FORMAT_SONGS, part[2], part[3], skip, coll_song_row, b);
     } else if (strcmp(kind, "artists") == 0) {
-        drill_query(e, source, SEL_DRILL_ARTISTS, "", "", skip, drill_group_row, b);
+        drill_query_find(e, source, SEL_DRILL_ARTISTS, "", skip, find, b);
     } else if (strcmp(kind, "artist") == 0 && part[2] != NULL) {
         pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
         drill_query(e, source, SEL_DRILL_ARTIST_SONGS, part[2], "", skip, coll_song_row, b);
