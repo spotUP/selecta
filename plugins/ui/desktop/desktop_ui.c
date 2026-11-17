@@ -4339,9 +4339,9 @@ static uint32_t browse_tiles(const desk* d, browse_tile* out, uint32_t cap) {
         }
     }
     {   /* I1440m: the C64 SID group: four tiles, each a drill of the source "deepsid" (the engine builds the lists from the DeepSID cache) */
-        static const char* const ds_name[4] = {"Tags", "Collections", "Groups", "Players"};
-        static const char* const ds_kind[4] = {"tags", "collections", "groups", "players"};
-        for (i = 0; i < 4u && n < cap; i++) {
+        static const char* const ds_name[6] = {"Tags", "Charts", "Collections", "Compos", "Groups", "Players"}; /* I1440n: Charts and Compos */
+        static const char* const ds_kind[6] = {"tags", "charts", "collections", "compos", "groups", "players"};
+        for (i = 0; i < 6u && n < cap; i++) {
             out[n].kind = 2u;
             out[n].count = 0u;
             snprintf(out[n].label, sizeof out[n].label, "C64 SID %s", ds_name[i]);
@@ -5953,9 +5953,10 @@ static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q) 
 /* The path one click on drill row `name` opens, or "" when the row is a leaf for now. */
 /* I1440m: the C64 SID drill kinds: the list kinds (tags, groups, players, collections) and the one-item kinds a click opens. */
 static const char* drl_deepsid_kind(const char* kind, const char** root) {
-    static const char* const k[4][3] = {{"tag", "tags", "Tags"}, {"group", "groups", "Groups"}, {"player", "players", "Players"}, {"folder", "collections", "Collections"}};
+    static const char* const k[8][3] = {{"tag", "tags", "Tags"}, {"group", "groups", "Groups"}, {"player", "players", "Players"}, {"folder", "collections", "Collections"},
+                                        {"chart", "charts", "Charts"}, {"year", "compos", "Compos"}, {"event", "compos", "Compos"}, {"compos", "compos", "Compos"}};
     uint32_t i;
-    for (i = 0u; i < 4u; i++) {
+    for (i = 0u; i < 8u; i++) {
         if (strcmp(kind, k[i][0]) == 0 || strcmp(kind, k[i][1]) == 0) {
             *root = k[i][1];
             return k[i][2];
@@ -5972,6 +5973,12 @@ static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
         snprintf(out, cap, "%s", name);
     } else if (np >= 1u && strcmp(part[0], "tags") == 0) { /* I1440m */
         snprintf(out, cap, "tag\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "charts") == 0) { /* I1440n */
+        snprintf(out, cap, "chart\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "compos") == 0) {
+        snprintf(out, cap, "year\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "year") == 0) {
+        snprintf(out, cap, "event\x1f%s", name);
     } else if (np >= 1u && strcmp(part[0], "groups") == 0) {
         snprintf(out, cap, "group\x1f%s", name);
     } else if (np >= 1u && strcmp(part[0], "players") == 0) {
