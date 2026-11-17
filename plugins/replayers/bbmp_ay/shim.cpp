@@ -47,4 +47,6 @@ uint32_t bbay_render(struct bbay* s, int16_t* out, uint32_t frames) {
 
 void bbay_close(struct bbay* s) { delete s; }
 
+void bbay_set_data_dir(const char* dir) { ay::beepola_set_data_dir(dir); }
+
 }  // extern "C"

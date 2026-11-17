@@ -21,14 +21,20 @@
 
 #include <algorithm>
 #include <cmath>
+#ifndef BBAY_NO_THREADS
 #include <condition_variable>
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#ifndef BBAY_NO_THREADS
 #include <mutex>
+#endif
 #include <string>
+#ifndef BBAY_NO_THREADS
 #include <thread>
+#endif
 #include <vector>
 
 namespace ay {
@@ -103,10 +109,13 @@ const DataFile kSampleFile = {"p1d-samples.bin", 1024,
 const DataFile kTailFile = {"svg-table-tail.bin", 136,
                             "41ffa3729b07d6bd64370f93b880611cd8987d9ad257e81c0edddd18f8f231b5"};
 
-// The file's bytes when BBMP_BEEPOLA_DATA has it with the right size and checksum.
+std::string g_data_dir;  // set by the host (libnix has no setenv); the variable wins when set
+
+// The file's bytes when BBMP_BEEPOLA_DATA (else the host's folder) has it with the right size and checksum.
 bool load_data(const DataFile& f, std::vector<u8>& out) {
   const char* dir = std::getenv("BBMP_BEEPOLA_DATA");
-  if (!dir || !*dir) return false;
+  if (!dir || !*dir) dir = g_data_dir.c_str();
+  if (!*dir) return false;
   const std::string path = std::string(dir) + "/" + f.name;
   FILE* fp = std::fopen(path.c_str(), "rb");
   if (!fp) return false;
@@ -332,7 +341,7 @@ void read_song(const std::vector<u8>& data, Song& s) {
           Pattern& p = s.pat[i];
           p.name = v2;
           p.rows = checked_rows(r.int32());
-          p.tempo = std::clamp<int32_t>(r.int32(), -1000, 1000);
+          p.tempo = std::min<int32_t>(std::max<int32_t>(r.int32(), -1000), 1000);
           for (int j = 0; j < p.rows; ++j) p.col[0][j] = r.byte();
           for (int j = 0; j < p.rows; ++j) p.col[1][j] = r.byte();
           for (int j = 0; j < p.rows; ++j) p.drum[j] = r.byte();
@@ -462,7 +471,7 @@ class Sound {
       k = k == 254 ? 0 : k + 1;
     }
     dc_ += (x - dc_) * dcrate_;
-    long s = std::lrint((x - dc_) * 16000.0);
+    long s = ::lrint((x - dc_) * 16000.0);
     if (s < -32768) s = -32768;
     if (s > 32767) s = 32767;
     frame(int16_t(s));
@@ -2882,6 +2891,7 @@ const EngineKind kKinds[] = {
 
 class Beepola : public Engine {
  public:
+#ifndef BBAY_NO_THREADS
   ~Beepola() override {
     {
       std::lock_guard<std::mutex> lock(mu_);
@@ -2890,6 +2900,7 @@ class Beepola : public Engine {
     cv_.notify_all();
     if (worker_.joinable()) worker_.join();
   }
+#endif
 
   void open(const std::string&, const std::vector<uint8_t>& data, int, int rate, Info& info) override {
     read_song(data, song_);
@@ -2964,9 +2975,21 @@ class Beepola : public Engine {
       if (!song_.pat[p].name.empty()) info.names.push_back(song_.pat[p].name);
 
     rate_ = rate;
+#ifdef BBAY_NO_THREADS
+    second_pass();  // the Amiga has no threads: pass 2 renders the whole song (mono, capped) before the first render()
+#else
     worker_ = std::thread([this] { second_pass(); });
+#endif
   }
 
+#ifdef BBAY_NO_THREADS
+  int render(int16_t* out, int frames) override {
+    const size_t n = std::min(pcm_.size() - pcm_pos_, size_t(frames));
+    for (size_t i = 0; i < n; ++i) out[2 * i] = out[2 * i + 1] = pcm_[pcm_pos_ + i];
+    pcm_pos_ += n;
+    return int(n);
+  }
+#else
   int render(int16_t* out, int frames) override {
     std::unique_lock<std::mutex> lock(mu_);
     cv_.wait(lock, [&] { return queue_.size() >= size_t(frames) * 2 || done_; });
@@ -2977,8 +3000,28 @@ class Beepola : public Engine {
     cv_.notify_all();
     return int(n);
   }
+#endif
 
  private:
+#ifdef BBAY_NO_THREADS
+  // One mono sample per output frame, kept until render(). shortcut: a song longer than kMaxPcm samples is cut there
+  // (about 4.5 minutes at 22050 Hz, 12 MB); upgrade by rendering in slices when a Machine can be resumed.
+  static constexpr size_t kMaxPcm = 6u << 20;
+  class Output : public Sound {
+   public:
+    Output(Beepola& owner, int rate) : Sound(rate), owner_(owner) {}
+    void flush() {}
+
+   protected:
+    void frame(int16_t s) override {
+      if (owner_.pcm_.size() >= kMaxPcm) throw Stopped{};
+      owner_.pcm_.push_back(s);
+    }
+
+   private:
+    Beepola& owner_;
+  };
+#else
   class Output : public Sound {
    public:
     Output(Beepola& owner, int rate) : Sound(rate), owner_(owner) {}
@@ -3004,6 +3047,7 @@ class Beepola : public Engine {
     Beepola& owner_;
     std::vector<int16_t> buf_;
   };
+#endif
 
   std::unique_ptr<Machine> make_machine(Needs& needs) {
     const Memory& m = *mem_;
@@ -3033,11 +3077,13 @@ class Beepola : public Engine {
       output.flush();
     } catch (const Stopped&) {
     }
+#ifndef BBAY_NO_THREADS
     {
       std::lock_guard<std::mutex> lock(mu_);
       done_ = true;
     }
     cv_.notify_all();
+#endif
   }
 
   static void write_layout(const std::string& path, const Memory& m) {
@@ -3078,14 +3124,21 @@ class Beepola : public Engine {
   i64 end_ = 0;
   int rate_ = 48000;
 
+#ifdef BBAY_NO_THREADS
+  std::vector<int16_t> pcm_;
+  size_t pcm_pos_ = 0;
+#else
   std::thread worker_;
   std::mutex mu_;
   std::condition_variable cv_;
   std::deque<int16_t> queue_;
   bool done_ = false, stop_ = false;
+#endif
 };
 
 }  // namespace
+
+void beepola_set_data_dir(const char* dir) { g_data_dir = dir ? dir : ""; }
 
 std::unique_ptr<Engine> make_beepola() { return std::unique_ptr<Engine>(new Beepola); }
 

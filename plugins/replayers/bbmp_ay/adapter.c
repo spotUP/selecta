@@ -7,6 +7,8 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include "probe.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,11 +17,11 @@ struct bbay* bbay_open(int kind, const uint8_t* data, uint32_t size, uint32_t tr
                        uint32_t* duration_ms, char* title, char* author, char* comment, uint32_t text_max);
 uint32_t bbay_render(struct bbay* s, int16_t* out, uint32_t frames);
 void bbay_close(struct bbay* s);
+void bbay_set_data_dir(const char* dir);
 
 #define BBAY_MAX_SECONDS 1200u
 #define BBAY_TEXT 256u
 
-enum { KIND_FLS = 0, KIND_FXM = 1, KIND_STRC = 2, KIND_BEEPOLA = 3, KIND_NONE = -1 };
 
 typedef struct bbay_state {
     const sel_host* host;
@@ -39,47 +41,6 @@ typedef struct bbay_state {
     sel_tag meta[7];
 } bbay_state;
 
-static int ext_is(const char* name, const char* ext) {
-    const char* dot;
-    size_t i;
-    if (name == NULL || (dot = strrchr(name, '.')) == NULL || strlen(dot + 1) != strlen(ext)) {
-        return 0;
-    }
-    for (i = 0; ext[i] != '\0'; i++) {
-        if ((dot[1 + i] | 0x20) != ext[i]) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-/* The one decider of which engine owns a file: the AY magic first, then the extension of the formats with no magic. */
-static int kind_of(const uint8_t* data, size_t size, const char* name) {
-    if (size >= 8u && memcmp(data, "ZXAYAMAD", 8) == 0) {
-        return KIND_FXM;
-    }
-    if (size >= 8u && memcmp(data, "ZXAYSTRC", 8) == 0) {
-        return KIND_STRC;
-    }
-    if (size >= 12u && memcmp(data, "BBSONG\0" "0001\0", 12) == 0) {
-        return KIND_BEEPOLA;
-    }
-    if (ext_is(name, "fls")) {
-        return KIND_FLS;
-    }
-    if (ext_is(name, "fxm")) {
-        return KIND_FXM;
-    }
-    return KIND_NONE;
-}
-
-static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    if (size < 64u) {
-        return SEL_PROBE_NO;
-    }
-    return kind_of(data, size, name) != KIND_NONE ? SEL_PROBE_YES : SEL_PROBE_NO;
-}
-
 static void rp_close(void* state) {
     bbay_state* s = (bbay_state*)state;
     if (s != NULL) {
@@ -96,13 +57,15 @@ static struct bbay* open_engine(bbay_state* s, uint32_t track, uint32_t rate) {
 }
 
 /* Beepola's engine reads zx48.rom, p1d-samples.bin and svg-table-tail.bin from the folder in BBMP_BEEPOLA_DATA and checks size and
- * SHA-256 itself; a song that needs a missing one is refused (toast), the others play. Folder: the variable if set, else the
- * host's config.dir (where the I751 downloader puts them). shortcut: process-wide env, one folder; upgrade with I751d when the
- * downloader exposes its own path. */
+ * SHA-256 itself; a song that needs a missing one is refused (toast), the others play. Folder: the variable if set (engine side), else the host's
+ * "support.dir" (<cache>/support, where the I751 downloader puts them, I751d), else config.dir. shortcut: one process-wide folder. */
 static void setup_beepola_data(const sel_host* host) {
-    const char* dir = host->config_get != NULL ? host->config_get(host, "config.dir", NULL) : NULL;
+    const char* dir = host->config_get != NULL ? host->config_get(host, "support.dir", NULL) : NULL;
+    if (dir == NULL || dir[0] == '\0') {
+        dir = host->config_get != NULL ? host->config_get(host, "config.dir", NULL) : NULL;
+    }
     if (dir != NULL && dir[0] != '\0') {
-        setenv("BBMP_BEEPOLA_DATA", dir, 0);
+        bbay_set_data_dir(dir); /* libnix has no setenv; the variable still wins when set */
     }
 }
 
@@ -119,7 +82,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     memset(s, 0, sizeof *s);
     s->host = host;
     setup_beepola_data(host);
-    s->kind = kind_of(src->data, src->size, src->path);
+    s->kind = bbay_kind_of(src->data, src->size, src->path);
     s->data = (uint8_t*)host->mem_alloc(host, src->size, SEL_MEM_FAST);
     if (s->kind == KIND_NONE || s->data == NULL) {
         host->mem_free(host, s->data);
@@ -218,28 +181,21 @@ static const sel_tag* rp_metadata(void* state) {
 static sel_tag g_hooks[13];
 static sel_tag g_desc[5];
 
-static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
-    t->tag = tag;
-    t->value = value;
-}
+#define set bbay_set_tag
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
+    size_t n;
     if (host_api < 1u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "bbmp_ay");
-    set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
-    set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "fls,fxm,amad,strc,ay,bbsong");
-    set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
-    set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
-    set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
-    set(&g_hooks[7], SEL_RP_START, SEL_TAG_FN(rp_start));
-    set(&g_hooks[8], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
-    set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
-    set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[11], SEL_RP_PRIORITY, 10); /* above gme (0), which also claims .ay; the probe answers YES only for the two AY types and the two extensions */
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    n = bbay_static_hooks(g_hooks); /* probe.c: shared with the Amiga manifest (I1223c) */
+    set(&g_hooks[n++], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
+    set(&g_hooks[n++], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
+    set(&g_hooks[n++], SEL_RP_START, SEL_TAG_FN(rp_start));
+    set(&g_hooks[n++], SEL_RP_RENDER, SEL_TAG_FN(rp_render));
+    set(&g_hooks[n++], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
+    set(&g_hooks[n++], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
+    set(&g_hooks[n], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "bbmp_ay");

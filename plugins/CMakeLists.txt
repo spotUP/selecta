@@ -220,8 +220,8 @@ if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
 endif()
 
 # bbmp_ay (I709a): ZX Spectrum Flash Tracker (.fls), Fuxoft AY Language (.fxm, .amad) and Sound Tracker AY files (.strc), GPL-3.0 bbmp
-# engines on the MIT Ayumi chip, behind the GPL-plugin gate. Host only.
-if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+# engines on the MIT Ayumi chip, behind the GPL-plugin gate. Host module, or an Amiga LoadSeg module (I1223c).
+if(SELECTA_GPL_PLUGINS AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(replayers/bbmp_ay)
 endif()
 
