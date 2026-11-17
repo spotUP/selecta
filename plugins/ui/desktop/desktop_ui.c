@@ -10429,8 +10429,7 @@ static void desk_search_tick(desk* d) {
 
 /* I774n R9: chips 0-3 are the result facets; 4 Format, 5 Channels (cycles), 6 Publisher write the existing query terms. */
 static const char* search_chip_label(desk* d, uint32_t k) {
-    static const char* const chan[4] = {"Channels: Any", "Channels: 4", "Channels: More than 4", "Channels: Fewer than 4"};
-    return k < SEARCH_FACETS ? search_facet_name[k] : k == 4u ? "Format" : k == 5u ? chan[d->search_chan & 3u] : "Publisher";
+    return k < SEARCH_FACETS ? search_facet_name[k] : k == 4u ? "Format" : k == 5u ? sel_uim_search_chan_label[d->search_chan & 3u] : "Publisher";
 }
 
 static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k) {
@@ -11901,21 +11900,11 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups; without results it is kept for the next ones */
         for (i = 4; i < SEARCH_CHIPS; i++) { /* I774n R9: Format and Publisher start their term in the field; Channels cycles its term */
             if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
-                static const char* const chan_term[4] = {"", "channels:4", "channels:>4", "channels:<4"};
-                size_t ql = strlen(d->query);
-                if (i == 5) { /* drop the old channels term, append the next */
-                    char* t = strstr(d->query, "channels:");
-                    if (t != NULL) { /* cut only the token, keep words typed after it */
-                        const char* e = t + strcspn(t, " ");
-                        e += strspn(e, " ");
-                        memmove(t, e, strlen(e) + 1u);
-                        ql = strlen(d->query);
-                        while (ql > 0u && d->query[ql - 1u] == ' ') d->query[--ql] = '\0';
-                    }
+                if (i == 5) { /* drop the old channels term, append the next (shared with the MUI chip) */
                     d->search_chan = (d->search_chan + 1u) & 3u;
-                    if (d->search_chan != 0u) snprintf(d->query + ql, sizeof d->query - ql, "%s%s", ql > 0u ? " " : "", chan_term[d->search_chan]);
+                    sel_uim_search_chan_apply(d->query, sizeof d->query, d->search_chan);
                 } else {
-                    snprintf(d->query + ql, sizeof d->query - ql, "%s%s:", ql > 0u ? " " : "", i == 4 ? "format" : "publisher");
+                    sel_uim_search_term_start(d->query, sizeof d->query, i == 4 ? "format" : "publisher");
                 }
                 d->qlen = strlen(d->query);
                 d->focus = (int32_t)d->layout.count;

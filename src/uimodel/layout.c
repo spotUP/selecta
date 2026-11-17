@@ -317,6 +317,30 @@ int sel_uim_hit(const sel_uim_layout* l, int32_t x, int32_t y) {
 }
 
 const char* const sel_uim_search_facets[SEL_UIM_SEARCH_FACETS] = {"All", "Songs", "Albums", "Artists"};
+const char* const sel_uim_search_chan_label[4] = {"Channels: Any", "Channels: 4", "Channels: More than 4", "Channels: Fewer than 4"};
+const char* const sel_uim_search_chan_term[4] = {"", "channels:4", "channels:>4", "channels:<4"};
+
+void sel_uim_search_chan_apply(char* query, size_t cap, uint32_t chan) {
+    char* t = strstr(query, "channels:");
+    size_t ql;
+    if (t != NULL) { /* cut only the token, keep words typed after it */
+        const char* e = t + strcspn(t, " ");
+        e += strspn(e, " ");
+        memmove(t, e, strlen(e) + 1u);
+    }
+    ql = strlen(query);
+    while (ql > 0u && query[ql - 1u] == ' ') {
+        query[--ql] = '\0';
+    }
+    if ((chan & 3u) != 0u) {
+        snprintf(query + ql, cap - ql, "%s%s", ql > 0u ? " " : "", sel_uim_search_chan_term[chan & 3u]);
+    }
+}
+
+void sel_uim_search_term_start(char* query, size_t cap, const char* word) {
+    size_t ql = strlen(query);
+    snprintf(query + ql, cap - ql, "%s%s:", ql > 0u ? " " : "", word);
+}
 
 void sel_uim_search_hint(int topbar, const char* const* chips, uint32_t n, char* out, size_t cap) {
     size_t o;

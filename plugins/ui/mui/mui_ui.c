@@ -212,6 +212,16 @@ typedef struct mui_state {
     int8_t info_fk[MUI_INFO_MAX];   /* I774n R11b: the Found In kind index of a kind row, -1 for any other */
     uint32_t si_found_open;         /* I774n R11b: bit k set = Found In kind k shows its names (as the Mac) */
     int info_csdb[MUI_INFO_MAX];    /* I1440q2: the CSDb release id of an info row, 0 for any other */
+    /* I774n R11c (design I774 A3): list 0 = the tag / catalogue rows, 1..5 = Credits, Other Sources, Found In, Same Tune, Demozoo (sel_uim_si_sections).
+     * si_ptr[L] holds the rows of list L, si_idx[L] their index in info_buf (so info_fk / info_csdb stay by buffer row); a section without rows hides. */
+    Object* si_list[SEL_UIM_SI_SECTION_N + 1];
+    Object* si_grp[SEL_UIM_SI_SECTION_N + 1];
+    const char* si_ptr[SEL_UIM_SI_SECTION_N + 1][MUI_INFO_MAX + 1];
+    uint8_t si_idx[SEL_UIM_SI_SECTION_N + 1][MUI_INFO_MAX];
+    uint8_t info_sec[MUI_INFO_MAX]; /* the list (0..5) a buffer row belongs to */
+    uint8_t si_shown;               /* bit L set = group L is shown */
+    Object* fchip_btn[3];           /* I774n R11c: Format, Channels, Publisher chips (the Mac R9 chips 4-6) */
+    uint32_t search_chan;           /* the Channels chip state: 0 Any, 1 four, 2 more than four, 3 fewer than four */
     char col_title_buf[160];
     char col_meta_buf[224];
     uint32_t col_serial;            /* the collection serial the list shows */
@@ -321,7 +331,6 @@ typedef struct mui_state {
     sel_engine_library_item side_items[MUI_SIDEBAR_ROWS]; /* the rows the shared filter pass (sel_uim_lfilter_pass) returned for lib_filter */
     uint32_t side_item_n;
     char info_buf[MUI_INFO_MAX][128];
-    const char* info_ptr[MUI_INFO_MAX + 1];
     Object* trk_list;               /* MUI-P4-16 pattern rows, shown only when the engine answered with pattern data */
     Object* trk_group;
     char trk_buf[MUI_TRK_ROWS][160];
@@ -674,6 +683,8 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
 #define CTL_SCOPE 0x2AC4L           /* I1176: the Queue scope Cycle */
 #define CTL_OPEN_CANCEL 0x2AC5L     /* I1415: the now-playing Cancel button, posts CANCEL_OPEN */
+#define CTL_SI_PICK_BASE 0x2AF0L    /* I774n R11c: CTL_SI_PICK_BASE + k, a row of Song Information section list k (1..5) was picked */
+#define CTL_FCHIP_BASE 0x2AF8L      /* I774n R11c: CTL_FCHIP_BASE + 0..2: the Format, Channels, Publisher chips */
 #define CTL_INFO_PICK 0x2AC6L       /* I1440q2: a Song Information row was picked (a CSDb release row opens csdb.dk) */
 #define CTL_ABOUT_OPEN 0x2AD0L      /* I1440q2: CTL_ABOUT_OPEN + i, the Open button of composer header row i */
 #define CTL_SRC_SYNC 0x2AC3L        /* I1175: the Sources page Sync button */
@@ -2189,6 +2200,14 @@ static Object* mui_facet_row_group(mui_state* s) {
         }
         DoMethod(s->facet_row, OM_ADDMEMBER, s->facet_btn[k]);
     }
+    for (k = 0; k < 3u; k++) { /* I774n R11c: the Mac R9 chips Format, Channels (cycles), Publisher; the same query terms (sel_uim_search_chan_apply) */
+        const char* cap = k == 0u ? "Format" : k == 1u ? sel_uim_search_chan_label[0] : "Publisher";
+        s->fchip_btn[k] = mui_make_button_ex(cap, k == 1u ? sel_uim_search_chan_label[2] : cap, "tile", NULL, CTL_FCHIP_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TAB, MUI_AA_ALIGN_CENTRE, 0, 0);
+        if (s->fchip_btn[k] == NULL) {
+            return NULL;
+        }
+        DoMethod(s->facet_row, OM_ADDMEMBER, s->fchip_btn[k]);
+    }
     DoMethod(s->facet_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     return s->facet_row;
 }
@@ -2332,9 +2351,30 @@ static Object* mui_detail_group(mui_state* s, int compact) {
         sp.no_select = 1; /* lyrics: one column, no selection, wheel only (design 3.6) */
         lyr_view = mui_aalist_new(&sp, &s->np_lyrics);
     }
-    s->info_ptr[0] = NULL;
     s->trk_ptr[0] = NULL;
-    info_g = mui_string_aalist(s->info_ptr, 0, 6, &s->info_list);
+    info_g = mui_string_aalist(s->si_ptr[0], 0, 6, &s->si_list[0]);
+    s->info_list = s->si_list[0];
+    s->si_ptr[0][0] = NULL;
+    if (info_g != NULL) { /* I774n R11c: the five section lists under the tag rows, one scrolling page; empty sections hide */
+        Object* contents = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        if (contents != NULL) {
+            uint32_t k;
+            DoMethod(contents, OM_ADDMEMBER, info_g);
+            for (k = 1; k <= SEL_UIM_SI_SECTION_N; k++) {
+                Object* lst;
+                s->si_ptr[k][0] = NULL;
+                lst = mui_string_aalist(s->si_ptr[k], 0, k == 3u ? 6 : 4, &s->si_list[k]);
+                s->si_grp[k] = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, (ULONG)FALSE, TAG_DONE);
+                if (lst != NULL && s->si_grp[k] != NULL) {
+                    DoMethod(s->si_grp[k], OM_ADDMEMBER, mui_aatext(sel_uim_si_sections[k - 1u], mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_LEFT, 0));
+                    DoMethod(s->si_grp[k], OM_ADDMEMBER, lst);
+                    DoMethod(s->si_list[k], MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)(CTL_SI_PICK_BASE + (LONG)k));
+                    DoMethod(contents, OM_ADDMEMBER, s->si_grp[k]);
+                }
+            }
+            info_g = mui_scroll_page(contents, 0);
+        }
+    }
     trk_g = mui_string_aalist(s->trk_ptr, 0, 8, &s->trk_list);
     if (s->info_list != NULL) {
         DoMethod(s->info_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_INFO_PICK);
@@ -2724,7 +2764,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             }
             sel_uim_tidy_info(lab, val, sizeof val); /* I1387b */
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", lab, val);
-            s->info_ptr[rows] = s->info_buf[rows];
+            s->info_sec[rows] = 0u;
             s->info_csdb[rows] = 0;
             s->info_fk[rows] = -1;
             rows++;
@@ -2735,6 +2775,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             const char* p = st->panel;
             uint32_t seen = 0u, in_sect = 0u, r; /* as the Mac walk: bit 0 Release, bit 1 Year already shown above the sections */
             int fk = -1;
+            uint32_t sec = 0u; /* the list the following rows go to */
             for (r = 0; r < rows; r++) {
                 seen |= (strncmp(s->info_buf[r], "Release:", 8) == 0 ? 1u : 0u) | (strncmp(s->info_buf[r], "Year:", 5) == 0 ? 2u : 0u);
             }
@@ -2767,13 +2808,18 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                 }
                 sel_uim_tidy_info(text, val, sizeof val); /* I1387b */
                 if (kind == (int)SEL_UIM_SI_HEADING) {
+                    int si = sel_uim_si_section_index(text);
+                    sec = si >= 0 ? (uint32_t)si + 1u : 0u;
+                    if (si >= 0) { /* the section list has its own heading object */
+                        continue;
+                    }
                     snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s", text);
                 } else if (text[0] == '\0') {
                     snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "    %s", val);
                 } else {
                     snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", text, val);
                 }
-                s->info_ptr[rows] = s->info_buf[rows];
+                s->info_sec[rows] = (uint8_t)sec;
                 s->info_csdb[rows] = sel_csdb_row_id(value); /* I1440q2: a click on the row opens the release page */
                 s->info_fk[rows] = row_fk;
                 rows++;
@@ -2782,13 +2828,28 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
         if (so->path != NULL && so->subsong_count > 1u) {
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "Subsong: %lu of %lu", (unsigned long)so->subsong + 1ul,
                      (unsigned long)so->subsong_count);
-            s->info_ptr[rows] = s->info_buf[rows];
+            s->info_sec[rows] = 0u;
             s->info_csdb[rows] = 0;
             s->info_fk[rows] = -1;
             rows++;
         }
-        s->info_ptr[rows] = NULL;
-        set(s->info_list, UPA_List_Count, (ULONG)rows);
+        {   /* I774n R11c: spread the buffer rows over the six lists; an empty section hides */
+            uint32_t n[SEL_UIM_SI_SECTION_N + 1] = {0}, r, L;
+            for (r = 0; r < rows; r++) {
+                L = s->info_sec[r];
+                s->si_ptr[L][n[L]] = s->info_buf[r];
+                s->si_idx[L][n[L]++] = (uint8_t)r;
+            }
+            for (L = 0; L <= SEL_UIM_SI_SECTION_N; L++) {
+                s->si_ptr[L][n[L]] = NULL;
+                if (s->si_list[L] != NULL) {
+                    set(s->si_list[L], UPA_List_Count, (ULONG)n[L]);
+                }
+                if (L > 0u && s->si_grp[L] != NULL) {
+                    set(s->si_grp[L], MUIA_ShowMe, n[L] > 0u ? TRUE : FALSE);
+                }
+            }
+        }
         if (rows > 0u) {
             s->p4[P4_SONGINFO]++;
         }
@@ -4479,15 +4540,19 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_ABOUT_OPEN && id < CTL_ABOUT_OPEN + (LONG)MUI_ABOUT_MAX) { /* I1440q2: a composer Link row */
         mui_open_url(s->col_about_url[id - CTL_ABOUT_OPEN]);
-    } else if (id == CTL_INFO_PICK) { /* I1440q2: a CSDb release row of Song Information */
+    } else if (id == CTL_INFO_PICK || (id > CTL_SI_PICK_BASE && id <= CTL_SI_PICK_BASE + (LONG)SEL_UIM_SI_SECTION_N)) { /* I1440q2: a CSDb release row of Song Information; I774n R11c: any of the six lists */
+        uint32_t L = id == CTL_INFO_PICK ? 0u : (uint32_t)(id - CTL_SI_PICK_BASE);
         long picked = -1;
-        GetAttr(UPA_List_Picked, s->info_list, (ULONG*)&picked);
-        if (picked >= 0 && (uint32_t)picked < MUI_INFO_MAX && s->info_fk[picked] >= 0) { /* I774n R11b: a Found In count line expands or folds its names */
-            s->si_found_open ^= 1u << s->info_fk[picked];
-        } else if (picked >= 0 && (uint32_t)picked < MUI_INFO_MAX && s->info_csdb[picked] > 0) {
-            char url[64];
-            sel_csdb_url(s->info_csdb[picked], url, sizeof url);
-            mui_open_url(url);
+        GetAttr(UPA_List_Picked, s->si_list[L], (ULONG*)&picked);
+        if (picked >= 0 && (uint32_t)picked < MUI_INFO_MAX && s->si_ptr[L][picked] != NULL) {
+            uint32_t r = s->si_idx[L][picked];
+            if (s->info_fk[r] >= 0) { /* I774n R11b: a Found In count line expands or folds its names */
+                s->si_found_open ^= 1u << s->info_fk[r];
+            } else if (s->info_csdb[r] > 0) {
+                char url[64];
+                sel_csdb_url(s->info_csdb[r], url, sizeof url);
+                mui_open_url(url);
+            }
         }
     } else if (id == CTL_OPEN_CANCEL) { /* I1415 */
         (void)mui_engine_line(s, "CANCEL_OPEN");
@@ -4498,6 +4563,23 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_TILE_BASE && id < CTL_TILE_BASE + (LONG)MUI_TILE_MAX) { /* I795 (P4): a Browse tile */
         mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE));
+    } else if (id >= CTL_FCHIP_BASE && id < CTL_FCHIP_BASE + 3L) { /* I774n R11c: a filter chip writes its term into the search field */
+        uint32_t k = (uint32_t)(id - CTL_FCHIP_BASE);
+        char q[160], b[200];
+        mui_str_utf8(s->str_search, q, sizeof q);
+        if (k == 1u) {
+            s->search_chan = (s->search_chan + 1u) & 3u;
+            sel_uim_search_chan_apply(q, sizeof q, s->search_chan);
+            mui_aabtn_set_caption(s->fchip_btn[1], sel_uim_search_chan_label[s->search_chan]);
+        } else {
+            sel_uim_search_term_start(q, sizeof q, k == 0u ? "format" : "publisher");
+        }
+        set(s->str_search, MUIA_String_Contents, (ULONG)mui_l1(b, sizeof b, q));
+        if (k == 1u) {
+            mui_p4_fire(s, P4_SEARCH);
+        } else if (s->win != NULL) {
+            set(s->win, MUIA_Window_ActiveObject, (ULONG)s->str_search);
+        }
     } else if (id >= CTL_FACET_BASE && id < CTL_FACET_BASE + (LONG)SEL_UIM_SEARCH_FACETS) { /* I795 (P5): a Search facet chip */
         const sel_view_state* view = sel_engine_state(s->engine)->view;
         char fl[40];

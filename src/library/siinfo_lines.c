@@ -44,7 +44,7 @@ static void si_num(char* dst, size_t cap, uint32_t v) {
 }
 
 uint32_t sel_uim_si_lines(const sel_uim_si_input* in, sel_uim_si_line* out, uint32_t max) {
-    static const char* const kind_label[] = {"Sites", "Collections", "Groups", "BBS", "CD-ROMs"};
+    static const char* const kind_label[] = {"Sites", "Collections", "Groups", "Bulletin Boards", "CD-ROMs"};
     si_sink s = {out, 0u, max};
     uint32_t i, k;
     sel_uim_si_line* l;

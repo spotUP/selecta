@@ -59,6 +59,10 @@ sel_uim_si_kind sel_uim_si_panel_kind(const char* label, const char** text);
 /* I774n R11b: index (0..SEL_UIM_SI_FOUND_N-1) of a Found In kind label, -1 when unknown; the UI keeps one expand bit per index. */
 #define SEL_UIM_SI_FOUND_N 5
 int sel_uim_si_found_index(const char* text);
+/* I774n R11c: the five section headings in display order (Credits, Other Sources, Found In, Same Tune, Demozoo); one list per index in the MUI. */
+#define SEL_UIM_SI_SECTION_N 5
+extern const char* const sel_uim_si_sections[SEL_UIM_SI_SECTION_N];
+int sel_uim_si_section_index(const char* heading); /* -1 when unknown */
 
 #ifdef __cplusplus
 }
