@@ -117,6 +117,9 @@ SEL_TAG(RP, NEEDS_FPU,        0x102D, INT)
  * list RP_METADATA gives) or NULL = "cannot say without the module", and the scan then resolves and opens as before.
  * Strings may live in `buf`; the list stays valid until the next call. */
 SEL_TAG(RP, SCAN_META,        0x102E, PTR)
+/* I774p: STRINGS, optional hook (sel_rp_strings_fn): the sample and instrument names plus the song message of a song,
+ * for the library's text search. Plugins without it supply none. */
+SEL_TAG(RP, STRINGS,          0x102F, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

@@ -9,7 +9,7 @@
 
 #define VIEW_DEPTH_MAX 8
 
-typedef enum { K_TEXT, K_INT, K_DUR, K_SIZE, K_TIME, K_BOOL, K_IN, K_VIEW, K_DUP, K_COPIES, K_PENDING } key_kind;
+typedef enum { K_TEXT, K_INT, K_DUR, K_SIZE, K_TIME, K_BOOL, K_IN, K_VIEW, K_DUP, K_COPIES, K_PENDING, K_STRINGS } key_kind;
 
 typedef struct key_def {
     const char* name;
@@ -28,7 +28,7 @@ static const key_def KEYS[] = {
     {"release", K_TEXT, "songs.album", 0}, /* I774m: the release the module came out on (the album column) */
     {"found", K_PENDING, NULL, 0},         /* I774m: parse only until the provenance table is queryable (R11) */
     {"sametune", K_PENDING, NULL, 0},      /* I774m: parse only until the tune groups are stored (R12) */
-    {"text", K_PENDING, NULL, 0},          /* I774m: parse only until song_strings exists (R16) */
+    {"text", K_STRINGS, NULL, 0},          /* I774p: sample and instrument names and song message (song_strings) */
     {"artist", K_TEXT, "songs.artist", 0},
     {"album", K_TEXT, "songs.album", 0},
     {"genre", K_TEXT, "songs.genre", 0},
@@ -322,6 +322,42 @@ static void pending_cond(pq* s, const char* v, size_t n) {
     bind_text(s, v, n, 0);
 }
 
+/* I774p: text:<word> searches the sample/instrument names and the song message. With FTS5 it is a token-prefix MATCH on
+ * song_strings (the value is quoted as one phrase, its quotes doubled); without, a LIKE substring scan of the same table. */
+static int g_fts5 = 1;
+
+void sel_query_set_fts5(int present) {
+    g_fts5 = present != 0;
+}
+
+static void strings_cond(pq* s, const char* v, size_t n) {
+    char q[2 * 96 + 4];
+    size_t o = 0, i;
+
+    if (n == 0) {
+        fail(s, "bad_value");
+        return;
+    }
+    if (!g_fts5) {
+        put(s, "songs.key IN (SELECT key FROM song_strings WHERE text LIKE ? ESCAPE '\\')");
+        bind_text(s, v, n, 1);
+        return;
+    }
+    if (n > 96) {
+        fail(s, "too_complex");
+        return;
+    }
+    q[o++] = '"';
+    for (i = 0; i < n; i++) {
+        if (v[i] == '"') q[o++] = '"';
+        q[o++] = v[i];
+    }
+    q[o++] = '"';
+    q[o++] = '*';
+    put(s, "songs.key IN (SELECT key FROM song_strings WHERE song_strings MATCH ?)");
+    bind_text(s, q, o, 0);
+}
+
 static void in_cond(pq* s, const char* v, size_t n) {
     put(s, "songs.key IN (SELECT playlist_entries.key FROM playlist_entries JOIN playlists ON playlists.id = "
            "playlist_entries.playlist_id LEFT JOIN folders ON folders.id = playlists.folder_id "
@@ -506,6 +542,9 @@ static void parse_term(pq* s) {
             break;
         case K_COPIES:
             copies_cond(s, v, vlen);
+            break;
+        case K_STRINGS:
+            strings_cond(s, v, vlen);
             break;
         case K_PENDING:
             pending_cond(s, v, vlen);

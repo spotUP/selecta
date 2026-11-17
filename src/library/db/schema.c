@@ -330,11 +330,16 @@ static const char SCHEMA_V24[] =
     "ALTER TABLE songs ADD COLUMN channels INTEGER NOT NULL DEFAULT 0;"
     "ALTER TABLE songs ADD COLUMN publisher TEXT;";
 
+/* I774p: sample/instrument names and song message for the `text:` term, filled by the idle pass. One row per scanned song
+ * (empty text when the player supplies none), so the pass can tell done from not yet looked at. */
+static const char SCHEMA_V25[] =
+    "CREATE VIRTUAL TABLE song_strings USING fts5(key UNINDEXED, text);";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23, SCHEMA_V24};
+                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23, SCHEMA_V24, SCHEMA_V25};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -459,6 +464,7 @@ static const char* const SCHEMA_FINAL[] = {
     "CREATE TRIGGER songs_ai AFTER INSERT ON songs BEGIN INSERT INTO song_fts(rowid, name, artist, format, path) VALUES(new.id, new.name, new.artist, new.format, new.path);END;",
     "CREATE TRIGGER songs_ad AFTER DELETE ON songs BEGIN INSERT INTO song_fts(song_fts, rowid, name, artist, format, path) VALUES('delete', old.id, old.name, old.artist, old.format, old.path);END;",
     "CREATE TRIGGER songs_au AFTER UPDATE ON songs BEGIN INSERT INTO song_fts(song_fts, rowid, name, artist, format, path) VALUES('delete', old.id, old.name, old.artist, old.format, old.path); INSERT INTO song_fts(rowid, name, artist, format, path) VALUES(new.id, new.name, new.artist, new.format, new.path);END;",
+    "CREATE VIRTUAL TABLE song_strings USING fts5(key UNINDEXED, text);",
     "CREATE TABLE songdb_cache(key TEXT PRIMARY KEY, authors TEXT, fetched INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;",
     "CREATE TABLE song_composers(song_key TEXT NOT NULL, canon TEXT NOT NULL, display TEXT NOT NULL, tag INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(song_key, canon)) WITHOUT ROWID;",
     "CREATE INDEX song_composers_canon ON song_composers(canon);",

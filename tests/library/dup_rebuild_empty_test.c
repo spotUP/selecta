@@ -19,7 +19,8 @@
 /* I1417: v21 (4 more, already over the old bound) and v22 (BEGIN, index, search_cache delete, user_version write, COMMIT = 5). */
 /* I1432: v23 (ratings from liked): BEGIN, the INSERT, the DELETE, the user_version write, COMMIT = 5 more. */
 /* I774m: v24 (uade key, channels, publisher): BEGIN, 3 ALTERs, the user_version write, COMMIT = 6 more. */
-#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5 + 5 + 6)
+/* I774p: v25 (song_strings): BEGIN, the table, the user_version write, COMMIT = 4, plus 9 statements SQLite runs inside CREATE VIRTUAL TABLE fts5 (shadow tables _data _idx _content _docsize _config and their initial rows; measured 57 total). */
+#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5 + 5 + 6 + 4 + 9)
 
 static int g_fail;
 static int g_stmts;
@@ -86,7 +87,7 @@ int main(int argc, char** argv) {
     run(db,
         "DROP TRIGGER IF EXISTS source_songs_state_ad; DROP TABLE source_state; DROP INDEX songs_dup_of; DROP TABLE dup_pick;"
         "ALTER TABLE songs DROP COLUMN dup_of; ALTER TABLE songs DROP COLUMN dup_members;"
-        "ALTER TABLE songs DROP COLUMN uade_key; ALTER TABLE songs DROP COLUMN channels; ALTER TABLE songs DROP COLUMN publisher; PRAGMA user_version=17;");
+        "ALTER TABLE songs DROP COLUMN uade_key; ALTER TABLE songs DROP COLUMN channels; ALTER TABLE songs DROP COLUMN publisher; DROP TABLE song_strings; PRAGMA user_version=17;");
     CHECK(sel_schema_version(db) == 17);
 
     /* v18 on an empty table. */

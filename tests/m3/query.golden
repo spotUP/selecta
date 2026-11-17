@@ -42,5 +42,5 @@ publisher:x	SELECT songs.key FROM songs WHERE COALESCE(songs.publisher, '') LIKE
 release:x	SELECT songs.key FROM songs WHERE COALESCE(songs.album, '') LIKE ? ESCAPE '\'	s:%x%
 found:aminet	SELECT songs.key FROM songs WHERE (0 AND ? IS NOT NULL)	s:aminet
 sametune:x	SELECT songs.key FROM songs WHERE (0 AND ? IS NOT NULL)	s:x
-text:x	SELECT songs.key FROM songs WHERE (0 AND ? IS NOT NULL)	s:x
+text:x	SELECT songs.key FROM songs WHERE songs.key IN (SELECT key FROM song_strings WHERE song_strings MATCH ?)	s:"x"*
 text:	ERROR bad_value	-
