@@ -959,7 +959,7 @@ static void mui_open_url(const char* url) {
         register const char* a0 __asm("a0") = url;
         register const void* a1 __asm("a1") = NULL;
         register LONG d0 __asm("d0");
-        __asm volatile("jsr -30(%%a6)" : "=r"(d0) : "r"(a6), "r"(a0), "r"(a1) : "d1", "memory", "cc");
+        __asm volatile("jsr -30(%%a6)" : "=r"(d0), "+r"(a0), "+r"(a1) : "r"(a6) : "d1", "memory", "cc"); /* d0-d1/a0-a1 scratch per LVO ABI */
         (void)d0;
     }
     CloseLibrary(b);
