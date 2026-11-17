@@ -3411,7 +3411,12 @@ static void test_cover_image(void) {
                   strstr(cls, "WriteChunkyPixels(_rp(obj)") != NULL && strstr(cls, "canvas_aga_image(obj, d)") != NULL,
               "the AGA cover is not pens + chunky draw with release");
     }
-    CHECK(strstr(src, "set(s->col_photo_box, MUIA_ShowMe, have ? TRUE : FALSE)") != NULL, "the photo panel is not hidden without a photo");
+    CHECK(strstr(src, "set(s->col_photo_box, MUIA_ShowMe, s->col_photo_have ? TRUE : FALSE)") != NULL, "the photo panel is not hidden without a photo");
+    /* I1440q7: a cover that lands after the page synced shows without reopening: retried when library_serial moves, once per serial, only while photo-less */
+    CHECK(strstr(src, "mui_col_photo_sync(s, pg, st->library_serial);\n    }\n    if (col) { /* I1440n3") != NULL &&
+              strstr(src, "!s->col_photo_have && s->col_photo != NULL && st->library_serial != s->col_photo_lib") != NULL &&
+              strstr(src, "s->col_photo_lib = lib_serial;") != NULL,
+          "the composer photo is not retried when the library serial moves");
     CHECK(strstr(cls, "d->img != NULL ? MUI_ART_DATATYPE : MUI_ART_COVER") != NULL, "the canvas does not draw the real image with the generated fallback");
 }
 

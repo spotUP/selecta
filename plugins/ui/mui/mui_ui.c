@@ -260,6 +260,8 @@ typedef struct mui_state {
     const sel_ui_art* art;          /* I1440q3: the library cover source, NULL without a library */
     Object* col_photo_box;          /* I1440q5: composer page photo panel (RTG and AGA, I1440q4) */
     Object* col_photo;              /* I1440q5: its cover canvas holding the photo words */
+    int col_photo_have;             /* I1440q7: the photo panel holds a photo */
+    uint32_t col_photo_lib;         /* I1440q7: library_serial the photo was last looked up for */
     char np_img_path[256];          /* I1440q3: the song whose real cover np_cover and bar_cover hold */
     Object* np_cover;               /* I1399d: Now Playing art canvas, detail slot (NULL: placeholder) */
     Object* bar_cover;              /* I1399d: the same cover in the player bar */
@@ -2937,6 +2939,31 @@ static void mui_col_briefs(mui_state* s, const sel_collection_page* pg, int col)
     (void)sel_uim_briefs_post(&s->col_brf, s->engine, pg);
 }
 
+/* I1440q5: as the desktop (col_round_art): a composer page with a DeepSID header shows the cover of its first song. I1440q7: the cover blob
+ * may land after the page first synced (fetched on demand); every commit moves library_serial (the desktop's lib_serial_seen), so
+ * mui_route_sync calls this again for a page still without a photo when that serial moved. */
+static void mui_col_photo_sync(mui_state* s, const sel_collection_page* pg, uint32_t lib_serial) {
+    uint32_t* px;
+    ULONG par = 0;
+    if (s->col_photo == NULL) {
+        return;
+    }
+    s->col_photo_lib = lib_serial;
+    px = pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && pg->about[0] != '\0' && pg->songs > 0u && pg->rows != NULL && !mui_col_groups(pg)
+             ? mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE) : NULL;
+    s->col_photo_have = px != NULL;
+    mui_canvas_set_image(s->col_photo, px, MUI_COVER_EDGE);
+    free(px);
+    GetAttr(MUIA_Parent, s->col_photo_box, &par);
+    if (par != 0) {
+        DoMethod((Object*)par, MUIM_Group_InitChange);
+    }
+    set(s->col_photo_box, MUIA_ShowMe, s->col_photo_have ? TRUE : FALSE);
+    if (par != 0) {
+        DoMethod((Object*)par, MUIM_Group_ExitChange);
+    }
+}
+
 /* I794: the route history drives the top bar Back / Forward state and which of the two main views shows: the collection page (P3) when
  * the history is on an album, artist or composer page the engine has built, else the main list (Home, Show all, doors). */
 static void mui_route_sync(mui_state* s, const sel_state* st) {
@@ -2972,22 +2999,7 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         mui_text_set(s->col_title, s->col_title_buf);
         mui_text_set(s->col_meta, s->col_meta_buf);
         mui_col_about_sync(s, pg);
-        if (s->col_photo != NULL) { /* I1440q5: as the desktop (col_round_art): a composer page with a DeepSID header shows the cover of its first song */
-            uint32_t* px = pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && pg->about[0] != '\0' && pg->songs > 0u && pg->rows != NULL && !mui_col_groups(pg)
-                               ? mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE) : NULL;
-            ULONG par = 0;
-            int have = px != NULL;
-            mui_canvas_set_image(s->col_photo, px, MUI_COVER_EDGE);
-            free(px);
-            GetAttr(MUIA_Parent, s->col_photo_box, &par);
-            if (par != 0) {
-                DoMethod((Object*)par, MUIM_Group_InitChange);
-            }
-            set(s->col_photo_box, MUIA_ShowMe, have ? TRUE : FALSE);
-            if (par != 0) {
-                DoMethod((Object*)par, MUIM_Group_ExitChange);
-            }
-        }
+        mui_col_photo_sync(s, pg, st->library_serial);
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
         {
@@ -2996,6 +3008,9 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
                 SetAttrs(s->col_list, UPA_List_First, (ULONG)first, TAG_DONE);
             }
         }
+    }
+    if (col && !s->col_photo_have && s->col_photo != NULL && st->library_serial != s->col_photo_lib) { /* I1440q7: a cover that landed later */
+        mui_col_photo_sync(s, pg, st->library_serial);
     }
     if (col) { /* I1440n3: the Tag button follows the page's tags and the active tag; shown only when there is something to pick or clear */
         char tl[96];
