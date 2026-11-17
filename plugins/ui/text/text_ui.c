@@ -813,6 +813,21 @@ static int tui_page_key(tui* u, const txt_key* k) {
         u->pg_cur -= u->pg_cur > 0u;
     } else if (k->code == TXT_KEY_DOWN || k->code == 'j') {
         u->pg_cur += u->pg_cur + 1u < n;
+    } else if ((k->code == 't' || k->code == 'x') && u->pg == TUI_PAGE_COLLECTION) { /* I1440n3: t = next tag (All Tags after the last), x = All Tags */
+        const sel_collection_page* pg = sel_engine_state(u->engine)->collection;
+        char tag[64], line[128];
+        if (pg == NULL) {
+            return 0;
+        }
+        if (k->code == 't') {
+            sel_uim_tag_next(pg, pg->tag, tag, sizeof tag);
+        } else {
+            tag[0] = '\0';
+        }
+        sel_uim_tag_line(tag, line, sizeof line);
+        tui_send(u, line);
+        u->pg_cur = 0u;
+        snprintf(u->cmd.status, sizeof u->cmd.status, "Tag filter: %s", tag[0] != '\0' ? tag : "All Tags");
     } else if (k->code == 13u) {
         tui_page_activate(u);
     } else if (k->code == 27u || k->code == 127u) {
@@ -1022,6 +1037,12 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
         if (ready && pg->sub[0] != '\0') {
             size_t at = strlen(buf);
             snprintf(buf + at, sizeof buf - at, "  - %s", pg->sub);
+        }
+        if (ready && (pg->tag[0] != '\0' || pg->tags[0] != '\0')) { /* I1440n3: the DeepSID tag filter, T cycles it, X clears it */
+            char tl[96];
+            size_t at = strlen(buf);
+            sel_uim_tagchip_label(pg->tag, tl, sizeof tl);
+            snprintf(buf + at, sizeof buf - at, "  [%s]", tl);
         }
         tui_ptext(u, 1, 2, buf, width - 1u, label);
         if (ready && pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* I1440o: the composer's DeepSID header, one "Label value" line each; Link rows are numbered */

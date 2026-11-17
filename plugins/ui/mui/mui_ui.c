@@ -195,6 +195,8 @@ typedef struct mui_state {
     Object* col_page;               /* I794 (P3): album, artist or composer page: header, meta line and the song AAList; replaces the main list while shown */
     Object* col_list;
     Object* col_artist;             /* the Artist link of an album page (META_ARTIST) */
+    Object* col_tag;                /* I1440n3: the Tag button, "Tag" or "Tag: <name>", shown when the page has DeepSID tags */
+    char col_tag_buf[96];           /* the caption col_tag shows now */
     Object* col_title;
     Object* col_meta;
     Object* col_about_grp;          /* I1440q: the composer page's DeepSID header: one label / value row per about line, shown while it has a line */
@@ -619,6 +621,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_NAV_FWD 0x2802L    /* I794: top bar Forward */
 #define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
 #define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
+#define CTL_COL_TAG 0x2814L    /* I1440n3: the Tag button of a collection page cycles the DeepSID tag filter (All Tags first) */
 #define CTL_NP_TOGGLE 0x2805L  /* I798 (T2, R3): Hide / Show Now Playing at the right end of the top bar */
 #define CTL_PAL_BTN 0x2806L    /* I798 (O1): the Commands button opening the palette window */
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
@@ -1856,6 +1859,8 @@ static Object* mui_col_page_group(mui_state* s) {
     s->col_title = mui_aatext(s->col_title_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
     s->col_meta = mui_aatext(s->col_meta_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
     s->col_artist = mui_make_button_w("Artist", "Artist", CTL_COL_ARTIST, 0);
+    s->col_tag = mui_make_button_w("Tag", "Tag", CTL_COL_TAG, 0);
+    snprintf(s->col_tag_buf, sizeof s->col_tag_buf, "Tag");
     memset(&sp, 0, sizeof sp);
     sp.active = -1;
     sp.row = mui_col_row;
@@ -1863,12 +1868,14 @@ static Object* mui_col_page_group(mui_state* s) {
     sp.max_rows = 12;
     sp.double_pick = 1;
     lg = mui_aalist_new(&sp, &s->col_list);
-    if (g == NULL || head == NULL || s->col_title == NULL || s->col_meta == NULL || s->col_artist == NULL || lg == NULL || s->col_list == NULL) {
+    if (g == NULL || head == NULL || s->col_title == NULL || s->col_meta == NULL || s->col_artist == NULL || s->col_tag == NULL || lg == NULL || s->col_list == NULL) {
         return NULL;
     }
     DoMethod(s->col_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_LIST);
     DoMethod(head, OM_ADDMEMBER, s->col_title);
     DoMethod(head, OM_ADDMEMBER, s->col_artist);
+    DoMethod(head, OM_ADDMEMBER, s->col_tag);
+    set(s->col_tag, MUIA_ShowMe, FALSE);
     DoMethod(g, OM_ADDMEMBER, head);
     DoMethod(g, OM_ADDMEMBER, s->col_meta);
     s->col_about_grp = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
@@ -2903,6 +2910,16 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
                 SetAttrs(s->col_list, UPA_List_First, (ULONG)first, TAG_DONE);
             }
         }
+    }
+    if (col) { /* I1440n3: the Tag button follows the page's tags and the active tag; shown only when there is something to pick or clear */
+        char tl[96];
+        int show = pg->tag[0] != '\0' || sel_uim_tag_count(pg) > 0u;
+        sel_uim_tagchip_label(pg->tag, tl, sizeof tl);
+        if (strcmp(tl, s->col_tag_buf) != 0) {
+            snprintf(s->col_tag_buf, sizeof s->col_tag_buf, "%s", tl);
+            mui_caption_set(s->col_tag, s->col_tag_buf);
+        }
+        set(s->col_tag, MUIA_ShowMe, show ? TRUE : FALSE);
     }
     mui_col_briefs(s, pg, col);
     mui_pages_sync(s, st, cur, col);
@@ -4122,6 +4139,14 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id == CTL_NAV_BACK || id == CTL_NAV_FWD) {
         mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1, mui_route_send, s); /* I794 (T1) */
+    } else if (id == CTL_COL_TAG) { /* I1440n3: All Tags, then each tag of the page, then All Tags again (MUI 3.8 has no popup; the button cycles) */
+        const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
+        char tag[64], line[128];
+        if (pg != NULL && (pg->tag[0] != '\0' || sel_uim_tag_name(pg, 0u) != NULL)) { /* nothing to pick and nothing to clear: no line */
+            sel_uim_tag_next(pg, pg->tag, tag, sizeof tag);
+            sel_uim_tag_line(tag, line, sizeof line);
+            (void)mui_engine_line(s, line);
+        }
     } else if (id == CTL_COL_ARTIST) {
         const sel_collection_page* pg = sel_engine_state(s->engine)->collection; /* META_ARTIST: the album page's artist link */
         if (pg != NULL && pg->sub[0] != '\0') {

@@ -3147,6 +3147,25 @@ static void test_col_about(void) {
     CHECK(strstr(src, "mui_col_about_sync(s, pg);") != NULL && strstr(src, "sel_uim_about_line(about") != NULL, "the page change does not fill the about rows from the engine");
 }
 
+/* I1440n3: the Tag button sits in the collection page head next to Artist, is shown only when the page has tags or one is active, cycles through
+ * the shared sel_uim_tag_next (All Tags first after the last tag) and sends the shared COLLECTION_TAG line; no inline list or label rule. */
+static void test_col_tag(void) {
+    char *src = ui_source(), *grp, *end, *handler, *sync;
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    grp = strstr(src, "static Object* mui_col_page_group(");
+    end = grp != NULL ? strstr(grp, "I795 (P1): row `row` of a Home shelf") : NULL;
+    CHECK(grp != NULL && end != NULL, "mui_col_page_group not found");
+    CHECK(grp != NULL && end != NULL && strstr(grp, "CTL_COL_TAG") != NULL && strstr(grp, "DoMethod(head, OM_ADDMEMBER, s->col_tag)") != NULL && strstr(grp, "DoMethod(head, OM_ADDMEMBER, s->col_tag)") < end, "the Tag button is not in the collection page head");
+    handler = strstr(src, "id == CTL_COL_TAG");
+    CHECK(handler != NULL && strstr(handler, "sel_uim_tag_next(pg, pg->tag") != NULL && strstr(handler, "sel_uim_tag_line(tag") != NULL && strstr(handler, "mui_engine_line(s, line)") != NULL, "the Tag button does not cycle through the shared helper and send COLLECTION_TAG");
+    sync = strstr(src, "the Tag button follows the page's tags");
+    CHECK(sync != NULL && strstr(sync, "sel_uim_tagchip_label(pg->tag") != NULL && strstr(sync, "MUIA_ShowMe") != NULL, "the Tag caption is not set from the shared label");
+    CHECK(strstr(src, "MUIC_Cycle") == NULL && strstr(src, "MUIC_Popup") == NULL, "MUI 4 / 5 style classes are used (MUI 3.8 only)");
+}
+
 /* I1440r: Song Information shows the engine's catalogue / DeepSID rows (st->panel, the Mac and text source) after the meta tags and before the
  * subsong line, tidied by the shared sel_uim_tidy_info; no parsing in MUI. */
 static void test_songinfo_panel(void) {
@@ -4237,6 +4256,8 @@ int main(int argc, char** argv) {
         test_volume_row();
     } else if (strcmp(argv[1], "col-about") == 0) {
         test_col_about();
+    } else if (strcmp(argv[1], "col-tag") == 0) {
+        test_col_tag();
     } else if (strcmp(argv[1], "songinfo-panel") == 0) {
         test_songinfo_panel();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {

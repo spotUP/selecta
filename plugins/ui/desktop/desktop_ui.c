@@ -3115,25 +3115,13 @@ static const char* song_menu_label(const desk* d, int32_t k) {
     return sel_uim_song_menu_label((uint32_t)k, d->sm_ref.removable != 0);
 }
 
-/* I1440n2: the tag chip's list is the page's own distinct tags ("a\0b\0\0", published by the engine), at most TAG_MENU_MAX shown.
- * shortcut: a page with more distinct tags shows the first TAG_MENU_MAX, add a scrolling list when a page needs it. */
-#define TAG_MENU_MAX 16u
+/* I1440n2: the tag chip's list is the page's own distinct tags, shared with the text and MUI UIs (sel_uim_tag_name, I1440n3). */
 static const char* tag_menu_name(const desk* d, uint32_t k) {
-    const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
-    const char* p = pg != NULL ? pg->tags : "";
-    while (*p != '\0' && k > 0u) {
-        p += strlen(p) + 1u;
-        k--;
-    }
-    return *p != '\0' ? p : NULL;
+    return sel_uim_tag_name(sel_engine_state(d->engine)->collection, k);
 }
 
 static uint32_t tag_menu_count(const desk* d) {
-    uint32_t n = 0u;
-    while (n < TAG_MENU_MAX && tag_menu_name(d, n) != NULL) {
-        n++;
-    }
-    return n;
+    return sel_uim_tag_count(sel_engine_state(d->engine)->collection);
 }
 
 /* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
@@ -5571,7 +5559,7 @@ static void col_cover_refresh(desk* d) {
 static void col_tag_set(desk* d, const char* tag) {
     char line[128];
     snprintf(d->col_tag, sizeof d->col_tag, "%s", tag);
-    snprintf(line, sizeof line, "COLLECTION_TAG \"%s\"", d->col_tag);
+    sel_uim_tag_line(d->col_tag, line, sizeof line);
     desk_send(d, line);
     d->pls_scroll = 0u;
     d->repaint = 1;
@@ -6680,7 +6668,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         if (col_tag_shown(d)) { /* I1440n2: the active tag fills the chip with the accent */
             char tl[96];
             int on = d->col_tag[0] != '\0';
-            snprintf(tl, sizeof tl, on ? "Tag: %s" : "Tag", d->col_tag);
+            sel_uim_tagchip_label(d->col_tag, tl, sizeof tl);
             draw_button(d, col_tag_rect(d, mn), on ? accent : surf, tl, 13, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : text);
         }
         if (col_field_shown(d)) {

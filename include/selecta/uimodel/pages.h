@@ -77,6 +77,17 @@ int sel_uim_tile_route(const sel_view_row* r, sel_uim_tile* out);
  * the last pair. Text and MUI draw the header through this; they share the numbering. */
 int sel_uim_about_line(const char* about, uint32_t i, uint32_t max, char* label, size_t lcap, char* value, size_t vcap);
 
+/* I1440n3: the DeepSID tag filter chip of a collection page, one rule for the Mac chip, the text key and the MUI button. The page's tags are
+ * pg->tags ("a\0b\0\0"); at most SEL_UIM_TAG_MAX are offered. */
+#define SEL_UIM_TAG_MAX 16u
+const char* sel_uim_tag_name(const sel_collection_page* pg, uint32_t k); /* tag k from 0, NULL past the last or past SEL_UIM_TAG_MAX */
+uint32_t sel_uim_tag_count(const sel_collection_page* pg);
+void sel_uim_tagchip_label(const char* active, char* buf, size_t cap); /* "Tag" or "Tag: <active>" */
+/* The tag after `active` in the cycle All Tags, tag 0, tag 1 ... back to All Tags; copied to `out` (empty = All Tags). */
+void sel_uim_tag_next(const sel_collection_page* pg, const char* active, char* out, size_t cap);
+/* The engine line for a tag choice (empty clears): COLLECTION_TAG "<name>". */
+void sel_uim_tag_line(const char* tag, char* line, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif
