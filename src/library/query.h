@@ -35,6 +35,9 @@ typedef const char* (*sel_query_view_fn)(void* ctx, const char* name);
 
 /* Compiles `text`. `now` (seconds since the epoch) anchors relative times. `views` may be NULL
  * (then `view:` is an unknown_view error). Returns 1 on success, 0 with out->error set. */
+/* I774p: whether the text: term may use FTS5 MATCH (1, default) or must fall back to LIKE (0). */
+void sel_query_set_fts5(int present);
+
 int sel_query_compile(const char* text, long long now, sel_query_view_fn views, void* ctx, sel_query* out);
 
 #endif

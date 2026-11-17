@@ -340,6 +340,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
         goto fail;
     }
     sel_library_trace(host, "sqlite3_open_v2 done", 0);
+    sel_query_set_fts5(sqlite3_compileoption_used("ENABLE_FTS5")); /* I774p: text: falls back to LIKE without FTS5 */
     sqlite3_busy_handler(lib->db, busy_wait, lib);
     /* I625a8f: one trace line per statement between open_v2 and "migrate begin", so the log says which one pays for the first
      * sqlite_master parse. */

@@ -83,6 +83,10 @@ typedef const sel_tag* (*sel_rp_metadata_fn)(void* state);
 typedef const sel_tag* (*sel_rp_scan_meta_fn)(const uint8_t* data, size_t size, const char* path, char* buf,
                                               size_t buf_n);
 
+/* RP_STRINGS (I774p): optional. Sample names, instrument names and the song message of the song in `data`, one per
+ * line, written NUL-terminated into `buf`; returns the byte count, 0 = none or not loadable. No open, no state. */
+typedef size_t (*sel_rp_strings_fn)(const uint8_t* data, size_t size, char* buf, size_t buf_n);
+
 /* RP_RENDER (RENDER kind only; RP_START gets voices = NULL): interleaved
  * stereo int16 at the rate given to RP_START; returns frames written, less
  * than `frames` only at song end. */

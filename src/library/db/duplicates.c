@@ -12,6 +12,8 @@
 #include "../md5.h"
 #include "../xxh32.h"
 #include "../source.h"
+#include "selecta/registry.h"
+#include "selecta/replayer.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,7 +90,7 @@ static int hash_next(sqlite3* db, int64_t after, int64_t size, const char* base,
     char path[1200];
     int rc = sqlite3_prepare_v2(
         db,
-        "SELECT id, key, path FROM songs WHERE source = 'local' AND (COALESCE(md5, '') = '' OR (uade_key IS NULL AND ?2 <= 0 AND ?3 IS NULL)) AND id > ?1"
+        "SELECT id, key, path FROM songs WHERE source = 'local' AND (COALESCE(md5, '') = '' OR (?2 <= 0 AND ?3 IS NULL AND (uade_key IS NULL OR NOT EXISTS (SELECT 1 FROM song_strings WHERE key = songs.key)))) AND id > ?1"
         " AND (?2 <= 0 OR size = ?2) AND (?2 > 0 OR ?3 IS NULL OR substr(path, -length(?3)) = ?3) ORDER BY id LIMIT 1",
         -1, &st, NULL);
 
@@ -441,6 +443,68 @@ static int uade_fill_id(sel_library* lib, int64_t id) {
     return sel_library_uade_fill(lib, key, NULL, &hit);
 }
 
+/* I774p: the sample and instrument names and the song message of local song `id`, from the first replayer whose probe
+ * accepts the file and that has an RP_STRINGS hook (loaded on demand). A row is stored even when empty, so the idle pass
+ * does not ask the same song twice. */
+#define STRINGS_MAX (64u * 1024u)
+#define STRINGS_FILE_MAX (16u * 1024u * 1024u)
+static int strings_fill_id(sel_library* lib, int64_t id) {
+    sqlite3_stmt* st = NULL;
+    char key[1200], path[1200];
+    uint8_t* data = NULL;
+    char* text = NULL;
+    size_t size = 0, n = 0;
+    uint32_t i, cnt;
+    FILE* f;
+    int rc = sqlite3_prepare_v2(lib->db, "SELECT key, path FROM songs WHERE id = ?1 AND source = 'local'", -1, &st, NULL);
+
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_int64(st, 1, id);
+    rc = sqlite3_step(st);
+    if (rc == SQLITE_ROW) {
+        snprintf(key, sizeof key, "%s", (const char*)sqlite3_column_text(st, 0));
+        snprintf(path, sizeof path, "%s", (const char*)sqlite3_column_text(st, 1));
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_ROW) return rc == SQLITE_DONE ? SQLITE_OK : rc;
+    text = calloc(1, STRINGS_MAX);
+    f = fopen(path, "rb");
+    if (f != NULL && text != NULL) {
+        fseek(f, 0, SEEK_END);
+        size = (size_t)ftell(f);
+        rewind(f);
+        if (size > 0 && size <= STRINGS_FILE_MAX && (data = malloc(size)) != NULL && fread(data, 1, size, f) != size) {
+            free(data);
+            data = NULL;
+        }
+    }
+    if (f != NULL) fclose(f);
+    cnt = data != NULL && lib->registry_count != NULL && lib->registry_get != NULL ? lib->registry_count() : 0u;
+    for (i = 0; i < cnt && n == 0; i++) {
+        const sel_tag* desc = lib->registry_get(i);
+        const sel_tag* hooks;
+        sel_rp_strings_fn fn;
+
+        if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) != SEL_PLUGIN_KIND_REPLAYER) continue;
+        hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+        if (sel_plugin_probe(&hooks, data, size, path) == SEL_PROBE_NO) continue;
+        hooks = sel_plugin_resolve(hooks);
+        fn = hooks != NULL ? (sel_rp_strings_fn)sel_tag_find(hooks, SEL_RP_STRINGS, 0) : NULL;
+        if (fn != NULL) n = fn(data, size, text, STRINGS_MAX);
+    }
+    free(data);
+    rc = sqlite3_prepare_v2(lib->db, "INSERT INTO song_strings(key, text) VALUES(?1, ?2)", -1, &st, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+        sqlite3_bind_text(st, 2, text != NULL ? text : "", -1, SQLITE_STATIC);
+        rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+        rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+    }
+    free(text);
+    return rc;
+}
+
 int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     int rc = SQLITE_MISUSE;
 
@@ -448,7 +512,10 @@ int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* fou
     *id = 0;
     if (op->op == SEL_DUP_HASH) {
         rc = op_hash(lib->db, op, id);
-        if (rc == SQLITE_OK && *id != 0) rc = uade_fill_id(lib, *id); /* I774m: the key is now stored; fill the blanks from the bake */
+        if (rc == SQLITE_OK && *id != 0) {
+            rc = uade_fill_id(lib, *id); /* I774m: the key is now stored; fill the blanks from the bake */
+            if (rc == SQLITE_OK) rc = strings_fill_id(lib, *id); /* I774p */
+        }
     } else if (op->op == SEL_DUP_NEXT && op->row != NULL) {
         rc = op_dup_next(lib->db, op, id);
     } else if (op->op == SEL_BEST_SOURCE && op->out != NULL && op->key != NULL) {

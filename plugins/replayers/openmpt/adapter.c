@@ -303,9 +303,48 @@ static const sel_tag* rp_metadata(void* state) {
     return s->meta;
 }
 
+/* I774p: sample and instrument names plus the message, one per line, for the library's text search. */
+static void add_line(char* buf, size_t cap, size_t* n, const char* v) {
+    size_t l = v != NULL ? strlen(v) : 0u;
+    if (l == 0u || *n + l + 2u > cap) return;
+    memcpy(buf + *n, v, l);
+    *n += l;
+    buf[(*n)++] = '\n';
+    buf[*n] = '\0';
+}
+
+static size_t rp_strings(const uint8_t* data, size_t size, char* buf, size_t buf_n) {
+    openmpt_module* mod;
+    size_t n = 0;
+    int32_t i, cnt;
+    if (buf_n < 2u) return 0;
+    buf[0] = '\0';
+    mod = openmpt_module_create_from_memory2(data, size, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    if (mod == NULL) return 0;
+    cnt = openmpt_module_get_num_samples(mod);
+    for (i = 0; i < cnt; i++) {
+        const char* v = openmpt_module_get_sample_name(mod, i);
+        add_line(buf, buf_n, &n, v);
+        if (v != NULL) openmpt_free_string(v);
+    }
+    cnt = openmpt_module_get_num_instruments(mod);
+    for (i = 0; i < cnt; i++) {
+        const char* v = openmpt_module_get_instrument_name(mod, i);
+        add_line(buf, buf_n, &n, v);
+        if (v != NULL) openmpt_free_string(v);
+    }
+    {
+        const char* v = openmpt_module_get_metadata(mod, "message");
+        add_line(buf, buf_n, &n, v);
+        if (v != NULL) openmpt_free_string(v);
+    }
+    openmpt_module_destroy(mod);
+    return n;
+}
+
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[21];
+static sel_tag g_hooks[22];
 static sel_tag g_desc[5];
 /* SEL_RP_CONFIG list: one entry per option, value = the host config key. */
 static sel_tag g_config[2];
@@ -361,7 +400,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[17], SEL_RP_MIN_CPU, 68020);
     set(&g_hooks[18], SEL_RP_NEEDS_FLOAT, 1);
     set(&g_hooks[19], SEL_RP_CONFIG, (uintptr_t)g_config);
-    set(&g_hooks[20], SEL_TAG_END, 0);
+    set(&g_hooks[20], SEL_RP_STRINGS, SEL_TAG_FN(rp_strings));
+    set(&g_hooks[21], SEL_TAG_END, 0);
     set(&g_config[0], SEL_TAG_USER, (uintptr_t)k_cfg_filter);
     set(&g_config[1], SEL_TAG_END, 0);
 
