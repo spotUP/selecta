@@ -1,0 +1,4 @@
+# I774s: I opens Song Information at 80x25 and nothing else.
+wait 800
+I
+wait 500
