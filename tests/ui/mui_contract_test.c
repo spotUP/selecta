@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 
 #include "mui_aa.h"
+#include "mui_canvas.h"
 #include "mui_iconmap.h"
 #include "mui_aatagmap.h"
 #include "mui_text.h"
@@ -3337,6 +3338,37 @@ static void test_screen_rtg_flag(void) {
           "a hardcoded RTG flag came back");
 }
 
+/* I1440q3: the real cover (library blob, the DeepSID composer photo for SID songs) reaches the MUI canvas: the square crop is centred, and the
+ * Amiga code feeds np_cover and bar_cover from the library cover source and draws the image path (MUI cannot run on the host). */
+static void test_cover_image(void) {
+    static char src[400000], cls[40000];
+    uint32_t in[8], out[4];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    f = fopen(MUI_DIR "/mui_canvas_class.c", "rb");
+    n = f != NULL ? fread(cls, 1, sizeof cls - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    cls[n] = 0;
+    {   /* 4 x 2: columns 1..2 are the centred 2 x 2 square, edge 2 keeps it as is */
+        uint32_t i;
+        for (i = 0; i < 8u; i++) {
+            in[i] = 0xFF000000u | (i * 0x101010u); /* opaque, the blit scaler would blend a transparent word */
+        }
+    }
+    CHECK(mui_image_square(in, 4, 2, out, 2) == 1, "square crop refused a valid image");
+    CHECK(out[0] == in[1] && out[1] == in[2] && out[2] == in[5] && out[3] == in[6], "the crop is not the centred square");
+    CHECK(mui_image_square(NULL, 4, 2, out, 2) == 0 && mui_image_square(in, 0, 2, out, 2) == 0, "bad arguments not refused");
+    CHECK(strstr(src, "s->art = a != NULL ? a->art : NULL;") != NULL, "the library art source is not taken from the open args");
+    CHECK(strstr(src, "mui_canvas_set_image(s->np_cover") != NULL && strstr(src, "mui_canvas_set_image(s->bar_cover") != NULL, "the covers get no real image");
+    CHECK(strstr(cls, "d->img != NULL ? MUI_ART_DATATYPE : MUI_ART_COVER") != NULL, "the canvas does not draw the real image with the generated fallback");
+}
+
 /* I918 step 5: the Visualizer page chooser is the tabs-or-cycle pair sized by sel_uim_viz_tabs_fit, only the shown area steps, the page
  * area may grow tall, and an area without a frame paints the window background instead of keeping stale pixels. The fit rule itself is
  * tested in test_libfilter; this proves the MUI code uses it (MUI cannot run on the host). */
@@ -4284,6 +4316,8 @@ int main(int argc, char** argv) {
         test_aa_aspect();
     } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {
         test_screen_rtg_flag();
+    } else if (strcmp(argv[1], "cover-image") == 0) {
+        test_cover_image();
     } else {
         return 2;
     }

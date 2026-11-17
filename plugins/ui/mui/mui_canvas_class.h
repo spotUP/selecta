@@ -18,6 +18,9 @@ void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_
  * song's cover kind (SEL_COVER_KIND_*), file extension and title, then redraws. RTG draws the generated cover, planar (AGA) fills the kind tint (0x00RRGGBB) and draws the same label and title. */
 Object* mui_canvas_cover_new(int screen_is_rtg);
 void mui_canvas_set_cover(Object* obj, uint32_t kind, uint32_t tint, const char* ext, const char* title);
+/* I1440q3: the real cover words (edge x edge) the single canvas draws instead of the generated cover; the canvas copies it, NULL
+ * returns to the generated cover. */
+void mui_canvas_set_image(Object* obj, const uint32_t* px, int32_t edge);
 /* Grid frames drawn by this object (the rig sentinel). */
 uint32_t mui_canvas_draws(Object* obj);
 /* Writes w x h 0xAARRGGBB words to the rastport at (dx, dy) through Picasso96 (the viz area shares it). */

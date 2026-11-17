@@ -19,8 +19,8 @@ target_include_directories(sel_sdkcheck_mui_ui PRIVATE "${PROJECT_SOURCE_DIR}/pl
 if(SEL_AMIGA)
   # libmui.a (toolchain) holds the out-of-line varargs MUI_NewObject the ApplicationObject/End idiom needs (I508).
   target_link_libraries(sel_plugin_mui_ui PUBLIC mui)
-  target_sources(sel_plugin_mui_ui PRIVATE mui_canvas_class.c mui_vizarea_class.c mui_listview_class.c mui_scrollgroup_class.c mui_keys_class.c mui_aawrap.c) # the AA classes: sel_mcc_static via mui_map
-  target_include_directories(sel_plugin_mui_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
+  target_sources(sel_plugin_mui_ui PRIVATE mui_canvas_class.c mui_vizarea_class.c mui_listview_class.c mui_scrollgroup_class.c mui_keys_class.c mui_aawrap.c mui_cover_image.c) # the AA classes: sel_mcc_static via mui_map
+  target_include_directories(sel_plugin_mui_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared" "${PROJECT_SOURCE_DIR}/third_party/stb") # amiga/p96_write.h; stb_image for mui_cover_image.c
   # I1399a: the cover kind icons for mui_canvas_set_icons. The desktop plugin's sel_gui_icons_baked is not linkable from this plugin
   # (separate LoadSeg module), so the same host bake tool writes a second, small set (16..40 px) under another symbol name.
   include(${PROJECT_SOURCE_DIR}/cmake/host_bake_tools.cmake)
