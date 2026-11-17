@@ -635,6 +635,8 @@ void sel_library_deepsid_kick(sel_library* lib, const char* ref);
 uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
 /* I1440l: "CSDb release" rows (max 6) from a ds_csdb answer: name, group, year, type when present, and the csdb.dk release URL. Pure. Returns rows added. */
 uint32_t sel_deepsid_csdb_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
+/* I1440l2: the release ids (max 6) of a ds_csdb answer (row URL, id and artwork key helpers: selecta/uimodel/csdb.h). */
+uint32_t sel_deepsid_csdb_ids(const char* json, int* ids, uint32_t max);
 /* I1440k: the same rows for the song `ref` from its cached ds_file row; a song with no row yet is kicked (sel_library_deepsid_kick) and shows them on the next read. */
 uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out, uint32_t cap, uint32_t* rows);
 /* I1440j: the composer page header rows (label/value pairs, an empty label ends) from the ds_composer row of the folder of the hvsc: song `ref`; none cached kicks the fetcher. */
