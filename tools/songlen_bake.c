@@ -40,6 +40,7 @@ int main(int argc, char** argv) {
             printf("credit_rows=%ld credit_pool_bytes=%ld credit_bytes=%ld\n", s.credit_rows, s.credit_pool_bytes, s.credit_bytes);
             for (i = 0; i < 5; i++) printf("prov_sources %s=%ld named=%ld\n", kn[i], s.prov_sources[i], s.prov_named[i]);
             printf("prov_pairs=%ld prov_unmapped_rows=%ld prov_bytes=%ld\n", s.prov_pairs, s.prov_unmapped, s.prov_bytes);
+            printf("groups=%ld members=%ld group_bytes=%ld same_bytes=%ld\n", s.groups, s.group_members, s.group_bytes, s.same_bytes);
         }
         return 0;
     }

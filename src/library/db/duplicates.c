@@ -11,6 +11,7 @@
 #include "db_internal.h"
 #include "../md5.h"
 #include "../xxh32.h"
+#include "../uadedb.h"
 #include "../source.h"
 #include "selecta/registry.h"
 #include "selecta/replayer.h"
@@ -505,6 +506,39 @@ static int strings_fill_id(sel_library* lib, int64_t id) {
     return rc;
 }
 
+/* I774o R13: the other library songs whose UADE key sits in the same same-tune group as song `op->key`. Rows: song key. */
+static int op_same_tune(sel_library* lib, const sel_genre_op* op, int64_t* id) {
+    sqlite3_stmt* st = NULL;
+    char keys[16][13], ukey[SEL_UADE_KEY_CHARS + 1u];
+    int n, i, rc;
+    int64_t rows = 0;
+
+    *id = 0;
+    rc = sqlite3_prepare_v2(lib->db, "SELECT uade_key FROM songs WHERE key = ?1 AND uade_key IS NOT NULL", -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+    ukey[0] = '\0';
+    if (sqlite3_step(st) == SQLITE_ROW) snprintf(ukey, sizeof ukey, "%s", (const char*)sqlite3_column_text(st, 0));
+    sqlite3_finalize(st);
+    n = ukey[0] != '\0' ? sel_uadesame_keys(lib->uade_dir, ukey, keys, 16) : 0;
+    for (i = 0; i < n; i++) {
+        rc = sqlite3_prepare_v2(lib->db, "SELECT key FROM songs WHERE uade_key = ?1 AND key <> ?2 ORDER BY id", -1, &st, NULL);
+        if (rc != SQLITE_OK) return rc;
+        sqlite3_bind_text(st, 1, keys[i], -1, SQLITE_STATIC);
+        sqlite3_bind_text(st, 2, op->key, -1, SQLITE_STATIC);
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const char* f[1];
+
+            f[0] = (const char*)sqlite3_column_text(st, 0);
+            rows++;
+            if (op->row(op->row_ctx, f) != 0) break;
+        }
+        sqlite3_finalize(st);
+    }
+    *id = rows;
+    return SQLITE_OK;
+}
+
 int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     int rc = SQLITE_MISUSE;
 
@@ -518,6 +552,8 @@ int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* fou
         }
     } else if (op->op == SEL_DUP_NEXT && op->row != NULL) {
         rc = op_dup_next(lib->db, op, id);
+    } else if (op->op == SEL_SAME_TUNE && op->key != NULL && op->row != NULL) {
+        rc = op_same_tune(lib, op, id);
     } else if (op->op == SEL_BEST_SOURCE && op->out != NULL && op->key != NULL) {
         rc = op_best(lib->db, op, id);
     } else if (op->op == SEL_DUP_PICK && op->out != NULL) {
@@ -717,8 +753,16 @@ void sel_library_hash_stats(sel_library* lib, sel_hash_stats* out) {
 
 typedef struct dup_sink {
     sel_dup_row_fn fn;
+    sel_same_tune_fn same;
     void* ctx;
 } dup_sink;
+
+static int same_row(void* ctx, const char* const* f) {
+    dup_sink* k = ctx;
+
+    k->same(k->ctx, f[0]);
+    return 0;
+}
 
 static int dup_row(void* ctx, const char* const* f) {
     dup_sink* k = ctx;
@@ -728,7 +772,7 @@ static int dup_row(void* ctx, const char* const* f) {
 }
 
 int sel_library_duplicates(sel_library* lib, sel_dup_row_fn fn, void* ctx) {
-    dup_sink k = {fn, ctx};
+    dup_sink k = {fn, NULL, ctx};
     sel_genre_op op;
     int64_t rows = 0;
 
@@ -736,6 +780,22 @@ int sel_library_duplicates(sel_library* lib, sel_dup_row_fn fn, void* ctx) {
     memset(&op, 0, sizeof op);
     op.op = SEL_DUP_NEXT;
     op.row = dup_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
+}
+
+int sel_library_same_tune(sel_library* lib, const char* song_key, sel_same_tune_fn fn, void* ctx) {
+    dup_sink k = {NULL, NULL, ctx};
+    sel_genre_op op;
+    int64_t rows = 0;
+
+    if (lib == NULL || song_key == NULL || fn == NULL) return -1;
+    k.same = fn;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_SAME_TUNE;
+    op.key = song_key;
+    op.row = same_row;
     op.row_ctx = &k;
     if (sel_genre_call(lib, &op, &rows) < 0) return -1;
     return (int)rows;
