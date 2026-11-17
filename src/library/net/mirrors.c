@@ -40,6 +40,7 @@ static const builtin BUILTIN[] = {
     {"modulespl", "https://www.modules.pl/modules/"},
     {"aminet", "https://aminet.net/"},
     {"turran", "https://uhc.megaburken.net/turran/"},
+    {"uadedata", "https://hippoplayer.se/uadedata/"}, /* I774o: Selecta's UADE data set, static files + manifest.txt */
 };
 
 static int add_base(sel_mirror_set* s, const char* base, size_t n) {
@@ -111,7 +112,11 @@ unsigned sel_mirrors_init(sel_mirror_set* s, const char* source, int amiga_route
     }
     if (amiga_route) {
         char base[SEL_MIRROR_URL_MAX];
-        snprintf(base, sizeof base, "%s/api/mirror/%s/", sel_devilbox_base(), source);
+        if (strcmp(source, "uadedata") == 0) { /* I774o: static files on the server itself (plain http there), not a proxied upstream */
+            snprintf(base, sizeof base, "%s/uadedata/", sel_devilbox_base());
+        } else {
+            snprintf(base, sizeof base, "%s/api/mirror/%s/", sel_devilbox_base(), source);
+        }
         add_base(s, base, strlen(base));
         return s->count;
     }

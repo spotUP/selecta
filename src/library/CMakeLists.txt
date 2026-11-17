@@ -27,7 +27,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/amiga_vfs.c db/appdir.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/search_cache.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/srcmirror.c db/items.c db/similar.c db/duplicates.c db/art_scrape.c db/deepsid_info.c db/deepsid_list.c db/testgen.c db/test_slow.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c uadedb.c siinfo_lines.c xxh32.c lyrics.c query.c regex.c share.c)
+target_sources(selecta_library PRIVATE db/amiga_vfs.c db/appdir.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/search_cache.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/srcmirror.c db/items.c db/similar.c db/duplicates.c db/art_scrape.c db/deepsid_info.c db/deepsid_list.c db/testgen.c db/test_slow.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c uadedata.c meta_utf8.c radio.c composer.c uadedb.c siinfo_lines.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 # The test knobs and stream_open.c call usleep and popen, net/backoff.c calls nanosleep with struct timespec, and net/devilbox.c calls fchmod; -std=c99 hides all of them on glibc (I990b, I787 items.c, I1130b, CI run 42250330619 backoff.c, CI run 42254434695 devilbox.c); _DEFAULT_SOURCE restores them, ignored on macOS.
 set_source_files_properties(db/test_slow.c db/items.c stream_open.c net/backoff.c net/devilbox.c sources/sync_net.c PROPERTIES COMPILE_DEFINITIONS _DEFAULT_SOURCE)
@@ -124,6 +124,19 @@ if(NOT SEL_AMIGA)
     add_custom_target(songlengths ALL DEPENDS ${CMAKE_BINARY_DIR}/songlengths.bin)
   else()
     message(STATUS "Song length database skipped: pass -DSELECTA_SONGLENGTHS_TSV=<songlengths.tsv> to bake songlengths.bin")
+  endif()
+  # I774o R12: with -DSELECTA_UADE_TOOLS_DIR=<audacious-uade-tools checkout> the uadedata target bakes the whole UADE data set
+  # (songlengths, uadeinfo, uademd5, uadecredits, uadeprov) into <build>/uadedata/, ready to bundle or serve; the in-app
+  # downloader (uadedata.c) only updates these files.
+  set(SELECTA_UADE_TOOLS_DIR "" CACHE PATH "audacious-uade-tools checkout to bake the UADE data set from")
+  if(SELECTA_UADE_TOOLS_DIR AND IS_DIRECTORY "${SELECTA_UADE_TOOLS_DIR}")
+    add_custom_command(
+      OUTPUT ${CMAKE_BINARY_DIR}/uadedata/uadeinfo.bin
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/uadedata
+      COMMAND uadedb_bake "${SELECTA_UADE_TOOLS_DIR}" ${CMAKE_BINARY_DIR}/uadedata
+      DEPENDS uadedb_bake
+      COMMENT "Baking the UADE data set")
+    add_custom_target(uadedata ALL DEPENDS ${CMAKE_BINARY_DIR}/uadedata/uadeinfo.bin)
   endif()
 endif()
 
