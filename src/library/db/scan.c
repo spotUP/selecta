@@ -22,7 +22,8 @@ static const char SQL_SONG[] =
                          " AND NOT " SEL_SONG_NAME_PLACEHOLDER("name", "path") " THEN name ELSE excluded.name END")
     ", artist=" SEL_SONG_TAG_KEEP_AT(artist, "excluded.key",
                                      "CASE WHEN " SAME_FILE " AND COALESCE(excluded.artist, '') = '' THEN artist ELSE excluded.artist END")
-    ", album=COALESCE(excluded.album, album), format=excluded.format, year=excluded.year,"
+    ", album=" SEL_SONG_TAG_KEEP_AT(album, "excluded.key", "COALESCE(excluded.album, album)")
+    ", format=excluded.format, year=" SEL_SONG_TAG_KEEP_AT(year, "excluded.key", "excluded.year") ","
     " duration_ms=CASE WHEN " SAME_FILE " AND excluded.duration_ms IS NULL THEN duration_ms ELSE excluded.duration_ms END,"
     " md5=excluded.md5, size=excluded.size";
 #undef SAME_FILE

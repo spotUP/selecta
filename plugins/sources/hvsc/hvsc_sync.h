@@ -10,6 +10,8 @@
 
 #define SEL_HVSC_LISTING "hvsc_listing.txt"    /* one path per line: `/MUSICIANS/H/Hubbard_Rob/Commando.sid` */
 #define SEL_HVSC_SONGLENGTHS "Songlengths.md5" /* `; /PATH` comment line, then `<md5>=<m:ss[.mmm]> ...` */
+#define SEL_HVSC_CREDITS "hvsc_credits.txt"    /* I1443b: `/PATH` tab author tab released, from hippoplayer.se */
+#define SEL_HVSC_CREDITS_URL "https://hippoplayer.se/api/deepsid/credits"
 #define SEL_HVSC_STIL "STIL.txt"               /* `/PATH` line, COMMENT:/TITLE:/ARTIST:/AUTHOR:/NAME:, `(#n)` */
 /* Where Modland serves the HVSC tree: <modland root>/pub/modules/HVSC/<hvsc path>. */
 #define SEL_HVSC_HOST_DIR "pub/modules/HVSC/"

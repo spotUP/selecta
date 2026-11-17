@@ -19,6 +19,10 @@ typedef struct sel_catalogue_song {
     int32_t duration_ms; /* 0 = unknown */
     int32_t year;        /* 0 = unknown */
     const char* cover_url; /* I1401d: http(s) image URL the song's source offers as its cover; NULL or "" = none */
+    /* I1443b: a C64 SID's raw header author and released text; the host splits them into artist, group (album) and year with
+     * sel_sid_credit. NULL = none. A source that sets them zeroes the struct first. */
+    const char* sid_author;
+    const char* sid_released;
 } sel_catalogue_song;
 
 /* Side data for a song that already has a row (HVSC Songlengths.md5 and STIL): stickers are name/value notes stored
