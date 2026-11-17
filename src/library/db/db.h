@@ -633,6 +633,8 @@ void sel_library_deepsid_kick(sel_library* lib, const char* ref);
  * empty label (the list keeps ending in one): tag groups (Genre tags, Production tags, Origin tags, Digi tags, Other tags), Player, Editor, Chip, Clock, Technical
  * (load, init and play address), Compo placings ("2nd at Assembly 1994, C64 music"), GB64 game. *rows grows by the rows added. Pure: no DB. Returns rows added. */
 uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
+/* I1440l: "CSDb release" rows (max 6) from a ds_csdb answer: name, group, year, type when present, and the csdb.dk release URL. Pure. Returns rows added. */
+uint32_t sel_deepsid_csdb_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
 /* I1440k: the same rows for the song `ref` from its cached ds_file row; a song with no row yet is kicked (sel_library_deepsid_kick) and shows them on the next read. */
 uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out, uint32_t cap, uint32_t* rows);
 const char* sel_json_value(const char* p);

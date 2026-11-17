@@ -10,6 +10,7 @@
 #define DS_ROW_MAX 256u
 #define DS_PLACINGS_MAX 6u
 #define DS_TAG_GROUPS 5u
+#define DS_CSDB_MAX 6u
 #define DS_JSON_CAP 65536u
 
 /* Appends one pair before the closing empty label; 0 when value is empty or it does not fit. */
@@ -148,6 +149,44 @@ uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* r
     return added;
 }
 
+/* I1440l: "CSDb release" rows from a ds_csdb answer {csdbId, releases[{id,name,screenshot[,group,year,type]}]}. The server sends id, name and screenshot today; group, year and type are shown when present. */
+uint32_t sel_deepsid_csdb_rows(const char* json, char* out, uint32_t cap, uint32_t* rows) {
+    const char *p, *end, *rel, *next;
+    char seg[512], name[96], grp[64], type[32], row[DS_ROW_MAX];
+    uint32_t n = 0, added = 0;
+    size_t len;
+    int id, year;
+
+    if (json == NULL || out == NULL) return 0;
+    p = strstr(json, "\"releases\"");
+    p = p != NULL ? sel_json_value(p + 10) : NULL;
+    end = p != NULL && *p == '[' ? strrchr(p, ']') : NULL;
+    while (end != NULL && n < DS_CSDB_MAX && (rel = strstr(p, "\"id\"")) != NULL && rel < end) {
+        next = strstr(rel + 4, "\"id\"");
+        len = next != NULL && next < end ? (size_t)(next - rel) : (size_t)(end - rel);
+        if (len >= sizeof seg) len = sizeof seg - 1u;
+        memcpy(seg, rel, len);
+        seg[len] = '\0';
+        p = rel + 4;
+        id = num_of(seg, "id");
+        year = num_of(seg, "year");
+        name[0] = grp[0] = type[0] = '\0';
+        sel_json_str(seg, "name", name, sizeof name);
+        sel_json_str(seg, "group", grp, sizeof grp);
+        sel_json_str(seg, "type", type, sizeof type);
+        if (id <= 0 || name[0] == '\0') continue;
+        snprintf(row, sizeof row, "%s", name);
+        if (grp[0] != '\0') snprintf(row + strlen(row), sizeof row - strlen(row), ", %s", grp);
+        if (year > 0) snprintf(row + strlen(row), sizeof row - strlen(row), ", %d", year);
+        if (type[0] != '\0') snprintf(row + strlen(row), sizeof row - strlen(row), ", %s", type);
+        snprintf(row + strlen(row), sizeof row - strlen(row), " (csdb.dk/release/?id=%d)", id); /* the panel has no open-URL action or image slot: the URL is shown as text */
+        added += (uint32_t)put(out, cap, "CSDb release", row);
+        n++;
+    }
+    if (rows != NULL) *rows += added;
+    return added;
+}
+
 static int art_ask(sel_library* lib, const sel_art_op* op) {
     sel_message reply;
 
@@ -182,6 +221,12 @@ uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out,
     if (n > 0) {
         js[n > (int)DS_JSON_CAP ? (int)DS_JSON_CAP : n] = '\0';
         added = sel_deepsid_rows(js, out, cap, rows);
+        op.kind = "ds_csdb"; /* written by the same kick as ds_file, so no second kick */
+        n = art_ask(lib, &op);
+        if (n > 0) {
+            js[n > (int)DS_JSON_CAP ? (int)DS_JSON_CAP : n] = '\0';
+            added += sel_deepsid_csdb_rows(js, out, cap, rows);
+        }
     } else {
         sel_library_deepsid_kick(lib, ref); /* queued on the job thread; the next panel read shows the rows */
     }
