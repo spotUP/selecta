@@ -109,7 +109,7 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
     } else if (op->op == SEL_SIMILAR_NEXT || op->op == SEL_ALSOBY_NEXT) {
         rc = sel_library_similar_op(lib, op, &found, &id);
     } else if (op->op == SEL_DUP_HASH || op->op == SEL_DUP_NEXT || op->op == SEL_BEST_SOURCE || op->op == SEL_DUP_PICK
-               || op->op == SEL_DUP_STORE) {
+               || op->op == SEL_DUP_STORE || op->op == SEL_SAME_TUNE) {
         rc = sel_library_duplicates_op(lib, op, &found, &id);
     }
     memset(reply, 0, sizeof *reply);
@@ -140,6 +140,7 @@ typedef struct row_buf {
 static uint32_t row_fields(uint32_t op) {
     switch (op) {
     case SEL_SIMILAR_NEXT: return 5u;
+    case SEL_SAME_TUNE: return 1u;
     case SEL_ALSOBY_NEXT:
     case SEL_DUP_NEXT:
     case SEL_COMPOSER_LIST: return 3u;

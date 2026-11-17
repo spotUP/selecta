@@ -733,6 +733,165 @@ static int write_md5(bake* b, const char* out_path, sel_uadedb_stats* st) {
     return ok;
 }
 
+/* ---- same-tune groups (I774o R13): port of the md5 union-find of upstream songdb/scripts/sources/audio.sc ---- */
+typedef struct tag_pair {
+    uint64_t tag; /* FNV-1a of "player\tAudioMd5": upstream's audioTag when no simhash is available */
+    uint32_t entry;
+} tag_pair;
+
+typedef struct grp_bake {
+    bake* b;
+    tag_pair* tp;
+    size_t n, cap;
+} grp_bake;
+
+static void audio_cb(char** f, int nf, void* ctx) {
+    grp_bake* g = (grp_bake*)ctx;
+    uint8_t md5[6];
+    size_t lo = 0, hi = g->b->nm;
+    uint64_t h = 1469598103934665603ull;
+    const char* c;
+    long e;
+    /* md5(12 hex), player, subsong, audio bytes, audio md5 (upstream parseAudioTsv); no audio = no tag */
+    if (nf < 5 || strlen(f[0]) < 12 || atol(f[3]) <= 0 || f[4][0] == '\0' || !sel_songlen_key_bytes(f[0], md5)) return;
+    while (lo < hi) { /* b->m is sorted by md5 */
+        size_t mid = lo + (hi - lo) / 2u;
+        int cmp = memcmp(md5, g->b->m[mid].md5, 6);
+        if (cmp == 0) { lo = mid; break; }
+        if (cmp < 0) hi = mid;
+        else lo = mid + 1u;
+    }
+    if (lo >= g->b->nm || memcmp(md5, g->b->m[lo].md5, 6) != 0) return;
+    e = find_entry(g->b, g->b->m[lo].key);
+    if (e < 0) return;
+    for (c = f[1]; *c; c++) h = (h ^ (uint8_t)*c) * 1099511628211ull;
+    h = (h ^ '\t') * 1099511628211ull;
+    for (c = f[4]; *c; c++) h = (h ^ (uint8_t)*c) * 1099511628211ull;
+    if (g->n == g->cap) {
+        tag_pair* t;
+        g->cap = g->cap != 0 ? g->cap * 2u : 1u << 20;
+        t = (tag_pair*)realloc(g->tp, g->cap * sizeof *t);
+        if (t == NULL) { g->b->failed = 1; return; }
+        g->tp = t;
+    }
+    g->tp[g->n].tag = h;
+    g->tp[g->n++].entry = (uint32_t)e;
+}
+
+static int cmp_tag(const void* a, const void* b) {
+    const tag_pair *x = (const tag_pair*)a, *y = (const tag_pair*)b;
+    if (x->tag != y->tag) return x->tag < y->tag ? -1 : 1;
+    return x->entry < y->entry ? -1 : x->entry > y->entry;
+}
+
+static uint32_t uf_find(uint32_t* p, uint32_t x) {
+    while (p[x] != x) { p[x] = p[p[x]]; x = p[x]; }
+    return x;
+}
+
+typedef struct ge_row { uint32_t a, b; } ge_row; /* (entry, group) for UGRP, (group, entry) for USAM */
+
+static int cmp_ge(const void* a, const void* b) {
+    const ge_row *x = (const ge_row*)a, *y = (const ge_row*)b;
+    if (x->a != y->a) return x->a < y->a ? -1 : 1;
+    return x->b < y->b ? -1 : x->b > y->b;
+}
+
+static int write_ge(const char* path, const char* magic, const ge_row* r, size_t n) {
+    FILE* f = fopen(path, "wb");
+    uint8_t h[16] = {0}, row[SEL_UADEGROUP_ROW];
+    size_t i;
+    int ok = f != NULL;
+    if (!ok) return 0;
+    memcpy(h, magic, 4);
+    put32(h + 4, 1u);
+    put32(h + 8, (uint32_t)n);
+    ok = fwrite(h, 1, 16, f) == 16;
+    for (i = 0; ok && i < n; i++) {
+        put24(row, r[i].a);
+        put24(row + 3, r[i].b);
+        ok = fwrite(row, 1, sizeof row, f) == sizeof row;
+    }
+    return fclose(f) == 0 && ok;
+}
+
+/* shortcut: tags are exact (player + audio md5), upstream also adds chromaprint simhash tags and a pairwise subsong check;
+ * upgrade when fuzzy remaster matches are wanted. No audio tsv files = no files written, groups=0. */
+static int write_groups(bake* b, const char* checkout, const char* outdir, sel_uadedb_stats* st) {
+    grp_bake g;
+    char dir[1024], path[1300];
+    DIR* d;
+    struct dirent* de;
+    uint32_t *par = NULL, *gid = NULL, *cnt = NULL, ng = 0;
+    ge_row *eg = NULL, *ge = NULL;
+    size_t i, u = 0, m = 0, run;
+    int ok = 0;
+    memset(&g, 0, sizeof g);
+    g.b = b;
+    snprintf(dir, sizeof dir, "%s/songdb/sources/audio", checkout);
+    d = opendir(dir);
+    if (d == NULL) return 1;
+    while ((de = readdir(d)) != NULL) {
+        size_t n = strlen(de->d_name);
+        if (n > 4 && strcmp(de->d_name + n - 4, ".tsv") == 0) {
+            snprintf(path, sizeof path, "%s/%s", dir, de->d_name);
+            each_row(path, audio_cb, &g);
+        }
+    }
+    closedir(d);
+    if (b->failed) goto done;
+    if (g.n > 1) qsort(g.tp, g.n, sizeof *g.tp, cmp_tag);
+    par = (uint32_t*)malloc((b->n + 1u) * sizeof *par);
+    gid = (uint32_t*)calloc(b->n + 1u, sizeof *gid);
+    cnt = (uint32_t*)calloc(b->n + 1u, sizeof *cnt);
+    eg = (ge_row*)malloc((g.n + 1u) * sizeof *eg);
+    ge = (ge_row*)malloc((g.n + 1u) * sizeof *ge);
+    if (par == NULL || gid == NULL || cnt == NULL || eg == NULL || ge == NULL) goto done;
+    for (i = 0; i < b->n; i++) par[i] = (uint32_t)i;
+    for (i = 1; i < g.n; i++) /* entries sharing a tag are one component (audio.sc audioFingerPrintComponents) */
+        if (g.tp[i].tag == g.tp[i - 1].tag) {
+            uint32_t ra = uf_find(par, g.tp[i].entry), rb = uf_find(par, g.tp[i - 1].entry);
+            if (ra != rb) par[ra > rb ? ra : rb] = ra < rb ? ra : rb; /* root = lowest entry */
+        }
+    for (i = 0; i < g.n; i++) {
+        eg[i].a = g.tp[i].entry;
+        eg[i].b = 0;
+    }
+    u = g.n;
+    qsort(eg, u, sizeof *eg, cmp_ge); /* by entry; drop repeats */
+    for (i = 0, run = 0; i < u; i++)
+        if (run == 0 || eg[run - 1].a != eg[i].a) eg[run++].a = eg[i].a;
+    u = run;
+    for (i = 0; i < u; i++) cnt[uf_find(par, eg[i].a)]++;
+    for (i = 0; i < u; i++) { /* a component of two or more distinct entries is a group; ids dense, by first member */
+        uint32_t r = uf_find(par, eg[i].a);
+        if (cnt[r] < 2u) continue;
+        if (gid[r] == 0) gid[r] = ++ng;
+        eg[m].a = eg[i].a;
+        eg[m++].b = gid[r];
+    }
+    st->groups = (long)ng;
+    st->group_members = (long)m;
+    if (m == 0) { ok = 1; goto done; }
+    if (ng > 0xffffffu) goto done;
+    for (i = 0; i < m; i++) { ge[i].a = eg[i].b; ge[i].b = eg[i].a; }
+    qsort(ge, m, sizeof *ge, cmp_ge);
+    snprintf(path, sizeof path, "%s/%s", outdir, SEL_UADEGROUPS_NAME);
+    if (!write_ge(path, "UGRP", eg, m)) goto done;
+    snprintf(path, sizeof path, "%s/%s", outdir, SEL_UADESAME_NAME);
+    if (!write_ge(path, "USAM", ge, m)) goto done;
+    st->group_bytes = st->same_bytes = (long)(16u + m * SEL_UADEGROUP_ROW);
+    ok = 1;
+done:
+    free(g.tp);
+    free(par);
+    free(gid);
+    free(cnt);
+    free(eg);
+    free(ge);
+    return ok;
+}
+
 int sel_uadedb_bake(const char* checkout, const char* outdir, sel_uadedb_stats* st) {
     static const char* const subs[] = {"site", "collection", "group", "bbs", "cd"}; /* SEL_UPRV_* order */
     char p[1400], q[1400];
@@ -791,6 +950,7 @@ int sel_uadedb_bake(const char* checkout, const char* outdir, sel_uadedb_stats* 
         (void)each_row(p, credit_cb, &b);
         if (b.failed) goto done;
     }
+    if (!write_groups(&b, checkout, outdir, st)) goto done; /* R13: needs b.m still sorted by md5 */
     snprintf(q, sizeof q, "%s/%s", outdir, SEL_UADEMD5_NAME);
     if (!write_md5(&b, q, st)) goto done;
     snprintf(q, sizeof q, "%s/%s", outdir, SEL_UADECREDITS_NAME);

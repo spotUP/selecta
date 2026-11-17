@@ -61,6 +61,7 @@ int main(void) {
     make_dir(root, "songdb/sources");
     make_dir(root, "songdb/sources/site");
     make_dir(root, "songdb/sources/cd");
+    make_dir(root, "songdb/sources/audio");
     make_dir(root, "out");
 
     /* R1 rows: a dup flag on subsong 2 of A, songend p+s / l / p, plus filler keys for the binary search */
@@ -100,6 +101,11 @@ int main(void) {
              "111111111111\tGlue Master~Kid\tMahoney\tMusicdisk 1\t1988\n222222222222\tXplore Alt\t\t\t\n999999999999\tZ\t\t\t\n");
     put_file(root, "tsv/pretty/md5/unexotica.tsv", "222222222222\tXplore\tGame House\tGame Title\t1991\n");
 
+    /* R13: A and B render the same audio (same player + audio md5), C another; E has no audio bytes */
+    put_file(root, "songdb/sources/audio/audio_uade.tsv",
+             "11111111111111111111111111111111\tuade\t1\t5000\tabcdabcdabcdabcdabcdabcdabcdabcd\tAQAA\n"
+             "22222222222222222222222222222222\tuade\t0\t5000\tabcdabcdabcdabcdabcdabcdabcdabcd\tAQAA\n"
+             "66666666666666666666666666666666\tuade\t0\t5000\t0123012301230123012301230123abcd\tAQAA\n");
     snprintf(cmd, sizeof cmd, "%s", out);
     CHECK(sel_uadedb_bake(root, out, &st) == 0);
     CHECK(st.songlen_entries == 23);
@@ -108,6 +114,26 @@ int main(void) {
     CHECK(st.md5_mismatch == 1 && st.md5_twin_unmapped == 1 && st.md5_checked >= 4);
     CHECK(st.md5_collision == 1); /* C's second md5 row is excused, not counted as a mismatch */
     CHECK(st.sl_checked == 3 && st.sl_mismatch == 1 && st.sl_collision == 1 && st.sl_twin_unmapped == 1);
+
+    /* R13: one group of two (A, B); C alone has no group; the reverse index names the other member */
+    CHECK(st.groups == 1 && st.group_members == 2);
+    {
+        char gp[320], keys[4][13];
+        uint32_t ga, gb, gc, mem[4];
+
+        snprintf(gp, sizeof gp, "%s/%s", out, SEL_UADEGROUPS_NAME);
+        snprintf(bin, sizeof bin, "%s/songlengths.bin", out);
+        CHECK(sel_songlen_find(bin, "aaaaaaaa0100", &ea) && sel_songlen_find(bin, "bbbbbbbb0200", &eb) && sel_songlen_find(bin, "cccccccc0300", &e));
+        ga = sel_uadegroup_of(gp, ea);
+        gb = sel_uadegroup_of(gp, eb);
+        gc = sel_uadegroup_of(gp, e);
+        CHECK(ga != 0 && ga == gb && gc == 0);
+        snprintf(gp, sizeof gp, "%s/%s", out, SEL_UADESAME_NAME);
+        CHECK(sel_uadesame_members(gp, ga, mem, 4) == 2);
+        CHECK(sel_uadesame_keys(out, "aaaaaaaa0100", keys, 4) == 1 && strcmp(keys[0], "bbbbbbbb0200") == 0);
+        CHECK(sel_uadesame_keys(out, "bbbbbbbb0200", keys, 4) == 1 && strcmp(keys[0], "aaaaaaaa0100") == 0);
+        CHECK(sel_uadesame_keys(out, "cccccccc0300", keys, 4) == 0);
+    }
 
     /* R1: flags */
     snprintf(bin, sizeof bin, "%s/songlengths.bin", out);

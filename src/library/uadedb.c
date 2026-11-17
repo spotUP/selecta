@@ -204,6 +204,74 @@ static void si_credit(sel_uim_si_credit* d, const char* source, const char* form
     d->year = year;
 }
 
+/* First row index of a UGRP/USAM file whose first u24 is >= want; -1 on a read error. */
+static long ge_lower(FILE* f, uint32_t n, uint32_t want) {
+    uint32_t lo = 0, hi = n;
+    uint8_t row[SEL_UADEGROUP_ROW];
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2u;
+        if (fseek(f, (long)(16u + mid * SEL_UADEGROUP_ROW), SEEK_SET) != 0 || fread(row, 1, sizeof row, f) != sizeof row) return -1;
+        if (be24(row) < want) lo = mid + 1u;
+        else hi = mid;
+    }
+    return (long)lo;
+}
+
+uint32_t sel_uadegroup_of(const char* path, uint32_t entry) {
+    FILE* f;
+    uint8_t hdr[16], row[SEL_UADEGROUP_ROW];
+    uint32_t n, g = 0;
+    long i;
+    if (!open_hdr(path, "UGRP", &f, hdr)) return 0;
+    n = be32(hdr + 8);
+    i = ge_lower(f, n, entry);
+    if (i >= 0 && (uint32_t)i < n && fseek(f, (long)(16u + (uint32_t)i * SEL_UADEGROUP_ROW), SEEK_SET) == 0 &&
+        fread(row, 1, sizeof row, f) == sizeof row && be24(row) == entry)
+        g = be24(row + 3);
+    fclose(f);
+    return g;
+}
+
+int sel_uadesame_members(const char* path, uint32_t group, uint32_t* entries, int max) {
+    FILE* f;
+    uint8_t hdr[16], row[SEL_UADEGROUP_ROW];
+    uint32_t n;
+    long i;
+    int c = 0;
+    if (group == 0 || !open_hdr(path, "USAM", &f, hdr)) return 0;
+    n = be32(hdr + 8);
+    i = ge_lower(f, n, group);
+    if (i >= 0 && fseek(f, (long)(16u + (uint32_t)i * SEL_UADEGROUP_ROW), SEEK_SET) == 0)
+        while ((uint32_t)i++ < n && c < max && fread(row, 1, sizeof row, f) == sizeof row && be24(row) == group) entries[c++] = be24(row + 3);
+    fclose(f);
+    return c;
+}
+
+int sel_uadesame_keys(const char* dir, const char* key, char (*keys)[13], int max) {
+    char sl[512], gp[512], sm[512];
+    uint32_t entry = 0, group, mem[64];
+    int i, n, c = 0;
+    FILE* f;
+    snprintf(sl, sizeof sl, "%s/songlengths.bin", dir);
+    snprintf(gp, sizeof gp, "%s/%s", dir, SEL_UADEGROUPS_NAME);
+    snprintf(sm, sizeof sm, "%s/%s", dir, SEL_UADESAME_NAME);
+    if (!sel_songlen_find(sl, key, &entry)) return 0;
+    group = sel_uadegroup_of(gp, entry);
+    if (group == 0) return 0;
+    n = sel_uadesame_members(sm, group, mem, 64);
+    f = fopen(sl, "rb");
+    if (f == NULL) return 0;
+    for (i = 0; i < n && c < max; i++) { /* songlengths.bin entry rows: 12 bytes from offset 16, the first 6 are the key */
+        uint8_t kb[6];
+        int j;
+        if (mem[i] == entry || fseek(f, (long)(16u + mem[i] * 12u), SEEK_SET) != 0 || fread(kb, 1, 6, f) != 6) continue;
+        for (j = 0; j < 6; j++) snprintf(keys[c] + j * 2, 3, "%02x", kb[j]);
+        c++;
+    }
+    fclose(f);
+    return c;
+}
+
 int sel_uadesong_load(const char* dir, const char* key, struct sel_uim_si_input* out) {
     char path[512];
     uint32_t entry = 0;

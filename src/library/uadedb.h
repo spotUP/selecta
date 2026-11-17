@@ -35,6 +35,12 @@
 #define SEL_UADECREDIT_SOURCES 9u
 enum { SEL_UPRV_SITE = 0, SEL_UPRV_COLLECTION, SEL_UPRV_GROUP, SEL_UPRV_BBS, SEL_UPRV_CD, SEL_UPRV_KINDS };
 
+#define SEL_UADEGROUPS_NAME "uadegroups.bin"
+#define SEL_UADESAME_NAME "uadesame.bin"
+#define SEL_UADEGROUP_ROW 6u
+/* uadegroups.bin "UGRP", u32 version (1), u32 count, u32 0; rows u24 entry, u24 group id (1..), sorted by entry.
+ * uadesame.bin "USAM", same header; rows u24 group id, u24 entry, sorted by group (reverse index). Only groups of 2+ are stored. */
+
 typedef struct sel_uadeinfo {
     char format[64];
     char authors[256];
@@ -74,6 +80,12 @@ int sel_uadeprov_source(const char* path, uint32_t id, int* kind, char* file, si
 struct sel_uim_si_input;
 int sel_uadesong_load(const char* dir, const char* key, struct sel_uim_si_input* out);
 
+/* Same tune (I774o R13): group id of `entry` (0 = none or bad file); members of group `group` into entries[0..max), returns the count.
+ * sel_uadesame_keys: UADE keys (12 hex) of the OTHER members of the group holding `key`, from the bake files in `dir`; returns the count. */
+uint32_t sel_uadegroup_of(const char* path, uint32_t entry);
+int sel_uadesame_members(const char* path, uint32_t group, uint32_t* entries, int max);
+int sel_uadesame_keys(const char* dir, const char* key, char (*keys)[13], int max);
+
 /* md5 (at least 12 hex digits) -> entry. 1 = found. */
 int sel_uademd5_lookup(const char* path, const char* md5hex, uint32_t* entry);
 
@@ -91,6 +103,7 @@ typedef struct sel_uadedb_stats {
     long credit_rows, credit_pool_bytes, credit_bytes;
     long prov_sources[SEL_UPRV_KINDS], prov_named[SEL_UPRV_KINDS]; /* sources per kind; named = display from sources.md */
     long prov_pairs, prov_unmapped, prov_bytes;
+    long groups, group_members, group_bytes, same_bytes; /* R13 */
 } sel_uadedb_stats;
 
 int sel_uadedb_bake(const char* checkout, const char* outdir, sel_uadedb_stats* st);

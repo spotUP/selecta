@@ -85,9 +85,13 @@ static int query_rows(sel_library* lib, const char* text) {
     return n;
 }
 
+static void same_cb(void* ctx, const char* song_key) {
+    snprintf((char*)ctx, 400, "%s", song_key);
+}
+
 int main(void) {
     char root[] = "/tmp/selecta_uadefill_XXXXXX";
-    char out[300], db[320], known[320], other[320], rows[256], key[SEL_UADE_KEY_CHARS + 1u], skey[340];
+    char out[300], db[320], known[320], other[320], rows[1024], key[SEL_UADE_KEY_CHARS + 1u], tkey[SEL_UADE_KEY_CHARS + 1u], skey[340], twin[320];
     sel_uadedb_stats bst;
     sel_library* lib;
     sel_genre_stats gs;
@@ -103,6 +107,7 @@ int main(void) {
     make_dir(root, "songdb/sources");
     make_dir(root, "songdb/sources/site");
     make_dir(root, "songdb/sources/cd");
+    make_dir(root, "songdb/sources/audio");
     make_dir(root, "out");
     snprintf(out, sizeof out, "%s/out", root);
     snprintf(known, sizeof known, "%s/known.mod", root);
@@ -111,15 +116,28 @@ int main(void) {
     put_file(root, "other.mod", "fixture bytes of a song the bake does not know");
     check(sel_uade_key_file(known, key) == 1, "key of the fixture file");
 
-    snprintf(rows, sizeof rows, "%s\t0\t1000,p\n", key);
+    /* R13: a twin file in the same same-tune group as the known song (same player + audio md5 in the audio source rows) */
+    snprintf(twin, sizeof twin, "%s/twin.mod", root);
+    put_file(root, "twin.mod", "fixture bytes of a twin render of the known song");
+    check(sel_uade_key_file(twin, tkey) == 1, "key of the twin file");
+    snprintf(rows, sizeof rows, "%s\t0\t1000,p\n%s\t0\t1000,p\n", key, tkey);
     put_file(root, "tsv/pretty/xxh32/songlengths.tsv", rows);
+    snprintf(rows, sizeof rows, "11111111111111111111111111111111\t0\t1000\tp\tuade\tProtracker\t4\t%ld\t%.8s\t00000000\ta\n"
+             "22222222222222222222222222222222\t0\t1000\tp\tuade\tProtracker\t4\t%ld\t%.8s\t00000000\tb\n",
+             strtol(key + 8, NULL, 16), key, strtol(tkey + 8, NULL, 16), tkey);
+    put_file(root, "songdb/sources/site/a.tsv", rows);
+    put_file(root, "songdb/sources/audio/audio_uade.tsv",
+             "11111111111111111111111111111111\tuade\t0\t900\tabcdabcdabcdabcdabcdabcdabcdabcd\tAQAA\n"
+             "22222222222222222222222222222222\tuade\t0\t900\tabcdabcdabcdabcdabcdabcdabcdabcd\tAQAA\n");
     snprintf(rows, sizeof rows, "%s\tProtracker\t4\n", key);
     put_file(root, "tsv/pretty/xxh32/modinfos.tsv", rows);
     snprintf(rows, sizeof rows, "%s\tGlue Master~Kid\tMahoney\tMusicdisk 1\t1988\n", key);
     put_file(root, "tsv/pretty/xxh32/metadata.tsv", rows);
     put_file(root, "tsv/pretty/md5/modinfos.tsv", "");
     put_file(root, "tsv/pretty/md5/metadata.tsv", "");
+    put_file(root, "tsv/pretty/md5/songlengths.tsv", "");
     check(sel_uadedb_bake(root, out, &bst) == 0, "bake");
+    check(bst.groups == 1 && bst.group_members == 2, "bake groups");
 
     snprintf(db, sizeof db, "%s/library.db", out);
     setenv("SELECTA_DEVILBOX_URL", "http://127.0.0.1:1", 1);
@@ -128,6 +146,7 @@ int main(void) {
     if (lib == NULL) return 1;
     scan(lib, known);
     scan(lib, other);
+    scan(lib, twin);
 
     /* the idle pass hashes the song, stores its key and fills the blanks from the bake: no network involved */
     memset(&op, 0, sizeof op);
@@ -139,11 +158,24 @@ int main(void) {
         op.after = id;
     }
     snprintf(skey, sizeof skey, "local:%s", known);
-    check(count(lib, "SELECT COUNT(*) FROM songs WHERE uade_key IS NOT NULL") == 2, "both songs have a uade key");
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE uade_key IS NOT NULL") == 3, "all songs have a uade key");
     check(count(lib, "SELECT COUNT(*) FROM songs WHERE format='Protracker' AND channels=4 AND year=1988 AND album='Musicdisk 1' AND publisher='Mahoney'") == 1,
           "known song got format, channels, year, album, publisher");
     check(count(lib, "SELECT COUNT(*) FROM song_composers WHERE tag=0") == 2, "known song got both authors");
-    check(count(lib, "SELECT COUNT(*) FROM songs WHERE channels=0 AND format IS NOT 'Protracker'") == 1, "unknown song stays blank");
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE channels=0 AND format IS NOT 'Protracker'") == 2, "unknown songs stay blank");
+
+    /* R13: the library lists the twin as the Same tune of the known song; the unknown song has none */
+    {
+        char got[400] = "";
+
+        snprintf(skey, sizeof skey, "local:%s", known);
+        check(sel_library_same_tune(lib, skey, same_cb, got) == 1, "known song has one Same tune");
+        snprintf(skey, sizeof skey, "local:%s", twin);
+        check(strcmp(got, skey) == 0, "the twin is the Same tune");
+        got[0] = '\0';
+        snprintf(skey, sizeof skey, "local:%s", other);
+        check(sel_library_same_tune(lib, skey, same_cb, got) == 0 && got[0] == '\0', "unknown song has no Same tune");
+    }
 
     /* queries */
     check(query_rows(lib, "channels:>3") == 1, "channels term");
