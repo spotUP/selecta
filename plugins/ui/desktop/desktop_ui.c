@@ -542,6 +542,9 @@ typedef struct desk {
     int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
     uint32_t hist_n, hist_pos;
     sel_route_hist rh;       /* app-wide history (I266, I678h): the pages and collection pages visited, with their scroll; Back and Forward move */
+    sel_gui_rect col_about_link[12]; /* I1440j2: the composer page's Link buttons (zero width = none) */
+    char col_about_url[12][256];
+    uint32_t col_about_retry_ms, col_about_tries; /* I1440j2: the header block is empty until the first DeepSID fetch lands: ask the engine again */
     sel_gui_rect col_artist; /* I678h: the artist name on an album page's meta line (a click opens the artist page); empty elsewhere */
     int baked_zoom;          /* I587: the Amiga tier (aga, rtg; --baked-zoom on the host): zoom and fit take only the baked scales */
     int copper_opt;          /* --copper N: copper pens on an INDEX8 canvas of any backend (the mem backend tests the AGA copper, I628); 0 = by backend */
@@ -5809,6 +5812,8 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
     snprintf(d->col_key, sizeof d->col_key, "%s", key != NULL ? key : "");
     snprintf(d->col_sub, sizeof d->col_sub, "%s", sub != NULL ? sub : "");
     d->col_year = 0u;
+    d->col_about_tries = 0u;
+    d->col_about_retry_ms = d->now_ms;
     {
         const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
         d->col_open_serial = pg != NULL ? pg->serial : 0u;
@@ -6328,6 +6333,9 @@ static void col_round_art(desk* d, sel_gui_rect r) {
     if (r.w <= 0 || r.h != r.w) {
         return;
     }
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && col_about_lines(d) > 0u && d->pls_n > 0u && cover_draw(d, r, pls_key(d, 0u), r.w / 2)) {
+        return; /* I1440j2: the DeepSID photo (the SID cover of I1440i) instead of the generated art */
+    }
     hash += d->pls_family * 0x9E3779B1u; /* the family is part of the cache identity: the page's songs may change it */
     if (d->col_av == NULL || d->col_av_w != r.w || d->col_av_hash != hash) {
         sel_gui_canvas tile;
@@ -6558,16 +6566,23 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         int32_t tw = at != NULL ? sel_gui_text_width(at, d->pl_name, d->pl_nlen) : 0, ch = tr.h - lpx(d, 8), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
         sel_gui_fill_rect(d->canvas, rect_of(tr.x + tw, tr.y + (tr.h - ch) / 2, cw, ch), text);
     }
-    if (col_about_lines(d) > 0u) { /* I1440j: the composer facts, one "Label  value" line each, under the header */
-        const char* ap = d->col_about;
+    memset(d->col_about_link, 0, sizeof d->col_about_link);
+    if (col_about_lines(d) > 0u) { /* I1440j: the composer facts, one "Label  value" line each, under the header; I1440j2: a Link value is a button */
         int32_t ay = cv.y + cv.h + lpx(d, PLS_GAP), lw = lpx(d, 130);
         uint32_t ai;
-        for (ai = 0; ai < col_about_lines(d); ai++) {
-            const char* av = ap + strlen(ap) + 1u;
-            draw_text(d, rect_of(cv.x, ay, lw, lpx(d, ABOUT_LINE_H)), ap, 0, 13, muted);
-            draw_text(d, rect_of(cv.x + lw, ay, mn.x + mn.w - cv.x - lw - lpx(d, HOME_MARGIN), lpx(d, ABOUT_LINE_H)), av, 0, 13, text);
+        char lab[48], val[256];
+        for (ai = 0; ai < col_about_lines(d) && sel_uim_about_line(d->col_about, ai, ABOUT_MAX, lab, sizeof lab, val, sizeof val); ai++) {
+            draw_text(d, rect_of(cv.x, ay, lw, lpx(d, ABOUT_LINE_H)), lab, 0, 13, muted);
+            if (strncmp(lab, "Link", 4) == 0 && strncmp(val, "http", 4) == 0) {
+                const sel_gui_atlas* at = desk_font(d, 0, 13);
+                int32_t tw = at != NULL ? sel_gui_text_width(at, val, strlen(val)) + lpx(d, 16) : lpx(d, 200), room = mn.x + mn.w - cv.x - lw - lpx(d, HOME_MARGIN);
+                d->col_about_link[ai] = rect_of(cv.x + lw, ay, tw < room ? tw : room, lpx(d, ABOUT_LINE_H));
+                snprintf(d->col_about_url[ai], sizeof d->col_about_url[ai], "%s", val);
+                draw_button(d, d->col_about_link[ai], surf, val, 13, text);
+            } else {
+                draw_text(d, rect_of(cv.x + lw, ay, mn.x + mn.w - cv.x - lw - lpx(d, HOME_MARGIN), lpx(d, ABOUT_LINE_H)), val, 0, 13, text);
+            }
             ay += lpx(d, ABOUT_LINE_H);
-            ap = av + strlen(av) + 1u;
         }
     }
     snprintf(count, sizeof count, "%u %s", (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
@@ -6844,6 +6859,15 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
     uint32_t slot;
     if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
         return 0;
+    }
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* I1440j2: a Link button opens the URL in the browser */
+        uint32_t li;
+        for (li = 0; li < 12u; li++) {
+            if (d->col_about_link[li].w > 0 && in_rect(d->col_about_link[li], ev->x, ev->y)) {
+                desk_open_url(d->col_about_url[li]);
+                return 1;
+            }
+        }
     }
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM && d->col_artist.w > 0 && in_rect(d->col_artist, ev->x, ev->y)) { /* I678h: the artist name opens the artist page */
         char artist[96];
@@ -18164,6 +18188,17 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             }
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         }
+    }
+    if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION && d->col_ready && d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && d->col_about[0] == '\0' &&
+        d->col_about_tries < 8u && d->now_ms - d->col_about_retry_ms >= 2000u && strncmp(pls_key(d, 0u) != NULL ? pls_key(d, 0u) : "", "hvsc:", 5) == 0) {
+        char open[160]; /* I1440j2: the first DeepSID fetch has not landed when the page opened: ask again every 2 s (8 times); the republish reloads the page */
+        d->col_about_tries++;
+        d->col_about_retry_ms = d->now_ms;
+        char head[32];
+        snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)col_eng_kind(d));
+        desk_quoted_request(open, sizeof open, head, d->col_key);
+        snprintf(open + strlen(open), sizeof open - strlen(open), " 1"); /* bounded like col_kind_open: a long key fills open */
+        desk_send(d, open);
     }
     if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION) { /* I994d4, I1077d: the engine republished the open page (own change, view, a sync of its source): read it again */
         const sel_collection_page* cp = sel_engine_state(d->engine)->collection;
