@@ -2,6 +2,7 @@
  * (include/selecta/uimodel.h): one widget per region, redrawn only when the region's dirty bit is set. Drawing goes
  * to a backend: `mem` (headless, no SDL, DUI-P2-6) or `sdl` (a window, DUI-P2-7), selected with `--backend`. */
 #include <ctype.h>
+#include <strings.h>
 #if defined(__APPLE__) || (defined(__unix__) && !defined(__amigaos__) && !defined(AMIGA))
 #include <spawn.h>
 #include <sys/wait.h>
@@ -313,6 +314,7 @@ typedef struct desk {
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
     uint32_t* pls_ord;       /* I678e: the shown songs as indices into pls_off: the search filter, then the sort */
+    char col_tag[64]; /* I1440n2: the DeepSID tag filter chip's active tag, empty for none */
     uint32_t pls_vn, col_sort, col_color, col_top; /* shown songs, sort (0 custom order, 1 title), header cover colour and the band's top colour */
     int col_cover;           /* 1 when col_color came from the first song's cover */
     int col_cover_wait;      /* I906c: the header cover is queued on the art worker; the header refreshes when it lands */
@@ -508,7 +510,7 @@ typedef struct desk {
     uint32_t dlg_playlists;  /* playlists the Clear Library dialog names */
     int quit_req;            /* I623: the Quit Selecta dialog was confirmed; the turn ends the UI loop like a closed window */
     uint32_t dlg_opens, dlg_confirms, dlg_cancels; /* sentinels: dialogs opened / confirmed / cancelled */
-    int sm_step;             /* 0 the items, 1 the playlist chooser, 2 the Queue scope choices (I258), 3 the playlist or folder menu (I647) */
+    int sm_step;             /* 0 the items, 1 the playlist chooser, 2 the Queue scope choices (I258), 3 the playlist or folder menu (I647), 6 the DeepSID tag list (I1440n2) */
     uint32_t sm_pl_id;       /* I647: the playlist or folder the step 3 menu acts on */
     uint32_t sm_pl_folder;   /* 1 = that row is a folder (the menu offers Delete only) */
     char sm_pl_name[64];
@@ -3109,6 +3111,27 @@ static const char* song_menu_label(const desk* d, int32_t k) {
     return sel_uim_song_menu_label((uint32_t)k, d->sm_ref.removable != 0);
 }
 
+/* I1440n2: the tag chip's list is the page's own distinct tags ("a\0b\0\0", published by the engine), at most TAG_MENU_MAX shown.
+ * shortcut: a page with more distinct tags shows the first TAG_MENU_MAX, add a scrolling list when a page needs it. */
+#define TAG_MENU_MAX 16u
+static const char* tag_menu_name(const desk* d, uint32_t k) {
+    const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
+    const char* p = pg != NULL ? pg->tags : "";
+    while (*p != '\0' && k > 0u) {
+        p += strlen(p) + 1u;
+        k--;
+    }
+    return *p != '\0' ? p : NULL;
+}
+
+static uint32_t tag_menu_count(const desk* d) {
+    uint32_t n = 0u;
+    while (n < TAG_MENU_MAX && tag_menu_name(d, n) != NULL) {
+        n++;
+    }
+    return n;
+}
+
 /* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
 static int32_t song_menu_n(const desk* d) {
     if (d->sm_step == 0) {
@@ -3116,6 +3139,9 @@ static int32_t song_menu_n(const desk* d) {
     }
     if (d->sm_step == 2) {
         return 3;
+    }
+    if (d->sm_step == 6) { /* I1440n2: All Tags plus the page's tags */
+        return (int32_t)tag_menu_count(d) + 1;
     }
     if (d->sm_step == 5) { /* I1039: System default plus every listed device */
         return (int32_t)d->dev_n + 1;
@@ -3250,6 +3276,7 @@ static void pls_close(desk* d);
 static sel_gui_rect add_btn_rect(desk* d, sel_gui_rect row);
 static int add_mode(const desk* d);
 static int pl_send(desk* d, const char* line);
+static void col_tag_set(desk* d, const char* tag);
 
 /* The Queue page Scope button opens the same menu with the three scope choices (I258); a pick sends SCOPE <name>. */
 static void scope_menu_open(desk* d, int32_t x, int32_t y) {
@@ -3381,6 +3408,22 @@ static void song_menu_draw(desk* d) {
             const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k)
                               : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "New Playlist...";
             hover_reg(d, m);
+            if (d->sm_step == 6) { /* I1440n2: All Tags, then the page's tags; the active one is accented and checked */
+                const char* nm = k == 0 ? NULL : tag_menu_name(d, (uint32_t)k - 1u);
+                int on = k == 0 ? d->col_tag[0] == '\0' : strcasecmp(d->col_tag, nm != NULL ? nm : "") == 0;
+                uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+                if (lit) {
+                    sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h), lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
+                                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+                }
+                sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 12), m.y + lpx(d, 4), m.w - lpx(d, 40), semi->line_height),
+                                  nm != NULL ? nm : "All Tags", on ? accent : ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1, &d->text);
+                if (on) {
+                    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_CHECK, rect_of(m.x + m.w - lpx(d, 28), m.y + (m.h - lpx(d, 16)) / 2, lpx(d, 16), lpx(d, 16)),
+                                      lpx(d, 16), accent);
+                }
+                continue;
+            }
             if (d->sm_step == 5) { /* I1039: output devices: System default, then the list; the pick is checked, AirPlay rows carry the AirPlay icon */
                 const char* cur = desk_pref(d, "output.device", "");
                 const char* uid = k == 0 ? "" : d->dev[k - 1].uid;
@@ -3810,7 +3853,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (d->sm_open) {
-        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 || d->sm_step == 5 || d->sm_step == 1 ? song_menu_n(d) : 8;
+        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 || d->sm_step == 5 || d->sm_step == 6 || d->sm_step == 1 ? song_menu_n(d) : 8;
         int keep = 0;
         if (d->sm_step == 4) { /* I611: the library sort and view menu: sort rows pick a sort, the strip a view, headers and the separator stay */
             for (k = 0; k < 8; k++) {
@@ -3843,6 +3886,13 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         for (k = 0; k < n; k++) {
             if (!in_rect(song_menu_item_rect(d, k), ev->x, ev->y)) {
                 continue;
+            }
+            if (d->sm_step == 6) { /* I1440n2: a tag pick (or All Tags) filters the page; the engine republishes the order */
+                const char* nm = k == 0 ? NULL : tag_menu_name(d, (uint32_t)k - 1u);
+                col_tag_set(d, nm != NULL ? nm : "");
+                d->sm_open = 0;
+                draw_home(d);
+                return 1;
             }
             if (d->sm_step == 5) { /* I1039: a device pick: the pref the output plugin polls in its pump */
                 dev_pick_send(d, k == 0 ? "" : d->dev[k - 1].uid);
@@ -5513,6 +5563,17 @@ static void col_cover_refresh(desk* d) {
     d->col_top = desk_mix(ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]), d->col_color, 40000);
 }
 
+/* I1440n2: sets the DeepSID tag filter (empty clears it) and sends it; the engine filters any collection page by the tag. */
+static void col_tag_set(desk* d, const char* tag) {
+    char line[128];
+    snprintf(d->col_tag, sizeof d->col_tag, "%s", tag);
+    snprintf(line, sizeof line, "COLLECTION_TAG \"%s\"", d->col_tag);
+    desk_send(d, line);
+    d->pls_scroll = 0u;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
 static void col_changed(desk* d) {
     /* drl_page is 0 while a filtered page loads, so the test reads the path and the filter text, which survive the reload */
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && drl_is_formats(d) && strcmp(d->drl_q, d->col_q) != 0 &&
@@ -5546,6 +5607,7 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
     d->pl_sel_id = id;
     d->pl_edit = 0;
     d->col_sort = 0u; /* I678e: a collection opens in its own order, unfiltered */
+    d->col_tag[0] = '\0';
     d->col_qlen = 0u;
     d->col_q[0] = '\0';
     d->drl_q[0] = '\0';
@@ -5644,6 +5706,17 @@ static int col_field_shown(const desk* d) {
 static sel_gui_rect col_sort_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect m = pls_more_rect(d, mn);
     return rect_of(m.x + m.w + lpx(d, QUEUE_BTN_GAP), m.y, m.w + lpx(d, 48), m.h);
+}
+
+/* I1440n2: the Tag chip sits right of the Sort button; shown when the page has DeepSID tags or a tag is active (so it can be cleared). */
+static sel_gui_rect col_tag_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect s = col_sort_rect(d, mn);
+    return rect_of(s.x + s.w + lpx(d, QUEUE_BTN_GAP), s.y, s.w, s.h);
+}
+
+static int col_tag_shown(const desk* d) {
+    const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
+    return d->col_tag[0] != '\0' || (pg != NULL && pg->tags[0] != '\0');
 }
 
 static sel_gui_rect col_find_rect(desk* d, sel_gui_rect mn) {
@@ -6600,6 +6673,12 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     if (col_tools_shown(d)) { /* I678e: the sort button and the search field */
         sel_gui_rect fr = col_find_rect(d, mn);
         draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
+        if (col_tag_shown(d)) { /* I1440n2: the active tag fills the chip with the accent */
+            char tl[96];
+            int on = d->col_tag[0] != '\0';
+            snprintf(tl, sizeof tl, on ? "Tag: %s" : "Tag", d->col_tag);
+            draw_button(d, col_tag_rect(d, mn), on ? accent : surf, tl, 13, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : text);
+        }
         if (col_field_shown(d)) {
             sel_gui_round_rect(d->canvas, fr, rad, surf);
             draw_text(d, rect_of(fr.x + lpx(d, 12), fr.y, fr.w - lpx(d, 24), fr.h), d->col_qlen > 0u ? d->col_q : "Search in this collection", 0, 13, d->col_qlen > 0u ? text : muted);
@@ -6883,6 +6962,18 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             d->col_search = 0;
             d->pl_edit = 0;
             col_changed(d);
+            return 1;
+        }
+        if (col_tag_shown(d) && in_rect(col_tag_rect(d, mn), ev->x, ev->y)) { /* I1440n2: opens the tag list under the chip */
+            sel_gui_rect tb = col_tag_rect(d, mn);
+            d->col_search = 0;
+            d->pl_edit = 0;
+            d->sm_open = 1;
+            d->sm_step = 6;
+            d->menu_x = tb.x;
+            d->menu_y = tb.y + tb.h;
+            d->menus++;
+            draw_home(d);
             return 1;
         }
         d->col_search = col_field_shown(d) && in_rect(col_find_rect(d, mn), ev->x, ev->y);
@@ -8612,10 +8703,10 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect cs = col_sort_rect(d, pmn), cf = col_find_rect(d, pmn);
             sel_engine_stats cst;
             sel_engine_stats_get(d->engine, &cst);
-            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d header_art_px=%d flat=%u views=%u orders=%u eshown=%u\n",
+            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x tag=[%s] sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d header_art_px=%d flat=%u views=%u orders=%u eshown=%u\n",
                          d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? "composer" : d->col_kind == COL_LIKED ? "liked" : d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT ? "recent" : d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL ? "local" : "source",
                          (unsigned)cst.collection_opens, (unsigned)art_dominants(d->art), d->col_cover, (unsigned)d->col_color, (unsigned)d->col_top,
-                         (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
+                         d->col_tag, (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
                          (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws,
                          (unsigned)cst.collection_views, (unsigned)cst.collection_orders, (unsigned)d->col_eshown);
             o = dump_put(d, o, "collection_tools shown=%d field=%d\n", col_tools_shown(d), col_field_shown(d)); /* I1224, I1229a */

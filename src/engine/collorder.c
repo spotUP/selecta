@@ -5,6 +5,7 @@
 #include <selecta/uimodel/browse.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 const char* sel_coll_title(const sel_coll_rec* r) {
     const char* b;
@@ -52,9 +53,51 @@ static int field_has(const char* s, const char* filter) {
     return sel_uim_lfilter_match(s != NULL ? s : "", filter);
 }
 
-uint32_t sel_coll_order_build(const sel_coll_rec* rec, uint32_t n, uint32_t sort, uint32_t descending, const char* filter, uint32_t* out) {
+int sel_coll_tag_has(const char* tags, const char* tag) {
+    size_t tl;
+    if (tag == NULL || tag[0] == '\0') return 1;
+    if (tags == NULL) return 0;
+    tl = strlen(tag);
+    while (*tags != '\0') {
+        const char* e = strstr(tags, ", ");
+        size_t len = e != NULL ? (size_t)(e - tags) : strlen(tags);
+        if (len == tl && strncasecmp(tags, tag, tl) == 0) return 1;
+        if (e == NULL) break;
+        tags = e + 2;
+    }
+    return 0;
+}
+
+void sel_coll_tags_merge(char* all, uint32_t cap, const char* tags) {
+    char* end = all;
+    if (all == NULL || cap < 2u || tags == NULL) return;
+    while (end[0] != '\0') end += strlen(end) + 1u;
+    while (*tags != '\0') {
+        const char* e = strstr(tags, ", ");
+        size_t len = e != NULL ? (size_t)(e - tags) : strlen(tags);
+        char name[96];
+        const char* p;
+        int have = 0;
+        if (len > 0u && len < sizeof name) {
+            memcpy(name, tags, len);
+            name[len] = '\0';
+            for (p = all; p[0] != '\0'; p += strlen(p) + 1u) have |= strcasecmp(p, name) == 0;
+            if (!have && (size_t)(end - all) + len + 2u <= cap) {
+                memcpy(end, name, len + 1u);
+                end += len + 1u;
+                end[0] = '\0';
+            }
+        }
+        if (e == NULL) break;
+        tags = e + 2;
+    }
+}
+
+uint32_t sel_coll_order_build(const sel_coll_rec* rec, uint32_t n, uint32_t sort, uint32_t descending, const char* filter, const char* tag,
+                              uint32_t* out) {
     uint32_t i, shown = 0u;
     for (i = 0; i < n; i++) {
+        if (!sel_coll_tag_has(rec[i].tags, tag)) continue;
         if (filter != NULL && filter[0] != '\0' && !field_has(sel_coll_title(&rec[i]), filter) && !field_has(rec[i].artist, filter) &&
             !field_has(rec[i].album, filter)) {
             continue;

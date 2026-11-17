@@ -230,6 +230,8 @@ typedef struct sel_collection_page {
     uint32_t shown;            /* rows in order (<= songs): the filtered count */
     uint32_t sort, descending; /* SEL_COLL_SORT_*, 0/1 */
     char filter[64];           /* the view this order was built for */
+    char tag[64];              /* I1440n2: the DeepSID tag filter of that view, "" for none */
+    char tags[1024];           /* I1440n2: the distinct DeepSID tags of this page's songs (cached ones), "name\0name\0", an extra NUL ends; the Tag chip's choices */
     char about[2048];          /* I1440j: a composer page's DeepSID header as label NUL value NUL pairs, an empty label ends; empty block when none is cached yet */
 } sel_collection_page;
 

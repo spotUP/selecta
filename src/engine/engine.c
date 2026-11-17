@@ -168,7 +168,7 @@
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(STREAM_ADD) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(COLLECTION_OPEN) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(PLAY_CONTEXT) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
-    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) X(COLLECTION_VIEW) \
+    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) X(COLLECTION_VIEW) X(COLLECTION_TAG) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -809,10 +809,10 @@ struct sel_engine {
     uint32_t collection_orders;               /* I994d1 sentinel: page orders built */
     uint32_t collection_views;                /* I994d2 sentinel: COLLECTION_VIEW commands applied */
     uint32_t rdc_sort, rdc_desc;              /* I1082f: the view the running build uses, staged from coll_sort/coll_desc/coll_filter when the job is posted (the engine thread edits those while the read runs) */
-    char rdc_filter[64];
+    char rdc_filter[64], rdc_tag[64];         /* I1440n2: rdc_tag stages coll_tag the same way */
     int rdc_reorder, rdc_next_reorder;        /* I994d2: the read re-orders the published page under the new view (no rebuild) */
     uint32_t coll_sort, coll_desc;            /* I994d1: the engine-global collection view the next build uses (SEL_COLL_SORT_*, 0/1) */
-    char coll_filter[64];
+    char coll_filter[64], coll_tag[64];       /* I1440n2: the DeepSID tag filter of the collection view ("": none) */
     /* I910: COLLECTION_OPEN posts the page build to a read slot (design 2026-11-01-ui-thread-library-waits.md section 4). The thread builds
      * into rdc_pg / rdc_blk from rdc_kind / rdc_key; the pump publishes them as e->coll when the read lands. rdc_next_* is the newest ask. */
     sel_lib_read rd_coll;
@@ -8191,6 +8191,8 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
 /* I994d1: builds pg's order from the rows (e->rdc_blk) and sort fields (e->rdc_titles) under the engine's collection view. The records
  * are a temporary array of pointers into both blocks; the order block stays with the page. A host without memory leaves the order NULL
  * (identity, every row shown). */
+enum { COLL_TAG_CAP = 128 };
+
 static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* rows, const char* titles) {
     sel_coll_rec* rec = (sel_coll_rec*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *rec, SEL_MEM_FAST);
     uint32_t* ord = (uint32_t*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *ord, SEL_MEM_FAST);
@@ -8202,6 +8204,11 @@ static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* 
         if (ord != NULL) e->host->mem_free(e->host, ord);
         return;
     }
+    char* pool = NULL; /* I1440n2: per-row tag text, only while a tag filter runs */
+    char tg[512];
+    int want_tags = e->rdc_tag[0] != '\0';
+    if (want_tags) pool = (char*)e->host->mem_alloc(e->host, (size_t)pg->songs * COLL_TAG_CAP, SEL_MEM_FAST);
+    if (!e->rdc_reorder) memset(pg->tags, 0, sizeof pg->tags); /* the page's tag choices are collected on a build; a re-order keeps them */
     for (i = 0; i < pg->songs; i++) {
         rec[i].key = r;
         r += strlen(r) + 1u;
@@ -8216,11 +8223,24 @@ static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* 
         m += strlen(m) + 1u;
         rec[i].duration_ms = strtoll(m, NULL, 10);
         m += strlen(m) + 1u;
+        rec[i].tags = NULL;
+        tg[0] = '\0';
+        /* shortcut: HVSC keys only, as the Song Information rows (sel_library_deepsid_panel); the tags are the ones a DeepSID fetch cached */
+        if ((want_tags || !e->rdc_reorder) && e->lib != NULL && strncmp(rec[i].key, "hvsc:", 5) == 0 &&
+            sel_library_sticker_get(e->lib, rec[i].key, "deepsid.tags", tg, sizeof tg) != 0) {
+            if (!e->rdc_reorder) sel_coll_tags_merge(pg->tags, sizeof pg->tags, tg);
+            if (pool != NULL) { /* shortcut: a row's tag text is cut at COLL_TAG_CAP-1 bytes in the filter */
+                snprintf(pool + (size_t)i * COLL_TAG_CAP, COLL_TAG_CAP, "%s", tg);
+                rec[i].tags = pool + (size_t)i * COLL_TAG_CAP;
+            }
+        }
     }
     pg->sort = e->rdc_sort;
     pg->descending = e->rdc_desc;
     snprintf(pg->filter, sizeof pg->filter, "%s", e->rdc_filter);
-    pg->shown = sel_coll_order_build(rec, pg->songs, pg->sort, pg->descending, pg->filter, ord);
+    snprintf(pg->tag, sizeof pg->tag, "%s", e->rdc_tag);
+    pg->shown = sel_coll_order_build(rec, pg->songs, pg->sort, pg->descending, pg->filter, pg->tag, ord);
+    if (pool != NULL) e->host->mem_free(e->host, pool);
     SEL_COUNT_ADD(&e->collection_orders, 1u);
     e->host->mem_free(e->host, rec);
     e->rdc_ord = ord;
@@ -8416,6 +8436,7 @@ static void coll_post(sel_engine* e) {
         e->rdc_sort = e->coll_sort;
         e->rdc_desc = e->coll_desc;
         snprintf(e->rdc_filter, sizeof e->rdc_filter, "%s", e->coll_filter);
+        snprintf(e->rdc_tag, sizeof e->rdc_tag, "%s", e->coll_tag);
         e->rdc_next_follow = 0;
         e->rdc_next_page = 0;
         e->rdc_next_reorder = 0;
@@ -8430,6 +8451,16 @@ static void cmd_COLLECTION_VIEW(sel_engine* e, const sel_message* m) {
     snprintf(e->coll_filter, sizeof e->coll_filter, "%s", m->args[0].v.s);
     e->coll_sort = sort < (uint32_t)SEL_COLL_SORT_COUNT ? sort : (uint32_t)SEL_COLL_SORT_CUSTOM;
     e->coll_desc = m->argc > 2 && m->args[2].v.u != 0u ? 1u : 0u;
+    e->collection_views++;
+    if (e->coll_titles != NULL) {
+        e->rdc_next_reorder = 1;
+        coll_post(e);
+    }
+}
+
+/* COLLECTION_TAG tag (I1440n2): the DeepSID tag filter of the open collection page ("" clears it), next to COLLECTION_VIEW's text filter. */
+static void cmd_COLLECTION_TAG(sel_engine* e, const sel_message* m) {
+    snprintf(e->coll_tag, sizeof e->coll_tag, "%s", m->args[0].v.s);
     e->collection_views++;
     if (e->coll_titles != NULL) {
         e->rdc_next_reorder = 1;
@@ -8464,6 +8495,7 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
         e->coll_sort = (uint32_t)SEL_COLL_SORT_CUSTOM; /* I994d2: a new open starts from the stored order; Back / Forward keep the view */
         e->coll_desc = 0u;
         e->coll_filter[0] = '\0';
+        e->coll_tag[0] = '\0';
     }
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
