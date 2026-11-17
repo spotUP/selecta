@@ -60,7 +60,14 @@ long sel_songlen_bake(const char* tsv_path, const char* out_path, long* out_byte
                     p = tab2 + 1;
                     while (*p != '\0' && cnt < SEL_SONGLEN_MAX_SUBSONGS && first + cnt <= 255u) {
                         unsigned long v = strtoul(p, &p, 10);
-                        while (*p != '\0' && *p != ' ') p++; /* ",flags" */
+                        uint32_t w = 0;
+                        if (*p == ',') { /* ",songend[,!]" */
+                            const char* tok = ++p;
+                            while (*p != '\0' && *p != ' ' && *p != ',') p++;
+                            w = (uint32_t)sel_songend_code(tok, (size_t)(p - tok)) << SEL_SONGLEN_END_SHIFT;
+                            if (p[0] == ',' && p[1] == '!') w |= SEL_SONGLEN_DUP_BIT;
+                        }
+                        while (*p != '\0' && *p != ' ') p++;
                         while (*p == ' ') p++;
                         if (nl == capl) {
                             uint32_t* g;
@@ -69,7 +76,7 @@ long sel_songlen_bake(const char* tsv_path, const char* out_path, long* out_byte
                             if (g == NULL) goto done;
                             lens = g;
                         }
-                        lens[nl++] = v > 0xffffffffUL ? 0u : (uint32_t)v;
+                        lens[nl++] = v > SEL_SONGLEN_MS_MASK ? 0u : (uint32_t)v | w;
                         cnt++;
                     }
                     if (cnt > 0) {
@@ -111,7 +118,7 @@ long sel_songlen_bake(const char* tsv_path, const char* out_path, long* out_byte
     out = fopen(out_path, "wb");
     if (out == NULL) goto done;
     memcpy(buf, "SLDB", 4);
-    put32(buf + 4, 1u);
+    put32(buf + 4, 2u);
     put32(buf + 8, (uint32_t)n);
     put32(buf + 12, (uint32_t)(SEL_SONGLEN_HEADER + n * SEL_SONGLEN_ENTRY));
     result = fwrite(buf, 1, SEL_SONGLEN_HEADER, out) == SEL_SONGLEN_HEADER ? (long)n : -1;
