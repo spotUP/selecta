@@ -2789,9 +2789,10 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
 
 /* I1306b: the posted song_briefs read of the shown collection page (the text UI's model, uimodel/briefs.h). A landed answer redraws the
  * list (setting the count always redraws an AAList); a new page posts its read once. */
-/* I1440q: the engine's about block (label NUL value NUL pairs, an empty label ends; mirrors the Mac col_about_lines) into the header rows. */
+/* I1440q: the about block into the header rows, through the shared sel_uim_about_line (the text UI's reader; numbers the Link rows). */
 static void mui_col_about_sync(mui_state* s, const sel_collection_page* pg) {
-    const char* p = pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? pg->about : "";
+    const char* about = pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? pg->about : "";
+    char lab[48], val[192];
     uint32_t i;
     ULONG parent = 0;
     GetAttr(MUIA_Parent, s->col_about_grp, &parent);
@@ -2800,16 +2801,14 @@ static void mui_col_about_sync(mui_state* s, const sel_collection_page* pg) {
     }
     DoMethod(s->col_about_grp, MUIM_Group_InitChange);
     for (i = 0; i < MUI_ABOUT_MAX; i++) {
-        int on = *p != '\0';
+        int on = sel_uim_about_line(about, i, MUI_ABOUT_MAX, lab, sizeof lab, val, sizeof val);
         if (on) {
-            const char* v = p + strlen(p) + 1u;
-            mui_text_set(s->col_about_lab[i], p);
-            mui_text_set(s->col_about_val[i], v);
-            p = v + strlen(v) + 1u;
+            mui_text_set(s->col_about_lab[i], lab);
+            mui_text_set(s->col_about_val[i], val);
         }
         set(s->col_about_row[i], MUIA_ShowMe, on ? TRUE : FALSE);
     }
-    set(s->col_about_grp, MUIA_ShowMe, *(pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? pg->about : "") != '\0' ? TRUE : FALSE);
+    set(s->col_about_grp, MUIA_ShowMe, *about != '\0' ? TRUE : FALSE);
     DoMethod(s->col_about_grp, MUIM_Group_ExitChange);
     if (parent != 0) {
         DoMethod((Object*)parent, MUIM_Group_ExitChange);

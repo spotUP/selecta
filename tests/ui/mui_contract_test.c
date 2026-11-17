@@ -3144,7 +3144,7 @@ static void test_col_about(void) {
     CHECK(meta != NULL && about != NULL && list != NULL && meta < about && about < list && list < end, "about header is not between the meta line and the song list");
     CHECK(strstr(grp, "s->col_about_lab[i]") != NULL && strstr(grp, "s->col_about_val[i]") != NULL, "about rows have no label and value objects");
     CHECK(strstr(src, "#define MUI_ABOUT_MAX 12") != NULL, "about row count differs from the Mac ABOUT_MAX");
-    CHECK(strstr(src, "mui_col_about_sync(s, pg);") != NULL && strstr(src, "pg->about") != NULL, "the page change does not fill the about rows from the engine");
+    CHECK(strstr(src, "mui_col_about_sync(s, pg);") != NULL && strstr(src, "sel_uim_about_line(about") != NULL, "the page change does not fill the about rows from the engine");
 }
 
 /* I796 (drift B1-B4): ONE reachability test of the player bar. mui_ui.c builds it from the map layer (Mac transport order, Mac column weights,
