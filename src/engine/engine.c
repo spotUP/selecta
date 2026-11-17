@@ -8050,8 +8050,8 @@ static void ds_song_row(void* ctx, const char* const* f) { /* key, name, author,
 }
 
 static void drill_deepsid(sel_engine* e, sel_collection_page* pg, const char* kind, const char* arg, coll_build* b) {
-    static const char* const coll[5][2] = {{"HVSC", "_High Voltage SID Collection"}, {"CGSC", "_Compute's Gazette SID Collection"}, {"SID Happens", "_SID Happens"},
-                                           {"Exotic", "_Exotic SID Tunes Collection"}, {"Public Playlists", "_Public Playlists"}};
+    static const char* const coll[4][2] = {{"HVSC", "_High Voltage SID Collection"}, {"CGSC", "_Compute's Gazette SID Collection"}, {"SID Happens", "_SID Happens"},
+                                           {"Exotic", "_Exotic SID Tunes Collection"}};
     ds_sink k;
     uint32_t i;
     memset(&k, 0, sizeof k);
@@ -8095,11 +8095,11 @@ static void drill_deepsid(sel_engine* e, sel_collection_page* pg, const char* ki
             sel_library_deepsid_list(e->lib, "placings", k.id, ds_song_row, &k);
         }
     } else if (strcmp(kind, "collections") == 0) {
-        for (i = 0; i < 5u; i++) drill_put_group(b, coll[i][0], 0ul);
+        for (i = 0; i < 4u; i++) drill_put_group(b, coll[i][0], 0ul);
     } else if (strcmp(kind, "folder") == 0 && arg != NULL) {
         const char* path = arg;
         int n;
-        for (i = 0; i < 5u; i++) {
+        for (i = 0; i < 4u; i++) {
             if (strcmp(arg, coll[i][0]) == 0) path = coll[i][1];
         }
         n = sel_library_deepsid_list(e->lib, "folders", path, ds_group_row, &k);
