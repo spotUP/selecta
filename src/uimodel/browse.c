@@ -220,3 +220,44 @@ const char* sel_uim_ds_label(const char* first, const char* name) {
     const char* slash = strrchr(name, '/');
     return slash != NULL && (strcmp(first, "collections") == 0 || strcmp(first, "folder") == 0) ? slash + 1 : name;
 }
+
+/* I790: split the drill path at the unit separators; returns the part count. */
+static uint32_t drill_split(const char* path, char (*part)[96]) {
+    uint32_t n = 0u;
+    const char* p = path;
+    while (*p != '\0' && n < 3u) {
+        size_t len = strcspn(p, "\x1f");
+        snprintf(part[n], 96, "%.*s", (int)(len < 95u ? len : 95u), p);
+        n++;
+        p += len;
+        if (*p == '\x1f') p++;
+    }
+    return n;
+}
+
+/* I1440s: the rule moved from the Mac drl_child (I790); the C64 SID kinds go through sel_uim_ds_child. SEL_DRILL_PAGE_ROOT is 1. */
+int sel_uim_drill_child(const char* drill_path, uint32_t drill_page, const char* name, char* out, size_t cap) {
+    char part[3][96];
+    uint32_t np = drill_split(drill_path, part);
+    out[0] = '\0';
+    if (drill_page == 1u) {
+        snprintf(out, cap, "%s", name);
+    } else if (np >= 1u && sel_uim_ds_child(part[0], name, out, cap)) {
+    } else if (np == 1u && strcmp(part[0], "formats") == 0) {
+        snprintf(out, cap, "format\x1f%s", name);
+    } else if (np == 1u && strcmp(part[0], "artists") == 0) {
+        snprintf(out, cap, "artist\x1f%s", name);
+    } else if (np == 1u && strcmp(part[0], "platforms") == 0) {
+        snprintf(out, cap, "platform\x1f%s", name);
+    } else if (np == 2u && strcmp(part[0], "platform") == 0) {
+        snprintf(out, cap, "format\x1f%s", name);
+    } else if (np == 2u && strcmp(part[0], "format") == 0) {
+        snprintf(out, cap, "format\x1f%s\x1f%s", part[1], name);
+    }
+    return out[0] != '\0';
+}
+
+void sel_uim_drill_row_label(const char* drill_path, const char* name, char* out, size_t cap) {
+    char part[3][96];
+    snprintf(out, cap, "%s", drill_split(drill_path, part) > 0u ? sel_uim_ds_label(part[0], name) : name);
+}

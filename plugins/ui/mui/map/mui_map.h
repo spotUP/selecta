@@ -393,8 +393,9 @@ uint32_t mui_shelf_find(const sel_view_state* v, uint32_t id, mui_shelf* out);
 /* I795 (P4): the Browse tiles, from the FORMATS_SHOW and COMPOSERS_SHOW answers in the engine state, then one Sources tile. */
 #define MUI_BROWSE_FORMATS 8u
 #define MUI_BROWSE_COMPOSERS 8u
-#define MUI_TILE_MAX (MUI_BROWSE_FORMATS + MUI_BROWSE_COMPOSERS + 1u)
-enum { MUI_TILE_FORMAT = 0, MUI_TILE_COMPOSER = 1, MUI_TILE_SOURCES = 2 };
+#define MUI_BROWSE_DEEPSID SEL_UIM_DS_TILES /* I1440s: the C64 SID tiles */
+#define MUI_TILE_MAX (MUI_BROWSE_FORMATS + MUI_BROWSE_COMPOSERS + MUI_BROWSE_DEEPSID + 1u)
+enum { MUI_TILE_FORMAT = 0, MUI_TILE_COMPOSER = 1, MUI_TILE_SOURCES = 2, MUI_TILE_DEEPSID = 3 };
 typedef struct mui_btile {
     uint32_t kind, count;
     char label[48], arg[96];

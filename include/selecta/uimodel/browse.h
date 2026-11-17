@@ -107,6 +107,12 @@ const char* sel_uim_side_empty(uint32_t chip, uint32_t n, int bitmap);
 /* I627, I678d: whether the "Create your first playlist" card shows: chip All or Playlists, no filter, no playlist row in the list, not the bitmap tier. */
 int sel_uim_side_card_shown(uint32_t chip, int filtered, uint32_t playlist_rows, int bitmap);
 
+/* I1440s: the drill path one click on drill group row `name` opens ("kind US name"), from the open page's drill path and SEL_DRILL_PAGE_* (the
+ * rule the Mac drill page used, shared with the MUI). 1 and `out` set, 0 and "" when the row is a leaf. */
+int sel_uim_drill_child(const char* drill_path, uint32_t drill_page, const char* name, char* out, size_t cap);
+/* I1440s: the text of a drill group row: a DeepSID folder path shows its leaf, the rest as given. */
+void sel_uim_drill_row_label(const char* drill_path, const char* name, char* out, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif

@@ -5863,8 +5863,8 @@ static void drl_label(const desk* d, const char* name, char* out, size_t cap) {
         snprintf(out, cap, "%s", DRL_UNKNOWN_ARTIST);
         return;
     }
-    if (np > 0u && sel_uim_ds_label(part[0], name) != name) { /* I1440m: a DeepSID folder row shows its leaf, the path stays the key */
-        snprintf(out, cap, "%s", sel_uim_ds_label(part[0], name));
+    sel_uim_drill_row_label(d->drl_path, name, out, cap); /* I1440m/s: a DeepSID folder row shows its leaf, the path stays the key; shared with MUI */
+    if (strcmp(out, name) != 0) {
         return;
     }
     if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
@@ -5968,24 +5968,7 @@ static const char* drl_deepsid_kind(const char* kind, const char** root) {
 }
 
 static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
-    char part[3][96];
-    uint32_t np = drl_split(d->drl_path, part);
-    out[0] = '\0';
-    if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
-        snprintf(out, cap, "%s", name);
-    } else if (np >= 1u && sel_uim_ds_child(part[0], name, out, cap)) { /* I1440m, I1440n: the C64 SID kinds, shared with the text UI */
-    } else if (np == 1u && strcmp(part[0], "formats") == 0) {
-        snprintf(out, cap, "format\x1f%s", name);
-    } else if (np == 1u && strcmp(part[0], "artists") == 0) {
-        snprintf(out, cap, "artist\x1f%s", name);
-    } else if (np == 1u && strcmp(part[0], "platforms") == 0) {
-        snprintf(out, cap, "platform\x1f%s", name);
-    } else if (np == 2u && strcmp(part[0], "platform") == 0) {
-        snprintf(out, cap, "format\x1f%s", name);
-    } else if (np == 2u && strcmp(part[0], "format") == 0) {
-        snprintf(out, cap, "format\x1f%s\x1f%s", part[1], name);
-    }
-    return out[0] != '\0';
+    return sel_uim_drill_child(d->drl_path, d->drl_page, name, out, cap); /* I1440s: the shared rule */
 }
 
 /* The crumbs of the drill path: label and the path a click reopens. Source, kind, then up to two more levels. */
