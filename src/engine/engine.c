@@ -8191,7 +8191,7 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
 /* I994d1: builds pg's order from the rows (e->rdc_blk) and sort fields (e->rdc_titles) under the engine's collection view. The records
  * are a temporary array of pointers into both blocks; the order block stays with the page. A host without memory leaves the order NULL
  * (identity, every row shown). */
-enum { COLL_TAG_CAP = 128 };
+enum { COLL_TAG_CAP = 128, COLL_TAG_BATCH = 32 };
 
 static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* rows, const char* titles) {
     sel_coll_rec* rec = (sel_coll_rec*)e->host->mem_alloc(e->host, (size_t)pg->songs * sizeof *rec, SEL_MEM_FAST);
@@ -8205,7 +8205,6 @@ static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* 
         return;
     }
     char* pool = NULL; /* I1440n2: per-row tag text, only while a tag filter runs */
-    char tg[512];
     int want_tags = e->rdc_tag[0] != '\0';
     if (want_tags) pool = (char*)e->host->mem_alloc(e->host, (size_t)pg->songs * COLL_TAG_CAP, SEL_MEM_FAST);
     if (!e->rdc_reorder) memset(pg->tags, 0, sizeof pg->tags); /* the page's tag choices are collected on a build; a re-order keeps them */
@@ -8224,16 +8223,41 @@ static void coll_order_make(sel_engine* e, sel_collection_page* pg, const char* 
         rec[i].duration_ms = strtoll(m, NULL, 10);
         m += strlen(m) + 1u;
         rec[i].tags = NULL;
-        tg[0] = '\0';
-        /* shortcut: HVSC keys only, as the Song Information rows (sel_library_deepsid_panel); the tags are the ones a DeepSID fetch cached */
-        if ((want_tags || !e->rdc_reorder) && e->lib != NULL && strncmp(rec[i].key, "hvsc:", 5) == 0 &&
-            sel_library_sticker_get(e->lib, rec[i].key, "deepsid.tags", tg, sizeof tg) != 0) {
-            if (!e->rdc_reorder) sel_coll_tags_merge(pg->tags, sizeof pg->tags, tg);
-            if (pool != NULL) { /* shortcut: a row's tag text is cut at COLL_TAG_CAP-1 bytes in the filter */
-                snprintf(pool + (size_t)i * COLL_TAG_CAP, COLL_TAG_CAP, "%s", tg);
-                rec[i].tags = pool + (size_t)i * COLL_TAG_CAP;
+    }
+    /* shortcut: HVSC keys only, as the Song Information rows (sel_library_deepsid_panel); the tags are the ones a DeepSID fetch cached.
+     * I1440n4: one request per COLL_TAG_BATCH rows (a per-row request cost ~30 us each, 150 ms for 5000 rows). */
+    /* the 11 KB batch buffers live on the heap: Amiga task stacks are a few KB */
+    enum { COLL_KEYS_SZ = COLL_TAG_BATCH * 96u + 1u, COLL_VALS_SZ = COLL_TAG_BATCH * SEL_STICKER_VALUE_MAX };
+    char* keys = (want_tags || !e->rdc_reorder) && e->lib != NULL ? (char*)e->host->mem_alloc(e->host, COLL_KEYS_SZ + COLL_VALS_SZ, SEL_MEM_FAST) : NULL;
+    if (keys != NULL) {
+        char* vals = keys + COLL_KEYS_SZ;
+        uint32_t idx[COLL_TAG_BATCH], n, j, from, got;
+        for (from = 0; from < pg->songs;) {
+            size_t used = 0;
+            n = 0;
+            for (; from < pg->songs && n < COLL_TAG_BATCH; from++) {
+                size_t kl = strlen(rec[from].key) + 1u;
+                if (strncmp(rec[from].key, "hvsc:", 5) != 0 || kl + 1u > COLL_KEYS_SZ) continue;
+                if (used + kl + 1u > COLL_KEYS_SZ) break; /* the next round takes this row */
+                memcpy(keys + used, rec[from].key, kl);
+                used += kl;
+                idx[n++] = from;
+            }
+            keys[used] = '\0';
+            got = 0;
+            if (n == 0 || !sel_library_sticker_get_many(e->lib, "deepsid.tags", keys, vals, COLL_VALS_SZ, &got)) continue;
+            for (j = 0, used = 0; j < got; j++) {
+                const char* tg = vals + used;
+                used += strlen(tg) + 1u;
+                if (tg[0] == '\0') continue;
+                if (!e->rdc_reorder) sel_coll_tags_merge(pg->tags, sizeof pg->tags, tg);
+                if (pool != NULL) { /* shortcut: a row's tag text is cut at COLL_TAG_CAP-1 bytes in the filter */
+                    snprintf(pool + (size_t)idx[j] * COLL_TAG_CAP, COLL_TAG_CAP, "%s", tg);
+                    rec[idx[j]].tags = pool + (size_t)idx[j] * COLL_TAG_CAP;
+                }
             }
         }
+        e->host->mem_free(e->host, keys);
     }
     pg->sort = e->rdc_sort;
     pg->descending = e->rdc_desc;

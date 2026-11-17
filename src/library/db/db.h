@@ -167,6 +167,7 @@ enum {
     SEL_USER_LIKE_QUEUE,   /* I306: queues the pending_push "like" row of the key (value = "token mkey r"), replacing an older one */
     SEL_USER_KEPT_GET,     /* I829b: reply [0] = 2 when the key is kept or liked (the cache trim's protect test) */
     SEL_USER_TOP_PLAYED,   /* I829b: at = max keys; out = the most played unskipped keys (most first), each NUL terminated, then "\0"; reply [2] = keys */
+    SEL_USER_STICKER_BATCH, /* I1440n4: name = sticker name, value = song keys, each NUL terminated, then "\0"; out = per key its value, NUL terminated ("" when absent); reply [2] = keys answered */
     SEL_USER_META_FILL     /* I1314a: name = title, value = author, duration_ms = length (0 = unknown) the player reported at play time; fills
                             * only the EMPTY name, artist and duration_ms of the songs row, never one with a value; reply [0] = 2 when the row changed */
 };
@@ -432,6 +433,8 @@ int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, c
 #define SEL_STICKER_VALUE_MAX 256u /* longest sticker value kept, with its NUL */
 int sel_library_sticker_set(sel_library* lib, const char* key, const char* name, const char* value);
 int sel_library_sticker_get(sel_library* lib, const char* key, const char* name, char* out, uint32_t cap);
+/* One sticker of many keys in one request: out gets one NUL terminated value per key ("" when absent), as many as fit; *done = keys answered. 1 on success. */
+int sel_library_sticker_get_many(sel_library* lib, const char* name, const char* keys, char* out, uint32_t cap, uint32_t* done);
 int sel_library_sticker_del(sel_library* lib, const char* key, const char* name);
 int sel_library_sticker_list(sel_library* lib, const char* key, char* out, uint32_t cap, uint32_t* rows);
 /* I185: the catalogue rows of the module info panel for song `key` (STIL note, composer, release, year, genre,
