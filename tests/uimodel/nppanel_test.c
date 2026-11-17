@@ -81,7 +81,7 @@ int main(void) {
     /* up next: the header, then the 3 entries after the playing one by file name */
     CHECK(count_kind(l, n, SEL_UIM_NP_UPNEXT_HDR) == 1u && count_kind(l, n, SEL_UIM_NP_UPNEXT) == SEL_UIM_NP_UPNEXT_MAX);
     f = sel_uim_np_find(l, n, SEL_UIM_NP_UPNEXT, 0u);
-    CHECK(f != NULL && strcmp(f[0].val, "two.mod") == 0 && strcmp(f[1].val, "three.xm") == 0 && strcmp(f[2].val, "four.s3m") == 0);
+    CHECK(f != NULL && strcmp(f[0].val, "Two.mod") == 0 && strcmp(f[1].val, "Three.xm") == 0 && strcmp(f[2].val, "Four.s3m") == 0);
 
     /* playing the third entry leaves two up next */
     st.queue_playing = 3u;

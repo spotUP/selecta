@@ -80,7 +80,7 @@ int main(void) {
     CHECK(is(look(&b, ',', 0), "PITCH -100"));
     CHECK(is(look(&b, TXT_KEY_RIGHT, TXT_MOD_CTRL), "TEMPO +5"));
     CHECK(is(look(&b, TXT_KEY_LEFT, TXT_MOD_CTRL), "TEMPO -5"));
-    CHECK(look(&b, 'V', 0) == NULL);
+    CHECK(is(look(&b, 'V', 0), "@switch_view")); /* I1222i */
     CHECK(is(look(&b, 'x', 0), "@queue_scope")); /* I1187 */
     CHECK(is(look(&b, 'c', 0), "@lib_mode"));
     CHECK(look(&b, 'Z', 0) == NULL);
