@@ -103,6 +103,40 @@ static void make_zip(const char* name, const char* member, const unsigned char* 
     free(heap);
 }
 
+/* One-member lha level 0 archive, method -lh0- (stored), written to file `name` (I710aeb). The member crc16 is lhasa's own (poly 0xA001). */
+static void make_lha(const char* name, const char* member, const unsigned char* data, size_t n) {
+    unsigned char* z = calloc(1, n + 64);
+    size_t mlen = strlen(member), pos, i;
+    unsigned crc = 0, sum = 0, b;
+
+    memcpy(z + 2, "-lh0-", 5);
+    w32(z + 7, n);
+    w32(z + 11, n);
+    w32(z + 15, 0x5a000000ul); /* dos time */
+    z[19] = 0x20;
+    z[20] = 0; /* level 0 */
+    z[21] = (unsigned char)mlen;
+    memcpy(z + 22, member, mlen);
+    for (i = 0; i < n; i++) {
+        crc ^= data[i];
+        for (b = 0; b < 8; b++) {
+            crc = (crc & 1u) ? (crc >> 1) ^ 0xA001u : crc >> 1;
+        }
+    }
+    w16(z + 22 + mlen, crc);
+    z[0] = (unsigned char)(22 + mlen); /* header size after the two leading bytes */
+    for (i = 2; i < 24u + mlen; i++) {
+        sum += z[i];
+    }
+    z[1] = (unsigned char)(sum & 0xffu);
+    pos = 22 + mlen + 2;
+    memcpy(z + pos, data, n);
+    pos += n;
+    z[pos++] = 0;
+    put(name, z, pos);
+    free(z);
+}
+
 int main(int argc, char** argv) {
     unsigned char good[1024], bad[1024], other[1024];
     uint8_t d[32];
@@ -213,6 +247,20 @@ int main(int argc, char** argv) {
         CHECK(sel_sysfile_resolve(g_dir, &decl, NULL, 0));
         remove(full);
         path(src, sizeof src, "in.bin");
+    }
+
+    /* I710aeb: install from an lha archive, the matching member is not the first */
+    {
+        path(src, sizeof src, "in.lha");
+        make_lha("in.lha", "other.bin", other, sizeof other);
+        CHECK(!sel_sysfile_install(g_dir, &decl, src, err, sizeof err));
+        CHECK(strstr(err, "No file in this archive matches the test disk image") != NULL);
+        CHECK(!exists("disk.d64"));
+        make_lha("in.lha", "Players/disk-any-name.d64", good, sizeof good);
+        CHECK(sel_sysfile_install(g_dir, &decl, src, err, sizeof err));
+        CHECK(exists("disk.d64") && !exists("disk.d64.part"));
+        CHECK(sel_sysfile_resolve(g_dir, &decl, NULL, 0));
+        remove(full);
     }
 
     /* I710aa: a plain file above the 16 MB zip member cap (Mariopants notes.wav is 25.7 MB) still resolves by sha. */
