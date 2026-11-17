@@ -164,6 +164,10 @@ typedef struct prov_pair {
 typedef struct bake {
     uint8_t* keys; /* 6 bytes per entry, sorted (songlengths.bin) */
     uint32_t n;
+    uint8_t *sl_first, *sl_count; /* per entry, from songlengths.bin, for the songlengths twin check */
+    uint32_t *sl_off, *sl_len;
+    uint8_t* coll; /* sorted 6-byte xxh32 keys that two or more md5s map to (real collisions) */
+    size_t ncoll;
     info_row* info;
     pool pl;
     uint32_t* fmt_ref; /* format id -> string ref */
@@ -214,8 +218,9 @@ static int bridge_find(const bake* b, uint8_t key[6]) {
 
 static int load_keys(bake* b, const char* songlen_bin) {
     FILE* f = fopen(songlen_bin, "rb");
-    uint8_t h[SEL_SONGLEN_HEADER], e[SEL_SONGLEN_ENTRY];
-    uint32_t i;
+    uint8_t h[SEL_SONGLEN_HEADER], e[SEL_SONGLEN_ENTRY], w[4];
+    uint32_t i, nlen;
+    long size;
     if (f == NULL) return 0;
     if (fread(h, 1, sizeof h, f) != sizeof h) {
         fclose(f);
@@ -224,12 +229,33 @@ static int load_keys(bake* b, const char* songlen_bin) {
     b->n = get32(h + 8);
     b->keys = (uint8_t*)malloc((size_t)b->n * 6u + 1u);
     b->info = (info_row*)calloc((size_t)b->n + 1u, sizeof *b->info);
-    for (i = 0; b->keys != NULL && b->info != NULL && i < b->n; i++) {
+    b->sl_first = (uint8_t*)malloc((size_t)b->n + 1u);
+    b->sl_count = (uint8_t*)malloc((size_t)b->n + 1u);
+    b->sl_off = (uint32_t*)malloc(((size_t)b->n + 1u) * 4u);
+    if (b->keys == NULL || b->info == NULL || b->sl_first == NULL || b->sl_count == NULL || b->sl_off == NULL) {
+        fclose(f);
+        return 0;
+    }
+    for (i = 0; i < b->n; i++) {
         if (fread(e, 1, sizeof e, f) != sizeof e) break;
         memcpy(b->keys + (size_t)i * 6u, e, 6);
+        b->sl_first[i] = e[6];
+        b->sl_count[i] = e[7];
+        b->sl_off[i] = get32(e + 8);
+    }
+    fseek(f, 0, SEEK_END);
+    size = ftell(f);
+    nlen = i == b->n && size >= (long)(SEL_SONGLEN_HEADER + b->n * SEL_SONGLEN_ENTRY)
+               ? (uint32_t)((size - (long)(SEL_SONGLEN_HEADER + b->n * SEL_SONGLEN_ENTRY)) / 4)
+               : 0u;
+    b->sl_len = (uint32_t*)malloc((size_t)nlen * 4u + 4u);
+    fseek(f, (long)(SEL_SONGLEN_HEADER + b->n * SEL_SONGLEN_ENTRY), SEEK_SET);
+    for (i = 0; b->sl_len != NULL && i < nlen; i++) {
+        if (fread(w, 1, 4, f) != 4) break;
+        b->sl_len[i] = get32(w);
     }
     fclose(f);
-    return b->keys != NULL && b->info != NULL && i == b->n;
+    return b->sl_len != NULL && i == nlen && nlen > 0;
 }
 
 static int fmt_id(bake* b, long ref) {
@@ -249,6 +275,41 @@ static int whitelisted(const uint8_t key[6]) {
     for (i = 0; i < sizeof k_whitelist / sizeof *k_whitelist; i++)
         if (sel_songlen_key_bytes(k_whitelist[i], w) && memcmp(w, key, 6) == 0) return 1;
     return 0;
+}
+
+/* Keys that two or more distinct md5s map to: same xxh32 + size, different files (crc32 differs). The twin rows of
+ * such a key legitimately disagree; the bake keeps the xxh32 row (first source row wins in the bridge). */
+static int collision_key(const bake* b, const uint8_t key[6]) {
+    size_t lo = 0, hi = b->ncoll;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2u;
+        int c = memcmp(key, b->coll + mid * 6u, 6);
+        if (c == 0) return 1;
+        if (c < 0) hi = mid;
+        else lo = mid + 1u;
+    }
+    return 0;
+}
+
+static int cmp_key6(const void* a, const void* b) { return memcmp(a, b, 6); }
+
+/* Fills b->coll from the de-duplicated bridge (b->m sorted by md5). */
+static int find_collisions(bake* b) {
+    uint8_t* all = (uint8_t*)malloc(b->nm * 6u + 1u);
+    size_t i, w = 0;
+    if (all == NULL) return 0;
+    b->coll = (uint8_t*)malloc(b->nm * 6u + 1u);
+    if (b->coll == NULL) { free(all); return 0; }
+    for (i = 0; i < b->nm; i++) memcpy(all + i * 6u, b->m[i].key, 6);
+    qsort(all, b->nm, 6, cmp_key6);
+    for (i = 1; i < b->nm; i++) {
+        if (memcmp(all + (i - 1u) * 6u, all + i * 6u, 6) != 0) continue;
+        if (w > 0 && memcmp(b->coll + (w - 1u) * 6u, all + i * 6u, 6) == 0) continue;
+        memcpy(b->coll + w++ * 6u, all + i * 6u, 6);
+    }
+    b->ncoll = w;
+    free(all);
+    return 1;
 }
 
 static unsigned year_byte(const char* s) {
@@ -306,9 +367,47 @@ static void info_cb(char** f, int nf, void* ctx) {
         b->st->md5_checked++;
         if (!same) {
             if (whitelisted(key)) b->st->md5_whitelisted++;
+            else if (collision_key(b, key)) b->st->md5_collision++;
             else b->st->md5_mismatch++;
         }
     }
+}
+
+/* Songlengths md5 twin row (md5 prefix, first subsong, "ms[,songend[,!]]" tokens): must equal the baked entry of
+ * the xxh32 key the bridge maps it to. */
+static void songlen_twin_cb(char** f, int nf, void* ctx) {
+    bake* b = (bake*)ctx;
+    uint8_t key[6];
+    long e;
+    const char* p;
+    unsigned i, ok = 1;
+    if (b->failed || nf < 3 || strlen(f[0]) != 12 || !sel_songlen_key_bytes(f[0], key)) return;
+    if (!bridge_find(b, key) || (e = find_entry(b, key)) < 0) {
+        b->st->sl_twin_unmapped++;
+        return;
+    }
+    b->st->sl_checked++;
+    ok = strtoul(f[1], NULL, 10) == b->sl_first[e];
+    p = f[2];
+    /* the baker stops at 255 subsongs (u8 count, first + count <= 255): a longer source row is truncated, not wrong */
+    for (i = 0; ok && *p != '\0' && !(i == b->sl_count[e] && i >= SEL_SONGLEN_MAX_SUBSONGS); i++) {
+        unsigned long v = strtoul(p, (char**)&p, 10);
+        uint32_t w = 0;
+        if (*p == ',') {
+            const char* tok = ++p;
+            while (*p != '\0' && *p != ' ' && *p != ',') p++;
+            w = (uint32_t)sel_songend_code(tok, (size_t)(p - tok)) << SEL_SONGLEN_END_SHIFT;
+            if (p[0] == ',' && p[1] == '!') w |= SEL_SONGLEN_DUP_BIT;
+        }
+        while (*p != '\0' && *p != ' ') p++;
+        while (*p == ' ') p++;
+        ok = i < b->sl_count[e] && b->sl_len[b->sl_off[e] + i] == (v > SEL_SONGLEN_MS_MASK ? 0u : (uint32_t)v | w);
+    }
+    if (ok && i != b->sl_count[e]) ok = 0;
+    if (ok) return;
+    if (whitelisted(key)) b->st->sl_whitelisted++;
+    else if (collision_key(b, key)) b->st->sl_collision++;
+    else b->st->sl_mismatch++;
 }
 
 /* Source row: md5, subsong, ms, songend, player, format, channels, size, xxh32, crc32, path. */
@@ -662,6 +761,7 @@ int sel_uadedb_bake(const char* checkout, const char* outdir, sel_uadedb_stats* 
         b.m[w++] = b.m[i];
     }
     b.nm = w;
+    if (!find_collisions(&b)) goto done;
 
     /* uadeinfo (R2): index 0 of the format table is the empty format */
     if (pool_ref(&b.pl, "", 1) < 0 || fmt_id(&b, 0) < 0) goto done;
@@ -672,6 +772,8 @@ int sel_uadedb_bake(const char* checkout, const char* outdir, sel_uadedb_stats* 
             if (!each_row(p, info_cb, &b) || b.failed) goto done;
         }
     }
+    snprintf(p, sizeof p, "%s/tsv/pretty/md5/songlengths.tsv", checkout);
+    if (!each_row(p, songlen_twin_cb, &b) || b.failed) goto done;
     {
         /* info_entries: entries with a non-empty format (modinfos covers every key) */
         long cnt = 0;
@@ -697,6 +799,11 @@ int sel_uadedb_bake(const char* checkout, const char* outdir, sel_uadedb_stats* 
     ok = write_prov(&b, q, st);
 done:
     free(b.keys);
+    free(b.sl_first);
+    free(b.sl_count);
+    free(b.sl_off);
+    free(b.sl_len);
+    free(b.coll);
     free(b.info);
     free(b.fmt_ref);
     free(b.pl.buf);
