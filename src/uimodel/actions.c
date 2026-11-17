@@ -88,7 +88,7 @@ static const sel_uim_action k_actions[] = {
     {"viz_krakatoa", "Krakatoa Smoke Visualizer", "Draw the song as simulated smoke", "wind",
      "View/Visualizer/Krakatoa Smoke", "C-9", "PREF_SET ui.desktop.viz viz_krakatoa"},
     {"viz_cover", "Cover Art Visualizer", "Show the cover of the playing song as large as it fits", "image",
-     "View/Visualizer/Cover Art", "C-0", "PREF_SET ui.desktop.viz viz_cover"},
+     "View/Visualizer/Cover Art", "C-k", "PREF_SET ui.desktop.viz viz_cover"},
     {"ui_text", "Switch to Text Interface", "Hand the session to the text interface", "terminal",
      "View/Switch to Text Interface", "C-t", "UI_SWITCH text"},
     {"ui_desktop", "Switch to Desktop Interface", "Hand the session to the desktop interface", "monitor",

@@ -108,6 +108,8 @@ if(sw MATCHES "ui_stats id=desktop ")
 endif()
 
 # Focus ring: Tab x2 then Shift+Tab leaves the focus on stop 0 (stat is stop + 1) after 3 moves, and the ring is drawn.
+# Fresh config: the keyed actions above save prefs (viz_cover saves visual mode, which draws no focus ring).
+file(REMOVE_RECURSE "${WORK}/cfg")
 dui_run(base --ui desktop --backend mem --stats --clock fixed --canvas 1280x800)
 dui_stat(base_hash "${base}" desktop canvas_hash)
 file(WRITE "${WORK}/tab.txt" "key tab\nkey tab\nkey shift+tab\n")
