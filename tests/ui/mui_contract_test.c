@@ -3147,6 +3147,22 @@ static void test_col_about(void) {
     CHECK(strstr(src, "mui_col_about_sync(s, pg);") != NULL && strstr(src, "sel_uim_about_line(about") != NULL, "the page change does not fill the about rows from the engine");
 }
 
+/* I1440r: Song Information shows the engine's catalogue / DeepSID rows (st->panel, the Mac and text source) after the meta tags and before the
+ * subsong line, tidied by the shared sel_uim_tidy_info; no parsing in MUI. */
+static void test_songinfo_panel(void) {
+    char *src = ui_source(), *meta, *panel, *sub;
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    meta = strstr(src, "one \"Label: value\" row per meta tag");
+    panel = meta != NULL ? strstr(meta, "const char* p = st->panel;") : NULL;
+    sub = panel != NULL ? strstr(panel, "\"Subsong: %lu of %lu\"") : NULL;
+    CHECK(panel != NULL && sub != NULL, "Song Information does not read the engine panel rows before the subsong line");
+    CHECK(panel != NULL && strstr(panel, "sel_uim_tidy_info(p, val, sizeof val)") != NULL, "panel rows skip the shared tidy rule");
+    CHECK(strstr(src, "#define MUI_INFO_MAX 48u") != NULL, "info rows cannot hold the DeepSID rows");
+}
+
 /* I796 (drift B1-B4): ONE reachability test of the player bar. mui_ui.c builds it from the map layer (Mac transport order, Mac column weights,
  * art frame, Like beside the title), and the icons it builds fire their commands: each transport action and Like go through mui_action_fire
  * (the handler sentinel mui_action_fires() counts them). */
@@ -4221,6 +4237,8 @@ int main(int argc, char** argv) {
         test_volume_row();
     } else if (strcmp(argv[1], "col-about") == 0) {
         test_col_about();
+    } else if (strcmp(argv[1], "songinfo-panel") == 0) {
+        test_songinfo_panel();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
         test_cycle_initial();
     } else if (strcmp(argv[1], "aa-aspect") == 0) {

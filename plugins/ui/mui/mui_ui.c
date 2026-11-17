@@ -138,7 +138,7 @@ static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
                                               "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage", "pfolder", "siwrong", "siskip", "sinote", "searchlive"};
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
-#define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
+#define MUI_INFO_MAX 48u  /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
 #define MUI_OFF_ROWS 6u    /* I1313d: most "Players Turned Off" rows */
 #define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
@@ -2601,6 +2601,21 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", lab, val);
             s->info_ptr[rows] = s->info_buf[rows];
             rows++;
+        }
+        /* I1440r: the catalogue and DeepSID rows the engine took from the library (label NUL value NUL pairs, the Mac and text order: after the
+         * meta tags); CSDb releases are text rows, the thumbnails wait for a datatype image object. */
+        if (st->panel != NULL) {
+            const char* p = st->panel;
+            while (*p != '\0' && rows < MUI_INFO_MAX - 1u) {
+                const char* value = p + strlen(p) + 1;
+                char val[96];
+                mui_flat(val, sizeof val, value);
+                sel_uim_tidy_info(p, val, sizeof val);
+                snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", p, val);
+                s->info_ptr[rows] = s->info_buf[rows];
+                rows++;
+                p = value + strlen(value) + 1;
+            }
         }
         if (so->path != NULL && so->subsong_count > 1u) {
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "Subsong: %lu of %lu", (unsigned long)so->subsong + 1ul,
