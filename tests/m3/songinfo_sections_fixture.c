@@ -2,6 +2,7 @@
  * The key comes from sel_uade_key_file, so the bake row matches the real file the selecta binary opens. */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #include "uadedb.h"
