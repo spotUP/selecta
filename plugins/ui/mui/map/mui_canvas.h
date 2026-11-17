@@ -63,4 +63,8 @@ void mui_canvas_set_icons(const sel_gui_icons_packed* baked);
 mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path want, const uint32_t* src, int32_t sw,
                                  int32_t sh, uint32_t kind, const char* format, const char* title);
 
+/* I1440q3: centre-crops the w x h words `src` to a square and scales it into `dst` (edge x edge). The real cover (library blob decoded
+ * by the plugin) becomes the canvas image; the frame is square, so no stretch. 0 on bad arguments. */
+int mui_image_square(const uint32_t* src, int32_t w, int32_t h, uint32_t* dst, int32_t edge);
+
 #endif /* MUI_CANVAS_H */

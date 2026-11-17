@@ -37,6 +37,8 @@ typedef struct canvas_data {
     uint32_t n, cursor;
     mui_art_fn art;
     void* art_ctx;
+    uint32_t* img;   /* I1440q3: real cover words (img_edge squared), owned; NULL = the generated cover */
+    int32_t img_edge;
     int single;      /* I1399d: one cover over the whole object (Now Playing art), not a grid */
     uint32_t kind, tint; /* tint: 0x00RRGGBB of the kind token, the planar fill */
     char title[64], ext[12];
@@ -72,6 +74,8 @@ static ULONG canvas_new(struct IClass* cl, Object* obj, Msg msg) {
 
 static ULONG canvas_dispose(struct IClass* cl, Object* obj, Msg msg) {
     canvas_data* d = INST_DATA(cl, obj);
+    free(d->img);
+    d->img = NULL;
     if (d->mc != NULL) {
         mui_canvas_release(d->mc);
         free(d->mc);
@@ -126,7 +130,8 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     }
     if (mui_canvas_fit(d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)})) {
         if (d->single) {
-            mui_canvas_draw_art(d->mc, (sel_gui_rect){0, 0, d->mc->c.w, d->mc->c.h}, MUI_ART_COVER, NULL, 0, 0, d->kind, d->ext, d->title);
+            mui_canvas_draw_art(d->mc, (sel_gui_rect){0, 0, d->mc->c.w, d->mc->c.h}, d->img != NULL ? MUI_ART_DATATYPE : MUI_ART_COVER, d->img,
+                                d->img_edge, d->img_edge, d->kind, d->ext, d->title);
             mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
             canvas_label(obj, d);
             return 0;
@@ -255,6 +260,18 @@ Object* mui_canvas_cover_new(int screen_is_rtg) {
         SetAttrs(o, MUIA_ShowMe, TRUE, TAG_DONE);
     }
     return o;
+}
+
+void mui_canvas_set_image(Object* obj, const uint32_t* px, int32_t edge) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    size_t n = (size_t)edge * (size_t)edge * sizeof *px;
+    free(d->img);
+    d->img = px != NULL ? malloc(n) : NULL;
+    if (d->img != NULL) {
+        memcpy(d->img, px, n);
+    }
+    d->img_edge = d->img != NULL ? edge : 0;
+    MUI_Redraw(obj, MADF_DRAWOBJECT);
 }
 
 void mui_canvas_set_cover(Object* obj, uint32_t kind, uint32_t tint, const char* ext, const char* title) {

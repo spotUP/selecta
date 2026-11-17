@@ -91,6 +91,7 @@ static void mui_libs_close(void) {
 #include "map/mui_aa.h"
 #include "map/mui_log.h"
 #include "mui_canvas_class.h"
+#include "mui_cover_image.h"
 #include "mui_vizarea_class.h"
 #include "mui_listview_class.h"
 #include "mui_keys_class.h"
@@ -245,6 +246,8 @@ typedef struct mui_state {
     Object* set_ctl[MUI_PREF_MAX];
     char set_choice[MUI_PREF_MAX][80];
     const char* set_entry[MUI_PREF_MAX][10];
+    const sel_ui_art* art;          /* I1440q3: the library cover source, NULL without a library */
+    char np_img_path[256];          /* I1440q3: the song whose real cover np_cover and bar_cover hold */
     Object* np_cover;               /* I1399d: Now Playing art canvas, detail slot (NULL: placeholder) */
     Object* bar_cover;              /* I1399d: the same cover in the player bar */
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
@@ -627,6 +630,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SHELF_LIST_BASE 0x2A20L /* I795 (P1): a row of a shelf slot was picked */
 #define CTL_TILE_BASE 0x2A40L       /* I795 (P4): the Browse tiles, CTL_TILE_BASE + slot */
 #define CTL_FACET_BASE 0x2A80L      /* I795 (P5): the Search facet chips, CTL_FACET_BASE + facet */
+#define MUI_COVER_EDGE 128 /* I1440q3: real cover words, square (cover frames are square) */
 #define CTL_LIBMODE 0x2AC0L         /* I1175: the Library mode Cycle (Composers, Tree, Columns, Files, History, Sources) */
 #define CTL_SRC_LIST 0x2AC1L        /* I1175: a row of the Sources page was picked */
 #define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
@@ -2494,6 +2498,18 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
         }
         if (s->bar_cover != NULL) {
             mui_canvas_set_cover(s->bar_cover, SEL_COVER_KIND_FORMAT, tint, dot != NULL ? dot + 1 : NULL, ttl);
+        }
+        /* I1440q3: the real cover (the DeepSID composer photo is a SID song's cover) over the generated one, once per song; RTG draws it */
+        if (strcmp(s->np_img_path, so->path != NULL ? so->path : "") != 0) {
+            uint32_t* px = so->path != NULL ? mui_cover_image(s->art, so->path, MUI_COVER_EDGE) : NULL;
+            snprintf(s->np_img_path, sizeof s->np_img_path, "%s", so->path != NULL ? so->path : "");
+            if (s->np_cover != NULL) {
+                mui_canvas_set_image(s->np_cover, px, MUI_COVER_EDGE);
+            }
+            if (s->bar_cover != NULL) {
+                mui_canvas_set_image(s->bar_cover, px, MUI_COVER_EDGE);
+            }
+            free(px);
         }
     }
     mui_text_set(s->np_title, s->np_buf[0]);
@@ -4376,6 +4392,8 @@ static void* mui_open(const sel_ui_open_args* a) {
     int np_compact;
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
+    s->art = a != NULL ? a->art : NULL;
+    s->np_img_path[0] = '\0';
     mui_route_init(&s->route);
     mui_route_set_leave(&s->route, mui_route_leave_cb, s); /* I1329i */
     s->find_plugin = a != NULL ? a->find_plugin : NULL;

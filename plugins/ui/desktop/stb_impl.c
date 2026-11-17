@@ -7,11 +7,13 @@
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic ignored "-Wcomment"
+#ifndef SEL_STB_IMAGE_ONLY /* I1440q3: the MUI plugin compiles this file for stb_image alone (no float truetype) */
 #define STB_TRUETYPE_IMPLEMENTATION
 #ifdef __clang__
 #pragma GCC diagnostic ignored "-Wnewline-eof"
 #endif
 #include "stb_truetype.h"
+#endif
 
 /* stb_image: PNG and JPEG from memory only (design doc 2.7). */
 #define STBI_ONLY_PNG

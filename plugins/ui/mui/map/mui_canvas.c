@@ -9,6 +9,7 @@
 #include <selecta/uimodel/tokens.h>
 
 #include <stdlib.h>
+#include <string.h>
 
 /* One size of the baked icon set, unpacked on first use (I1399a): the largest baked size not above `px`. The kind icons are a
  * handful of masks, so the whole set at one cover-sized edge is small (about 40 KB at 32 px); a later larger edge rebuilds it. */
@@ -175,4 +176,25 @@ mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path wan
     }
     mui_platform_cover(&m->c, r, kind, format, title);
     return MUI_ART_COVER;
+}
+
+int mui_image_square(const uint32_t* src, int32_t w, int32_t h, uint32_t* dst, int32_t edge) {
+    int32_t side, x0, y0, y;
+    uint32_t* sq;
+    if (src == NULL || dst == NULL || w <= 0 || h <= 0 || edge <= 0) {
+        return 0;
+    }
+    side = w < h ? w : h;
+    x0 = (w - side) / 2;
+    y0 = (h - side) / 2;
+    sq = malloc((size_t)side * (size_t)side * sizeof *sq);
+    if (sq == NULL) {
+        return 0;
+    }
+    for (y = 0; y < side; y++) {
+        memcpy(sq + (size_t)y * (size_t)side, src + (size_t)(y0 + y) * (size_t)w + (size_t)x0, (size_t)side * sizeof *sq);
+    }
+    sel_gui_image_scale(sq, side, side, dst, edge, edge);
+    free(sq);
+    return 1;
 }

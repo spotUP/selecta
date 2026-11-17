@@ -683,6 +683,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-open-compact-reach COMMAND mui_contract_test open-compact-reach) # I949f
   add_test(NAME mui-aa-aspect COMMAND mui_contract_test aa-aspect)
   add_test(NAME mui-screen-rtg-flag COMMAND mui_contract_test screen-rtg-flag)
+  add_test(NAME mui-cover-image COMMAND mui_contract_test cover-image)
   add_test(NAME mui-window-borderless COMMAND mui_contract_test window-borderless)
   add_test(NAME mui-menu-dispatch COMMAND mui_contract_test menu-dispatch)
   add_test(NAME mui-weights COMMAND mui_contract_test weights)
