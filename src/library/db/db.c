@@ -24,8 +24,10 @@ static uint32_t g_heap_allocs;
  * I790 (D-M3-2): the V14 indexes songs_source_format and songs_source_artist plus the source_new table pushed the :memory:
  * scan past 544 KiB again (SQLITE_NOMEM in sel_library_scan_batch, peak ~333 KB); another 32 KiB makes the tier 576 KiB.
  * I848a (D-M3-2): the V16 partial indexes songs_md5 and songs_source_path (+ I838 item_formats) outgrew it again; 608 KiB
- * still failed (memsys5 power-of-two blocks), so the tier is 640 KiB. */
-#define HEAP_SMALL_BYTES (640u * 1024u)
+ * still failed (memsys5 power-of-two blocks), so the tier is 640 KiB.
+ * I1400c (songs_added) and I1417 (songs_artist_nocase): two more indexes, either one alone tips the :memory: scan over
+ * (peak 375200 of the 640 KiB heap part); +32 KiB makes the tier 672 KiB. */
+#define HEAP_SMALL_BYTES (672u * 1024u)
 
 /* Lookaside of the small tier: 32400 bytes, just under the 32 KiB memsys5 block (the default asks 48000 -> 64 KiB). */
 #define LOOKASIDE_SMALL_SLOT 1200

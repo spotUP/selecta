@@ -17,7 +17,8 @@
  * trigger, the user_version write and COMMIT = 6 more statements, none of them on songs. */
 /* I1400c: the step back also runs v20 in its own transaction: BEGIN, the songs(added) index, the user_version write and COMMIT = 4 more. */
 /* I1417: v21 (4 more, already over the old bound) and v22 (BEGIN, index, search_cache delete, user_version write, COMMIT = 5). */
-#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5)
+/* I1432: v23 (ratings from liked): BEGIN, the INSERT, the DELETE, the user_version write, COMMIT = 5 more. */
+#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5 + 5)
 
 static int g_fail;
 static int g_stmts;
