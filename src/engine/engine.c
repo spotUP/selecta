@@ -6697,12 +6697,58 @@ static void folders_read_run(sel_engine* e) {
 
 /* I191: rebuilds the rows of the home view source (recently played, jump back in, new this week) from the
  * library. Without a library the home view is empty. */
+/* I1440n: the Home shelf "From DeepSID": the newest uploads and one composer among them, from the cached DeepSID list (design
+ * 2026-11-16-i1440-deepsid.md 3.4). Empty (no shelf) while the list is not cached or the scrape is off: the list call then answers -1. */
+typedef struct ds_home {
+    char* text;
+    size_t o, cap;
+    uint32_t n, seen;
+    char author[96];
+} ds_home;
+
+static void ds_home_row(void* ctx, const char* const* f) { /* key, name, author, player */
+    ds_home* h = (ds_home*)ctx;
+    h->seen++;
+    if (h->n < 8u && f[0][0] != '\0' && h->o + strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + 8u < h->cap) {
+        h->o += (size_t)snprintf(h->text + h->o, h->cap - h->o, "S %s\t%s\x1f%s\n", f[0], f[1][0] != '\0' ? f[1] : f[0], f[2]);
+        h->n++;
+    }
+    /* one random composer: reservoir pick over the authors seen */
+    if (f[2][0] != '\0' && rand() % (int)h->seen == 0) snprintf(h->author, sizeof h->author, "%s", f[2]);
+}
+
+static void home_deepsid_shelf(sel_engine* e) {
+    ds_home h;
+    char canon[96];
+    size_t len = strlen(e->rd_home_text);
+    h.text = e->rd_home_text + len;
+    h.cap = SEL_VIEW_HOME_TEXT_MAX - len;
+    h.o = 0;
+    h.n = h.seen = 0;
+    h.author[0] = '\0';
+    if (h.cap < 2048u || sel_library_deepsid_list(e->lib, "charts", "new", ds_home_row, &h) <= 0 || h.n == 0u) return;
+    h.text[h.o] = '\0';
+    {   /* the heading goes first: move the rows up behind it */
+        static const char head[] = "H From DeepSID\n";
+        if (h.o + sizeof head + 160u >= h.cap) { h.text[0] = '\0'; return; }
+        memmove(h.text + sizeof head - 1u, h.text, h.o + 1u);
+        memcpy(h.text, head, sizeof head - 1u);
+        h.o += sizeof head - 1u;
+    }
+    if (h.author[0] != '\0' && sel_composer_canon(h.author, canon, sizeof canon) > 0) {
+        h.o += (size_t)snprintf(h.text + h.o, h.cap - h.o, "S #%u:%s\t%s\n", (unsigned)SEL_LIB_ITEM_COMPOSER, canon, h.author);
+    }
+    e->rd_home_lines += h.n + 2u;
+}
+
 static void home_read_run(sel_engine* e) {
     e->rd_home_text[0] = '\0';
     e->rd_home_lines = 0;
     if (!sel_library_home_chip(e->lib, e->rd_home_chip, 10, e->rd_home_text, SEL_VIEW_HOME_TEXT_MAX, &e->rd_home_lines)) {
         e->rd_home_text[0] = '\0';
+        return;
     }
+    home_deepsid_shelf(e);
 }
 
 static void home_apply(sel_engine* e, const char* from);
@@ -7916,7 +7962,43 @@ typedef struct ds_sink {
     coll_build* b;
     const char* want;
     char id[24];
+    char year[12]; /* I1440n: compos: the year being folded (years level) */
+    unsigned long events;
 } ds_sink;
+
+/* I1440n: the charts the server serves. Top rated and most played are left out: the server answers 501 for them (no reachable source). */
+static const char* const ds_chart[][2] = {{"Newest Uploads", "new"}};
+
+static void ds_group_row(void* ctx, const char* const* f);
+
+static void ds_year_flush(ds_sink* k) { /* compos, years level: one row per year with its event count */
+    char n[24];
+    const char* parts[3];
+    if (k->year[0] == '\0') return;
+    snprintf(n, sizeof n, "%lu", k->events);
+    parts[0] = k->year, parts[1] = n, parts[2] = "";
+    composer_put(&k->b->rows, parts, 3);
+    k->b->n++;
+}
+
+static void ds_year_row(void* ctx, const char* const* f) { /* name, entries, year, event id: the list is ordered by year */
+    ds_sink* k = (ds_sink*)ctx;
+    if (strcmp(k->year, f[2]) != 0) {
+        ds_year_flush(k);
+        snprintf(k->year, sizeof k->year, "%s", f[2]);
+        k->events = 0;
+    }
+    k->events++;
+}
+
+static void ds_event_row(void* ctx, const char* const* f) { /* events of the wanted year; or the id of the wanted event name when want is set with no year */
+    ds_sink* k = (ds_sink*)ctx;
+    if (k->year[0] != '\0') {
+        if (strcmp(f[2], k->year) == 0) ds_group_row(ctx, f);
+    } else if (k->want != NULL && k->id[0] == '\0' && strcmp(f[0], k->want) == 0) {
+        snprintf(k->id, sizeof k->id, "%s", f[3]);
+    }
+}
 
 static void ds_group_row(void* ctx, const char* const* f) { /* name, count, third column */
     ds_sink* k = (ds_sink*)ctx;
@@ -7974,6 +8056,25 @@ static void drill_deepsid(sel_engine* e, sel_collection_page* pg, const char* ki
     } else if (strcmp(kind, "player") == 0 && arg != NULL) {
         pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
         sel_library_deepsid_list(e->lib, "player", arg, ds_song_row, &k);
+    } else if (strcmp(kind, "charts") == 0) { /* I1440n */
+        for (i = 0; i < sizeof ds_chart / sizeof ds_chart[0]; i++) drill_put_group(b, ds_chart[i][0], 0ul);
+    } else if (strcmp(kind, "chart") == 0 && arg != NULL) {
+        for (i = 0; i < sizeof ds_chart / sizeof ds_chart[0]; i++) {
+            if (strcmp(arg, ds_chart[i][0]) != 0) continue;
+            pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+            sel_library_deepsid_list(e->lib, "charts", ds_chart[i][1], ds_song_row, &k);
+        }
+    } else if (strcmp(kind, "compos") == 0) { /* I1440n: years, then events of a year, then the placings of an event */
+        if (sel_library_deepsid_list(e->lib, "comps", "", ds_year_row, &k) > 0) ds_year_flush(&k);
+    } else if (strcmp(kind, "year") == 0 && arg != NULL) {
+        snprintf(k.year, sizeof k.year, "%s", arg);
+        sel_library_deepsid_list(e->lib, "comps", "", ds_event_row, &k);
+    } else if (strcmp(kind, "event") == 0 && arg != NULL) {
+        k.want = arg;
+        if (sel_library_deepsid_list(e->lib, "comps", "", ds_event_row, &k) > 0 && k.id[0] != '\0') {
+            pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+            sel_library_deepsid_list(e->lib, "placings", k.id, ds_song_row, &k);
+        }
     } else if (strcmp(kind, "collections") == 0) {
         for (i = 0; i < 5u; i++) drill_put_group(b, coll[i][0], 0ul);
     } else if (strcmp(kind, "folder") == 0 && arg != NULL) {

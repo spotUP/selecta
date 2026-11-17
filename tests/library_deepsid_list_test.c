@@ -56,6 +56,19 @@ int main(void) {
     r = sel_deepsid_list_parse("tunes", "{\"tunes\":[{\"fullname\":\"_High Voltage SID Collection/A/b.sid\",\"name\":\"b\",\"author\":\"x\"}],\"total\":1}", keep, &g);
     CHECK(r == 1 && strcmp(g.f[0][0], "hvsc:A/b.sid") == 0);
 
+    /* I1440n: competitions (name, entries, year, event id), placings ("<place>. <song>") and charts/uploads (file lists) */
+    memset(&g, 0, sizeof g);
+    r = sel_deepsid_list_parse("comps", "[{\"eventId\":12,\"name\":\"Main Party\",\"competition\":\"Music\",\"year\":1999,\"entries\":14}]", keep, &g);
+    CHECK(r == 1 && strcmp(g.f[0][0], "Main Party - Music") == 0 && strcmp(g.f[0][1], "14") == 0 && strcmp(g.f[0][2], "1999") == 0 && strcmp(g.f[0][3], "12") == 0);
+
+    memset(&g, 0, sizeof g);
+    r = sel_deepsid_list_parse("placings", "[{\"place\":1,\"name\":\"Winner\",\"author\":\"Zed\",\"file\":{\"path\":\"_High Voltage SID Collection/MUSICIANS/Z/Zed/w.sid\",\"name\":\"Winner\"}},{\"place\":2,\"name\":\"No file\"}]", keep, &g);
+    CHECK(r == 1 && strcmp(g.f[0][0], "hvsc:MUSICIANS/Z/Zed/w.sid") == 0 && strncmp(g.f[0][1], "1. ", 3) == 0);
+
+    memset(&g, 0, sizeof g);
+    r = sel_deepsid_list_parse("charts", "[{\"file\":{\"path\":\"_High Voltage SID Collection/MUSICIANS/Z/Zed/w.sid\",\"name\":\"Winner\"},\"author\":\"Zed\"}]", keep, &g);
+    CHECK(r == 1 && strcmp(g.f[0][0], "hvsc:MUSICIANS/Z/Zed/w.sid") == 0);
+
     memset(&g, 0, sizeof g);
     r = sel_deepsid_list_parse("tags", "[]", keep, &g);
     CHECK(r == 0 && g.n == 0);

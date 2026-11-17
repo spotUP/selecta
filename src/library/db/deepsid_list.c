@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define DL_LIST_CAP 65536u
 #define DL_OBJ_MAX 1024u
@@ -108,7 +109,15 @@ int sel_deepsid_list_parse(const char* what, const char* json, sel_deepsid_row_f
             field(seg, "files", b, sizeof b);
             field(seg, "name", c, sizeof c);
             d[0] = '\0';
-        } else { /* files: the song key hvsc:<path>, name, author, player */
+        } else if (strcmp(what, "comps") == 0) { /* I1440n: event name with its competition, entries, year, event id */
+            field(seg, "name", a, sizeof a);
+            field(seg, "competition", c, sizeof c);
+            if (a[0] != '\0' && c[0] != '\0' && strcmp(a, c) != 0) snprintf(a + strlen(a), sizeof a - strlen(a), " - %.80s", c);
+            else if (a[0] == '\0') snprintf(a, sizeof a, "%s", c);
+            field(seg, "entries", b, sizeof b);
+            field(seg, "year", c, sizeof c);
+            field(seg, "eventId", d, sizeof d);
+        } else { /* files (also uploads, charts, placings): the song key hvsc:<path>, name, author, player */
             char path[256];
             field(seg, "path", path, sizeof path);
             if (path[0] == '\0') field(seg, "fullname", path, sizeof path);
@@ -117,6 +126,14 @@ int sel_deepsid_list_parse(const char* what, const char* json, sel_deepsid_row_f
             field(seg, "name", b, sizeof b);
             field(seg, "author", c, sizeof c);
             field(seg, "player", d, sizeof d);
+            if (strcmp(what, "placings") == 0) { /* I1440n: "<place>. <song name>"; an entry with no file in the collection has no path and is skipped above */
+                char place[16], tmp[256];
+                field(seg, "place", place, sizeof place);
+                if (place[0] != '\0') {
+                    snprintf(tmp, sizeof tmp, "%s. %s", place, b);
+                    snprintf(b, sizeof b, "%s", tmp);
+                }
+            }
         }
         if (a[0] == '\0') continue;
         f[0] = a, f[1] = b, f[2] = c, f[3] = d;
@@ -139,6 +156,11 @@ int sel_library_deepsid_list(sel_library* lib, const char* what, const char* arg
 
     if (lib == NULL || what == NULL || fn == NULL) return -1;
     snprintf(spec, sizeof spec, "%s\x1f%s", what, arg != NULL ? arg : "");
+    if (strcmp(what, "charts") == 0) { /* I1440n: a chart changes daily: the day is part of the cache key, so each day asks once */
+        time_t now = time(NULL);
+        struct tm* t = gmtime(&now);
+        if (t != NULL) snprintf(spec + strlen(spec), sizeof spec - strlen(spec), ":%04d%02d%02d", t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
+    }
     js = malloc(DL_LIST_CAP + 1u);
     if (js == NULL) return -1;
     memset(&op, 0, sizeof op);

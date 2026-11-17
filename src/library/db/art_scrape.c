@@ -665,6 +665,9 @@ static int ds_list_step(sel_library* lib, const char* spec, sel_scrape_stats* st
     else if (strcmp(what, "group") == 0) snprintf(url, sizeof url, "%s/api/deepsid/groups/%s/files?limit=200", base, enc);
     else if (strcmp(what, "players") == 0) snprintf(url, sizeof url, "%s/api/deepsid/players?limit=200", base);
     else if (strcmp(what, "player") == 0) snprintf(url, sizeof url, "%s/api/deepsid/search?q=%s&category=player&limit=200", base, enc); /* shortcut: no player-songs route, the search by player; add one when the server gets it */
+    else if (strcmp(what, "charts") == 0 && strncmp(arg, "new", 3) == 0) snprintf(url, sizeof url, "%s/api/deepsid/charts?kind=new&limit=200", base); /* top and played: the server answers 501 */
+    else if (strcmp(what, "comps") == 0) snprintf(url, sizeof url, "%s/api/deepsid/competitions?limit=200", base);
+    else if (strcmp(what, "placings") == 0 && atoi(arg) > 0) snprintf(url, sizeof url, "%s/api/deepsid/competitions/%d?limit=200", base, atoi(arg));
     else if (strcmp(what, "folders") == 0) snprintf(url, sizeof url, "%s/api/deepsid/folders?path=%s&limit=200", base, enc);
     else if (strcmp(what, "tunes") == 0) snprintf(url, sizeof url, "%s/api/deepsid/tunes?path=%s&limit=200", base, enc);
     else return 1;
