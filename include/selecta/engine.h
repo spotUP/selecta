@@ -230,6 +230,7 @@ typedef struct sel_collection_page {
     uint32_t shown;            /* rows in order (<= songs): the filtered count */
     uint32_t sort, descending; /* SEL_COLL_SORT_*, 0/1 */
     char filter[64];           /* the view this order was built for */
+    char about[2048];          /* I1440j: a composer page's DeepSID header as label NUL value NUL pairs, an empty label ends; empty block when none is cached yet */
 } sel_collection_page;
 
 typedef struct sel_state {

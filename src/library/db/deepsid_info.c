@@ -188,3 +188,131 @@ uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out,
     free(js);
     return added;
 }
+
+/* I1440j: the composer page header (design 3.1) from the DeepSID 'ds_composer' answer, as label/value pairs like sel_deepsid_rows. */
+static void composer_list(const char* json, const char* key, const char* label, char* out, uint32_t cap, uint32_t* added) {
+    char pat[32], list[DS_ROW_MAX];
+    const char *p, *end, *q;
+    size_t n, k = 0;
+
+    snprintf(pat, sizeof pat, "\"%s\"", key);
+    p = strstr(json, pat);
+    p = p != NULL ? sel_json_value(p + strlen(pat)) : NULL;
+    end = p != NULL && *p == '[' ? strchr(p, ']') : NULL;
+    list[0] = '\0';
+    while (end != NULL && (p = strchr(p + 1, '"')) != NULL && p < end) {
+        q = strchr(p + 1, '"');
+        if (q == NULL || q > end) break;
+        n = (size_t)(q - p - 1);
+        if (k + n + 3u >= sizeof list) break;
+        k += (size_t)snprintf(list + k, sizeof list - k, "%s%.*s", k > 0 ? ", " : "", (int)n, p + 1);
+        p = q;
+    }
+    *added += (uint32_t)put(out, cap, label, list);
+}
+
+static void composer_objs(const char* json, const char* key, const char* a_key, const char* b_key, char* out, uint32_t cap, uint32_t* added, int links) {
+    char pat[32], seg[384], a[96], b[160], row[DS_ROW_MAX];
+    const char *p, *end, *obj, *close;
+    uint32_t n = 0;
+    size_t len;
+
+    snprintf(pat, sizeof pat, "\"%s\"", key);
+    p = strstr(json, pat);
+    p = p != NULL ? sel_json_value(p + strlen(pat)) : NULL;
+    end = p != NULL && *p == '[' ? strchr(p, ']') : NULL;
+    while (end != NULL && n < 12u && (obj = strchr(p, '{')) != NULL && obj < end && (close = strchr(obj, '}')) != NULL) {
+        len = (size_t)(close - obj) < sizeof seg - 1u ? (size_t)(close - obj) : sizeof seg - 1u;
+        memcpy(seg, obj, len);
+        seg[len] = '\0';
+        p = close + 1;
+        a[0] = b[0] = '\0';
+        sel_json_str(seg, a_key, a, sizeof a);
+        sel_json_str(seg, b_key, b, sizeof b);
+        if (a[0] == '\0') continue;
+        if (links) snprintf(row, sizeof row, "%s: %s", a, b);
+        else snprintf(row, sizeof row, "%s%s%s", a, b[0] != '\0' ? ", " : "", b);
+        *added += (uint32_t)put(out, cap, links ? "Link" : "Worked at", row);
+        n++;
+    }
+}
+
+static void composer_str(const char* json, const char* key, const char* label, char* out, uint32_t cap, uint32_t* added) {
+    char v[DS_ROW_MAX];
+
+    v[0] = '\0';
+    sel_json_str(json, key, v, sizeof v);
+    *added += (uint32_t)put(out, cap, label, v);
+}
+
+uint32_t sel_deepsid_composer_rows(const char* json, char* out, uint32_t cap) {
+    char v[DS_ROW_MAX], w[96];
+    const char* c;
+    uint32_t added = 0;
+    int id;
+
+    if (json == NULL || out == NULL || cap < 2u || strstr(json, "\"found\":false") != NULL) return 0;
+    out[0] = out[1] = '\0';
+    composer_str(json, "name", "Name", out, cap, &added);
+    composer_list(json, "handles", "Handles", out, cap, &added);
+    composer_str(json, "born", "Born", out, cap, &added);
+    composer_str(json, "died", "Died", out, cap, &added);
+    composer_str(json, "country", "Country", out, cap, &added);
+    composer_str(json, "focus", "Focus", out, cap, &added);
+    composer_str(json, "affiliation", "Groups", out, cap, &added);
+    composer_objs(json, "employment", "company", "years", out, cap, &added, 0);
+    composer_str(json, "notable", "Notable", out, cap, &added);
+    composer_objs(json, "links", "name", "url", out, cap, &added, 1);
+    id = num_of(json, "csdbId");
+    if (id > 0) {
+        snprintf(v, sizeof v, "CSDb: https://csdb.dk/scener/?id=%d", id);
+        added += (uint32_t)put(out, cap, "Link", v);
+    }
+    c = strstr(json, "\"counts\"");
+    if (c != NULL) {
+        w[0] = '\0';
+        sel_json_str(c, "collection", w, sizeof w);
+        snprintf(v, sizeof v, "%d", num_of(c, "files"));
+        added += (uint32_t)put(out, cap, strcmp(w, "CGSC") == 0 ? "Songs in CGSC" : "Songs in HVSC", v);
+        snprintf(v, sizeof v, "%d", num_of(c, "placings"));
+        added += (uint32_t)put(out, cap, "Compo placings", v);
+        snprintf(v, sizeof v, "%d", num_of(c, "youtube"));
+        added += (uint32_t)put(out, cap, "YouTube captures", v);
+    }
+    return added;
+}
+
+/* The header rows for the composer of song `ref` (any hvsc: song of the page): the ds_composer row of its folder; none cached yet kicks the fetcher. */
+uint32_t sel_library_deepsid_composer(sel_library* lib, const char* ref, char* out, uint32_t cap) {
+    char key[1100];
+    char *js, *slash;
+    sel_art_op op;
+    uint32_t added = 0;
+    int n;
+
+    if (lib == NULL || ref == NULL || out == NULL || strncmp(ref, "hvsc:", 5) != 0) return 0;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_DS_KEY;
+    op.ref = ref;
+    op.data = (uint8_t*)key;
+    op.cap = sizeof key;
+    if (art_ask(lib, &op) <= 0 || (slash = strrchr(key, '/')) == NULL) return 0;
+    *slash = '\0'; /* shortcut: the song's own folder, so a song in a sub-folder misses its composer; upgrade with a first-two-segments rule */
+    js = malloc(DS_JSON_CAP + 1u);
+    if (js == NULL) return 0;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_GET;
+    op.album = sel_art_dz_id(key);
+    op.kind = "ds_composer";
+    op.data = (uint8_t*)js;
+    op.cap = DS_JSON_CAP;
+    n = art_ask(lib, &op);
+    if (n > 0) {
+        js[n > (int)DS_JSON_CAP ? (int)DS_JSON_CAP : n] = '\0';
+        added = sel_deepsid_composer_rows(js, out, cap);
+    } else {
+        sel_library_deepsid_kick(lib, ref);
+    }
+    free(js);
+    return added;
+}
