@@ -3900,9 +3900,10 @@ static void test_tiles_reach(void) {
     st.formats = "MOD\0" "12\0" "XM\0" "1\0";
     st.composers = "jogeir\0" "Jogeir Liljedahl\0" "7\0";
     n = mui_browse_tiles(&st, tiles, MUI_TILE_MAX);
-    CHECK(n == 4u && tiles[0].kind == MUI_TILE_FORMAT && strcmp(tiles[0].arg, "mod") == 0 && tiles[0].count == 12u && tiles[2].kind == MUI_TILE_COMPOSER &&
-              strcmp(tiles[2].arg, "jogeir") == 0 && strcmp(tiles[2].label, "Jogeir Liljedahl") == 0 && tiles[3].kind == MUI_TILE_SOURCES,
-          "browse tiles: %u tiles (2 formats, 1 composer, Sources)", (unsigned)n);
+    CHECK(n == 4u + MUI_BROWSE_DEEPSID && tiles[0].kind == MUI_TILE_FORMAT && strcmp(tiles[0].arg, "mod") == 0 && tiles[0].count == 12u && tiles[2].kind == MUI_TILE_COMPOSER &&
+              strcmp(tiles[2].arg, "jogeir") == 0 && strcmp(tiles[2].label, "Jogeir Liljedahl") == 0 && tiles[3].kind == MUI_TILE_DEEPSID && strcmp(tiles[3].arg, "deepsid\x1f" "tags") == 0 &&
+              tiles[n - 1u].kind == MUI_TILE_SOURCES,
+          "browse tiles: %u tiles (2 formats, 1 composer, C64 SID, Sources)", (unsigned)n);
     memset(&l, 0, sizeof l);
     CHECK(mui_route_click(&r, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, tiles[2].arg, tiles[2].label, "", route_rec, &l) && mui_route_on_collection(&r) &&
               l.n == 1u && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0] && r.rh.calls == 2u, "a composer tile opens its collection page: %s", l.n > 0u ? l.line[0] : "(none)");

@@ -105,6 +105,17 @@ uint32_t mui_browse_tiles(const sel_state* st, mui_btile* out, uint32_t cap) {
             p = next_str(cnt);
         }
     }
+    {   /* I1440s: the C64 SID group, a drill of the source "deepsid" (the Mac browse_tiles list; design 2026-11-16-i1440-deepsid.md 3.3) */
+        static const char* const name[MUI_BROWSE_DEEPSID] = {"Tags", "Charts", "Collections", "Compos", "Groups", "Players"};
+        static const char* const kind[MUI_BROWSE_DEEPSID] = {"tags", "charts", "collections", "compos", "groups", "players"};
+        for (k = 0; k < MUI_BROWSE_DEEPSID && n < cap; k++) {
+            out[n].kind = MUI_TILE_DEEPSID;
+            out[n].count = 0u;
+            snprintf(out[n].label, sizeof out[n].label, "C64 SID %s", name[k]);
+            snprintf(out[n].arg, sizeof out[n].arg, "deepsid\x1f%s", kind[k]);
+            n++;
+        }
+    }
     if (n < cap) { /* the Sources tile: the SOURCES list */
         out[n].kind = MUI_TILE_SOURCES;
         out[n].count = 0u;
@@ -116,7 +127,7 @@ uint32_t mui_browse_tiles(const sel_state* st, mui_btile* out, uint32_t cap) {
 }
 
 void mui_tile_caption(const mui_btile* t, char* out, size_t cap) {
-    if (t->kind == MUI_TILE_SOURCES) {
+    if (t->kind == MUI_TILE_SOURCES || t->kind == MUI_TILE_DEEPSID) {
         snprintf(out, cap, "%s", t->label);
     } else {
         snprintf(out, cap, "%s - %u song%s", t->label, (unsigned)t->count, t->count == 1u ? "" : "s");

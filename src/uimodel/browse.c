@@ -189,3 +189,62 @@ const char* sel_uim_side_empty(uint32_t chip, uint32_t n, int bitmap) {
 int sel_uim_side_card_shown(uint32_t chip, int filtered, uint32_t playlist_rows, int bitmap) {
     return chip <= 1u && !filtered && playlist_rows == 0u && !bitmap;
 }
+
+/* I790: split the drill path at the unit separators; returns the part count. */
+static uint32_t drill_split(const char* path, char (*part)[96]) {
+    uint32_t n = 0u;
+    const char* p = path;
+    while (*p != '\0' && n < 3u) {
+        size_t len = strcspn(p, "\x1f");
+        snprintf(part[n], 96, "%.*s", (int)(len < 95u ? len : 95u), p);
+        n++;
+        p += len;
+        if (*p == '\x1f') p++;
+    }
+    return n;
+}
+
+/* The rule moved from the Mac drl_child (I790, I1440m, I1440n); SEL_DRILL_PAGE_ROOT is 1. */
+int sel_uim_drill_child(const char* drill_path, uint32_t drill_page, const char* name, char* out, size_t cap) {
+    char part[3][96];
+    uint32_t np = drill_split(drill_path, part);
+    out[0] = '\0';
+    if (drill_page == 1u) {
+        snprintf(out, cap, "%s", name);
+    } else if (np >= 1u && strcmp(part[0], "tags") == 0) {
+        snprintf(out, cap, "tag\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "charts") == 0) {
+        snprintf(out, cap, "chart\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "compos") == 0) {
+        snprintf(out, cap, "year\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "year") == 0) {
+        snprintf(out, cap, "event\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "groups") == 0) {
+        snprintf(out, cap, "group\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "players") == 0) {
+        snprintf(out, cap, "player\x1f%s", name);
+    } else if (np >= 1u && (strcmp(part[0], "collections") == 0 || strcmp(part[0], "folder") == 0)) {
+        snprintf(out, cap, "folder\x1f%s", name);
+    } else if (np == 1u && strcmp(part[0], "formats") == 0) {
+        snprintf(out, cap, "format\x1f%s", name);
+    } else if (np == 1u && strcmp(part[0], "artists") == 0) {
+        snprintf(out, cap, "artist\x1f%s", name);
+    } else if (np == 1u && strcmp(part[0], "platforms") == 0) {
+        snprintf(out, cap, "platform\x1f%s", name);
+    } else if (np == 2u && strcmp(part[0], "platform") == 0) {
+        snprintf(out, cap, "format\x1f%s", name);
+    } else if (np == 2u && strcmp(part[0], "format") == 0) {
+        snprintf(out, cap, "format\x1f%s\x1f%s", part[1], name);
+    }
+    return out[0] != '\0';
+}
+
+void sel_uim_drill_row_label(const char* drill_path, const char* name, char* out, size_t cap) {
+    char part[3][96];
+    uint32_t np = drill_split(drill_path, part);
+    if (np > 0u && (strcmp(part[0], "collections") == 0 || strcmp(part[0], "folder") == 0) && strrchr(name, '/') != NULL) {
+        snprintf(out, cap, "%s", strrchr(name, '/') + 1);
+    } else {
+        snprintf(out, cap, "%s", name);
+    }
+}

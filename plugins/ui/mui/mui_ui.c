@@ -1768,6 +1768,11 @@ static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_
 
 /* I794 (P3): row `row` of the collection page (rows are "path\0plays\0" pairs): the song's catalogued title (I1306b), else the file name
  * of its path. */
+/* I1440s: a source drill page whose rows are groups ("name\0count\0size\0" triples, DeepSID Charts, Compos, Tags ...), not songs. */
+static int mui_col_groups(const sel_collection_page* pg) {
+    return pg != NULL && (pg->drill == (uint32_t)SEL_DRILL_PAGE_ROOT || pg->drill == (uint32_t)SEL_DRILL_PAGE_GROUPS);
+}
+
 static const char* mui_col_row(void* ctx, long row) {
     mui_state* s = (mui_state*)ctx;
     const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
@@ -1777,6 +1782,18 @@ static const char* mui_col_row(void* ctx, long row) {
     long i;
     if (pg == NULL || pg->rows == NULL || row < 0 || (uint32_t)row >= pg->songs) {
         return "";
+    }
+    if (mui_col_groups(pg)) { /* I1440s: "label  count", the label as the shared drill rule shows it */
+        char lab[200];
+        for (r = pg->rows, i = 0; i < row && *r != '\0'; i++) {
+            r += strlen(r) + 1u;
+            r += strlen(r) + 1u;
+            r += strlen(r) + 1u;
+        }
+        sel_uim_drill_row_label(pg->drill_path, r, lab, sizeof lab);
+        r += strlen(r) + 1u;
+        snprintf(tidy, sizeof tidy, "%s%s%s", lab, r[0] != '\0' && strcmp(r, "0") != 0 ? "  " : "", strcmp(r, "0") != 0 ? r : "");
+        return tidy;
     }
     r = sel_uim_briefs_title(&s->col_brf, pg, (uint32_t)row);
     if (r != NULL) {
@@ -2819,7 +2836,7 @@ static void mui_col_briefs(mui_state* s, const sel_collection_page* pg, int col)
     if (sel_uim_briefs_take(&s->col_brf, s->engine) && col && pg != NULL && pg->serial == s->col_brf.serial) {
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, TAG_DONE);
     }
-    if (!col || !sel_uim_briefs_due(&s->col_brf, s->engine, pg)) {
+    if (!col || mui_col_groups(pg) || !sel_uim_briefs_due(&s->col_brf, s->engine, pg)) { /* I1440s: group rows are not songs */
         return;
     }
     free(s->col_brf.buf);
@@ -2833,7 +2850,8 @@ static void mui_col_briefs(mui_state* s, const sel_collection_page* pg, int col)
 static void mui_route_sync(mui_state* s, const sel_state* st) {
     const sel_collection_page* pg = st->collection;
     const sel_route_entry* cur = mui_route_cur(&s->route);
-    int col = cur != NULL && mui_route_on_collection(&s->route) && pg != NULL && pg->kind == cur->kind && strcmp(pg->key, cur->key) == 0;
+    int col = cur != NULL && mui_route_on_collection(&s->route) && pg != NULL && pg->kind == cur->kind &&
+              strncmp(pg->key, cur->key, strcspn(cur->key, "\x1f\x1e")) == 0 && pg->key[strcspn(cur->key, "\x1f\x1e")] == '\0'; /* I1440s: a source drill key is the source, US, the level */
     int lit = mui_route_lit_door(&s->route); /* I797 (S2): the door of the current page takes the SELECTED face, the others none */
     uint32_t dk;
     for (dk = 0; dk < MUI_SIDEBAR_DOORS; dk++) {
@@ -4012,6 +4030,8 @@ static void mui_tile_fire(mui_state* s, uint32_t k) {
     t = &s->tile[k];
     if (t->kind == MUI_TILE_COMPOSER) {
         mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, t->arg, t->label, "", mui_route_send, s);
+    } else if (t->kind == MUI_TILE_DEEPSID) { /* I1440s: a C64 SID tile opens the drill of the source "deepsid" */
+        mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, t->arg, t->label, "", mui_route_send, s);
     } else if (t->kind == MUI_TILE_FORMAT) {
         char q[120], lines[3][160], joined[512];
         uint32_t n, i;
@@ -4097,6 +4117,21 @@ static void mui_control_fire(mui_state* s, LONG id) {
         long picked = -1;
         char pl[512];
         GetAttr(UPA_List_Picked, s->col_list, (ULONG*)&picked);
+        if (mui_col_groups(pg) && picked >= 0 && (uint32_t)picked < pg->songs) { /* I1440s: a group row opens the next drill level of the source */
+            const char* r = pg->rows;
+            char child[160], key[SEL_ROUTE_KEY_MAX];
+            long i;
+            for (i = 0; i < picked; i++) {
+                r += strlen(r) + 1u;
+                r += strlen(r) + 1u;
+                r += strlen(r) + 1u;
+            }
+            if (sel_uim_drill_child(pg->drill_path, pg->drill, r, child, sizeof child) != 0) {
+                snprintf(key, sizeof key, "%s\x1f%s", pg->key, child);
+                mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, key, pg->title, "", mui_route_send, s);
+            }
+            return;
+        }
         /* I1329h: PLAY_CONTEXT plays the row and queues the rest of the page behind it, named for the "Playing from" line (desk_play_context). */
         if (pg != NULL && picked >= 0 && mui_col_play_line(pg, (uint32_t)picked, pl, sizeof pl) != 0u && mui_engine_line(s, pl)) {
             s->row_plays++;

@@ -5966,37 +5966,7 @@ static const char* drl_deepsid_kind(const char* kind, const char** root) {
 }
 
 static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
-    char part[3][96];
-    uint32_t np = drl_split(d->drl_path, part);
-    out[0] = '\0';
-    if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
-        snprintf(out, cap, "%s", name);
-    } else if (np >= 1u && strcmp(part[0], "tags") == 0) { /* I1440m */
-        snprintf(out, cap, "tag\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "charts") == 0) { /* I1440n */
-        snprintf(out, cap, "chart\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "compos") == 0) {
-        snprintf(out, cap, "year\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "year") == 0) {
-        snprintf(out, cap, "event\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "groups") == 0) {
-        snprintf(out, cap, "group\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "players") == 0) {
-        snprintf(out, cap, "player\x1f%s", name);
-    } else if (np >= 1u && (strcmp(part[0], "collections") == 0 || strcmp(part[0], "folder") == 0)) {
-        snprintf(out, cap, "folder\x1f%s", name);
-    } else if (np == 1u && strcmp(part[0], "formats") == 0) {
-        snprintf(out, cap, "format\x1f%s", name);
-    } else if (np == 1u && strcmp(part[0], "artists") == 0) {
-        snprintf(out, cap, "artist\x1f%s", name);
-    } else if (np == 1u && strcmp(part[0], "platforms") == 0) {
-        snprintf(out, cap, "platform\x1f%s", name);
-    } else if (np == 2u && strcmp(part[0], "platform") == 0) {
-        snprintf(out, cap, "format\x1f%s", name);
-    } else if (np == 2u && strcmp(part[0], "format") == 0) {
-        snprintf(out, cap, "format\x1f%s\x1f%s", part[1], name);
-    }
-    return out[0] != '\0';
+    return sel_uim_drill_child(d->drl_path, d->drl_page, name, out, cap); /* I1440s: the shared rule */
 }
 
 /* The crumbs of the drill path: label and the path a click reopens. Source, kind, then up to two more levels. */
