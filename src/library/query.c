@@ -9,7 +9,7 @@
 
 #define VIEW_DEPTH_MAX 8
 
-typedef enum { K_TEXT, K_INT, K_DUR, K_SIZE, K_TIME, K_BOOL, K_IN, K_VIEW, K_DUP, K_COPIES } key_kind;
+typedef enum { K_TEXT, K_INT, K_DUR, K_SIZE, K_TIME, K_BOOL, K_IN, K_VIEW, K_DUP, K_COPIES, K_PENDING } key_kind;
 
 typedef struct key_def {
     const char* name;
@@ -23,6 +23,12 @@ typedef struct key_def {
 
 static const key_def KEYS[] = {
     {"format", K_TEXT, "songs.format", 0},
+    {"channels", K_INT, "songs.channels", 0}, /* I774m: baked channel count, 0 = unknown */
+    {"publisher", K_TEXT, "songs.publisher", 0},
+    {"release", K_TEXT, "songs.album", 0}, /* I774m: the release the module came out on (the album column) */
+    {"found", K_PENDING, NULL, 0},         /* I774m: parse only until the provenance table is queryable (R11) */
+    {"sametune", K_PENDING, NULL, 0},      /* I774m: parse only until the tune groups are stored (R12) */
+    {"text", K_PENDING, NULL, 0},          /* I774m: parse only until song_strings exists (R16) */
     {"artist", K_TEXT, "songs.artist", 0},
     {"album", K_TEXT, "songs.album", 0},
     {"genre", K_TEXT, "songs.genre", 0},
@@ -306,6 +312,16 @@ static void copies_cond(pq* s, const char* v, size_t n) {
     bind_text(s, v, n, 0);
 }
 
+/* I774m: a term whose data is not stored yet. The value is bound and checked non-empty, the condition matches nothing. */
+static void pending_cond(pq* s, const char* v, size_t n) {
+    if (n == 0) {
+        fail(s, "bad_value");
+        return;
+    }
+    put(s, "(0 AND ? IS NOT NULL)");
+    bind_text(s, v, n, 0);
+}
+
 static void in_cond(pq* s, const char* v, size_t n) {
     put(s, "songs.key IN (SELECT playlist_entries.key FROM playlist_entries JOIN playlists ON playlists.id = "
            "playlist_entries.playlist_id LEFT JOIN folders ON folders.id = playlists.folder_id "
@@ -490,6 +506,9 @@ static void parse_term(pq* s) {
             break;
         case K_COPIES:
             copies_cond(s, v, vlen);
+            break;
+        case K_PENDING:
+            pending_cond(s, v, vlen);
             break;
         default:
             num_cond(s, kd, v, vlen);

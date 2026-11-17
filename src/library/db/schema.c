@@ -324,11 +324,17 @@ static const char SCHEMA_V23[] =
     "INSERT OR IGNORE INTO ratings(key, rating, synced) SELECT key, 5, 1 FROM liked;"
     "DELETE FROM liked;";
 
+/* I774m: UADE key (xxh32 of the file, filled by the idle duplicates pass), channel count and publisher, filled from the bake files (D2). */
+static const char SCHEMA_V24[] =
+    "ALTER TABLE songs ADD COLUMN uade_key TEXT;"
+    "ALTER TABLE songs ADD COLUMN channels INTEGER NOT NULL DEFAULT 0;"
+    "ALTER TABLE songs ADD COLUMN publisher TEXT;";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23};
+                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23, SCHEMA_V24};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -431,7 +437,7 @@ static int migrate_chain_fresh(sqlite3* db, const sel_host* host) {
 static const char* const SCHEMA_FINAL[] = {
     "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID;",
     "CREATE TABLE files(source TEXT NOT NULL, path TEXT NOT NULL, format TEXT, artist TEXT, album TEXT, name TEXT, hidden INTEGER NOT NULL DEFAULT 0, md5 TEXT, size INTEGER, PRIMARY KEY(source, path)) WITHOUT ROWID;",
-    "CREATE TABLE songs(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, source TEXT NOT NULL, path TEXT NOT NULL, name TEXT, artist TEXT, album TEXT, format TEXT, year INTEGER, genre TEXT, duration_ms INTEGER, loudness_gain INTEGER, md5 TEXT, size INTEGER, added INTEGER NOT NULL DEFAULT 0, dup_of TEXT, dup_members INTEGER NOT NULL DEFAULT 1, loudness_prov INTEGER NOT NULL DEFAULT 0);",
+    "CREATE TABLE songs(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, source TEXT NOT NULL, path TEXT NOT NULL, name TEXT, artist TEXT, album TEXT, format TEXT, year INTEGER, genre TEXT, duration_ms INTEGER, loudness_gain INTEGER, md5 TEXT, size INTEGER, added INTEGER NOT NULL DEFAULT 0, dup_of TEXT, dup_members INTEGER NOT NULL DEFAULT 1, loudness_prov INTEGER NOT NULL DEFAULT 0, uade_key TEXT, channels INTEGER NOT NULL DEFAULT 0, publisher TEXT);",
     "CREATE TABLE albums(id INTEGER PRIMARY KEY, name TEXT NOT NULL, artist TEXT, year INTEGER, source TEXT);",
     "CREATE TABLE artwork(album_id INTEGER NOT NULL, kind TEXT NOT NULL, data BLOB, PRIMARY KEY(album_id, kind));",
     "CREATE TABLE history(id INTEGER PRIMARY KEY, key TEXT NOT NULL, played_at INTEGER NOT NULL, duration_ms INTEGER, skipped INTEGER NOT NULL DEFAULT 0, format TEXT);",

@@ -314,6 +314,16 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     lib->host = host;
     lib->account = account;
     lib->hide_dups = 1; /* library.hide_duplicates defaults on (I1094c) */
+    {   /* I774m: the bake files sit in the directory of library.db (a "/" on every host, a ":" for a device root on the Amiga) */
+        size_t n = strlen(path), cut = 0, i;
+
+        for (i = 0; i < n; i++) {
+            if (path[i] == '/' || path[i] == ':') cut = i + 1;
+        }
+        if (cut >= sizeof lib->uade_dir) cut = sizeof lib->uade_dir - 1u;
+        memcpy(lib->uade_dir, path, cut);
+        lib->uade_dir[cut] = '\0';
+    }
     lib->cache_budget = sel_cache_budget(machine);
     if (!heap_acquire(host, sel_library_heap_bytes(machine))) {
         host->mem_free(host, lib);
