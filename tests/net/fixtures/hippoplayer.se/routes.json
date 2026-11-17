@@ -37,5 +37,30 @@
     "headers": {
       "Content-Type": "application/json"
     }
+  },
+  "/api/deepsid/file-by-path?path=MUSICIANS%2FN%2FNobody%2FNone.sid&full=1": {
+    "status": 404,
+    "body": "{\"error\": \"not found\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "/api/deepsid/file-by-path?path=MUSICIANS%2FG%2FGiana_Co%2FGiana.sid&full=1": {
+    "body": "{\"id\": 77, \"name\": \"Giana.sid\", \"tags\": [], \"csdbId\": 9, \"csdbType\": \"release\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "/api/deepsid/composer?path=MUSICIANS%2FG%2FGiana_Co": {
+    "body": "{\"fullname\": \"Giana Co\", \"photo\": \"composer.png\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "/api/deepsid/csdb/77": {
+    "body": "{\"csdbId\": 9, \"releases\": [{\"id\": 9, \"name\": \"Giana\"}]}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
   }
 }

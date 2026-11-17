@@ -632,7 +632,7 @@ void sel_library_demozoo_kick(sel_library* lib, const char* ref);
 /* I1401d: remember the cover URL a source offers for song source:path (http/https only); dz_step fetches it as the song's cover. */
 /* I1440h: DeepSID data for a song on the same job thread (design 2026-11-16-i1440-deepsid.md 2.2). _deepsid_kick(ref) resolves the song to its `hvsc:<path>`
  * key, then GET <base>/api/deepsid/file-by-path?path=<p>&full=1 (and /composer, /csdb/<id>), cached as artwork rows of sel_art_dz_id(key): 'ds_file' (server JSON),
- * 'ds_composer' (on the folder key), 'ds_csdb', 'ds_miss' (epoch seconds, retried after SEL_ART_SCRAPE_RETRY_DAYS). The tags also go to the sticker "deepsid.tags"
+ * 'ds_composer' (on the folder key), 'ds_csdb', 'ds_miss2' (a JSON not-found answer only; epoch seconds; I1450 retired the old 'ds_miss' rows, retried after SEL_ART_SCRAPE_RETRY_DAYS). The tags also go to the sticker "deepsid.tags"
  * of the key. Base URL SELECTA_DEEPSID_URL (default https://hippoplayer.se); off like Demozoo (SELECTA_ART_SCRAPE=off). */
 void sel_library_deepsid_kick(sel_library* lib, const char* ref);
 /* I1440k: Song Information rows from a DeepSID 'ds_file' answer (design 3.2). Appends "label\0value\0" pairs to a panel list `out` that already ends in an

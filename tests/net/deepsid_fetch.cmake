@@ -2,6 +2,7 @@
 #  1. a known HVSC key: ds_file, ds_composer and ds_csdb rows, the tags as the sticker "deepsid.tags", three requests;
 #  2. an unknown key: a ds_miss row after one request;
 #  3. a repeat of both keys sends no request at all;
+#  3b. I1450: an HTML 404 (route missing on the site) records no miss and is asked again; only the JSON not-found above is cached;
 #  4. revert proof: SELECTA_ART_SCRAPE=off sends nothing and stores nothing.
 # -DCLI=<selecta-cli> -DWORK=<fixture work dir>
 file(READ "${WORK}/port" port)
@@ -41,6 +42,14 @@ run("${db}" "${hit}" c)
 want("hit cached" "${c}" "deepsid_requests=0")
 run("${db}" "${miss}" d)
 want("miss cached" "${d}" "deepsid_requests=0")
+
+set(html "hvsc:MUSICIANS/N/Nobody/Html.sid")
+set(db3 "${WORK}/ds-html.db")
+file(REMOVE "${db3}")
+run("${db3}" "${html}" h1)
+want("html 404 is no miss" "${h1}" "deepsid_miss=0 .*deepsid_requests=1")
+run("${db3}" "${html}" h2)
+want("html 404 is retried" "${h2}" "deepsid_miss=0 .*deepsid_requests=1")
 
 set(db2 "${WORK}/ds-off.db")
 file(REMOVE "${db2}")
