@@ -412,3 +412,5 @@ Buttons and gadgets: "Show File Names", "Any Format", "Any Channels", "4 Channel
 - Credit source: Johan: "we dont need to show site credits". Credits rows show the value only, with no "(UnExoticA)" suffix and no selected-row source line. This replaces the inline-origin item in A11. The Mac hover is not decided here; raise it in R9.
 - Empty sections: accepted. They hide completely.
 - Filters: Format popup list, Channels cycle (Any, 4, More than 4, Fewer than 4), and a Publisher popup list as well (Johan picked both options). Release, found, same tune and text stay typed or reached by row links. The RAM estimate in this addendum grows by the publisher list; R17 measures it.
+- Mac credits (2026-11-17): Mac drops the source hover too, for 1:1 parity. Credit sources stay in the data but no UI shows them.
+- Same Tune (2026-11-17): the bake adds a reverse index file sorted by group (group -> song keys), so a song info open needs few seeks on a 68020. This is a new bake output, added to R12 (server bake) and the reader in uadedb.
