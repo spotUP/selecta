@@ -266,7 +266,7 @@ typedef struct mui_state {
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
     Object* np_artist;
     Object* np_album;
-    Object* np_prog;                /* I1415: Gauge + Cancel while a slow open runs, hidden otherwise */
+    Object* np_prog;                /* I1415: progress bar + Cancel while a slow open runs, hidden otherwise */
     Object* np_gauge;
     uint32_t prog_on, prog_pct;     /* I1415: shown now / last percent written (also the list signature) */
     char prog_path[SEL_OPEN_PATH_MAX]; /* I1415: the OPEN path of the shown progress, the list row that gets the percent */
@@ -2264,8 +2264,8 @@ static Object* mui_detail_group(mui_state* s, int compact) {
     s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ", MUI_LBL_ARTIST);
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ", MUI_LBL_ALBUM);
     s->np_note = mui_np_text(s->np_buf[3], sizeof s->np_buf[3], " ", MUI_LBL_UPCOMING);
-    /* I1415: the load bar (MUI 3.8 Gauge) and its Cancel button, shown by mui_open_sync after 300 ms of loading. */
-    s->np_gauge = MUI_NewObject((char*)MUIC_Gauge, MUIA_Gauge_Horiz, (ULONG)TRUE, MUIA_Gauge_Max, 100, MUIA_Gauge_Current, 0, TAG_DONE);
+    /* I1415: the load bar (Selecta_AAProgress) and its Cancel button, shown by mui_open_sync after 300 ms of loading. */
+    s->np_gauge = mui_aaprogress_new(0, 100);
     s->np_prog = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, (ULONG)TRUE, MUIA_ShowMe, (ULONG)FALSE, TAG_DONE);
     if (s->np_prog != NULL && s->np_gauge != NULL) {
         DoMethod(s->np_prog, OM_ADDMEMBER, s->np_gauge);
@@ -3059,7 +3059,7 @@ static void mui_on_event(void* state, const sel_message* evt) {
 }
 
 /* I1415: poll the open progress on the refresh tick (a snapshot read, nothing blocks). Below 300 ms nothing shows. Shown: the phase
- * text in the note line, the Gauge (empty while the total is unknown) and Cancel; the list row of the OPEN path gets the percent
+ * text in the note line, the progress bar (empty while the total is unknown) and Cancel; the list row of the OPEN path gets the percent
  * (mui_refresh reads prog_path and prog_pct). On the way out the note line is refilled by forcing mui_detail_refresh. */
 static void mui_open_sync(mui_state* s) {
     sel_open_progress p;
@@ -3080,7 +3080,7 @@ static void mui_open_sync(mui_state* s) {
         }
         uint32_t key = fr < 0 ? 1000u : pct + 1u; /* 0 = none, 1000 = unknown total ("..." in the list) */
         if (key != s->prog_pct) {
-            set(s->np_gauge, MUIA_Gauge_Current, (ULONG)pct);
+            set(s->np_gauge, UPA_Progress_Value, (ULONG)pct);
         }
         s->prog_pct = key;
         snprintf(s->prog_path, sizeof s->prog_path, "%s", p.path);
