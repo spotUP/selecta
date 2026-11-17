@@ -22,6 +22,18 @@ void sel_uim_drill_key(const char* source, const char* path, uint32_t skip, cons
 /* The path one level up from `path`; "" is the first level (also the answer for a first-level path). */
 void sel_uim_drill_up(const char* path, char* out, size_t cap);
 
+/* 1 when the engine filters this level's whole list before windowing (formats, artists, format US name). */
+int sel_uim_drill_engine_find(const char* path);
+/* 1 when the find field shows on this level: engine-find levels while groups are loaded or a find is active; other group levels
+ * only when the whole level is one window (skip 0, n < SEL_DRILL_WINDOW), so a local filter never hides rows. */
+int sel_uim_drill_filterable(uint32_t page, const char* path, uint32_t n, uint32_t skip, const char* find);
+/* Crumb labels (96 bytes each) and the path each reopens: source name, kind, up to 2 more levels; returns the count. */
+uint32_t sel_uim_drill_crumbs(const char* source_name, const char* path, char (*label)[96], char (*cpath)[160]);
+/* Splits a route / COLLECTION_OPEN key into source, path, skip and find (inverse of sel_uim_drill_key). */
+void sel_uim_drill_key_parse(const char* key, char* source, size_t scap, char* path, size_t pcap, uint32_t* skip, char* find, size_t fcap);
+/* The count column text: "N" at the root, "N songs" below it, "" when unknown. */
+void sel_uim_drill_count(uint32_t page, const char* count, char* out, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif

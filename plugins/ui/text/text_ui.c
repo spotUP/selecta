@@ -819,7 +819,8 @@ static void tui_page_activate(tui* u) {
 /* I1442b: a source drill level the find text narrows: the group levels and the artist's songs of a non-deepsid source (the engine filters
  * formats and artists before windowing, a04fe076). */
 static int tui_drill_filterable(const sel_collection_page* pg) {
-    return pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_SOURCE && pg->drill != (uint32_t)SEL_DRILL_PAGE_NONE && strcmp(pg->key, "deepsid") != 0;
+    return pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_SOURCE && pg->drill != (uint32_t)SEL_DRILL_PAGE_NONE && strcmp(pg->key, "deepsid") != 0 &&
+           sel_uim_drill_engine_find(pg->drill_path); /* I1442b MUI: the shared rule; the engine ignores find text on other levels */
 }
 
 /* I1442b: reopens the open drill level with `find` in the key (no history entry; Back still leaves the page). */
