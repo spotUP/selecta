@@ -223,6 +223,7 @@ endif()
 # gui headers only. The plugin sees it through SELECTA_DESKTOP_SDL.
 if(SELECTA_UI_DESKTOP)
   add_library(selecta_ui_desktop STATIC backend_sdl.c)
+  set_source_files_properties(backend_sdl.c PROPERTIES COMPILE_DEFINITIONS _DEFAULT_SOURCE) # strtok_r hidden by -std=c99 on musl/glibc (I694a)
   if(APPLE) # I1039: the system AirPlay picker (AVRoutePickerView) in the window
     enable_language(OBJC)
     target_sources(selecta_ui_desktop PRIVATE macos/route_picker.m)

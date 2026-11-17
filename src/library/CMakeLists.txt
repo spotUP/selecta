@@ -8,6 +8,8 @@ if(SEL_AMIGA)
 else()
   if(APPLE)
     set(SEL_WATCH_SOURCE ${PROJECT_SOURCE_DIR}/src/core/macos/watch.c)
+  elseif(EMSCRIPTEN) # I694a: no inotify in the browser
+    set(SEL_WATCH_SOURCE ${PROJECT_SOURCE_DIR}/src/core/web/watch.c)
   else()
     set(SEL_WATCH_SOURCE ${PROJECT_SOURCE_DIR}/src/core/linux/watch.c)
   endif()

@@ -606,7 +606,10 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
         case SDL_EVENT_MOUSE_BUTTON_UP:
         case SDL_EVENT_MOUSE_MOTION:
         case SDL_EVENT_MOUSE_WHEEL:
-        case SDL_EVENT_PINCH_UPDATE: {
+#ifndef __EMSCRIPTEN__ /* I694a: the SDL 3.2.22 Emscripten port has no pinch events (touch lands in I694j) */
+        case SDL_EVENT_PINCH_UPDATE:
+#endif
+        {
             sel_gui_raw raw;
             memset(&raw, 0, sizeof raw);
             SDL_ConvertEventToRenderCoordinates(b->renderer, &ev);
@@ -619,9 +622,11 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
                 raw.kind = SEL_GUI_RAW_WHEEL;
                 raw.dx = q16_of(ev.wheel.x * dir);
                 raw.dy = q16_of(ev.wheel.y * dir);
+#ifndef __EMSCRIPTEN__
             } else if (ev.type == SDL_EVENT_PINCH_UPDATE) {
                 raw.kind = SEL_GUI_RAW_PINCH;
                 raw.scale = q16_of(ev.pinch.scale);
+#endif
             } else {
                 raw.kind = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? SEL_GUI_RAW_BUTTON_DOWN : SEL_GUI_RAW_BUTTON_UP;
                 raw.x = (int32_t)ev.button.x;
