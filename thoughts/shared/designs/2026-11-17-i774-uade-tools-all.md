@@ -405,3 +405,10 @@ Buttons and gadgets: "Show File Names", "Any Format", "Any Channels", "4 Channel
   running `found:`.
 - "Show File Names" hidden until the server row R14 lands.
 - No "Loading" rows in Song Information: sections appear when the worker read lands; Demozoo appears last.
+
+### A12. Johan's answers (2026-11-17)
+
+- Placement: accepted. The five sections sit below the tag rows on the same Song Information page.
+- Credit source: Johan: "we dont need to show site credits". Credits rows show the value only, with no "(UnExoticA)" suffix and no selected-row source line. This replaces the inline-origin item in A11. The Mac hover is not decided here; raise it in R9.
+- Empty sections: accepted. They hide completely.
+- Filters: Format popup list, Channels cycle (Any, 4, More than 4, Fewer than 4), and a Publisher popup list as well (Johan picked both options). Release, found, same tune and text stay typed or reached by row links. The RAM estimate in this addendum grows by the publisher list; R17 measures it.
