@@ -18190,7 +18190,8 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         char head[32];
         snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)col_eng_kind(d));
         desk_quoted_request(open, sizeof open, head, d->col_key);
-        desk_send(d, strcat(open, " 1"));
+        snprintf(open + strlen(open), sizeof open - strlen(open), " 1"); /* bounded like col_kind_open: a long key fills open */
+        desk_send(d, open);
     }
     if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION) { /* I994d4, I1077d: the engine republished the open page (own change, view, a sync of its source): read it again */
         const sel_collection_page* cp = sel_engine_state(d->engine)->collection;
