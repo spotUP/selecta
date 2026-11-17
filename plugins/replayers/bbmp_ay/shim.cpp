@@ -17,12 +17,12 @@ struct bbay {
   ay::Info info;
 };
 
-// kind: 0 fls, 1 fxm (also .amad), 2 strc. Fills the strings (NUL terminated, truncated). Returns NULL when refused.
+// kind: 0 fls, 1 fxm (also .amad), 2 strc, 3 beepola (.bbsong). Fills the strings (NUL terminated, truncated). Returns NULL when refused.
 struct bbay* bbay_open(int kind, const uint8_t* data, uint32_t size, uint32_t track, uint32_t rate, uint32_t* tracks,
                        uint32_t* duration_ms, char* title, char* author, char* comment, uint32_t text_max) {
   try {
     std::unique_ptr<bbay> s(new bbay);
-    s->engine = kind == 0 ? ay::make_fls() : kind == 1 ? ay::make_fxm() : ay::make_strc();
+    s->engine = kind == 0 ? ay::make_fls() : kind == 1 ? ay::make_fxm() : kind == 3 ? ay::make_beepola() : ay::make_strc();
     std::vector<uint8_t> bytes(data, data + size);
     s->engine->open("", bytes, static_cast<int>(track), static_cast<int>(rate), s->info);
     *tracks = s->info.tracks < 1 ? 1u : static_cast<uint32_t>(s->info.tracks);

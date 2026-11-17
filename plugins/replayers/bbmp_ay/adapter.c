@@ -1,5 +1,5 @@
 /* bbmp ay replayer (row I709a): a RENDER-kind adapter over the bbmp csrc/ay engines (third_party/bbmp_ay, GPL-3.0-or-later)
- * on the Ayumi chip emulator (third_party/ayumi, MIT) for three ZX Spectrum formats: Flash Tracker (.fls, no magic),
+ * on the Ayumi chip emulator (third_party/ayumi, MIT) for four ZX Spectrum formats: Beepola (.bbsong, magic "BBSONG", I1223b; needs three data files, see setup_beepola_data), Flash Tracker (.fls, no magic),
  * Fuxoft AY Language (.fxm, no magic; .amad = AY file "ZXAYAMAD") and Sound Tracker compiled by Raxoft (AY file "ZXAYSTRC").
  * "ay" is claimed too, but the probe answers YES only for those two AY types, so ZXAYEMUL files stay with gme. The engines
  * need the rate at open time, so RP_OPEN opens once at 44100 Hz to learn the subsong count and metadata and RP_START
@@ -19,7 +19,7 @@ void bbay_close(struct bbay* s);
 #define BBAY_MAX_SECONDS 1200u
 #define BBAY_TEXT 256u
 
-enum { KIND_FLS = 0, KIND_FXM = 1, KIND_STRC = 2, KIND_NONE = -1 };
+enum { KIND_FLS = 0, KIND_FXM = 1, KIND_STRC = 2, KIND_BEEPOLA = 3, KIND_NONE = -1 };
 
 typedef struct bbay_state {
     const sel_host* host;
@@ -61,6 +61,9 @@ static int kind_of(const uint8_t* data, size_t size, const char* name) {
     if (size >= 8u && memcmp(data, "ZXAYSTRC", 8) == 0) {
         return KIND_STRC;
     }
+    if (size >= 12u && memcmp(data, "BBSONG\0" "0001\0", 12) == 0) {
+        return KIND_BEEPOLA;
+    }
     if (ext_is(name, "fls")) {
         return KIND_FLS;
     }
@@ -92,6 +95,17 @@ static struct bbay* open_engine(bbay_state* s, uint32_t track, uint32_t rate) {
                      s->comment, BBAY_TEXT);
 }
 
+/* Beepola's engine reads zx48.rom, p1d-samples.bin and svg-table-tail.bin from the folder in BBMP_BEEPOLA_DATA and checks size and
+ * SHA-256 itself; a song that needs a missing one is refused (toast), the others play. Folder: the variable if set, else the
+ * host's config.dir (where the I751 downloader puts them). shortcut: process-wide env, one folder; upgrade with I751d when the
+ * downloader exposes its own path. */
+static void setup_beepola_data(const sel_host* host) {
+    const char* dir = host->config_get != NULL ? host->config_get(host, "config.dir", NULL) : NULL;
+    if (dir != NULL && dir[0] != '\0') {
+        setenv("BBMP_BEEPOLA_DATA", dir, 0);
+    }
+}
+
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     bbay_state* s;
     struct bbay* probe;
@@ -104,6 +118,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     memset(s, 0, sizeof *s);
     s->host = host;
+    setup_beepola_data(host);
     s->kind = kind_of(src->data, src->size, src->path);
     s->data = (uint8_t*)host->mem_alloc(host, src->size, SEL_MEM_FAST);
     if (s->kind == KIND_NONE || s->data == NULL) {
@@ -190,7 +205,7 @@ static const sel_tag* rp_metadata(void* state) {
         s->meta[n++].value = (uintptr_t)s->author;
     }
     s->meta[n].tag = SEL_META_FORMAT;
-    s->meta[n++].value = (uintptr_t)(s->kind == KIND_FLS ? "Flash Tracker" : s->kind == KIND_FXM ? "Fuxoft AY Language" : "Sound Tracker (Raxoft)");
+    s->meta[n++].value = (uintptr_t)(s->kind == KIND_BEEPOLA ? "Beepola" : s->kind == KIND_FLS ? "Flash Tracker" : s->kind == KIND_FXM ? "Fuxoft AY Language" : "Sound Tracker (Raxoft)");
     if (s->duration_ms != 0u) {
         s->meta[n].tag = SEL_META_DURATION_MS;
         s->meta[n++].value = (uintptr_t)s->duration_ms;
@@ -215,7 +230,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "bbmp_ay");
     set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
     set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_RENDER);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "fls,fxm,amad,strc,ay");
+    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t) "fls,fxm,amad,strc,ay,bbsong");
     set(&g_hooks[4], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
     set(&g_hooks[5], SEL_RP_OPEN, SEL_TAG_FN(rp_open));
     set(&g_hooks[6], SEL_RP_CLOSE, SEL_TAG_FN(rp_close));
