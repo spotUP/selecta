@@ -107,6 +107,15 @@ uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx) {
     return mui_source_toggle(s, m->n, i, send, ctx);
 }
 
+uint32_t mui_srcs_open(const mui_srcs* m, uint32_t i, char* key, size_t kcap, char* name, size_t ncap) {
+    if (i >= m->n || m->it[i].key[0] == '\0') {
+        return 0;
+    }
+    snprintf(key, kcap, "%s", m->it[i].key);
+    snprintf(name, ncap, "%s", m->it[i].name);
+    return 1;
+}
+
 uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx) {
     sel_uim_source s[SEL_SOURCE_MAX];
     if (i >= m->n || !sel_uim_src_syncable(&m->it[i]) || !m->it[i].enabled) {

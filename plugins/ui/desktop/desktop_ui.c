@@ -5788,19 +5788,11 @@ static uint32_t drl_rows(const desk* d) {
 /* I1235: the find field narrows a drill group level only when the whole level is on the page (one window, no skip), so a filter never hides
  * rows that sit in another window. */
 static int drl_engine_find(const desk* d) {
-    const char* us = strchr(d->drl_path, 0x1f); /* I1442: the artist levels too ("artists", "format US name"); a songs level has a second US */
-    return strcmp(d->drl_path, "formats") == 0 || strcmp(d->drl_path, "artists") == 0 ||
-           (strncmp(d->drl_path, "format", 6) == 0 && d->drl_path[6] == 0x1f && strchr(us + 1, 0x1f) == NULL);
+    return sel_uim_drill_engine_find(d->drl_path);
 }
 
 static int drl_filterable(const desk* d) {
-    if (d->col_kind != (uint32_t)SEL_LIB_ITEM_SOURCE) {
-        return 0;
-    }
-    if (drl_engine_find(d)) { /* the engine filters the whole format list, so any window state takes the field; it stays while a filtered page loads */
-        return (d->drl_page == (uint32_t)SEL_DRILL_PAGE_GROUPS && d->drl_n > 0u) || d->drl_q[0] != '\0';
-    }
-    return d->drl_page == (uint32_t)SEL_DRILL_PAGE_GROUPS && d->drl_n > 0u && d->drl_skip == 0u && d->drl_n < (uint32_t)SEL_DRILL_WINDOW;
+    return d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && sel_uim_drill_filterable(d->drl_page, d->drl_path, d->drl_n, d->drl_skip, d->drl_q);
 }
 
 static uint32_t col_rows(const desk* d) {
@@ -5969,65 +5961,12 @@ static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q) 
 }
 
 /* The path one click on drill row `name` opens, or "" when the row is a leaf for now. */
-/* I1440m: the C64 SID drill kinds: the list kinds (tags, groups, players, collections) and the one-item kinds a click opens. */
-static const char* drl_deepsid_kind(const char* kind, const char** root) {
-    static const char* const k[8][3] = {{"tag", "tags", "Tags"}, {"group", "groups", "Groups"}, {"player", "players", "Players"}, {"folder", "collections", "Collections"},
-                                        {"chart", "charts", "Charts"}, {"year", "compos", "Compos"}, {"event", "compos", "Compos"}, {"compos", "compos", "Compos"}};
-    uint32_t i;
-    for (i = 0u; i < 8u; i++) {
-        if (strcmp(kind, k[i][0]) == 0 || strcmp(kind, k[i][1]) == 0) {
-            *root = k[i][1];
-            return k[i][2];
-        }
-    }
-    return NULL;
-}
-
 static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
     return sel_uim_drill_child(d->drl_path, d->drl_page, name, out, cap); /* I1440s: the shared rule */
 }
 
-/* The crumbs of the drill path: label and the path a click reopens. Source, kind, then up to two more levels. */
 static uint32_t drl_crumbs(const desk* d, char (*label)[96], char (*path)[160]) {
-    char part[3][96];
-    uint32_t np = sel_uim_drill_split(d->drl_path, part), n = 0u, k;
-    snprintf(label[0], 96, "%s", d->pls_name);
-    path[0][0] = '\0';
-    n = 1u;
-    if (np == 0u) {
-        return n;
-    }
-    snprintf(label[1], 96, "%s", strcmp(part[0], "format") == 0 || strcmp(part[0], "formats") == 0 ? "Formats"
-                                 : strcmp(part[0], "artist") == 0 || strcmp(part[0], "artists") == 0 ? "Artists"
-                                 : strcmp(part[0], "platform") == 0 || strcmp(part[0], "platforms") == 0 ? "Platforms" : "New");
-    snprintf(path[1], 160, "%s", strcmp(part[0], "format") == 0 ? "formats" : strcmp(part[0], "artist") == 0 ? "artists" : strcmp(part[0], "platform") == 0 ? "platforms" : part[0]);
-    {
-        const char* dsroot;
-        const char* dslabel = drl_deepsid_kind(part[0], &dsroot);
-        if (dslabel != NULL) { /* I1440m */
-            snprintf(label[1], 96, "%s", dslabel);
-            snprintf(path[1], 160, "%s", dsroot);
-        }
-    }
-    n = 2u;
-    for (k = 1u; k < np; k++) {
-        char tmp[96];
-        uint32_t f;
-        snprintf(tmp, sizeof tmp, "%s", part[k]);
-        for (f = 0u; strcmp(part[0], "platform") == 0 && k == 1u && f < (uint32_t)SEL_PLATFORM_FAMILY_COUNT; f++) {
-            if (strcmp(sel_platform_id(f), part[k]) == 0) {
-                snprintf(tmp, sizeof tmp, "%s", sel_platform_label(f));
-            }
-        }
-        snprintf(label[n], 96, "%s", tmp);
-        if (k == 1u) {
-            snprintf(path[n], 160, "%s\x1f%s", part[0], part[1]);
-        } else {
-            snprintf(path[n], 160, "%s\x1f%s\x1f%s", part[0], part[1], part[2]);
-        }
-        n++;
-    }
-    return n;
+    return sel_uim_drill_crumbs(d->pls_name, d->drl_path, label, path);
 }
 
 static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t muted) {
@@ -6716,11 +6655,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         }
         di = d->drl_ord[di];
         drl_label(d, d->drl_name[di], lab, sizeof lab);
-        if (d->drl_count[di][0] == '\0') {
-            cnt[0] = '\0';
-        } else {
-            snprintf(cnt, sizeof cnt, d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT ? "%s" : "%s songs", d->drl_count[di]);
-        }
+        sel_uim_drill_count(d->drl_page, d->drl_count[di], cnt, sizeof cnt);
         draw_text(d, rect_of(r.x + lpx(d, 12), r.y, r.w - lpx(d, 200), r.h), lab, 0, 14, row_ink(d, r, text));
         draw_text(d, rect_of(r.x + r.w - lpx(d, 168), r.y, lpx(d, 156), r.h), cnt, 0, 13, muted);
     }
@@ -11779,15 +11714,11 @@ static void desk_route_enter(desk* d, const sel_route_entry* e, int restore) {
         pls_open(d, e->id, e->name);
     } else if (e->kind == (uint32_t)SEL_LIB_ITEM_SOURCE && e->key[strcspn(e->key, "\x1f\x1e")] != '\0') {
         /* I1286: a drill level of a source page: the source key, then the level (path and skip) drl_open_q composed */
-        char base[SEL_ROUTE_KEY_MAX];
-        size_t bn = strcspn(e->key, "\x1f\x1e");
-        const char* rest = e->key + bn;
-        const char* skip = strchr(rest, '\x1e');
-        char path[SEL_ROUTE_KEY_MAX];
-        snprintf(base, sizeof base, "%.*s", (int)bn, e->key);
-        snprintf(path, sizeof path, "%.*s", (int)(skip != NULL ? (size_t)(skip - rest) : strlen(rest)) - (rest[0] == '\x1f' ? 1 : 0), rest + (rest[0] == '\x1f' ? 1 : 0));
+        char base[SEL_ROUTE_KEY_MAX], path[SEL_ROUTE_KEY_MAX], find[64];
+        uint32_t skip;
+        sel_uim_drill_key_parse(e->key, base, sizeof base, path, sizeof path, &skip, find, sizeof find);
         col_kind_open(d, e->kind, base, e->name, e->sub, restore);
-        drl_open(d, path, skip != NULL ? (uint32_t)strtoul(skip + 1, NULL, 10) : 0u);
+        drl_open(d, path, skip);
     } else if (e->kind != 0u || e->key[0] != '\0' || e->name[0] != '\0') {
         col_kind_open(d, e->kind, e->key, e->name, e->sub, restore);
     }

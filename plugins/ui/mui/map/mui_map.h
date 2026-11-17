@@ -725,6 +725,7 @@ int mui_srcs_event(mui_srcs* m, const sel_message* evt); /* 1 when the event was
 uint32_t mui_srcs_row(const mui_srcs* m, uint32_t i, char* out, size_t cap);
 uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx); /* lines sent, 0 for a row that is not there */
 uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);   /* 0 unless the row is a switched-on syncable remote */
+uint32_t mui_srcs_open(const mui_srcs* m, uint32_t i, char* key, size_t kcap, char* name, size_t ncap); /* I1442b: the source id and name Open routes with; 0 for no row */
 
 /* I1182: the first-start sync offer window, the desktop's nag dialog (nagdlg_*) on the shared sel_uim_offer model. It opens once per
  * launch when the SOURCES rows hold a due source; one check per due source, all ticked; Sync sends what the desktop's Sync now sends
@@ -850,5 +851,19 @@ int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px, int aspect_q8);
 uint32_t mui_sidebar_builds(void);
 /* I949c: sentinel, the builds that took the rail path (no Your Library block). */
 uint32_t mui_sidebar_rail_builds(void);
+
+
+/* I1442b: the source drill page rows. mui_drill_filter fills `ord` with the visible group indices (the local filter; engine-find levels
+ * arrive narrowed) and returns how many; mui_drill_rows is the list count with the Previous and Next rows; mui_drill_pick maps a list row
+ * to a group index or MUI_DRILL_PREV / NEXT / NONE; mui_drill_text is the row text ("Label  N songs"); mui_drill_find_line the
+ * COLLECTION_OPEN line an engine-find level sends on each filter change (skip 0, no history entry). */
+#define MUI_DRILL_PREV (-1L)
+#define MUI_DRILL_NEXT (-2L)
+#define MUI_DRILL_NONE (-3L)
+uint32_t mui_drill_filter(const sel_collection_page* pg, const char* find, uint32_t* ord, uint32_t cap);
+uint32_t mui_drill_rows(const sel_collection_page* pg, uint32_t skip, uint32_t vn);
+long mui_drill_pick(const sel_collection_page* pg, uint32_t skip, const uint32_t* ord, uint32_t vn, long row);
+void mui_drill_text(const sel_collection_page* pg, uint32_t skip, const uint32_t* ord, uint32_t vn, long row, char* out, size_t cap);
+uint32_t mui_drill_find_line(const char* source, const char* path, const char* find, char* out, size_t cap);
 
 #endif

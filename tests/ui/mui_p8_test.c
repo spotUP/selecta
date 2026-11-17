@@ -873,6 +873,72 @@ static void test_library_pages(void) {
     CHECK(mui_view_fires() - vbase == 3u && mui_source_fires() - sbase == 3u, "sentinels view %u source %u", (unsigned)(mui_view_fires() - vbase), (unsigned)(mui_source_fires() - sbase));
 }
 
+/* mui-p8-drill-rows (I1442b MUI steps 2 and 3): the drill page row text ("Label  N songs"), Previous / Next rows and the row -> group map. */
+static sel_collection_page drill_page(uint32_t drill, const char* path, const char* rows, uint32_t n) {
+    sel_collection_page pg;
+    memset(&pg, 0, sizeof pg);
+    pg.drill = drill;
+    snprintf(pg.drill_path, sizeof pg.drill_path, "%s", path);
+    pg.rows = rows;
+    pg.songs = n;
+    return pg;
+}
+
+static void test_drill_rows(void) {
+    static const char root[] = "formats\0" "4\0" "0\0" "platforms\0" "3\0" "0\0";
+    static const char artists[] = "\0" "5\0" "0\0" "Jogeir\0" "7\0" "0\0";
+    static const char fmts[] = "Protracker\0" "1333\0" "0\0" "Fasttracker\0" "10\0" "0\0" "Impulse Tracker\0" "2\0" "0\0" "SID\0" "1\0" "0\0";
+    uint32_t ord[8], vn;
+    char out[96];
+    sel_collection_page pg = drill_page((uint32_t)SEL_DRILL_PAGE_ROOT, "", root, 2u);
+    vn = mui_drill_filter(&pg, "", ord, 8u);
+    mui_drill_text(&pg, 0u, ord, vn, 0, out, sizeof out);
+    CHECK(vn == 2u && strcmp(out, "Formats  4") == 0, "root row [%s] vn=%u", out, (unsigned)vn);
+    pg = drill_page((uint32_t)SEL_DRILL_PAGE_GROUPS, "formats", fmts, 4u);
+    vn = mui_drill_filter(&pg, "", ord, 8u);
+    mui_drill_text(&pg, 0u, ord, vn, 0, out, sizeof out);
+    CHECK(strcmp(out, "Protracker  1333 songs") == 0, "format row [%s]", out);
+    pg = drill_page((uint32_t)SEL_DRILL_PAGE_GROUPS, "artists", artists, 2u);
+    vn = mui_drill_filter(&pg, "", ord, 8u);
+    mui_drill_text(&pg, 0u, ord, vn, 0, out, sizeof out);
+    CHECK(strcmp(out, "Unknown artist  5 songs") == 0, "empty artist row [%s]", out);
+    CHECK(mui_drill_rows(&pg, 0u, vn) == 2u && mui_drill_pick(&pg, 0u, ord, vn, 2) == MUI_DRILL_NONE, "short level has no Next");
+    { /* a full window with skip 200: Previous first, Next last, row 1 is group 0 */
+        static char big[200 * 12 + 1];
+        char* w = big;
+        uint32_t i;
+        for (i = 0u; i < 200u; i++) {
+            w += sprintf(w, "A%u", (unsigned)i) + 1;
+            w += sprintf(w, "1") + 1;
+            w += sprintf(w, "0") + 1;
+        }
+        pg = drill_page((uint32_t)SEL_DRILL_PAGE_GROUPS, "artists", big, 200u);
+        vn = mui_drill_filter(&pg, "", ord, 0u);
+        CHECK(vn == 0u, "cap 0 holds nothing");
+        {
+            static uint32_t all[200];
+            vn = mui_drill_filter(&pg, "", all, 200u);
+            CHECK(vn == 200u && mui_drill_rows(&pg, 200u, vn) == 202u, "rows with Previous and Next: %u", (unsigned)mui_drill_rows(&pg, 200u, vn));
+            CHECK(mui_drill_pick(&pg, 200u, all, vn, 0) == MUI_DRILL_PREV && mui_drill_pick(&pg, 200u, all, vn, 1) == 0 && mui_drill_pick(&pg, 200u, all, vn, 201) == MUI_DRILL_NEXT, "pick map");
+            mui_drill_text(&pg, 200u, all, vn, 201, out, sizeof out);
+            CHECK(strcmp(out, "Next") == 0, "next text [%s]", out);
+            mui_drill_text(&pg, 200u, all, vn, 0, out, sizeof out);
+            CHECK(strcmp(out, "Previous") == 0, "previous text [%s]", out);
+            CHECK(mui_drill_rows(&pg, 0u, vn) == 201u, "no Previous at skip 0");
+        }
+    }
+    { /* step 5: the local filter narrows a non-engine level; the engine find line carries the text and the restore flag */
+        char line[256];
+        pg = drill_page((uint32_t)SEL_DRILL_PAGE_GROUPS, "platforms", fmts, 4u);
+        vn = mui_drill_filter(&pg, "tracker", ord, 8u);
+        CHECK(vn == 3u, "tracker leaves 3 of 4 (%u)", (unsigned)vn);
+        vn = mui_drill_filter(&pg, "pro", ord, 8u);
+        CHECK(vn == 1u && ord[0] == 0u, "pro leaves Protracker (%u)", (unsigned)vn);
+        CHECK(mui_drill_find_line("hvsc", "formats", "fmtl", line, sizeof line) != 0u && strncmp(line, "COLLECTION_OPEN 7 \"hvsc", 23) == 0 && strstr(line, "fmtl") != NULL &&
+                  strcmp(line + strlen(line) - 2u, " 1") == 0, "find line [%s]", line);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -907,6 +973,8 @@ int main(int argc, char** argv) {
         test_offer_never();
     } else if (strcmp(argv[1], "button-edge") == 0) {
         test_button_edge();
+    } else if (strcmp(argv[1], "drill-rows") == 0) {
+        test_drill_rows();
     } else if (strcmp(argv[1], "col-titles") == 0) {
         test_col_titles();
     } else if (strcmp(argv[1], "queue-scope") == 0) {
