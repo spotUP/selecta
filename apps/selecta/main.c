@@ -811,6 +811,10 @@ int main(int argc, char** argv)
     if (library != NULL) sel_library_watch(1); /* I906a: this thread runs every UI and the engine pump; a library wait here is a debug-guard hit */
     e = sel_engine_create(host, &cfg);
     sel_trace(host, "engine created (prefs load, catalogue open, source setup)");
+    /* I774o R12b: the baked UADE data ships with the install; this only updates it, never in a scripted run. */
+    if (library != NULL && cfg.config_dir != NULL && !has_keys && !is_null) {
+        (void)sel_library_uadedata_kick(library, cfg.config_dir);
+    }
     if (e == NULL) {
         char mem_[160];
         STARTUP_FAIL("not enough memory to start the engine (%s). Memory: %s. Close other programs or free memory, then start Selecta again.",

@@ -736,6 +736,11 @@ void sel_library_lyrics_result(sel_library* lib, sel_lyrics_result* out); /* cop
 int sel_library_sysfile_request(sel_library* lib, const char* config_dir, const sel_sysfile_decl* d);
 int sel_library_sysfile_poll(sel_library* lib, const char* name);
 unsigned sel_library_sysfile_dups(sel_library* lib);
+/* I774o R12b: once per start, updates the UADE data set in config_dir from the server on the job thread (uadedata.h).
+ * Poll with sel_library_sysfile_poll(lib, SEL_UADEDATA_SLOT); the readers open the files per call, so a new set is seen
+ * at the next song info or library fill with no reload. Returns 1 when queued. */
+#define SEL_UADEDATA_SLOT "uadedata"
+int sel_library_uadedata_kick(sel_library* lib, const char* config_dir);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);

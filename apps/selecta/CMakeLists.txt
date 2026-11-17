@@ -99,7 +99,7 @@ endif()
 if(SEL_AMIGA AND TARGET library_template)
   add_custom_target(selecta_dist
     COMMAND ${CMAKE_COMMAND} -DMODE=stage "-DDEST=${CMAKE_BINARY_DIR}/dist/Selecta" "-DBIN_DIR=$<TARGET_FILE_DIR:selecta>"
-      "-DROOT=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/selecta_dist.cmake"
+      "-DUADEDATA_DIR=${CMAKE_BINARY_DIR}/uadedata" "-DROOT=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/selecta_dist.cmake"
     VERBATIM COMMENT "Staging the Selecta Amiga archive tree")
   add_dependencies(selecta_dist selecta library_template)
 endif()

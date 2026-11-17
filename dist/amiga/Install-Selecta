@@ -25,4 +25,12 @@
 (makedir (tackon #drawer "rexx"))
 (copyfiles (source "rexx") (dest (tackon #drawer "rexx")) (all))
 
+; The baked UADE data set (song lengths, info, credits) goes into the config drawer PROGDIR:Selecta; the in-app downloader only updates it.
+(if (exists "uadedata")
+  (
+    (makedir (tackon #drawer "Selecta"))
+    (copyfiles (source "uadedata") (dest (tackon #drawer "Selecta")) (all))
+  )
+)
+
 (exit "Selecta is installed. Start it from the Selecta drawer; the first start creates library.db from library-template.db.")

@@ -2,6 +2,7 @@
  * and the Mirrors transport, then the companion files the replayers declare. The handle owns the
  * cache (and with it the mirror sets and the cache dir), created on the first fetch. */
 #include "db_internal.h"
+#include "../uadedata.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -621,10 +622,42 @@ static sel_sysf_slot* sysf_free(sel_library* lib) {
     return NULL;
 }
 
+/* I774o R12b: the UADE data update rides the system-file slot (one request per name and session, polled by name).
+ * It runs on its own cache handle: the job thread must not hold lib->cache, the foreground fetch owns that. */
+static int uadedata_run(sel_library* lib, const char* dir) {
+    sel_cache* c = lib->host->mem_alloc(lib->host, sizeof *c, SEL_MEM_FAST);
+    int rc = SEL_SYSF_ALL_FAILED;
+
+    if (c == NULL) {
+        return rc;
+    }
+    memset(c, 0, sizeof *c);
+    sel_cache_init(c, lib->cache->dir, lib->cache->amiga_route);
+    c->part_tag = ".ud";
+    c->unzip_host = lib->host;
+    rc = sel_uadedata_update(c, dir) >= 0 ? SEL_SYSF_OK : SEL_SYSF_ALL_FAILED;
+    lib->host->mem_free(lib->host, c);
+    return rc;
+}
+
 static int sysf_run_slot(sel_library* lib, sel_sysf_slot* s) {
     sel_sysfile_res res;
 
+    if (strcmp(s->decl.name, SEL_UADEDATA_SLOT) == 0) {
+        return uadedata_run(lib, s->config);
+    }
     return sel_sysfile_fetch(lib->host, s->config, &s->decl, &res);
+}
+
+int sel_library_uadedata_kick(sel_library* lib, const char* config_dir) {
+    sel_sysfile_decl d;
+
+    if (lib == NULL || cache_get(lib) == NULL) {
+        return 0;
+    }
+    memset(&d, 0, sizeof d);
+    d.name = SEL_UADEDATA_SLOT;
+    return sel_library_sysfile_request(lib, config_dir, &d);
 }
 
 #if defined(SEL_LIBRARY_NO_THREAD)
