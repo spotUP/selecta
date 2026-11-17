@@ -3954,6 +3954,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_dz_query_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-dz-query COMMAND library_dz_query_test)
   set_tests_properties(library-dz-query PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_dz_query_ok")
+  # I1440k: the Song Information rows of a DeepSID ds_file answer
+  add_executable(library_deepsid_rows_test library_deepsid_rows_test.c)
+  target_include_directories(library_deepsid_rows_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_deepsid_rows_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-deepsid-rows COMMAND library_deepsid_rows_test)
+  set_tests_properties(library-deepsid-rows PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_deepsid_rows_ok")
   # I336: the library job thread runs the folder scan task off the caller's thread.
   add_executable(library_task_test library_task_test.c)
   target_include_directories(library_task_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)

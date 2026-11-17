@@ -629,6 +629,14 @@ void sel_library_demozoo_kick(sel_library* lib, const char* ref);
  * 'ds_composer' (on the folder key), 'ds_csdb', 'ds_miss' (epoch seconds, retried after SEL_ART_SCRAPE_RETRY_DAYS). The tags also go to the sticker "deepsid.tags"
  * of the key. Base URL SELECTA_DEEPSID_URL (default https://hippoplayer.se); off like Demozoo (SELECTA_ART_SCRAPE=off). */
 void sel_library_deepsid_kick(sel_library* lib, const char* ref);
+/* I1440k: Song Information rows from a DeepSID 'ds_file' answer (design 3.2). Appends "label\0value\0" pairs to a panel list `out` that already ends in an
+ * empty label (the list keeps ending in one): tag groups (Genre tags, Production tags, Origin tags, Digi tags, Other tags), Player, Editor, Chip, Clock, Technical
+ * (load, init and play address), Compo placings ("2nd at Assembly 1994, C64 music"), GB64 game. *rows grows by the rows added. Pure: no DB. Returns rows added. */
+uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
+/* I1440k: the same rows for the song `ref` from its cached ds_file row; a song with no row yet is kicked (sel_library_deepsid_kick) and shows them on the next read. */
+uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out, uint32_t cap, uint32_t* rows);
+const char* sel_json_value(const char* p);
+const char* sel_json_str(const char* from, const char* key, char* out, size_t cap);
 void sel_library_cover_url_put(sel_library* lib, const char* source, const char* path, const char* url);
 /* I1401: the lookup query for a song of any source. A Modland key goes as key=<key>; every other song goes as title=<title>&author=<artist> and
  * needs both non-empty. Writes the query (no leading '?') into out; 0 when there is nothing to ask (no title or artist) or it does not fit. */
