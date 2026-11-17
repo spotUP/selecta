@@ -544,7 +544,6 @@ typedef struct desk {
     sel_route_hist rh;       /* app-wide history (I266, I678h): the pages and collection pages visited, with their scroll; Back and Forward move */
     sel_gui_rect col_about_link[12]; /* I1440j2: the composer page's Link buttons (zero width = none) */
     char col_about_url[12][256];
-    uint32_t col_about_retry_ms, col_about_tries; /* I1440j2: the header block is empty until the first DeepSID fetch lands: ask the engine again */
     sel_gui_rect col_artist; /* I678h: the artist name on an album page's meta line (a click opens the artist page); empty elsewhere */
     int baked_zoom;          /* I587: the Amiga tier (aga, rtg; --baked-zoom on the host): zoom and fit take only the baked scales */
     int copper_opt;          /* --copper N: copper pens on an INDEX8 canvas of any backend (the mem backend tests the AGA copper, I628); 0 = by backend */
@@ -5809,8 +5808,6 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
     snprintf(d->col_key, sizeof d->col_key, "%s", key != NULL ? key : "");
     snprintf(d->col_sub, sizeof d->col_sub, "%s", sub != NULL ? sub : "");
     d->col_year = 0u;
-    d->col_about_tries = 0u;
-    d->col_about_retry_ms = d->now_ms;
     {
         const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
         d->col_open_serial = pg != NULL ? pg->serial : 0u;
@@ -18155,17 +18152,6 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             }
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         }
-    }
-    if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION && d->col_ready && d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && d->col_about[0] == '\0' &&
-        d->col_about_tries < 8u && d->now_ms - d->col_about_retry_ms >= 2000u && strncmp(pls_key(d, 0u) != NULL ? pls_key(d, 0u) : "", "hvsc:", 5) == 0) {
-        char open[160]; /* I1440j2: the first DeepSID fetch has not landed when the page opened: ask again every 2 s (8 times); the republish reloads the page */
-        d->col_about_tries++;
-        d->col_about_retry_ms = d->now_ms;
-        char head[32];
-        snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)col_eng_kind(d));
-        desk_quoted_request(open, sizeof open, head, d->col_key);
-        snprintf(open + strlen(open), sizeof open - strlen(open), " 1"); /* bounded like col_kind_open: a long key fills open */
-        desk_send(d, open);
     }
     if (d->pls_id != 0u && d->page == SEL_UIM_PG_COLLECTION) { /* I994d4, I1077d: the engine republished the open page (own change, view, a sync of its source): read it again */
         const sel_collection_page* cp = sel_engine_state(d->engine)->collection;

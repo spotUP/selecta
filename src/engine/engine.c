@@ -8238,10 +8238,11 @@ static size_t coll_block_span(const char* blk, uint32_t n, unsigned fields) {
 /* I994d3a: a folder-tree reload fires for every playlist and folder edit; the open playlist page follows only when ITS content changed
  * (items, plays, sort fields or name). The comparison is against the published page, which the read thread may read: the pump publishes
  * only after this build is taken. */
-static int coll_same_as_published(sel_engine* e, const coll_build* b) {
+static int coll_same_as_published(sel_engine* e, const coll_build* b, const sel_collection_page* pg) {
     size_t r = coll_block_span(e->coll_rows != NULL ? e->coll_rows : "", b->n, 2u);
     size_t m = b->meta.buf != NULL ? coll_block_span(b->meta.buf, b->n, 5u) : 0u;
     if (e->coll.kind != e->rdc_pg.kind || strcmp(e->coll.key, e->rdc_pg.key) != 0 || strcmp(e->coll.title, e->rdc_pg.title) != 0) return 0;
+    if (memcmp(e->coll.about, pg->about, sizeof pg->about) != 0) return 0; /* I1440j3: a landed DeepSID fetch changes only the header block */
     if (e->coll.songs != b->n || e->coll_rows == NULL || e->coll_titles == NULL || b->rows.buf == NULL || b->meta.buf == NULL) return b->n == 0u && e->coll.songs == 0u;
     return coll_block_span(b->rows.buf, b->n, 2u) == r && memcmp(b->rows.buf, e->coll_rows, r) == 0 && memcmp(b->meta.buf, e->coll_titles, m) == 0;
 }
@@ -8348,7 +8349,7 @@ static void coll_build_run(sel_engine* e) {
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
         SEL_COUNT_ADD(&e->collection_queries, 1u);
     }
-    if (e->rdc_follow && coll_same_as_published(e, &b)) { /* I994d3a: nothing of this playlist changed: no page, no serial */
+    if (e->rdc_follow && coll_same_as_published(e, &b, pg)) { /* I994d3a: nothing of this playlist changed: no page, no serial */
         composer_release(e->host, &b.rows.buf);
         composer_release(e->host, &b.meta.buf);
         e->rdc_page = 0;
@@ -10532,6 +10533,10 @@ static void lib_models_follow(sel_engine* e) {
         e->rdc_next_page = 1;
         e->rdc_next_follow = 1;
         coll_post(e);
+    }
+    if (!recents_only && e->cur != SEL_SLOT_NONE && e->slot[e->cur].path != NULL) { /* I1440j3: a landed DeepSID fetch is a library write: the open SID song's Song Information reads again */
+        char skey[SEL_DEFERRED_PATH_MAX];
+        if (sel_song_key_of(e->slot[e->cur].path, skey, sizeof skey) && strncmp(skey, "hvsc:", 5) == 0) panel_reload(e);
     }
     lib_read_post(e, &e->rd_folders, folders_read_run);
     /* I1086b: the Search hits are a model too: the shown query runs again, no client resend. I1091: in place (search_refresh), so a write at a

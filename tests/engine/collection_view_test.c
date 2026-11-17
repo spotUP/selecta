@@ -76,6 +76,7 @@ static const char* qpath(sel_engine* e, uint32_t i) {
 
 int main(void) {
     const sel_host* host = sel_host_default();
+    setenv("SELECTA_ART_SCRAPE", "off", 1); /* I1440j3: the composer page cache miss must not fetch */
     char dir[] = "/tmp/selecta_collview_XXXXXX";
     char db[256], line[600], key[NSONGS][64], sqltext[2048];
     sel_engine_config cfg;
@@ -284,6 +285,44 @@ int main(void) {
     pg = sel_engine_state(e)->collection;
     CHECK(pg != NULL && pg->drill == (uint32_t)SEL_DRILL_PAGE_ROOT && pg->order == NULL && pg->shown == pg->songs);
     CHECK(stats(e).collection_orders == orders);
+
+    /* I1440j3: a DeepSID composer row that lands after the page opened republishes the open composer page with the header block. */
+    {
+        char js[] = "{\"name\":\"Rob Hubbard\"}", dkey[1100];
+        const char* hv = "hvsc:MUSICIANS/H/Hubbard_Rob/Commando.sid";
+        sel_art_op op;
+        uint32_t before;
+        char* slash = NULL;
+
+        snprintf(sqltext, sizeof sqltext,
+                 "INSERT INTO songs(key, source, path, name, added) VALUES('%s','hvsc','MUSICIANS/H/Hubbard_Rob/Commando.sid','Commando',1);"
+                 "INSERT INTO song_composers(song_key, canon, display) VALUES('%s','hubbard rob','Rob Hubbard');", hv, hv);
+        sql(lib, sqltext);
+        snprintf(line, sizeof line, "COLLECTION_OPEN %u \"hubbard rob\"", (unsigned)SEL_LIB_ITEM_COMPOSER);
+        run(e, line);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && pg->songs == 1u && pg->about[0] == '\0');
+        before = pg != NULL ? pg->serial : 0u;
+        memset(&op, 0, sizeof op);
+        op.op = SEL_ART_DS_KEY;
+        op.ref = hv;
+        op.data = (uint8_t*)dkey;
+        op.cap = sizeof dkey;
+        CHECK(sel_deepsid_art_ask(lib, &op) > 0 && (slash = strrchr(dkey, '/')) != NULL);
+        if (slash != NULL) {
+            *slash = '\0';
+            memset(&op, 0, sizeof op);
+            op.op = SEL_ART_PUT;
+            op.album = sel_art_dz_id(dkey);
+            op.kind = "ds_composer";
+            op.data = (uint8_t*)js;
+            op.len = (uint32_t)strlen(js);
+            sel_deepsid_art_ask(lib, &op);
+        }
+        sel_engine_pump_reads(e, sink, NULL, 60000u);
+        pg = sel_engine_state(e)->collection;
+        CHECK(pg != NULL && pg->serial > before && strcmp(pg->about + strlen(pg->about) + 1u, "Rob Hubbard") == 0);
+    }
 
     sel_engine_destroy(e);
     sel_library_close(lib);
