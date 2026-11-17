@@ -5,7 +5,10 @@
  * until MUI-P5-7 draws 1-bit covers there. */
 #include "mui_canvas_class.h"
 
+#include <selecta/platform.h>
+
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,6 +22,7 @@
 #include <proto/muimaster.h>
 
 extern struct Library* MUIMasterBase;
+extern struct GfxBase* GfxBase; /* opened by mui_open, renamed by mui_gfxbase.h (I719) */
 
 /* The instance data stays small: BOOPSI keeps the instance size in a UWORD (struct IClass cl_InstSize), and
  * sel_gui_canvas alone is about 165 KB (the INDEX8 cubes). Embedding it truncated the size MUI allocated, and the
@@ -33,6 +37,9 @@ typedef struct canvas_data {
     uint32_t n, cursor;
     mui_art_fn art;
     void* art_ctx;
+    int single;      /* I1399d: one cover over the whole object (Now Playing art), not a grid */
+    uint32_t kind;
+    char title[64], ext[12];
 } canvas_data;
 
 /* Build-time guard: BOOPSI keeps the instance size in a UWORD (cl_InstSize). */
@@ -73,6 +80,32 @@ static ULONG canvas_dispose(struct IClass* cl, Object* obj, Msg msg) {
     return DoSuperMethodA(cl, obj, msg);
 }
 
+/* Kind label above the item title, bottom left (Johan 2026-11-15), drawn with graphics.library Text() in the window font: MUI has no
+ * glyph atlas for src/gui, and the smaller change is two Text() calls. Pen SHINEPEN: white on the stock palettes, unverified on the rig. */
+static void canvas_text(Object* obj, const char* s, LONG y) {
+    struct RastPort* rp = _rp(obj);
+    struct TextExtent te;
+    LONG n = (LONG)strlen(s), fit;
+    if (n == 0) {
+        return;
+    }
+    fit = (LONG)TextFit(rp, (CONST_STRPTR)s, (ULONG)n, &te, NULL, 1, (LONG)_mwidth(obj) - 8, (LONG)rp->TxHeight + 2);
+    Move(rp, _mleft(obj) + 4, y);
+    Text(rp, (CONST_STRPTR)s, (ULONG)fit);
+}
+
+static void canvas_label(Object* obj, const canvas_data* d) {
+    struct RastPort* rp = _rp(obj);
+    LONG base = (LONG)rp->TxBaseline, h = (LONG)rp->TxHeight, bottom = _mtop(obj) + _mheight(obj) - 4;
+    if (_mheight(obj) < 3 * h || _dri(obj) == NULL) { /* too small for text: the icon alone */
+        return;
+    }
+    SetAPen(rp, _dri(obj)->dri_Pens[SHINEPEN]);
+    SetDrMd(rp, JAM1);
+    canvas_text(obj, d->title, bottom - h + base);
+    canvas_text(obj, sel_cover_kind_label(d->kind), bottom - 2 * h + base);
+}
+
 static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     canvas_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
@@ -80,6 +113,12 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         return 0;
     }
     if (mui_canvas_fit(d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)})) {
+        if (d->single) {
+            mui_canvas_draw_art(d->mc, (sel_gui_rect){0, 0, d->mc->c.w, d->mc->c.h}, MUI_ART_COVER, NULL, 0, 0, d->kind, d->ext, d->title);
+            mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
+            canvas_label(obj, d);
+            return 0;
+        }
         mui_canvas_draw_grid(d->mc, &d->style, d->tiles, d->n, d->cursor, d->art, d->art_ctx);
         mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
     }
@@ -184,4 +223,22 @@ void mui_canvas_class_free(void) {
         MUI_DeleteCustomClass(g_class);
         g_class = NULL;
     }
+}
+
+Object* mui_canvas_cover_new(int screen_is_rtg) {
+    static const mui_grid_style none = {0u, 0u, 0u, 0, 0, 0};
+    Object* o = mui_canvas_new(&none, screen_is_rtg);
+    if (o != NULL) {
+        ((canvas_data*)INST_DATA(g_class->mcc_Class, o))->single = 1;
+        SetAttrs(o, MUIA_ShowMe, TRUE, TAG_DONE);
+    }
+    return o;
+}
+
+void mui_canvas_set_cover(Object* obj, uint32_t kind, const char* ext, const char* title) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    d->kind = kind;
+    snprintf(d->ext, sizeof d->ext, "%s", ext != NULL ? ext : "");
+    snprintf(d->title, sizeof d->title, "%s", title != NULL ? title : "");
+    MUI_Redraw(obj, MADF_DRAWOBJECT);
 }
