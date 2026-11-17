@@ -1,0 +1,8 @@
+# I1440p2: C opens the C64 SID tiles page, Enter opens the first tile (a drill page), Backspace must return to the tiles page.
+wait 500
+C
+wait 200
+Enter
+wait 500
+Backspace
+wait 300

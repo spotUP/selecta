@@ -616,6 +616,8 @@ static void tui_page_enter(tui* u, const sel_route_entry* e, int restore) {
         snprintf(u->pg_title, sizeof u->pg_title, "%s", e->name);
         u->pg_opens_coll++;
         tui_collection_open(u, e->kind, e->key, restore);
+    } else if (e->page == (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE + (uint32_t)TUI_PAGE_TILES) { /* I1440p2: the tiles page is a history entry, so Back from a drill returns to it */
+        u->pg = TUI_PAGE_TILES;
     } else {
         u->pg = TUI_PAGE_NONE;
     }
@@ -1314,7 +1316,11 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         u->lib_mode_on = 0;
         tui_send(u, "VIEW_SOURCE home");
     } else if (strcmp(name, "c64_sid") == 0) { /* I1440p: the C64 SID Browse tiles as a page */
+        sel_route_entry tiles;
         sel_route_hist_init(&u->rh);
+        memset(&tiles, 0, sizeof tiles);
+        tiles.page = (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE + (uint32_t)TUI_PAGE_TILES;
+        sel_route_hist_seed(&u->rh, &tiles);
         u->pg = TUI_PAGE_TILES;
         u->pg_cur = 0;
     } else if (strcmp(name, "stats") == 0) {

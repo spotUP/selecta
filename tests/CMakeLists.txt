@@ -2357,6 +2357,13 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_page.cmake")
   set_tests_properties(text-ui-songinfo-page PROPERTIES LABELS m3)
 
+  add_test(NAME text-ui-tiles-back
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/tiles_back.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/tiles_back"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/tiles_back.cmake")
+  set_tests_properties(text-ui-tiles-back PROPERTIES LABELS m3)
+
   add_test(NAME song-key
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>"
       "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.sel"
