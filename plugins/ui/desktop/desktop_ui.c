@@ -264,6 +264,7 @@ typedef struct desk {
     uint32_t col_kind;       /* I678f: 0 = a playlist, else SEL_LIB_ITEM_ALBUM / ARTIST / COMPOSER / RECENT / LOCAL / SOURCE, or COL_LIKED for Liked Songs (whose engine kind is 0): the kind the collection page shows (pls_id is COL_KIND_ID then) */
     char col_sub[96];        /* the album's artist (the side item's sub) */
     uint32_t col_year;       /* the album's year (0 unknown) */
+    char col_about[2048];    /* I1440j: the composer page's DeepSID header (label NUL value NUL pairs) */
     struct cover_ent { /* I845: LRU of generated platform covers, drawn by blit instead of regenerating the gradient every frame */
         uint32_t* px;
         int32_t w, h;
@@ -5384,6 +5385,7 @@ static void pls_reload_run(desk* d) {
             d->col_ready = 1;
             snprintf(d->col_sub, sizeof d->col_sub, "%s", pg->sub);
             d->col_year = pg->year;
+            memcpy(d->col_about, pg->about, sizeof d->col_about);
             for (sh = 0; sh < 4u; sh++) {
                 d->col_shelf_n[sh] = pg->shelf_n[sh];
                 d->col_shelf_total[sh] = pg->shelf_total[sh];
@@ -5639,9 +5641,25 @@ static sel_gui_rect col_find_rect(desk* d, sel_gui_rect mn) {
     return rect_of(mn.x + mn.w - lpx(d, HOME_MARGIN) - lpx(d, 220), b.y, lpx(d, 220), b.h);
 }
 
+/* I1440j: the composer header block (DeepSID facts under the cover row): label/value lines, at most 12; the song rows start below it. */
+#define ABOUT_LINE_H 18
+#define ABOUT_MAX 12u
+static uint32_t col_about_lines(const desk* d) {
+    const char* p = d->col_about;
+    uint32_t n = 0;
+    if (d->col_kind != (uint32_t)SEL_LIB_ITEM_COMPOSER) return 0;
+    while (*p != '\0' && n < ABOUT_MAX) {
+        p += strlen(p) + 1u;
+        p += strlen(p) + 1u;
+        n++;
+    }
+    return n;
+}
+
 static sel_gui_rect pls_row_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
     sel_gui_rect c = pls_cover_rect(d, mn);
-    return rect_of(c.x, c.y + c.h + lpx(d, PLS_GAP) + (int32_t)slot * lpx(d, SONG_ROW_H), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, SONG_ROW_H));
+    int32_t ab = col_about_lines(d) > 0u ? (int32_t)col_about_lines(d) * lpx(d, ABOUT_LINE_H) + lpx(d, PLS_GAP) : 0;
+    return rect_of(c.x, c.y + c.h + lpx(d, PLS_GAP) + ab + (int32_t)slot * lpx(d, SONG_ROW_H), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, SONG_ROW_H));
 }
 
 static int pls_row_visible(desk* d, sel_gui_rect mn, uint32_t slot) {
@@ -6488,6 +6506,18 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         const sel_gui_atlas* at = desk_font(d, 1, 32);
         int32_t tw = at != NULL ? sel_gui_text_width(at, d->pl_name, d->pl_nlen) : 0, ch = tr.h - lpx(d, 8), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
         sel_gui_fill_rect(d->canvas, rect_of(tr.x + tw, tr.y + (tr.h - ch) / 2, cw, ch), text);
+    }
+    if (col_about_lines(d) > 0u) { /* I1440j: the composer facts, one "Label  value" line each, under the header */
+        const char* ap = d->col_about;
+        int32_t ay = cv.y + cv.h + lpx(d, PLS_GAP), lw = lpx(d, 130);
+        uint32_t ai;
+        for (ai = 0; ai < col_about_lines(d); ai++) {
+            const char* av = ap + strlen(ap) + 1u;
+            draw_text(d, rect_of(cv.x, ay, lw, lpx(d, ABOUT_LINE_H)), ap, 0, 13, muted);
+            draw_text(d, rect_of(cv.x + lw, ay, mn.x + mn.w - cv.x - lw - lpx(d, HOME_MARGIN), lpx(d, ABOUT_LINE_H)), av, 0, 13, text);
+            ay += lpx(d, ABOUT_LINE_H);
+            ap = av + strlen(av) + 1u;
+        }
     }
     snprintf(count, sizeof count, "%u %s", (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST) {

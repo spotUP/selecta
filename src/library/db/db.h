@@ -635,6 +635,9 @@ void sel_library_deepsid_kick(sel_library* lib, const char* ref);
 uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
 /* I1440k: the same rows for the song `ref` from its cached ds_file row; a song with no row yet is kicked (sel_library_deepsid_kick) and shows them on the next read. */
 uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out, uint32_t cap, uint32_t* rows);
+/* I1440j: the composer page header rows (label/value pairs, an empty label ends) from the ds_composer row of the folder of the hvsc: song `ref`; none cached kicks the fetcher. */
+uint32_t sel_deepsid_composer_rows(const char* json, char* out, uint32_t cap);
+uint32_t sel_library_deepsid_composer(sel_library* lib, const char* ref, char* out, uint32_t cap);
 const char* sel_json_value(const char* p);
 const char* sel_json_str(const char* from, const char* key, char* out, size_t cap);
 void sel_library_cover_url_put(sel_library* lib, const char* source, const char* path, const char* url);

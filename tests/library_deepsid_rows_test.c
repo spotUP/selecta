@@ -52,6 +52,26 @@ int main(void) {
     rows = 0;
     CHECK(sel_deepsid_rows("{\"id\":1,\"tags\":[],\"placings\":[],\"gb64\":null}", e, sizeof e, &rows) == 0 && rows == 0 && e[0] == '\0');
     CHECK(sel_deepsid_rows(FULL, e, sizeof e, &rows) <= 3); /* a full buffer drops rows, never overruns */
+    {
+        static const char* const COMP =
+            "{\"found\":true,\"id\":7,\"fullname\":\"MUSICIANS/H/Hubbard_Rob\",\"name\":\"Rob Hubbard\",\"handles\":[\"Rob\",\"Hubbard\"],\"focus\":\"Musician\","
+            "\"born\":\"1955-08-02\",\"died\":null,\"country\":\"United Kingdom\",\"notable\":\"Commando\",\"employment\":[{\"company\":\"Ariolasoft\",\"years\":\"1985\"}],"
+            "\"affiliation\":\"Hotline\",\"csdbType\":\"scener\",\"csdbId\":1234,\"photo\":\"musicians_h_hubbard_rob.jpg\","
+            "\"links\":[{\"name\":\"Homepage\",\"url\":\"https://example.org\"}],\"counts\":{\"files\":97,\"placings\":3,\"youtube\":12,\"collection\":\"MUSICIANS\"},"
+            "\"tags\":[{\"name\":\"Rock\",\"type\":\"GENRE\"}]}";
+        char c[2048];
+
+        n = sel_deepsid_composer_rows(COMP, c, sizeof c);
+        CHECK(n == 13);
+        CHECK(strcmp(get(c, "Name"), "Rob Hubbard") == 0 && strcmp(get(c, "Handles"), "Rob, Hubbard") == 0);
+        CHECK(strcmp(get(c, "Born"), "1955-08-02") == 0 && get(c, "Died") == NULL);
+        CHECK(strcmp(get(c, "Country"), "United Kingdom") == 0 && strcmp(get(c, "Groups"), "Hotline") == 0);
+        CHECK(strcmp(get(c, "Worked at"), "Ariolasoft, 1985") == 0 && strcmp(get(c, "Notable"), "Commando") == 0);
+        CHECK(strcmp(get(c, "Link"), "Homepage: https://example.org") == 0);
+        CHECK(strcmp(get(c, "Songs in HVSC"), "97") == 0 && strcmp(get(c, "Compo placings"), "3") == 0 && strcmp(get(c, "YouTube captures"), "12") == 0);
+        CHECK(sel_deepsid_composer_rows("{\"found\":false}", c, sizeof c) == 0);
+        CHECK(sel_deepsid_composer_rows(COMP, e, sizeof e) <= 3);
+    }
     if (failures == 0) printf("library_deepsid_rows_ok\n");
     return failures != 0;
 }

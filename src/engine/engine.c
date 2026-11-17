@@ -8151,6 +8151,15 @@ static void coll_build_run(sel_engine* e) {
         snprintf(pg->title, sizeof pg->title, "%s", src != NULL && src->name != NULL ? src->name : id);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
         if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
+        {   /* I1440j: the DeepSID header comes from the first HVSC song of the page (its folder is the composer's); a page with none keeps an empty block */
+            const char* row = b.rows.buf;
+            uint32_t tried;
+            for (tried = 0u; row != NULL && *row != '\0' && tried < 40u; tried++) {
+                if (strncmp(row, "hvsc:", 5) == 0 && sel_library_deepsid_composer(e->lib, row, pg->about, sizeof pg->about) > 0u) break;
+                row += strlen(row) + 1u;
+                row += strlen(row) + 1u;
+            }
+        }
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
         SEL_COUNT_ADD(&e->collection_queries, 1u);
     }
