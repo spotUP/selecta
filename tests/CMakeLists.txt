@@ -4372,6 +4372,17 @@ if(NOT SEL_AMIGA)
   set_tests_properties(stream-live-ogg-chained PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_chained_ok")
 
+  # I774t: the openmpt adapter's message trim (blank sample-name lines of a MOD).
+  if(TARGET selecta_openmpt)
+    add_executable(openmpt_message_trim_test m3/openmpt_message_trim_test.c)
+    target_include_directories(openmpt_message_trim_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+    target_compile_definitions(openmpt_message_trim_test PRIVATE SEL_PLUGIN_KIND_BUILD=1)
+    target_link_libraries(openmpt_message_trim_test PRIVATE selecta_openmpt selecta_plugin_shared m)
+    set_target_properties(openmpt_message_trim_test PROPERTIES LINKER_LANGUAGE CXX)
+    add_test(NAME openmpt-message-trim COMMAND openmpt_message_trim_test)
+    set_tests_properties(openmpt-message-trim PROPERTIES PASS_REGULAR_EXPRESSION "openmpt_message_trim_ok")
+  endif()
+
   # I195h: the stb_vorbis adapter makes no malloc or alloca after (or even during) the render path: every decoder
   # allocation comes from the host-allocated arena. The test compiles the adapter and stb_vorbis.c with counting
   # malloc/alloca (stb_vorbis_count.h) and drives the plugin hooks over chained.ogg; the tiny variant has a 4 KB

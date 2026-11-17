@@ -855,6 +855,7 @@ struct sel_engine {
     char op_path[SEL_OPEN_PATH_MAX];
     char pm_rules[512]; /* I1225: companion rules for the read's remote fetch, built on the pump before the post */
     char rdp_path[SEL_DEFERRED_PATH_MAX], rdp_next_path[SEL_DEFERRED_PATH_MAX];
+    char rdp_file[SEL_BROWSE_PATH_MAX], rdp_next_file[SEL_BROWSE_PATH_MAX]; /* I774t: the cached file of a remote song, empty for a local one */
     char rdp_buf[SEL_PANEL_BYTES];
     sel_uim_si_input rdp_si; /* I774n R10: filled beside rdp_buf on the read thread */
     int rdp_si_have;
@@ -2538,7 +2539,19 @@ static void panel_run(sel_engine* e) {
     if (!sel_library_song_panel(e->lib, e->rdp_path, e->rdp_buf, sizeof e->rdp_buf, &e->rdp_rows)) e->rdp_rows = 0u;
     {   /* I774n R10: the bake rows (songlengths/uadeinfo/uadecredits/uadeprov beside the config drawer), off the pump thread */
         char key[SEL_UADE_KEY_CHARS + 1u];
-        e->rdp_si_have = e->config_dir[0] != '\0' && sel_uade_key_file(e->rdp_path, key) && sel_uadesong_load(e->config_dir, key, &e->rdp_si);
+        e->rdp_si_have = e->config_dir[0] != '\0' && sel_uade_key_file(e->rdp_file[0] != '\0' ? e->rdp_file : e->rdp_path, key) && sel_uadesong_load(e->config_dir, key, &e->rdp_si);
+        if (e->rdp_si_have) { /* I774t: a remote row has no uade_key in the db; its cached file's key fills the sections the db pass left out */
+            uint32_t used;
+            const char* q = e->rdp_buf;
+            int has_heading = 0;
+            while (*q != '\0') {
+                has_heading |= (unsigned char)q[0] == 1u;
+                q += strlen(q) + 1u;
+                q += strlen(q) + 1u;
+            }
+            used = (uint32_t)(q - e->rdp_buf);
+            if (!has_heading) e->rdp_rows += sel_uim_si_panel_put(&e->rdp_si, e->rdp_buf, sizeof e->rdp_buf, &used);
+        }
     }
 }
 
@@ -2546,6 +2559,7 @@ static void panel_post(sel_engine* e) {
     if (lib_read_idle(&e->rd_panel)) {
         e->rdp_state = e->rdp_next_state;
         snprintf(e->rdp_path, sizeof e->rdp_path, "%s", e->rdp_next_path);
+        snprintf(e->rdp_file, sizeof e->rdp_file, "%s", e->rdp_next_file);
     }
     lib_read_post(e, &e->rd_panel, panel_run);
 }
@@ -12375,6 +12389,10 @@ static void refresh_snapshot(sel_engine* e) {
             sel_library_demozoo_kick(e->lib, sl->path); /* I1303c: queued on the job thread, never a wait here */
             e->rdp_next_state = sl->rp_state; /* I906d: a posted read, never a wait on this thread */
             snprintf(e->rdp_next_path, sizeof e->rdp_next_path, "%s", sl->path);
+            {
+                const sel_play_meta* pm = play_meta_find(e, sl->path);
+                snprintf(e->rdp_next_file, sizeof e->rdp_next_file, "%s", pm != NULL ? pm->cached : "");
+            }
             panel_post(e);
         }
     }
