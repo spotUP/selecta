@@ -36,6 +36,7 @@ class Engine {
 };
 
 // One function per engine, each in its own <name>_engine.cpp.
+void beepola_set_data_dir(const char* dir);  // folder of the three data files; BBMP_BEEPOLA_DATA wins when set
 std::unique_ptr<Engine> make_beepola();   // Beepola .bbsong (ZX Spectrum beeper)
 std::unique_ptr<Engine> make_fls();       // Flash Tracker .fls
 std::unique_ptr<Engine> make_fxm();       // Fuxoft AY Language .fxm and ZXAYAMAD .amad

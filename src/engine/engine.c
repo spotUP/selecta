@@ -58,6 +58,7 @@
 #endif
 #include "db.h"
 #include "sysfile.h"
+#include "cache.h"
 #include "sysfile_fetch.h"
 #include "composer.h"
 #include "meta_utf8.h"
@@ -2489,6 +2490,11 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
         have = 1;
     }
     if (have) return e->rp_value;
+    if (strcmp(key, "support.dir") == 0) { /* I751d: where the support-file downloader keeps maker-owned files (Beepola ROM and samples) */
+        sel_cache cache;
+        sel_cache_init(&cache, NULL, 0);
+        if (snprintf(e->rp_value, sizeof e->rp_value, "%s/support", cache.dir) < (int)sizeof e->rp_value) return e->rp_value;
+    }
     {
         const char* sp = sf_config_path(e, key);
         if (sp != NULL) return sp; /* I710ga4: the checked file the host stored for this replayer */

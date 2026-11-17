@@ -21,7 +21,7 @@ Psg::~Psg() {
 }
 
 void Psg::setup(int rate, double clock_hz, Chip chip, Layout layout, int chips) {
-  chips_ = std::clamp(chips, 1, 2);
+  chips_ = std::min(std::max(chips, 1), 2);
   // where the channels A, B and C sit between left (0) and right (1)
   static const double kPan[3][3] = {{0.5, 0.5, 0.5}, {0.2, 0.5, 0.8}, {0.2, 0.8, 0.5}};
   const double* pan = kPan[layout == Layout::ABC ? 1 : layout == Layout::ACB ? 2 : 0];
@@ -56,8 +56,8 @@ void Psg::render(int16_t* out, int frames) {
       left += ay_[c]->left;
       right += ay_[c]->right;
     }
-    out[i * 2] = static_cast<int16_t>(std::clamp(std::lrint(left * gain_), -32768L, 32767L));
-    out[i * 2 + 1] = static_cast<int16_t>(std::clamp(std::lrint(right * gain_), -32768L, 32767L));
+    out[i * 2] = static_cast<int16_t>(std::min(std::max(::lrint(left * gain_), -32768L), 32767L));
+    out[i * 2 + 1] = static_cast<int16_t>(std::min(std::max(::lrint(right * gain_), -32768L), 32767L));
   }
 }
 
