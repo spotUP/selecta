@@ -645,6 +645,41 @@ static void ds_tags(sel_library* lib, const char* key, const char* json) {
     sel_library_sticker_set(lib, key, "deepsid.tags", all);
 }
 
+
+/* I1440m: one DeepSID list (spec = what US arg) into its 'ds_list' row. Returns 1 done, -1 network trouble (nothing recorded). */
+static int ds_list_step(sel_library* lib, const char* spec, sel_scrape_stats* st) {
+    char base[256], what[24], enc[1500], url[SCRAPE_URL_MAX];
+    const char* arg = strchr(spec, 0x1f);
+    scrape_buf js;
+    int r;
+
+    if (arg == NULL || (size_t)(arg - spec) >= sizeof what) return 1;
+    snprintf(what, sizeof what, "%.*s", (int)(arg - spec), spec);
+    arg++;
+    if (dz_has(lib, sel_art_dz_id(spec), "ds_list", NULL, 0) > 0) return 1;
+    base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+    sel_url_encode(arg, enc, sizeof enc);
+    if (strcmp(what, "tags") == 0) snprintf(url, sizeof url, "%s/api/deepsid/tags", base);
+    else if (strcmp(what, "tag") == 0 && atoi(arg) > 0) snprintf(url, sizeof url, "%s/api/deepsid/tags/%d/files?limit=200", base, atoi(arg));
+    else if (strcmp(what, "groups") == 0) snprintf(url, sizeof url, "%s/api/deepsid/groups?limit=200", base);
+    else if (strcmp(what, "group") == 0) snprintf(url, sizeof url, "%s/api/deepsid/groups/%s/files?limit=200", base, enc);
+    else if (strcmp(what, "players") == 0) snprintf(url, sizeof url, "%s/api/deepsid/players?limit=200", base);
+    else if (strcmp(what, "player") == 0) snprintf(url, sizeof url, "%s/api/deepsid/search?q=%s&category=player&limit=200", base, enc); /* shortcut: no player-songs route, the search by player; add one when the server gets it */
+    else if (strcmp(what, "folders") == 0) snprintf(url, sizeof url, "%s/api/deepsid/folders?path=%s&limit=200", base, enc);
+    else if (strcmp(what, "tunes") == 0) snprintf(url, sizeof url, "%s/api/deepsid/tunes?path=%s&limit=200", base, enc);
+    else return 1;
+    js.data = malloc(DS_JSON_MAX);
+    js.cap = DS_JSON_MAX - 1u;
+    if (js.data == NULL) return -1;
+    js.len = 0;
+    st->albums++;
+    r = ds_fetch(lib, spec, "ds_list", url, &js, st);
+    if (r == 0) dz_put(lib, sel_art_dz_id(spec), "ds_list", "[]", 2); /* a definite no: an empty list, not asked again */
+    else if (r == 1) st->scraped++;
+    free(js.data);
+    return r < 0 ? -1 : 1;
+}
+
 /* One song. Returns 1 done (stored, cached or nothing to ask), -1 network trouble (nothing recorded). */
 static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
     char base[256], key[1100], fkey[1100], enc[1100], url[SCRAPE_URL_MAX], stamp[24];
@@ -770,6 +805,18 @@ void sel_scrape_job_run(sel_library* lib) {
         lib->job_scrape = 1;
         return;
     }
+    if (lib->ds_list[0] != '\0') { /* I1440m: a DeepSID list, same turn rules as the song above */
+        char spec[sizeof lib->ds_list];
+
+        memcpy(spec, lib->ds_list, sizeof spec);
+        lib->ds_list[0] = '\0';
+        pthread_mutex_unlock(&lib->job_lock);
+        ds_list_step(lib, spec, &d);
+        pthread_mutex_lock(&lib->job_lock);
+        add_stats(&lib->scrape_stats, &d);
+        lib->job_scrape = 1;
+        return;
+    }
     if (lib->scrape_pending) {
         lib->scrape_pending = 0;
         lib->scrape_after = 0;
@@ -814,6 +861,15 @@ void sel_library_deepsid_kick(sel_library* lib, const char* ref) {
     pthread_mutex_unlock(&lib->job_lock);
 }
 
+void sel_library_deepsid_list_kick(sel_library* lib, const char* spec) {
+    if (lib == NULL || spec == NULL || strlen(spec) >= sizeof lib->ds_list || scrape_disabled(lib) || !sel_job_start(lib)) return;
+    pthread_mutex_lock(&lib->job_lock);
+    memcpy(lib->ds_list, spec, strlen(spec) + 1u);
+    lib->job_scrape = 1;
+    sel_job_wake(lib);
+    pthread_mutex_unlock(&lib->job_lock);
+}
+
 int sel_library_scrape_poll(sel_library* lib) {
     (void)lib;
     return 0;
@@ -845,9 +901,24 @@ void sel_library_deepsid_kick(sel_library* lib, const char* ref) {
     if (lib != NULL && ref != NULL && !scrape_disabled(lib) && sel_song_key_of(ref, key, sizeof key)) memcpy(lib->ds_key, key, sizeof key);
 }
 
+void sel_library_deepsid_list_kick(sel_library* lib, const char* spec) {
+    if (lib != NULL && spec != NULL && strlen(spec) < sizeof lib->ds_list && !scrape_disabled(lib)) memcpy(lib->ds_list, spec, strlen(spec) + 1u);
+}
+
 int sel_library_scrape_poll(sel_library* lib) {
     sel_scrape_stats d;
     int r;
+
+    if (lib != NULL && lib->ds_list[0] != '\0') {
+        char spec[sizeof lib->ds_list];
+
+        memcpy(spec, lib->ds_list, sizeof spec);
+        lib->ds_list[0] = '\0';
+        memset(&d, 0, sizeof d);
+        ds_list_step(lib, spec, &d);
+        add_stats(&lib->scrape_stats, &d);
+        return 1;
+    }
 
     if (lib != NULL && lib->ds_key[0] != '\0') {
         char ref[sizeof lib->ds_key];

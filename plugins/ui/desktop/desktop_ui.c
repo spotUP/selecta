@@ -4338,6 +4338,17 @@ static uint32_t browse_tiles(const desk* d, browse_tile* out, uint32_t cap) {
             k++;
         }
     }
+    {   /* I1440m: the C64 SID group: four tiles, each a drill of the source "deepsid" (the engine builds the lists from the DeepSID cache) */
+        static const char* const ds_name[4] = {"Tags", "Collections", "Groups", "Players"};
+        static const char* const ds_kind[4] = {"tags", "collections", "groups", "players"};
+        for (i = 0; i < 4u && n < cap; i++) {
+            out[n].kind = 2u;
+            out[n].count = 0u;
+            snprintf(out[n].label, sizeof out[n].label, "C64 SID %s", ds_name[i]);
+            snprintf(out[n].arg, sizeof out[n].arg, "deepsid\x1f%s", ds_kind[i]);
+            n++;
+        }
+    }
     if (n < cap) { /* I678i: Tree and Columns of the retired Library page live on Browse Folders, reached from this tile */
         out[n].kind = 3u;
         out[n].count = 0u;
@@ -5850,6 +5861,10 @@ static void drl_label(const desk* d, const char* name, char* out, size_t cap) {
         snprintf(out, cap, "%s", DRL_UNKNOWN_ARTIST);
         return;
     }
+    if (np > 0u && (strcmp(part[0], "collections") == 0 || strcmp(part[0], "folder") == 0) && strrchr(name, '/') != NULL) { /* I1440m: a DeepSID folder row shows its leaf, the path stays the key */
+        snprintf(out, cap, "%s", strrchr(name, '/') + 1);
+        return;
+    }
     if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
         out[0] = (char)(out[0] >= 'a' && out[0] <= 'z' ? out[0] - 32 : out[0]);
         return;
@@ -5936,12 +5951,33 @@ static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q) 
 }
 
 /* The path one click on drill row `name` opens, or "" when the row is a leaf for now. */
+/* I1440m: the C64 SID drill kinds: the list kinds (tags, groups, players, collections) and the one-item kinds a click opens. */
+static const char* drl_deepsid_kind(const char* kind, const char** root) {
+    static const char* const k[4][3] = {{"tag", "tags", "Tags"}, {"group", "groups", "Groups"}, {"player", "players", "Players"}, {"folder", "collections", "Collections"}};
+    uint32_t i;
+    for (i = 0u; i < 4u; i++) {
+        if (strcmp(kind, k[i][0]) == 0 || strcmp(kind, k[i][1]) == 0) {
+            *root = k[i][1];
+            return k[i][2];
+        }
+    }
+    return NULL;
+}
+
 static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
     char part[3][96];
     uint32_t np = drl_split(d->drl_path, part);
     out[0] = '\0';
     if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
         snprintf(out, cap, "%s", name);
+    } else if (np >= 1u && strcmp(part[0], "tags") == 0) { /* I1440m */
+        snprintf(out, cap, "tag\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "groups") == 0) {
+        snprintf(out, cap, "group\x1f%s", name);
+    } else if (np >= 1u && strcmp(part[0], "players") == 0) {
+        snprintf(out, cap, "player\x1f%s", name);
+    } else if (np >= 1u && (strcmp(part[0], "collections") == 0 || strcmp(part[0], "folder") == 0)) {
+        snprintf(out, cap, "folder\x1f%s", name);
     } else if (np == 1u && strcmp(part[0], "formats") == 0) {
         snprintf(out, cap, "format\x1f%s", name);
     } else if (np == 1u && strcmp(part[0], "artists") == 0) {
@@ -5970,6 +6006,14 @@ static uint32_t drl_crumbs(const desk* d, char (*label)[96], char (*path)[160]) 
                                  : strcmp(part[0], "artist") == 0 || strcmp(part[0], "artists") == 0 ? "Artists"
                                  : strcmp(part[0], "platform") == 0 || strcmp(part[0], "platforms") == 0 ? "Platforms" : "New");
     snprintf(path[1], 160, "%s", strcmp(part[0], "format") == 0 ? "formats" : strcmp(part[0], "artist") == 0 ? "artists" : strcmp(part[0], "platform") == 0 ? "platforms" : part[0]);
+    {
+        const char* dsroot;
+        const char* dslabel = drl_deepsid_kind(part[0], &dsroot);
+        if (dslabel != NULL) { /* I1440m */
+            snprintf(label[1], 96, "%s", dslabel);
+            snprintf(path[1], 160, "%s", dsroot);
+        }
+    }
     n = 2u;
     for (k = 1u; k < np; k++) {
         char tmp[96];
