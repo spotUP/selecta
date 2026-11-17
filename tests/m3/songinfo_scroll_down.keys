@@ -1,0 +1,6 @@
+# I774s: Down once scrolls one line.
+wait 800
+I
+wait 300
+Down
+wait 300

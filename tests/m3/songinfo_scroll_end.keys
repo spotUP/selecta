@@ -1,0 +1,8 @@
+# I774s: n shows the Found In names, End jumps to the last line.
+wait 800
+I
+wait 300
+n
+wait 300
+End
+wait 500

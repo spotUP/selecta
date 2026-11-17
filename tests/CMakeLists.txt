@@ -2380,6 +2380,25 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_sections.cmake")
   set_tests_properties(text-ui-songinfo-sections PROPERTIES LABELS m3)
 
+  # I774s: scrolling, the f/c/p facet searches, the n toggle and the Other Sources / Found In sections with data, at 80x25
+  foreach(spec "scroll-top:songinfo_scroll_top:Information\;Found In\;more below:Sites" "scroll-down:songinfo_scroll_down:more below:Credits"
+               "scroll-end:songinfo_scroll_end:Aminet\;Disc 1\;more above:Credits" "scroll-home:songinfo_scroll_home:Credits\;more below:Aminet"
+               "facet-f:songinfo_facet_f:format:Song Information" "facet-c:songinfo_facet_c:channels:Song Information"
+               "facet-p:songinfo_facet_p:publisher:Song Information")
+    string(REPLACE ":" ";" parts "${spec}")
+    list(GET parts 0 tname)
+    list(GET parts 1 kname)
+    list(GET parts 2 want)
+    list(GET parts 3 absent)
+    add_test(NAME text-ui-songinfo-${tname}
+      COMMAND "${CMAKE_COMMAND}" "-DFIXTURE=$<TARGET_FILE:songinfo_sections_fixture>" "-DSELECTA=$<TARGET_FILE:selecta>"
+        "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/${kname}.keys" "-DSIZE=80x25" "-DWANT=${want}" "-DABSENT=${absent}"
+        "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/songinfo_${tname}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_scroll.cmake")
+    set_tests_properties(text-ui-songinfo-${tname} PROPERTIES LABELS m3)
+  endforeach()
+
   add_test(NAME text-ui-tiles-back
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/tiles_back.keys"

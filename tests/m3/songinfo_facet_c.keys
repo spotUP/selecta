@@ -1,0 +1,6 @@
+# I774s: c searches the song Channels.
+wait 800
+I
+wait 300
+c
+wait 800
