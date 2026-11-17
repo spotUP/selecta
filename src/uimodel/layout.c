@@ -324,7 +324,9 @@ void sel_uim_search_chan_apply(char* query, size_t cap, uint32_t chan) {
     char* t = strstr(query, "channels:");
     size_t ql;
     if (t != NULL) { /* cut only the token, keep words typed after it */
-        const char* e = t + strcspn(t, " ");
+        const char* e = t + 9; /* the term is channels: + optional < or > + digits; text glued behind it stays */
+        e += strspn(e, "<>") > 0u ? 1u : 0u;
+        e += strspn(e, "0123456789");
         e += strspn(e, " ");
         memmove(t, e, strlen(e) + 1u);
     }
