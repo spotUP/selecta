@@ -101,7 +101,7 @@ static const char* rel_path(const char* p) {
     return p;
 }
 
-static int queue_row(sync_state* s, const char* rel) {
+static int queue_row(sync_state* s, const char* rel, const char* author, const char* released) {
     scan_text* t = s->text;
     sel_catalogue_song song;
     sel_tag tags[4];
@@ -126,11 +126,42 @@ static int queue_row(sync_state* s, const char* rel) {
             song.name = (const char*)tags[i].value;
         }
     }
+    song.sid_author = author;
+    song.sid_released = released;
     if (!s->cat->song(s->host, &song)) {
         s->failed = 1;
         return 0;
     }
     return 1;
+}
+
+/* I1443b: optional <dir>/hvsc_credits.txt, `<path>\t<author>\t<released>` per line (the server's /api/deepsid/credits). Each line
+ * queues its song again with the header text; the host splits it into artist, group and year. Runs right after the listing, so
+ * the Songlengths pass that follows still fills the durations. A missing file is no credits, not an error. */
+static void sync_credits(sync_state* s, const char* file) {
+    FILE* f = fopen(file, "rb");
+    char line[LINE_BYTES];
+
+    if (f == NULL) {
+        return;
+    }
+    while (!s->failed && fgets(line, sizeof line, f) != NULL) {
+        char* author = strchr(line, '\t');
+        char* released;
+
+        sel_sync_chomp(line);
+        if (author == NULL) {
+            continue;
+        }
+        *author++ = '\0';
+        released = strchr(author, '\t');
+        if (released == NULL) {
+            continue;
+        }
+        *released++ = '\0';
+        queue_row(s, rel_path(line), author, released);
+    }
+    fclose(f);
 }
 
 static int sync_listing(sync_state* s, const char* file) {
@@ -145,7 +176,7 @@ static int sync_listing(sync_state* s, const char* file) {
         if (line[0] == '\0' || line[0] == ';' || line[0] == '#') {
             continue;
         }
-        if (!queue_row(s, rel_path(line))) {
+        if (!queue_row(s, rel_path(line), NULL, NULL)) {
             if (!s->failed) {
                 s->st->skipped_rows++;
             }
@@ -436,6 +467,9 @@ int sel_hvsc_sync(const sel_host* host, const char* dir, sel_hvsc_sync_stats* st
     if (cat != NULL && s.text != NULL && s.lens != NULL && s.stils != NULL && s.notes != NULL &&
         (open = cat->begin(host, "hvsc")) != 0) {
         if (snprintf(path, sizeof path, "%s/%s", dir, SEL_HVSC_LISTING) < (int)sizeof path && sync_listing(&s, path)) {
+            if (snprintf(path, sizeof path, "%s/%s", dir, SEL_HVSC_CREDITS) < (int)sizeof path) {
+                sync_credits(&s, path);
+            }
             ok = snprintf(path, sizeof path, "%s/%s", dir, SEL_HVSC_SONGLENGTHS) < (int)sizeof path &&
                  sync_songlengths(&s, path);
             if (ok) {

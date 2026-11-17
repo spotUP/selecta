@@ -3,6 +3,7 @@
 #include "sync_host.h"
 
 #include "../cache.h"
+#include "../composer.h"
 #include "../local.h"
 #include "../query.h"
 #include "../source.h"
@@ -175,16 +176,37 @@ static const char* arena_copy(sel_cat_batch* b, const char* s) {
 }
 
 static int fill_row(sel_cat_batch* b, sel_scan_row* r, const sel_catalogue_song* s) {
+    char credit_artist[SEL_COMPOSER_MAX];
+    char credit_group[SEL_COMPOSER_MAX];
+    int32_t credit_year = 0;
+    const char* artist = s->artist;
+    const char* album = s->album;
+
+    r->year = s->year;
+    /* I1443b: a SID's header author/released give the artist (only when the source named none: MUSICIANS/ folder wins), the
+     * group (album) and the year. */
+    if ((s->sid_author != NULL || s->sid_released != NULL) &&
+        sel_sid_credit("SID", s->sid_author ? s->sid_author : "", s->sid_released ? s->sid_released : "", credit_artist,
+                       sizeof credit_artist, credit_group, sizeof credit_group, &credit_year)) {
+        if (artist == NULL || artist[0] == '\0') {
+            artist = credit_artist;
+        }
+        if (album == NULL || album[0] == '\0') {
+            album = credit_group;
+        }
+        if (r->year == 0) {
+            r->year = credit_year;
+        }
+    }
     r->source = b->source;
     r->path = arena_copy(b, s->path);
     r->format = arena_copy(b, s->format);
-    r->artist = arena_copy(b, s->artist);
-    r->album = arena_copy(b, s->album);
+    r->artist = arena_copy(b, artist);
+    r->album = arena_copy(b, album);
     r->name = arena_copy(b, s->name);
     r->md5 = arena_copy(b, s->md5);
     r->size = s->size;
     r->duration_ms = s->duration_ms;
-    r->year = s->year;
     return r->path && r->format && r->artist && r->album && r->name && r->md5;
 }
 
@@ -199,6 +221,9 @@ static int cat_song(const sel_host* host, const sel_catalogue_song* s) {
     need = 6u;
     need += (s->path ? strlen(s->path) : 0) + (s->format ? strlen(s->format) : 0) + (s->artist ? strlen(s->artist) : 0) +
             (s->album ? strlen(s->album) : 0) + (s->name ? strlen(s->name) : 0) + (s->md5 ? strlen(s->md5) : 0);
+    if (s->sid_author != NULL || s->sid_released != NULL) {
+        need += 2u * SEL_COMPOSER_MAX; /* I1443b: the split SID credit */
+    }
     if (need > BATCH_ARENA) {
         return 0;
     }

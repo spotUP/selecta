@@ -51,6 +51,21 @@ static int stil_ok(const char* path) {
     return banner && entries;
 }
 
+/* I1443b: the credits file is `<MUSICIANS|GAMES|DEMOS>/...sid` tab author tab released per line. */
+static int credits_ok(const char* path) {
+    FILE* in = fopen(path, "rb");
+    char line[LINE_BYTES];
+    int ok = 0;
+
+    if (in == NULL) {
+        return 0;
+    }
+    ok = fgets(line, sizeof line, in) != NULL && strchr(line, '\t') != NULL &&
+         (strncmp(line, "MUSICIANS/", 10) == 0 || strncmp(line, "GAMES/", 6) == 0 || strncmp(line, "DEMOS/", 6) == 0);
+    fclose(in);
+    return ok;
+}
+
 /* Writes the `; /PATH` lines of Songlengths.md5 as `/PATH` lines: the catalogue listing. Returns the count, or
  * -1 when a file cannot be opened or written. */
 static int64_t derive_listing(const char* songlengths, const char* listing) {
@@ -91,6 +106,7 @@ int sel_hvsc_net_sync(const sel_host* host, const char* base, sel_hvsc_sync_stat
     char songlengths[PATH_BYTES];
     char stil[PATH_BYTES];
     char listing[PATH_BYTES];
+    char credits[PATH_BYTES];
     char url[URL_BYTES];
     unsigned long got = 0;
     size_t n = strlen(base);
@@ -120,6 +136,10 @@ int sel_hvsc_net_sync(const sel_host* host, const char* base, sel_hvsc_sync_stat
         return 0;
     }
     net->stil_bytes = (uint32_t)got;
+    /* I1443b: best effort; no credits file (offline server, route not deployed) leaves artist, group and year as they were. */
+    if (snprintf(credits, sizeof credits, "%s/%s", dir, SEL_HVSC_CREDITS) < (int)sizeof credits) {
+        net_svc->get_file_checked(host, SEL_HVSC_CREDITS_URL, credits, credits_ok, &net->http_requests, &got);
+    }
     derived = derive_listing(songlengths, listing);
     if (derived < 1) {
         return 0;

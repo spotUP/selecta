@@ -11,7 +11,7 @@ trap 'rm -rf "$root"' EXIT
 field() { echo "$out" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
 fail() { echo "FAIL $1"; exit 1; }
 
-cp "$fx"/hvsc_listing.txt "$fx"/Songlengths.md5 "$fx"/STIL.txt "$root/"
+cp "$fx"/hvsc_listing.txt "$fx"/Songlengths.md5 "$fx"/STIL.txt "$fx"/hvsc_credits.txt "$root/"
 listed=$(grep -c '^/\(MUSICIANS\|GAMES\|DEMOS\)/' "$fx/hvsc_listing.txt")
 skipped=$(grep -vc '^/\(MUSICIANS\|GAMES\|DEMOS\)/' "$fx/hvsc_listing.txt" || true)
 lengths=$(grep -c '^[0-9a-f]\{32\}=' "$fx/Songlengths.md5")
@@ -50,6 +50,12 @@ lo=$(echo "$rows" | grep '^MUSICIANS/D/DRAX/Listing_Only.sid|')
 # hosted by Modland: the url resolves through the Modland host path layout
 [ "$(echo "$monty" | cut -d'|' -f7)" = "https://modland.com/pub/modules/HVSC/MUSICIANS/H/Hubbard_Rob/Monty_on_the_Run.sid" ] || fail "Monty url"
 echo "$cher" | cut -d'|' -f7 | grep -qF 'https://modland.com/pub/modules/HVSC/DEMOS/0-9/1000_Cherries.sid' || fail "Cherries url"
+
+# I1443b: a credits line with author "<?>" and released "1988 Fairlight" gives artist and group Fairlight and year 1988; the
+# MUSICIANS/ rows (no credit line) keep their folder artist and get no year
+cred=$(sqlite3 "$root/h.db" "SELECT artist||'|'||album||'|'||year FROM songs WHERE path='DEMOS/0-9/1000_Cherries.sid'")
+[ "$cred" = "Fairlight|Fairlight|1988" ] || fail "Cherries credit: $cred"
+[ "$(sqlite3 "$root/h.db" "SELECT COALESCE(year,0) FROM songs WHERE path='MUSICIANS/H/Hubbard_Rob/Monty_on_the_Run.sid'")" = 0 ] || fail "Monty year"
 
 # STIL notes attach to their song keys, per file and per subtune
 st=$(echo "$out" | sed -n 's/^hvsc_sticker=//p')
