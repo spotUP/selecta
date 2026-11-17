@@ -55,7 +55,11 @@ int main(void) {
         CHECK(sel_deepsid_csdb_rows("{\"csdbId\":7,\"releases\":[{\"id\":123,\"name\":\"Tune Pack\",\"screenshot\":\"/x.png\"},"
                                     "{\"id\":124,\"name\":\"Demo\",\"group\":\"Censor\",\"year\":1990,\"type\":\"C64 Music\"}]}", c, sizeof c, &r) == 2 && r == 2);
         CHECK(strcmp(get(c, "CSDb release"), "Tune Pack (csdb.dk/release/?id=123)") == 0);
-        CHECK(strstr(c + strlen(c) + 1 + strlen(c + strlen(c) + 1) + 1, "Demo, Censor, 1990, C64 Music (csdb.dk/release/?id=124)") != NULL);
+        {
+            const char* v1 = c + strlen(c) + 1;
+            const char* l2 = v1 + strlen(v1) + 1;
+            CHECK(strcmp(l2 + strlen(l2) + 1, "Demo, Censor, 1990, C64 Music (csdb.dk/release/?id=124)") == 0);
+        }
     }
     rows = 0;
     CHECK(sel_deepsid_rows("{\"id\":1,\"tags\":[],\"placings\":[],\"gb64\":null}", e, sizeof e, &rows) == 0 && rows == 0 && e[0] == '\0');
