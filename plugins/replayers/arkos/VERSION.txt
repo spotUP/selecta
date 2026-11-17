@@ -1,0 +1,6 @@
+Arkos Tracker 3 player, ported to C (I433a importer, I433b player).
+Source: https://bitbucket.org/JulienNevo/arkostracker3.git
+Commit: 14d975bdf0787cde4a5fa9425abe793e4a3a3536
+Files ported: source/player/SongPlayer.cpp, source/player/channel/ChannelPlayer.cpp, source/player/PsgPeriod.cpp
+Licence: MIT (LICENSE.txt). No LZH (AKY/AKM export) code is ported, so no LZH licence text is needed.
+Chip emulator: Ayumi (third_party/ayumi, MIT).
