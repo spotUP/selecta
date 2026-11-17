@@ -596,7 +596,9 @@ int sel_library_song_panel(sel_library* lib, const char* key, char* out, uint32_
     op.key = key;
     op.out = out;
     op.out_cap = cap;
-    return user_call_rows(lib, &op, rows) > 0;
+    if (user_call_rows(lib, &op, rows) <= 0) return 0;
+    sel_library_deepsid_panel(lib, key, out, cap, rows); /* I1440k: SID songs add the DeepSID rows */
+    return 1;
 }
 
 int sel_library_stats(sel_library* lib, char* out, uint32_t cap, uint32_t* rows) {

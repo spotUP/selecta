@@ -838,3 +838,7 @@ void sel_library_scrape_wait(sel_library* lib) {
 }
 
 #endif
+
+/* I1440k: the two JSON scanners above for deepsid_info.c (same flat-key scanning, no second parser). */
+const char* sel_json_value(const char* p) { return json_value(p); }
+const char* sel_json_str(const char* from, const char* key, char* out, size_t cap) { return json_str(from, key, out, cap); }
