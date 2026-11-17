@@ -1,4 +1,5 @@
 /* The page table (I792): see include/selecta/uimodel/pages.h. */
+#include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -147,4 +148,58 @@ int sel_uim_about_line(const char* about, uint32_t i, uint32_t max, char* label,
         p = v + strlen(v) + 1u;
     }
     return 0;
+}
+
+const char* sel_uim_tag_name(const sel_collection_page* pg, uint32_t k) {
+    const char* p = pg != NULL ? pg->tags : "";
+    if (k >= SEL_UIM_TAG_MAX) {
+        return NULL;
+    }
+    while (*p != '\0' && k > 0u) {
+        p += strlen(p) + 1u;
+        k--;
+    }
+    return *p != '\0' ? p : NULL;
+}
+
+uint32_t sel_uim_tag_count(const sel_collection_page* pg) {
+    uint32_t n = 0u;
+    while (sel_uim_tag_name(pg, n) != NULL) {
+        n++;
+    }
+    return n;
+}
+
+void sel_uim_tagchip_label(const char* active, char* buf, size_t cap) {
+    if (active != NULL && active[0] != '\0') {
+        snprintf(buf, cap, "Tag: %s", active);
+    } else {
+        snprintf(buf, cap, "Tag");
+    }
+}
+
+static int tag_same(const char* a, const char* b) { /* whole name, case-insensitive like the engine filter */
+    while (*a != '\0' && tolower((unsigned char)*a) == tolower((unsigned char)*b)) {
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
+void sel_uim_tag_next(const sel_collection_page* pg, const char* active, char* out, size_t cap) {
+    uint32_t i, n = sel_uim_tag_count(pg);
+    uint32_t next = n > 0u ? 1u : 0u; /* 0 = All Tags, k = tag k - 1; no active tag, or one the page does not list: the first tag */
+    if (active != NULL && active[0] != '\0') {
+        for (i = 0; i < n; i++) {
+            if (tag_same(sel_uim_tag_name(pg, i), active)) {
+                next = i + 2u;
+                break;
+            }
+        }
+    }
+    snprintf(out, cap, "%s", next >= 1u && next <= n ? sel_uim_tag_name(pg, next - 1u) : "");
+}
+
+void sel_uim_tag_line(const char* tag, char* line, size_t cap) {
+    snprintf(line, cap, "COLLECTION_TAG \"%s\"", tag != NULL ? tag : "");
 }
