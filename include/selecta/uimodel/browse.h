@@ -3,6 +3,7 @@
 #ifndef SELECTA_UIMODEL_BROWSE_H
 #define SELECTA_UIMODEL_BROWSE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -27,6 +28,16 @@ const char* sel_uim_scope_label(uint32_t i);
 uint32_t sel_uim_scope_index(const char* name);
 /* "SCOPE <name>" into out; returns the length, 0 for an index past the count. */
 uint32_t sel_uim_scope_line(uint32_t i, char* out, uint32_t cap);
+
+/* I1440p: the C64 SID Browse tiles, one model for every UI. Tile i (Tags, Charts, Collections, Compos, Groups, Players): its full
+ * English label "C64 SID Tags" and the drill key "deepsid" US kind (US 0x1f). Returns 0 past SEL_UIM_DS_TILES. */
+#define SEL_UIM_DS_TILES 6u
+int sel_uim_ds_tile(uint32_t i, char* label, size_t cap, char* arg, size_t arg_cap);
+/* The drill path of one click on row `name` of a DeepSID list whose drill path starts with `first` ("tags" -> "tag" US name); 0 when
+ * `first` is no DeepSID list. */
+int sel_uim_ds_child(const char* first, const char* name, char* out, size_t cap);
+/* The label of a DeepSID drill row: a folder path shows its leaf, every other row its name. */
+const char* sel_uim_ds_label(const char* first, const char* name);
 
 #define SEL_UIM_TILE_STEPS 5u
 /* The grid and home shelf tile size steps in logical pixels (96..208); 0 past the count. */

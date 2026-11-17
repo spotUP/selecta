@@ -4342,13 +4342,10 @@ static uint32_t browse_tiles(const desk* d, browse_tile* out, uint32_t cap) {
         }
     }
     {   /* I1440m: the C64 SID group: four tiles, each a drill of the source "deepsid" (the engine builds the lists from the DeepSID cache) */
-        static const char* const ds_name[6] = {"Tags", "Charts", "Collections", "Compos", "Groups", "Players"}; /* I1440n: Charts and Compos */
-        static const char* const ds_kind[6] = {"tags", "charts", "collections", "compos", "groups", "players"};
-        for (i = 0; i < 6u && n < cap; i++) {
+        for (i = 0; i < SEL_UIM_DS_TILES && n < cap; i++) {
             out[n].kind = 2u;
             out[n].count = 0u;
-            snprintf(out[n].label, sizeof out[n].label, "C64 SID %s", ds_name[i]);
-            snprintf(out[n].arg, sizeof out[n].arg, "deepsid\x1f%s", ds_kind[i]);
+            (void)sel_uim_ds_tile(i, out[n].label, sizeof out[n].label, out[n].arg, sizeof out[n].arg); /* I1440p: shared with the text UI */
             n++;
         }
     }
@@ -5866,8 +5863,8 @@ static void drl_label(const desk* d, const char* name, char* out, size_t cap) {
         snprintf(out, cap, "%s", DRL_UNKNOWN_ARTIST);
         return;
     }
-    if (np > 0u && (strcmp(part[0], "collections") == 0 || strcmp(part[0], "folder") == 0) && strrchr(name, '/') != NULL) { /* I1440m: a DeepSID folder row shows its leaf, the path stays the key */
-        snprintf(out, cap, "%s", strrchr(name, '/') + 1);
+    if (np > 0u && sel_uim_ds_label(part[0], name) != name) { /* I1440m: a DeepSID folder row shows its leaf, the path stays the key */
+        snprintf(out, cap, "%s", sel_uim_ds_label(part[0], name));
         return;
     }
     if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
@@ -5976,20 +5973,7 @@ static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
     out[0] = '\0';
     if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
         snprintf(out, cap, "%s", name);
-    } else if (np >= 1u && strcmp(part[0], "tags") == 0) { /* I1440m */
-        snprintf(out, cap, "tag\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "charts") == 0) { /* I1440n */
-        snprintf(out, cap, "chart\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "compos") == 0) {
-        snprintf(out, cap, "year\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "year") == 0) {
-        snprintf(out, cap, "event\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "groups") == 0) {
-        snprintf(out, cap, "group\x1f%s", name);
-    } else if (np >= 1u && strcmp(part[0], "players") == 0) {
-        snprintf(out, cap, "player\x1f%s", name);
-    } else if (np >= 1u && (strcmp(part[0], "collections") == 0 || strcmp(part[0], "folder") == 0)) {
-        snprintf(out, cap, "folder\x1f%s", name);
+    } else if (np >= 1u && sel_uim_ds_child(part[0], name, out, cap)) { /* I1440m, I1440n: the C64 SID kinds, shared with the text UI */
     } else if (np == 1u && strcmp(part[0], "formats") == 0) {
         snprintf(out, cap, "format\x1f%s", name);
     } else if (np == 1u && strcmp(part[0], "artists") == 0) {
