@@ -3191,6 +3191,11 @@ static void test_songinfo_panel(void) {
         sel_uim_search_chan_apply(q, sizeof q, 2u);
         CHECK(strcmp(q, "tune x channels:>4") == 0 || strstr(q, "channels:>4") != NULL, "the Channels chip does not replace the channels term");
     }
+    {
+        char q[64] = "tune channels:4foo bar"; /* I774n: text glued behind the term survives the cycle */
+        sel_uim_search_chan_apply(q, sizeof q, 0u);
+        CHECK(strcmp(q, "tune foo bar") == 0, "text glued after the channels term is dropped");
+    }
     CHECK(sel_uim_si_found_index("Bulletin Boards") == 3 && sel_uim_si_found_index("BBS") < 0, "the Found In kind BBS does not read Bulletin Boards");
 }
 

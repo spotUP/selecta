@@ -45,6 +45,8 @@
 #include <selecta/uimodel/sources.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/doors.h>
+
+enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_CHIPS = 7, SEARCH_SECTION_GAP = 24 }; /* Search page constants, used by the stats dump too */
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/route.h>
 #include <selecta/uimodel/keybind.h>
@@ -8511,7 +8513,7 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "online_chip %u %d %d %d %d scope=%s\n", (unsigned)oi, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h, csc[0] != '\0' ? csc : "-");
         }
         o = dump_put(d, o, "online_chips rows=%d\n", (int)online_chip_rows(d, panel_rect(d, "main"))); /* I1224: the wrapped chip row's rows */
-        for (oi = 0; oi < 4u; oi++) { /* I1019f: the facet row (SEARCH_FACETS), always drawn */
+        for (oi = 0; oi < SEARCH_CHIPS; oi++) { /* I1019f: every search chip (facets, Format, Channels, Publisher), always drawn */
             sel_gui_rect fr = search_facet_rect(d, panel_rect(d, "main"), oi);
             o = dump_put(d, o, "search_facet_chip %u %d %d %d %d\n", (unsigned)oi, (int)fr.x, (int)fr.y, (int)fr.w, (int)fr.h);
         }
@@ -10114,7 +10116,6 @@ static int library_click(desk* d, int32_t x, int32_t y) {
  * does the search (LIBRARY_SEARCH, the query language incl. `format:mod`); the debounce reuses the tooltip delay pattern
  * (a UI clock stamp, a wait hint for the idle block, a tick that fires once). */
 /* SEARCH_SECTION_GAP: the space above every shown section heading after the first (I1041), in the draw and the height. */
-enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_CHIPS = 7, SEARCH_SECTION_GAP = 24 };
 /* The Search page draws the whole grouped result (library groups, then one From section per source) and scrolls it in
  * pixels, so its view window holds every row the search text can hold; a shorter window cut the last From sections off
  * behind a library that matches the query (I1030: From Radio Browser missing on All sources). */
