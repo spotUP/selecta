@@ -35,6 +35,7 @@
 #include <selecta/library_item.h>
 
 #if defined(__amigaos__) || defined(AMIGA)
+#define MUI_ABOUT_MAX 12 /* I1440q: header rows of a composer page (the Mac ABOUT_MAX) */
 #define SEL_MUI_NATIVE 1
 #include <exec/types.h>
 #include <libraries/mui.h>
@@ -196,6 +197,10 @@ typedef struct mui_state {
     Object* col_artist;             /* the Artist link of an album page (META_ARTIST) */
     Object* col_title;
     Object* col_meta;
+    Object* col_about_grp;          /* I1440q: the composer page's DeepSID header: one label / value row per about line, shown while it has a line */
+    Object* col_about_row[MUI_ABOUT_MAX];
+    Object* col_about_lab[MUI_ABOUT_MAX];
+    Object* col_about_val[MUI_ABOUT_MAX];
     char col_title_buf[160];
     char col_meta_buf[224];
     uint32_t col_serial;            /* the collection serial the list shows */
@@ -1828,6 +1833,7 @@ static Object* mui_col_page_group(mui_state* s) {
     Object* lg;
     Object* head = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    uint32_t i;
     snprintf(s->col_title_buf, sizeof s->col_title_buf, " ");
     snprintf(s->col_meta_buf, sizeof s->col_meta_buf, " ");
     s->col_title = mui_aatext(s->col_title_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
@@ -1848,6 +1854,23 @@ static Object* mui_col_page_group(mui_state* s) {
     DoMethod(head, OM_ADDMEMBER, s->col_artist);
     DoMethod(g, OM_ADDMEMBER, head);
     DoMethod(g, OM_ADDMEMBER, s->col_meta);
+    s->col_about_grp = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    if (s->col_about_grp == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < MUI_ABOUT_MAX; i++) { /* I1440q: no photo (the MUI art object is the cover Canvas, no datatype image), no Compo Entries tab (no data) */
+        Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+        s->col_about_row[i] = row;
+        s->col_about_lab[i] = mui_aatext_sized(" ", "Compo placings", MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT, 0);
+        s->col_about_val[i] = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
+        if (row == NULL || s->col_about_lab[i] == NULL || s->col_about_val[i] == NULL) {
+            return NULL;
+        }
+        DoMethod(row, OM_ADDMEMBER, s->col_about_lab[i]);
+        DoMethod(row, OM_ADDMEMBER, s->col_about_val[i]);
+        DoMethod(s->col_about_grp, OM_ADDMEMBER, row);
+    }
+    DoMethod(g, OM_ADDMEMBER, s->col_about_grp);
     DoMethod(g, OM_ADDMEMBER, lg);
     return g;
 }
@@ -2766,6 +2789,32 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
 
 /* I1306b: the posted song_briefs read of the shown collection page (the text UI's model, uimodel/briefs.h). A landed answer redraws the
  * list (setting the count always redraws an AAList); a new page posts its read once. */
+/* I1440q: the about block into the header rows, through the shared sel_uim_about_line (the text UI's reader; numbers the Link rows). */
+static void mui_col_about_sync(mui_state* s, const sel_collection_page* pg) {
+    const char* about = pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? pg->about : "";
+    char lab[48], val[192];
+    uint32_t i;
+    ULONG parent = 0;
+    GetAttr(MUIA_Parent, s->col_about_grp, &parent);
+    if (parent != 0) {
+        DoMethod((Object*)parent, MUIM_Group_InitChange);
+    }
+    DoMethod(s->col_about_grp, MUIM_Group_InitChange);
+    for (i = 0; i < MUI_ABOUT_MAX; i++) {
+        int on = sel_uim_about_line(about, i, MUI_ABOUT_MAX, lab, sizeof lab, val, sizeof val);
+        if (on) {
+            mui_text_set(s->col_about_lab[i], lab);
+            mui_text_set(s->col_about_val[i], val);
+        }
+        set(s->col_about_row[i], MUIA_ShowMe, on ? TRUE : FALSE);
+    }
+    set(s->col_about_grp, MUIA_ShowMe, *about != '\0' ? TRUE : FALSE);
+    DoMethod(s->col_about_grp, MUIM_Group_ExitChange);
+    if (parent != 0) {
+        DoMethod((Object*)parent, MUIM_Group_ExitChange);
+    }
+}
+
 static void mui_col_briefs(mui_state* s, const sel_collection_page* pg, int col) {
     if (sel_uim_briefs_take(&s->col_brf, s->engine) && col && pg != NULL && pg->serial == s->col_brf.serial) {
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, TAG_DONE);
@@ -2812,6 +2861,7 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         }
         mui_text_set(s->col_title, s->col_title_buf);
         mui_text_set(s->col_meta, s->col_meta_buf);
+        mui_col_about_sync(s, pg);
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
         {

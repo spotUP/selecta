@@ -3124,6 +3124,29 @@ static void test_volume_row(void) {
     CHECK(strstr(grp, "CTL_VOLUME, MUI_VOLUME_FIX_W)") != NULL, "volume slider has no fixed width");
 }
 
+/* I1440q: the composer page header: MUI_ABOUT_MAX label / value rows sit in the collection page group between the meta line and the song list,
+ * and a page change fills them from the engine's about block (mui_col_about_sync). */
+static void test_col_about(void) {
+    char *src = ui_source(), *grp, *end, *meta, *about, *list;
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    grp = strstr(src, "static Object* mui_col_page_group(");
+    end = grp != NULL ? strstr(grp, "I795 (P1): row `row` of a Home shelf") : NULL;
+    CHECK(grp != NULL && end != NULL, "mui_col_page_group not found");
+    if (grp == NULL || end == NULL) {
+        return;
+    }
+    meta = strstr(grp, "DoMethod(g, OM_ADDMEMBER, s->col_meta)");
+    about = strstr(grp, "DoMethod(g, OM_ADDMEMBER, s->col_about_grp)");
+    list = strstr(grp, "DoMethod(g, OM_ADDMEMBER, lg)");
+    CHECK(meta != NULL && about != NULL && list != NULL && meta < about && about < list && list < end, "about header is not between the meta line and the song list");
+    CHECK(strstr(grp, "s->col_about_lab[i]") != NULL && strstr(grp, "s->col_about_val[i]") != NULL, "about rows have no label and value objects");
+    CHECK(strstr(src, "#define MUI_ABOUT_MAX 12") != NULL, "about row count differs from the Mac ABOUT_MAX");
+    CHECK(strstr(src, "mui_col_about_sync(s, pg);") != NULL && strstr(src, "sel_uim_about_line(about") != NULL, "the page change does not fill the about rows from the engine");
+}
+
 /* I796 (drift B1-B4): ONE reachability test of the player bar. mui_ui.c builds it from the map layer (Mac transport order, Mac column weights,
  * art frame, Like beside the title), and the icons it builds fire their commands: each transport action and Like go through mui_action_fire
  * (the handler sentinel mui_action_fires() counts them). */
@@ -4195,6 +4218,8 @@ int main(int argc, char** argv) {
         test_overlays();
     } else if (strcmp(argv[1], "volume-row") == 0) {
         test_volume_row();
+    } else if (strcmp(argv[1], "col-about") == 0) {
+        test_col_about();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
         test_cycle_initial();
     } else if (strcmp(argv[1], "aa-aspect") == 0) {
