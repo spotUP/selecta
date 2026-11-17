@@ -37,6 +37,7 @@
 #include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/nppanel.h>
+#include <selecta/uimodel/csdb.h>
 #include <selecta/uimodel/select.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/uimodel/sources.h>
@@ -294,6 +295,9 @@ typedef struct desk {
     uint32_t pls_cols_ok, pls_has_artist, pls_has_album, pls_has_tail; /* I1079c: which collection page columns have content (cached) */
     pls_meta_row* pls_meta;  /* I678h3: the artist and album of each song, read once per reload */
     sel_gui_rect si_composer; /* I678h3: the Song Information composer link, zero width when the page has no composer row */
+    struct { sel_gui_rect r; int id; } si_csdb[6]; /* I1440l2: the CSDb release rows drawn this frame (click rect and release id) */
+    uint32_t si_csdb_n, si_thumb_tries; /* rows registered; retries of the thumbnail lookup while the screenshots download */
+    uint32_t si_thumb_next;             /* host clock_ms of the next retry */
     char si_composer_key[SEL_COMPOSER_MAX]; /* its composer canon, from the song's db row */
     char si_composer_ref[512]; /* the song path si_composer_key was read for */
     int32_t si_composer_row; /* the info row index of the Author tag, -1 when the song has none */
@@ -7274,7 +7278,7 @@ static int pl_key(desk* d, const sel_gui_input* ev) {
  * (STIL note, composer, release, year, genre, rating, play count: sel_state.panel) and the flag buttons. The engine owns
  * the flags and the note (FLAG wrong, FLAG skip, NOTE: the library flags table, the rows `selecta-cli wrong` lists); the
  * page draws the data and sends those verbs for the song being played. */
-enum { SI_BUTTONS = 3, SI_ROW_H = 20 };
+enum { SI_BUTTONS = 3, SI_ROW_H = 20, SI_THUMB = 48 };
 
 static const char* si_button_label(uint32_t k) {
     return sel_uim_flag_label(k);
@@ -7386,6 +7390,9 @@ static int32_t si_lines(desk* d, sel_gui_rect mn, const char* value) {
 }
 
 static int32_t si_row_h(desk* d, sel_gui_rect mn, const char* value) {
+    if (sel_csdb_row_id(value) > 0) { /* I1440l2: a CSDb release row is as tall as its screenshot thumbnail */
+        return lpx(d, SI_THUMB + 8);
+    }
     int32_t h = si_lines(d, mn, value) * desk_font(d, 0, 13)->line_height;
     return h > lpx(d, SI_ROW_H) ? h : lpx(d, SI_ROW_H);
 }
@@ -7409,6 +7416,34 @@ static void si_composer_rect(desk* d, sel_gui_rect mn, const char* value, uint32
     d->si_composer = rect_of(si_value_x(d, mn), y, tw < si_value_w(d, mn) ? tw : si_value_w(d, mn), lpx(d, SI_ROW_H));
 }
 
+/* I1440l2 (design 3.2): a CSDb release row is the screenshot thumbnail (the cover path of the artwork key sel_csdb_art_key, a placeholder tile until
+ * the server screenshot has downloaded) and the text beside it; the whole row opens the csdb.dk release page. */
+static void si_draw_csdb(desk* d, sel_gui_rect mn, const char* value, int32_t vx, int32_t y) {
+    int id = sel_csdb_row_id(value);
+    char key[40];
+    int32_t th = lpx(d, SI_THUMB), gap = lpx(d, 12), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    sel_gui_rect ar = rect_of(vx, y + lpx(d, 4), th, th);
+
+    sel_csdb_art_key(id, key, sizeof key);
+    if (!cover_draw(d, ar, key, rad)) {
+        sel_gui_round_rect(d->canvas, ar, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        if (d->si_thumb_tries < 8u) { /* the download lands on the library job: look again every 2 s, a few times */
+            uint32_t now = desk_prof_clock(d);
+            if ((int32_t)(now - d->si_thumb_next) >= 0) {
+                d->si_thumb_next = now + 2000u;
+                d->si_thumb_tries++;
+                art_forget_misses(d->art);
+            }
+            d->repaint = 1;
+        }
+    }
+    draw_text(d, rect_of(vx + th + gap, y, si_value_w(d, mn) - th - gap, th + lpx(d, 8)), value, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    if (d->si_csdb_n < 6u) {
+        d->si_csdb[d->si_csdb_n].r = rect_of(vx, y, si_value_w(d, mn), th + lpx(d, 8));
+        d->si_csdb[d->si_csdb_n++].id = id;
+    }
+}
+
 static void si_draw_row(desk* d, const char* label, const char* value, uint32_t i) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t h = si_row_h(d, mn, value), y = si_row_y(d, mn), lw, vx;
@@ -7424,6 +7459,11 @@ static void si_draw_row(desk* d, const char* label, const char* value, uint32_t 
     }
     si_composer_rect(d, mn, value, i, y);
     draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, lw, lpx(d, SI_ROW_H)), label, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    if (sel_csdb_row_id(value) > 0) {
+        si_draw_csdb(d, mn, value, vx, y);
+        d->si_rows++;
+        return;
+    }
     if (si_lines(d, mn, value) > 1) {
         sel_gui_text_wrap(d->canvas, desk_font(d, 0, 13), rect_of(vx, y, si_value_w(d, mn), h), value,
                           ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1 << 20, &d->text);
@@ -8182,6 +8222,7 @@ static void draw_songinfo(desk* d) {
     d->si_rows = 0;
     sel_gui_clip_push(d->canvas, rect_of(mn.x, si_list_top(d, mn), mn.w, mn.y + mn.h - si_list_top(d, mn)));
     memset(&d->si_composer, 0, sizeof d->si_composer);
+    d->si_csdb_n = 0u;
     si_walk_from_top(d, st, si_draw_row);
     sel_gui_clip_pop(d->canvas);
     if (d->si_rows == 0u) {
@@ -8210,6 +8251,14 @@ static int si_pointer(desk* d, const sel_gui_input* ev) {
         snprintf(canon, sizeof canon, "%s", d->si_composer_key);
         desk_route(d, SEL_ROUTE_SONGINFO_COMPOSER, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, canon, canon, "");
         return 1;
+    }
+    for (k = 0; k < d->si_csdb_n; k++) { /* I1440l2: a CSDb release opens its csdb.dk page in the browser (the I1384b path) */
+        if (in_rect(d->si_csdb[k].r, ev->x, ev->y)) {
+            char url[64];
+            sel_csdb_url(d->si_csdb[k].id, url, sizeof url);
+            desk_open_url(url);
+            return 1;
+        }
     }
     for (k = 0; k < SI_BUTTONS; k++) {
         if (in_rect(queue_btn_rect(d, mn, k), ev->x, ev->y)) {

@@ -15,6 +15,7 @@
 #include "../../core/pal.h"
 #include "../dir.h"
 #include "../song_key.h"
+#include <selecta/uimodel/csdb.h>
 #include "selecta/platform.h"
 
 #include <stdio.h>
@@ -629,6 +630,29 @@ static int ds_fetch(sel_library* lib, const char* key, const char* kind, const c
     return 1;
 }
 
+/* I1440l2 (design 3.2): the screenshot of each CSDb release of a ds_csdb answer, as the 160 px JPEG of the server, stored as the cover of the artwork key
+ * sel_deepsid_csdb_key(id) so the Song Information thumbnails read it like any cover. A miss or failure is not retried (the file row is the cache gate). */
+static void csdb_thumbs(sel_library* lib, const char* base, const char* json, sel_scrape_stats* st) {
+    int ids[6], i;
+    uint32_t n = sel_deepsid_csdb_ids(json, ids, 6u);
+    scrape_buf img;
+
+    img.data = n > 0 ? malloc(DZ_IMAGE_MAX) : NULL;
+    for (i = 0; img.data != NULL && i < (int)n; i++) {
+        char raw[40], key[64], url[SCRAPE_URL_MAX];
+
+        sel_csdb_art_key(ids[i], raw, sizeof raw);
+        if (!sel_song_key_of(raw, key, sizeof key) || dz_has(lib, sel_art_dz_id(key), "cover", NULL, 0) > 0) continue;
+        snprintf(url, sizeof url, "%s/api/deepsid/image/csdb/%d.jpg?w=160", base, ids[i]);
+        img.cap = DZ_IMAGE_MAX;
+        if (scrape_get(url, &img, st) == 1 && img.len < DZ_IMAGE_MAX && is_image(&img)) {
+            dz_put(lib, sel_art_dz_id(key), "cover", img.data, img.len);
+            dz_put(lib, sel_art_dz_id(key), "dz_key", key, strlen(key));
+        }
+    }
+    free(img.data);
+}
+
 /* The names of the "tags" array of a file answer, joined by ", ", into the sticker "deepsid.tags" of the key (an emptied list clears it). */
 static void ds_tags(sel_library* lib, const char* key, const char* json) {
     char all[512], name[96];
@@ -719,7 +743,7 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
             p = p != NULL ? json_value(p + 4) : NULL;
             if (p != NULL && atoi(p) > 0) {
                 snprintf(url, sizeof url, "%s/api/deepsid/csdb/%d", base, atoi(p));
-                ds_fetch(lib, key, "ds_csdb", url, &js, st); /* a failure here is retried never: the file row is the cache gate; shortcut, upgrade when CSDb flaps */
+                if (ds_fetch(lib, key, "ds_csdb", url, &js, st) == 1) csdb_thumbs(lib, base, (const char*)js.data, st); /* a failure here is retried never: the file row is the cache gate; shortcut, upgrade when CSDb flaps */
             }
         }
         slash = strrchr(key, '/');

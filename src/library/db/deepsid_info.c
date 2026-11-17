@@ -187,6 +187,20 @@ uint32_t sel_deepsid_csdb_rows(const char* json, char* out, uint32_t cap, uint32
     return added;
 }
 
+/* I1440l2: the release ids (max 6) of a ds_csdb answer, for the thumbnail fetcher. */
+uint32_t sel_deepsid_csdb_ids(const char* json, int* ids, uint32_t max) {
+    const char* p = json != NULL ? strstr(json, "\"releases\"") : NULL;
+    uint32_t n = 0;
+
+    while (p != NULL && n < max && n < DS_CSDB_MAX && (p = strstr(p + 1, "\"id\"")) != NULL) {
+        const char* v = sel_json_value(p + 4);
+        int id = v != NULL ? atoi(v) : 0;
+
+        if (id > 0) ids[n++] = id;
+    }
+    return n;
+}
+
 int sel_deepsid_art_ask(sel_library* lib, const sel_art_op* op) {
     sel_message reply;
 
