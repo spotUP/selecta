@@ -68,6 +68,12 @@ int sel_uadeprov_get(const char* path, uint32_t entry, uint16_t* ids, int max);
 /* Source table lookup: kind (SEL_UPRV_*) and the strings, cut to the buffer sizes. 1 = found. */
 int sel_uadeprov_source(const char* path, uint32_t id, int* kind, char* file, size_t filecap, char* display, size_t dispcap);
 
+/* I774n R8: fills the song info input (include/selecta/uimodel/siinfo.h) for the song with UADE key `key` from the bake files
+ * in directory `dir` (songlengths.bin, uadeinfo.bin, uadecredits.bin, uadeprov.bin). 1 = the key is in the bake (a missing
+ * file leaves its part empty), 0 = not in the bake. *out is zeroed first. */
+struct sel_uim_si_input;
+int sel_uadesong_load(const char* dir, const char* key, struct sel_uim_si_input* out);
+
 /* md5 (at least 12 hex digits) -> entry. 1 = found. */
 int sel_uademd5_lookup(const char* path, const char* md5hex, uint32_t* entry);
 

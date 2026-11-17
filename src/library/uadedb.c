@@ -3,6 +3,8 @@
 
 #include "songlen.h"
 
+#include <selecta/uimodel/siinfo.h>
+
 #include <stdio.h>
 #include <string.h>
 
@@ -189,4 +191,49 @@ int sel_uademd5_lookup(const char* path, const char* md5hex, uint32_t* entry) {
     }
     fclose(f);
     return found;
+}
+
+static void si_credit(sel_uim_si_credit* d, const char* source, const char* format, const char* authors, const char* publishers,
+                      const char* album, uint32_t channels, uint32_t year) {
+    snprintf(d->source, sizeof d->source, "%s", source);
+    snprintf(d->format, sizeof d->format, "%s", format);
+    snprintf(d->authors, sizeof d->authors, "%s", authors);
+    snprintf(d->publisher, sizeof d->publisher, "%s", publishers);
+    snprintf(d->album, sizeof d->album, "%s", album);
+    d->channels = channels;
+    d->year = year;
+}
+
+int sel_uadesong_load(const char* dir, const char* key, struct sel_uim_si_input* out) {
+    char path[512];
+    uint32_t entry = 0;
+    uint16_t ids[SEL_UIM_SI_PROV_MAX];
+    sel_uadeinfo info;
+    sel_uadecredit cr[SEL_UADECREDIT_SOURCES];
+    int i, n;
+
+    memset(out, 0, sizeof *out);
+    snprintf(path, sizeof path, "%s/songlengths.bin", dir);
+    if (!sel_songlen_find(path, key, &entry)) return 0;
+    snprintf(path, sizeof path, "%s/%s", dir, SEL_UADEINFO_NAME);
+    if (sel_uadeinfo_get(path, entry, &info)) {
+        out->have_info = 1;
+        si_credit(&out->info, "", info.format, info.authors, info.publishers, info.album, info.channels, info.year);
+    }
+    snprintf(path, sizeof path, "%s/%s", dir, SEL_UADECREDITS_NAME);
+    n = sel_uadecredits_get(path, entry, cr, SEL_UADECREDIT_SOURCES);
+    for (i = 0; i < n && out->ncredits < SEL_UIM_SI_CREDIT_MAX; i++) {
+        si_credit(&out->credits[out->ncredits++], sel_uadecredit_source_name(cr[i].source), "", cr[i].authors, cr[i].publishers, cr[i].album, 0, cr[i].year);
+    }
+    snprintf(path, sizeof path, "%s/%s", dir, SEL_UADEPROV_NAME);
+    n = sel_uadeprov_get(path, entry, ids, SEL_UIM_SI_PROV_MAX);
+    for (i = 0; i < n; i++) {
+        int kind = 0;
+        char file[32], disp[sizeof out->prov[0].display];
+        if (!sel_uadeprov_source(path, ids[i], &kind, file, sizeof file, disp, sizeof disp)) continue;
+        out->prov[out->nprov].kind = kind;
+        snprintf(out->prov[out->nprov].display, sizeof disp, "%s", disp[0] ? disp : file);
+        out->nprov++;
+    }
+    return 1;
 }

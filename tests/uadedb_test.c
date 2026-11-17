@@ -5,6 +5,8 @@
 #include "songlen.h"
 #include "uadedb.h"
 
+#include <selecta/uimodel/siinfo.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,6 +168,39 @@ int main(void) {
         CHECK(sel_uadeprov_get(bin, eb, ids, 8) == 1 && ids[0] == 0);
         CHECK(!sel_uadeprov_source(bin, 3u, &kind, file, sizeof file, disp, sizeof disp));
         CHECK(st.prov_sources[SEL_UPRV_SITE] == 2 && st.prov_sources[SEL_UPRV_CD] == 1 && st.prov_pairs == 4);
+    }
+
+    /* I774n R8: the song info section lines */
+    {
+        static sel_uim_si_input in;
+        sel_uim_si_line ln[SEL_UIM_SI_LINES_MAX];
+        uint32_t c;
+        CHECK(sel_uadesong_load(out, "aaaaaaaa0100", &in));
+        c = sel_uim_si_lines(&in, ln, SEL_UIM_SI_LINES_MAX);
+        CHECK(c == 13u); /* Credits heading + 6; Found In heading, Sites 2 + 2 names, CD-ROMs 1 + 1 name */
+        CHECK(ln[0].kind == SEL_UIM_SI_HEADING && strcmp(ln[0].key, "Credits") == 0);
+        CHECK(strcmp(ln[1].key, "Authors") == 0 && strcmp(ln[1].val, "Glue Master, Kid") == 0);
+        CHECK(strcmp(ln[2].key, "Group / Publisher") == 0 && strcmp(ln[2].val, "Mahoney") == 0);
+        CHECK(strcmp(ln[3].val, "Musicdisk 1") == 0 && strcmp(ln[4].key, "Year") == 0 && strcmp(ln[4].val, "1988") == 0);
+        CHECK(strcmp(ln[5].val, "Protracker") == 0 && strcmp(ln[6].key, "Channels") == 0 && strcmp(ln[6].val, "4") == 0);
+        CHECK(ln[7].kind == SEL_UIM_SI_HEADING && strcmp(ln[7].key, "Found In") == 0);
+        CHECK(ln[8].kind == SEL_UIM_SI_FOUND_KIND && strcmp(ln[8].key, "Sites") == 0 && strcmp(ln[8].val, "2") == 0);
+        CHECK(ln[9].kind == SEL_UIM_SI_FOUND_NAME && strcmp(ln[9].val, "Aminet") == 0 && strcmp(ln[10].val, "other") == 0);
+        CHECK(ln[11].kind == SEL_UIM_SI_FOUND_KIND && strcmp(ln[11].key, "CD-ROMs") == 0 && strcmp(ln[11].val, "1") == 0);
+        CHECK(strcmp(ln[12].val, "Disc 1") == 0);
+
+        /* B: only a one-site provenance and two other sources; no Same Tune / Demozoo section anywhere */
+        CHECK(sel_uadesong_load(out, "bbbbbbbb0200", &in));
+        c = sel_uim_si_lines(&in, ln, SEL_UIM_SI_LINES_MAX);
+        CHECK(strcmp(ln[0].key, "Credits") == 0 && strcmp(ln[2].val, "Impulse Tracker 2.13") == 0 && strcmp(ln[3].val, "15") == 0);
+        CHECK(strcmp(ln[4].key, "Other Sources") == 0);
+        CHECK(ln[5].kind == SEL_UIM_SI_OTHER && strcmp(ln[5].key, "AMP") == 0 && strcmp(ln[5].val, "Xplore Alt") == 0);
+        CHECK(strcmp(ln[6].key, "UnExoticA") == 0 && strcmp(ln[6].val, "Xplore, Game House, Game Title, 1991") == 0);
+        CHECK(strcmp(ln[7].key, "Found In") == 0 && strcmp(ln[8].key, "Sites") == 0 && strcmp(ln[8].val, "1") == 0 && c == 10u);
+
+        /* key not in the bake: no input, no lines */
+        CHECK(!sel_uadesong_load(out, "ffffffffffff", &in));
+        CHECK(sel_uim_si_lines(&in, ln, SEL_UIM_SI_LINES_MAX) == 0u);
     }
 
     snprintf(cmd, sizeof cmd, "rm -rf \"%s\"", root);
