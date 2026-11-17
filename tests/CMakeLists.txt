@@ -1165,6 +1165,10 @@ if(NOT SEL_AMIGA)
   add_executable(keybind_test ui/keybind_test.c)
   target_link_libraries(keybind_test PRIVATE selecta_textui selecta_core)
   add_test(NAME keybind-unit COMMAND keybind_test)
+  # I1440p: the C64 SID tile and drill helpers shared by the desktop and text UIs.
+  add_executable(uim_ds_test ui/uim_ds_test.c)
+  target_link_libraries(uim_ds_test PRIVATE selecta_textui selecta_core)
+  add_test(NAME uim-deepsid-tiles COMMAND uim_ds_test)
 endif()
 
 # T37: the command palette and help overlay model.

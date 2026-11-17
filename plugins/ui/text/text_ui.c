@@ -574,7 +574,7 @@ static txt_style tui_style(const tui* u, txt_role r);
  * (sel_uim_home_shelves) and the tile route (sel_uim_tile_route) are the shared ones. The engine builds a Collection page:
  * COLLECTION_OPEN fills state.collection, which the page lists. */
 
-enum { TUI_PAGE_NONE = 0, TUI_PAGE_SHELF = 1, TUI_PAGE_COLLECTION = 2, TUI_SHELF_MAX = 8 };
+enum { TUI_PAGE_NONE = 0, TUI_PAGE_SHELF = 1, TUI_PAGE_COLLECTION = 2, TUI_PAGE_TILES = 3, TUI_SHELF_MAX = 8 }; /* I1440p: TILES is the C64 SID Browse tile list */
 
 static const char* const k_coll_shelf[SEL_COLLECTION_SHELVES] = {"Albums", "Appears On", "More by", "Spellings"};
 
@@ -676,6 +676,26 @@ static int tui_coll_line(const sel_collection_page* pg, const sel_uim_briefs* br
     const char* r;
     *song = NULL;
     memset(tile, 0, sizeof *tile);
+    if (pg->drill == (uint32_t)SEL_DRILL_PAGE_ROOT || pg->drill == (uint32_t)SEL_DRILL_PAGE_GROUPS) { /* I790: rows name, count, size; the C64 SID lists (I1440p) open a deeper level */
+        char first[24], child[160];
+        size_t fl = strcspn(pg->drill_path, "\x1f");
+        for (r = pg->rows, k = 0; k < pg->songs && *r != '\0'; k++) {
+            const char* cnt = r + strlen(r) + 1u;
+            if (k == i) {
+                snprintf(first, sizeof first, "%.*s", (int)(fl < sizeof first - 1u ? fl : sizeof first - 1u), pg->drill_path);
+                snprintf(buf, cap, "%s  %s", sel_uim_ds_label(first, r), cnt);
+                if (strcmp(pg->key, "deepsid") == 0 && sel_uim_ds_child(first, r, child, sizeof child)) {
+                    tile->kind = (uint32_t)SEL_LIB_ITEM_SOURCE;
+                    snprintf(tile->key, sizeof tile->key, "%s\x1f%s", pg->key, child);
+                    snprintf(tile->name, sizeof tile->name, "%s", sel_uim_ds_label(first, r));
+                }
+                return 1;
+            }
+            r = cnt + strlen(cnt) + 1u;
+            r += strlen(r) + 1u;
+        }
+        return 0;
+    }
     for (s = 0; s < SEL_COLLECTION_SHELVES; s++) {
         if (i < pg->shelf_n[s]) {
             const sel_engine_collection_row* row = &pg->shelf[s][i];
@@ -730,6 +750,9 @@ static void tui_briefs_follow(tui* u) {
 
 static uint32_t tui_page_count(const tui* u, const sel_state* s) {
     uint32_t n = 0, i;
+    if (u->pg == TUI_PAGE_TILES) {
+        return SEL_UIM_DS_TILES;
+    }
     if (u->pg == TUI_PAGE_SHELF) {
         sel_uim_shelf sh;
         return s->view != NULL && tui_page_shelf(u, s->view, &sh) ? sh.rows : 0u;
@@ -749,7 +772,12 @@ static void tui_page_activate(tui* u) {
     sel_uim_tile tile;
     char buf[320];
     const char* song;
-    if (u->pg == TUI_PAGE_SHELF) {
+    if (u->pg == TUI_PAGE_TILES) {
+        char label[64], arg[64];
+        if (sel_uim_ds_tile(u->pg_cur, label, sizeof label, arg, sizeof arg)) {
+            (void)tui_route(u, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, arg, label, "");
+        }
+    } else if (u->pg == TUI_PAGE_SHELF) {
         sel_uim_shelf sh;
         if (s->view == NULL || !tui_page_shelf(u, s->view, &sh) || u->pg_cur >= sh.rows) {
             return;
@@ -765,6 +793,8 @@ static void tui_page_activate(tui* u) {
         if (song != NULL) {
             snprintf(buf, sizeof buf, "QUEUE_ADD %s", song);
             tui_send(u, buf);
+        } else if (tile.kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I1440p: a C64 SID list row opens the next level */
+            (void)tui_route(u, SEL_ROUTE_BROWSE_TILE, tile.kind, 0u, tile.key, tile.name, "");
         } else if (tile.kind != 0u) {
             (void)tui_route(u, SEL_ROUTE_ALBUM_CARD, tile.kind, tile.id, tile.key, tile.name, tile.sub);
         }
@@ -968,6 +998,17 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
             const sel_view_row* r = &s->view->rows[sh.first + i];
             txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
             snprintf(buf, sizeof buf, " %s%s%s", r->text, r->artist != NULL && r->artist[0] ? "  - " : "", r->artist != NULL ? r->artist : "");
+            tui_pfill(u, 0, 3u + i, width, 1, ' ', st);
+            tui_ptext(u, 1, 3u + i, buf, width - 1u, st);
+            drawn++;
+        }
+    } else if (u->pg == TUI_PAGE_TILES) {
+        char arg[64];
+        tui_ptext(u, 1, 2, "Browse  C64 SID", width - 1u, label);
+        for (i = 0; i < SEL_UIM_DS_TILES && i < rows; i++) {
+            txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
+            (void)sel_uim_ds_tile(i, buf + 1, sizeof buf - 1u, arg, sizeof arg);
+            buf[0] = ' ';
             tui_pfill(u, 0, 3u + i, width, 1, ' ', st);
             tui_ptext(u, 1, 3u + i, buf, width - 1u, st);
             drawn++;
@@ -1272,6 +1313,10 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         u->lib_screen = 0;
         u->lib_mode_on = 0;
         tui_send(u, "VIEW_SOURCE home");
+    } else if (strcmp(name, "c64_sid") == 0) { /* I1440p: the C64 SID Browse tiles as a page */
+        sel_route_hist_init(&u->rh);
+        u->pg = TUI_PAGE_TILES;
+        u->pg_cur = 0;
     } else if (strcmp(name, "stats") == 0) {
         /* The statistics screen (F24, I192): the engine reads the stats SQL views; b again closes it. */
         tui_send(u, s->stats != NULL ? "STATS_HIDE" : "STATS_SHOW");

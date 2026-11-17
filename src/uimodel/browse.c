@@ -189,3 +189,34 @@ const char* sel_uim_side_empty(uint32_t chip, uint32_t n, int bitmap) {
 int sel_uim_side_card_shown(uint32_t chip, int filtered, uint32_t playlist_rows, int bitmap) {
     return chip <= 1u && !filtered && playlist_rows == 0u && !bitmap;
 }
+
+/* I1440p: the C64 SID tiles and drill kinds, shared by the desktop and text UIs (design 2026-11-16-i1440-deepsid.md 3.3, 3.4). */
+static const char* const k_ds_name[SEL_UIM_DS_TILES] = {"Tags", "Charts", "Collections", "Compos", "Groups", "Players"};
+static const char* const k_ds_kind[SEL_UIM_DS_TILES] = {"tags", "charts", "collections", "compos", "groups", "players"};
+
+int sel_uim_ds_tile(uint32_t i, char* label, size_t cap, char* arg, size_t arg_cap) {
+    if (i >= SEL_UIM_DS_TILES) {
+        return 0;
+    }
+    snprintf(label, cap, "C64 SID %s", k_ds_name[i]);
+    snprintf(arg, arg_cap, "deepsid\x1f%s", k_ds_kind[i]);
+    return 1;
+}
+
+int sel_uim_ds_child(const char* first, const char* name, char* out, size_t cap) {
+    static const char* const k[7][2] = {{"tags", "tag"},     {"charts", "chart"},   {"compos", "year"},       {"year", "event"},
+                                        {"groups", "group"}, {"players", "player"}, {"collections", "folder"}};
+    uint32_t i;
+    for (i = 0; i < 7u; i++) {
+        if (strcmp(first, k[i][0]) == 0 || (i == 6u && strcmp(first, "folder") == 0)) {
+            snprintf(out, cap, "%s\x1f%s", k[i][1], name);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+const char* sel_uim_ds_label(const char* first, const char* name) {
+    const char* slash = strrchr(name, '/');
+    return slash != NULL && (strcmp(first, "collections") == 0 || strcmp(first, "folder") == 0) ? slash + 1 : name;
+}
