@@ -11909,7 +11909,13 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
                 size_t ql = strlen(d->query);
                 if (i == 5) { /* drop the old channels term, append the next */
                     char* t = strstr(d->query, "channels:");
-                    if (t != NULL) { *t = '\0'; ql = strlen(d->query); while (ql > 0u && d->query[ql - 1u] == ' ') d->query[--ql] = '\0'; }
+                    if (t != NULL) { /* cut only the token, keep words typed after it */
+                        const char* e = t + strcspn(t, " ");
+                        e += strspn(e, " ");
+                        memmove(t, e, strlen(e) + 1u);
+                        ql = strlen(d->query);
+                        while (ql > 0u && d->query[ql - 1u] == ' ') d->query[--ql] = '\0';
+                    }
                     d->search_chan = (d->search_chan + 1u) & 3u;
                     if (d->search_chan != 0u) snprintf(d->query + ql, sizeof d->query - ql, "%s%s", ql > 0u ? " " : "", chan_term[d->search_chan]);
                 } else {
