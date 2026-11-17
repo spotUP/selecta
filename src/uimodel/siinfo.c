@@ -10,9 +10,20 @@ sel_uim_si_kind sel_uim_si_panel_kind(const char* label, const char** text) {
     return k;
 }
 
+const char* const sel_uim_si_sections[SEL_UIM_SI_SECTION_N] = {"Credits", "Other Sources", "Found In", "Same Tune", "Demozoo"};
+int sel_uim_si_section_index(const char* heading) {
+    int k;
+    for (k = 0; k < SEL_UIM_SI_SECTION_N; k++) {
+        if (strcmp(heading, sel_uim_si_sections[k]) == 0) {
+            return k;
+        }
+    }
+    return -1;
+}
+
 /* I774n R11b: the Found In kind labels in builder order (src/library/siinfo_lines.c); one expand bit per entry in every UI. */
 int sel_uim_si_found_index(const char* text) {
-    static const char* const kinds[SEL_UIM_SI_FOUND_N] = {"Sites", "Collections", "Groups", "BBS", "CD-ROMs"};
+    static const char* const kinds[SEL_UIM_SI_FOUND_N] = {"Sites", "Collections", "Groups", "Bulletin Boards", "CD-ROMs"};
     int k;
     for (k = 0; k < SEL_UIM_SI_FOUND_N; k++) {
         if (strcmp(text, kinds[k]) == 0) {

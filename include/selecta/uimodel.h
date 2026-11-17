@@ -208,6 +208,13 @@ enum {
 /* I733: empty-field hint text, one source for the desktop and the MUI UI. */
 #define SEL_UIM_SEARCH_FACETS 4u
 extern const char* const sel_uim_search_facets[SEL_UIM_SEARCH_FACETS]; /* All, Songs, Albums, Artists */
+/* I774n R11c: the filter chips beside the facets (Mac R9): Format and Publisher start their term in the field; Channels cycles Any, 4, more than 4,
+ * fewer than 4. sel_uim_search_chan_apply drops the old channels token (keeping words typed after it) and appends the term of `chan` (0..3). */
+extern const char* const sel_uim_search_chan_label[4]; /* "Channels: Any" ... */
+extern const char* const sel_uim_search_chan_term[4];  /* "", "channels:4", "channels:>4", "channels:<4" */
+void sel_uim_search_chan_apply(char* query, size_t cap, uint32_t chan);
+/* Starts "format:" or "publisher:" at the end of the query (word = "format" / "publisher"). */
+void sel_uim_search_term_start(char* query, size_t cap, const char* word);
 #define SEL_UIM_CMD_HINT "Type a command"
 /* Search field hint: with a top bar "What do you want to play?", else "Search" plus the chip names after the leading All chip, lowercased
  * ("Search songs, albums, artists"). */

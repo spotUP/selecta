@@ -30,6 +30,7 @@
 
 #include <selecta/library_item.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/siinfo.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/pages.h>
 
@@ -3181,6 +3182,16 @@ static void test_songinfo_panel(void) {
     CHECK(panel != NULL && sub != NULL, "Song Information does not read the engine panel rows before the subsong line");
     CHECK(panel != NULL && strstr(panel, "sel_uim_tidy_info(text, val, sizeof val)") != NULL && strstr(panel, "sel_uim_si_panel_kind(p, &text)") != NULL, "panel rows skip the shared tidy rule");
     CHECK(strstr(src, "#define MUI_INFO_MAX 112u") != NULL, "info rows cannot hold the DeepSID rows");
+    /* I774n R11c (design A3, A10): five section lists routed by the shared section table, the shared filter-chip helpers, the A9 label */
+    CHECK(strstr(src, "sel_uim_si_section_index(text)") != NULL && strstr(src, "s->si_list[k]") != NULL && strstr(src, "CTL_SI_PICK_BASE + (LONG)k") != NULL, "Song Information is not split into the five section lists");
+    CHECK(strstr(src, "sel_uim_search_chan_apply(q, sizeof q, s->search_chan)") != NULL && strstr(src, "sel_uim_search_term_start(q, sizeof q, k == 0u ? \"format\" : \"publisher\")") != NULL && strstr(src, "CTL_FCHIP_BASE + (LONG)k") != NULL, "the Format, Channels, Publisher chips do not use the shared uimodel helpers");
+    CHECK(strcmp(sel_uim_si_sections[2], "Found In") == 0 && sel_uim_si_section_index("Demozoo") == 4, "the section table moved");
+    {
+        char q[64] = "tune channels:4 x";
+        sel_uim_search_chan_apply(q, sizeof q, 2u);
+        CHECK(strcmp(q, "tune x channels:>4") == 0 || strstr(q, "channels:>4") != NULL, "the Channels chip does not replace the channels term");
+    }
+    CHECK(sel_uim_si_found_index("Bulletin Boards") == 3 && sel_uim_si_found_index("BBS") < 0, "the Found In kind BBS does not read Bulletin Boards");
 }
 
 /* I1440q2: composer Link rows and CSDb release rows open their URL through openurl.library (absent: nothing), the release URL from the shared
@@ -3195,7 +3206,7 @@ static void test_open_url(void) {
     CHECK(fn != NULL && strstr(fn, "OpenLibrary((CONST_STRPTR) \"openurl.library\"") != NULL && strstr(fn, "jsr -30(%%a6)") != NULL, "no openurl.library URL_OpenA call");
     CHECK(fn != NULL && strstr(fn, "== NULL) {\n        return;") != NULL, "a missing openurl.library is not silent");
     CHECK(strstr(src, "mui_open_url(s->col_about_url[id - CTL_ABOUT_OPEN])") != NULL, "composer Link rows do not open their URL");
-    CHECK(strstr(src, "sel_csdb_url(s->info_csdb[picked], url, sizeof url)") != NULL && strstr(src, "s->info_csdb[rows] = sel_csdb_row_id(value)") != NULL, "CSDb release rows do not open csdb.dk");
+    CHECK(strstr(src, "sel_csdb_url(s->info_csdb[r], url, sizeof url)") != NULL && strstr(src, "s->info_csdb[rows] = sel_csdb_row_id(value)") != NULL, "CSDb release rows do not open csdb.dk");
     CHECK(strstr(src, "UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_INFO_PICK") != NULL, "the info list is not wired to the pick handler");
 }
 
