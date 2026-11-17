@@ -2597,6 +2597,17 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I1223b: a Beepola .bbsong plays through the render entry point (bbmp_ay module); its data files come from the I751
+  # downloader. Fetched by checksum, exit 77 = skip (no network).
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/bbmp-beepola-decode)
+    add_test(NAME bbmp-beepola-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/bbmp_beepola_decode.sh $<TARGET_FILE:selecta-cli>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/bbmp-beepola-decode)
+    set_tests_properties(bbmp-beepola-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "bbmp_beepola_decode_ok" SKIP_RETURN_CODE 77
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I710ac: Sound Club (.sn) and Sound Club 2 (.sn2) songs play through the render entry point (bbmp_sclub module, GPL-3.0). Songs
   # are fetched by checksum, exit 77 = skip. A .sn that is not Sound Club must not be claimed.
   if(SELECTA_GPL_PLUGINS)
