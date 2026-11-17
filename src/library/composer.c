@@ -1,6 +1,7 @@
 /* Composer name normalisation (composer.h; plan I182, T85). */
 #include "composer.h"
 
+#include <ctype.h>
 #include <string.h>
 
 static int is_alnum(unsigned char c) {
@@ -132,4 +133,40 @@ int sel_composer_display(const char* name, char* out, size_t cap) {
     }
     out[o] = '\0';
     return o > 0;
+}
+
+/* I1443: see composer.h. */
+static void credit_copy(char* dst, size_t cap, const char* src) {
+    size_t n = strlen(src);
+
+    if (cap == 0) return;
+    if (n >= cap) n = cap - 1u;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+int sel_sid_credit(const char* format, const char* author, const char* released, char* artist, size_t acap, char* group, size_t gcap,
+                   int32_t* year) {
+    char rel[SEL_COMPOSER_MAX];
+    char* g = rel;
+    size_t n, i;
+    int digits = 0;
+
+    if (format == NULL || strncmp(format, "SID", 3) != 0) return 0;
+    credit_copy(rel, sizeof rel, released != NULL ? released : "");
+    *year = 0;
+    /* a leading year token is 4 digits or '?' ("1988", "198?"); only all digits give a year, either way it is not the group */
+    for (i = 0; i < 4u && (isdigit((unsigned char)rel[i]) || rel[i] == '?'); i++) {
+        digits += rel[i] != '?';
+    }
+    if (i == 4u && (rel[4] == '\0' || isspace((unsigned char)rel[4]))) {
+        if (digits == 4) *year = (rel[0] - '0') * 1000 + (rel[1] - '0') * 100 + (rel[2] - '0') * 10 + (rel[3] - '0');
+        g = rel + 4;
+    }
+    while (isspace((unsigned char)*g)) g++;
+    for (n = strlen(g); n > 0 && isspace((unsigned char)g[n - 1u]); n--) g[n - 1u] = '\0';
+    credit_copy(group, gcap, g);
+    if (author == NULL || author[0] == '\0' || strcmp(author, "<?>") == 0) author = g;
+    if (author != artist) credit_copy(artist, acap, author); /* a caller may pass its author buffer as the output */
+    return 1;
 }

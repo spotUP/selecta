@@ -343,7 +343,7 @@ typedef struct sel_wq_op {
     void (*done)(sel_engine* e, struct sel_wq_op* op);
     char* buf;
     void* res; /* I906g: the op's answer region (host memory), allocated on the pump at queue time, filled by run, freed after done */
-    const char* s[3];
+    const char* s[4];
     int rc;
     int fin; /* written with __atomic ops: the thread stores 1 after run */
     uint32_t id, u1, u2;
@@ -358,6 +358,8 @@ static void lib_read_post(sel_engine* e, sel_lib_read* r, void (*run)(sel_engine
 static int lib_read_idle(const sel_lib_read* r);
 static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
                         const char* s2, const char* s3);
+static sel_wq_op* wq_new4(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
+                         const char* s2, const char* s3, const char* s4);
 static void wq_submit(sel_engine* e);
 static void wq_sticker_set_run(sel_library* lib, sel_wq_op* op);
 static void wq_cache_drop_run(sel_library* lib, sel_wq_op* op);
@@ -2611,7 +2613,7 @@ static void leveler_writeback(sel_engine* e, sel_slot* sl) {
 }
 
 static void wq_meta_fill_run(sel_library* lib, sel_wq_op* op) {
-    op->rc = sel_library_song_meta_fill(lib, op->s[0], op->s[1], op->s[2], (int32_t)op->n1);
+    op->rc = sel_library_song_meta_fill(lib, op->s[0], op->s[1], op->s[2], op->s[3], (int32_t)op->u1, (int32_t)op->n1);
 }
 
 static void wq_meta_fill_done(sel_engine* e, sel_wq_op* op) {
@@ -2629,7 +2631,10 @@ static void meta_fill_writeback(sel_engine* e, sel_slot* sl) {
     const sel_tag* meta;
     const char* title;
     const char* author;
+    const char* release;
     int32_t dur;
+    int32_t year = 0;
+    char artist[SEL_COMPOSER_MAX], group[SEL_COMPOSER_MAX];
     char key[SEL_DEFERRED_PATH_MAX + 8];
     sel_wq_op* op;
 
@@ -2639,11 +2644,19 @@ static void meta_fill_writeback(sel_engine* e, sel_slot* sl) {
     title = (const char*)sel_tag_find(meta, SEL_META_TITLE, 0);
     author = (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0);
     dur = (int32_t)sel_tag_find(meta, SEL_META_DURATION_MS, 0);
-    if ((title == NULL || title[0] == '\0') && (author == NULL || author[0] == '\0') && dur <= 0) return;
+    release = (const char*)sel_tag_find(meta, SEL_META_RELEASE, 0);
+    group[0] = '\0';
+    /* I1443: a SID file's author is often "<?>" and its released field is "1988 Group": artist, year and group (album) from them */
+    if (sel_sid_credit((const char*)sel_tag_find(meta, SEL_META_FORMAT, 0), author, release, artist, sizeof artist, group, sizeof group,
+                       &year)) {
+        author = artist;
+    }
+    if ((title == NULL || title[0] == '\0') && (author == NULL || author[0] == '\0') && dur <= 0 && group[0] == '\0' && year <= 0) return;
     song_key(sl->path, key, sizeof key);
     if (key[0] == '\0') return;
-    op = wq_new(e, wq_meta_fill_run, wq_meta_fill_done, key, title != NULL ? title : "", author != NULL ? author : "");
+    op = wq_new4(e, wq_meta_fill_run, wq_meta_fill_done, key, title != NULL ? title : "", author != NULL ? author : "", group);
     if (op != NULL) {
+        op->u1 = year > 0 ? (uint32_t)year : 0u;
         op->n1 = dur > 0 ? dur : 0;
         wq_submit(e);
     }
@@ -4984,10 +4997,10 @@ static void lib_read_end(sel_lib_read* r) {
 
 /* I906f: queues a write (see sel_wq_op). NULL when the queue is full or out of memory: the caller reports "library_busy". The op becomes
  * visible to the writer thread at wq_submit, so the caller can set id/u1/u2/n1 first. */
-static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
-                        const char* s2, const char* s3) {
-    const char* in[3];
-    size_t len[3], total = 0;
+static sel_wq_op* wq_new4(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
+                         const char* s2, const char* s3, const char* s4) {
+    const char* in[4];
+    size_t len[4], total = 0;
     sel_wq_op* op;
     char* w;
     int i;
@@ -4996,7 +5009,8 @@ static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), v
     in[0] = s1 != NULL ? s1 : "";
     in[1] = s2 != NULL ? s2 : "";
     in[2] = s3 != NULL ? s3 : "";
-    for (i = 0; i < 3; i++) {
+    in[3] = s4 != NULL ? s4 : "";
+    for (i = 0; i < 4; i++) {
         len[i] = strlen(in[i]) + 1u;
         total += len[i];
     }
@@ -5004,7 +5018,7 @@ static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), v
     memset(op, 0, sizeof *op);
     op->buf = (char*)e->host->mem_alloc(e->host, total, SEL_MEM_FAST);
     if (op->buf == NULL) return NULL;
-    for (w = op->buf, i = 0; i < 3; i++) {
+    for (w = op->buf, i = 0; i < 4; i++) {
         memcpy(w, in[i], len[i]);
         op->s[i] = w;
         w += len[i];
@@ -5012,6 +5026,11 @@ static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), v
     op->run = run;
     op->done = done;
     return op;
+}
+
+static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
+                        const char* s2, const char* s3) {
+    return wq_new4(e, run, done, s1, s2, s3, NULL);
 }
 
 /* The writer thread: runs the queued ops in order until none is left. */

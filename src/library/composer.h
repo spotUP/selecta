@@ -11,6 +11,7 @@
 #define SELECTA_LIBRARY_COMPOSER_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <selecta/engine.h> /* SEL_COMPOSER_MAX (I488): one public definition */
 
 /* I353: songs with no song_composers row form one group, listed last. Its key is a canon that sel_composer_canon can never
@@ -23,5 +24,12 @@ int sel_composer_canon(const char* name, char* out, size_t cap);
 
 /* Display name for `name`: the cleaned spelling with all-caps words capitalised. Same canon <=> same display after this call on the canonical entry. Returns 1 when non-empty. */
 int sel_composer_display(const char* name, char* out, size_t cap);
+
+/* I1443: the credit of a SID file from the header's author and released fields (the player reports them as SEL_META_AUTHOR and
+ * SEL_META_RELEASE, format label "SID..."). artist = the author when it names someone, else (empty or "<?>") the releasing group;
+ * *year = the leading 4 digits of released (0 when absent or "198?"); group = the rest of released, trimmed ("1988 Fairlight" ->
+ * 1988, "Fairlight"). Returns 0 and writes nothing when `format` is not a SID label. */
+int sel_sid_credit(const char* format, const char* author, const char* released, char* artist, size_t acap, char* group, size_t gcap,
+                   int32_t* year);
 
 #endif

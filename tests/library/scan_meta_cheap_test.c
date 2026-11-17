@@ -244,7 +244,7 @@ int main(void) {
 
         read_field(lib, "key", "sure.chp", key, sizeof key);
         wg0 = sel_library_write_gen(lib);
-        rc = sel_library_song_meta_fill(lib, key, "Played Title", "Player Author", 123000);
+        rc = sel_library_song_meta_fill(lib, key, "Played Title", "Player Author", NULL, 0, 123000);
         printf("full row fill rc=%d write_gen %u -> %u\n", rc, (unsigned)wg0, (unsigned)sel_library_write_gen(lib));
         CHECK(rc != 2);
         CHECK(sel_library_write_gen(lib) == wg0);
@@ -259,12 +259,12 @@ int main(void) {
         db_enter(lib);
         CHECK(sqlite3_exec(lib->db, "UPDATE songs SET name = 'nul' WHERE path LIKE '%/null.chp'", NULL, NULL, NULL) == SQLITE_OK);
         db_leave(lib);
-        sel_library_song_meta_fill(lib, key, "Stem Title", NULL, 0);
+        sel_library_song_meta_fill(lib, key, "Stem Title", NULL, NULL, 0, 0);
         check_field(lib, "name", "null.chp", "nul");
         db_enter(lib);
         CHECK(sqlite3_exec(lib->db, "UPDATE songs SET name = 'null' WHERE path LIKE '%/null.chp'", NULL, NULL, NULL) == SQLITE_OK);
         db_leave(lib);
-        sel_library_song_meta_fill(lib, key, "Stem Title", NULL, 0);
+        sel_library_song_meta_fill(lib, key, "Stem Title", NULL, NULL, 0, 0);
         check_field(lib, "name", "null.chp", "Stem Title");
         snprintf(sql, sizeof sql, "UPDATE songs SET name = '%s' WHERE path LIKE '%%/null.chp'", orig); /* restore for the rescan checks */
         db_enter(lib);
