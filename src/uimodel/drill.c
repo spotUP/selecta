@@ -1,9 +1,10 @@
-/* The source drill rules: see include/selecta/uimodel/drill.h. Lifted from desktop_ui.c (drl_split, drl_child, drl_label, the key in
+/* The source drill rules: see include/selecta/uimodel/drill.h. Lifted from desktop_ui.c (drl_split, drl_label, the key in
  * drl_open_q) so the text UI and the desktop name the levels the same way. */
 #include <stdio.h>
 #include <string.h>
 #include <selecta/engine.h>
 #include <selecta/platform.h>
+#include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/drill.h>
 
 uint32_t sel_uim_drill_split(const char* path, char (*part)[SEL_UIM_DRILL_PART]) {
@@ -21,26 +22,6 @@ uint32_t sel_uim_drill_split(const char* path, char (*part)[SEL_UIM_DRILL_PART])
     return n;
 }
 
-int sel_uim_drill_child(uint32_t page, const char* path, const char* name, char* out, size_t cap) {
-    char part[3][SEL_UIM_DRILL_PART];
-    uint32_t np = sel_uim_drill_split(path, part);
-    out[0] = '\0';
-    if (page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
-        snprintf(out, cap, "%s", name);
-    } else if (np == 1u && strcmp(part[0], "formats") == 0) {
-        snprintf(out, cap, "format\x1f%s", name);
-    } else if (np == 1u && strcmp(part[0], "artists") == 0) {
-        snprintf(out, cap, "artist\x1f%s", name);
-    } else if (np == 1u && strcmp(part[0], "platforms") == 0) {
-        snprintf(out, cap, "platform\x1f%s", name);
-    } else if (np == 2u && strcmp(part[0], "platform") == 0) {
-        snprintf(out, cap, "format\x1f%s", name);
-    } else if (np == 2u && strcmp(part[0], "format") == 0) {
-        snprintf(out, cap, "format\x1f%s\x1f%s", part[1], name);
-    }
-    return out[0] != '\0';
-}
-
 void sel_uim_drill_label(uint32_t page, const char* path, const char* name, char* out, size_t cap) {
     uint32_t f;
     char part[3][SEL_UIM_DRILL_PART];
@@ -48,6 +29,10 @@ void sel_uim_drill_label(uint32_t page, const char* path, const char* name, char
     snprintf(out, cap, "%s", name);
     if (name[0] == '\0' && np > 0u && (strcmp(part[0], "artists") == 0 || (np == 2u && strcmp(part[0], "format") == 0))) { /* I911 */
         snprintf(out, cap, "Unknown artist");
+        return;
+    }
+    sel_uim_drill_row_label(path, name, out, cap); /* I1440m/s: a DeepSID folder row shows its leaf */
+    if (strcmp(out, name) != 0) {
         return;
     }
     if (page == (uint32_t)SEL_DRILL_PAGE_ROOT) {

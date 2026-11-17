@@ -14,8 +14,7 @@ extern "C" {
 
 /* Splits a drill path (kind US a US b) into at most 3 parts of SEL_UIM_DRILL_PART bytes; returns the part count. */
 uint32_t sel_uim_drill_split(const char* path, char (*part)[SEL_UIM_DRILL_PART]);
-/* The path one pick of row `name` opens from the level `page` (SEL_DRILL_PAGE_*) at `path`; 0 (out empty) when the row is a leaf for now. */
-int sel_uim_drill_child(uint32_t page, const char* path, const char* name, char* out, size_t cap);
+/* The path one pick of a row opens is sel_uim_drill_child (browse.h). */
 /* The label a row shows: root names capitalised, platform ids as their family label, the empty artist as "Unknown artist". */
 void sel_uim_drill_label(uint32_t page, const char* path, const char* name, char* out, size_t cap);
 /* The COLLECTION_OPEN key of a level: source id, path, then RS skip and GS find text when set. */

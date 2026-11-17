@@ -58,7 +58,7 @@ enum { TUI_INFO_NONE = 0, TUI_INFO_NOWPLAYING = 1, TUI_INFO_SONGINFO = 2 };
 #define TUI_MENU_MAX 10u
 
 /* Menu items (I1190): the song menu in sel_uim_song_menu_label order, the playlist menu, and the playlist picker. */
-enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK, MN_QUIT };
+enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK, MN_SRCPICK, MN_QUIT };
 
 typedef struct tui {
     sel_engine* engine;
@@ -143,6 +143,7 @@ typedef struct tui {
     char mn_lab[TUI_MENU_MAX][64];
     uint32_t mn_id, mn_folder, mn_parent, mn_qid; /* playlist or folder under the cursor; folder to create in; queue entry id */
     char mn_title[96], mn_key[256], mn_log[192];
+    uint32_t mn_plkind;                    /* I1442b: SEL_LIB_ITEM_* the posted menu read lists (playlists, or sources for the source picker) */
     uint32_t mn_plwant, mn_plflight;       /* I1416g: the Add to Playlist read is wanted / posted and not yet taken */
     sel_engine_library_item mn_pls[TUI_MENU_MAX - 1u];
     int lib_empty_query;                   /* the last library query was empty (all songs) */
@@ -697,7 +698,7 @@ static int tui_coll_line(const sel_collection_page* pg, const sel_uim_briefs* br
                     char lab[160];
                     sel_uim_drill_label(pg->drill, pg->drill_path, r, lab, sizeof lab);
                     snprintf(buf, cap, "%s  %s", lab, cnt);
-                    if (sel_uim_drill_child(pg->drill, pg->drill_path, r, child, sizeof child)) {
+                    if (sel_uim_drill_child(pg->drill_path, pg->drill, r, child, sizeof child)) {
                         tile->kind = (uint32_t)SEL_LIB_ITEM_SOURCE;
                         snprintf(tile->key, sizeof tile->key, "%s\x1f%s", pg->key, child);
                         snprintf(tile->name, sizeof tile->name, "%s", lab);
@@ -1188,7 +1189,7 @@ static void tui_menu_playlists_follow(tui* u) {
     uint32_t m = 0u, got = 0u, i;
     if (u->mn_plwant && !u->mn_plflight && !sel_engine_library_items_busy(u->engine)) {
         u->mn_plwant = 0u;
-        if (sel_engine_library_items_post(u->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), TUI_MENU_MAX - 1u)) {
+        if (sel_engine_library_items_post(u->engine, SEL_LIB_ITEM_BIT(u->mn_plkind), TUI_MENU_MAX - 1u)) {
             u->mn_plflight = 1u;
         }
     }
@@ -1196,11 +1197,15 @@ static void tui_menu_playlists_follow(tui* u) {
         return;
     }
     u->mn_plflight = 0u;
-    if (u->overlay != 4 || u->mn_act[0] != (uint32_t)MN_PLPICK) {
+    if (u->overlay != 4 || (u->mn_plkind == (uint32_t)SEL_LIB_ITEM_SOURCE ? u->mn_n != 0u : u->mn_act[0] != (uint32_t)MN_PLPICK)) {
         return; /* the menu closed meanwhile: the answer is dropped */
     }
     for (i = 0; i < got && u->mn_n < TUI_MENU_MAX; i++) {
-        tui_menu_add(u, MN_PLPICK, u->mn_pls[i].name, u->mn_pls[i].id);
+        if (u->mn_plkind == (uint32_t)SEL_LIB_ITEM_SOURCE) {
+            tui_menu_add(u, MN_SRCPICK, u->mn_pls[i].name, i); /* mn_pl indexes mn_pls: the source id is its key */
+        } else {
+            tui_menu_add(u, MN_PLPICK, u->mn_pls[i].name, u->mn_pls[i].id);
+        }
     }
     u->dirty = 1;
 }
@@ -1208,8 +1213,21 @@ static void tui_menu_playlists_follow(tui* u) {
 static void tui_menu_playlists(tui* u) {
     u->mn_n = 0;
     u->mn_cur = 0;
+    u->mn_plkind = (uint32_t)SEL_LIB_ITEM_PLAYLIST;
     tui_menu_add(u, MN_PLPICK, sel_uim_plbtn_label(1), 0);
     u->mn_plwant = 1u;
+    tui_menu_playlists_follow(u);
+}
+
+/* I1442b: the Sources picker (key O): the library's sources as a menu; a pick opens that source's drill pages. */
+static void tui_menu_sources(tui* u) {
+    u->mn_n = 0;
+    u->mn_cur = 0;
+    u->mn_plkind = (uint32_t)SEL_LIB_ITEM_SOURCE;
+    snprintf(u->mn_title, sizeof u->mn_title, "Sources");
+    u->mn_plwant = 1u;
+    u->mn_opens++;
+    u->overlay = 4;
     tui_menu_playlists_follow(u);
 }
 
@@ -1261,6 +1279,11 @@ static void tui_menu_pick(tui* u) {
         return;
     }
     u->overlay = 0;
+    if (act == (uint32_t)MN_SRCPICK) {
+        const sel_engine_library_item* it = &u->mn_pls[u->mn_pl[u->mn_cur]];
+        (void)tui_route(u, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, it->key, it->name, "");
+        return;
+    }
     if (act == (uint32_t)MN_PLAY) {
         tui_menu_send(u, "VIEW_ACTIVATE");
     } else if (act == (uint32_t)MN_NEXT || act == (uint32_t)MN_QUEUE) {
@@ -1374,6 +1397,10 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         u->lib_screen = 0;
         u->lib_mode_on = 0;
         tui_send(u, "VIEW_SOURCE home");
+    } else if (strcmp(name, "sources") == 0) { /* I1442b: pick a source, then drill Formats / Artists / Platforms */
+        u->lib_screen = 0;
+        u->lib_mode_on = 0;
+        tui_menu_sources(u);
     } else if (strcmp(name, "c64_sid") == 0) { /* I1440p: the C64 SID Browse tiles as a page */
         sel_route_entry tiles;
         sel_route_hist_init(&u->rh);
