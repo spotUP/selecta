@@ -3960,6 +3960,12 @@ if(NOT SEL_AMIGA)
   target_include_directories(library_folder_art_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_folder_art_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-folder-art COMMAND library_folder_art_test)
+  # I1440n4: per-row sticker lookup cost of the collection page build.
+  add_executable(library_sticker_bench_test library_sticker_bench_test.c)
+  target_include_directories(library_sticker_bench_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_sticker_bench_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-sticker-bench COMMAND library_sticker_bench_test)
+  set_tests_properties(library-sticker-bench PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sticker_bench_ok")
   set_tests_properties(library-folder-art PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_folder_art_ok")
   # I1401: the Demozoo query of a song of any source (key= for Modland, title + author for the rest).
   add_executable(library_dz_query_test library_dz_query_test.c)

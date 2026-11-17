@@ -570,6 +570,22 @@ int sel_library_sticker_get(sel_library* lib, const char* key, const char* name,
     return user_call(lib, &op) == 2;
 }
 
+int sel_library_sticker_get_many(sel_library* lib, const char* name, const char* keys, char* out, uint32_t cap, uint32_t* done) {
+    sel_user_op op;
+    uint32_t n = 0;
+    if (out == NULL || cap < 2u || keys == NULL || name == NULL) return 0;
+    out[0] = '\0';
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_STICKER_BATCH;
+    op.name = name;
+    op.value = keys;
+    op.out = out;
+    op.out_cap = cap;
+    if (user_call_rows(lib, &op, &n) <= 0) return 0;
+    if (done != NULL) *done = n;
+    return 1;
+}
+
 int sel_library_sticker_del(sel_library* lib, const char* key, const char* name) {
     sel_user_op op;
     memset(&op, 0, sizeof op);
