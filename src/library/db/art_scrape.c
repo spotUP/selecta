@@ -282,6 +282,7 @@ static int scrape_step(sel_library* lib, int64_t* after, sel_scrape_stats* st) {
 /* I1303c: Demozoo screenshots for one Modland song. Same fetch, cap, User-Agent and miss rule as the album pass; the rows hang off
  * sel_art_dz_id(key) (no albums row, so no album list shows them). Returns 1 done (hit, miss or nothing to do), -1 network trouble. */
 #define DZ_SHOTS_MAX 8
+#define DS_JSON_MAX 65536u /* a longer body is cut by buf_sink: the tags and ids come first */
 #define DZ_IMAGE_MAX (2u * 1024u * 1024u) /* an image that fills the buffer was cut: skipped, never stored half */
 
 static int dz_has(sel_library* lib, int id, const char* kind, uint8_t* out, uint32_t cap) {
@@ -482,6 +483,52 @@ static int url_art(sel_library* lib, const char* key, int id, sel_scrape_stats* 
     return ok;
 }
 
+static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st);
+
+/* I1440i (design 2.3, D5): a SID song with no folder art or cover_url takes the DeepSID composer photo as its cover. The ds_composer row is the
+ * cache of I1440h's fetcher (ds_step runs when the row is missing); the photo is the server's resized JPEG, never the original. The placeholder
+ * composer.png is never a cover. shortcut: one fixed width (320, the largest cover thumbnail); the Amiga resize shrinks it further. 1 = cover stored. */
+static int composer_art(sel_library* lib, const char* key, int id, sel_scrape_stats* st) {
+    char dk[1100], fkey[1100], photo[256], enc[600], base[256], url[SCRAPE_URL_MAX];
+    sel_art_op op;
+    scrape_buf js, img;
+    const char* slash;
+    int ok = 0;
+
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_DS_KEY;
+    op.ref = key;
+    op.data = (uint8_t*)dk;
+    op.cap = sizeof dk;
+    if (art_request(lib, &op) <= 0 || (slash = strrchr(dk, '/')) == NULL || (size_t)(slash - dk) >= sizeof fkey) return 0;
+    snprintf(fkey, sizeof fkey, "%.*s", (int)(slash - dk), dk);
+    if (dz_has(lib, sel_art_dz_id(fkey), "ds_composer", NULL, 0) <= 0) ds_step(lib, key, st);
+    js.data = malloc(DS_JSON_MAX);
+    img.data = malloc(DZ_IMAGE_MAX);
+    if (js.data != NULL && img.data != NULL) {
+        int n = dz_has(lib, sel_art_dz_id(fkey), "ds_composer", js.data, DS_JSON_MAX - 1u);
+
+        if (n > 0) {
+            js.data[n] = '\0';
+            if (json_str((const char*)js.data, "photo", photo, sizeof photo) != NULL && photo[0] != '\0' && strcmp(photo, "composer.png") != 0 &&
+                sel_url_encode(photo, enc, sizeof enc)) {
+                base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+                snprintf(url, sizeof url, "%s/api/deepsid/image/composers/%s?w=320", base, enc);
+                img.cap = DZ_IMAGE_MAX;
+                img.len = 0;
+                if (scrape_get(url, &img, st) == 1 && img.len < DZ_IMAGE_MAX && is_image(&img)) {
+                    dz_put(lib, id, "cover", img.data, img.len);
+                    dz_put(lib, id, "dz_key", key, strlen(key));
+                    ok = 1;
+                }
+            }
+        }
+    }
+    free(js.data);
+    free(img.data);
+    return ok;
+}
+
 static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     char base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], kind[12], stamp[24];
     uint8_t seen[24];
@@ -498,7 +545,7 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     op.ref = key;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) return 1; /* real art, or screenshots already cached */
-    if (folder_art(lib, key, id) || url_art(lib, key, id, st)) {
+    if (folder_art(lib, key, id) || url_art(lib, key, id, st) || composer_art(lib, key, id, st)) {
         st->scraped++;
         return 1;
     }
@@ -572,7 +619,6 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
 }
 
 /* I1440h: DeepSID. One GET into `js` (NUL-terminated), the artwork row `kind` of `key` filled with the body. 1 = stored, 0 = definite no, -1 = try later. */
-#define DS_JSON_MAX 65536u /* a longer body is cut by buf_sink: the tags and ids come first */
 
 static int ds_fetch(sel_library* lib, const char* key, const char* kind, const char* url, scrape_buf* js, sel_scrape_stats* st) {
     int r = scrape_get(url, js, st);

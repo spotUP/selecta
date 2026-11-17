@@ -4353,6 +4353,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(demozoo-art PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 120 PASS_REGULAR_EXPRESSION "demozoo_art_ok")
 
+  # I1440i: the DeepSID composer photo as the cover of a SID song with no other art.
+  add_test(NAME deepsid-cover
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/deepsid_cover.cmake")
+  set_tests_properties(deepsid-cover PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "deepsid_cover_ok")
+
   # I1440h: the DeepSID fetcher (file, composer, CSDb rows, tags to a sticker, miss cache) over a local hippoplayer.se fixture.
   add_test(NAME deepsid-fetch
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/deepsid_fetch.cmake")
