@@ -5,6 +5,8 @@
 #include "entropy.h"
 #include "zip_member.h"
 
+#include <archive/archive.h>
+
 #include <selecta/engine.h>
 
 #if !defined(SEL_LIBRARY_NO_THREAD)
@@ -187,6 +189,22 @@ static int on_member(void* ctx, const char* name, const unsigned char* data, siz
     return 1;
 }
 
+/* The archive walk continues on nonzero and stops on 0; on_member returns nonzero when it consumed the match. */
+static int on_lha_member(void* ctx, const char* name, const unsigned char* data, size_t n) {
+    return !on_member(ctx, name, data, n);
+}
+
+/* I710aeb: lha members are extracted in memory (system files are far below the lhasa member size), through the archive adapter. */
+static void* lha_alloc(const sel_host* h, size_t n, uint32_t kind) {
+    (void)h;
+    (void)kind;
+    return malloc(n);
+}
+static void lha_free(const sel_host* h, void* p) {
+    (void)h;
+    free(p);
+}
+
 static void reason(char* err, size_t cap, const char* fmt, const char* label) {
     if (err != NULL && cap > 0) {
         if (snprintf(err, cap, fmt, label) >= (int)cap) {
@@ -244,7 +262,28 @@ int sel_sysfile_install(const char* config_dir, const sel_sysfile_decl* d, const
         size_t n = 0;
         unsigned char* b = slurp(src, &n);
 
-        if (b == NULL) {
+        if (b != NULL && sel_archive_kind(b, n) == SEL_ARCHIVE_LHA) {
+            sel_host host;
+            install_ctx c;
+
+            memset(&host, 0, sizeof host);
+            host.mem_alloc = lha_alloc;
+            host.mem_free = lha_free;
+            c.d = d;
+            c.part = part;
+            c.dest = dest;
+            c.written = 0;
+            if (sel_archive_each(&host, SEL_ARCHIVE_LHA, b, n, SEL_ZIP_MEMBER_MAX, on_lha_member, &c) < 0) {
+                reason(err, cap, "Cannot read this lha archive for %s", label);
+            } else if (c.written == 0) {
+                if (err != NULL && cap > 0 && snprintf(err, cap, "No file in this archive matches the %s", label) >= (int)cap) {
+                    err[cap - 1] = '\0';
+                }
+            } else if (c.written < 0) {
+                reason(err, cap, "Cannot write %s", label);
+            }
+            ok = c.written > 0;
+        } else if (b == NULL) {
             reason(err, cap, "Cannot read the file for %s", label);
         } else if ((d->size != 0 && n != d->size) || !sha_accepted(d->sha256, b, n)) {
             if (err != NULL && cap > 0 && snprintf(err, cap, "Not the %s", label) >= (int)cap) {
