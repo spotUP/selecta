@@ -3974,6 +3974,12 @@ if(NOT SEL_AMIGA)
   target_include_directories(library_folder_art_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_folder_art_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-folder-art COMMAND library_folder_art_test)
+  # I1440u: --db in a drawer that does not exist yet opens (the drawer is made).
+  add_executable(library_missing_drawer_test library_missing_drawer_test.c)
+  target_include_directories(library_missing_drawer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_missing_drawer_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-missing-drawer COMMAND library_missing_drawer_test)
+  set_tests_properties(library-missing-drawer PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_missing_drawer_ok")
   # I1440n4: per-row sticker lookup cost of the collection page build.
   add_executable(library_sticker_bench_test library_sticker_bench_test.c)
   target_include_directories(library_sticker_bench_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
