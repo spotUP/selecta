@@ -99,6 +99,7 @@ struct sel_library {
     unsigned scrape_pending; /* a pass has albums left; threads: a kick restarts it from id 0 (under job_lock) */
     int scrape_off;          /* set_enabled(0): kick does nothing */
     int dz_off;              /* I1303c: art.demozoo off: demozoo_kick does nothing */
+    char ds_list[1200];      /* I1440m: list spec (what US arg) waiting for a DeepSID list fetch, same rules as ds_key */
     char ds_key[1200];       /* I1440h: song key waiting for a DeepSID fetch, same rules as dz_key */
     char dz_key[1200];       /* I1303c: song key waiting for a Demozoo lookup, last one wins; threads: under job_lock */
     unsigned long scrape_mb_ms; /* sel_net_now_ms of the last MusicBrainz request, for the 1 request per second limit */
@@ -327,3 +328,5 @@ void sel_rating_job_run(sel_library* lib);    /* sends every pending rating (no 
 
 /* amiga_vfs.c: registers the AmigaDOS-path VFS as default (68k only; no-op on desktop). */
 void sel_library_vfs_init(void);
+
+int sel_deepsid_art_ask(sel_library* lib, const sel_art_op* op); /* I1440m: one artwork-row request on the library worker */
