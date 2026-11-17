@@ -39,6 +39,11 @@ typedef struct canvas_data {
     void* art_ctx;
     uint32_t* img;   /* I1440q3: real cover words (img_edge squared), owned; NULL = the generated cover */
     int32_t img_edge;
+    LONG pens[MUI_COVER_CUBE]; /* I1440q4: AGA, the cube's shared pens, held from the first image draw to MUIM_Cleanup */
+    int pens_held;
+    uint8_t* idx;     /* the remapped image (img_edge squared); NULL = redo from img */
+    uint8_t* chunky;  /* the scaled, pen-mapped pixels of the last draw (cw squared) */
+    int32_t cw;
     int single;      /* I1399d: one cover over the whole object (Now Playing art), not a grid */
     uint32_t kind, tint; /* tint: 0x00RRGGBB of the kind token, the planar fill */
     char title[64], ext[12];
@@ -76,6 +81,9 @@ static ULONG canvas_dispose(struct IClass* cl, Object* obj, Msg msg) {
     canvas_data* d = INST_DATA(cl, obj);
     free(d->img);
     d->img = NULL;
+    free(d->idx);
+    free(d->chunky);
+    d->idx = d->chunky = NULL;
     if (d->mc != NULL) {
         mui_canvas_release(d->mc);
         free(d->mc);
@@ -110,10 +118,74 @@ static void canvas_label(Object* obj, const canvas_data* d) {
     canvas_text(obj, sel_cover_kind_label(d->kind), bottom - 2 * h + base);
 }
 
+/* I1440q4: drop the pen-bound caches; held pens go back to the screen (cm NULL: the screen is gone, nothing to release). */
+static void canvas_aga_free(canvas_data* d, struct ColorMap* cm) {
+    uint32_t i;
+    if (d->pens_held && cm != NULL) {
+        for (i = 0; i < MUI_COVER_CUBE; i++) {
+            if (d->pens[i] >= 0) {
+                ReleasePen(cm, (ULONG)d->pens[i]);
+            }
+        }
+    }
+    d->pens_held = 0;
+    free(d->idx);
+    free(d->chunky);
+    d->idx = d->chunky = NULL;
+    d->cw = 0;
+}
+
+/* I1440q4: the real cover on a palette screen: cube pens, ordered-dither index image (once per image), nearest scale to the largest
+ * centred square (once per size), WriteChunkyPixels (graphics v40). Returns 0 when it cannot (OS 3.0, no memory): the tint path draws. */
+static int canvas_aga_image(Object* obj, canvas_data* d) {
+    struct ColorMap* cm = _screen(obj)->ViewPort.ColorMap;
+    LONG side = _mwidth(obj) < _mheight(obj) ? _mwidth(obj) : _mheight(obj);
+    LONG x0 = _mleft(obj) + (_mwidth(obj) - side) / 2, y0 = _mtop(obj) + (_mheight(obj) - side) / 2;
+    uint32_t i;
+    if (d->img == NULL || GfxBase->LibNode.lib_Version < 40 || side < 8) {
+        return 0;
+    }
+    if (!d->pens_held) {
+        for (i = 0; i < MUI_COVER_CUBE; i++) {
+            uint32_t c = mui_cover_cube_rgb(i);
+            d->pens[i] = ObtainBestPenA(cm, ((c >> 16) & 0xFFu) * 0x01010101u, ((c >> 8) & 0xFFu) * 0x01010101u, (c & 0xFFu) * 0x01010101u, NULL);
+        }
+        d->pens_held = 1;
+    }
+    if (d->idx == NULL) {
+        d->idx = (uint8_t*)malloc((size_t)d->img_edge * (size_t)d->img_edge);
+        if (d->idx == NULL || !mui_cover_remap(d->img, d->img_edge, d->idx)) {
+            free(d->idx);
+            d->idx = NULL;
+            return 0;
+        }
+    }
+    if (d->chunky == NULL || d->cw != side) {
+        uint32_t n = (uint32_t)side * (uint32_t)side;
+        free(d->chunky);
+        d->chunky = (uint8_t*)malloc(n);
+        if (d->chunky == NULL) {
+            d->cw = 0;
+            return 0;
+        }
+        mui_cover_scale8(d->idx, d->img_edge, d->chunky, side, side);
+        for (i = 0; i < n; i++) {
+            LONG p = d->pens[d->chunky[i]];
+            d->chunky[i] = (uint8_t)(p < 0 ? 0 : p);
+        }
+        d->cw = side;
+    }
+    WriteChunkyPixels(_rp(obj), x0, y0, x0 + side - 1, y0 + side - 1, d->chunky, side);
+    return 1;
+}
+
 static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     canvas_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
     if ((msg->flags & MADF_DRAWOBJECT) == 0) {
+        return 0;
+    }
+    if (d->single && !d->rtg && canvas_aga_image(obj, d)) { /* I1440q4: the real cover through the cube pens */
         return 0;
     }
     if (d->single && !d->rtg) { /* AGA path: the kind tint as the nearest palette pen, then the label and title */
@@ -189,6 +261,7 @@ static ULONG __attribute__((used)) canvas_dispatch_c(struct IClass* cl, Object* 
         return TRUE;
     case MUIM_Cleanup:
         d = INST_DATA(cl, obj);
+        canvas_aga_free(d, _screen(obj) != NULL ? _screen(obj)->ViewPort.ColorMap : NULL);
         if (d->p96 != NULL) {
             CloseLibrary(d->p96);
             d->p96 = NULL;
@@ -266,6 +339,10 @@ void mui_canvas_set_image(Object* obj, const uint32_t* px, int32_t edge) {
     canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
     size_t n = (size_t)edge * (size_t)edge * sizeof *px;
     free(d->img);
+    free(d->idx); /* I1440q4: a new image remaps; the held pens stay */
+    free(d->chunky);
+    d->idx = d->chunky = NULL;
+    d->cw = 0;
     d->img = px != NULL ? malloc(n) : NULL;
     if (d->img != NULL) {
         memcpy(d->img, px, n);

@@ -67,4 +67,13 @@ mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path wan
  * by the plugin) becomes the canvas image; the frame is square, so no stretch. 0 on bad arguments. */
 int mui_image_square(const uint32_t* src, int32_t w, int32_t h, uint32_t* dst, int32_t edge);
 
+/* I1440q4: AGA (planar, palette) cover. The words (edge x edge) become indices 0..MUI_COVER_CUBE-1 of a 3 x 3 x 3 colour cube with a
+ * 4 x 4 ordered dither (integer only, one pass, no error buffer: roughly 60 cycles a pixel, ~1M cycles = ~70 ms on a 14 MHz 68020 for
+ * 128 x 128, estimate). mui_cover_cube_rgb gives 0x00RRGGBB of an index (the pen to obtain); mui_cover_scale8 nearest-scales the
+ * square index image to dw x dh. */
+#define MUI_COVER_CUBE 27u
+uint32_t mui_cover_cube_rgb(uint32_t index);
+int mui_cover_remap(const uint32_t* src, int32_t edge, uint8_t* idx);
+void mui_cover_scale8(const uint8_t* src, int32_t sedge, uint8_t* dst, int32_t dw, int32_t dh);
+
 #endif /* MUI_CANVAS_H */

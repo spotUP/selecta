@@ -258,7 +258,7 @@ typedef struct mui_state {
     char set_choice[MUI_PREF_MAX][80];
     const char* set_entry[MUI_PREF_MAX][10];
     const sel_ui_art* art;          /* I1440q3: the library cover source, NULL without a library */
-    Object* col_photo_box;          /* I1440q5: composer page photo panel (RTG only; NULL on AGA, which keeps the text header) */
+    Object* col_photo_box;          /* I1440q5: composer page photo panel (RTG and AGA, I1440q4) */
     Object* col_photo;              /* I1440q5: its cover canvas holding the photo words */
     char np_img_path[256];          /* I1440q3: the song whose real cover np_cover and bar_cover hold */
     Object* np_cover;               /* I1399d: Now Playing art canvas, detail slot (NULL: placeholder) */
@@ -1903,9 +1903,9 @@ static Object* mui_col_page_group(mui_state* s) {
         return NULL;
     }
     DoMethod(s->col_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_LIST);
-    if (g_screen_rtg) { /* I1440q5: the composer photo (design 3.1), a canvas in a square panel; hidden until a photo decodes. AGA: no photo */
+    { /* I1440q5/q4: the composer photo (design 3.1), a canvas in a square panel on RTG and AGA; hidden until a photo decodes */
         s->col_photo_box = mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_COL_PHOTO_PX, MUI_COL_PHOTO_PX);
-        s->col_photo = mui_canvas_cover_new(1);
+        s->col_photo = mui_canvas_cover_new(g_screen_rtg);
         if (s->col_photo_box != NULL && s->col_photo != NULL) {
             DoMethod(s->col_photo_box, OM_ADDMEMBER, s->col_photo);
             set(s->col_photo_box, MUIA_ShowMe, FALSE);

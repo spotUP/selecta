@@ -198,3 +198,41 @@ int mui_image_square(const uint32_t* src, int32_t w, int32_t h, uint32_t* dst, i
     free(sq);
     return 1;
 }
+
+/* I1440q4: AGA cover. 3 levels per channel = a 27 colour cube; a 4 x 4 ordered dither picks the level, so the 68020 does three adds,
+ * three divides by a constant and one store per pixel (no error buffer, no search over the palette). The pens come from the screen
+ * (ObtainBestPen, shared), the index maps through a 27 entry pen table. */
+static const uint8_t g_bayer4[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
+
+uint32_t mui_cover_cube_rgb(uint32_t index) {
+    static const uint32_t lvl[3] = {0x00u, 0x80u, 0xFFu};
+    return index >= MUI_COVER_CUBE ? 0u : (lvl[index / 9u] << 16) | (lvl[(index / 3u) % 3u] << 8) | lvl[index % 3u];
+}
+
+int mui_cover_remap(const uint32_t* src, int32_t edge, uint8_t* idx) {
+    int32_t x, y;
+    if (src == NULL || idx == NULL || edge <= 0) {
+        return 0;
+    }
+    for (y = 0; y < edge; y++) {
+        for (x = 0; x < edge; x++) {
+            uint32_t p = src[(size_t)y * (size_t)edge + (size_t)x];
+            uint32_t d = (uint32_t)g_bayer4[((uint32_t)y & 3u) * 4u + ((uint32_t)x & 3u)] * 16u + 8u; /* 8..248 */
+            uint32_t r = (((p >> 16) & 0xFFu) * 2u + d) / 255u;
+            uint32_t g = (((p >> 8) & 0xFFu) * 2u + d) / 255u;
+            uint32_t b = ((p & 0xFFu) * 2u + d) / 255u;
+            idx[(size_t)y * (size_t)edge + (size_t)x] = (uint8_t)(r * 9u + g * 3u + b);
+        }
+    }
+    return 1;
+}
+
+void mui_cover_scale8(const uint8_t* src, int32_t sedge, uint8_t* dst, int32_t dw, int32_t dh) {
+    int32_t x, y;
+    for (y = 0; y < dh; y++) {
+        const uint8_t* row = src + (size_t)(((int64_t)y * sedge) / dh) * (size_t)sedge;
+        for (x = 0; x < dw; x++) {
+            dst[(size_t)y * (size_t)dw + (size_t)x] = row[((int64_t)x * sedge) / dw];
+        }
+    }
+}

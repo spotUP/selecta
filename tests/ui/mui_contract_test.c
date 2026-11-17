@@ -3369,8 +3369,48 @@ static void test_cover_image(void) {
     /* I1440q5: the composer page header photo: RTG-only canvas, fed from the page's first song through the same loader, hidden without a photo */
     CHECK(strstr(src, "mui_canvas_set_image(s->col_photo") != NULL && strstr(src, "mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE)") != NULL,
           "the composer header photo is not fed from the first song's cover");
-    CHECK(strstr(src, "if (g_screen_rtg) { /* I1440q5") != NULL && strstr(src, "DoMethod(head, OM_ADDMEMBER, s->col_photo_box)") != NULL,
-          "the composer header photo panel is not built on RTG only or not in the header");
+    CHECK(strstr(src, "{ /* I1440q5/q4") != NULL && strstr(src, "if (g_screen_rtg) { /* I1440q5") == NULL && strstr(src, "s->col_photo = mui_canvas_cover_new(g_screen_rtg)") != NULL &&
+              strstr(src, "DoMethod(head, OM_ADDMEMBER, s->col_photo_box)") != NULL,
+          "the composer header photo panel is gated on RTG again or not in the header");
+    /* I1440q4: AGA cover: the cube remap on a known image, the pen cache and the chunky draw in the canvas class */
+    {
+        uint32_t px[16], i;
+        uint8_t idx[16], sc[16];
+        for (i = 0; i < 16u; i++) {
+            px[i] = 0xFFFFFFFFu; /* white stays the top cube entry whatever the dither phase */
+        }
+        CHECK(mui_cover_remap(px, 4, idx) == 1, "cube remap refused a valid image");
+        for (i = 0; i < 16u; i++) {
+            CHECK(idx[i] == 26u, "white is not the cube white (%u)", (unsigned)idx[i]);
+            px[i] = 0xFF000000u;
+        }
+        mui_cover_remap(px, 4, idx);
+        for (i = 0; i < 16u; i++) {
+            CHECK(idx[i] == 0u, "black is not the cube black (%u)", (unsigned)idx[i]);
+            px[i] = 0xFFC0C0C0u; /* light grey sits between cube levels 1 and 2: the dither uses both */
+        }
+        mui_cover_remap(px, 4, idx);
+        {
+            uint32_t lo = 0, hi = 0;
+            for (i = 0; i < 16u; i++) {
+                CHECK(idx[i] == 13u || idx[i] == 26u, "grey left the grey diagonal (%u)", (unsigned)idx[i]);
+                lo += idx[i] == 13u;
+                hi += idx[i] == 26u;
+            }
+            CHECK(lo > 0u && hi > 0u, "light grey did not dither between two levels");
+        }
+        CHECK(mui_cover_cube_rgb(0) == 0x000000u && mui_cover_cube_rgb(26) == 0xFFFFFFu && mui_cover_cube_rgb(9) == 0x800000u && mui_cover_cube_rgb(27) == 0u,
+              "cube pen colours are wrong");
+        CHECK(mui_cover_remap(NULL, 4, idx) == 0 && mui_cover_remap(px, 0, idx) == 0, "cube remap bad arguments not refused");
+        for (i = 0; i < 16u; i++) {
+            idx[i] = (uint8_t)i;
+        }
+        mui_cover_scale8(idx, 4, sc, 2, 2); /* nearest: rows 0 and 2, columns 0 and 2 */
+        CHECK(sc[0] == 0u && sc[1] == 2u && sc[2] == 8u && sc[3] == 10u, "nearest scale picks the wrong source pixels");
+        CHECK(strstr(cls, "ObtainBestPenA(cm, ((c >> 16)") != NULL && strstr(cls, "ReleasePen(cm, (ULONG)d->pens[i])") != NULL &&
+                  strstr(cls, "WriteChunkyPixels(_rp(obj)") != NULL && strstr(cls, "canvas_aga_image(obj, d)") != NULL,
+              "the AGA cover is not pens + chunky draw with release");
+    }
     CHECK(strstr(src, "set(s->col_photo_box, MUIA_ShowMe, have ? TRUE : FALSE)") != NULL, "the photo panel is not hidden without a photo");
     CHECK(strstr(cls, "d->img != NULL ? MUI_ART_DATATYPE : MUI_ART_COVER") != NULL, "the canvas does not draw the real image with the generated fallback");
 }
