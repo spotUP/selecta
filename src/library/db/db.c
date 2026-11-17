@@ -281,6 +281,27 @@ static int copy_template(const sel_host* host, const char* path) {
     return 1;
 }
 
+/* I1440u: --db may name a file in a drawer that does not exist yet (RAM:cfg/library.db). SQLite never makes the drawer, so the open
+ * failed with CANTOPEN and the fatal start-up report (an EasyRequest on the Amiga) waited for a click nobody gives on an unattended
+ * start. Make the drawer first, with DOS requesters off (sel_config_mkdir); a volume root ("RAM:x") has no drawer to make. */
+static void make_parent_drawer(const char* path) {
+    char dir[512];
+    size_t i, dirlen = 0;
+
+    if (path[0] == '\0' || strcmp(path, ":memory:") == 0 || strncmp(path, "file:", 5) == 0) {
+        return;
+    }
+    for (i = 0; path[i] != '\0'; i++) {
+        if (path[i] == '/') dirlen = i;
+    }
+    if (dirlen == 0 || dirlen >= sizeof dir || path[dirlen - 1] == ':') {
+        return;
+    }
+    memcpy(dir, path, dirlen);
+    dir[dirlen] = '\0';
+    (void)sel_config_mkdir(dir);
+}
+
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path) {
     sel_library* lib = host->mem_alloc(host, sizeof *lib, SEL_MEM_FAST);
     char sql[80];
@@ -302,6 +323,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     lib->heap_allocs = g_heap_allocs;
     sel_library_trace(host, "sqlite heap acquired bytes", (int)g_heap_bytes);
     sel_library_trace(host, "open begin", 0);
+    make_parent_drawer(path);
     copy_template(host, path);
     if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL) !=
             SQLITE_OK) {
