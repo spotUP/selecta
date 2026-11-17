@@ -1,8 +1,8 @@
  [Home]  [What do you want to play?]  [Browse]
  Playlists         │ Queue by folder  Tree  Scope: Library
  Queue             │ [-] tests/m12/a (2)
- Now Playing       │     one.mod - Protracker (mod)
- Song Information  │     two.mod - Protracker (mod)
+ Now Playing       │     One.mod - Protracker (mod)
+ Song Information  │     Two.mod - Protracker (mod)
  Your Library  [+] │ [+] tests/m12/b (1)
  [Playlists]       │
  [Albums]          │
@@ -11,8 +11,8 @@
  [Sources]         │
  [Local Files]     │
  tests/m12/a       │
- one.mod - Protrack│
- two.mod - Protrack│
+ One.mod - Protrack│
+ Two.mod - Protrack│
  tests/m12/b       │
                    │
                    │
