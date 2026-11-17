@@ -177,6 +177,22 @@ int main(void) {
         check(sel_library_same_tune(lib, skey, same_cb, got) == 0 && got[0] == '\0', "unknown song has no Same tune");
     }
 
+    /* I774m: a song hashed before the key existed (md5 set, uade_key NULL, blanks unfilled) is caught up by the same pass */
+    check(sqlite3_exec(lib->db, "UPDATE songs SET uade_key = NULL, format = NULL, channels = 0, year = NULL, album = NULL, publisher = NULL;"
+                                "DELETE FROM song_composers; DELETE FROM song_strings;", NULL, NULL, NULL) == SQLITE_OK, "simulate pre-key rows");
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE COALESCE(md5,'') <> '' AND uade_key IS NULL") == 3, "all three songs hashed, no key");
+    memset(&op, 0, sizeof op);
+    op.op = SEL_DUP_HASH;
+    for (;;) {
+        id = 0;
+        check(sel_genre_call(lib, &op, &id) >= 0, "dup hash catch-up");
+        if (id == 0) break;
+        op.after = id;
+    }
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE uade_key IS NOT NULL") == 3, "hashed songs got their key");
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE format='Protracker' AND channels=4 AND year=1988 AND publisher='Mahoney'") == 1,
+          "hashed song got its bake data");
+
     /* queries */
     check(query_rows(lib, "channels:>3") == 1, "channels term");
     check(query_rows(lib, "channels:>4") == 0, "channels bound");
