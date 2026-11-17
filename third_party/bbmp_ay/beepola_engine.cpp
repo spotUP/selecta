@@ -415,6 +415,55 @@ struct Memory {
 // ---------------------------------------------------------------------------
 // From speaker changes to samples.
 
+#ifdef BBAY_INT_SOUND
+// The 68k build (BBAY_INT_SOUND, no FPU): each output sample is the mean speaker level over its own T-states (a box
+// filter) in integers. The float path below (4x oversampling, a 255-tap sinc, doubles per speaker step) needs about
+// 40 million soft-float advance() calls and 450 million float multiply-adds for an 80 s song: hours on a 68020 (I1223c).
+class Sound {
+ public:
+  explicit Sound(int rate) : rate_(rate), q_(3500000 / rate), r_(3500000 % rate), dcdiv_(rate / 20 > 0 ? rate / 20 : 1) {
+    len_ = q_;
+    edge_ = q_;
+  }
+  virtual ~Sound() = default;
+
+  void advance(i64 u) {
+    while (u >= edge_) {
+      sum_ += level * int(edge_ - now_);
+      emit();
+      now_ = edge_;
+      len_ = q_;
+      acc_ += r_;
+      if (acc_ >= rate_) {
+        acc_ -= rate_;
+        ++len_;
+      }
+      edge_ += len_;
+    }
+    sum_ += level * int(u - now_);
+    now_ = u;
+  }
+  int level = 0;
+
+ protected:
+  virtual void frame(int16_t s) = 0;
+
+ private:
+  // Level 0..1 as 0..16000 with the DC (about 50 ms) removed, as the float path's gain.
+  void emit() {
+    const int x = sum_ * 16000 / len_;
+    sum_ = 0;
+    dc_ += ((x << 8) - dc_) / dcdiv_;
+    int s = x - (dc_ >> 8);
+    if (s < -32768) s = -32768;
+    if (s > 32767) s = 32767;
+    frame(int16_t(s));
+  }
+
+  int rate_, q_, r_, dcdiv_, len_, acc_ = 0, sum_ = 0, dc_ = 0;
+  i64 edge_, now_ = 0;
+};
+#else
 class Sound {
  public:
   explicit Sound(int rate) : rate_(rate) {
@@ -485,6 +534,7 @@ class Sound {
   int at_ = 0;
   float tap_[255];
 };
+#endif
 
 // ---------------------------------------------------------------------------
 // The step machine.
@@ -2976,6 +3026,7 @@ class Beepola : public Engine {
 
     rate_ = rate;
 #ifdef BBAY_NO_THREADS
+    pcm_.reserve(size_t(std::min<i64>(end_ / 3500 * rate / 1000 + rate, i64(kMaxPcm))));  // one block, no doubling
     second_pass();  // the Amiga has no threads: pass 2 renders the whole song (mono, capped) before the first render()
 #else
     worker_ = std::thread([this] { second_pass(); });

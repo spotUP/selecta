@@ -2614,8 +2614,13 @@ if(NOT SEL_AMIGA)
   # downloader. Fetched by checksum, exit 77 = skip (no network).
   if(SELECTA_GPL_PLUGINS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/bbmp-beepola-decode)
+    # I1223c: the 68k build's integer sound path (BBAY_INT_SOUND, synchronous BBAY_NO_THREADS) compiled for the host.
+    add_executable(beepola_int_sound m3/beepola_int_sound.cpp ${PROJECT_SOURCE_DIR}/third_party/bbmp_ay/beepola_engine.cpp)
+    target_include_directories(beepola_int_sound PRIVATE ${PROJECT_SOURCE_DIR}/third_party/bbmp_ay)
+    target_compile_definitions(beepola_int_sound PRIVATE BBAY_NO_THREADS BBAY_INT_SOUND)
+    set_target_properties(beepola_int_sound PROPERTIES CXX_STANDARD 17)
     add_test(NAME bbmp-beepola-decode
-      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/bbmp_beepola_decode.sh $<TARGET_FILE:selecta-cli>
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/bbmp_beepola_decode.sh $<TARGET_FILE:selecta-cli> $<TARGET_FILE:beepola_int_sound>
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/bbmp-beepola-decode)
     set_tests_properties(bbmp-beepola-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "bbmp_beepola_decode_ok" SKIP_RETURN_CODE 77
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")

@@ -4,7 +4,7 @@
 # (`selecta-cli support get beepola-data`, consent pref set in a temp config dir, SHA-256 checked) into a cache dir and hands
 # the folder to the engine through BBMP_BEEPOLA_DATA. A truncated .bbsong must be refused. The song is fetched by checksum,
 # never committed. Exit 77 = no network.
-# usage: bbmp_beepola_decode.sh <selecta-cli>
+# usage: bbmp_beepola_decode.sh <selecta-cli> [beepola_int_sound]
 set -u
 cli=$1
 here=$(dirname "$0")
@@ -30,5 +30,7 @@ e=$(energy fd_bb.wav)
 echo "plastic_galaxy.bbsong frames=$got energy=$e"
 head -c 40 "$f" > trunc.bbsong
 if "$cli" render trunc.bbsong --output fd_bb2.wav --seconds 5 --rate "$rate" >/dev/null 2>&1; then fail "a truncated .bbsong was accepted"; fi
+# I1223c: the 68k build's integer sound path renders the whole song (1775713 frames at 22050 Hz, as the float path).
+if [ -n "${2:-}" ]; then "$2" "$f" 1775713 || fail "integer sound path"; fi
 rm -rf "$t" fd_bb.wav fd_bb2.wav trunc.bbsong
 echo bbmp_beepola_decode_ok

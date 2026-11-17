@@ -16,7 +16,8 @@ if(NOT SEL_AMIGA) # -fPIC makes m68k gcc 6.5 hit an internal compiler error (pri
 endif()
 if(SEL_AMIGA)
   # The engines use C++ exceptions as control flow (song end, refusal); the Amiga toolchain defaults to -fno-exceptions.
-  target_compile_definitions(bbmp_ay_engine PRIVATE BBAY_NO_THREADS)
+  # BBAY_INT_SOUND (I1223c): Beepola's sound path in integers; the float one costs hours per song on an FPU-less 68020.
+  target_compile_definitions(bbmp_ay_engine PRIVATE BBAY_NO_THREADS BBAY_INT_SOUND)
   target_compile_options(bbmp_ay_engine PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions>)
 endif()
 
