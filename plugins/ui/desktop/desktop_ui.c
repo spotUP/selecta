@@ -39,6 +39,7 @@
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/nppanel.h>
 #include <selecta/uimodel/csdb.h>
+#include <selecta/uimodel/siinfo.h>
 #include <selecta/uimodel/select.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/uimodel/sources.h>
@@ -295,7 +296,11 @@ typedef struct desk {
     int32_t songs_fmt_w;     /* I1079d: the measured width of the widest Format label of the songs table (header and rows), 0 = stale */
     uint32_t pls_cols_ok, pls_has_artist, pls_has_album, pls_has_tail; /* I1079c: which collection page columns have content (cached) */
     pls_meta_row* pls_meta;  /* I678h3: the artist and album of each song, read once per reload */
-    sel_gui_rect si_composer; /* I678h3: the Song Information composer link, zero width when the page has no composer row */
+    int si_kind;              /* I774n R9: sel_uim_si_kind of the row the Song Information walk is emitting (CREDIT for a plain pair) */
+    uint32_t si_found_open;   /* I774n R9: bit k set = the Found In kind k (si_found_kinds order) shows its names */
+    int32_t si_fk_idx;        /* I774n R9: the Found In kind the walk is at (-1: none) */
+    sel_gui_rect si_fk[5];    /* I774n R9: click rects of the Found In kind rows drawn last */
+    sel_gui_rect si_composer;/* I678h3: the Song Information composer link, zero width when the page has no composer row */
     struct { sel_gui_rect r; int id; } si_csdb[6]; /* I1440l2: the CSDb release rows drawn this frame (click rect and release id) */
     uint32_t si_csdb_n, si_thumb_tries; /* rows registered; retries of the thumbnail lookup while the screenshots download */
     uint32_t si_thumb_next;             /* host clock_ms of the next retry */
@@ -453,6 +458,7 @@ typedef struct desk {
     sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
     uint32_t home_chip;      /* the Home format chip in force: 0 All, 1 Music, 2 Modules, 3 Chiptunes (I678j) */
+    uint32_t search_chan;    /* I774n R9: the Channels chip state: 0 Any, 1 four, 2 more than four, 3 fewer than four */
     uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Albums, 3 Artists */
     uint32_t badge_drawn;    /* I1020: the source badges the last Search frame painted (one per result row); badge_text keeps the first 16 names for the dump */
     char badge_text[16][48];
@@ -7155,7 +7161,9 @@ static int pl_key(desk* d, const sel_gui_input* ev) {
  * (STIL note, composer, release, year, genre, rating, play count: sel_state.panel) and the flag buttons. The engine owns
  * the flags and the note (FLAG wrong, FLAG skip, NOTE: the library flags table, the rows `selecta-cli wrong` lists); the
  * page draws the data and sends those verbs for the song being played. */
-enum { SI_BUTTONS = 3, SI_ROW_H = 20, SI_THUMB = 48 };
+enum { SI_BUTTONS = 3, SI_ROW_H = 20, SI_THUMB = 48, SI_FOUND_N = 5 };
+/* I774n R9: the Found In kind labels sel_uim_si_lines produces, in its order; one bit of si_found_open per entry. */
+static const char* const si_found_kinds[SI_FOUND_N] = {"Sites", "Collections", "Groups", "BBS", "CD-ROMs"};
 
 static const char* si_button_label(uint32_t k) {
     return sel_uim_flag_label(k);
@@ -7198,9 +7206,11 @@ static void si_composer_load(desk* d, const sel_state* st) {
  * drawing and the geometry dump share this walk, so the dumped rows are the drawn rows. */
 static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const char*, const char*, uint32_t)) {
     const uintptr_t absent = (uintptr_t)-1;
-    uint32_t n = 0, tag;
+    uint32_t n = 0, tag, seen = 0u, in_sect = 0u; /* seen: bit 0 Release, bit 1 Year already emitted; the Credits copy of them is dropped */
     char label[32], val[2048];
     d->si_composer_row = -1;
+    d->si_kind = (int)SEL_UIM_SI_CREDIT;
+    d->si_fk_idx = -1;
     for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL; tag++) {
         uintptr_t v = sel_tag_find(st->song.meta, tag, absent);
         sel_tag_type type = SEL_TT_INT;
@@ -7215,20 +7225,50 @@ static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const 
         si_clean(val);
         sel_uim_tag_label(tag, label, sizeof label);
         sel_uim_tidy_info(label, val, sizeof val);
+        seen |= (strcmp(label, "Release") == 0 ? 1u : 0u) | (strcmp(label, "Year") == 0 ? 2u : 0u);
         emit(d, label, val, n++);
     }
     if (st->panel != NULL) {
         const char* p = st->panel;
         while (*p != '\0') {
             const char* value = p + strlen(p) + 1;
+            const char* text;
+            int kind = (int)sel_uim_si_panel_kind(p, &text);
             snprintf(val, sizeof val, "%s", value);
             si_clean(val);
-            sel_uim_tidy_info(p, val, sizeof val);
+            d->si_kind = kind;
+            in_sect |= kind == (int)SEL_UIM_SI_HEADING;
+            if (kind == (int)SEL_UIM_SI_CREDIT) {
+                uint32_t bit = strcmp(text, "Release") == 0 ? 1u : strcmp(text, "Year") == 0 ? 2u : 0u;
+                if (in_sect && (seen & bit) != 0u) { /* I774n R9: the tag or catalogue row above already shows it */
+                    p = value + strlen(value) + 1;
+                    continue;
+                }
+                seen |= bit;
+            }
+            if (kind == (int)SEL_UIM_SI_FOUND_KIND) { /* I774n R9: the kind's count line; its names follow only while it is expanded */
+                uint32_t k;
+                for (k = 0; k < SI_FOUND_N && strcmp(text, si_found_kinds[k]) != 0; k++) {}
+                d->si_fk_idx = k < SI_FOUND_N ? (int32_t)k : -1;
+                if (d->si_fk_idx >= 0) {
+                    char cnt[24];
+                    snprintf(cnt, sizeof cnt, "%s", val);
+                    snprintf(val, sizeof val, "%s (%s names)", cnt, (d->si_found_open & (1u << d->si_fk_idx)) ? "hide" : "show");
+                }
+            } else if (kind == (int)SEL_UIM_SI_FOUND_NAME && (d->si_fk_idx < 0 || !(d->si_found_open & (1u << d->si_fk_idx)))) {
+                p = value + strlen(value) + 1;
+                continue;
+            } else if (kind == (int)SEL_UIM_SI_HEADING || kind == (int)SEL_UIM_SI_CREDIT) {
+                d->si_fk_idx = -1;
+            }
+            if (kind == (int)SEL_UIM_SI_CREDIT || kind == (int)SEL_UIM_SI_HEADING) {
+                sel_uim_tidy_info(text, val, sizeof val);
+            }
             if (strcmp(p, "Composer") == 0) { /* I678h3: the catalogue's Composer row links to the composer the db row names */
                 si_composer_load(d, st);
                 d->si_composer_row = d->si_composer_key[0] != '\0' ? (int32_t)n : -1;
             }
-            emit(d, p, val, n++);
+            emit(d, text, val, n++);
             p = value + strlen(value) + 1;
         }
     }
@@ -7333,6 +7373,15 @@ static void si_draw_row(desk* d, const char* label, const char* value, uint32_t 
     d->si_cy += h;
     if (y + h <= si_list_top(d, mn) || y >= mn.y + mn.h) {
         return;
+    }
+    if (d->si_kind == (int)SEL_UIM_SI_HEADING) { /* I774n R9: a section heading (Credits, Other Sources, Found In) */
+        draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y + lpx(d, 6), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, SI_ROW_H)), label, 1, 14,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        d->si_rows++;
+        return;
+    }
+    if (d->si_kind == (int)SEL_UIM_SI_FOUND_KIND && d->si_fk_idx >= 0) {
+        d->si_fk[d->si_fk_idx] = rect_of(mn.x + lpx(d, HOME_MARGIN), y, mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, SI_ROW_H));
     }
     si_composer_rect(d, mn, value, i, y);
     draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, lw, lpx(d, SI_ROW_H)), label, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
@@ -8099,6 +8148,7 @@ static void draw_songinfo(desk* d) {
     d->si_rows = 0;
     sel_gui_clip_push(d->canvas, rect_of(mn.x, si_list_top(d, mn), mn.w, mn.y + mn.h - si_list_top(d, mn)));
     memset(&d->si_composer, 0, sizeof d->si_composer);
+    memset(d->si_fk, 0, sizeof d->si_fk);
     d->si_csdb_n = 0u;
     si_walk_from_top(d, st, si_draw_row);
     sel_gui_clip_pop(d->canvas);
@@ -8128,6 +8178,14 @@ static int si_pointer(desk* d, const sel_gui_input* ev) {
         snprintf(canon, sizeof canon, "%s", d->si_composer_key);
         desk_route(d, SEL_ROUTE_SONGINFO_COMPOSER, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, canon, canon, "");
         return 1;
+    }
+    for (k = 0; k < SI_FOUND_N; k++) { /* I774n R9: a Found In count line expands or folds its names */
+        if (d->si_fk[k].w > 0 && in_rect(d->si_fk[k], ev->x, ev->y)) {
+            d->si_found_open ^= 1u << k;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
     }
     for (k = 0; k < d->si_csdb_n; k++) { /* I1440l2: a CSDb release opens its csdb.dk page in the browser (the I1384b path) */
         if (in_rect(d->si_csdb[k].r, ev->x, ev->y)) {
@@ -10060,7 +10118,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
  * does the search (LIBRARY_SEARCH, the query language incl. `format:mod`); the debounce reuses the tooltip delay pattern
  * (a UI clock stamp, a wait hint for the idle block, a tick that fires once). */
 /* SEARCH_SECTION_GAP: the space above every shown section heading after the first (I1041), in the draw and the height. */
-enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_SECTION_GAP = 24 };
+enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_CHIPS = 7, SEARCH_SECTION_GAP = 24 };
 /* The Search page draws the whole grouped result (library groups, then one From section per source) and scrolls it in
  * pixels, so its view window holds every row the search text can hold; a shorter window cut the last From sections off
  * behind a library that matches the query (I1030: From Radio Browser missing on All sources). */
@@ -10373,14 +10431,20 @@ static void desk_search_tick(desk* d) {
     }
 }
 
+/* I774n R9: chips 0-3 are the result facets; 4 Format, 5 Channels (cycles), 6 Publisher write the existing query terms. */
+static const char* search_chip_label(desk* d, uint32_t k) {
+    static const char* const chan[4] = {"Channels: Any", "Channels: 4", "Channels: More than 4", "Channels: Fewer than 4"};
+    return k < SEARCH_FACETS ? search_facet_name[k] : k == 4u ? "Format" : k == 5u ? chan[d->search_chan & 3u] : "Publisher";
+}
+
 static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k) {
     const sel_gui_atlas* chip = desk_font(d, 1, 13);
     int32_t x = mn.x + lpx(d, HOME_MARGIN), i;
     for (i = 0; i < (int32_t)k && chip != NULL; i++) {
-        x += sel_gui_text_width(chip, search_facet_name[i], strlen(search_facet_name[i])) + 2 * lpx(d, 14) + lpx(d, 8);
+        x += sel_gui_text_width(chip, search_chip_label(d, (uint32_t)i), strlen(search_chip_label(d, (uint32_t)i))) + 2 * lpx(d, 14) + lpx(d, 8);
     }
     return rect_of(x, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16 + HOME_CHIP_H + 8) + online_chip_extra_h(d, mn),
-                   (chip != NULL ? sel_gui_text_width(chip, search_facet_name[k], strlen(search_facet_name[k])) : 40) + 2 * lpx(d, 14),
+                   (chip != NULL ? sel_gui_text_width(chip, search_chip_label(d, k), strlen(search_chip_label(d, k))) : 40) + 2 * lpx(d, 14),
                    lpx(d, HOME_CHIP_H));
 }
 
@@ -10633,10 +10697,10 @@ static void draw_search(desk* d) {
     }
     d->facet_drawn = 0u;
     d->badge_drawn = 0u;
-    for (k = 0; k < SEARCH_FACETS; k++) { /* facet chips: the active one filled with the accent; always drawn, below the source row (I1019f) */
+    for (k = 0; k < SEARCH_CHIPS; k++) { /* facet chips: the active one filled with the accent; always drawn, below the source row (I1019f) */
         sel_gui_rect cr = search_facet_rect(d, mn, k);
         d->facet_drawn++;
-        draw_chip(d, cr, search_facet_name[k], k == d->search_facet, SEL_GUI_TOKEN_SURFACE);
+        draw_chip(d, cr, search_chip_label(d, k), k < SEARCH_FACETS ? k == d->search_facet : k == 5u && d->search_chan != 0u, SEL_GUI_TOKEN_SURFACE);
     }
     online_draw_chips(d, mn);
     y = search_body_y(d, mn);
@@ -11839,6 +11903,32 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         return 1;
     }
     if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups; without results it is kept for the next ones */
+        for (i = 4; i < SEARCH_CHIPS; i++) { /* I774n R9: Format and Publisher start their term in the field; Channels cycles its term */
+            if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
+                static const char* const chan_term[4] = {"", "channels:4", "channels:>4", "channels:<4"};
+                size_t ql = strlen(d->query);
+                if (i == 5) { /* drop the old channels term, append the next */
+                    char* t = strstr(d->query, "channels:");
+                    if (t != NULL) { /* cut only the token, keep words typed after it */
+                        const char* e = t + strcspn(t, " ");
+                        e += strspn(e, " ");
+                        memmove(t, e, strlen(e) + 1u);
+                        ql = strlen(d->query);
+                        while (ql > 0u && d->query[ql - 1u] == ' ') d->query[--ql] = '\0';
+                    }
+                    d->search_chan = (d->search_chan + 1u) & 3u;
+                    if (d->search_chan != 0u) snprintf(d->query + ql, sizeof d->query - ql, "%s%s", ql > 0u ? " " : "", chan_term[d->search_chan]);
+                } else {
+                    snprintf(d->query + ql, sizeof d->query - ql, "%s%s:", ql > 0u ? " " : "", i == 4 ? "format" : "publisher");
+                }
+                d->qlen = strlen(d->query);
+                d->focus = (int32_t)d->layout.count;
+                if (i == 5) desk_search_fire(d);
+                d->repaint = 1;
+                d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+                return 1;
+            }
+        }
         for (i = 0; i < SEARCH_FACETS; i++) {
             if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
                 int changed = d->search_facet != i;

@@ -189,6 +189,18 @@ int main(void) {
         CHECK(ln[11].kind == SEL_UIM_SI_FOUND_KIND && strcmp(ln[11].key, "CD-ROMs") == 0 && strcmp(ln[11].val, "1") == 0);
         CHECK(strcmp(ln[12].val, "Disc 1") == 0);
 
+        { /* R9: the panel pairs round-trip the kind through the tag byte */
+            char pan[2048];
+            uint32_t used = 0u, prows, pk = 0u;
+            const char* p = pan;
+            const char* txt;
+            prows = sel_uim_si_panel_put(&in, pan, sizeof pan, &used);
+            CHECK(prows == c);
+            CHECK(sel_uim_si_panel_kind(p, &txt) == SEL_UIM_SI_HEADING && strcmp(txt, "Credits") == 0);
+            while (*p != '\0' && pk < prows) { p += strlen(p) + 1; p += strlen(p) + 1; pk++; }
+            CHECK(pk == prows);
+        }
+
         /* B: only a one-site provenance and two other sources; no Same Tune / Demozoo section anywhere */
         CHECK(sel_uadesong_load(out, "bbbbbbbb0200", &in));
         c = sel_uim_si_lines(&in, ln, SEL_UIM_SI_LINES_MAX);
