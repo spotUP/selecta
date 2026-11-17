@@ -58,6 +58,7 @@ int main(void) {
     make_dir(root, "songdb");
     make_dir(root, "songdb/sources");
     make_dir(root, "songdb/sources/site");
+    make_dir(root, "songdb/sources/cd");
     make_dir(root, "out");
 
     /* R1 rows: a dup flag on subsong 2 of A, songend p+s / l / p, plus filler keys for the binary search */
@@ -79,6 +80,17 @@ int main(void) {
              "11111111111111111111111111111111\t2\t2000\tl\tuade\tProtracker\t4\t256\taaaaaaaa\t00000000\tmods/a.lha/a\n"
              "22222222222222222222222222222222\t0\t3000\tp\tuade\tIT\t15\t512\tbbbbbbbb\t00000000\tmods/b\n"
              "55555555555555555555555555555555\t0\t1\tp\tuade\tX\t1\t1\tdddddddd\t00000000\tmods/c\n");
+
+    /* R5: the same tune A in a second site file and a CD file; display names come from sources.md */
+    put_file(root, "songdb/sources/site/other.tsv",
+             "11111111111111111111111111111111\t1\t1000\tp+s\tuade\tProtracker\t4\t256\taaaaaaaa\t00000000\tx/a\n");
+    put_file(root, "songdb/sources/cd/disc1.tsv",
+             "11111111111111111111111111111111\t1\t1000\tp+s\tuade\tProtracker\t4\t256\taaaaaaaa\t00000000\ta\n");
+    put_file(root, "sources.md", "### Sources\n\n#### Site\n\n- **Aminet** - https://aminet.net/\n\n#### CD / DVD\n\n- **Disc 1** - x\n");
+    /* R4: A's AMP row equals its metadata (dropped); B has an AMP and an UnExoticA row (kept); one unknown md5 */
+    put_file(root, "tsv/pretty/md5/amp.tsv",
+             "111111111111\tGlue Master~Kid\tMahoney\tMusicdisk 1\t1988\n222222222222\tXplore Alt\t\t\t\n999999999999\tZ\t\t\t\n");
+    put_file(root, "tsv/pretty/md5/unexotica.tsv", "222222222222\tXplore\tGame House\tGame Title\t1991\n");
 
     snprintf(cmd, sizeof cmd, "%s", out);
     CHECK(sel_uadedb_bake(root, out, &st) == 0);
@@ -125,6 +137,36 @@ int main(void) {
     CHECK(sel_uademd5_lookup(bin, "222222222222", &e) && e == eb);
     CHECK(!sel_uademd5_lookup(bin, "55555555555555555555555555555555", &e)); /* key not in songlengths */
     CHECK(!sel_uademd5_lookup(bin, "999999999999", &e));
+
+    /* R4: per-source credit rows of B (entry eb); A's only row was dropped */
+    {
+        sel_uadecredit cr[4];
+        uint16_t ids[8];
+        int kind = -1;
+        char file[32], disp[64];
+        snprintf(bin, sizeof bin, "%s/%s", out, SEL_UADECREDITS_NAME);
+        CHECK(st.credit_kept[0] == 1 && st.credit_dropped[0] == 1 && st.credit_unmapped[0] == 1);
+        CHECK(st.credit_kept[4] == 1 && st.credit_rows == 2);
+        CHECK(sel_uadecredits_get(bin, eb, cr, 4) == 2);
+        CHECK(strcmp(sel_uadecredit_source_name(cr[0].source), "AMP") == 0 && strcmp(cr[0].authors, "Xplore Alt") == 0);
+        CHECK(strcmp(sel_uadecredit_source_name(cr[1].source), "UnExoticA") == 0 && strcmp(cr[1].publishers, "Game House") == 0 &&
+              strcmp(cr[1].album, "Game Title") == 0 && cr[1].year == 1991u);
+        CHECK(sel_uadecredits_get(bin, ea, cr, 4) == 0);
+        CHECK(sel_uadecredits_get(bin, 9999u, cr, 4) == 0);
+
+        /* R5: A is in aminet + other (site) and disc1 (cd); B only in aminet */
+        snprintf(bin, sizeof bin, "%s/%s", out, SEL_UADEPROV_NAME);
+        CHECK(sel_uadeprov_get(bin, ea, ids, 8) == 3 && ids[0] == 0 && ids[1] == 1 && ids[2] == 2);
+        CHECK(sel_uadeprov_source(bin, ids[0], &kind, file, sizeof file, disp, sizeof disp) && kind == SEL_UPRV_SITE &&
+              strcmp(file, "aminet") == 0 && strcmp(disp, "Aminet") == 0);
+        CHECK(sel_uadeprov_source(bin, ids[1], &kind, file, sizeof file, disp, sizeof disp) && kind == SEL_UPRV_SITE &&
+              strcmp(disp, "other") == 0);
+        CHECK(sel_uadeprov_source(bin, ids[2], &kind, file, sizeof file, disp, sizeof disp) && kind == SEL_UPRV_CD &&
+              strcmp(disp, "Disc 1") == 0);
+        CHECK(sel_uadeprov_get(bin, eb, ids, 8) == 1 && ids[0] == 0);
+        CHECK(!sel_uadeprov_source(bin, 3u, &kind, file, sizeof file, disp, sizeof disp));
+        CHECK(st.prov_sources[SEL_UPRV_SITE] == 2 && st.prov_sources[SEL_UPRV_CD] == 1 && st.prov_pairs == 4);
+    }
 
     snprintf(cmd, sizeof cmd, "rm -rf \"%s\"", root);
     (void)system(cmd);

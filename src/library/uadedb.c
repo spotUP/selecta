@@ -61,6 +61,110 @@ int sel_uadeinfo_get(const char* path, uint32_t entry, sel_uadeinfo* out) {
     return 1;
 }
 
+static const char* const k_credit_sources[SEL_UADECREDIT_SOURCES] = {
+    "AMP", "Modland", "Demozoo", "Kestra", "UnExoticA", "ExoticA (old)", "Mods Anthology", "Fujiology", "Wanted Team"};
+
+const char* sel_uadecredit_source_name(uint32_t source) { return source < SEL_UADECREDIT_SOURCES ? k_credit_sources[source] : ""; }
+
+/* Opens `path`, reads the 16-byte header and the index words idx[entry], idx[entry + 1] (the row/id range). */
+static int open_range(const char* path, const char* magic, uint32_t entry, FILE** f, uint32_t* pool, uint32_t* lo, uint32_t* hi) {
+    uint8_t hdr[16], w[8];
+    if (!open_hdr(path, magic, f, hdr)) return 0;
+    *pool = be32(hdr + 12);
+    if (entry >= be32(hdr + 8) || fseek(*f, (long)(16u + 4u * (uint64_t)entry), SEEK_SET) != 0 || fread(w, 1, 8, *f) != 8) {
+        fclose(*f);
+        return 0;
+    }
+    *lo = be32(w);
+    *hi = be32(w + 4);
+    return 1;
+}
+
+int sel_uadecredits_get(const char* path, uint32_t entry, sel_uadecredit* out, int max) {
+    FILE* f;
+    uint8_t hdr[16], row[SEL_UADECREDITS_ROW];
+    uint32_t pool, lo, hi, n, i, cnt;
+    long rows;
+    int got = 0;
+    if (out == NULL || max <= 0 || !open_range(path, "UCRD", entry, &f, &pool, &lo, &hi)) return 0;
+    rewind(f);
+    if (fread(hdr, 1, 16, f) != 16) {
+        fclose(f);
+        return 0;
+    }
+    n = be32(hdr + 8);
+    rows = (long)(16u + 4u * (uint64_t)(n + 1u));
+    cnt = hi - lo;
+    for (i = 0; i < cnt && got < max; i++) {
+        sel_uadecredit* c = &out[got];
+        if (fseek(f, rows + (long)((uint64_t)(lo + i) * SEL_UADECREDITS_ROW), SEEK_SET) != 0 ||
+            fread(row, 1, sizeof row, f) != sizeof row)
+            break;
+        memset(c, 0, sizeof *c);
+        c->source = row[0];
+        c->year = row[10] != 0 ? 1900u + row[10] : 0u;
+        read_str(f, (long)pool + (long)be24(row + 1), c->authors, sizeof c->authors);
+        read_str(f, (long)pool + (long)be24(row + 4), c->publishers, sizeof c->publishers);
+        read_str(f, (long)pool + (long)be24(row + 7), c->album, sizeof c->album);
+        got++;
+    }
+    fclose(f);
+    return got;
+}
+
+int sel_uadeprov_get(const char* path, uint32_t entry, uint16_t* ids, int max) {
+    FILE* f;
+    uint8_t hdr[16], b[2];
+    uint32_t pool, lo, hi, n, i;
+    long base;
+    int got = 0;
+    if (ids == NULL || max <= 0 || !open_range(path, "UPRV", entry, &f, &pool, &lo, &hi)) return 0;
+    rewind(f);
+    if (fread(hdr, 1, 16, f) != 16) {
+        fclose(f);
+        return 0;
+    }
+    n = be32(hdr + 8);
+    base = (long)(16u + 4u * (uint64_t)(n + 1u));
+    if (fseek(f, base + 2 * (long)lo, SEEK_SET) == 0) {
+        for (i = lo; i < hi && got < max && fread(b, 1, 2, f) == 2; i++) ids[got++] = (uint16_t)((b[0] << 8) | b[1]);
+    }
+    fclose(f);
+    return got;
+}
+
+int sel_uadeprov_source(const char* path, uint32_t id, int* kind, char* file, size_t filecap, char* display, size_t dispcap) {
+    FILE* f;
+    uint8_t hdr[16], b[4];
+    uint32_t i;
+    int c;
+    if (!open_hdr(path, "UPRV", &f, hdr)) return 0;
+    if (fseek(f, (long)be32(hdr + 12), SEEK_SET) != 0 || fread(b, 1, 4, f) != 4 || id >= be32(b)) {
+        fclose(f);
+        return 0;
+    }
+    for (i = 0; i <= id; i++) { /* records are variable length: walk to the id */
+        int k = fgetc(f);
+        size_t fl = 0, dl = 0;
+        if (k == EOF) { fclose(f); return 0; }
+        if (i == id && kind != NULL) *kind = k;
+        while ((c = fgetc(f)) != EOF && c != 0) {
+            if (i == id && file != NULL && fl + 1 < filecap) file[fl++] = (char)c;
+        }
+        if (c == EOF) { fclose(f); return 0; }
+        while ((c = fgetc(f)) != EOF && c != 0) {
+            if (i == id && display != NULL && dl + 1 < dispcap) display[dl++] = (char)c;
+        }
+        if (c == EOF) { fclose(f); return 0; }
+        if (i == id) {
+            if (file != NULL && filecap > 0) file[fl] = '\0';
+            if (display != NULL && dispcap > 0) display[dl] = '\0';
+        }
+    }
+    fclose(f);
+    return 1;
+}
+
 int sel_uademd5_lookup(const char* path, const char* md5hex, uint32_t* entry) {
     FILE* f;
     uint8_t hdr[16], want[6], row[SEL_UADEMD5_ROW];
