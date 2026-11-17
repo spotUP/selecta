@@ -119,6 +119,7 @@ int main(void) {
     put_file(root, "tsv/pretty/xxh32/metadata.tsv", rows);
     put_file(root, "tsv/pretty/md5/modinfos.tsv", "");
     put_file(root, "tsv/pretty/md5/metadata.tsv", "");
+    put_file(root, "tsv/pretty/md5/songlengths.tsv", ""); /* I774r: the twin check reads it */
     check(sel_uadedb_bake(root, out, &bst) == 0, "bake");
 
     snprintf(db, sizeof db, "%s/library.db", out);
@@ -144,6 +145,22 @@ int main(void) {
           "known song got format, channels, year, album, publisher");
     check(count(lib, "SELECT COUNT(*) FROM song_composers WHERE tag=0") == 2, "known song got both authors");
     check(count(lib, "SELECT COUNT(*) FROM songs WHERE channels=0 AND format IS NOT 'Protracker'") == 1, "unknown song stays blank");
+
+    /* I774m: a song hashed before the key existed (md5 set, uade_key NULL, blanks unfilled) is caught up by the same pass */
+    check(sqlite3_exec(lib->db, "UPDATE songs SET uade_key = NULL, format = NULL, channels = 0, year = NULL, album = NULL, publisher = NULL;"
+                                "DELETE FROM song_composers; DELETE FROM song_strings;", NULL, NULL, NULL) == SQLITE_OK, "simulate pre-key rows");
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE COALESCE(md5,'') <> '' AND uade_key IS NULL") == 2, "both songs hashed, no key");
+    memset(&op, 0, sizeof op);
+    op.op = SEL_DUP_HASH;
+    for (;;) {
+        id = 0;
+        check(sel_genre_call(lib, &op, &id) >= 0, "dup hash catch-up");
+        if (id == 0) break;
+        op.after = id;
+    }
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE uade_key IS NOT NULL") == 2, "hashed songs got their key");
+    check(count(lib, "SELECT COUNT(*) FROM songs WHERE format='Protracker' AND channels=4 AND year=1988 AND publisher='Mahoney'") == 1,
+          "hashed song got its bake data");
 
     /* queries */
     check(query_rows(lib, "channels:>3") == 1, "channels term");
