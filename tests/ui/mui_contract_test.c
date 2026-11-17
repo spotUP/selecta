@@ -3366,6 +3366,12 @@ static void test_cover_image(void) {
     CHECK(mui_image_square(NULL, 4, 2, out, 2) == 0 && mui_image_square(in, 0, 2, out, 2) == 0, "bad arguments not refused");
     CHECK(strstr(src, "s->art = a != NULL ? a->art : NULL;") != NULL, "the library art source is not taken from the open args");
     CHECK(strstr(src, "mui_canvas_set_image(s->np_cover") != NULL && strstr(src, "mui_canvas_set_image(s->bar_cover") != NULL, "the covers get no real image");
+    /* I1440q5: the composer page header photo: RTG-only canvas, fed from the page's first song through the same loader, hidden without a photo */
+    CHECK(strstr(src, "mui_canvas_set_image(s->col_photo") != NULL && strstr(src, "mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE)") != NULL,
+          "the composer header photo is not fed from the first song's cover");
+    CHECK(strstr(src, "if (g_screen_rtg) { /* I1440q5") != NULL && strstr(src, "DoMethod(head, OM_ADDMEMBER, s->col_photo_box)") != NULL,
+          "the composer header photo panel is not built on RTG only or not in the header");
+    CHECK(strstr(src, "set(s->col_photo_box, MUIA_ShowMe, have ? TRUE : FALSE)") != NULL, "the photo panel is not hidden without a photo");
     CHECK(strstr(cls, "d->img != NULL ? MUI_ART_DATATYPE : MUI_ART_COVER") != NULL, "the canvas does not draw the real image with the generated fallback");
 }
 

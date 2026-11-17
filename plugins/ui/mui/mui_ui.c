@@ -258,6 +258,8 @@ typedef struct mui_state {
     char set_choice[MUI_PREF_MAX][80];
     const char* set_entry[MUI_PREF_MAX][10];
     const sel_ui_art* art;          /* I1440q3: the library cover source, NULL without a library */
+    Object* col_photo_box;          /* I1440q5: composer page photo panel (RTG only; NULL on AGA, which keeps the text header) */
+    Object* col_photo;              /* I1440q5: its cover canvas holding the photo words */
     char np_img_path[256];          /* I1440q3: the song whose real cover np_cover and bar_cover hold */
     Object* np_cover;               /* I1399d: Now Playing art canvas, detail slot (NULL: placeholder) */
     Object* bar_cover;              /* I1399d: the same cover in the player bar */
@@ -642,6 +644,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SHELF_LIST_BASE 0x2A20L /* I795 (P1): a row of a shelf slot was picked */
 #define CTL_TILE_BASE 0x2A40L       /* I795 (P4): the Browse tiles, CTL_TILE_BASE + slot */
 #define CTL_FACET_BASE 0x2A80L      /* I795 (P5): the Search facet chips, CTL_FACET_BASE + facet */
+#define MUI_COL_PHOTO_PX 72 /* I1440q5: composer photo panel edge on the collection page header */
 #define MUI_COVER_EDGE 128 /* I1440q3: real cover words, square (cover frames are square) */
 #define CTL_LIBMODE 0x2AC0L         /* I1175: the Library mode Cycle (Composers, Tree, Columns, Files, History, Sources) */
 #define CTL_SRC_LIST 0x2AC1L        /* I1175: a row of the Sources page was picked */
@@ -1900,6 +1903,17 @@ static Object* mui_col_page_group(mui_state* s) {
         return NULL;
     }
     DoMethod(s->col_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_LIST);
+    if (g_screen_rtg) { /* I1440q5: the composer photo (design 3.1), a canvas in a square panel; hidden until a photo decodes. AGA: no photo */
+        s->col_photo_box = mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_COL_PHOTO_PX, MUI_COL_PHOTO_PX);
+        s->col_photo = mui_canvas_cover_new(1);
+        if (s->col_photo_box != NULL && s->col_photo != NULL) {
+            DoMethod(s->col_photo_box, OM_ADDMEMBER, s->col_photo);
+            set(s->col_photo_box, MUIA_ShowMe, FALSE);
+            DoMethod(head, OM_ADDMEMBER, s->col_photo_box);
+        } else {
+            s->col_photo_box = s->col_photo = NULL;
+        }
+    }
     DoMethod(head, OM_ADDMEMBER, s->col_title);
     DoMethod(head, OM_ADDMEMBER, s->col_artist);
     DoMethod(head, OM_ADDMEMBER, s->col_tag);
@@ -2958,6 +2972,22 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         mui_text_set(s->col_title, s->col_title_buf);
         mui_text_set(s->col_meta, s->col_meta_buf);
         mui_col_about_sync(s, pg);
+        if (s->col_photo != NULL) { /* I1440q5: as the desktop (col_round_art): a composer page with a DeepSID header shows the cover of its first song */
+            uint32_t* px = pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && pg->about[0] != '\0' && pg->songs > 0u && pg->rows != NULL && !mui_col_groups(pg)
+                               ? mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE) : NULL;
+            ULONG par = 0;
+            int have = px != NULL;
+            mui_canvas_set_image(s->col_photo, px, MUI_COVER_EDGE);
+            free(px);
+            GetAttr(MUIA_Parent, s->col_photo_box, &par);
+            if (par != 0) {
+                DoMethod((Object*)par, MUIM_Group_InitChange);
+            }
+            set(s->col_photo_box, MUIA_ShowMe, have ? TRUE : FALSE);
+            if (par != 0) {
+                DoMethod((Object*)par, MUIM_Group_ExitChange);
+            }
+        }
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
         SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
         {
