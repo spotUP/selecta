@@ -5176,7 +5176,7 @@ static const char* pls_key(const desk* d, uint32_t i) {
 static void pls_reload_run(desk* d);
 static void drl_filter(desk* d);
 static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q);
-static int drl_is_formats(const desk* d);
+static int drl_engine_find(const desk* d);
 
 /* I782: the page model is read from the library off the draw's critical path: no request waits for the library (a sync or a job holds it
  * for long), a busy library keeps the old model on screen and pls_stale asks again next frame. */
@@ -5488,7 +5488,7 @@ static void col_cover_refresh(desk* d) {
 
 static void col_changed(desk* d) {
     /* drl_page is 0 while a filtered page loads, so the test reads the path and the filter text, which survive the reload */
-    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && drl_is_formats(d) && strcmp(d->drl_q, d->col_q) != 0 &&
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && drl_engine_find(d) && strcmp(d->drl_q, d->col_q) != 0 &&
         (d->drl_q[0] != '\0' || d->drl_n >= (uint32_t)SEL_DRILL_WINDOW || d->drl_skip > 0u)) {
         int keep = d->col_search; /* the engine re-filters the whole list; typing must keep the keyboard */
         drl_open_q(d, d->drl_path, 0u, d->col_q);
@@ -5678,15 +5678,17 @@ static uint32_t drl_rows(const desk* d) {
 
 /* I1235: the find field narrows a drill group level only when the whole level is on the page (one window, no skip), so a filter never hides
  * rows that sit in another window. */
-static int drl_is_formats(const desk* d) {
-    return strcmp(d->drl_path, "formats") == 0;
+static int drl_engine_find(const desk* d) {
+    const char* us = strchr(d->drl_path, 0x1f); /* I1442: the artist levels too ("artists", "format US name"); a songs level has a second US */
+    return strcmp(d->drl_path, "formats") == 0 || strcmp(d->drl_path, "artists") == 0 ||
+           (strncmp(d->drl_path, "format", 6) == 0 && d->drl_path[6] == 0x1f && strchr(us + 1, 0x1f) == NULL);
 }
 
 static int drl_filterable(const desk* d) {
     if (d->col_kind != (uint32_t)SEL_LIB_ITEM_SOURCE) {
         return 0;
     }
-    if (drl_is_formats(d)) { /* the engine filters the whole format list, so any window state takes the field; it stays while a filtered page loads */
+    if (drl_engine_find(d)) { /* the engine filters the whole format list, so any window state takes the field; it stays while a filtered page loads */
         return (d->drl_page == (uint32_t)SEL_DRILL_PAGE_GROUPS && d->drl_n > 0u) || d->drl_q[0] != '\0';
     }
     return d->drl_page == (uint32_t)SEL_DRILL_PAGE_GROUPS && d->drl_n > 0u && d->drl_skip == 0u && d->drl_n < (uint32_t)SEL_DRILL_WINDOW;
