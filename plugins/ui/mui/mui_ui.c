@@ -23,6 +23,7 @@
 #include "map/mui_route.h"
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/drill.h>
 #include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/open_progress.h>
