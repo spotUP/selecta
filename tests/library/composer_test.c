@@ -86,6 +86,33 @@ int main(void) {
             }
         }
     }
+    /* I1443: a SID header's author/released fields -> artist, year, group (the playsid player reports them as AUTHOR and RELEASE) */
+    {
+        static const struct {
+            const char *format, *author, *released, *artist, *group;
+            int32_t year;
+        } c[] = {
+            {"SID", "<?>", "1988 Fairlight", "Fairlight", "Fairlight", 1988},
+            {"SID 2SID", "Rob Hubbard", "1985 Gremlin Graphics", "Rob Hubbard", "Gremlin Graphics", 1985},
+            {"SID", "", "198? Censor Design ", "Censor Design", "Censor Design", 0},
+            {"SID", "<?>", "1990", "", "", 1990},
+        };
+        size_t i;
+        char artist[64], group[64];
+        int32_t year;
+
+        for (i = 0; i < sizeof c / sizeof c[0]; i++) {
+            int r = sel_sid_credit(c[i].format, c[i].author, c[i].released, artist, sizeof artist, group, sizeof group, &year);
+            if (!r || strcmp(artist, c[i].artist) != 0 || strcmp(group, c[i].group) != 0 || year != c[i].year) {
+                printf("FAIL line %d: sid credit %zu = '%s' '%s' %d\n", __LINE__, i, artist, group, (int)year);
+                g_fail++;
+            }
+        }
+        if (sel_sid_credit("MOD", "x", "1988 y", artist, sizeof artist, group, sizeof group, &year)) {
+            printf("FAIL line %d: sid credit accepted a non-SID format\n", __LINE__);
+            g_fail++;
+        }
+    }
     if (g_fail == 0) printf("composer_ok\n");
     return g_fail != 0;
 }

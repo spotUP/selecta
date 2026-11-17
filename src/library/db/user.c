@@ -984,21 +984,32 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
 #define META_FILL_NAME "(?2 IS NOT NULL AND ?2 IS NOT name AND " SEL_SONG_NAME_PLACEHOLDER("name", "path") " AND " META_FILL_TAG_FREE("name") ")"
 #define META_FILL_ARTIST "(?3 IS NOT NULL AND COALESCE(artist, '') = '' AND " META_FILL_TAG_FREE("artist") ")"
 #define META_FILL_LENGTH "(?4 IS NOT NULL AND COALESCE(duration_ms, 0) <= 0)"
+        /* I1443: the group (album) and year of a SID file's released field fill the same way */
+#define META_FILL_ALBUM "(?5 IS NOT NULL AND COALESCE(album, '') = '' AND " META_FILL_TAG_FREE("album") ")"
+#define META_FILL_YEAR "(?6 IS NOT NULL AND COALESCE(year, 0) <= 0 AND " META_FILL_TAG_FREE("year") ")"
         sqlite3_stmt* st = NULL;
         int fill_name = 0;
         int fill_artist = 0;
         int fill_length = 0;
-        rc = sqlite3_prepare_v2(lib->db, "SELECT " META_FILL_NAME ", " META_FILL_ARTIST ", " META_FILL_LENGTH " FROM songs WHERE key = ?1",
+        int fill_album = 0;
+        int fill_year = 0;
+        rc = sqlite3_prepare_v2(lib->db,
+                                "SELECT " META_FILL_NAME ", " META_FILL_ARTIST ", " META_FILL_LENGTH ", " META_FILL_ALBUM ", " META_FILL_YEAR
+                                " FROM songs WHERE key = ?1",
                                 -1, &st, NULL);
         if (rc == SQLITE_OK) {
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
             if (op->name != NULL && op->name[0] != '\0') sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
             if (op->value != NULL && op->value[0] != '\0') sqlite3_bind_text(st, 3, op->value, -1, SQLITE_STATIC);
             if (op->duration_ms > 0) sqlite3_bind_int64(st, 4, op->duration_ms);
+            if (op->album != NULL && op->album[0] != '\0') sqlite3_bind_text(st, 5, op->album, -1, SQLITE_STATIC);
+            if (op->year > 0) sqlite3_bind_int(st, 6, op->year);
             if (sqlite3_step(st) == SQLITE_ROW) {
                 fill_name = sqlite3_column_int(st, 0);
                 fill_artist = sqlite3_column_int(st, 1);
                 fill_length = sqlite3_column_int(st, 2);
+                fill_album = sqlite3_column_int(st, 3);
+                fill_year = sqlite3_column_int(st, 4);
             }
             sqlite3_finalize(st);
             st = NULL;
@@ -1007,12 +1018,15 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
 #undef META_FILL_NAME
 #undef META_FILL_ARTIST
 #undef META_FILL_LENGTH
-        if (rc == SQLITE_OK && (fill_name || fill_artist || fill_length)) {
+#undef META_FILL_ALBUM
+#undef META_FILL_YEAR
+        if (rc == SQLITE_OK && (fill_name || fill_artist || fill_length || fill_album || fill_year)) {
             rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
             if (rc == SQLITE_OK) {
                 rc = sqlite3_prepare_v2(lib->db,
                                         "UPDATE songs SET name = CASE WHEN ?5 THEN ?2 ELSE name END, artist = CASE WHEN ?6 THEN ?3 ELSE artist END,"
-                                        " duration_ms = CASE WHEN ?7 THEN ?4 ELSE duration_ms END WHERE key = ?1",
+                                        " duration_ms = CASE WHEN ?7 THEN ?4 ELSE duration_ms END, album = CASE WHEN ?8 THEN ?5 ELSE album END,"
+                                        " year = CASE WHEN ?9 THEN ?6 ELSE year END WHERE key = ?1",
                                         -1, &st, NULL);
             }
             if (rc == SQLITE_OK) {
@@ -1023,6 +1037,10 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
                 sqlite3_bind_int(st, 5, fill_name);
                 sqlite3_bind_int(st, 6, fill_artist);
                 sqlite3_bind_int(st, 7, fill_length);
+                if (fill_album) sqlite3_bind_text(st, 5, op->album, -1, SQLITE_STATIC);
+                if (fill_year) sqlite3_bind_int(st, 6, op->year);
+                sqlite3_bind_int(st, 8, fill_album);
+                sqlite3_bind_int(st, 9, fill_year);
                 rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
                 found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
                 sqlite3_finalize(st);

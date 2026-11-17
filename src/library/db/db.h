@@ -188,6 +188,8 @@ typedef struct sel_user_op {
     int64_t to;          /* FOLDER_MOVE / PLAYLIST_MOVE: target folder id */
     int32_t skipped;     /* HISTORY: 1 = ended by the user before the natural end */
     int32_t duration_ms; /* HISTORY: 0 = unknown */
+    const char* album;   /* META_FILL: the group, NULL or "" = leave */
+    int32_t year;        /* META_FILL: 0 = leave */
     char* out;           /* STICKER_GET: value, "" when absent */
     uint32_t out_cap;
     uint32_t chip;       /* HOME: the Home chip (SEL_HOME_CHIP_*, I678j) */
@@ -398,8 +400,9 @@ unsigned sel_library_cache_trim(sel_library* lib, uint32_t budget, struct sel_ca
 int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int skipped);
 /* I1314a: fills the empty title (name), author (artist) and duration_ms of the song's row from what its player reported when it
  * played (a scan that described the song by signature left them empty). Fields with a value stay. 2 = the row changed, 1 = nothing to
- * fill, 0 = failed. NULL, "" or 0 skips a field. */
-int sel_library_song_meta_fill(sel_library* lib, const char* key, const char* title, const char* author, int32_t duration_ms);
+ * fill, 0 = failed. NULL, "" or 0 skips a field. I1443: album and year fill the same way (a SID file's group and release year). */
+int sel_library_song_meta_fill(sel_library* lib, const char* key, const char* title, const char* author, const char* album, int32_t year,
+                               int32_t duration_ms);
 int sel_library_like(sel_library* lib, const char* key, int64_t at);
 /* I306: takes the like back (1 on success, also when the song was not liked). sel_library_liked: 1 when `key` is liked. */
 int sel_library_unlike(sel_library* lib, const char* key, int64_t at);

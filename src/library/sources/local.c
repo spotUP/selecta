@@ -5,6 +5,7 @@
 
 #include "../../engine/claims.h"
 
+#include "../composer.h"
 #include "../source.h"
 #include "archive/archive.h"
 #include "dir.h"
@@ -165,6 +166,8 @@ static void fill_row_meta(scan_row_text* t, sel_scan_row* r, const sel_tag* meta
         copy_meta(t->album, sizeof t->album, (const char*)sel_tag_find(meta, SEL_META_RELEASE, 0));
         copy_meta(t->format, sizeof t->format, (const char*)sel_tag_find(meta, SEL_META_FORMAT, 0));
         r->duration_ms = (int32_t)sel_tag_find(meta, SEL_META_DURATION_MS, 0);
+        /* I1443: a SID file's author is often "<?>" and its released field is "1988 Group": artist, year and group (album) from them */
+        sel_sid_credit(t->format, t->artist, t->album, t->artist, sizeof t->artist, t->album, sizeof t->album, &r->year);
     }
 }
 
