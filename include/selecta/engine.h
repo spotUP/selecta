@@ -13,6 +13,8 @@
 #include <selecta/viz.h>
 #include <selecta/voices.h>
 
+struct sel_uim_si_input; /* include/selecta/uimodel/siinfo.h */
+
 SEL_EXTERN_C_BEGIN
 
 typedef enum sel_play_state { SEL_STOPPED = 0, SEL_PLAYING, SEL_PAUSED } sel_play_state;
@@ -258,6 +260,7 @@ typedef struct sel_state {
     const char* panel;          /* I185: catalogue rows of the open song, "label\0value\0" pairs (library data: STIL note,
                                  * composer, release, year, genre, rating, play count; absent data has no row), NULL: none */
     uint32_t panel_rows;        /* rows in `panel` */
+    const struct sel_uim_si_input* songinfo; /* I774n R10: the UADE bake rows of the open song (credits, other sources, provenance; render with sel_uim_si_lines), NULL: key not in the bake. Read with `panel`, so it changes when panel_serial does */
     uint32_t panel_serial;      /* I288: counts panel loads; a change means `panel` was read again (a rating or sticker write) */
     uint32_t search_serial;     /* I994b: the SOURCE_SEARCH hit list's version (list=hits); a change means the hits the UI shows are gone */
     uint32_t library_serial;    /* I348: counts library changes (a scan, sync or fetch finished); a change means library listings are stale */

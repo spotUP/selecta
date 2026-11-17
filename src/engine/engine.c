@@ -13,6 +13,7 @@
  * thread as its consumer, these two have the audio thread on one end. */
 #include <selecta/catalogue.h>
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/siinfo.h>
 #include <selecta/engine.h>
 #include <selecta/format_label.h>
 #include <selecta/output.h>
@@ -63,6 +64,7 @@
 #include "composer.h"
 #include "meta_utf8.h"
 #include "xxh32.h"
+#include "uadedb.h"
 #include "lyrics.h"
 #include "devilbox_lyrics.h"
 #include "cache.h"
@@ -512,6 +514,8 @@ struct sel_engine {
     char composer_filter[64];                  /* I611: COMPOSERS_VIEW text filter on the composer rows (empty: all) */
     uint32_t composer_sort, composer_views;    /* I611: COMPOSERS_VIEW sort (SEL_UIM_LSORT_*) and how many COMPOSERS_VIEW commands ran (sentinel) */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
+    sel_uim_si_input si;                       /* I774n R10: UADE bake rows of the open song, published with the panel */
+    int si_have;
     char panel[SEL_PANEL_BYTES];               /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t songs_counted_at;                 /* DUI-P4-18: library_changes + 1 when state.library_songs was counted */
     uint32_t library_changes;                  /* I348, I1077c: library_serial; moves in lib_gen_poll only, once per published batch of commits */
@@ -852,6 +856,8 @@ struct sel_engine {
     char pm_rules[512]; /* I1225: companion rules for the read's remote fetch, built on the pump before the post */
     char rdp_path[SEL_DEFERRED_PATH_MAX], rdp_next_path[SEL_DEFERRED_PATH_MAX];
     char rdp_buf[SEL_PANEL_BYTES];
+    sel_uim_si_input rdp_si; /* I774n R10: filled beside rdp_buf on the read thread */
+    int rdp_si_have;
     uint32_t rdp_rows;
     const void *rdp_state, *rdp_next_state;
     uint32_t panel_reads;                      /* panel reads that landed and were published (I906d sentinel) */
@@ -2530,6 +2536,10 @@ static void panel_run(sel_engine* e) {
     e->rdp_rows = 0u;
     e->rdp_buf[0] = '\0';
     if (!sel_library_song_panel(e->lib, e->rdp_path, e->rdp_buf, sizeof e->rdp_buf, &e->rdp_rows)) e->rdp_rows = 0u;
+    {   /* I774n R10: the bake rows (songlengths/uadeinfo/uadecredits/uadeprov beside the config drawer), off the pump thread */
+        char key[SEL_UADE_KEY_CHARS + 1u];
+        e->rdp_si_have = e->config_dir[0] != '\0' && sel_uade_key_file(e->rdp_path, key) && sel_uadesong_load(e->config_dir, key, &e->rdp_si);
+    }
 }
 
 static void panel_post(sel_engine* e) {
@@ -2553,6 +2563,8 @@ static void panel_publish(sel_engine* e) {
     if (e->rdp_state != e->panel_state) return;
     memcpy(e->panel, e->rdp_buf, sizeof e->panel);
     e->panel_rows = e->rdp_rows;
+    e->si_have = e->rdp_si_have;
+    if (e->si_have) e->si = e->rdp_si;
     e->panel_loads++;
     e->panel_reads++;
 }
@@ -12352,10 +12364,12 @@ static void refresh_snapshot(sel_engine* e) {
     if (sl == NULL || sl->rp_state == NULL) {
         e->panel_state = NULL;
         e->panel_rows = 0;
+        e->si_have = 0;
     } else if (sl->rp_state != e->panel_state) {
         /* I185: the catalogue rows of a newly opened song come from the library, on this (pump) thread only. */
         e->panel_state = sl->rp_state;
         e->panel_rows = 0;
+        e->si_have = 0;
         e->panel[0] = '\0';
         if (e->lib != NULL && sl->path != NULL) {
             sel_library_demozoo_kick(e->lib, sl->path); /* I1303c: queued on the job thread, never a wait here */
@@ -12371,6 +12385,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.collection = e->coll.serial != 0u ? &e->coll : NULL;
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
+    e->state.songinfo = e->si_have ? &e->si : NULL;
     e->state.panel_serial = e->panel_loads;
     e->state.library_serial = e->library_changes;
     e->state.search_serial = e->search_serial;

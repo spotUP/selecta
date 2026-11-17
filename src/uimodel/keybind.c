@@ -186,6 +186,9 @@ static const struct {
     {"page:Escape", "@page_close"}, {"page:Backspace", "@page_close"},
     {"page:w", "@si_wrong"},   {"page:x", "@si_skip"},
     {"page:e", "@si_edit"},    {"page:Enter", "@si_save"},
+    /* I774n R10: n shows the Found In names; f c p search the song's Format, Channels, Publisher (query terms format: channels: publisher:) */
+    {"page:n", "@si_names"},   {"page:f", "@si_format"},
+    {"page:c", "@si_channels"}, {"page:p", "@si_publisher"},
 };
 
 static int find(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {

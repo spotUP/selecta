@@ -1,0 +1,4 @@
+# I774n R10 text-ui-songinfo-sections: I opens Song Information; the bake rows draw the Credits section below the tag rows.
+wait 800
+I
+wait 500
