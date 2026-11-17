@@ -485,6 +485,7 @@ static int url_art(sel_library* lib, const char* key, int id, sel_scrape_stats* 
 }
 
 static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st);
+static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stats* st);
 
 /* I1440i (design 2.3, D5): a SID song with no folder art or cover_url takes the DeepSID composer photo as its cover. The ds_composer row is the
  * cache of I1440h's fetcher (ds_step runs when the row is missing); the photo is the server's resized JPEG, never the original. The placeholder
@@ -546,7 +547,8 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     op.ref = key;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) return 1; /* real art, or screenshots already cached */
-    if (folder_art(lib, key, id) || url_art(lib, key, id, st) || composer_art(lib, key, id, st)) {
+    if (folder_art(lib, key, id) || url_art(lib, key, id, st) || composer_art(lib, key, id, st) ||
+        csdb_cover(lib, key, id, st)) {
         st->scraped++;
         return 1;
     }
@@ -653,6 +655,41 @@ static void csdb_thumbs(sel_library* lib, const char* base, const char* json, se
     free(img.data);
 }
 
+/* I1450 (design D5): after the composer photo, the first CSDb release screenshot of the song is its cover, before the Demozoo fallback. The ids come from
+ * the ds_csdb row of I1440h (ds_step fetches it when missing); the image is the server's resized JPEG, as in csdb_thumbs. 1 = cover stored. */
+static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stats* st) {
+    char dk[1100], base[256], url[SCRAPE_URL_MAX];
+    sel_art_op op;
+    scrape_buf js, img;
+    int ids[1], ok = 0, n;
+
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_DS_KEY;
+    op.ref = key;
+    op.data = (uint8_t*)dk;
+    op.cap = sizeof dk;
+    if (art_request(lib, &op) <= 0) return 0;
+    ds_step(lib, key, st);
+    js.data = malloc(DS_JSON_MAX);
+    img.data = malloc(DZ_IMAGE_MAX);
+    if (js.data != NULL && img.data != NULL && (n = dz_has(lib, sel_art_dz_id(dk), "ds_csdb", js.data, DS_JSON_MAX - 1u)) > 0) {
+        js.data[n] = '\0';
+        if (sel_deepsid_csdb_ids((const char*)js.data, ids, 1u) > 0) {
+            base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+            snprintf(url, sizeof url, "%s/api/deepsid/image/csdb/%d.jpg?w=320", base, ids[0]);
+            img.cap = DZ_IMAGE_MAX;
+            if (scrape_get(url, &img, st) == 1 && img.len < DZ_IMAGE_MAX && is_image(&img)) {
+                dz_put(lib, id, "cover", img.data, img.len);
+                dz_put(lib, id, "dz_key", key, strlen(key));
+                ok = 1;
+            }
+        }
+    }
+    free(js.data);
+    free(img.data);
+    return ok;
+}
+
 /* The names of the "tags" array of a file answer, joined by ", ", into the sticker "deepsid.tags" of the key (an emptied list clears it). */
 static void ds_tags(sel_library* lib, const char* key, const char* json) {
     char all[512], name[96];
@@ -725,7 +762,7 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
     id = sel_art_dz_id(key);
     if (dz_has(lib, id, "ds_file", NULL, 0) > 0) return 1;
     memset(seen, 0, sizeof seen);
-    if (dz_has(lib, id, "ds_miss", seen, sizeof seen - 1u) > 0 && (time_t)atol((const char*)seen) > time(NULL) - (time_t)SEL_ART_SCRAPE_RETRY_DAYS * 86400) return 1;
+    if (dz_has(lib, id, "ds_miss2", seen, sizeof seen - 1u) > 0 && (time_t)atol((const char*)seen) > time(NULL) - (time_t)SEL_ART_SCRAPE_RETRY_DAYS * 86400) return 1;
     js.data = malloc(DS_JSON_MAX);
     js.cap = DS_JSON_MAX - 1u;
     if (js.data == NULL) return -1;
@@ -755,9 +792,11 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
             }
         }
         st->scraped++;
-    } else if (r == 0) {
+    } else if (r == 0 && js.len > 0 && js.data[0] == '{') {
+        /* I1450: only a JSON answer is the API saying "not found". An HTML 404 (route missing on the site) records nothing, so the next scrape retries.
+         * The kind is ds_miss2: the old ds_miss rows were written while the route was missing and are ignored once. */
         snprintf(stamp, sizeof stamp, "%lu", (unsigned long)time(NULL));
-        dz_put(lib, id, "ds_miss", stamp, strlen(stamp));
+        dz_put(lib, id, "ds_miss2", stamp, strlen(stamp));
         st->misses++;
     } else {
         st->errors++;

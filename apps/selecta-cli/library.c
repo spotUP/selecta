@@ -731,7 +731,7 @@ static int library_scan(int argc, char** argv) {
         int n[4] = {0, 0, 0, 0}, tags = 0;
 
         if (sqlite3_open_v2(db_path, &h, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK &&
-            sqlite3_prepare_v2(h, "SELECT sum(kind='ds_file'), sum(kind='ds_composer'), sum(kind='ds_csdb'), sum(kind='ds_miss'),"
+            sqlite3_prepare_v2(h, "SELECT sum(kind='ds_file'), sum(kind='ds_composer'), sum(kind='ds_csdb'), sum(kind='ds_miss2'),"
                                   " (SELECT count(*) FROM stickers WHERE name = 'deepsid.tags' AND value = 'Cover, Remix') FROM artwork WHERE album_id < 0",
                                -1, &q, NULL) == SQLITE_OK &&
             sqlite3_step(q) == SQLITE_ROW) {
