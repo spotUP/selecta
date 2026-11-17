@@ -85,6 +85,8 @@ typedef struct sel_uadedb_stats {
     long info_unmapped; /* xxh32 modinfos/metadata rows whose key is not in songlengths */
     long md5_mapped, md5_unmapped, md5_conflict, md5_bytes;
     long md5_checked, md5_mismatch, md5_whitelisted, md5_twin_unmapped;
+    long md5_collision; /* mismatches on a key two or more md5s share (excused; the xxh32 row stays) */
+    long sl_checked, sl_mismatch, sl_whitelisted, sl_collision, sl_twin_unmapped; /* songlengths md5 twin check */
     long credit_kept[SEL_UADECREDIT_SOURCES], credit_dropped[SEL_UADECREDIT_SOURCES], credit_unmapped[SEL_UADECREDIT_SOURCES];
     long credit_rows, credit_pool_bytes, credit_bytes;
     long prov_sources[SEL_UPRV_KINDS], prov_named[SEL_UPRV_KINDS]; /* sources per kind; named = display from sources.md */

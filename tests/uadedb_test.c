@@ -75,13 +75,19 @@ int main(void) {
     /* md5 twins: A and B correct except B's album, which is planted wrong; one md5 no source row knows */
     put_file(root, "tsv/pretty/md5/modinfos.tsv", "111111111111\tProtracker\t4\n222222222222\tImpulse Tracker 2.13\t15\n444444444444\tX\t1\n");
     put_file(root, "tsv/pretty/md5/metadata.tsv",
-             "111111111111\tGlue Master~Kid\tMahoney\tMusicdisk 1\t1988\n222222222222\tXplore\t\tWRONG\t\n");
+             "111111111111\tGlue Master~Kid\tMahoney\tMusicdisk 1\t1988\n222222222222\tXplore\t\tWRONG\t\n"
+             "666666666666\tOther\t\t\t\n");
+    /* songlengths twins: A correct, B planted wrong, C has two md5s (a collision, excused), one md5 unknown */
+    put_file(root, "tsv/pretty/md5/songlengths.tsv",
+             "111111111111\t1\t1000,p+s 2000,l,!\n222222222222\t0\t3001,p\n777777777777\t0\t5000,p+v\n999999999999\t0\t1,p\n");
     /* source rows: md5, subsong, ms, songend, player, format, channels, size (256 = 0x0100), xxh32, crc32, path */
     put_file(root, "songdb/sources/site/aminet.tsv",
              "11111111111111111111111111111111\t1\t1000\tp+s\tuade\tProtracker\t4\t256\taaaaaaaa\t00000000\tmods/a.lha/a\n"
              "11111111111111111111111111111111\t2\t2000\tl\tuade\tProtracker\t4\t256\taaaaaaaa\t00000000\tmods/a.lha/a\n"
              "22222222222222222222222222222222\t0\t3000\tp\tuade\tIT\t15\t512\tbbbbbbbb\t00000000\tmods/b\n"
-             "55555555555555555555555555555555\t0\t1\tp\tuade\tX\t1\t1\tdddddddd\t00000000\tmods/c\n");
+             "55555555555555555555555555555555\t0\t1\tp\tuade\tX\t1\t1\tdddddddd\t00000000\tmods/c\n"
+             "66666666666666666666666666666666\t0\t4000\tp+v\tuade\tFoo\t1\t768\tcccccccc\t00000000\tmods/c1\n"
+             "77777777777777777777777777777777\t0\t4000\tp+v\tuade\tFoo\t1\t768\tcccccccc\t00000001\tmods/c2\n");
 
     /* R5: the same tune A in a second site file and a CD file; display names come from sources.md */
     put_file(root, "songdb/sources/site/other.tsv",
@@ -98,8 +104,10 @@ int main(void) {
     CHECK(sel_uadedb_bake(root, out, &st) == 0);
     CHECK(st.songlen_entries == 23);
     CHECK(st.info_entries == 3); /* A, B, C have a format string */
-    CHECK(st.md5_mapped == 2 && st.md5_unmapped == 1);
+    CHECK(st.md5_mapped == 4 && st.md5_unmapped == 1);
     CHECK(st.md5_mismatch == 1 && st.md5_twin_unmapped == 1 && st.md5_checked >= 4);
+    CHECK(st.md5_collision == 1); /* C's second md5 row is excused, not counted as a mismatch */
+    CHECK(st.sl_checked == 3 && st.sl_mismatch == 1 && st.sl_collision == 1 && st.sl_twin_unmapped == 1);
 
     /* R1: flags */
     snprintf(bin, sizeof bin, "%s/songlengths.bin", out);
@@ -167,7 +175,7 @@ int main(void) {
               strcmp(disp, "Disc 1") == 0);
         CHECK(sel_uadeprov_get(bin, eb, ids, 8) == 1 && ids[0] == 0);
         CHECK(!sel_uadeprov_source(bin, 3u, &kind, file, sizeof file, disp, sizeof disp));
-        CHECK(st.prov_sources[SEL_UPRV_SITE] == 2 && st.prov_sources[SEL_UPRV_CD] == 1 && st.prov_pairs == 4);
+        CHECK(st.prov_sources[SEL_UPRV_SITE] == 2 && st.prov_sources[SEL_UPRV_CD] == 1 && st.prov_pairs == 5);
     }
 
     /* I774n R8: the song info section lines */

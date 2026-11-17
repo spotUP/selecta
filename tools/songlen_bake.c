@@ -25,8 +25,10 @@ int main(int argc, char** argv) {
         printf("songlen_entries=%ld songlen_bytes=%ld\n", s.songlen_entries, s.songlen_bytes);
         printf("info_entries=%ld pool_bytes=%ld info_bytes=%ld info_unmapped=%ld\n", s.info_entries, s.pool_bytes,
                s.info_bytes, s.info_unmapped);
-        printf("md5_checked=%ld md5_mismatch=%ld md5_whitelisted=%ld md5_twin_unmapped=%ld\n", s.md5_checked,
-               s.md5_mismatch, s.md5_whitelisted, s.md5_twin_unmapped);
+        printf("md5_checked=%ld md5_mismatch=%ld md5_whitelisted=%ld md5_collision=%ld md5_twin_unmapped=%ld\n", s.md5_checked,
+               s.md5_mismatch, s.md5_whitelisted, s.md5_collision, s.md5_twin_unmapped);
+        printf("sl_checked=%ld sl_mismatch=%ld sl_whitelisted=%ld sl_collision=%ld sl_twin_unmapped=%ld\n", s.sl_checked,
+               s.sl_mismatch, s.sl_whitelisted, s.sl_collision, s.sl_twin_unmapped);
         printf("md5_mapped=%ld md5_unmapped=%ld md5_conflict=%ld md5_bytes=%ld\n", s.md5_mapped, s.md5_unmapped,
                s.md5_conflict, s.md5_bytes);
         {
