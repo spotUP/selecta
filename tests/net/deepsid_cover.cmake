@@ -64,7 +64,7 @@ endif()
 
 run("${db}" "${miss}" c)
 want("no photo, no cover" "${c}" "demozoo_shots=1 ") # still the one cover of the hit key; the miss key adds none
-count_requests("/api/deepsid/image/" img3)
+count_requests("/api/deepsid/image/composers/" img3) # CSDb thumbnails (I1440l2) are image requests too
 if(img3 GREATER i2)
   message(FATAL_ERROR "I1440i: an image request was sent for a key without a composer photo")
 endif()
