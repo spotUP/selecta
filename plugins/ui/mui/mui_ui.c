@@ -23,6 +23,7 @@
 #include "map/mui_route.h"
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/siinfo.h>
 #include <selecta/uimodel/drill.h>
 #include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
@@ -141,7 +142,7 @@ static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
                                               "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected", "nppage", "pfolder", "siwrong", "siskip", "sinote", "searchlive"};
 #define MUI_PREF_MAX SEL_UIM_PREF_ROWS_MAX /* MUI-P4-10: Settings row capacity; the table is checked against it at compile time (MPS-1b) */
-#define MUI_INFO_MAX 48u  /* MUI-P4-9: most song info rows */
+#define MUI_INFO_MAX 112u /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
 #define MUI_OFF_ROWS 6u    /* I1313d: most "Players Turned Off" rows */
 #define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
@@ -208,6 +209,8 @@ typedef struct mui_state {
     Object* col_about_val[MUI_ABOUT_MAX];
     Object* col_about_open[MUI_ABOUT_MAX]; /* I1440q2: the Open button of a Link row (openurl.library) */
     char col_about_url[MUI_ABOUT_MAX][192];
+    int8_t info_fk[MUI_INFO_MAX];   /* I774n R11b: the Found In kind index of a kind row, -1 for any other */
+    uint32_t si_found_open;         /* I774n R11b: bit k set = Found In kind k shows its names (as the Mac) */
     int info_csdb[MUI_INFO_MAX];    /* I1440q2: the CSDb release id of an info row, 0 for any other */
     char col_title_buf[160];
     char col_meta_buf[224];
@@ -2608,6 +2611,10 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             }
         }
     }
+    MUI_SIG(s->si_found_open);
+    for (k = 0; st->panel != NULL && st->panel[k] != '\0' && k < 8192u; k++) { /* the bake sections land after the song: a changed panel rebuilds the rows */
+        MUI_SIG(st->panel[k]);
+    }
     if (sig == s->detail_sig) {
         return;
     }
@@ -2719,22 +2726,57 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", lab, val);
             s->info_ptr[rows] = s->info_buf[rows];
             s->info_csdb[rows] = 0;
+            s->info_fk[rows] = -1;
             rows++;
         }
         /* I1440r: the catalogue and DeepSID rows the engine took from the library (label NUL value NUL pairs, the Mac and text order: after the
          * meta tags); CSDb releases are text rows, the thumbnails wait for a datatype image object. */
         if (st->panel != NULL) {
             const char* p = st->panel;
+            uint32_t seen = 0u, in_sect = 0u, r; /* as the Mac walk: bit 0 Release, bit 1 Year already shown above the sections */
+            int fk = -1;
+            for (r = 0; r < rows; r++) {
+                seen |= (strncmp(s->info_buf[r], "Release:", 8) == 0 ? 1u : 0u) | (strncmp(s->info_buf[r], "Year:", 5) == 0 ? 2u : 0u);
+            }
             while (*p != '\0' && rows < MUI_INFO_MAX - 1u) {
                 const char* value = p + strlen(p) + 1;
+                const char* text;
+                int kind = (int)sel_uim_si_panel_kind(p, &text);
                 char val[96];
+                int8_t row_fk = -1;
                 mui_flat(val, sizeof val, value);
-                sel_uim_tidy_info(p, val, sizeof val);
-                snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", p, val);
+                p = value + strlen(value) + 1;
+                in_sect |= kind == (int)SEL_UIM_SI_HEADING;
+                if (kind == (int)SEL_UIM_SI_CREDIT) {
+                    uint32_t bit = strcmp(text, "Release") == 0 ? 1u : strcmp(text, "Year") == 0 ? 2u : 0u;
+                    if (in_sect && (seen & bit) != 0u) { /* the tag or catalogue row above already shows it */
+                        continue;
+                    }
+                    seen |= bit;
+                }
+                if (kind == (int)SEL_UIM_SI_FOUND_KIND) {
+                    char cnt[24];
+                    fk = sel_uim_si_found_index(text);
+                    row_fk = (int8_t)fk;
+                    snprintf(cnt, sizeof cnt, "%s", val);
+                    snprintf(val, sizeof val, "%s (%s names)", cnt, fk >= 0 && (s->si_found_open & (1u << fk)) != 0u ? "hide" : "show");
+                } else if (kind == (int)SEL_UIM_SI_FOUND_NAME && (fk < 0 || (s->si_found_open & (1u << fk)) == 0u)) {
+                    continue;
+                } else if (kind == (int)SEL_UIM_SI_HEADING || kind == (int)SEL_UIM_SI_CREDIT) {
+                    fk = -1;
+                }
+                sel_uim_tidy_info(text, val, sizeof val); /* I1387b */
+                if (kind == (int)SEL_UIM_SI_HEADING) {
+                    snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s", text);
+                } else if (text[0] == '\0') {
+                    snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "    %s", val);
+                } else {
+                    snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", text, val);
+                }
                 s->info_ptr[rows] = s->info_buf[rows];
                 s->info_csdb[rows] = sel_csdb_row_id(value); /* I1440q2: a click on the row opens the release page */
+                s->info_fk[rows] = row_fk;
                 rows++;
-                p = value + strlen(value) + 1;
             }
         }
         if (so->path != NULL && so->subsong_count > 1u) {
@@ -2742,6 +2784,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                      (unsigned long)so->subsong_count);
             s->info_ptr[rows] = s->info_buf[rows];
             s->info_csdb[rows] = 0;
+            s->info_fk[rows] = -1;
             rows++;
         }
         s->info_ptr[rows] = NULL;
@@ -4439,7 +4482,9 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id == CTL_INFO_PICK) { /* I1440q2: a CSDb release row of Song Information */
         long picked = -1;
         GetAttr(UPA_List_Picked, s->info_list, (ULONG*)&picked);
-        if (picked >= 0 && (uint32_t)picked < MUI_INFO_MAX && s->info_csdb[picked] > 0) {
+        if (picked >= 0 && (uint32_t)picked < MUI_INFO_MAX && s->info_fk[picked] >= 0) { /* I774n R11b: a Found In count line expands or folds its names */
+            s->si_found_open ^= 1u << s->info_fk[picked];
+        } else if (picked >= 0 && (uint32_t)picked < MUI_INFO_MAX && s->info_csdb[picked] > 0) {
             char url[64];
             sel_csdb_url(s->info_csdb[picked], url, sizeof url);
             mui_open_url(url);
