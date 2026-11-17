@@ -2597,6 +2597,14 @@ if(NOT SEL_AMIGA)
       ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
   endif()
 
+  # I433b: an Arkos Tracker 3 song (the AT3 example, committed MIT fixture) plays through the arkos replayer.
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/arkos-decode)
+  add_test(NAME arkos-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/arkos_decode.sh $<TARGET_FILE:selecta-cli> ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/arkos_lopears.aks
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/arkos-decode)
+  set_tests_properties(arkos-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "arkos_decode_ok"
+    ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+
   # I1223b: a Beepola .bbsong plays through the render entry point (bbmp_ay module); its data files come from the I751
   # downloader. Fetched by checksum, exit 77 = skip (no network).
   if(SELECTA_GPL_PLUGINS)
