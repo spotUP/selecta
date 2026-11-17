@@ -12,4 +12,6 @@ target_link_libraries(selecta_uimodel PUBLIC selecta_core selecta_formats)
 if(SEL_AMIGA)
   add_library(selecta_uimodel_seg STATIC ${SEL_UIMODEL_SOURCES})
   target_include_directories(selecta_uimodel_seg PUBLIC "${PROJECT_SOURCE_DIR}/include")
+  # I1452: text_ui calls sel_uim_si_lines (src/library, self-contained); selecta_library is not linked into the module.
+  target_sources(selecta_uimodel_seg PRIVATE ../library/siinfo_lines.c)
 endif()
