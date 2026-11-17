@@ -1,0 +1,6 @@
+# I774s: p searches the song Group / Publisher.
+wait 800
+I
+wait 300
+p
+wait 800

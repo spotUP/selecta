@@ -189,6 +189,10 @@ static const struct {
     /* I774n R10: n shows the Found In names; f c p search the song's Format, Channels, Publisher (query terms format: channels: publisher:) */
     {"page:n", "@si_names"},   {"page:f", "@si_format"},
     {"page:c", "@si_channels"}, {"page:p", "@si_publisher"},
+    /* I774s: line and page scrolling of the song info page */
+    {"page:Up", "@si_sup"},    {"page:Down", "@si_sdown"},
+    {"page:PageUp", "@si_spgup"}, {"page:PageDown", "@si_spgdn"},
+    {"page:Home", "@si_stop"}, {"page:End", "@si_send"},
 };
 
 static int find(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {

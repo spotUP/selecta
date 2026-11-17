@@ -91,6 +91,8 @@ typedef struct tui {
     uint32_t si_actions, np_draws; /* I1191 sentinels */
     int si_names;                  /* I774n R10: Found In shows the source names under each count */
     uint32_t si_facets;            /* I774n R10 sentinel: facet searches started from the page */
+    uint32_t si_scroll, si_max, si_vis; /* I774s: first line shown, last legal first line and lines shown of the song info page (set by the draw) */
+    uint32_t si_off, si_top, si_bot;    /* I774s: row shift, first and end row of the scrolling area; 0, 0, 0 draw unscrolled (the side panel) */
     int splash_wanted;  /* no --exec was given: the start screen may show (row I355) */
     int splash_off;     /* a key or a song ended the start screen for good */
     int splash_shown;   /* the frame being drawn is the start screen */
@@ -1442,6 +1444,7 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     } else if (strcmp(name, "nowplaying") == 0 || strcmp(name, "songinfo") == 0) {
         int want = name[0] == 'n' ? TUI_INFO_NOWPLAYING : TUI_INFO_SONGINFO;
         u->page = u->page == want ? TUI_INFO_NONE : want;
+        u->si_scroll = 0u;
         u->pattern = 0;
         u->viz = 0;
     } else if (strcmp(name, "page_close") == 0) {
@@ -1456,6 +1459,15 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
                 u->si_actions++;
                 tui_send(u, fl);
             }
+        }
+    } else if (strncmp(name, "si_s", 4) == 0) { /* I774s: si_sup si_sdown si_spgup si_spgdn si_stop si_send scroll the song info page */
+        if (u->page == TUI_INFO_SONGINFO) {
+            uint32_t pg = u->si_vis > 1u ? u->si_vis - 1u : 1u, cur = u->si_scroll;
+            u->si_scroll = strcmp(name, "si_sup") == 0 ? cur - (cur > 0u)
+                         : strcmp(name, "si_sdown") == 0 ? cur + (cur < u->si_max)
+                         : strcmp(name, "si_spgup") == 0 ? cur - (cur < pg ? cur : pg)
+                         : strcmp(name, "si_spgdn") == 0 ? (u->si_max - cur < pg ? u->si_max : cur + pg)
+                         : strcmp(name, "si_stop") == 0 ? 0u : u->si_max;
         }
     } else if (strcmp(name, "si_names") == 0) {
         u->si_names = !u->si_names;
@@ -2164,13 +2176,20 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
 }
 
 
+/* I774s: one info line at virtual row y; the scroll shifts it up and rows outside [si_top, si_bot) are not drawn. */
+static void tui_sline(tui* u, uint32_t x, uint32_t y, const char* text, uint32_t w, txt_style st) {
+    if (y >= u->si_top + u->si_off && y - u->si_off < (u->si_bot != 0u ? u->si_bot : u->pv_rows + 1u)) {
+        tui_ptext(u, x, y - u->si_off, text, w, st);
+    }
+}
+
 /* Every META tag the replayer reported, in tags.def order (the Song Information page; the side panel is the detail region). */
 static uint32_t tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
     const uintptr_t absent = (uintptr_t)-1;
     uint32_t tag, y = top + 1u;
     uint32_t w = u->pv_w - x - 1u;
-    tui_ptext(u, x, top, "Information", w, tui_style(u, TXT_ROLE_LABEL));
-    for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL && y < (u->pv_rows + 2u) - 1u; tag++) {
+    tui_sline(u, x, top, "Information", w, tui_style(u, TXT_ROLE_LABEL));
+    for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL; tag++) {
         uintptr_t v = sel_tag_find(s->song.meta, tag, absent);
         sel_tag_type type = SEL_TT_INT;
         char label[32], val[160];
@@ -2190,15 +2209,15 @@ static uint32_t tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32
         }
         sel_uim_tag_label(tag, label, sizeof label);
         sel_uim_tidy_info(label, val, sizeof val); /* I1387b */
-        tui_ptext(u, x, y, label, w, tui_style(u, TXT_ROLE_LABEL));
-        tui_ptext(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
+        tui_sline(u, x, y, label, w, tui_style(u, TXT_ROLE_LABEL));
+        tui_sline(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
         y++;
     }
     /* I185: the catalogue rows the engine took from the library (label and value pairs); absent data has no row. */
     u->meta_panel_rows = 0;
     if (s->panel != NULL) {
         const char* p = s->panel;
-        while (*p != '\0' && y < (u->pv_rows + 2u) - 1u) {
+        while (*p != '\0') {
             const char* value = p + strlen(p) + 1;
             char val[160];
             uint32_t i;
@@ -2209,10 +2228,10 @@ static uint32_t tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32
                 }
             }
             sel_uim_tidy_info(p, val, sizeof val); /* I1387b */
-            tui_ptext(u, x, y, p, w, tui_style(u, TXT_ROLE_LABEL));
-            tui_ptext(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
+            tui_sline(u, x, y, p, w, tui_style(u, TXT_ROLE_LABEL));
+            tui_sline(u, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
             y++;
-            u->meta_panel_rows++;
+            u->meta_panel_rows += y - 1u >= u->si_top + u->si_off && y - 1u - u->si_off < (u->si_bot != 0u ? u->si_bot : u->pv_rows + 1u);
             p = value + strlen(value) + 1;
         }
     }
@@ -2227,23 +2246,24 @@ static const sel_uim_si_line* tui_si_lines(const sel_state* s, uint32_t* n) {
     return ln;
 }
 
-static void tui_songinfo_sections(tui* u, const sel_state* s, uint32_t x, uint32_t y) {
+static uint32_t tui_songinfo_sections(tui* u, const sel_state* s, uint32_t x, uint32_t y) {
     uint32_t n, i, w = u->pv_w - x - 1u;
     const sel_uim_si_line* ln = tui_si_lines(s, &n);
-    for (i = 0; i < n && y < (u->pv_rows + 2u) - 1u; i++) {
+    for (i = 0; i < n; i++) {
         if (ln[i].kind == SEL_UIM_SI_FOUND_NAME && !u->si_names) {
             continue;
         }
         if (ln[i].kind == SEL_UIM_SI_HEADING) {
             y++;
-            tui_ptext(u, x, y++, ln[i].key, w, tui_style(u, TXT_ROLE_LABEL));
+            tui_sline(u, x, y++, ln[i].key, w, tui_style(u, TXT_ROLE_LABEL));
         } else if (ln[i].kind == SEL_UIM_SI_FOUND_NAME) {
-            tui_ptext(u, x + 2u, y++, ln[i].val, w > 2u ? w - 2u : 1u, tui_style(u, TXT_ROLE_DIM));
+            tui_sline(u, x + 2u, y++, ln[i].val, w > 2u ? w - 2u : 1u, tui_style(u, TXT_ROLE_DIM));
         } else {
-            tui_ptext(u, x, y, ln[i].key, w, tui_style(u, TXT_ROLE_LABEL));
-            tui_ptext(u, x + 18u, y++, ln[i].val, w > 18u ? w - 18u : 1u, tui_style(u, TXT_ROLE_VALUE));
+            tui_sline(u, x, y, ln[i].key, w, tui_style(u, TXT_ROLE_LABEL));
+            tui_sline(u, x + 18u, y++, ln[i].val, w > 18u ? w - 18u : 1u, tui_style(u, TXT_ROLE_VALUE));
         }
     }
+    return y;
 }
 
 /* The Format, Channels and Publisher facets (design 5.2): a search with the existing query term on the value of the Credits line. */
@@ -2310,7 +2330,7 @@ static void tui_nowplaying_page(tui* u, const sel_state* s) {
 /* Song Information page (desktop draw_songinfo): the three buttons, the note field, then every tag of the open song. */
 static void tui_songinfo_page(tui* u, const sel_state* s) {
     char buf[300];
-    uint32_t b, x = 1;
+    uint32_t b, x = 1, total;
     static const char* const keys[3] = {"w", "x", "Enter"};
     tui_ptext(u, 1, 2, "Song Information", u->pv_w - 2u, tui_style(u, TXT_ROLE_LABEL));
     for (b = 0; b < 3u; b++) {
@@ -2320,7 +2340,29 @@ static void tui_songinfo_page(tui* u, const sel_state* s) {
     }
     snprintf(buf, sizeof buf, "e Note: %s", u->si_note[0] != '\0' ? u->si_note : "");
     tui_ptext(u, 1, 4, buf, u->pv_w - 2u, tui_style(u, u->si_note[0] != '\0' ? TXT_ROLE_NORMAL : TXT_ROLE_DIM));
+    /* I774s: a dry pass (nothing drawn) measures the lines, then the page draws from si_scroll; clipped content gets a marker row. */
+    u->si_top = UINT32_MAX;
+    total = tui_songinfo_sections(u, s, 1u, tui_songinfo_tags(u, s, 1u, 6u)) - 6u;
+    u->si_top = 6u;
+    u->si_bot = u->pv_rows + 1u;
+    u->si_vis = u->si_bot - 6u;
+    if (total > u->si_vis) {
+        u->si_bot--; /* the last row is the marker */
+        u->si_vis--;
+    }
+    u->si_max = total > u->si_vis ? total - u->si_vis : 0u;
+    if (u->si_scroll > u->si_max) {
+        u->si_scroll = u->si_max;
+    }
+    u->si_off = u->si_scroll;
     tui_songinfo_sections(u, s, 1u, tui_songinfo_tags(u, s, 1u, 6u));
+    if (u->si_max > 0u) {
+        tui_ptext(u, 1, u->si_bot, u->si_scroll < u->si_max ? "-- more below (Down, PageDown, End) --" : "-- more above (Up, PageUp, Home) --",
+                  u->pv_w - 2u, tui_style(u, TXT_ROLE_DIM));
+    }
+    u->si_off = 0u;
+    u->si_top = 0u;
+    u->si_bot = 0u;
 }
 
 /* Palette and help overlay: query line, then verbs grouped by area (query empty)
