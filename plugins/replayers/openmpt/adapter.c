@@ -262,6 +262,26 @@ static void fetch(openmpt_module* mod, const char* key, char* dst, size_t cap) {
     }
 }
 
+/* I774t: a MOD/XM message is its 31 sample names joined by newlines; the unused slots are empty lines that made the Song info
+ * message row 30 lines tall. Drop the empty lines at both ends and fold each run of empty lines between into one. */
+static void trim_blank_lines(char* m) {
+    size_t r = 0, w = 0, n = strlen(m);
+    int nl = 0;
+    while (n > 0u && (m[n - 1u] == '\n' || m[n - 1u] == '\r' || m[n - 1u] == ' ')) n--;
+    for (; r < n; r++) {
+        char c = m[r];
+        if (c == '\r') continue;
+        if (c == '\n') {
+            if (w == 0u || nl >= 2) continue;
+            nl++;
+        } else {
+            nl = 0;
+        }
+        m[w++] = c;
+    }
+    m[w] = '\0';
+}
+
 static void add_str(openmpt_state* s, uint32_t* n, uint32_t tag, const char* value) {
     if (value[0] != '\0') {
         s->meta[*n].tag = tag;
@@ -286,6 +306,7 @@ static const sel_tag* rp_metadata(void* state) {
     fetch(s->mod, "artist", s->author, sizeof s->author);
     fetch(s->mod, "type_long", s->format, sizeof s->format);
     fetch(s->mod, "message", s->message, sizeof s->message);
+    trim_blank_lines(s->message);
     seconds = openmpt_module_get_duration_seconds(s->mod);
     add_str(s, &n, SEL_META_TITLE, s->title);
     add_str(s, &n, SEL_META_AUTHOR, s->author);
