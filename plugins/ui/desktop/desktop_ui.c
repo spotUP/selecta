@@ -31,6 +31,7 @@
 #include <selecta/gui/gui_input.h>
 #include <selecta/gui/gui_edit.h>
 #include <selecta/uimodel/about.h>
+#include <selecta/uimodel/drill.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/open_progress.h>
 #include <selecta/uimodel/cols.h>
@@ -5899,50 +5900,9 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
     d->pl_sel_id = 0u;
 }
 
-/* I790: split the drill path at the unit separators; returns the part count. */
-static uint32_t drl_split(const char* path, char (*part)[96]) {
-    uint32_t n = 0u;
-    const char* p = path;
-    while (*p != '\0' && n < 3u) {
-        size_t len = strcspn(p, "\x1f");
-        snprintf(part[n], 96, "%.*s", (int)(len < 95u ? len : 95u), p);
-        n++;
-        p += len;
-        if (*p == '\x1f') {
-            p++;
-        }
-    }
-    return n;
-}
-
-#define DRL_UNKNOWN_ARTIST "Unknown artist"
-
-/* The readable label of one drill row: root names capitalised, platform ids as their family label. */
+/* The readable label of one drill row: the shared rule (uimodel/drill.c). */
 static void drl_label(const desk* d, const char* name, char* out, size_t cap) {
-    uint32_t f;
-    char part[3][96];
-    uint32_t np = drl_split(d->drl_path, part);
-    snprintf(out, cap, "%s", name);
-    if (name[0] == '\0' && np > 0u && (strcmp(part[0], "artists") == 0 || (np == 2u && strcmp(part[0], "format") == 0))) { /* I911: songs with no artist come back as one group named '' */
-        snprintf(out, cap, "%s", DRL_UNKNOWN_ARTIST);
-        return;
-    }
-    sel_uim_drill_row_label(d->drl_path, name, out, cap); /* I1440m/s: a DeepSID folder row shows its leaf, the path stays the key; shared with MUI */
-    if (strcmp(out, name) != 0) {
-        return;
-    }
-    if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
-        out[0] = (char)(out[0] >= 'a' && out[0] <= 'z' ? out[0] - 32 : out[0]);
-        return;
-    }
-    if (np > 0u && strcmp(part[0], "platforms") == 0) {
-        for (f = 0u; f < (uint32_t)SEL_PLATFORM_FAMILY_COUNT; f++) {
-            if (strcmp(sel_platform_id(f), name) == 0) {
-                snprintf(out, cap, "%s", sel_platform_label(f));
-                return;
-            }
-        }
-    }
+    sel_uim_drill_label(d->drl_page, d->drl_path, name, out, cap);
 }
 
 /* I1235: rebuild the visible drill rows from the find field text, matched on the label the row shows. */
@@ -5978,15 +5938,7 @@ static void drl_open_q(desk* d, const char* path, uint32_t skip, const char* q) 
     const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
     char key[320], open[420];
     size_t n;
-    snprintf(key, sizeof key, "%s%s%s", d->col_key, path[0] != '\0' ? "\x1f" : "", path);
-    if (skip > 0u || q[0] != '\0') {
-        n = strlen(key);
-        snprintf(key + n, sizeof key - n, "\x1e%u", (unsigned)skip);
-    }
-    if (q[0] != '\0') {
-        n = strlen(key);
-        snprintf(key + n, sizeof key - n, "\x1d%s", q);
-    }
+    sel_uim_drill_key(d->col_key, path, skip, q, key, sizeof key);
     if (!d->pg_walk && q[0] == '\0') { /* I1286: a drill level is a page of the history (Back and Forward walk it); the find text is not part of it */
         sel_route_entry e;
         memset(&e, 0, sizeof e);
@@ -6038,7 +5990,7 @@ static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
 /* The crumbs of the drill path: label and the path a click reopens. Source, kind, then up to two more levels. */
 static uint32_t drl_crumbs(const desk* d, char (*label)[96], char (*path)[160]) {
     char part[3][96];
-    uint32_t np = drl_split(d->drl_path, part), n = 0u, k;
+    uint32_t np = sel_uim_drill_split(d->drl_path, part), n = 0u, k;
     snprintf(label[0], 96, "%s", d->pls_name);
     path[0][0] = '\0';
     n = 1u;

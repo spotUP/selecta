@@ -53,3 +53,6 @@ free
 realloc
 # I1415: the open progress snapshot the text UI module polls for its load bar.
 sel_engine_open_progress
+# I1442b: platform names the shared drill pages (src/uimodel/drill.c) show for the Platforms source.
+sel_platform_id
+sel_platform_label

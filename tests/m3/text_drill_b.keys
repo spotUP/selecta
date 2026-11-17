@@ -1,0 +1,28 @@
+# I1442b: as text_drill_a, then / types Alpha and Enter: the list narrows to the two Alpha artists.
+wait 400
+:
+s
+o
+u
+r
+c
+e
+Space
+h
+v
+s
+c
+Enter
+wait 600
+Down
+Down
+Enter
+wait 600
+/
+A
+l
+p
+h
+a
+Enter
+wait 800

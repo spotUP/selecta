@@ -1,0 +1,21 @@
+# I1442b: opens the hvsc source, picks Artists (third root row), nothing typed.
+wait 400
+:
+s
+o
+u
+r
+c
+e
+Space
+h
+v
+s
+c
+Enter
+wait 600
+Down
+Down
+Enter
+wait 600
+wait 300
