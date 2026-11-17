@@ -1,0 +1,61 @@
+-- The C compiler identification is AppleClang 17.0.0.17000604
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- third_party/nuade is empty in this worktree; using /Users/spot/Code/MusicPlayer/third_party/nuade
+-- third_party/libopenmpt is empty in this worktree; using /Users/spot/Code/MusicPlayer/third_party/libopenmpt
+-- selecta tables: commands=128 events=23 tags=407 meta=15
+-- Song length database skipped: pass -DSELECTA_SONGLENGTHS_TSV=<songlengths.tsv> to bake songlengths.bin
+-- The OBJC compiler identification is AppleClang 17.0.0.17000604
+-- Detecting OBJC compiler ABI info
+-- Detecting OBJC compiler ABI info - done
+-- Check for working OBJC compiler: /usr/bin/cc - skipped
+-- nuade: 125 players
+-- The CXX compiler identification is AppleClang 17.0.0.17000604
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found ZLIB: /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libz.tbd (found version "1.2.12")
+CMake Warning (author) at plugins/replayers/zxtune/CMakeLists.txt:58:
+  Syntax Warning in cmake code at column 55
+
+  Argument not separated from preceding token by whitespace.
+This warning is for project developers.  Use -Wno-author to suppress it.
+
+-- zxtune plugin skipped: set SELECTA_ZXTUNE_SRC to a zxtune checkout at e36902fe1cc06d9e73116db644b688708a7745d4
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+CMake Warning at third_party/libvgm/CMakeLists.txt:124 (find_package):
+  By not providing "FindSanitizers.cmake" in CMAKE_MODULE_PATH this project
+  has asked CMake to find a package configuration file provided by
+  "Sanitizers", but CMake did not find one.
+
+  Could not find a package configuration file provided by "Sanitizers" with
+  any of the following names:
+
+    Sanitizers.cps
+    sanitizers.cps
+    SanitizersConfig.cmake
+    sanitizers-config.cmake
+
+  Add the installation prefix of "Sanitizers" to CMAKE_PREFIX_PATH or set
+  "Sanitizers_DIR" to a directory containing one of the above files.  If
+  "Sanitizers" provides a separate development package or SDK, be sure it has
+  been installed.
+
+
+-- Performing Test Iconv_IS_BUILT_IN
+-- Performing Test Iconv_IS_BUILT_IN - Failed
+-- Found Iconv: /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libiconv.tbd
+-- nuade: 1 players
+-- Found Python3: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 (found version "3.14.10") found components: Interpreter
+-- Configuring done (115.4s)
+-- Generating done (4.1s)
+-- Build files have been written to: /Users/spot/Code/MusicPlayer/.claude/worktrees/gen-i1346b/build-i1346b
