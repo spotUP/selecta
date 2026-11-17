@@ -130,3 +130,21 @@ int sel_uim_tile_route(const sel_view_row* r, sel_uim_tile* out) {
     }
     return 0;
 }
+
+int sel_uim_about_line(const char* about, uint32_t i, uint32_t max, char* label, size_t lcap, char* value, size_t vcap) {
+    uint32_t k, links = 0;
+    const char* p = about;
+    if (about == NULL || i >= max) return 0;
+    for (k = 0; *p != '\0'; k++) {
+        const char* v = p + strlen(p) + 1u;
+        if (strcmp(p, "Link") == 0) links++;
+        if (k == i) {
+            if (strcmp(p, "Link") == 0) snprintf(label, lcap, "Link %u", (unsigned)links);
+            else snprintf(label, lcap, "%s", p);
+            snprintf(value, vcap, "%s", v);
+            return 1;
+        }
+        p = v + strlen(v) + 1u;
+    }
+    return 0;
+}

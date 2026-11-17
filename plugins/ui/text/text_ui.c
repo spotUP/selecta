@@ -952,7 +952,7 @@ static void tui_search_draw(tui* u, const sel_state* s, uint32_t width) {
 
 static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
     char buf[320];
-    uint32_t i, n, drawn = 0, rows = tui_main_rows(u);
+    uint32_t i, n, drawn = 0, hdr = 0, rows = tui_main_rows(u);
     txt_style label = tui_style(u, TXT_ROLE_LABEL);
     sel_uim_tile tile;
     const char* song;
@@ -981,6 +981,15 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
             snprintf(buf + at, sizeof buf - at, "  - %s", pg->sub);
         }
         tui_ptext(u, 1, 2, buf, width - 1u, label);
+        if (ready && pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* I1440o: the composer's DeepSID header, one "Label value" line each; Link rows are numbered */
+            char lab[40], val[300];
+            while (hdr + 1u < rows && sel_uim_about_line(pg->about, hdr, 12u, lab, sizeof lab, val, sizeof val)) {
+                tui_ptext(u, 1, 3u + hdr, lab, 14u, label);
+                tui_ptext(u, 16, 3u + hdr, val, width > 17u ? width - 17u : 1u, tui_style(u, TXT_ROLE_VALUE));
+                hdr++;
+            }
+        }
+        rows -= hdr;
         n = ready ? tui_page_count(u, s) : 0u;
         for (i = 0; i < n && i < rows; i++) {
             txt_style st = tui_style(u, i == u->pg_cur ? TXT_ROLE_CURSOR : TXT_ROLE_FILE);
@@ -988,8 +997,8 @@ static void tui_page_draw(tui* u, const sel_state* s, uint32_t width) {
                 break;
             }
             buf[0] = ' ';
-            tui_pfill(u, 0, 3u + i, width, 1, ' ', st);
-            tui_ptext(u, 1, 3u + i, buf, width - 1u, st);
+            tui_pfill(u, 0, 3u + hdr + i, width, 1, ' ', st);
+            tui_ptext(u, 1, 3u + hdr + i, buf, width - 1u, st);
             drawn++;
         }
         if (!ready) {

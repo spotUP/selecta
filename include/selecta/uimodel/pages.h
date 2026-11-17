@@ -72,6 +72,11 @@ typedef struct sel_uim_tile {
 } sel_uim_tile;
 int sel_uim_tile_route(const sel_view_row* r, sel_uim_tile* out);
 
+/* I1440o: the composer page header (sel_collection_page.about, label NUL value NUL pairs). Fills pair `i` (from 0) into `label` and
+ * `value`, at most `max` pairs shown; a "Link" row is labelled "Link <n>" (n counts the Link rows so far, a numbered list). Returns 0 past
+ * the last pair. Text and MUI draw the header through this; they share the numbering. */
+int sel_uim_about_line(const char* about, uint32_t i, uint32_t max, char* label, size_t lcap, char* value, size_t vcap);
+
 #ifdef __cplusplus
 }
 #endif

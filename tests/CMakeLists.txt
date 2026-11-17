@@ -3966,6 +3966,13 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_deepsid_list_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-deepsid-list COMMAND library_deepsid_list_test)
   set_tests_properties(library-deepsid-list PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_deepsid_list_ok")
+
+  # I1440o: composer header lines of the text UI over the DeepSID composer rows.
+  add_executable(uim_about_lines_test uimodel/about_lines_test.c)
+  target_include_directories(uim_about_lines_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(uim_about_lines_test PRIVATE selecta_uimodel selecta_library selecta_core)
+  add_test(NAME uim-about-lines COMMAND uim_about_lines_test)
+  set_tests_properties(uim-about-lines PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "uim_about_lines_ok")
   # I336: the library job thread runs the folder scan task off the caller's thread.
   add_executable(library_task_test library_task_test.c)
   target_include_directories(library_task_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
