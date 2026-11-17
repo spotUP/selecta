@@ -10,6 +10,7 @@
  * song added first. */
 #include "db_internal.h"
 #include "../md5.h"
+#include "../xxh32.h"
 #include "../source.h"
 
 #include <stdio.h>
@@ -62,14 +63,19 @@ static int exec2(sqlite3* db, const char* sql, const char* a, const char* b) {
  * unhashed. */
 static int store_hash(sqlite3* db, const char* key, const char* path) {
     char hex[33];
-    int rc;
+    int rc = SQLITE_OK;
     char old[33];
+    char ukey[SEL_UADE_KEY_CHARS + 1u];
 
-    if (!md5_of_file(path, hex)) return SQLITE_OK;
     sel_dup_md5_of(db, key, old);
-    rc = exec2(db, "UPDATE songs SET md5 = ?2 WHERE key = ?1", key, hex);
-    if (rc == SQLITE_OK) rc = exec2(db, "UPDATE files SET md5 = ?2 WHERE source = 'local' AND path = ?1", path, hex);
-    if (rc == SQLITE_OK) rc = sel_dup_after(db, old, key);
+    if (old[0] == '\0') { /* I774m: a song hashed earlier only needs its UADE key, not a second md5 */
+        if (!md5_of_file(path, hex)) return SQLITE_OK;
+        rc = exec2(db, "UPDATE songs SET md5 = ?2 WHERE key = ?1", key, hex);
+        if (rc == SQLITE_OK) rc = exec2(db, "UPDATE files SET md5 = ?2 WHERE source = 'local' AND path = ?1", path, hex);
+        if (rc == SQLITE_OK) rc = sel_dup_after(db, old, key);
+    }
+    /* I774m: the UADE key (xxh32 of the head) names the song in the bake files; filled in the same pass. An unreadable file keeps NULL. */
+    if (rc == SQLITE_OK && sel_uade_key_file(path, ukey)) rc = exec2(db, "UPDATE songs SET uade_key = ?2 WHERE key = ?1", key, ukey);
     return rc;
 }
 
@@ -82,7 +88,7 @@ static int hash_next(sqlite3* db, int64_t after, int64_t size, const char* base,
     char path[1200];
     int rc = sqlite3_prepare_v2(
         db,
-        "SELECT id, key, path FROM songs WHERE source = 'local' AND COALESCE(md5, '') = '' AND id > ?1"
+        "SELECT id, key, path FROM songs WHERE source = 'local' AND (COALESCE(md5, '') = '' OR (uade_key IS NULL AND ?2 <= 0 AND ?3 IS NULL)) AND id > ?1"
         " AND (?2 <= 0 OR size = ?2) AND (?2 > 0 OR ?3 IS NULL OR substr(path, -length(?3)) = ?3) ORDER BY id LIMIT 1",
         -1, &st, NULL);
 
@@ -419,6 +425,22 @@ static int op_best(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
+/* I774m: after the idle pass stored the UADE key of song `id`, fills its blank columns from the bake files (D2). */
+static int uade_fill_id(sel_library* lib, int64_t id) {
+    sqlite3_stmt* st = NULL;
+    char key[1200];
+    int hit = 0;
+    int rc = sqlite3_prepare_v2(lib->db, "SELECT key FROM songs WHERE id = ?1 AND uade_key IS NOT NULL", -1, &st, NULL);
+
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_int64(st, 1, id);
+    rc = sqlite3_step(st);
+    if (rc == SQLITE_ROW) snprintf(key, sizeof key, "%s", (const char*)sqlite3_column_text(st, 0));
+    sqlite3_finalize(st);
+    if (rc != SQLITE_ROW) return rc == SQLITE_DONE ? SQLITE_OK : rc;
+    return sel_library_uade_fill(lib, key, NULL, &hit);
+}
+
 int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     int rc = SQLITE_MISUSE;
 
@@ -426,6 +448,7 @@ int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* fou
     *id = 0;
     if (op->op == SEL_DUP_HASH) {
         rc = op_hash(lib->db, op, id);
+        if (rc == SQLITE_OK && *id != 0) rc = uade_fill_id(lib, *id); /* I774m: the key is now stored; fill the blanks from the bake */
     } else if (op->op == SEL_DUP_NEXT && op->row != NULL) {
         rc = op_dup_next(lib->db, op, id);
     } else if (op->op == SEL_BEST_SOURCE && op->out != NULL && op->key != NULL) {

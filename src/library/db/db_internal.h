@@ -59,6 +59,7 @@ struct sel_library {
     const sel_host* host;
     uint32_t account;
     sqlite3* db;
+    char uade_dir[SEL_PIN_PATH]; /* I774m: directory of library.db; the UADE bake files (songlengths.bin, uadeinfo.bin, uadecredits.bin, ...) sit beside it */
     int has_index;     /* a read-only index is attached as schema idx (index.c) */
     int idx_dup;       /* the attached index has dup_of / dup_members (exported at schema v18 or later; I1094c) */
     char src_off[160]; /* comma separated ids of the switched-off sources (library.sources_off, I265); read by search and radio */
@@ -272,6 +273,9 @@ void sel_home_chip_sql(uint32_t chip, const char* col, char* out, size_t cap);
 typedef void (*sel_home_item_fn)(void* ctx, uint32_t kind, const char* key, const char* name, const char* sub);
 int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, sel_home_item_fn fn, void* ctx);
 int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id); /* I678f, items.c */
+/* I774m: fills the blank cache columns and song_composers of song `song_key` from the bake files beside library.db (D2). `ukey` NULL reads
+ * songs.uade_key. *hit = 1 when the key is in the bake. Returns an SQLite code. */
+int sel_library_uade_fill(sel_library* lib, const char* song_key, const char* ukey, int* hit);
 int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* path, const char* song_key,
                                sel_genre_stats* stats);
 

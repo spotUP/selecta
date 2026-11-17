@@ -13,6 +13,9 @@
 #include "../composer.h"
 #include "../devilbox_loudness.h"
 #include "../net/mirrors.h"
+#include "../songlen.h"
+#include "../uadedb.h"
+#include "../xxh32.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -233,6 +236,80 @@ static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return SQLITE_OK;
 }
 
+/* I774m (design 2026-11-17-i774-uade-tools-all.md R6): the blanks of one song from the bake files. Tags and catalogue win (D2): a column
+ * that already holds a value stays, authors are only written when the song has no composer rows. */
+int sel_library_uade_fill(sel_library* lib, const char* song_key, const char* ukey, int* hit) {
+    char key[SEL_UADE_KEY_CHARS + 1u];
+    char path[SEL_PIN_PATH + 32u];
+    sel_uadeinfo info;
+    uint32_t entry = 0;
+    sqlite3_stmt* st = NULL;
+    size_t dn = strlen(lib->uade_dir);
+    int rc;
+
+    *hit = 0;
+    key[0] = '\0';
+    if (ukey != NULL) {
+        snprintf(key, sizeof key, "%s", ukey);
+    } else {
+        rc = sqlite3_prepare_v2(lib->db, "SELECT uade_key FROM songs WHERE key = ?1", -1, &st, NULL);
+        if (rc != SQLITE_OK) return rc;
+        sqlite3_bind_text(st, 1, song_key, -1, SQLITE_STATIC);
+        if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) == SQLITE_TEXT) {
+            snprintf(key, sizeof key, "%s", (const char*)sqlite3_column_text(st, 0));
+        }
+        sqlite3_finalize(st);
+    }
+    if (key[0] == '\0') return SQLITE_OK;
+    snprintf(path, sizeof path, "%s%s", lib->uade_dir, SEL_SONGLEN_NAME);
+    if (!sel_songlen_find(path, key, &entry)) return SQLITE_OK;
+    snprintf(path + dn, sizeof path - dn, "%s", SEL_UADEINFO_NAME);
+    if (!sel_uadeinfo_get(path, entry, &info)) return SQLITE_OK;
+    *hit = 1;
+    st = NULL;
+    rc = sqlite3_prepare_v2(
+        lib->db,
+        "UPDATE songs SET format = CASE WHEN COALESCE(format, '') = '' AND ?2 <> '' THEN ?2 ELSE format END,"
+        " year = CASE WHEN COALESCE(year, 0) = 0 AND ?3 > 0 THEN ?3 ELSE year END,"
+        " album = CASE WHEN COALESCE(album, '') = '' AND ?4 <> '' THEN ?4 ELSE album END,"
+        " channels = CASE WHEN channels = 0 THEN ?5 ELSE channels END,"
+        " publisher = CASE WHEN COALESCE(publisher, '') = '' AND ?6 <> '' THEN ?6 ELSE publisher END WHERE key = ?1",
+        -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, song_key, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 2, info.format, -1, SQLITE_STATIC);
+    sqlite3_bind_int(st, 3, (int)info.year);
+    sqlite3_bind_text(st, 4, info.album, -1, SQLITE_STATIC);
+    sqlite3_bind_int(st, 5, (int)info.channels);
+    sqlite3_bind_text(st, 6, info.publishers, -1, SQLITE_STATIC);
+    rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return rc;
+    if (info.authors[0] != '\0') {
+        sel_genre_op op;
+        char lines[sizeof info.authors];
+        char* c;
+        int found = 0;
+
+        rc = sqlite3_prepare_v2(lib->db, "SELECT 1 FROM song_composers WHERE song_key = ?1 LIMIT 1", -1, &st, NULL);
+        if (rc != SQLITE_OK) return rc;
+        sqlite3_bind_text(st, 1, song_key, -1, SQLITE_STATIC);
+        rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+        if (rc == SQLITE_ROW) return SQLITE_OK;
+        if (rc != SQLITE_DONE) return rc;
+        snprintf(lines, sizeof lines, "%s", info.authors);
+        for (c = lines; *c != '\0'; c++) {
+            if (*c == '~') *c = '\n';
+        }
+        memset(&op, 0, sizeof op);
+        op.key = song_key;
+        op.value = lines;
+        return op_apply(lib->db, &op, &found);
+    }
+    return SQLITE_OK;
+}
+
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     int rc = SQLITE_MISUSE;
 
@@ -243,6 +320,11 @@ int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, 
     } else if (op->op == SEL_SONGDB_PUT) {
         rc = op_put(lib->db, op);
         *found = rc == SQLITE_OK;
+    } else if (op->op == SEL_UADE_FILL && op->key != NULL) {
+        int hit = 0;
+
+        rc = sel_library_uade_fill(lib, op->key, op->value, &hit);
+        *found = hit;
     } else if (op->op == SEL_SONGDB_APPLY) {
         rc = op_apply(lib->db, op, found);
     } else if (op->op == SEL_COMPOSER_NEXT && op->out != NULL) {
@@ -312,6 +394,16 @@ int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* p
     sel_genre_op op;
     int cached;
 
+    memset(&op, 0, sizeof op);
+    op.op = SEL_UADE_FILL; /* I774m: a key in the bake never asks the endpoint */
+    op.key = song_key;
+    op.value = ukey;
+    cached = sel_genre_call(lib, &op, NULL);
+    if (cached < 0) return 0;
+    if (cached == 1) {
+        stats->bake_hits++;
+        return 1;
+    }
     memset(&op, 0, sizeof op);
     op.op = SEL_SONGDB_GET;
     op.key = ukey;

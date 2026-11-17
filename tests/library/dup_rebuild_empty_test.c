@@ -18,7 +18,8 @@
 /* I1400c: the step back also runs v20 in its own transaction: BEGIN, the songs(added) index, the user_version write and COMMIT = 4 more. */
 /* I1417: v21 (4 more, already over the old bound) and v22 (BEGIN, index, search_cache delete, user_version write, COMMIT = 5). */
 /* I1432: v23 (ratings from liked): BEGIN, the INSERT, the DELETE, the user_version write, COMMIT = 5 more. */
-#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5 + 5)
+/* I774m: v24 (uade key, channels, publisher): BEGIN, 3 ALTERs, the user_version write, COMMIT = 6 more. */
+#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5 + 5 + 6)
 
 static int g_fail;
 static int g_stmts;
@@ -84,7 +85,8 @@ int main(int argc, char** argv) {
     CHECK(sel_schema_version(db) == SEL_LIB_SCHEMA_VERSION);
     run(db,
         "DROP TRIGGER IF EXISTS source_songs_state_ad; DROP TABLE source_state; DROP INDEX songs_dup_of; DROP TABLE dup_pick;"
-        "ALTER TABLE songs DROP COLUMN dup_of; ALTER TABLE songs DROP COLUMN dup_members; PRAGMA user_version=17;");
+        "ALTER TABLE songs DROP COLUMN dup_of; ALTER TABLE songs DROP COLUMN dup_members;"
+        "ALTER TABLE songs DROP COLUMN uade_key; ALTER TABLE songs DROP COLUMN channels; ALTER TABLE songs DROP COLUMN publisher; PRAGMA user_version=17;");
     CHECK(sel_schema_version(db) == 17);
 
     /* v18 on an empty table. */
