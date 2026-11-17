@@ -10,18 +10,18 @@
 /* Stored order 0..4. Row 3 has no catalogue title: it shows (and sorts as) its file name "alpha.mod". Rows 1 and 4 tie on
  * every sort key except title. */
 static const sel_coll_rec REC[N] = {
-    {"local:/m/zed.mod", "Zed", "Mike", "Blue", 300, 90000},
-    {"local:/m/b.mod", "bravo", "adam", "Red", 100, 60000},
-    {"local:/m/c.mod", "Charlie", "Zoe", "green", 500, 30000},
-    {"local:/m/alpha.mod", "", "Mike", "Blue", 200, 60000},
-    {"local:/m/e.mod", "Echo", "adam", "Red", 100, 60000},
+    {"local:/m/zed.mod", "Zed", "Mike", "Blue", 300, 90000, ""},
+    {"local:/m/b.mod", "bravo", "adam", "Red", 100, 60000, "Cover, Vocal"},
+    {"local:/m/c.mod", "Charlie", "Zoe", "green", 500, 30000, ""},
+    {"local:/m/alpha.mod", "", "Mike", "Blue", 200, 60000, "Arp, Cover"},
+    {"local:/m/e.mod", "Echo", "adam", "Red", 100, 60000, "Vocal"},
 };
 
 static int fails;
 
 static void expect(const char* what, uint32_t sort, uint32_t desc, const char* filter, const uint32_t* want, uint32_t want_n) {
     uint32_t out[N], got, i;
-    got = sel_coll_order_build(REC, N, sort, desc, filter, out);
+    got = sel_coll_order_build(REC, N, sort, desc, filter, NULL, out);
     if (got != want_n) {
         printf("FAIL %s: shown %u want %u\n", what, got, want_n);
         fails++;
@@ -75,6 +75,23 @@ int main(void) {
     expect("filter album + title desc", SEL_COLL_SORT_TITLE, 1, "red", f_red, 2);
     expect("filter none match", SEL_COLL_SORT_TITLE, 0, "qqq", NULL, 0);
 
+    {   /* I1440n2: the DeepSID tag filter: whole names, case-insensitive, combined with the text filter and the sort */
+        uint32_t out[N], got;
+        char all[64] = "";
+        got = sel_coll_order_build(REC, N, SEL_COLL_SORT_TITLE, 0, "", "cover", out);
+        if (got != 2 || out[0] != 3 || out[1] != 1) { printf("FAIL tag cover: %u\n", got); fails++; }
+        got = sel_coll_order_build(REC, N, SEL_COLL_SORT_CUSTOM, 0, "", "Vocal", out);
+        if (got != 2 || out[0] != 1 || out[1] != 4) { printf("FAIL tag vocal: %u\n", got); fails++; }
+        got = sel_coll_order_build(REC, N, SEL_COLL_SORT_CUSTOM, 0, "echo", "Vocal", out);
+        if (got != 1 || out[0] != 4) { printf("FAIL tag + text: %u\n", got); fails++; }
+        got = sel_coll_order_build(REC, N, SEL_COLL_SORT_CUSTOM, 0, "", "Voc", out); /* a prefix is not the tag */
+        if (got != 0) { printf("FAIL tag prefix: %u\n", got); fails++; }
+        got = sel_coll_order_build(REC, N, SEL_COLL_SORT_CUSTOM, 0, "", "", out);
+        if (got != N) { printf("FAIL empty tag: %u\n", got); fails++; }
+        sel_coll_tags_merge(all, sizeof all, "Cover, Vocal");
+        sel_coll_tags_merge(all, sizeof all, "arp, cover");
+        if (memcmp(all, "Cover\0Vocal\0arp\0\0", 17) != 0) { printf("FAIL tags merge\n"); fails++; }
+    }
     if (strcmp(sel_coll_title(&REC[3]), "alpha.mod") != 0 || strcmp(sel_coll_title(&REC[0]), "Zed") != 0) {
         printf("FAIL title fallback\n");
         fails++;
