@@ -6,6 +6,8 @@
 #include <selecta/gui/gui_genart.h>
 #include <selecta/library_item.h>
 #include "../source.h"
+#include "../uadedb.h"
+#include <selecta/uimodel/siinfo.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -886,6 +888,19 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
                 }
             }
             sqlite3_finalize(st);
+        }
+        if (rc == SQLITE_OK) { /* I774n R9: the UADE bake sections (Credits, Other Sources, Found In) of the song's uade_key, after the catalogue rows */
+            sqlite3_stmt* uk = NULL;
+            if (sqlite3_prepare_v2(lib->db, "SELECT uade_key FROM songs WHERE key = ?1 AND uade_key IS NOT NULL", -1, &uk, NULL) == SQLITE_OK) {
+                sqlite3_bind_text(uk, 1, op->key, -1, SQLITE_STATIC);
+                if (sqlite3_step(uk) == SQLITE_ROW) {
+                    static sel_uim_si_input si; /* the worker is one thread; the struct is ~4 KB */
+                    if (sel_uadesong_load(lib->uade_dir, (const char*)sqlite3_column_text(uk, 0), &si)) {
+                        rows += (int64_t)sel_uim_si_panel_put(&si, op->out, op->out_cap, &used);
+                    }
+                }
+                sqlite3_finalize(uk);
+            }
         }
     } else if (op->op == SEL_USER_CUE_SET) {
         sqlite3_stmt* st = NULL;

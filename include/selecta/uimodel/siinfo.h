@@ -50,6 +50,13 @@ typedef struct {
 /* Builds the lines in display order; a section with no data is left out, including its heading. Returns the count (<= max). */
 uint32_t sel_uim_si_lines(const sel_uim_si_input* in, sel_uim_si_line* out, uint32_t max);
 
+/* I774n R9: the lines as "label\0value\0" panel pairs (sel_state.panel), appended at out[*used] (the list ends in an empty label, as
+ * panel_put in src/library/db/user.c leaves it). The line kind rides in the first label byte: heading 0x01, Found In kind 0x02,
+ * Found In name 0x03 (empty label); Credits and Other Sources rows are plain pairs. Stops when a pair does not fit. Returns the pairs added. */
+uint32_t sel_uim_si_panel_put(const sel_uim_si_input* in, char* out, uint32_t cap, uint32_t* used);
+/* Decodes a panel label: returns its kind (CREDIT for a plain pair) and sets *text to the label without the tag byte. */
+sel_uim_si_kind sel_uim_si_panel_kind(const char* label, const char** text);
+
 #ifdef __cplusplus
 }
 #endif
