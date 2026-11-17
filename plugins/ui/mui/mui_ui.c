@@ -4227,11 +4227,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1, mui_route_send, s); /* I794 (T1) */
     } else if (id == CTL_COL_TAG) { /* I1440n3: All Tags, then each tag of the page, then All Tags again (MUI 3.8 has no popup; the button cycles) */
         const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
-        char tag[64], line[128];
+        char tag[64], tag_line[128];
         if (pg != NULL && (pg->tag[0] != '\0' || sel_uim_tag_name(pg, 0u) != NULL)) { /* nothing to pick and nothing to clear: no line */
             sel_uim_tag_next(pg, pg->tag, tag, sizeof tag);
-            sel_uim_tag_line(tag, line, sizeof line);
-            (void)mui_engine_line(s, line);
+            sel_uim_tag_line(tag, tag_line, sizeof tag_line);
+            (void)mui_engine_line(s, tag_line);
         }
     } else if (id == CTL_COL_ARTIST) {
         const sel_collection_page* pg = sel_engine_state(s->engine)->collection; /* META_ARTIST: the album page's artist link */

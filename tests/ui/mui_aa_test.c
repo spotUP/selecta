@@ -1075,7 +1075,7 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
     CHECK(count_of(ui, "mui_aalist_new(") == 6 && /* I1175 2cab9cf1: + the Sources page list src_list, the 6th */  count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
     CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 3 && count_of(ui, "sp.no_select = 1;") == 1,          "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "UPA_List_Columns") == 1 && count_of(ui, "UPA_List_Playing") == 1 && count_of(ui, "UPA_List_Picked") == 10, /* I1175 2cab9cf1: + src_list notify and read-back */ "columns %d, playing %d, picked %d", count_of(ui, "UPA_List_Columns"),
+    CHECK(count_of(ui, "UPA_List_Columns") == 1 && count_of(ui, "UPA_List_Playing") == 1 && count_of(ui, "UPA_List_Picked") == 12, /* I1175 2cab9cf1: + src_list notify and read-back; I1440q2: + info_list notify and read-back */ "columns %d, playing %d, picked %d", count_of(ui, "UPA_List_Columns"),
           count_of(ui, "UPA_List_Playing"), count_of(ui, "UPA_List_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");
