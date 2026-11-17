@@ -211,6 +211,19 @@ typedef struct mui_state {
     char col_title_buf[160];
     char col_meta_buf[224];
     uint32_t col_serial;            /* the collection serial the list shows */
+    char drl_src[64];               /* I1442b: the drill page's source id, window skip and typed filter (parsed from the page key) */
+    uint32_t drl_skip;
+    char drl_find[64];
+    uint32_t drl_ord[SEL_DRILL_WINDOW]; /* the group indexes the list shows (after the local filter), drl_vn of them */
+    uint32_t drl_vn;
+    Object* col_crumb_grp;          /* I1442b: crumb buttons (Source > Formats > Protracker), the last one disabled */
+    Object* col_crumb[4];
+    char col_crumb_buf[4][96];
+    char drl_cpath[4][160];         /* the path each crumb reopens */
+    uint32_t drl_cn;
+    Object* col_find;               /* I1442b: the drill filter field; ShowMe per sel_uim_drill_filterable */
+    uint32_t drl_find_due;          /* mui_now_ms() when the typed filter is applied, 0 = none pending (debounce) */
+    int drl_find_shown;
     sel_uim_briefs col_brf;         /* I1306b: the catalogued song titles of the page, one posted song_briefs read per page (shared model) */
     int col_shown;                  /* 1 while col_page replaces the list */
     Object* list;
@@ -355,6 +368,7 @@ typedef struct mui_state {
     Object* src_list;
     Object* src_switch;
     Object* src_sync;
+    Object* src_open;               /* I1442b: opens the picked source's drill root */
     Object* mode_row;               /* I1175: the Library mode Cycle above the list */
     Object* cyc_libmode;
     const char* libmode_ent[MUI_LIBMODE_COUNT + 1u];
@@ -632,7 +646,10 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_NAV_FWD 0x2802L    /* I794: top bar Forward */
 #define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
 #define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
-#define CTL_COL_TAG 0x2814L    /* I1440n3: the Tag button of a collection page cycles the DeepSID tag filter (All Tags first) */
+#define CTL_COL_CRUMB_BASE 0x2AE0L /* I1442b: the drill page crumb buttons, CTL_COL_CRUMB_BASE + i (up to 4) */
+#define CTL_COL_FIND 0x2AE8L       /* I1442b: the drill page find field changed (debounced in mui_drill_find_tick) */
+#define CTL_SRC_OPEN 0x2AC7L       /* I1442b: the Sources page Open button (opens the picked source's drill root) */
+#define CTL_COL_TAG 0x2814L   /* I1440n3: the Tag button of a collection page cycles the DeepSID tag filter (All Tags first) */
 #define CTL_NP_TOGGLE 0x2805L  /* I798 (T2, R3): Hide / Show Now Playing at the right end of the top bar */
 #define CTL_PAL_BTN 0x2806L    /* I798 (O1): the Commands button opening the palette window */
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
@@ -1598,6 +1615,18 @@ static void mui_search_live_notify(Object* field) {
     }
 }
 
+/* I1442b: the drill find field notifies per change (CTL_COL_FIND); mui_drill_find_tick applies it after a short pause. */
+static void mui_find_live_notify(Object* field) {
+    ULONG str = 0;
+    if (field == NULL) {
+        return;
+    }
+    GetAttr(UPA_Field_String, field, &str);
+    if (str != 0) {
+        DoMethod((Object*)str, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_FIND);
+    }
+}
+
 /* I615d (design 8.3): the window-wide top bar of the DEFAULT tier, centred like topbar_compute: Home (round icon button), the search field
  * and Browse joined to its right end by a 1 px divider. Built only on an RTG screen; on the bitmap tier the slot is an empty hidden group
  * (the search field then stays in the tool row). One search String and one control id (CTL_P4_BASE + P4_SEARCH) either way. */
@@ -1816,20 +1845,15 @@ static const char* mui_col_row(void* ctx, long row) {
     const char* base;
     static char tidy[256]; /* I1387: the row text is read at once by the list callback, one row at a time */
     long i;
+    if (pg != NULL && pg->rows != NULL && mui_col_groups(pg)) { /* I1442b: "label  count", Previous / Next rows (shared rules, map/mui_drill.c) */
+        if (row < 0 || (uint32_t)row >= mui_drill_rows(pg, s->drl_skip, s->drl_vn)) {
+            return "";
+        }
+        mui_drill_text(pg, s->drl_skip, s->drl_ord, s->drl_vn, row, tidy, sizeof tidy);
+        return tidy;
+    }
     if (pg == NULL || pg->rows == NULL || row < 0 || (uint32_t)row >= pg->songs) {
         return "";
-    }
-    if (mui_col_groups(pg)) { /* I1440s: "label  count", the label as the shared drill rule shows it */
-        char lab[200];
-        for (r = pg->rows, i = 0; i < row && *r != '\0'; i++) {
-            r += strlen(r) + 1u;
-            r += strlen(r) + 1u;
-            r += strlen(r) + 1u;
-        }
-        sel_uim_drill_row_label(pg->drill_path, r, lab, sizeof lab);
-        r += strlen(r) + 1u;
-        snprintf(tidy, sizeof tidy, "%s%s%s", lab, r[0] != '\0' && strcmp(r, "0") != 0 ? "  " : "", strcmp(r, "0") != 0 ? r : "");
-        return tidy;
     }
     r = sel_uim_briefs_title(&s->col_brf, pg, (uint32_t)row);
     if (r != NULL) {
@@ -1921,6 +1945,25 @@ static Object* mui_col_page_group(mui_state* s) {
     DoMethod(head, OM_ADDMEMBER, s->col_tag);
     set(s->col_tag, MUIA_ShowMe, FALSE);
     DoMethod(g, OM_ADDMEMBER, head);
+    s->col_crumb_grp = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE); /* I1442b */
+    s->col_find = mui_make_string(CTL_COL_FIND, 0, "Filter");
+    if (s->col_crumb_grp == NULL || s->col_find == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < 4u; i++) {
+        s->col_crumb_buf[i][0] = '\0';
+        s->col_crumb[i] = mui_make_button_w("-", "tile", CTL_COL_CRUMB_BASE + (LONG)i, 0);
+        if (s->col_crumb[i] == NULL) {
+            return NULL;
+        }
+        set(s->col_crumb[i], MUIA_ShowMe, FALSE);
+        DoMethod(s->col_crumb_grp, OM_ADDMEMBER, s->col_crumb[i]);
+    }
+    DoMethod(s->col_crumb_grp, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(s->col_crumb_grp, OM_ADDMEMBER, s->col_find);
+    set(s->col_find, MUIA_ShowMe, FALSE);
+    mui_find_live_notify(s->col_find);
+    DoMethod(g, OM_ADDMEMBER, s->col_crumb_grp);
     DoMethod(g, OM_ADDMEMBER, s->col_meta);
     s->col_about_grp = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (s->col_about_grp == NULL) {
@@ -2073,9 +2116,11 @@ static Object* mui_sources_page_group(mui_state* s) {
     lg = mui_aalist_new(&sp, &s->src_list);
     s->src_switch = mui_make_button_w("Switch On or Off", "tile", CTL_SRC_SWITCH, 0);
     s->src_sync = mui_make_button_w("Sync", "tile", CTL_SRC_SYNC, 0);
-    if (g == NULL || bar == NULL || lg == NULL || s->src_list == NULL || s->src_switch == NULL || s->src_sync == NULL) {
+    s->src_open = mui_make_button_w("Open", "tile", CTL_SRC_OPEN, 0);
+    if (g == NULL || bar == NULL || lg == NULL || s->src_list == NULL || s->src_switch == NULL || s->src_sync == NULL || s->src_open == NULL) {
         return NULL;
     }
+    DoMethod(bar, OM_ADDMEMBER, s->src_open);
     DoMethod(s->src_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_SRC_LIST);
     DoMethod(bar, OM_ADDMEMBER, s->src_switch);
     DoMethod(bar, OM_ADDMEMBER, s->src_sync);
@@ -3001,7 +3046,39 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         mui_col_about_sync(s, pg);
         mui_col_photo_sync(s, pg, st->library_serial);
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
-        SetAttrs(s->col_list, UPA_List_Count, (ULONG)pg->songs, UPA_List_Active, (ULONG)-1L, TAG_DONE);
+        if (mui_col_groups(pg)) { /* I1442b: skip, source and find come from the page key; the list shows the window plus Previous / Next */
+            char dpath[160];
+            sel_uim_drill_key_parse(pg->key, s->drl_src, sizeof s->drl_src, dpath, sizeof dpath, &s->drl_skip, s->drl_find, sizeof s->drl_find);
+            s->drl_vn = mui_drill_filter(pg, "", s->drl_ord, (uint32_t)SEL_DRILL_WINDOW);
+            s->drl_find_due = 0u;
+            if (s->drl_find[0] == '\0') {
+                SetAttrs(s->col_find, MUIA_String_Contents, (ULONG) "", TAG_DONE); /* a new level starts unfiltered */
+            }
+            {
+                char cl[4][96];
+                uint32_t k;
+                s->drl_cn = sel_uim_drill_crumbs(pg->title, pg->drill_path, cl, s->drl_cpath);
+                for (k = 0; k < 4u; k++) {
+                    if (k < s->drl_cn) {
+                        snprintf(s->col_crumb_buf[k], sizeof s->col_crumb_buf[k], "%s", cl[k]);
+                        mui_caption_set(s->col_crumb[k], s->col_crumb_buf[k]);
+                        set(s->col_crumb[k], MUIA_Disabled, k + 1u == s->drl_cn ? TRUE : FALSE);
+                    }
+                    set(s->col_crumb[k], MUIA_ShowMe, k < s->drl_cn ? TRUE : FALSE);
+                }
+                set(s->col_crumb_grp, MUIA_ShowMe, TRUE);
+            }
+        } else {
+            s->drl_skip = 0u;
+            s->drl_vn = 0u;
+            s->drl_cn = 0u;
+            set(s->col_crumb_grp, MUIA_ShowMe, FALSE);
+        }
+        {
+            int fshow = mui_col_groups(pg) && sel_uim_drill_filterable(pg->drill, pg->drill_path, pg->songs, s->drl_skip, s->drl_find);
+            set(s->col_find, MUIA_ShowMe, fshow ? TRUE : FALSE);
+        }
+        SetAttrs(s->col_list, UPA_List_Count, (ULONG)(mui_col_groups(pg) ? mui_drill_rows(pg, s->drl_skip, s->drl_vn) : pg->songs), UPA_List_Active, (ULONG)-1L, TAG_DONE);
         {
             int32_t first;
             if (mui_route_take_scroll(&s->route, &first)) { /* I1329i: Back or Forward: the list is where it was left */
@@ -3021,6 +3098,20 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
             mui_caption_set(s->col_tag, s->col_tag_buf);
         }
         set(s->col_tag, MUIA_ShowMe, show ? TRUE : FALSE);
+    }
+    if (col && s->drl_find_due != 0u && (int32_t)(mui_now_ms() - s->drl_find_due) >= 0 && mui_col_groups(pg)) { /* I1442b: the debounced filter */
+        char text[160];
+        s->drl_find_due = 0u;
+        mui_str_utf8(s->col_find, text, sizeof text);
+        if (sel_uim_drill_engine_find(pg->drill_path)) { /* the engine narrows these levels: reopen in place, no route entry */
+            char line[512];
+            if (strcmp(text, s->drl_find) != 0 && mui_drill_find_line(s->drl_src, pg->drill_path, text, line, sizeof line) != 0u) {
+                mui_engine_line(s, line);
+            }
+        } else { /* the level is one window: the shared local match narrows it */
+            s->drl_vn = mui_drill_filter(pg, text, s->drl_ord, (uint32_t)SEL_DRILL_WINDOW);
+            SetAttrs(s->col_list, UPA_List_Count, (ULONG)mui_drill_rows(pg, s->drl_skip, s->drl_vn), UPA_List_Active, (ULONG)-1L, TAG_DONE);
+        }
     }
     mui_col_briefs(s, pg, col);
     mui_pages_sync(s, st, cur, col);
@@ -4253,23 +4344,44 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (pg != NULL && pg->sub[0] != '\0') {
             mui_route_click(&s->route, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, pg->sub, pg->sub, "", mui_route_send, s);
         }
+    } else if (id == CTL_COL_FIND) { /* I1442b: restart the pause; mui_sync applies the text when it has passed */
+        s->drl_find_due = mui_now_ms() + 250u;
+        if (s->drl_find_due == 0u) {
+            s->drl_find_due = 1u;
+        }
+    } else if (id >= CTL_COL_CRUMB_BASE && id < CTL_COL_CRUMB_BASE + 4L) { /* I1442b: a crumb reopens that level of the source */
+        uint32_t k = (uint32_t)(id - CTL_COL_CRUMB_BASE);
+        const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
+        if (pg != NULL && k < s->drl_cn) {
+            char key[SEL_ROUTE_KEY_MAX];
+            sel_uim_drill_key(s->drl_src, s->drl_cpath[k], 0u, "", key, sizeof key);
+            mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, key, pg->title, "", mui_route_send, s);
+        }
     } else if (id == CTL_COL_LIST) {
         const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
         long picked = -1;
         char pl[512];
         GetAttr(UPA_List_Picked, s->col_list, (ULONG*)&picked);
-        if (mui_col_groups(pg) && picked >= 0 && (uint32_t)picked < pg->songs) { /* I1440s: a group row opens the next drill level of the source */
-            const char* r = pg->rows;
-            char child[160], key[SEL_ROUTE_KEY_MAX];
-            long i;
-            for (i = 0; i < picked; i++) {
-                r += strlen(r) + 1u;
-                r += strlen(r) + 1u;
-                r += strlen(r) + 1u;
-            }
-            if (sel_uim_drill_child(pg->drill_path, pg->drill, r, child, sizeof child) != 0) {
-                snprintf(key, sizeof key, "%s\x1f%s", pg->key, child);
+        if (mui_col_groups(pg) && picked >= 0) { /* I1442b: a group row opens the next level; Previous / Next move the window */
+            long g = mui_drill_pick(pg, s->drl_skip, s->drl_ord, s->drl_vn, picked);
+            char key[SEL_ROUTE_KEY_MAX];
+            if (g == MUI_DRILL_PREV || g == MUI_DRILL_NEXT) {
+                uint32_t sk = g == MUI_DRILL_NEXT ? s->drl_skip + (uint32_t)SEL_DRILL_WINDOW : (s->drl_skip > (uint32_t)SEL_DRILL_WINDOW ? s->drl_skip - (uint32_t)SEL_DRILL_WINDOW : 0u);
+                sel_uim_drill_key(s->drl_src, pg->drill_path, sk, s->drl_find, key, sizeof key);
                 mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, key, pg->title, "", mui_route_send, s);
+            } else if (g >= 0) {
+                const char* r = pg->rows;
+                char child[160];
+                long i;
+                for (i = 0; i < g; i++) {
+                    r += strlen(r) + 1u;
+                    r += strlen(r) + 1u;
+                    r += strlen(r) + 1u;
+                }
+                if (sel_uim_drill_child(pg->drill_path, pg->drill, r, child, sizeof child) != 0) {
+                    sel_uim_drill_key(s->drl_src, child, 0u, "", key, sizeof key);
+                    mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, key, pg->title, "", mui_route_send, s);
+                }
             }
             return;
         }
@@ -4312,6 +4424,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         long picked = -1;
         GetAttr(UPA_List_Picked, s->src_list, (ULONG*)&picked);
         s->src_pick = picked;
+    } else if (id == CTL_SRC_OPEN) { /* I1442b: Open (or a double pick) shows the source's drill root, as the Mac Sources page Open */
+        char key[SEL_ROUTE_KEY_MAX], name[64];
+        if (s->src_pick >= 0 && mui_srcs_open(&s->srcs, (uint32_t)s->src_pick, key, sizeof key, name, sizeof name) != 0u) {
+            mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, key, name, "", mui_route_send, s);
+        }
     } else if (id == CTL_SRC_SWITCH) {
         if (s->src_pick >= 0) {
             mui_srcs_toggle(&s->srcs, (uint32_t)s->src_pick, mui_p8_send, s);
