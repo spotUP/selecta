@@ -7161,9 +7161,7 @@ static int pl_key(desk* d, const sel_gui_input* ev) {
  * (STIL note, composer, release, year, genre, rating, play count: sel_state.panel) and the flag buttons. The engine owns
  * the flags and the note (FLAG wrong, FLAG skip, NOTE: the library flags table, the rows `selecta-cli wrong` lists); the
  * page draws the data and sends those verbs for the song being played. */
-enum { SI_BUTTONS = 3, SI_ROW_H = 20, SI_THUMB = 48, SI_FOUND_N = 5 };
-/* I774n R9: the Found In kind labels sel_uim_si_lines produces, in its order; one bit of si_found_open per entry. */
-static const char* const si_found_kinds[SI_FOUND_N] = {"Sites", "Collections", "Groups", "BBS", "CD-ROMs"};
+enum { SI_BUTTONS = 3, SI_ROW_H = 20, SI_THUMB = 48, SI_FOUND_N = SEL_UIM_SI_FOUND_N };
 
 static const char* si_button_label(uint32_t k) {
     return sel_uim_flag_label(k);
@@ -7247,9 +7245,7 @@ static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const 
                 seen |= bit;
             }
             if (kind == (int)SEL_UIM_SI_FOUND_KIND) { /* I774n R9: the kind's count line; its names follow only while it is expanded */
-                uint32_t k;
-                for (k = 0; k < SI_FOUND_N && strcmp(text, si_found_kinds[k]) != 0; k++) {}
-                d->si_fk_idx = k < SI_FOUND_N ? (int32_t)k : -1;
+                d->si_fk_idx = sel_uim_si_found_index(text);
                 if (d->si_fk_idx >= 0) {
                     char cnt[24];
                     snprintf(cnt, sizeof cnt, "%s", val);

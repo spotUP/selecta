@@ -56,6 +56,9 @@ uint32_t sel_uim_si_lines(const sel_uim_si_input* in, sel_uim_si_line* out, uint
 uint32_t sel_uim_si_panel_put(const sel_uim_si_input* in, char* out, uint32_t cap, uint32_t* used);
 /* Decodes a panel label: returns its kind (CREDIT for a plain pair) and sets *text to the label without the tag byte. */
 sel_uim_si_kind sel_uim_si_panel_kind(const char* label, const char** text);
+/* I774n R11b: index (0..SEL_UIM_SI_FOUND_N-1) of a Found In kind label, -1 when unknown; the UI keeps one expand bit per index. */
+#define SEL_UIM_SI_FOUND_N 5
+int sel_uim_si_found_index(const char* text);
 
 #ifdef __cplusplus
 }

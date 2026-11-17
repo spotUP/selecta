@@ -3179,8 +3179,8 @@ static void test_songinfo_panel(void) {
     panel = meta != NULL ? strstr(meta, "const char* p = st->panel;") : NULL;
     sub = panel != NULL ? strstr(panel, "\"Subsong: %lu of %lu\"") : NULL;
     CHECK(panel != NULL && sub != NULL, "Song Information does not read the engine panel rows before the subsong line");
-    CHECK(panel != NULL && strstr(panel, "sel_uim_tidy_info(p, val, sizeof val)") != NULL, "panel rows skip the shared tidy rule");
-    CHECK(strstr(src, "#define MUI_INFO_MAX 48u") != NULL, "info rows cannot hold the DeepSID rows");
+    CHECK(panel != NULL && strstr(panel, "sel_uim_tidy_info(text, val, sizeof val)") != NULL && strstr(panel, "sel_uim_si_panel_kind(p, &text)") != NULL, "panel rows skip the shared tidy rule");
+    CHECK(strstr(src, "#define MUI_INFO_MAX 112u") != NULL, "info rows cannot hold the DeepSID rows");
 }
 
 /* I1440q2: composer Link rows and CSDb release rows open their URL through openurl.library (absent: nothing), the release URL from the shared
