@@ -26,6 +26,7 @@ static const sel_uim_side_kind TUI_SIDE_KIND_CHIPS = SEL_UIM_SIDE_CHIPS;
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/failtext.h>
 #include <selecta/uimodel/libfilter.h>
+#include <selecta/uimodel/siinfo.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel.h>
@@ -88,6 +89,8 @@ typedef struct tui {
     int page;           /* 0 none, 1 Now Playing, 2 Song Information (I1191) */
     char si_note[TUI_NOTE_BYTES]; /* the Song Information note field */
     uint32_t si_actions, np_draws; /* I1191 sentinels */
+    int si_names;                  /* I774n R10: Found In shows the source names under each count */
+    uint32_t si_facets;            /* I774n R10 sentinel: facet searches started from the page */
     int splash_wanted;  /* no --exec was given: the start screen may show (row I355) */
     int splash_off;     /* a key or a song ended the start screen for good */
     int splash_shown;   /* the frame being drawn is the start screen */
@@ -420,6 +423,8 @@ static void tui_library_search(tui* u, const char* query) {
     }
     u->lib_empty_query = query[0] == '\0';
 }
+
+static void tui_songinfo_facet(tui* u, const char* label, const char* term); /* I774n R10, defined with the song info page */
 
 /* The search prompt: on the Library screen, or with an empty line, it filters the Library tree; elsewhere a query lists the categorized results (the desktop's Songs, Albums, Artists sections). */
 static void tui_search_submit(tui* u, const char* query) {
@@ -1452,6 +1457,13 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
                 tui_send(u, fl);
             }
         }
+    } else if (strcmp(name, "si_names") == 0) {
+        u->si_names = !u->si_names;
+    } else if (strcmp(name, "si_format") == 0 || strcmp(name, "si_channels") == 0 || strcmp(name, "si_publisher") == 0) {
+        if (u->page == TUI_INFO_SONGINFO) {
+            tui_songinfo_facet(u, name[3] == 'f' ? "Format" : name[3] == 'c' ? "Channels" : "Group / Publisher",
+                               name[3] == 'f' ? "format" : name[3] == 'c' ? "channels" : "publisher");
+        }
     } else if (strcmp(name, "si_edit") == 0) {
         if (u->page == TUI_INFO_SONGINFO) {
             txt_cmdline_open(&u->cmd);
@@ -2153,7 +2165,7 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
 
 
 /* Every META tag the replayer reported, in tags.def order (the Song Information page; the side panel is the detail region). */
-static void tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
+static uint32_t tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32_t top) {
     const uintptr_t absent = (uintptr_t)-1;
     uint32_t tag, y = top + 1u;
     uint32_t w = u->pv_w - x - 1u;
@@ -2202,6 +2214,56 @@ static void tui_songinfo_tags(tui* u, const sel_state* s, uint32_t x, uint32_t t
             y++;
             u->meta_panel_rows++;
             p = value + strlen(value) + 1;
+        }
+    }
+    return y;
+}
+
+/* I774n R10: the R8 sections (Credits, Other Sources, Found In) below the tag rows, from sel_uim_si_lines; a section with no data has no
+ * heading (Johan A12). Found In shows a count per kind, the names under it after n. */
+static const sel_uim_si_line* tui_si_lines(const sel_state* s, uint32_t* n) {
+    static sel_uim_si_line ln[SEL_UIM_SI_LINES_MAX]; /* about 40 KB: static, never on the 68k stack */
+    *n = s->songinfo != NULL ? sel_uim_si_lines(s->songinfo, ln, SEL_UIM_SI_LINES_MAX) : 0u;
+    return ln;
+}
+
+static void tui_songinfo_sections(tui* u, const sel_state* s, uint32_t x, uint32_t y) {
+    uint32_t n, i, w = u->pv_w - x - 1u;
+    const sel_uim_si_line* ln = tui_si_lines(s, &n);
+    for (i = 0; i < n && y < (u->pv_rows + 2u) - 1u; i++) {
+        if (ln[i].kind == SEL_UIM_SI_FOUND_NAME && !u->si_names) {
+            continue;
+        }
+        if (ln[i].kind == SEL_UIM_SI_HEADING) {
+            y++;
+            tui_ptext(u, x, y++, ln[i].key, w, tui_style(u, TXT_ROLE_LABEL));
+        } else if (ln[i].kind == SEL_UIM_SI_FOUND_NAME) {
+            tui_ptext(u, x + 2u, y++, ln[i].val, w > 2u ? w - 2u : 1u, tui_style(u, TXT_ROLE_DIM));
+        } else {
+            tui_ptext(u, x, y, ln[i].key, w, tui_style(u, TXT_ROLE_LABEL));
+            tui_ptext(u, x + 18u, y++, ln[i].val, w > 18u ? w - 18u : 1u, tui_style(u, TXT_ROLE_VALUE));
+        }
+    }
+}
+
+/* The Format, Channels and Publisher facets (design 5.2): a search with the existing query term on the value of the Credits line. */
+static void tui_songinfo_facet(tui* u, const char* label, const char* term) {
+    const sel_state* s = sel_engine_state(u->engine);
+    uint32_t n, i;
+    const sel_uim_si_line* ln = tui_si_lines(s, &n);
+    for (i = 0; i < n; i++) {
+        if (ln[i].kind == SEL_UIM_SI_CREDIT && strcmp(ln[i].key, label) == 0) {
+            char q[TXT_CMD_LINE], v[sizeof ln[i].val];
+            uint32_t k = 0, j;
+            for (j = 0; ln[i].val[j] != '\0'; j++) {
+                if (ln[i].val[j] != '"') v[k++] = ln[i].val[j];
+            }
+            v[k] = '\0';
+            snprintf(q, sizeof q, "%s:\"%s\"", term, v);
+            u->page = TUI_INFO_NONE;
+            u->si_facets++;
+            tui_search_submit(u, q);
+            return;
         }
     }
 }
@@ -2258,7 +2320,7 @@ static void tui_songinfo_page(tui* u, const sel_state* s) {
     }
     snprintf(buf, sizeof buf, "e Note: %s", u->si_note[0] != '\0' ? u->si_note : "");
     tui_ptext(u, 1, 4, buf, u->pv_w - 2u, tui_style(u, u->si_note[0] != '\0' ? TXT_ROLE_NORMAL : TXT_ROLE_DIM));
-    tui_songinfo_tags(u, s, 1u, 6u);
+    tui_songinfo_sections(u, s, 1u, tui_songinfo_tags(u, s, 1u, 6u));
 }
 
 /* Palette and help overlay: query line, then verbs grouped by area (query empty)

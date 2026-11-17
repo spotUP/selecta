@@ -2370,6 +2370,16 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_page.cmake")
   set_tests_properties(text-ui-songinfo-page PROPERTIES LABELS m3)
 
+  add_executable(songinfo_sections_fixture m3/songinfo_sections_fixture.c)
+  target_link_libraries(songinfo_sections_fixture PRIVATE selecta_library selecta_songlen_bake)
+  add_test(NAME text-ui-songinfo-sections
+    COMMAND "${CMAKE_COMMAND}" "-DFIXTURE=$<TARGET_FILE:songinfo_sections_fixture>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_sections.keys"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/songinfo_sections"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/songinfo_sections.cmake")
+  set_tests_properties(text-ui-songinfo-sections PROPERTIES LABELS m3)
+
   add_test(NAME text-ui-tiles-back
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/tiles_back.keys"
