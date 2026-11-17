@@ -1,0 +1,12 @@
+# I774s: PageDown twice then Home returns to the top.
+wait 800
+I
+wait 300
+n
+wait 300
+PageDown
+wait 300
+PageDown
+wait 300
+Home
+wait 500
