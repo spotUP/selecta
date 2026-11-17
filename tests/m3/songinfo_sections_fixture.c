@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
     put(root, "tsv/pretty/xxh32/metadata.tsv", row);
     put(root, "tsv/pretty/md5/modinfos.tsv", ""); /* the bake needs both passes present */
     put(root, "tsv/pretty/md5/metadata.tsv", "");
+    put(root, "tsv/pretty/md5/songlengths.tsv", ""); /* the md5-twin cross-check (I774r) needs it too */
     put(root, "sources.md", "### Sources\n\n#### Site\n\n- **Aminet** - https://aminet.net/\n");
     if (argc > 3) {
         /* source rows: md5, subsong, ms, songend, player, format, channels, size, xxh32, crc32, path; the md5 is made up, the xxh32 is the key's */
