@@ -231,3 +231,177 @@ Amiga SQLite build, replayer API access to sample names, the 68020 md5 rate beyo
 | D5 | hippoplayer.se bakes and serves versioned files. |
 | D6 | UADE key filled in the existing duplicates idle pass. |
 | D7 | Server bakes `uadegroups.bin`; clients use it offline. |
+
+## R11a MUI addendum (2026-11-17)
+
+Implements section 5.1 (song info sections) and 5.2 (filter facets) for the Amiga MUI track (`plugins/ui/mui`), MUI 3.8
+only. R11b builds from this section. The MUI renders the R8 uimodel output; it holds no labels, no section logic, no
+file access of its own (RULES 0b single source, 1a screen thread).
+
+### A1. What exists (measured in `plugins/ui/mui/mui_ui.c` on main 03fa0194)
+
+- Song Information is a page, not a separate window: `page_info` in the Now Playing pane (detail column in the full
+  layout, its own page on narrow screens, I960d/I1341). It holds `info_g`, a Selecta listview built by
+  `mui_string_aalist(s->info_ptr, 0, 6, &s->info_list)` (6 visible rows), then the flag row (Mark Wrong, Skip Song,
+  Save Note, I1178).
+- `info_list` rows are copied into `s->info_buf[MUI_INFO_MAX=48][128]` (6 KB) from the meta tags, then `st->panel`
+  ("label\0value\0" pairs from the library worker, I185/I906d), then the Subsong line. A pick runs `CTL_INFO_PICK`
+  (CSDb rows open csdb.dk, I1440q2).
+- Section headings elsewhere use `mui_aatext(..., mui_pens_label_tone(MUI_LBL_SECTION), ...)` ("Now Playing", "Next in
+  Queue"). Virtual-row lists use `mui_row_aalist(row_fn, ctx, count, rows, &obj)` (the collection page reads its rows
+  straight from the engine snapshot, no copy). Scrolling pages use `mui_aa_scrollgroup_new` (Selecta_AAScrollGroup,
+  I1351). Cycles use `mui_make_cycle`. The search row has `str_search` and the facet chips `facet_btn[]` (I795).
+
+### A2. Data contract assumed from R8
+
+R8 is being built now; the MUI binds to the shape section 5.1 names. Assumed: one shared accessor per section in
+`src/uimodel` returning rows as "label\0value\0" pairs (the `st->panel` shape), each row carrying an action kind
+(none, filter term, play path, open URL) and its argument, plus the section heading string. If R8 lands a different
+shape, R11b adapts the five row callbacks in A3 only; nothing else in this addendum changes.
+
+| Section (5.1) | Rows (from R8) | Row pick action (same as Mac links) |
+|---|---|---|
+| Credits | Authors, Group, Release, Year, Format, Channels | Authors -> `author:`, Group -> `publisher:`, Release -> `release:`, Format -> `format:`, Channels -> `channels:` search in the library |
+| Other sources | one row per differing `uadecredits` row ("AMP: Major Tom") | none |
+| Found in | one row per kind with count ("CD-ROMs: 7"); expanded: one row per source name under its kind | kind row toggles its names (`found:` search on a second pick of an expanded kind is left out, see A9) |
+| Same tune | one row per group member ("Title - Format") | plays the member (library path), else runs `sametune:` |
+| Demozoo | Production, Platform, Release date, Tags | Production opens the Demozoo page URL (existing `mui_open_url`) |
+
+### A3. Object tree (inside the existing `page_info`)
+
+```
+page_info (MUIC_Group, vertical; existing)
+  si_scroll = Selecta_AAScrollGroup (mui_aa_scrollgroup_new)       NEW: the page scrolls as one, like the Mac panel
+    Virtgroup contents (MUIC_Group, vertical)
+      info_g          Selecta listview, existing tag/catalogue rows (unchanged)
+      si_sec[k], k = Credits, Other sources, Found in, Same tune, Demozoo:
+        si_grp[k]     MUIC_Group vertical, MUIA_ShowMe from row count (A6)
+          si_head[k]  mui_aatext(heading from R8, MUI_LBL_SECTION tone, left)
+          si_list[k]  Selecta listview via mui_row_aalist(mui_si_row, &si_ctx[k], n, visible, ...)
+      (Found in only)  si_names_btn  mui_make_button_w("Show File Names") ShowMe FALSE until R14 lands
+  flag row (Mark Wrong, Skip Song, Save Note; existing, stays below the scroll so it never scrolls away)
+```
+
+- Five lists, not one list with heading rows: matches the Mac's separate sections, lets each section hide alone, and
+  keeps the existing `info_list` and its `CTL_INFO_PICK` handler untouched.
+- `visible` rows per list = min(row count, cap): Credits 6, Other sources 4, Found in 6, Same tune 6, Demozoo 4. Each
+  list sizes to its rows (no empty space); longer lists scroll inside their own listview. Rows are re-counted with
+  `set(si_list[k], UPA_List_Count, n)` and a `MUIM_Group_InitChange/ExitChange` on `si_scroll` only when a ShowMe or
+  height changes (one relayout per song change, not per row).
+- One notify per list: `UPA_List_Picked` -> `MUIM_Application_ReturnID, CTL_SI_PICK_BASE + k` (five new ids beside
+  `CTL_INFO_PICK`). The handler reads the picked row's action from R8 and either sets the search string and runs the
+  existing search path (`str_search` + the P4_SEARCH flow, so the Library view opens on the filtered list as the Mac
+  link does), plays the path through the existing play line, or calls `mui_open_url`.
+
+### A4. MUI 3.8 classes used
+
+All already in the build; no new BOOPSI class, no MUI 4/5 attribute.
+- `MUIC_Group` (section groups, Virtgroup contents), `MUIA_ShowMe`, `MUIM_Group_InitChange/ExitChange`.
+- Selecta_AAScrollGroup (`mui_scrollgroup_class.c`, wraps MUI 3.8 Virtgroup) for the page scroll.
+- Selecta listview (`mui_listview_class.c`, `UPA_List_Count`, `UPA_List_Picked`) for the five lists, through
+  `mui_row_aalist` with a row callback: rows are read from the R8 buffer at draw time, flattened to Latin-1 through
+  one static 256-byte tidy buffer (the `mui_col_row` pattern), so no per-row copies.
+- `mui_aatext` (AA text) for headings; `mui_make_button_w` for Show File Names; `mui_make_cycle` (MUIC_Cycle) and
+  `MUIC_Popobject` for the filter gadgets (A5).
+
+### A5. Filter facets (section 5.2)
+
+Mac: format and channel facets in the library filter bar. MUI, beside `str_search` in the search row:
+- **Format**: `MUIC_Popobject` whose string object is a read-only `mui_aatext` button showing "Format: Any" or
+  "Format: Protracker", and whose popup object is a Selecta listview of the formats present in the library with counts
+  ("Protracker  1,204"). A Cycle is wrong here: about 250 UADE formats make a MUI 3.8 cycle popup taller than a PAL
+  screen. First entry "Any Format". Pick writes or removes the `format:"<name>"` term in the search string and re-runs
+  the search; typing a letter in the open popup jumps to the first format starting with it (listview type-ahead,
+  existing).
+- **Channels**: `mui_make_cycle` with entries from uimodel ("Any Channels", "4 Channels", "More than 4 Channels",
+  "Fewer than 4 Channels"), writing `channels:4`, `channels:>4`, `channels:<4`.
+- Entries and the term rewrite come from shared uimodel code (the Mac R9 facets use the same table and the same
+  "replace this term in the query string" helper); if R8/R9 put that helper elsewhere, MUI calls it, never re-parses.
+- `publisher:`, `release:`, `found:`, `sametune:`, `text:` get no gadget: they are reached by typing and by the
+  Song Information row links (A2), the same split as the Mac filter bar (Mac shows only format and channel facets).
+  Both gadgets hide on screens below the compact width (`mui_layout_compact`), like the facet chips; the terms still
+  work typed.
+- The format list is a library query (`SELECT format, count(*) ... GROUP BY format`), so it is posted to the library
+  worker on the first popup open after a `library_serial` change; until it lands the list shows one row "Loading
+  Formats". Never read on the screen thread (RULES 1a).
+
+### A6. Lazy open and bake file seeks
+
+- No seeks while Song Information is not on screen. The read is asked only when `page_info` is visible (the detail
+  column in the full layout shows it all the time, so there it follows every song change; narrow layouts read when
+  the page opens). Same song + same `panel_serial` = no new read.
+- The read runs on the library worker beside the existing panel read (I906d pattern): the screen thread posts the
+  song key, the worker runs the R8 builder over the bake files, the MUI picks the result up on a later pump through a
+  serial and relayouts once. The page shows the existing tag rows at once; the five sections appear when the read
+  lands (no "Loading" rows: sections stay hidden until they have rows).
+- Seeks per open, from section 3: ~19 in `songlengths.bin` (key -> entry), 1-2 each in `uadeinfo`, `uadecredits`,
+  `uadeprov`, ~17 binary-search seeks in `uadegroups.bin` (sorted by entry, about 100k rows guessed), plus string pool
+  reads: about 45 seeks. Found in counts by kind need each source id's kind: the source table (a few thousand
+  sources, unmeasured) is read once into a u8-per-id kind array on the first Found in read and kept, so later opens
+  cost no extra seeks. Expanded names read one source-table record per name, only on the expand pick.
+- Demozoo stays the existing `/api/demozoo/lookup` network call on its worker, not a bake read; its section appears
+  later than the other four when it lands.
+- R17 measures seeks and ms per open on the rig (the design's existing row); the target is under 150 ms on a 68020 HD
+  and no frame drop while it runs.
+
+### A7. RAM estimate
+
+| Item | Bytes |
+|---|---|
+| 5 group + 5 heading + 5 listview objects + scroll group (MUI instance data, about 300-500 B each) | ~7 KB |
+| Row buffer: R8 builder output for one song, capped (Credits 6, Other sources 16, Found in 3 + 32 names, Same tune 32, Demozoo 6 rows, about 100 B each) | ~10 KB |
+| Row callback tidy buffer, section counts, action ids | < 1 KB |
+| Source kind array (cached once, A6) | ~3 KB (unmeasured source count) |
+| Format popup list (about 250 formats x 32 B, only after first open) | ~8 KB |
+| Channels cycle, popobject objects | ~1.5 KB |
+| **Total** | **~30 KB fast RAM**, bake readers stay under 4 KB per lookup (section 4) |
+
+The R8 row buffer is the only copy: the lists read it through callbacks, unlike `info_buf` which copies. Caps are the
+uimodel's, so the three UIs truncate the same way (a capped list ends in a row "and N more", from R8).
+
+### A8. Empty sections
+
+- A section with zero rows hides its whole group (`MUIA_ShowMe FALSE`): no heading, no "No data" line. Same rule for
+  each file missing or failing its header check (section 4): only its section disappears.
+- All five empty (no data pack, or an unknown song): the page looks exactly as today (tag rows + flag row).
+- Same tune lists only the other members; a song alone in its group has no section. Other sources lists only rows
+  that differ from Credits (the bake already drops equal rows).
+- The Format popup with no format column filled yet shows "Any Format" only; the gadget stays visible.
+
+### A9. Labels (full English words)
+
+All strings come from uimodel (shared with Mac and text); listed here so R11b can check them on the rig. Headings:
+"Credits", "Other Sources", "Found In", "Same Tune", "Demozoo". Credits rows: "Authors", "Group", "Release", "Year",
+"Format", "Channels". Found in kinds: "Sites", "Collections", "Groups", "Bulletin Boards", "CD-ROMs" (not "BBS").
+Buttons and gadgets: "Show File Names", "Any Format", "Any Channels", "4 Channels", "More than 4 Channels", "Fewer than
+4 Channels", "Loading Formats". Value origin: appended to the Credits row as "(UnExoticA)" (A2 "on demand" has no MUI
+3.8 per-row hover; see decisions).
+
+### A10. R11b steps (sonnet, one row each, build + host check; rig in R17)
+
+1. Section groups, headings and five virtual-row lists in `page_info` inside Selecta_AAScrollGroup; row callbacks on
+   the R8 accessors; ShowMe per row count. Check: `build/amiga` builds; `mui-doors` and the P4 counters (`songinfo`)
+   still pass; new counter `si_sections=` counts visible sections.
+2. Pick handlers (`CTL_SI_PICK_BASE + k`): filter term / play / URL via existing paths. Check: scripted pick on a
+   fixture song sets the search string to the expected term (`--explain` sql matches R7).
+3. Format popobject + Channels cycle in the search row, worker-posted format list. Check: picks write the R7 terms;
+   no library read on the screen thread (screen thread audit rule, I1416 list).
+4. Seg imports appended to `cmake/amiga_seg_imports.txt` for any new uimodel symbol (append only).
+
+### A11. Decisions Johan could veto
+
+- Song Information stays a page in the Now Playing pane (detail column), not a new window; the five sections sit
+  below the existing tag rows in one scrolling page, flag buttons pinned below.
+- Five separate listviews (one per section) instead of one list with heading rows.
+- Visible row caps per section: Credits 6, Other sources 4, Found in 6, Same tune 6, Demozoo 4; longer lists scroll.
+- Empty sections hide completely (no "No data" line); missing pack = page looks as today.
+- Value origin shown inline as "(UnExoticA)" after each Credits value, because MUI 3.8 has no per-row hover (Mac
+  shows it on hover).
+- Format facet is a popup list (Popobject), not a Cycle; Channels is a Cycle with four entries (Any, 4, More than 4,
+  Fewer than 4).
+- No gadgets for publisher/release/found/sametune/text; reached by typing and row links. Both facet gadgets hidden
+  on compact widths.
+- Credits row picks jump to the Library with that filter (like Mac links); Found in kind rows expand names instead of
+  running `found:`.
+- "Show File Names" hidden until the server row R14 lands.
+- No "Loading" rows in Song Information: sections appear when the worker read lands; Demozoo appears last.
