@@ -29,6 +29,16 @@ int main(int argc, char** argv) {
                s.md5_mismatch, s.md5_whitelisted, s.md5_twin_unmapped);
         printf("md5_mapped=%ld md5_unmapped=%ld md5_conflict=%ld md5_bytes=%ld\n", s.md5_mapped, s.md5_unmapped,
                s.md5_conflict, s.md5_bytes);
+        {
+            static const char* const cn[] = {"amp", "modland", "demozoo", "kestra", "unexotica", "oldexotica", "modsanthology", "fujiology", "wantedteam"};
+            static const char* const kn[] = {"site", "collection", "group", "bbs", "cd"};
+            int i;
+            for (i = 0; i < 9; i++)
+                printf("credits %s kept=%ld dropped=%ld unmapped=%ld\n", cn[i], s.credit_kept[i], s.credit_dropped[i], s.credit_unmapped[i]);
+            printf("credit_rows=%ld credit_pool_bytes=%ld credit_bytes=%ld\n", s.credit_rows, s.credit_pool_bytes, s.credit_bytes);
+            for (i = 0; i < 5; i++) printf("prov_sources %s=%ld named=%ld\n", kn[i], s.prov_sources[i], s.prov_named[i]);
+            printf("prov_pairs=%ld prov_unmapped_rows=%ld prov_bytes=%ld\n", s.prov_pairs, s.prov_unmapped, s.prov_bytes);
+        }
         return 0;
     }
     n = sel_songlen_bake(argv[1], argv[2], &bytes);
