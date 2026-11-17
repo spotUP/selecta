@@ -3163,6 +3163,22 @@ static void test_songinfo_panel(void) {
     CHECK(strstr(src, "#define MUI_INFO_MAX 48u") != NULL, "info rows cannot hold the DeepSID rows");
 }
 
+/* I1440q2: composer Link rows and CSDb release rows open their URL through openurl.library (absent: nothing), the release URL from the shared
+ * sel_csdb_url. The photo and thumbnails are not drawn: MUI has no image decoder path (see thoughts/spot/agent-reports/I1440q2-mui-photo-url.md). */
+static void test_open_url(void) {
+    char *src = ui_source(), *fn;
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    fn = strstr(src, "static void mui_open_url(");
+    CHECK(fn != NULL && strstr(fn, "OpenLibrary((CONST_STRPTR) \"openurl.library\"") != NULL && strstr(fn, "jsr -30(%%a6)") != NULL, "no openurl.library URL_OpenA call");
+    CHECK(fn != NULL && strstr(fn, "== NULL) {\n        return;") != NULL, "a missing openurl.library is not silent");
+    CHECK(strstr(src, "mui_open_url(s->col_about_url[id - CTL_ABOUT_OPEN])") != NULL, "composer Link rows do not open their URL");
+    CHECK(strstr(src, "sel_csdb_url(s->info_csdb[picked], url, sizeof url)") != NULL && strstr(src, "s->info_csdb[rows] = sel_csdb_row_id(value)") != NULL, "CSDb release rows do not open csdb.dk");
+    CHECK(strstr(src, "UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_INFO_PICK") != NULL, "the info list is not wired to the pick handler");
+}
+
 /* I796 (drift B1-B4): ONE reachability test of the player bar. mui_ui.c builds it from the map layer (Mac transport order, Mac column weights,
  * art frame, Like beside the title), and the icons it builds fire their commands: each transport action and Like go through mui_action_fire
  * (the handler sentinel mui_action_fires() counts them). */
@@ -4237,6 +4253,8 @@ int main(int argc, char** argv) {
         test_volume_row();
     } else if (strcmp(argv[1], "col-about") == 0) {
         test_col_about();
+    } else if (strcmp(argv[1], "open-url") == 0) {
+        test_open_url();
     } else if (strcmp(argv[1], "songinfo-panel") == 0) {
         test_songinfo_panel();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {

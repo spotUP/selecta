@@ -29,6 +29,7 @@
 #include <selecta/uimodel/briefs.h>
 #include <selecta/uimodel/title.h>
 #include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/csdb.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/tags.h>
@@ -201,6 +202,9 @@ typedef struct mui_state {
     Object* col_about_row[MUI_ABOUT_MAX];
     Object* col_about_lab[MUI_ABOUT_MAX];
     Object* col_about_val[MUI_ABOUT_MAX];
+    Object* col_about_open[MUI_ABOUT_MAX]; /* I1440q2: the Open button of a Link row (openurl.library) */
+    char col_about_url[MUI_ABOUT_MAX][192];
+    int info_csdb[MUI_INFO_MAX];    /* I1440q2: the CSDb release id of an info row, 0 for any other */
     char col_title_buf[160];
     char col_meta_buf[224];
     uint32_t col_serial;            /* the collection serial the list shows */
@@ -637,6 +641,8 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
 #define CTL_SCOPE 0x2AC4L           /* I1176: the Queue scope Cycle */
 #define CTL_OPEN_CANCEL 0x2AC5L     /* I1415: the now-playing Cancel button, posts CANCEL_OPEN */
+#define CTL_INFO_PICK 0x2AC6L       /* I1440q2: a Song Information row was picked (a CSDb release row opens csdb.dk) */
+#define CTL_ABOUT_OPEN 0x2AD0L      /* I1440q2: CTL_ABOUT_OPEN + i, the Open button of composer header row i */
 #define CTL_SRC_SYNC 0x2AC3L        /* I1175: the Sources page Sync button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
@@ -941,6 +947,24 @@ static int mui_theme_live_now(void) {
 
 /* I1139 (map/mui_text.h): uimodel text is UTF-8, MUI draws Latin-1. Selecta converts on its side of every handoff; the UP- classes
  * (plugins/shared/mcc) take Latin-1 untouched. These are the set calls and the read-back of a string gadget. */
+/* I1440q2: opens a URL through openurl.library (URL_OpenA, LVO -30: url in a0, tag list in a1); without the library nothing happens. No SDK header
+ * for it ships here, so the call is made by hand. */
+static void mui_open_url(const char* url) {
+    struct Library* b;
+    if (url == NULL || *url == '\0' || (b = OpenLibrary((CONST_STRPTR) "openurl.library", 1)) == NULL) {
+        return;
+    }
+    {
+        register struct Library* a6 __asm("a6") = b;
+        register const char* a0 __asm("a0") = url;
+        register const void* a1 __asm("a1") = NULL;
+        register LONG d0 __asm("d0");
+        __asm volatile("jsr -30(%%a6)" : "=r"(d0) : "r"(a6), "r"(a0), "r"(a1) : "d1", "memory", "cc");
+        (void)d0;
+    }
+    CloseLibrary(b);
+}
+
 static void mui_text_set(Object* obj, const char* utf8) {
     char b[MUI_L1_TEXT];
     mui_aatext_set(obj, mui_l1(b, sizeof b, utf8));
@@ -1885,6 +1909,12 @@ static Object* mui_col_page_group(mui_state* s) {
         }
         DoMethod(row, OM_ADDMEMBER, s->col_about_lab[i]);
         DoMethod(row, OM_ADDMEMBER, s->col_about_val[i]);
+        s->col_about_open[i] = mui_make_button_w("Open", "tile", CTL_ABOUT_OPEN + (LONG)i, 0);
+        if (s->col_about_open[i] == NULL) {
+            return NULL;
+        }
+        set(s->col_about_open[i], MUIA_ShowMe, FALSE);
+        DoMethod(row, OM_ADDMEMBER, s->col_about_open[i]);
         DoMethod(s->col_about_grp, OM_ADDMEMBER, row);
     }
     DoMethod(g, OM_ADDMEMBER, s->col_about_grp);
@@ -2230,6 +2260,9 @@ static Object* mui_detail_group(mui_state* s, int compact) {
     s->trk_ptr[0] = NULL;
     info_g = mui_string_aalist(s->info_ptr, 0, 6, &s->info_list);
     trk_g = mui_string_aalist(s->trk_ptr, 0, 8, &s->trk_list);
+    if (s->info_list != NULL) {
+        DoMethod(s->info_list, MUIM_Notify, UPA_List_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_INFO_PICK);
+    }
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     /* I1125 (design I973 6a Q6): the Like heart sits on the Now Playing panel like the Mac np_like, not in the player bar. */
     like = mui_make_button_icon("Like", "Like", CTL_P4_BASE + (LONG)P4_LIKE);
@@ -2600,6 +2633,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             sel_uim_tidy_info(lab, val, sizeof val); /* I1387b */
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", lab, val);
             s->info_ptr[rows] = s->info_buf[rows];
+            s->info_csdb[rows] = 0;
             rows++;
         }
         /* I1440r: the catalogue and DeepSID rows the engine took from the library (label NUL value NUL pairs, the Mac and text order: after the
@@ -2613,6 +2647,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                 sel_uim_tidy_info(p, val, sizeof val);
                 snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", p, val);
                 s->info_ptr[rows] = s->info_buf[rows];
+                s->info_csdb[rows] = sel_csdb_row_id(value); /* I1440q2: a click on the row opens the release page */
                 rows++;
                 p = value + strlen(value) + 1;
             }
@@ -2621,6 +2656,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "Subsong: %lu of %lu", (unsigned long)so->subsong + 1ul,
                      (unsigned long)so->subsong_count);
             s->info_ptr[rows] = s->info_buf[rows];
+            s->info_csdb[rows] = 0;
             rows++;
         }
         s->info_ptr[rows] = NULL;
@@ -2837,7 +2873,11 @@ static void mui_col_about_sync(mui_state* s, const sel_collection_page* pg) {
         if (on) {
             mui_text_set(s->col_about_lab[i], lab);
             mui_text_set(s->col_about_val[i], val);
+            snprintf(s->col_about_url[i], sizeof s->col_about_url[i], "%s", strncmp(lab, "Link", 4) == 0 ? val : "");
+        } else {
+            s->col_about_url[i][0] = '\0';
         }
+        set(s->col_about_open[i], MUIA_ShowMe, s->col_about_url[i][0] != '\0' ? TRUE : FALSE);
         set(s->col_about_row[i], MUIA_ShowMe, on ? TRUE : FALSE);
     }
     set(s->col_about_grp, MUIA_ShowMe, *about != '\0' ? TRUE : FALSE);
@@ -4189,6 +4229,16 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id == CTL_SRC_SWITCH) {
         if (s->src_pick >= 0) {
             mui_srcs_toggle(&s->srcs, (uint32_t)s->src_pick, mui_p8_send, s);
+        }
+    } else if (id >= CTL_ABOUT_OPEN && id < CTL_ABOUT_OPEN + (LONG)MUI_ABOUT_MAX) { /* I1440q2: a composer Link row */
+        mui_open_url(s->col_about_url[id - CTL_ABOUT_OPEN]);
+    } else if (id == CTL_INFO_PICK) { /* I1440q2: a CSDb release row of Song Information */
+        long picked = -1;
+        GetAttr(UPA_List_Picked, s->info_list, (ULONG*)&picked);
+        if (picked >= 0 && (uint32_t)picked < MUI_INFO_MAX && s->info_csdb[picked] > 0) {
+            char url[64];
+            sel_csdb_url(s->info_csdb[picked], url, sizeof url);
+            mui_open_url(url);
         }
     } else if (id == CTL_OPEN_CANCEL) { /* I1415 */
         (void)mui_engine_line(s, "CANCEL_OPEN");
