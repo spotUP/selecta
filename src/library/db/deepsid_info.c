@@ -187,7 +187,7 @@ uint32_t sel_deepsid_csdb_rows(const char* json, char* out, uint32_t cap, uint32
     return added;
 }
 
-static int art_ask(sel_library* lib, const sel_art_op* op) {
+int sel_deepsid_art_ask(sel_library* lib, const sel_art_op* op) {
     sel_message reply;
 
     memset(&reply, 0, sizeof reply);
@@ -208,7 +208,7 @@ uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out,
     op.ref = ref;
     op.data = (uint8_t*)key;
     op.cap = sizeof key;
-    if (art_ask(lib, &op) <= 0) return 0;
+    if (sel_deepsid_art_ask(lib, &op) <= 0) return 0;
     js = malloc(DS_JSON_CAP + 1u);
     if (js == NULL) return 0;
     memset(&op, 0, sizeof op);
@@ -217,12 +217,12 @@ uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out,
     op.kind = "ds_file";
     op.data = (uint8_t*)js;
     op.cap = DS_JSON_CAP;
-    n = art_ask(lib, &op);
+    n = sel_deepsid_art_ask(lib, &op);
     if (n > 0) {
         js[n > (int)DS_JSON_CAP ? (int)DS_JSON_CAP : n] = '\0';
         added = sel_deepsid_rows(js, out, cap, rows);
         op.kind = "ds_csdb"; /* written by the same kick as ds_file, so no second kick */
-        n = art_ask(lib, &op);
+        n = sel_deepsid_art_ask(lib, &op);
         if (n > 0) {
             js[n > (int)DS_JSON_CAP ? (int)DS_JSON_CAP : n] = '\0';
             added += sel_deepsid_csdb_rows(js, out, cap, rows);
@@ -341,7 +341,7 @@ uint32_t sel_library_deepsid_composer(sel_library* lib, const char* ref, char* o
     op.ref = ref;
     op.data = (uint8_t*)key;
     op.cap = sizeof key;
-    if (art_ask(lib, &op) <= 0 || (slash = strrchr(key, '/')) == NULL) return 0;
+    if (sel_deepsid_art_ask(lib, &op) <= 0 || (slash = strrchr(key, '/')) == NULL) return 0;
     *slash = '\0'; /* shortcut: the song's own folder, so a song in a sub-folder misses its composer; upgrade with a first-two-segments rule */
     js = malloc(DS_JSON_CAP + 1u);
     if (js == NULL) return 0;
@@ -351,7 +351,7 @@ uint32_t sel_library_deepsid_composer(sel_library* lib, const char* ref, char* o
     op.kind = "ds_composer";
     op.data = (uint8_t*)js;
     op.cap = DS_JSON_CAP;
-    n = art_ask(lib, &op);
+    n = sel_deepsid_art_ask(lib, &op);
     if (n > 0) {
         js[n > (int)DS_JSON_CAP ? (int)DS_JSON_CAP : n] = '\0';
         added = sel_deepsid_composer_rows(js, out, cap);

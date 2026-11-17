@@ -642,6 +642,13 @@ uint32_t sel_deepsid_composer_rows(const char* json, char* out, uint32_t cap);
 uint32_t sel_library_deepsid_composer(sel_library* lib, const char* ref, char* out, uint32_t cap);
 const char* sel_json_value(const char* p);
 const char* sel_json_str(const char* from, const char* key, char* out, size_t cap);
+
+/* I1440m: DeepSID list rows. Row fields by list: tags name,count,type,id; groups name,count; players title,0,developer,id; folders path,files,leaf; files key,name,author,player. */
+typedef void (*sel_deepsid_row_fn)(void* ctx, const char* const* f);
+int sel_deepsid_list_parse(const char* what, const char* json, sel_deepsid_row_fn fn, void* ctx);
+/* what: tags | tag(arg id) | groups | group(arg name) | players | player(arg title) | folders(arg path) | tunes(arg path). Rows, or -1 when not cached yet (a fetch is queued). */
+int sel_library_deepsid_list(sel_library* lib, const char* what, const char* arg, sel_deepsid_row_fn fn, void* ctx);
+void sel_library_deepsid_list_kick(sel_library* lib, const char* spec);
 void sel_library_cover_url_put(sel_library* lib, const char* source, const char* path, const char* url);
 /* I1401: the lookup query for a song of any source. A Modland key goes as key=<key>; every other song goes as title=<title>&author=<artist> and
  * needs both non-empty. Writes the query (no leading '?') into out; 0 when there is nothing to ask (no title or artist) or it does not fit. */

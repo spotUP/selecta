@@ -7910,6 +7910,86 @@ static int drill_name_has(const char* name, const char* q) {
     return 0;
 }
 
+/* I1440m: the C64 SID pages of the source "deepsid" (design 2026-11-16-i1440-deepsid.md 3.3). Lists come from the cached DeepSID answers;
+ * an uncached list queues its fetch on the job thread and the page is empty until the next open. */
+typedef struct ds_sink {
+    coll_build* b;
+    const char* want;
+    char id[24];
+} ds_sink;
+
+static void ds_group_row(void* ctx, const char* const* f) { /* name, count, third column */
+    ds_sink* k = (ds_sink*)ctx;
+    const char* parts[3];
+    parts[0] = f[0];
+    parts[1] = f[1];
+    parts[2] = f[2];
+    composer_put(&k->b->rows, parts, 3);
+    k->b->n++;
+}
+
+static void ds_tag_row(void* ctx, const char* const* f) { /* tags: the group row, and the id of the wanted name */
+    ds_sink* k = (ds_sink*)ctx;
+    if (k->want != NULL && k->id[0] == '\0' && strcmp(f[0], k->want) == 0) snprintf(k->id, sizeof k->id, "%s", f[3]);
+    if (k->want == NULL) ds_group_row(ctx, f);
+}
+
+static void ds_song_row(void* ctx, const char* const* f) { /* key, name, author, player */
+    ds_sink* k = (ds_sink*)ctx;
+    const char* row[8];
+    row[0] = f[0];
+    row[1] = f[1][0] != '\0' ? f[1] : f[0];
+    row[2] = f[2];
+    row[3] = f[3];
+    row[4] = "0";
+    row[5] = "sid";
+    row[6] = "0";
+    row[7] = "0";
+    coll_song_row(k->b, row);
+}
+
+static void drill_deepsid(sel_engine* e, sel_collection_page* pg, const char* kind, const char* arg, coll_build* b) {
+    static const char* const coll[5][2] = {{"HVSC", "_High Voltage SID Collection"}, {"CGSC", "_Compute's Gazette SID Collection"}, {"SID Happens", "_SID Happens"},
+                                           {"Exotic", "_Exotic SID Tunes Collection"}, {"Public Playlists", "_Public Playlists"}};
+    ds_sink k;
+    uint32_t i;
+    memset(&k, 0, sizeof k);
+    k.b = b;
+    if (strcmp(kind, "tags") == 0) {
+        sel_library_deepsid_list(e->lib, "tags", "", ds_tag_row, &k);
+    } else if (strcmp(kind, "tag") == 0 && arg != NULL) {
+        k.want = arg;
+        if (sel_library_deepsid_list(e->lib, "tags", "", ds_tag_row, &k) > 0 && k.id[0] != '\0') {
+            pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+            k.want = NULL;
+            sel_library_deepsid_list(e->lib, "tag", k.id, ds_song_row, &k);
+        }
+    } else if (strcmp(kind, "groups") == 0) {
+        sel_library_deepsid_list(e->lib, "groups", "", ds_group_row, &k);
+    } else if (strcmp(kind, "group") == 0 && arg != NULL) {
+        pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+        sel_library_deepsid_list(e->lib, "group", arg, ds_song_row, &k);
+    } else if (strcmp(kind, "players") == 0) {
+        sel_library_deepsid_list(e->lib, "players", "", ds_group_row, &k);
+    } else if (strcmp(kind, "player") == 0 && arg != NULL) {
+        pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+        sel_library_deepsid_list(e->lib, "player", arg, ds_song_row, &k);
+    } else if (strcmp(kind, "collections") == 0) {
+        for (i = 0; i < 5u; i++) drill_put_group(b, coll[i][0], 0ul);
+    } else if (strcmp(kind, "folder") == 0 && arg != NULL) {
+        const char* path = arg;
+        int n;
+        for (i = 0; i < 5u; i++) {
+            if (strcmp(arg, coll[i][0]) == 0) path = coll[i][1];
+        }
+        n = sel_library_deepsid_list(e->lib, "folders", path, ds_group_row, &k);
+        if (n == 0) { /* a leaf folder: its songs */
+            pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+            sel_library_deepsid_list(e->lib, "tunes", path, ds_song_row, &k);
+        }
+    }
+}
+
 /* key = source [US kind [US a [US b]]] [RS skip [GS find]]. Builds the level into b and pg->drill. The find text (I1235) narrows the format list
  * before it is windowed, so a list longer than SEL_DRILL_WINDOW filters over all of it, not only the loaded window. */
 static void drill_build(sel_engine* e, const char* key, coll_build* b) {
@@ -7942,6 +8022,10 @@ static void drill_build(sel_engine* e, const char* key, coll_build* b) {
     if (part[1] != NULL) snprintf(pg->drill_path, sizeof pg->drill_path, "%s%s%s%s%s", part[1], part[2] ? "\x1f" : "", part[2] ? part[2] : "", part[3] ? "\x1f" : "", part[3] ? part[3] : "");
     snprintf(pg->key, sizeof pg->key, "%s", source);
     pg->drill = (uint32_t)SEL_DRILL_PAGE_GROUPS;
+    if (strcmp(source, "deepsid") == 0) { /* I1440m */
+        drill_deepsid(e, pg, kind, part[2], b);
+        return;
+    }
     if (strcmp(kind, "formats") == 0) {
         drill_formats d;
         drill_formats_sorted(e, source, &d);
@@ -8148,7 +8232,7 @@ static void coll_build_run(sel_engine* e) {
             drill_build(e, key, &b);
         }
         src = sel_source_find(id);
-        snprintf(pg->title, sizeof pg->title, "%s", src != NULL && src->name != NULL ? src->name : id);
+        snprintf(pg->title, sizeof pg->title, "%s", strcmp(id, "deepsid") == 0 ? "C64 SID" : src != NULL && src->name != NULL ? src->name : id);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
         if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
         {   /* I1440j: the DeepSID header comes from the first HVSC song of the page (its folder is the composer's); a page with none keeps an empty block */
