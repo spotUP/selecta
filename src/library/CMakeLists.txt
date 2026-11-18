@@ -133,7 +133,7 @@ endif()
 # missing. Install it in the same directory as library.db (the config dir), like songlengths.bin. A SQLite file is platform
 # independent. The Amiga cross build cannot run a tool it builds, so it takes the host-built one:
 # -DSELECTA_TEMPLATEBAKE_EXE=<path to the host library_template_bake>; without it no file is made and the DDL path stays.
-if(NOT SEL_AMIGA)
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN) # I694a: the browser build takes the DDL path
   add_executable(library_template_bake ${PROJECT_SOURCE_DIR}/tools/library_template_bake.c)
   target_link_libraries(library_template_bake PRIVATE selecta_library selecta_core)
   set(LIBTEMPLATE_CMD library_template_bake)
