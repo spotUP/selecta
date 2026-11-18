@@ -10220,7 +10220,7 @@ static void online_scope_pick(desk* d, uint32_t k) {
     uint32_t cur = scope_cur_mask(d), nm = 0u;
     if (row >= 0 && row < 32) {
         uint32_t i;
-        nm = cur ^ (1u << row);
+        nm = sel_uim_chip_toggle(cur, (uint32_t)row + 1u);
         d->scope[0] = '\0';
         for (i = 0; i < 32u && nm != 0u; i++) {
             if (nm >> i & 1u) {
@@ -10634,12 +10634,12 @@ static int heading_names_scope_source(const desk* d, const char* heading) {
 /* Whether the group of a heading (sel_uim_search_group) is drawn under the facet chip: online From sections are song results (I1019e). */
 static int search_group_shown(const desk* d, uint32_t group, const char* heading) {
     if (d->scope_filtered) { /* I1224: a source chip clicked over the shown All results keeps only that source's From section (no new query) */
-        return group == 4u && heading_names_scope_source(d, heading) && (d->search_facet == 0u || (d->search_facet & 1u));
+        return sel_uim_search_group_shown(d->search_facet, 1, group, heading_names_scope_source(d, heading));
     }
     if (group == 4u && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) == 0) { /* the Library chip: no From section */
         return 0;
     }
-    return d->search_facet == 0u || (group >= 1u && (d->search_facet >> ((group == 4u ? 1u : group) - 1u) & 1u) != 0u); /* I1456: union of the facets on */
+    return sel_uim_search_group_shown(d->search_facet, 0, group, 0);
 }
 
 /* I1019e: whether a From section of the shown search view still reads Searching (its source has not answered). A scripted run keeps turning while
@@ -11989,9 +11989,9 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         }
         for (i = 0; i < SEARCH_FACETS; i++) {
             if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
-                uint32_t was = d->search_facet, bit = i == 0u ? 0u : 1u << (i - 1u); /* I1456: a chip toggles; All clears */
+                uint32_t was = d->search_facet; /* I1456: a chip toggles; All clears */
                 int changed;
-                d->search_facet = i == 0u ? 0u : was ^ bit;
+                d->search_facet = sel_uim_chip_toggle(was, i);
                 changed = d->search_facet != was;
                 d->search_q16 = changed ? 0 : d->search_q16; /* another facet's groups open at the top */
                 d->repaint = 1;
