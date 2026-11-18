@@ -153,7 +153,7 @@ list(GET on 6 rp0)
 if(NOT rp0 EQUAL 0)
   message(FATAL_ERROR "I1019h: Search must never count a radio play, got radio_plays=${rp0}:\n${played}")
 endif()
-set(SO_CANVAS 2000x1600) # the Modules.pl sidebar row sits below 800 px
+set(SO_CANVAS 2000x2200) # the Modules.pl sidebar row sits below the 1600 px player bar edge since the composer and group rows (kind 5, 6) joined the sidebar
 so_run(side "wait 300\n")
 if(NOT "${side}" MATCHES "sidelib_row [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=7 [Mm]odules[^\n]*\n")
   message(FATAL_ERROR "I1019h: no modulespl source row in the sidebar:\n${side}")
