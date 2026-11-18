@@ -311,7 +311,20 @@ static uint64_t hash_surface(const SDL_Surface* s, int32_t w, int32_t h) {
 
 void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c) {
     const uint32_t* px = (const uint32_t*)c->pixels;
+#ifndef __EMSCRIPTEN__
     uint32_t i;
+#endif
+#ifdef __EMSCRIPTEN__ /* I694a: the web texture keeps only what was uploaded; upload the whole canvas so a lost or partial dirty list never leaves black regions */
+    {
+        SDL_Rect all;
+        all.x = 0;
+        all.y = 0;
+        all.w = c->w;
+        all.h = c->h;
+        SDL_UpdateTexture(b->texture, &all, px, c->w * 4);
+        b->upload_pixels += (uint32_t)all.w * (uint32_t)all.h;
+    }
+#else
     for (i = 0; i < c->dirty_n; i++) {
         SDL_Rect r;
         r.x = c->dirty[i].x;
@@ -321,6 +334,7 @@ void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c) {
         SDL_UpdateTexture(b->texture, &r, px + (size_t)r.y * (size_t)c->w + (size_t)r.x, c->w * 4);
         b->upload_pixels += (uint32_t)r.w * (uint32_t)r.h;
     }
+#endif
     SDL_RenderClear(b->renderer);
     SDL_RenderTexture(b->renderer, b->texture, NULL, NULL);
     SDL_RenderPresent(b->renderer);
