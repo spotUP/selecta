@@ -2383,8 +2383,8 @@ if(NOT SEL_AMIGA)
   # I774s: scrolling, the f/c/p facet searches, the n toggle and the Other Sources / Found In sections with data, at 80x25
   foreach(spec "scroll-top:songinfo_scroll_top:Information\;Found In\;more below:Sites" "scroll-down:songinfo_scroll_down:more below:│ Information"
                "scroll-end:songinfo_scroll_end:Aminet\;Disc 1\;more above:Credits" "scroll-home:songinfo_scroll_home:Credits\;more below:Aminet"
-               "facet-f:songinfo_facet_f:format:Song Information" "facet-c:songinfo_facet_c:channels:Song Information"
-               "facet-p:songinfo_facet_p:publisher:Song Information")
+               "facet-f:songinfo_facet_f:format:│ Song Information" "facet-c:songinfo_facet_c:channels:│ Song Information"
+               "facet-p:songinfo_facet_p:publisher:│ Song Information")
     string(REPLACE ":" ";" parts "${spec}")
     list(GET parts 0 tname)
     list(GET parts 1 kname)

@@ -128,6 +128,7 @@ typedef struct tui {
     uint32_t folder_opens;                 /* T83 sentinel: openings of the playlist folder tree */
     uint32_t table_actions;                /* I1184 sentinel: keys that fired a line of the shared action table */
     char table_log[192];                   /* I1184: those lines in order, '|' separated (the tail is kept) */
+    char search_text[TXT_CMD_LINE];        /* the last submitted search, shown in the top bar field like the desktop's */
     int lib_screen;                        /* the query view is the Library screen */
     uint32_t lib_mode;                     /* I1187: the Library mode (sel_uim_libmode_name) the last mode key or Library opening set */
     int lib_mode_on;                       /* I1187: lib_mode is in force (cleared when Browse, Folders or Home take the pane) */
@@ -430,6 +431,7 @@ static void tui_songinfo_facet(tui* u, const char* label, const char* term); /* 
 
 /* The search prompt: on the Library screen, or with an empty line, it filters the Library tree; elsewhere a query lists the categorized results (the desktop's Songs, Albums, Artists sections). */
 static void tui_search_submit(tui* u, const char* query) {
+    snprintf(u->search_text, sizeof u->search_text, "%s", query);
     char line[TXT_CMD_LINE * 2 + 32];
     if (u->lib_screen || query[0] == '\0' || sel_uim_search_line(query, line, sizeof line) == 0u) {
         tui_library_search(u, query);
@@ -2022,7 +2024,7 @@ static void tui_topbar(tui* u, uint32_t y) {
     char hint[96], line[160];
     txt_grid_fill(&u->grid, 0, y, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_HEADER));
     sel_uim_search_hint(1, NULL, 0, hint, sizeof hint);
-    snprintf(line, sizeof line, "[Home]  [%s]  [Browse]", hint);
+    snprintf(line, sizeof line, "[Home]  [%s]  [Browse]", u->search_text[0] != '\0' ? u->search_text : hint);
     txt_grid_text(&u->grid, 1, y, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_HEADER));
 }
 
