@@ -5,7 +5,7 @@
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 execute_process(
-  COMMAND "${SELECTA}" --output null --start-dir "${WORK}" --catalogue "${CAT}"
+  COMMAND "${SELECTA}" --output null --size 80x60 --start-dir "${WORK}" --catalogue "${CAT}"
           --exec "LIBRARY_SEARCH hubbard" --exec "VIEW_SOURCE search"
           --keys /dev/null --screen-dump "${WORK}/screen.txt"
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)

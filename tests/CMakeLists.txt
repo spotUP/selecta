@@ -2381,7 +2381,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(text-ui-songinfo-sections PROPERTIES LABELS m3)
 
   # I774s: scrolling, the f/c/p facet searches, the n toggle and the Other Sources / Found In sections with data, at 80x25
-  foreach(spec "scroll-top:songinfo_scroll_top:Information\;Found In\;more below:Sites" "scroll-down:songinfo_scroll_down:more below:Credits"
+  foreach(spec "scroll-top:songinfo_scroll_top:Information\;Found In\;more below:Sites" "scroll-down:songinfo_scroll_down:more below:│ Information"
                "scroll-end:songinfo_scroll_end:Aminet\;Disc 1\;more above:Credits" "scroll-home:songinfo_scroll_home:Credits\;more below:Aminet"
                "facet-f:songinfo_facet_f:format:Song Information" "facet-c:songinfo_facet_c:channels:Song Information"
                "facet-p:songinfo_facet_p:publisher:Song Information")
