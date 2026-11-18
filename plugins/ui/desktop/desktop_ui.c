@@ -473,6 +473,7 @@ typedef struct desk {
     char scope[24];          /* I1019f: the source chip in force: "" All sources (the fan-out, every launch), SEARCH_SCOPE_LIBRARY the library alone, else the id of one online source (SOURCE_SEARCH). Never persisted */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
     uint32_t art_waits;      /* I906c: headless naps spent waiting for the background cover batches */
+    uint32_t open_waits;     /* I1460: scripted naps spent before a `wait` for a song open in flight */
     uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
     uint32_t sync_waits;     /* I1077d: headless naps spent waiting for a running LIBRARY_SYNC to end */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
@@ -16769,6 +16770,21 @@ static int desk_replay_lines(desk* d, char* line) {
                 pointer_sent = 1;
             }
         } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_WAIT) {
+            sel_open_progress op;
+            sel_engine_open_progress(d->engine, &op);
+            if (!d->live && op.active && d->open_waits < 20000u) {
+                /* I1460: the song open runs on rd_play since I1415/I1416c and `wait` moves a virtual clock without pumping the
+                 * engine, so a song started just before would land only after the wait. Hold the turn (the shell pumps the engine)
+                 * until the open lands, as a live clock would in the first milliseconds; at most about 20 s. */
+                if (nl != NULL) {
+                    *nl = '\n';
+                }
+                d->input_at = line;
+                d->input_done = 0;
+                d->open_waits++;
+                desk_nap();
+                return 1;
+            }
             desk_advance(d, ev.ms);
             pointer_sent = d->sends != sent; /* a timer that fired in the wait (the search debounce) sent a line: resume on its answer */
         } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_SLEEP) {
