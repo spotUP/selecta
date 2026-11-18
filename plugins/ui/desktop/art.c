@@ -491,7 +491,7 @@ const char* art_video(desk_art* a, const char* title) {
 const uint32_t* art_big_frame(desk_art* a, const char* title, int32_t edge, uint32_t n) {
     art_entry* e;
     art_big_job* b;
-    uint32_t i, k;
+    uint32_t i;
     int32_t frame = 0;
 
     if (a == NULL || edge <= DESK_ART_TILE_EDGE || edge > 2048 || (e = find_entry(a, title)) == NULL || e->album == 0) {
