@@ -30,11 +30,16 @@ static int key_ok(const char* key) {
 
 int sel_turran_row(void* ctx, const char* dir, const char* file, const char* title, const char* artist, const char* format) {
     const sel_search_sink* out = ctx;
-    char key[KEY_CAP];
+    char key[KEY_CAP], name[KEY_CAP];
 
     (void)format;
     if ((size_t)snprintf(key, sizeof key, "%s/%s", dir, file) >= sizeof key || !key_ok(key)) {
         return -1;
+    }
+    if (title == NULL || title[0] == '\0') { /* I1457: the index carries no title; the search row shows the file name without its extension */
+        const char* dot = strrchr(file, '.');
+        snprintf(name, sizeof name, "%.*s", (int)(dot != NULL && dot != file ? (size_t)(dot - file) : strlen(file)), file);
+        title = name;
     }
     return out->row(out->ctx, key, title, artist, sel_platform_path_ext(file));
 }

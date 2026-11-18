@@ -15,6 +15,7 @@ typedef struct {
     int n;
     char path[8][160];
     char format[8][16];
+    char title[8][64];
 } rows;
 
 static int g_fail;
@@ -22,9 +23,9 @@ static int g_fail;
 static int take(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
     rows* r = ctx;
 
-    (void)title;
     (void)artist;
     if (r->n < 8) {
+        snprintf(r->title[r->n], sizeof r->title[0], "%s", title);
         snprintf(r->path[r->n], sizeof r->path[0], "%s", path);
         snprintf(r->format[r->n], sizeof r->format[0], "%s", format);
     }
@@ -73,6 +74,8 @@ int main(void) {
     fclose(f);
     IS("path0", r.path[0], "Collection/Music/Mod/Ripped By Chip/Protracker/Andy (UK)/runaway short.mod");
     IS("format0", r.format[0], "mod");
+    IS("title0 falls back to the file name (I1457)", r.title[0], "runaway short");
+    IS("title2", r.title[2], "Awesome-A - Turrican (WIP)");
     IS("path1", r.path[1], "Collection/Music/Mod/Ripped By Chip/Protracker/Animotion/revolution.mod");
     IS("path2", r.path[2], "Collection/Music/MP3_OGG_WAV/AmigaRemix/Awesome-A - Turrican (WIP).mp3");
     IS("format2", r.format[2], "mp3");
