@@ -55,6 +55,11 @@ function(run_at tag waits)
   set(${tag}_watch ${CMAKE_MATCH_7} PARENT_SCOPE)
   set(${tag}_clicks ${CMAKE_MATCH_8} PARENT_SCOPE)
   set(${tag}_last "${CMAKE_MATCH_9}" PARENT_SCOPE)
+  # I1455: the cover spinner dump line exists and agrees with the show
+  if(NOT "${o}" MATCHES "cover_spinner drawn=([0-9]+) slide_switches=([0-9]+) slide_of=([0-9]+)")
+    message(FATAL_ERROR "${tag}: no cover_spinner line in:\n${o}")
+  endif()
+  set(${tag}_spof ${CMAKE_MATCH_3} PARENT_SCOPE)
 endfunction()
 
 run_at(t0 "wait 400\nwait 100\n")
@@ -73,6 +78,9 @@ if(t0_hash STREQUAL t1_hash OR t1_hash STREQUAL t2_hash OR t0_hash STREQUAL t2_h
 endif()
 if(NOT t3_hash STREQUAL t0_hash)
   message(FATAL_ERROR "the show must wrap to the first still: ${t3_hash} vs ${t0_hash}")
+endif()
+if(NOT t0_spof EQUAL 3)
+  message(FATAL_ERROR "cover_spinner dump slide_of=${t0_spof}, want 3")
 endif()
 # Watch demo: the button exists and a click records the link
 if(t0_watch LESS 1)
