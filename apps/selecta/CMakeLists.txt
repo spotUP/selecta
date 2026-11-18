@@ -12,6 +12,11 @@ else()
   target_sources(selecta PRIVATE ../common/ctlsock.c)
 endif()
 
+# I694a: the web build writes selecta.html + .js + .wasm (+ .worker.js); serve with scripts/serve-web.py.
+if(EMSCRIPTEN)
+  set_target_properties(selecta PROPERTIES SUFFIX .html)
+endif()
+
 # I1023: on macOS the selecta target is a bundle, so a double-click on Selecta.app opens the desktop UI with no Terminal
 # window. $<TARGET_FILE:selecta> then names Selecta.app/Contents/MacOS/Selecta, which is how every test finds the binary.
 # The icon (apps/selecta/icon/selecta.svg) is rendered into Selecta.icns at build time by icon/make_icns.sh.

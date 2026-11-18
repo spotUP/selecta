@@ -492,7 +492,7 @@ const char* sel_registry_default_output(const sel_tag* machine) {
 
 const char* sel_registry_default_ui(const sel_tag* machine) {
     (void)machine;
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__EMSCRIPTEN__) /* I694a: the browser is a window launch */
     /* I1023: a double-click on Selecta.app opens the desktop UI; a build without it falls back to text. */
     if (sel_registry_find(SEL_PLUGIN_KIND_UI, "desktop") != NULL) {
         return "desktop";

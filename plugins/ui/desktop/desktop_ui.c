@@ -2047,7 +2047,7 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease);
 
 /* I1384b: hands an http(s) link to the system browser. SELECTA_NO_OPEN=1 (tests) only records the click. */
 static void desk_open_url(const char* url) {
-#if defined(__APPLE__) || (defined(__unix__) && !defined(__amigaos__) && !defined(AMIGA))
+#if defined(__APPLE__) || (defined(__unix__) && !defined(__amigaos__) && !defined(AMIGA) && !defined(__EMSCRIPTEN__)) /* I694a: no processes in the browser */
     extern char** environ;
     pid_t pid;
 #if defined(__APPLE__)
@@ -18423,7 +18423,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return 1;
     }
 #ifdef SELECTA_DESKTOP_SDL
-    if (d->live) { /* a window on a real display: idle until an event or the next second boundary */
+    if (d->live && d->sdl != NULL) { /* a window on a real display: idle until an event or the next second boundary */
         int32_t w = 0, h = 0;
         int ev;
         uint32_t wait_ms;

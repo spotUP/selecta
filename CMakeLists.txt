@@ -13,6 +13,10 @@ project(selecta VERSION 0.0.1 LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+# I694a: musl hides POSIX (clock_gettime, nanosleep, strdup, strtok_r) under -std=c99 as glibc does; the Emscripten build defines it everywhere.
+if(EMSCRIPTEN)
+  add_compile_definitions(_DEFAULT_SOURCE)
+endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
