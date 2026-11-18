@@ -78,6 +78,23 @@ if(NOT nmp EQUAL 3 OR NOT nlib GREATER 0 OR NOT n EQUAL want)
   message(FATAL_ERROR "badge names: Modules.pl=${nmp} (want 3) Library=${nlib} (want > 0) total=${n}:\n${a}")
 endif()
 
+# I1458: no source badge overlaps the row's hover "..." button (search_badge_rect <n> x y w h more x y w h; more w = 0 for a row without one).
+string(REGEX MATCHALL "search_badge_rect [0-9]+ -?[0-9]+ -?[0-9]+ [0-9]+ [0-9]+ more -?[0-9]+ -?[0-9]+ [0-9]+ [0-9]+" rects "${a}")
+set(with_more 0)
+foreach(rl IN LISTS rects)
+  string(REGEX MATCH "search_badge_rect [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) more (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)" _ "${rl}")
+  if(NOT CMAKE_MATCH_7 EQUAL 0)
+    math(EXPR with_more "${with_more} + 1")
+    math(EXPR bright "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3}")
+    if(bright GREATER CMAKE_MATCH_5)
+      message(FATAL_ERROR "I1458: badge '${rl}' reaches into the row's \"...\" button:\n${a}")
+    endif()
+  endif()
+endforeach()
+if(with_more LESS 4)
+  message(FATAL_ERROR "I1458: only ${with_more} badge rows report a \"...\" button rect (want >= 4):\n${a}")
+endif()
+
 # 2. Modules.pl picked: three rows, three Modules.pl badges, no Library badge. I1073: at 1280 px the source chip row overflows and
 # Modules.pl is past its right end, so the right chevron scrolls the row to its end first (clicked more times than there are chips).
 set(scroll "")

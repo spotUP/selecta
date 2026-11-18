@@ -464,6 +464,7 @@ typedef struct desk {
     uint32_t search_facet;   /* I1456: the facet chips in force, a bit set: 0 All, 1 Songs, 2 Albums, 4 Artists; several may be on (union) */
     uint32_t badge_drawn;    /* I1020: the source badges the last Search frame painted (one per result row); badge_text keeps the first 16 names for the dump */
     char badge_text[16][48];
+    sel_gui_rect badge_rect[16], badge_more[16]; /* I1458: where each badge sat and where its row's hover "..." button sits, for the dump */
     uint32_t facet_drawn;    /* I1019f: the facet chips the last Search frame painted (the dump sentinel that the row is drawn under every source pick) */
     uint32_t scope_mask;     /* I1456: the source chips on, one bit per d->src row (union); 0 = read the single key in scope */
     int scope_filtered;      /* I1224: the scope is a source chip clicked over All results already shown: the grouped view stays and only that source's From section is drawn; no new query */
@@ -1311,6 +1312,8 @@ static void search_badge_draw(desk* d, sel_gui_rect row, const char* name) {
     draw_text_centered_pad(d, bx, name, 0, 11, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), lpx(d, 8));
     if (d->badge_drawn < 16u) {
         snprintf(d->badge_text[d->badge_drawn], sizeof d->badge_text[0], "%s", name);
+        d->badge_rect[d->badge_drawn] = bx;
+        d->badge_more[d->badge_drawn] = rect_of(0, 0, 0, 0);
     }
     d->badge_drawn++;
 }
@@ -8522,6 +8525,9 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "search_badges %u\n", (unsigned)d->badge_drawn); /* I1020: one source badge per result row of the last Search frame */
         for (oi = 0; oi < d->badge_drawn && oi < 16u; oi++) {
             o = dump_put(d, o, "search_badge %u %s\n", (unsigned)oi, d->badge_text[oi]);
+            o = dump_put(d, o, "search_badge_rect %u %d %d %d %d more %d %d %d %d\n", (unsigned)oi, (int)d->badge_rect[oi].x, (int)d->badge_rect[oi].y,
+                         (int)d->badge_rect[oi].w, (int)d->badge_rect[oi].h, (int)d->badge_more[oi].x, (int)d->badge_more[oi].y,
+                         (int)d->badge_more[oi].w, (int)d->badge_more[oi].h);
         }
         for (oi = 0; oi < d->on_n && oi < 3u; oi++) {
             o = dump_put(d, o, "online_row %u %d %d %d %d %s\n", (unsigned)oi, (int)d->on_row[oi].rect.x, (int)d->on_row[oi].rect.y, (int)d->on_row[oi].rect.w, (int)d->on_row[oi].rect.h, d->on_row[oi].key);
@@ -10917,8 +10923,9 @@ static void draw_search(desk* d) {
                         continue;
                     }
                     if (group >= 1u && group <= 3u ? 1 : (group == 4u && r->key != NULL)) { /* I1020: every result row names its source; a note row has none */
-                        bw = search_badge_w(d, src) + lpx(d, 16);
-                        search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), src);
+                        int32_t res = (group == 1u || group == 4u) && !r->album && r->key != NULL ? lpx(d, 36) : 0; /* I1458: the hover "..." button (song_row_add: 20 wide, 8 in) keeps its slot, the badge sits left of it */
+                        bw = search_badge_w(d, src) + lpx(d, 16) + res;
+                        search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg - res, lpx(d, SEARCH_ROW_H)), src);
                     }
                     {   /* I1412: "Title - Author": the title in the row colour, the divider and the author in the muted text token */
                         sel_gui_rect tr = rect_of(mn.x + mg, y, mn.w - 2 * mg - bw, lpx(d, SEARCH_ROW_H));
@@ -10933,8 +10940,11 @@ static void draw_search(desk* d) {
                     }
                 }
                 if ((group == 1u || group == 4u) && !r->album && r->key != NULL) {
-                    song_row_set_list(d, song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0),
-                                      SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
+                    song_row* sr = song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0);
+                    if (sr != NULL && d->badge_drawn > 0u && d->badge_drawn <= 16u) {
+                        d->badge_more[d->badge_drawn - 1u] = sr->more;
+                    }
+                    song_row_set_list(d, sr, SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
                 }
                 if (group == 2u && r->album && r->key != NULL) { /* I1408: an Albums row opens the album (the engine's VIEW_ACTIVATE album route) */
                     search_artist_reg_at(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), t, r);
