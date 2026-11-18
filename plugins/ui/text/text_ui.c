@@ -964,51 +964,6 @@ static const sel_view_state* tui_search_view(tui* u) {
 
 /* I1456: the search chips are All, Songs, Albums, Artists, then one per "From <source>" section of the shown results; keys 0 to 9 toggle them
  * (sel_uim_chip_toggle, shared with the desktop); the list is the union of the chips on (sel_uim_search_group_shown). */
-static uint32_t tui_search_from_n(const sel_view_state* v) {
-    uint32_t i, n = 0;
-    for (i = 0; i < v->row_n; i++) {
-        n += v->rows[i].kind == SEL_ROW_HEADING && sel_uim_search_group(v->rows[i].text) == 4u;
-    }
-    return n;
-}
-
-/* Name of the j-th From section (the text between "From " and " ("), into out. */
-static void tui_search_from_name(const sel_view_state* v, uint32_t j, char* out, size_t cap) {
-    uint32_t i;
-    const char* t = "";
-    const char* par;
-    size_t n;
-    for (i = 0; i < v->row_n; i++) {
-        if (v->rows[i].kind == SEL_ROW_HEADING && sel_uim_search_group(v->rows[i].text) == 4u && j-- == 0u) {
-            t = v->rows[i].text + 5;
-            break;
-        }
-    }
-    par = strrchr(t, '(');
-    n = par != NULL && par > t ? (size_t)(par - t) : strlen(t);
-    while (n > 0 && t[n - 1] == ' ') {
-        n--;
-    }
-    snprintf(out, cap, "%.*s", (int)n, t);
-}
-
-/* 1 when row `i` sits under a heading the chips leave out (the heading row included). */
-static int tui_search_chip_hidden(const tui* u, const sel_view_state* v, uint32_t i) {
-    uint32_t h = i + 1u, from = 0, k;
-    do {
-        h--;
-        if (v->rows[h].kind == SEL_ROW_HEADING) {
-            break;
-        }
-    } while (h > 0u);
-    if (v->rows[h].kind != SEL_ROW_HEADING) {
-        return 0;
-    }
-    for (k = 0; k < h; k++) {
-        from += v->rows[k].kind == SEL_ROW_HEADING && sel_uim_search_group(v->rows[k].text) == 4u;
-    }
-    return !sel_uim_search_group_shown(u->sfacets, u->ssrc != 0u, sel_uim_search_group(v->rows[h].text), from < 32u && (u->ssrc >> from & 1u) != 0u);
-}
 
 /* Digit keys on the search results: toggle chip 0..9. 1 when the key was taken. */
 static int tui_search_chip_key(tui* u, const txt_key* k) {
@@ -1018,7 +973,7 @@ static int tui_search_chip_key(tui* u, const txt_key* k) {
         return 0;
     }
     chip = k->code - '0';
-    if (chip >= 4u + tui_search_from_n(v)) {
+    if (chip >= 4u + sel_uim_search_from_n(v->rows, v->row_n)) {
         return 0;
     }
     if (chip < 4u) {
@@ -1038,7 +993,7 @@ static int tui_search_step(tui* u, const char* action) {
         return 0;
     }
     for (at = (int64_t)(v->cursor - v->window_start) + dir; at >= 0 && at < (int64_t)v->row_n; at += dir) {
-        if (!sel_uim_search_row_folded(v->rows, v->row_n, (uint32_t)at) && !tui_search_chip_hidden(u, v, (uint32_t)at)) {
+        if (!sel_uim_search_row_folded(v->rows, v->row_n, (uint32_t)at) && !sel_uim_search_row_hidden(v->rows, v->row_n, (uint32_t)at, u->sfacets, u->ssrc)) {
             char buf[48];
             snprintf(buf, sizeof buf, "VIEW_CURSOR %u", (unsigned)(v->window_start + (uint32_t)at));
             tui_send(u, buf);
@@ -1066,7 +1021,7 @@ static int tui_search_fold_enter(tui* u) {
 /* The results list: headings, the unfolded rows, and under a category with more rows than the fold shows its Show all (n) / Show less line. */
 static void tui_search_draw(tui* u, const sel_state* s, uint32_t width) {
     const sel_view_state* v = s->view;
-    uint32_t i, y = 3u, rows = tui_main_rows(u), head = 0, have_head = 0, x = 1u, nf = tui_search_from_n(v);
+    uint32_t i, y = 3u, rows = tui_main_rows(u), head = 0, have_head = 0, x = 1u, nf = sel_uim_search_from_n(v->rows, v->row_n);
     char buf[300];
     for (i = 0; i < 4u + nf && x < width; i++) { /* the chip row: [Name] is on, the digit is the key */
         int on = i == 0u ? u->sfacets == 0u && u->ssrc == 0u : i < 4u ? (u->sfacets >> (i - 1u) & 1u) != 0u : (u->ssrc >> (i - 4u) & 1u) != 0u;
@@ -1074,7 +1029,7 @@ static void tui_search_draw(tui* u, const sel_state* s, uint32_t width) {
         if (i < 4u) {
             snprintf(nm, sizeof nm, "%s", sel_uim_search_facets[i]);
         } else {
-            tui_search_from_name(v, i - 4u, nm, sizeof nm);
+            sel_uim_search_from_name(v->rows, v->row_n, i - 4u, nm, sizeof nm);
         }
         snprintf(buf, sizeof buf, on ? "%u [%s] " : "%u %s  ", (unsigned)i, nm);
         x += tui_ptext(u, x, y, buf, width - x, tui_style(u, on ? TXT_ROLE_CURSOR : TXT_ROLE_DIM));
@@ -1098,7 +1053,7 @@ static void tui_search_draw(tui* u, const sel_state* s, uint32_t width) {
         if (end || y - 3u >= rows) {
             break;
         }
-        if (tui_search_chip_hidden(u, v, i)) {
+        if (sel_uim_search_row_hidden(v->rows, v->row_n, i, u->sfacets, u->ssrc)) {
             have_head = 0; /* no Show all line for a section the chips leave out */
             continue;
         }

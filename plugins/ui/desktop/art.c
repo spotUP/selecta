@@ -2,6 +2,7 @@
 #include "art.h"
 
 #include <selecta/engine.h>
+#include <selecta/uimodel.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -478,15 +479,8 @@ static void big_worker(void* ctx) {
 
 uint32_t art_frames(desk_art* a, const char* title) {
     art_entry* e = a != NULL ? find_entry(a, title) : NULL;
-    uint32_t n = 0u, k;
 
-    if (e == NULL || e->album == 0) {
-        return 0u;
-    }
-    for (k = 0; k < 8u; k++) {
-        n += (e->kmask >> k) & 1u;
-    }
-    return n > 0u ? n : 1u; /* a source without kinds holds just the cover */
+    return e == NULL || e->album == 0 ? 0u : sel_uim_art_frames(e->kmask);
 }
 
 const char* art_video(desk_art* a, const char* title) {
@@ -497,20 +491,13 @@ const char* art_video(desk_art* a, const char* title) {
 const uint32_t* art_big_frame(desk_art* a, const char* title, int32_t edge, uint32_t n) {
     art_entry* e;
     art_big_job* b;
-    uint32_t i, k;
+    uint32_t i;
     int32_t frame = 0;
 
     if (a == NULL || edge <= DESK_ART_TILE_EDGE || edge > 2048 || (e = find_entry(a, title)) == NULL || e->album == 0) {
         return NULL;
     }
-    if (e->kmask != 0u) { /* the n-th present still */
-        for (k = 0; k < 8u; k++) {
-            if (((e->kmask >> k) & 1u) != 0u && n-- == 0u) {
-                frame = (int32_t)k;
-                break;
-            }
-        }
-    }
+    frame = (int32_t)sel_uim_art_frame_kind(e->kmask, n); /* the n-th present still */
     for (i = 0; i < a->big_n; i++) {
         if (a->big[i].album == e->album && a->big[i].edge == edge && a->big[i].frame == frame) {
             return a->big[i].px;

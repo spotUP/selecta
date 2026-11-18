@@ -132,6 +132,25 @@ uint32_t sel_uim_search_section_rows(const sel_view_row* rows, uint32_t row_n, u
 int sel_uim_search_expanded(const char* heading);
 /* 1 when row `i` is a result row a folded category hides (past SEL_UIM_SEARCH_FOLD_ROWS under a heading that is not expanded); headings never fold. The text and MUI lists skip these rows. */
 int sel_uim_search_row_folded(const sel_view_row* rows, uint32_t row_n, uint32_t i);
+/* I1456: number of "From <source>" sections in the shown search rows (one source chip each). */
+uint32_t sel_uim_search_from_n(const sel_view_row* rows, uint32_t row_n);
+/* I1456: name of the k-th From section (the text between "From " and " ("), into out. */
+void sel_uim_search_from_name(const sel_view_row* rows, uint32_t row_n, uint32_t k, char* out, size_t cap);
+/* I1456: 1 when row `i` sits under (or is) a heading the chips leave out: `facets` and `src` are the chip bit sets (0 = All). The text and MUI lists skip these rows. */
+int sel_uim_search_row_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t i, uint32_t facets, uint32_t src);
+/* I1454: the cover slide show clock shared by every UI. `key` names the playing song (a change restarts at still 0); time only counts while `playing`;
+ * a step is capped at 5000 ms. Returns 1 when idx advanced on this call. */
+typedef struct sel_uim_slide {
+    char key[512];
+    uint32_t idx, acc_ms, last_ms, switches;
+} sel_uim_slide;
+int sel_uim_slide_step(sel_uim_slide* s, const char* key, uint32_t n, int playing, uint32_t now_ms, uint32_t period_ms);
+/* Pref art.slideshow_seconds ("6") to ms; under one second or unparsable gives 6000. */
+uint32_t sel_uim_slide_period_ms(const char* pref_value);
+/* Stills a `kinds` mask holds (bits 0..7: cover, dz1..dz7; the video bit is not a still); 1 when none, since a source without kinds holds the cover. */
+uint32_t sel_uim_art_frames(uint32_t kinds);
+/* Bit index (0 = cover, k = dz<k>) of the n-th still of `kinds`; 0 when the mask is empty. */
+uint32_t sel_uim_art_frame_kind(uint32_t kinds, uint32_t n);
 /* Flips the category of `heading` between folded and expanded. */
 void sel_uim_search_fold_toggle(const char* heading);
 /* Song context menu (DUI-P4-16): five items on every page; item 4 is Remove from Queue on the Queue page. */

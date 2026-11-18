@@ -1022,6 +1022,26 @@ void sel_gui_round_rect(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint3
     sel_gui_prof_end(c, SEL_GUI_PROF_ROUND, t0);
 }
 
+int32_t sel_gui_spinner_dot(uint32_t i, int32_t cx, int32_t cy, int32_t r, int32_t* x, int32_t* y) {
+    static const int16_t ring[8][2] = {{0, -1000}, {707, -707}, {1000, 0}, {707, 707}, {0, 1000}, {-707, 707}, {-1000, 0}, {-707, -707}};
+    *x = cx + ring[i & 7u][0] * r / 1000;
+    *y = cy + ring[i & 7u][1] * r / 1000;
+    return r / 3 > 2 ? r / 3 : 2; /* dot size */
+}
+
+uint32_t sel_gui_spinner_lead(uint32_t now_ms) {
+    return (now_ms / 100u) % 8u;
+}
+
+void sel_gui_spinner(sel_gui_canvas* c, int32_t cx, int32_t cy, int32_t r, uint32_t lead, uint32_t accent, uint32_t muted) {
+    uint32_t i;
+    for (i = 0; i < 8u; i++) {
+        int32_t x, y, dot = sel_gui_spinner_dot(i, cx, cy, r, &x, &y);
+        sel_gui_rect d = {x - dot / 2, y - dot / 2, dot, dot};
+        sel_gui_round_rect(c, d, dot / 2, i == lead ? accent : muted);
+    }
+}
+
 void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb) {
     uint32_t t0 = sel_gui_prof_begin(c);
     round_frame_raw(c, to_canvas(c, r), radius, width, argb, ydv(c));
