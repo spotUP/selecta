@@ -2834,19 +2834,19 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             rows++;
         }
         {   /* I774n R11c: spread the buffer rows over the six lists; an empty section hides */
-            uint32_t n[SEL_UIM_SI_SECTION_N + 1] = {0}, r, L;
+            uint32_t sec_n[SEL_UIM_SI_SECTION_N + 1] = {0}, r, L;
             for (r = 0; r < rows; r++) {
                 L = s->info_sec[r];
-                s->si_ptr[L][n[L]] = s->info_buf[r];
-                s->si_idx[L][n[L]++] = (uint8_t)r;
+                s->si_ptr[L][sec_n[L]] = s->info_buf[r];
+                s->si_idx[L][sec_n[L]++] = (uint8_t)r;
             }
             for (L = 0; L <= SEL_UIM_SI_SECTION_N; L++) {
-                s->si_ptr[L][n[L]] = NULL;
+                s->si_ptr[L][sec_n[L]] = NULL;
                 if (s->si_list[L] != NULL) {
-                    set(s->si_list[L], UPA_List_Count, (ULONG)n[L]);
+                    set(s->si_list[L], UPA_List_Count, (ULONG)sec_n[L]);
                 }
                 if (L > 0u && s->si_grp[L] != NULL) {
-                    set(s->si_grp[L], MUIA_ShowMe, n[L] > 0u ? TRUE : FALSE);
+                    set(s->si_grp[L], MUIA_ShowMe, sec_n[L] > 0u ? TRUE : FALSE);
                 }
             }
         }
