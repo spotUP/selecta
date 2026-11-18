@@ -1,0 +1,46 @@
+# dui-cover-download-spinner (I1459): the cover spinner shows while a cover image DOWNLOADS, not only while it decodes.
+#   Violated invariant: art_scrape fetched over the network with no in-flight state, so the cover area stayed bare until the image was stored.
+#   The library keeps a fetch-in-flight flag (sel_library_cover_fetching, read through sel_engine_cover_fetching); the desktop cover spinner reads it.
+#   Fixture: a tagged mp3 with no cover scanned into a scratch db. Run A: SELECTA_SCRAPE_HOLD_MS keeps the scrape GET (to a refused local port) in
+#   flight for 5 s while Now Playing shows the song: `cover_spinner drawn=` must be > 0 and `fetching=` 1 at some frame. Run B (no hold, the GET
+#   fails at once): no spinner is drawn. -DSELECTA -DSONGS -DWORK -DSQLITE3
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+dui_require_sdl()
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}/music")
+file(COPY "${HERE}/../library/fixtures/nocover_hit.mp3" DESTINATION "${WORK}/music")
+set(song "${WORK}/music/nocover_hit.mp3")
+set(db "${WORK}/library.db")
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+foreach(v MB CAA ITUNES DZ)
+  set(ENV{SELECTA_ART_${v}_URL} "http://127.0.0.1:1")
+endforeach()
+unset(ENV{SELECTA_ART_SCRAPE})
+unset(ENV{SELECTA_SCRAPE_HOLD_MS})
+set(common --ui desktop --backend mem --view nowplaying --canvas 1280x800 --clock fixed --stats --db "${db}")
+file(WRITE "${WORK}/seed.txt" "wait 1\nexec LIBRARY_SCAN ${WORK}/music\nwait 8\n")
+dui_run(seed ${common} --input "${WORK}/seed.txt")
+file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
+file(WRITE "${WORK}/play.txt" "exec QUEUE_ADD \"${song}\"\nexec PLAY\nwait 600\nwait 600\n")
+
+function(spin tag)
+  dui_run(o ${common} --input "${WORK}/play.txt")
+  if(NOT "${o}" MATCHES "cover_spinner drawn=([0-9]+) slide_switches=([0-9]+) slide_of=([0-9]+) fetching_seen=([0-9]+)")
+    message(FATAL_ERROR "${tag}: no cover_spinner line in:\n${o}")
+  endif()
+  set(${tag}_drawn ${CMAKE_MATCH_1} PARENT_SCOPE)
+  set(${tag}_seen ${CMAKE_MATCH_4} PARENT_SCOPE)
+endfunction()
+
+set(ENV{SELECTA_SCRAPE_HOLD_MS} 5000)
+spin(held)
+unset(ENV{SELECTA_SCRAPE_HOLD_MS})
+spin(quick)
+if(held_seen LESS 1 OR held_drawn LESS 1)
+  message(FATAL_ERROR "held fetch: spinner drawn=${held_drawn} fetching_seen=${held_seen}, want both > 0")
+endif()
+if(NOT quick_drawn EQUAL 0)
+  message(FATAL_ERROR "no fetch in flight: spinner drawn=${quick_drawn}, want 0")
+endif()
+message(STATUS "cover_download_spinner_ok")

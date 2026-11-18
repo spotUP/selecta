@@ -260,6 +260,7 @@ typedef struct desk {
     uint32_t search_wait_reads;  /* sel_engine_stats.lib_reads_applied when the query went out */
     uint32_t search_fire_frame;  /* d->frames when the query went out */
     uint32_t spinner_draws;      /* frames that drew the searching spinner (dump sentinel) */
+    uint32_t cover_fetch_seen;   /* I1459: cover_pending reads that found a network fetch in flight (dump sentinel) */
     uint32_t cover_spins;        /* I1455: frames whose cover area drew that spinner while an image downloads or decodes (dump sentinel) */
     uint32_t spinner_first_frame; /* d->frames of the first spinner frame after the last fire, ~0 none */
     uint32_t search_cleared;     /* frames that drew the cleared list (no stale rows) while search_wait */
@@ -2121,6 +2122,12 @@ static const uint32_t* slide_pixels(desk* d, const char* key, int32_t edge, uint
 }
 
 static void draw_search_spinner(desk* d, int32_t cx, int32_t cy, int32_t r);
+/* I1459: a cover is still on its way: the network fetch (library flag) or a decode (art worker). */
+static int cover_pending(desk* d) {
+    int fetching = sel_engine_cover_fetching(d->engine);
+    d->cover_fetch_seen += (uint32_t)fetching;
+    return (d->art != NULL && art_busy(d->art)) || fetching;
+}
 /* I1455: the searching spinner of I1231 over a cover area whose image is still on its way (a batch or full-size decode is running). */
 static void cover_spinner(desk* d, sel_gui_rect ar) {
     draw_search_spinner(d, ar.x + ar.w / 2, ar.y + ar.h / 2, (ar.w < ar.h ? ar.w : ar.h) / 8);
@@ -2161,7 +2168,7 @@ static int cover_draw(desk* d, sel_gui_rect ar, const char* key, int32_t radius)
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
             return 1;
         }
-        wait = art_busy(d->art);
+        wait = cover_pending(d);
     }
     sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, radius);
     sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
@@ -8627,7 +8634,7 @@ static const char* library_dump_build(desk* d) {
         sel_engine_stats_get(d->engine, &fes);
         o = dump_put(d, o, "search_fanout peak=%u wall_ms=%u sources=%u\n", (unsigned)fes.search_peak, (unsigned)fes.search_wall_ms, (unsigned)fes.search_src_n);
         o = dump_put(d, o, "search_catalogue_groups=%u\n", (unsigned)fes.search_catalogue_groups);
-        o = dump_put(d, o, "cover_spinner drawn=%u slide_switches=%u slide_of=%u\n", (unsigned)d->cover_spins, (unsigned)d->slide_switches, (unsigned)d->slide_of);
+        o = dump_put(d, o, "cover_spinner drawn=%u slide_switches=%u slide_of=%u fetching_seen=%u\n", (unsigned)d->cover_spins, (unsigned)d->slide_switches, (unsigned)d->slide_of, (unsigned)d->cover_fetch_seen);
         o = dump_put(d, o, "search_spinner drawn=%u first_frame_after_fire=%d cleared=%u wait=%d\n", (unsigned)d->spinner_draws,
                      d->spinner_first_frame == ~0u ? -1 : (int)(d->spinner_first_frame - d->search_fire_frame), (unsigned)d->search_cleared,
                      d->search_wait);
@@ -13706,7 +13713,7 @@ static void draw_nowplaypage(desk* d) {
         d->pc_page = 0;
     } else {
         song_platform_cover(d, ar, st->song.path, f->title, &d->pc_page);
-        if (st->song.path != NULL && d->art != NULL && art_busy(d->art)) cover_spinner(d, ar); /* I1455: the cover is still downloading */
+        if (st->song.path != NULL && cover_pending(d)) cover_spinner(d, ar); /* I1455/I1459: the cover is still downloading or decoding */
     }
     x = ar.x + ar.w + mg;
     y = ar.y;

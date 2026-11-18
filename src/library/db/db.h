@@ -670,6 +670,8 @@ const char* sel_dz_family(uint32_t family);
 const char* sel_dz_pick(const char* js, const char* fam, const char** end);
 void sel_library_scrape_set_enabled(sel_library* lib, int on);
 void sel_library_scrape_kick(sel_library* lib);
+/* I1459: 1 while a cover scrape GET (MusicBrainz, Cover Art Archive, iTunes, Demozoo, DeepSID) is on the wire; the cover spinner shows it. */
+int sel_library_cover_fetching(sel_library* lib);
 int sel_library_scrape_poll(sel_library* lib);
 void sel_library_scrape_wait(sel_library* lib);
 void sel_library_scrape_stats(sel_library* lib, sel_scrape_stats* out);
