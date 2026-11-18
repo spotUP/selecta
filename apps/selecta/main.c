@@ -371,9 +371,15 @@ static int scripted_run(int argc, char** argv, int has_keys, int out_is_null) {
  * --output). Anything else keeps the text UI, so test and terminal runs never open a window. --input is deliberately not a
  * marker: it is the desktop UI's own script file, so a run that passes it is asking for the desktop. */
 static int default_ui_allowed(int argc, char** argv) {
+#ifdef __EMSCRIPTEN__
+    (void)argc;
+    (void)argv;
+    return 1; /* I694a: the page is the window; stdio is the page console, never a terminal */
+#else
     return !isatty(0) && !isatty(1) && option(argc, argv, "--keys", NULL) == NULL &&
            option(argc, argv, "--console-frames", NULL) == NULL && option(argc, argv, "--size", NULL) == NULL &&
            option(argc, argv, "--output", NULL) == NULL;
+#endif
 }
 
 /* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
