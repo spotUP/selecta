@@ -412,6 +412,7 @@ int desk_sdl_open_folder_dialog(desk_sdl* b) {
         return 0;
     }
 #ifdef __EMSCRIPTEN__ /* I694a: the SDL 3.2.22 Emscripten port has no file dialogs */
+    (void)folder_chosen;
     return 0;
 #else
     SDL_ShowOpenFolderDialog(folder_chosen, b, b->window, NULL, 0);
