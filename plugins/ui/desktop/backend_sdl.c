@@ -227,11 +227,16 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     if (b->window != NULL) { /* the offscreen and dummy drivers have no GL: render in software */
         b->renderer = SDL_CreateRenderer(b->window, b->headless ? "software" : NULL);
     }
-#ifdef __EMSCRIPTEN__ /* I694a: the transferred OffscreenCanvas keeps its 300x150 default unless the worker sizes it itself */
-    emscripten_set_canvas_element_size("#canvas", w, h);
-#endif
 #ifdef __EMSCRIPTEN__ /* I694a: name the renderer SDL picked, the browser round 4 could not tell */
-    fprintf(stderr, "selecta: web renderer %s, window %p\n", b->renderer != NULL ? SDL_GetRendererName(b->renderer) : "none", (void*)b->window);
+    {
+        int ww = 0, wh = 0, pw = 0, ph = 0, ow = 0, oh = 0;
+        SDL_GetWindowSize(b->window, &ww, &wh);
+        SDL_GetWindowSizeInPixels(b->window, &pw, &ph);
+        if (b->renderer != NULL) {
+            SDL_GetCurrentRenderOutputSize(b->renderer, &ow, &oh);
+        }
+        fprintf(stderr, "selecta: web renderer %s, request %dx%d window %dx%d pixels %dx%d render %dx%d density %.2f\n", b->renderer != NULL ? SDL_GetRendererName(b->renderer) : "none", (int)w, (int)h, ww, wh, pw, ph, ow, oh, (double)SDL_GetWindowPixelDensity(b->window));
+    }
 #endif
     if (b->renderer == NULL || !make_texture(b, w, h)) {
         if (b->renderer == NULL) {
@@ -722,6 +727,17 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
             result = DESK_SDL_ACTIVITY;
         }
     }
+#ifdef __EMSCRIPTEN__ /* I694a: the canvas may be sized after the window opens without any resize event; re-read the pixel size so the first layout uses it */
+    if (result != DESK_SDL_RESIZE) {
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(b->window, &pw, &ph);
+        if (pw > 0 && ph > 0 && (pw != b->w || ph != b->h)) {
+            *w = pw;
+            *h = ph;
+            result = DESK_SDL_RESIZE;
+        }
+    }
+#endif
     return result;
 }
 
