@@ -484,6 +484,32 @@ static int url_art(sel_library* lib, const char* key, int id, sel_scrape_stats* 
     return ok;
 }
 
+/* I1454: a song keeps every still it has: the first is its 'cover', the next ones 'dz1'..'dz7' (the slide show of I1384b cycles them). An image the
+ * song already holds (same bytes) is not added twice. 1 = stored, 0 = duplicate or no free slot. */
+static int still_add(sel_library* lib, int id, const char* key, const void* data, size_t len) {
+    uint8_t* tmp = (uint8_t*)malloc(DZ_IMAGE_MAX);
+    char kind[8];
+    int k, ok = 0;
+
+    if (tmp == NULL) return 0;
+    for (k = 0; k < 8; k++) {
+        int n;
+
+        if (k == 0) strcpy(kind, "cover");
+        else snprintf(kind, sizeof kind, "dz%d", k);
+        n = dz_has(lib, id, kind, tmp, DZ_IMAGE_MAX);
+        if (n <= 0) {
+            dz_put(lib, id, kind, data, len);
+            dz_put(lib, id, "dz_key", key, strlen(key));
+            ok = 1;
+            break;
+        }
+        if ((size_t)n == len && memcmp(tmp, data, len) == 0) break;
+    }
+    free(tmp);
+    return ok;
+}
+
 static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st);
 static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stats* st);
 
@@ -519,9 +545,7 @@ static int composer_art(sel_library* lib, const char* key, int id, sel_scrape_st
                 img.cap = DZ_IMAGE_MAX;
                 img.len = 0;
                 if (scrape_get(url, &img, st) == 1 && img.len < DZ_IMAGE_MAX && is_image(&img)) {
-                    dz_put(lib, id, "cover", img.data, img.len);
-                    dz_put(lib, id, "dz_key", key, strlen(key));
-                    ok = 1;
+                    ok = still_add(lib, id, key, img.data, img.len);
                 }
             }
         }
@@ -532,12 +556,12 @@ static int composer_art(sel_library* lib, const char* key, int id, sel_scrape_st
 }
 
 static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
-    char base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], kind[12], stamp[24];
+    char base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], stamp[24];
     uint8_t seen[24];
     scrape_buf js, img;
     sel_art_op op;
     const char *p, *end = NULL, *fam = NULL;
-    int id, alb, n = 0, r, shots_max = DZ_SHOTS_MAX;
+    int id, alb, n = 0, r, sid, shots_max = DZ_SHOTS_MAX;
     const char* cap_env = getenv("SELECTA_ART_DZ_SHOTS"); /* test knob: a live check fetches one image */
 
     if (cap_env != NULL && atoi(cap_env) > 0 && atoi(cap_env) < shots_max) shots_max = atoi(cap_env);
@@ -546,11 +570,22 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     op.op = SEL_ART_FIND;
     op.ref = key;
     alb = art_request(lib, &op);
-    if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) return 1; /* real art, or screenshots already cached */
-    if (folder_art(lib, key, id) || url_art(lib, key, id, st) || composer_art(lib, key, id, st) ||
-        csdb_cover(lib, key, id, st)) {
+    if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) { /* real art, or screenshots already cached */
+        if (alb == id && dz_has(lib, id, "dz_more", NULL, 0) <= 0) { /* I1454: a SID cover cached before the rotation gets the CSDb shots once */
+            csdb_cover(lib, key, id, st);
+            dz_put(lib, id, "dz_more", "1", 1);
+        }
+        return 1;
+    }
+    if (folder_art(lib, key, id) || url_art(lib, key, id, st)) {
         st->scraped++;
         return 1;
+    }
+    sid = composer_art(lib, key, id, st); /* I1454: the composer photo, then the CSDb shots, then Demozoo: all of them rotate, not the first only */
+    sid |= csdb_cover(lib, key, id, st);
+    if (sid) {
+        st->scraped++;
+        dz_put(lib, id, "dz_more", "1", 1);
     }
     memset(meta, 0, sizeof meta);
     if (strncmp(key, "modland:pub/modules/", 20) != 0) { /* I1401: any other source is asked by title + artist from the songs row */
@@ -595,9 +630,7 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
             r = scrape_get(shot, &img, st);
             if (r < 0) break;
             if (r == 1 && img.len < img.cap && is_image(&img)) {
-                if (n == 0) strcpy(kind, "cover");
-                else snprintf(kind, sizeof kind, "dz%d", n);
-                dz_put(lib, id, kind, img.data, img.len);
+                still_add(lib, id, key, img.data, img.len);
                 n++;
             }
         }
@@ -661,7 +694,7 @@ static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stat
     char dk[1100], base[256], url[SCRAPE_URL_MAX];
     sel_art_op op;
     scrape_buf js, img;
-    int ids[1], ok = 0, n;
+    int ids[3], ok = 0, n, i, ni;
 
     memset(&op, 0, sizeof op);
     op.op = SEL_ART_DS_KEY;
@@ -674,15 +707,13 @@ static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stat
     img.data = malloc(DZ_IMAGE_MAX);
     if (js.data != NULL && img.data != NULL && (n = dz_has(lib, sel_art_dz_id(dk), "ds_csdb", js.data, DS_JSON_MAX - 1u)) > 0) {
         js.data[n] = '\0';
-        if (sel_deepsid_csdb_ids((const char*)js.data, ids, 1u) > 0) {
-            base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
-            snprintf(url, sizeof url, "%s/api/deepsid/image/csdb/%d.jpg?w=320", base, ids[0]);
+        ni = (int)sel_deepsid_csdb_ids((const char*)js.data, ids, 3u); /* I1454: up to 3 release screenshots, all join the rotation */
+        base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+        for (i = 0; i < ni; i++) {
+            snprintf(url, sizeof url, "%s/api/deepsid/image/csdb/%d.jpg?w=320", base, ids[i]);
             img.cap = DZ_IMAGE_MAX;
-            if (scrape_get(url, &img, st) == 1 && img.len < DZ_IMAGE_MAX && is_image(&img)) {
-                dz_put(lib, id, "cover", img.data, img.len);
-                dz_put(lib, id, "dz_key", key, strlen(key));
-                ok = 1;
-            }
+            img.len = 0;
+            if (scrape_get(url, &img, st) == 1 && img.len < DZ_IMAGE_MAX && is_image(&img) && still_add(lib, id, key, img.data, img.len)) ok = 1;
         }
     }
     free(js.data);
