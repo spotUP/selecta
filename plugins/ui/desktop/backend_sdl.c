@@ -4,6 +4,9 @@
 #include <selecta/uimodel/keys.h>
 
 #include <SDL3/SDL.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/html5.h>
+#endif
 #ifdef __APPLE__
 #include "macos/route_picker.h"
 #endif
@@ -224,6 +227,9 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     if (b->window != NULL) { /* the offscreen and dummy drivers have no GL: render in software */
         b->renderer = SDL_CreateRenderer(b->window, b->headless ? "software" : NULL);
     }
+#ifdef __EMSCRIPTEN__ /* I694a: the transferred OffscreenCanvas keeps its 300x150 default unless the worker sizes it itself */
+    emscripten_set_canvas_element_size("#canvas", w, h);
+#endif
 #ifdef __EMSCRIPTEN__ /* I694a: name the renderer SDL picked, the browser round 4 could not tell */
     fprintf(stderr, "selecta: web renderer %s, window %p\n", b->renderer != NULL ? SDL_GetRendererName(b->renderer) : "none", (void*)b->window);
 #endif
