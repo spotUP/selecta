@@ -112,17 +112,17 @@ if(NOT SEL_AMIGA)
   add_executable(dui_art_async_unit "${PROJECT_SOURCE_DIR}/tests/dui/art_async_unit.c" art.c posix/art_thread.c stb_impl.c)
   target_include_directories(dui_art_async_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
-  target_link_libraries(dui_art_async_unit PRIVATE m selecta_gui selecta_archive Threads::Threads)
+  target_link_libraries(dui_art_async_unit PRIVATE m selecta_gui selecta_uimodel selecta_archive Threads::Threads)
   # dui-art-big (I1384d): art_big decodes the full cover at the size a big view draws it.
   add_executable(dui_art_big_unit "${PROJECT_SOURCE_DIR}/tests/dui/art_big_unit.c" art.c posix/art_thread.c stb_impl.c)
   target_include_directories(dui_art_big_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
-  target_link_libraries(dui_art_big_unit PRIVATE m selecta_gui selecta_archive Threads::Threads)
+  target_link_libraries(dui_art_big_unit PRIVATE m selecta_gui selecta_uimodel selecta_archive Threads::Threads)
   # dui-art-per-turn (I1416f): art.c with the Amiga (inline) thread shim decodes one cover per art_pump turn.
   add_executable(dui_art_per_turn_unit "${PROJECT_SOURCE_DIR}/tests/dui/art_per_turn_unit.c" art.c amiga/art_thread.c stb_impl.c)
   target_include_directories(dui_art_per_turn_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
-  target_link_libraries(dui_art_per_turn_unit PRIVATE m selecta_gui selecta_archive)
+  target_link_libraries(dui_art_per_turn_unit PRIVATE m selecta_gui selecta_uimodel selecta_archive)
   # dui-amiga-font (I526-P1): the bitmap .font reader against hand-decoded rows.
   add_executable(dui_amiga_font_unit "${PROJECT_SOURCE_DIR}/tests/dui/amiga_font_unit.c" amiga_font.c)
   target_include_directories(dui_amiga_font_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop")
