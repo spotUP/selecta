@@ -18279,7 +18279,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return 1;
     }
 #ifdef SELECTA_DESKTOP_SDL
-    if (d->live) { /* a window on a real display: idle until an event or the next second boundary */
+    if (d->live && d->sdl != NULL) { /* a window on a real display: idle until an event or the next second boundary */
         int32_t w = 0, h = 0;
         int ev;
         uint32_t wait_ms;
