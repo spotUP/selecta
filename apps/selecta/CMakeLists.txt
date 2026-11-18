@@ -15,6 +15,9 @@ endif()
 # I694a: the web build writes selecta.html + .js + .wasm (+ .worker.js); serve with scripts/serve-web.py.
 if(EMSCRIPTEN)
   set_target_properties(selecta PROPERTIES SUFFIX .html)
+  # The page is just the canvas, not Emscripten's default shell with its logo, controls and log box.
+  target_link_options(selecta PRIVATE --shell-file "${CMAKE_CURRENT_SOURCE_DIR}/web_shell.html")
+  set_property(TARGET selecta APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/web_shell.html")
 endif()
 
 # I1023: on macOS the selecta target is a bundle, so a double-click on Selecta.app opens the desktop UI with no Terminal

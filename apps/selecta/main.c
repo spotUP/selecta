@@ -33,6 +33,9 @@
 #include "arexx.h"
 #endif
 #include <time.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "catalogue.h"
 #include "startup_error.h"
 #include "console_fallback.h"
@@ -587,6 +590,121 @@ static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
 }
 #endif
 
+/* The shell's loop state, so one turn is a function: the web build runs turns from the browser's main loop (I694a). */
+typedef struct shell_loop {
+    sel_engine* e;
+    int clockless;
+    shell_output* so;
+    sel_ui_open_args* args;
+    void** ctx;
+    sel_int_session* isess;
+    int ctl_fd;
+#if !defined(SEL_NO_CONTROL_SOCKET) || defined(__amigaos__)
+    ctl_ctx* cc;
+#endif
+#ifdef __amigaos__
+    arexx_port* arexx;
+#endif
+    const sel_host* host;
+    uint32_t waits, gap_last_ms, gap_ms_max, wait_ms_min, wait_ms_max;
+    int gap_have;
+    unsigned socket_cmds;
+} shell_loop;
+
+/* One turn of the shell loop: 0 keeps running, 1 ends the run, 2 ends it as an error (main returns 1). */
+static int shell_turn(shell_loop* L) {
+    sel_engine* e = L->e;
+    int clockless = L->clockless;
+    shell_output* so = L->so;
+    sel_ui_open_args* args = L->args;
+    void** ctx = L->ctx;
+    sel_int_session* isess = L->isess;
+    int ctl_fd = L->ctl_fd;
+#if !defined(SEL_NO_CONTROL_SOCKET) || defined(__amigaos__)
+    ctl_ctx* cc = L->cc;
+#endif
+#ifdef __amigaos__
+    arexx_port* arexx = L->arexx;
+#endif
+    const sel_host* host = L->host;
+    unsigned u;
+    int r;
+    (void)ctl_fd;
+    (void)host;
+    r = -1;
+    for (u = 0; u < g_ui_count; u++) { /* the loop runs while any UI still has a turn to take */
+        uint32_t wait_ms = sel_shell_wait_ms(clockless, so->out != NULL, so->paced, SHELL_TURN_MS);
+        int wr;
+        if (wait_ms < L->wait_ms_min) {
+            L->wait_ms_min = wait_ms;
+        }
+        if (wait_ms > L->wait_ms_max) {
+            L->wait_ms_max = wait_ms;
+        }
+        wr = g_uis[u].wait(g_uis[u].state, wait_ms);
+        if (L->waits == 0 && u == 0) {
+            sel_trace(host, "first frame shown (first UI wait returned)");
+        }
+        if (wr > r) {
+            r = wr;
+        }
+        if (u == 0) {
+            const sel_host* gh = sel_engine_plugin_host(e);
+            uint32_t now = gh->clock_ms(gh);
+            if (L->gap_have && now - L->gap_last_ms > L->gap_ms_max) {
+                L->gap_ms_max = now - L->gap_last_ms;
+            }
+            L->gap_last_ms = now;
+            L->gap_have = 1;
+        }
+    }
+    pump_turn(e, clockless, sink, ctx); /* a UI_SWITCH key sent during the wait is waiting in the engine */
+    {
+        char want[16];
+        if (sel_engine_take_ui_switch(e, want, sizeof want)) { /* the shell owns the UIs: switch between turns */
+            if (ui_switch(want, args, ctx) < 0) {
+                #ifdef __amigaos__
+                arexx_shutdown(arexx, cc);
+                #endif
+                return 2;
+            }
+            return 0;
+        }
+    }
+    if (r < 0 || sel_engine_take_quit(e)) { /* QUIT ends the run like the primary UI's quit key */
+        return 1;
+    }
+    L->waits++;
+    if (so->out != NULL) {
+        g_pumping = 1;
+        so->pump(so->out, so->rate * SHELL_TURN_MS / 1000u);
+        g_pumping = 0;
+    } else if (clockless) {
+        sel_engine_hw_step(e, so->rate * SHELL_TURN_MS / 1000u); /* handed over: the script's time reaches the HW song like a pulled one */
+    }
+    pump_turn(e, clockless, sink, ctx);
+    sel_int_session_poll(isess);
+#ifndef SEL_NO_CONTROL_SOCKET
+    if (ctl_fd >= 0) {
+        L->socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, sel_shell_wait_ms(clockless, so->out != NULL, so->paced, SHELL_TURN_MS), ctl_handle, cc);
+    }
+#endif
+#ifdef __amigaos__
+    if (arexx != NULL) { /* the Amiga's control path, polled where the socket is polled (M4-AX-3-2) */
+        arexx_poll(arexx, arexx_exec, cc);
+    }
+#endif
+    return 0;
+}
+
+#ifdef __EMSCRIPTEN__
+static void shell_web_turn(void* arg) { /* I694a: the desktop UI runs on the browser's main thread, one shell turn per animation frame */
+    if (shell_turn((shell_loop*)arg) != 0) {
+        emscripten_cancel_main_loop();
+    }
+}
+#endif
+
 #ifdef __amigaos__
 /* libnix polls Ctrl-C inside stdio and exit()s on it, which skips the UI close and leaves the RTG screen open (I287).
  * An empty override keeps the signal for the UI's own Wait/SetSignal, which quits through its normal close path. */
@@ -640,12 +758,10 @@ int main(int argc, char** argv)
 #endif
     char cmd[1100];
     uint32_t waits = 0;
-    uint32_t gap_last_ms = 0, gap_ms_max = 0; /* I1082a: longest wall time between two UI wait returns, pump included */
-    int gap_have = 0;
+    uint32_t gap_ms_max = 0; /* I1082a: longest wall time between two UI wait returns, pump included */
     int engine_thread = 0; /* I1082a: 1 once the engine pumps on its own thread (I1082f) */
     uint32_t wait_ms_min = 0xFFFFFFFFu; /* the smallest and largest UI wait the loop asked for (I684c) */
     uint32_t wait_ms_max = 0;
-    int r;
     int has_keys = option(argc, argv, "--keys", NULL) != NULL;
     /* Preferred media-session integration per OS; sel_registry_default_integration falls back
      * to "none" when it is not built (Amiga, Linux without libsystemd, Windows). */
@@ -1043,70 +1159,43 @@ int main(int argc, char** argv)
 
     /* A clockless output (null, wav): each turn pumps exactly one UI_WAIT's worth
      * of frames, so a run is deterministic. A real output paces the loop. */
-    for (;;) {
-        r = -1;
-        for (u = 0; u < g_ui_count; u++) { /* the loop runs while any UI still has a turn to take */
-            uint32_t wait_ms = sel_shell_wait_ms(clockless, so.out != NULL, so.paced, SHELL_TURN_MS);
-            int wr;
-            if (wait_ms < wait_ms_min) {
-                wait_ms_min = wait_ms;
-            }
-            if (wait_ms > wait_ms_max) {
-                wait_ms_max = wait_ms;
-            }
-            wr = g_uis[u].wait(g_uis[u].state, wait_ms);
-            if (waits == 0 && u == 0) {
-                sel_trace(host, "first frame shown (first UI wait returned)");
-            }
-            if (wr > r) {
-                r = wr;
-            }
-            if (u == 0) {
-                const sel_host* gh = sel_engine_plugin_host(e);
-                uint32_t now = gh->clock_ms(gh);
-                if (gap_have && now - gap_last_ms > gap_ms_max) {
-                    gap_ms_max = now - gap_last_ms;
-                }
-                gap_last_ms = now;
-                gap_have = 1;
-            }
-        }
-        pump_turn(e, clockless, sink, ctx); /* a UI_SWITCH key sent during the wait is waiting in the engine */
-        {
-            char want[16];
-            if (sel_engine_take_ui_switch(e, want, sizeof want)) { /* the shell owns the UIs: switch between turns */
-                if (ui_switch(want, &args, ctx) < 0) {
-                    #ifdef __amigaos__
-                    arexx_shutdown(arexx, &cc);
-                    #endif
-                    return 1;
-                }
-                continue;
-            }
-        }
-        if (r < 0 || sel_engine_take_quit(e)) { /* QUIT ends the run like the primary UI's quit key */
-            break;
-        }
-        waits++;
-        if (so.out != NULL) {
-            g_pumping = 1;
-            so.pump(so.out, so.rate * SHELL_TURN_MS / 1000u);
-            g_pumping = 0;
-        } else if (clockless) {
-            sel_engine_hw_step(e, so.rate * SHELL_TURN_MS / 1000u); /* handed over: the script's time reaches the HW song like a pulled one */
-        }
-        pump_turn(e, clockless, sink, ctx);
-        sel_int_session_poll(isess);
-#ifndef SEL_NO_CONTROL_SOCKET
-        if (ctl_fd >= 0) {
-            socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, sel_shell_wait_ms(clockless, so.out != NULL, so.paced, SHELL_TURN_MS), ctl_handle, &cc);
-        }
+    {
+        shell_loop L;
+        memset(&L, 0, sizeof L);
+        L.e = e;
+        L.clockless = clockless;
+        L.so = &so;
+        L.args = &args;
+        L.ctx = ctx;
+        L.isess = isess;
+        L.ctl_fd = ctl_fd;
+#if !defined(SEL_NO_CONTROL_SOCKET) || defined(__amigaos__)
+        L.cc = &cc;
 #endif
 #ifdef __amigaos__
-        if (arexx != NULL) { /* the Amiga's control path, polled where the socket is polled (M4-AX-3-2) */
-            arexx_poll(arexx, arexx_exec, &cc);
+        L.arexx = arexx;
+#endif
+        L.host = host;
+        L.wait_ms_min = wait_ms_min;
+        L.wait_ms_max = wait_ms_max;
+#ifdef __EMSCRIPTEN__
+        emscripten_set_main_loop_arg(shell_web_turn, &L, 0, 1); /* never returns: the page is the process */
+#else
+        for (;;) {
+            int tr = shell_turn(&L);
+            if (tr == 2) {
+                return 1;
+            }
+            if (tr == 1) {
+                break;
+            }
         }
 #endif
+        waits = L.waits;
+        socket_cmds = L.socket_cmds;
+        gap_ms_max = L.gap_ms_max;
+        wait_ms_min = L.wait_ms_min;
+        wait_ms_max = L.wait_ms_max;
     }
 
     ust = ui_stats_of(&g_uis[0]);

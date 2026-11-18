@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selecta</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; border: 0; outline: 0; }
+  #status { position: fixed; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center;
+            font: 14px system-ui, sans-serif; color: #888; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<div id="status">Loading...</div>
+<script>
+  var canvas = document.getElementById('canvas');
+  var statusEl = document.getElementById('status');
+  /* Give the canvas its real pixel size before the module starts, so the first layout sees it. */
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(window.innerWidth * dpr);
+  canvas.height = Math.round(window.innerHeight * dpr);
+  var Module = {
+    canvas: canvas,
+    print: function (...a) { console.log(...a); },
+    printErr: function (...a) { console.warn(...a); },
+    setStatus: function (t) { statusEl.textContent = t; statusEl.style.display = t ? '' : 'none'; }
+  };
+  window.onerror = function () { statusEl.style.display = ''; statusEl.textContent = 'Failed to start, see the console'; };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
