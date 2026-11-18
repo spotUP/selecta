@@ -453,10 +453,11 @@ typedef struct desk {
     sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
     uint32_t home_chip;      /* the Home format chip in force: 0 All, 1 Music, 2 Modules, 3 Chiptunes (I678j) */
-    uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Albums, 3 Artists */
+    uint32_t search_facet;   /* I1456: the facet chips in force, a bit set: 0 All, 1 Songs, 2 Albums, 4 Artists; several may be on (union) */
     uint32_t badge_drawn;    /* I1020: the source badges the last Search frame painted (one per result row); badge_text keeps the first 16 names for the dump */
     char badge_text[16][48];
     uint32_t facet_drawn;    /* I1019f: the facet chips the last Search frame painted (the dump sentinel that the row is drawn under every source pick) */
+    uint32_t scope_mask;     /* I1456: the source chips on, one bit per d->src row (union); 0 = read the single key in scope */
     int scope_filtered;      /* I1224: the scope is a source chip clicked over All results already shown: the grouped view stays and only that source's From section is drawn; no new query */
     char scope[24];          /* I1019f: the source chip in force: "" All sources (the fan-out, every launch), SEARCH_SCOPE_LIBRARY the library alone, else the id of one online source (SOURCE_SEARCH). Never persisted */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
@@ -10108,23 +10109,60 @@ static int desk_scope_online(const desk* d) {
     return d->scope[0] != '\0' && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) != 0 && !d->scope_filtered;
 }
 
-/* A click on a source chip picks it; the selected chip, or All sources, returns to All sources (I1019f). Nothing is persisted. */
+/* I1456: the source rows whose chips are on: scope_mask, else the one source the scope names. */
+static uint32_t scope_cur_mask(const desk* d) {
+    uint32_t i;
+    if (d->scope_mask != 0u) {
+        return d->scope_mask;
+    }
+    for (i = 0; d->scope[0] != '\0' && i < d->src_n && i < 32u && i < sizeof d->src / sizeof d->src[0]; i++) {
+        if (strcmp(d->src[i].key, d->scope) == 0) {
+            return 1u << i;
+        }
+    }
+    return 0u;
+}
+
+/* Whether chip k is drawn on: All sources when no scope, the Library when it is the scope, a source chip when its bit is on. */
+static int online_chip_on(const desk* d, uint32_t k) {
+    int row = online_scope_row(d, k);
+    return row >= 0 ? row < 32 && (scope_cur_mask(d) >> row & 1u) != 0u : strcmp(online_chip_scope(d, k), d->scope) == 0;
+}
+
+/* A click on a source chip toggles it (I1456: several may be on, results are their union); All sources clears them, the Library is alone (I1019f).
+ * Over All results already shown the chips filter what is shown (I1224); otherwise one source searches that source, two or more fan out and filter. Nothing is persisted. */
 static void online_scope_pick(desk* d, uint32_t k) {
-    const char* want = online_chip_scope(d, k);
     const sel_state* st = sel_engine_state(d->engine);
     int all_shown = d->search_on && d->qlen > 0u && st != NULL && st->view != NULL && st->view->source == SEL_VIEW_SEARCH
                     && (d->scope[0] == '\0' || d->scope_filtered); /* the All results are in the engine's view */
-    int to_source = online_scope_row(d, k) >= 0, same = strcmp(want, d->scope) == 0;
-    if (all_shown && (to_source || (k == 0u && d->scope_filtered))) { /* I1224: filter what is shown, do not search again; the selected chip or All sources lifts the filter */
-        snprintf(d->scope, sizeof d->scope, "%s", same ? "" : want);
+    int row = online_scope_row(d, k);
+    uint32_t cur = scope_cur_mask(d), nm = 0u;
+    if (row >= 0 && row < 32) {
+        uint32_t i;
+        nm = cur ^ (1u << row);
+        d->scope[0] = '\0';
+        for (i = 0; i < 32u && nm != 0u; i++) {
+            if (nm >> i & 1u) {
+                snprintf(d->scope, sizeof d->scope, "%s", d->src[i].key);
+                break;
+            }
+        }
+    } else if (row >= 0) {
+        return;
+    } else if (k == 1u && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) != 0) {
+        snprintf(d->scope, sizeof d->scope, "%s", SEARCH_SCOPE_LIBRARY);
+    } else {
+        d->scope[0] = '\0';
+    }
+    d->scope_mask = nm;
+    if (all_shown && (row >= 0 || (k == 0u && d->scope_filtered))) { /* I1224: filter what is shown, do not search again */
         d->scope_filtered = d->scope[0] != '\0';
         d->search_q16 = 0;
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return;
     }
-    d->scope_filtered = 0;
-    snprintf(d->scope, sizeof d->scope, "%s", same ? "" : want);
+    d->scope_filtered = (nm & (nm - 1u)) != 0u; /* two or more sources: the fan-out, filtered to them */
     d->on_state = 0u;
     d->on_n = 0u;
     d->search_on = 0;
@@ -10234,7 +10272,7 @@ static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
 static void online_draw_chips(desk* d, sel_gui_rect mn) {
     uint32_t k, n = online_scope_count(d);
     for (k = 0; k < n && k < (uint32_t)ONLINE_CHIPS_MAX; k++) {
-        draw_chip(d, online_chip_rect(d, mn, k), online_chip_name(d, k), strcmp(online_chip_scope(d, k), d->scope) == 0, SEL_GUI_TOKEN_SURFACE);
+        draw_chip(d, online_chip_rect(d, mn, k), online_chip_name(d, k), online_chip_on(d, k), SEL_GUI_TOKEN_SURFACE);
     }
 }
 
@@ -10320,7 +10358,7 @@ static int online_click(desk* d, sel_gui_rect pm, int32_t x, int32_t y) {
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
 static void desk_search_fire(desk* d) {
     char line[160];
-    d->scope_filtered = 0; /* I1224: a fresh query replaces the All results a filter was cut from */
+    d->scope_filtered = (d->scope_mask & (d->scope_mask - 1u)) != 0u; /* I1224: a fresh query replaces the All results a filter was cut from; I1456: two or more chips stay a filter */
     d->search_pending = 0;
     d->search_q16 = 0; /* new results open at the top; a Search page restored by Back or Forward gets its offset once the results are tall enough (I1012) */
     d->search_restore = d->search_restore == 1 ? 2 : 0;
@@ -10495,11 +10533,13 @@ static int32_t search_body_y(desk* d, sel_gui_rect mn) {
  * the draw and the wheel share, so the scroll bound is the drawn height. */
 /* I1224: whether a "From <name> (n)" heading belongs to the source the scope names. */
 static int heading_names_scope_source(const desk* d, const char* heading) {
-    uint32_t i;
-    for (i = 0; i < d->src_n && i < sizeof d->src / sizeof d->src[0]; i++) {
-        if (strcmp(d->src[i].key, d->scope) == 0) {
+    uint32_t i, cur = scope_cur_mask(d);
+    for (i = 0; i < d->src_n && i < 32u && i < sizeof d->src / sizeof d->src[0]; i++) {
+        if (cur >> i & 1u) {
             size_t nl = strlen(d->src[i].name);
-            return strncmp(heading, "From ", 5) == 0 && strncmp(heading + 5, d->src[i].name, nl) == 0 && heading[5 + nl] == ' ';
+            if (strncmp(heading, "From ", 5) == 0 && strncmp(heading + 5, d->src[i].name, nl) == 0 && heading[5 + nl] == ' ') {
+                return 1;
+            }
         }
     }
     return 0;
@@ -10508,12 +10548,12 @@ static int heading_names_scope_source(const desk* d, const char* heading) {
 /* Whether the group of a heading (sel_uim_search_group) is drawn under the facet chip: online From sections are song results (I1019e). */
 static int search_group_shown(const desk* d, uint32_t group, const char* heading) {
     if (d->scope_filtered) { /* I1224: a source chip clicked over the shown All results keeps only that source's From section (no new query) */
-        return group == 4u && heading_names_scope_source(d, heading);
+        return group == 4u && heading_names_scope_source(d, heading) && (d->search_facet == 0u || (d->search_facet & 1u));
     }
     if (group == 4u && strcmp(d->scope, SEARCH_SCOPE_LIBRARY) == 0) { /* the Library chip: no From section */
         return 0;
     }
-    return d->search_facet == 0u || d->search_facet == (group == 4u ? 1u : group);
+    return d->search_facet == 0u || (group >= 1u && (d->search_facet >> ((group == 4u ? 1u : group) - 1u) & 1u) != 0u); /* I1456: union of the facets on */
 }
 
 /* I1019e: whether a From section of the shown search view still reads Searching (its source has not answered). A scripted run keeps turning while
@@ -10636,7 +10676,7 @@ static void draw_search(desk* d) {
     for (k = 0; k < SEARCH_FACETS; k++) { /* facet chips: the active one filled with the accent; always drawn, below the source row (I1019f) */
         sel_gui_rect cr = search_facet_rect(d, mn, k);
         d->facet_drawn++;
-        draw_chip(d, cr, search_facet_name[k], k == d->search_facet, SEL_GUI_TOKEN_SURFACE);
+        draw_chip(d, cr, search_facet_name[k], k == 0u ? d->search_facet == 0u : (d->search_facet >> (k - 1u) & 1u) != 0u, SEL_GUI_TOKEN_SURFACE);
     }
     online_draw_chips(d, mn);
     y = search_body_y(d, mn);
@@ -11565,7 +11605,8 @@ static void desk_rt_leave(desk* d) {
 static void desk_rt_search_restore(desk* d, const sel_route_entry* e) {
     snprintf(d->query, sizeof d->query, "%s", e->name);
     d->qlen = strlen(d->query);
-    d->search_facet = e->aux < 4u ? e->aux : 0u;
+    d->search_facet = e->aux < 8u ? e->aux : 0u;
+    d->scope_mask = 0u;
     snprintf(d->scope, sizeof d->scope, "%s", e->sub);
     d->scope_filtered = 0;
     d->search_restore_q16 = e->scroll;
@@ -11656,6 +11697,7 @@ static void desk_page_apply(desk* d, desk_page pg) {
             const char* sc = from == SEL_UIM_PG_COLLECTION ? col_source_scope(d) : NULL;
             snprintf(d->scope, sizeof d->scope, "%s", sc != NULL ? sc : "");
             d->scope_filtered = 0;
+            d->scope_mask = 0u;
             d->on_state = 0u;
             d->on_n = 0u;
         }
@@ -11841,8 +11883,10 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups; without results it is kept for the next ones */
         for (i = 0; i < SEARCH_FACETS; i++) {
             if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
-                int changed = d->search_facet != i;
-                d->search_facet = i;
+                uint32_t was = d->search_facet, bit = i == 0u ? 0u : 1u << (i - 1u); /* I1456: a chip toggles; All clears */
+                int changed;
+                d->search_facet = i == 0u ? 0u : was ^ bit;
+                changed = d->search_facet != was;
                 d->search_q16 = changed ? 0 : d->search_q16; /* another facet's groups open at the top */
                 d->repaint = 1;
                 d->uim.dirty |= SEL_UIM_DIRTY_ALL;
