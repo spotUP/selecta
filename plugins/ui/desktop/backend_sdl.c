@@ -224,6 +224,9 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     if (b->window != NULL) { /* the offscreen and dummy drivers have no GL: render in software */
         b->renderer = SDL_CreateRenderer(b->window, b->headless ? "software" : NULL);
     }
+#ifdef __EMSCRIPTEN__ /* I694a: name the renderer SDL picked, the browser round 4 could not tell */
+    fprintf(stderr, "selecta: web renderer %s, window %p\n", b->renderer != NULL ? SDL_GetRendererName(b->renderer) : "none", (void*)b->window);
+#endif
     if (b->renderer == NULL || !make_texture(b, w, h)) {
         if (b->renderer == NULL) {
             fprintf(stderr, "selecta: SDL %s failed: %s\n", b->window == NULL ? "window" : "renderer", SDL_GetError());
