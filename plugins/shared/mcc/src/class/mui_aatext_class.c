@@ -165,6 +165,9 @@ static ULONG aatext_new(struct IClass* cl, Object* obj, struct opSet* msg) {
     d = INST_DATA(cl, obj);
     contents = (const char*)GetTagData(UPA_Text_Contents, (ULONG)(uintptr_t)"", tags);
     widest = (const char*)GetTagData(UPA_Text_Widest, (ULONG)(uintptr_t)contents, tags);
+    if (widest == NULL) { /* I1453: a NULL widest (mui_aatext_tags always sends the tag) means "the text itself"; reading address 0 gave an empty widest, a zero minimum width and a clipped title */
+        widest = contents;
+    }
     strncpy(d->text, contents, sizeof d->text - 1);
     strncpy(d->widest, widest, sizeof d->widest - 1);
     d->tone = (int)GetTagData(UPA_Text_Tone, UPV_Text_Tone_Normal, tags);
