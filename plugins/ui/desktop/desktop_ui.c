@@ -10953,11 +10953,11 @@ static void draw_search(desk* d) {
                     }
                 }
                 if ((group == 1u || group == 4u) && !r->album && r->key != NULL) {
-                    song_row* sr = song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0);
-                    if (sr != NULL && d->badge_drawn > 0u && d->badge_drawn <= 16u) {
-                        d->badge_more[d->badge_drawn - 1u] = sr->more;
+                    song_row* row = song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0);
+                    if (row != NULL && d->badge_drawn > 0u && d->badge_drawn <= 16u) {
+                        d->badge_more[d->badge_drawn - 1u] = row->more;
                     }
-                    song_row_set_list(d, sr, SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
+                    song_row_set_list(d, row, SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
                 }
                 if (group == 2u && r->album && r->key != NULL) { /* I1408: an Albums row opens the album (the engine's VIEW_ACTIVATE album route) */
                     search_artist_reg_at(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), t, r);
