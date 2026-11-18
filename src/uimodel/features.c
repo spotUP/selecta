@@ -48,6 +48,18 @@ uint32_t sel_uim_search_group(const char* heading) {
     return strncmp(heading, "From ", 5) == 0 ? 4u : 0u;
 }
 
+/* I1456: chip 0 (All) clears the set, chip k flips bit k-1. */
+uint32_t sel_uim_chip_toggle(uint32_t mask, uint32_t chip) {
+    return chip == 0u ? 0u : chip > 32u ? mask : mask ^ (1u << (chip - 1u));
+}
+
+int sel_uim_search_group_shown(uint32_t facets, int scope_filtered, uint32_t group, int source_named) {
+    if (scope_filtered) { /* I1224: a source chip over shown All results keeps only that source's From section */
+        return group == 4u && source_named && sel_uim_search_group_shown(facets, 0, 4u, 0);
+    }
+    return facets == 0u || (group >= 1u && (facets >> ((group == 4u ? 1u : group) - 1u) & 1u) != 0u); /* union of the facets on; From sections are song results */
+}
+
 int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t heading) {
     const char* t;
     const char* par;

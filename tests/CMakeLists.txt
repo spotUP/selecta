@@ -3617,6 +3617,18 @@ if(NOT SEL_AMIGA)
   set_tests_properties(text-ui-search-fold PROPERTIES LABELS m3 TIMEOUT 30)
 endif()
 
+# I1456: text UI search chips toggle freely (union inside a group).
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-search-chips
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_fold.tsv"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/search_fold.keys"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/search_chips"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/search_chips.cmake")
+  set_tests_properties(text-ui-search-chips PROPERTIES LABELS m3 TIMEOUT 30)
+endif()
+
 # M3 Phase 4 (I160): T71 rescan and watcher part. A file added to one subdirectory of a fixture copy after
 # the first scan rescans that directory alone (folder watcher, mtime poll, manual rescan).
 if(NOT SEL_AMIGA)
