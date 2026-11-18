@@ -2033,7 +2033,7 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease);
 
 /* I1384b: hands an http(s) link to the system browser. SELECTA_NO_OPEN=1 (tests) only records the click. */
 static void desk_open_url(const char* url) {
-#if defined(__APPLE__) || (defined(__unix__) && !defined(__amigaos__) && !defined(AMIGA))
+#if defined(__APPLE__) || (defined(__unix__) && !defined(__amigaos__) && !defined(AMIGA) && !defined(__EMSCRIPTEN__)) /* I694a: no processes in the browser */
     extern char** environ;
     pid_t pid;
 #if defined(__APPLE__)

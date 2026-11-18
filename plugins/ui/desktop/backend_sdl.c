@@ -411,8 +411,12 @@ int desk_sdl_open_folder_dialog(desk_sdl* b) {
     if (b == NULL || b->window == NULL || b->headless) {
         return 0;
     }
+#ifdef __EMSCRIPTEN__ /* I694a: the SDL 3.2.22 Emscripten port has no file dialogs */
+    return 0;
+#else
     SDL_ShowOpenFolderDialog(folder_chosen, b, b->window, NULL, 0);
     return 1;
+#endif
 }
 
 /* I652c: the native file dialog for a playlist file (.m3u .m3u8 .pls); the answer arrives like the folder dialog's, as a drop. */
@@ -451,8 +455,13 @@ int desk_sdl_open_file_dialog(desk_sdl* b) {
     if (b == NULL || b->window == NULL || b->headless) {
         return 0;
     }
+#ifdef __EMSCRIPTEN__ /* I694a: the SDL 3.2.22 Emscripten port has no file dialogs */
+    (void)filters;
+    return 0;
+#else
     SDL_ShowOpenFileDialog(folder_chosen, b, b->window, filters, 1, NULL, 0);
     return 1;
+#endif
 }
 
 int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev) {
