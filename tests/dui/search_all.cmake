@@ -231,6 +231,23 @@ if(NOT "${s2}" MATCHES "search_section [0-9]+ rows=3 From Modules.pl \\(3\\)\n")
   message(FATAL_ERROR "unpicked: the From Modules.pl section must be back:\n${s2}")
 endif()
 
+# I1456: source chips toggle freely. With the All results shown, Modules.pl and Internet Archive both on keep exactly their two From
+# sections (the union), not the other sources'; no new query is sent for the second chip.
+if(NOT "${s0}" MATCHES "online_chip [0-9]+ (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) scope=archiveorg\n")
+  message(FATAL_ERROR "no Internet Archive chip (online_chip scope=archiveorg):\n${s0}")
+endif()
+math(EXPR ax "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR ay "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+set(click2 "wait 300\nmove ${ax} ${ay}\nclick ${ax} ${ay}\nwait 50\n")
+sa_run(s4 "${typed}${click}${click2}wait 300\n")
+if(NOT "${s4}" MATCHES "search_section [0-9]+ rows=3 From Modules.pl \\(3\\)\n" OR
+   NOT "${s4}" MATCHES "search_section [0-9]+ rows=8 From Internet Archive \\(8\\)\n")
+  message(FATAL_ERROR "I1456: Modules.pl and Internet Archive both on must draw both From sections:\n${s4}")
+endif()
+if("${s4}" MATCHES "From Radio Browser" OR "${s4}" MATCHES "From ccMixter")
+  message(FATAL_ERROR "I1456: only the two chosen sources may draw a From section:\n${s4}")
+endif()
+
 # A stale pref from older builds is ignored: the page opens on All sources.
 file(MAKE_DIRECTORY "${WORK}/cfg")
 file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\nsearch.last_source=modulespl\n")

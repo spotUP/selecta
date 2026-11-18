@@ -130,7 +130,16 @@ function(chip_click label want_facet want_drawn)
   math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
   # The tall canvas, like the All run above: with every From section the 800 px frame clips the last rows (the chip row sits at the same place).
   set(SEARCH_CANVAS 1280x2600)
-  search_run(chip_${label} "${typed}wait 600\nclick ${cx} ${cy}\nwait 100\n")
+  set(clicks "click ${cx} ${cy}\nwait 100\n")
+  foreach(more ${ARGN}) # I1456: further facet chips clicked after the first stay on with it
+    string(REGEX MATCHALL "label (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ink [-0-9]+ [-0-9]+ text ${more}\n" found2 "${burst_out}")
+    list(GET found2 -1 last2)
+    string(REGEX MATCH "label (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)" unused "${last2}")
+    math(EXPR mx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+    math(EXPR my "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+    string(APPEND clicks "click ${mx} ${my}\nwait 100\n")
+  endforeach()
+  search_run(chip_${label} "${typed}wait 600\n${clicks}")
   set(SEARCH_CANVAS 1280x800)
   expect("${chip_${label}_out}" "search groups songs=${mod_count} albums=${want_albums} artists=${want_artists} facet=${want_facet} drawn=${want_drawn}\n" "clicking ${label}")
   if(chip_${label}_hash STREQUAL tall_hash)
@@ -143,7 +152,10 @@ math(EXPR albums_drawn "1 + ${want_albums_shown}")
 math(EXPR artists_drawn "1 + ${want_artists_shown}")
 chip_click("Songs" 1 ${songs_drawn})
 chip_click("Albums" 2 ${albums_drawn})
-chip_click("Artists" 3 ${artists_drawn})
+chip_click("Artists" 4 ${artists_drawn}) # I1456: the facet is a bit set (Songs 1, Albums 2, Artists 4)
+# I1456: two facet chips on at once show the union of their groups (Songs + Albums: both headings and rows).
+math(EXPR both_drawn "${songs_drawn} + ${albums_drawn}")
+chip_click("Songs" 3 ${both_drawn} "Albums")
 
 # Chips before a query (I256 follow-up): the Search page draws its own facet chips with an empty query, and a click on one
 # keeps the facet. The Home chips (All, Songs, Composers, Playlists) must not be what is drawn there.
