@@ -154,6 +154,12 @@ sel_gui_rect sel_gui_rect_intersect(sel_gui_rect a, sel_gui_rect b);
 void sel_gui_fill_rect(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb);
 /* Rounded rectangle: 4x4 coverage anti-aliasing on RGBA32; INDEX8 keeps the pixels covered by half or more. */
 void sel_gui_round_rect(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb);
+/* I1231/I1455: the busy spinner, eight dots on a ring of radius r around (cx, cy); dot `lead` in `accent`, the rest in `muted`.
+ * sel_gui_spinner_lead turns with the UI clock (100 ms per dot). sel_gui_spinner_dot gives the centre and size of dot i (0..7) so a
+ * pen-only drawer (MUI on AGA) lays the same ring out. */
+void sel_gui_spinner(sel_gui_canvas* c, int32_t cx, int32_t cy, int32_t r, uint32_t lead, uint32_t accent, uint32_t muted);
+uint32_t sel_gui_spinner_lead(uint32_t now_ms);
+int32_t sel_gui_spinner_dot(uint32_t i, int32_t cx, int32_t cy, int32_t r, int32_t* x, int32_t* y);
 /* Outline of a rounded rectangle: the band `width` pixels wide just inside r, same corner radius and anti-aliasing
  * as sel_gui_round_rect, so a ring drawn on the rect a pill was filled with hugs the pill. */
 void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb);

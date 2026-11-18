@@ -406,8 +406,8 @@ typedef struct desk {
     uint32_t np_genart;      /* platform cover draws by the Now Playing panel: one per draw (DUI-P4-7, I691b) */
     uint32_t np_fade;        /* fade strips over the Now Playing artwork last draw: 0 on a platform cover, whose word sits in the faded third (I693b) */
     uint32_t pc_np, pc_bar, pc_page, pc_tile0, pc_draws, pc_shelf, pc_grid, pc_flow, pc_side, pc_header; /* I691d: shelf, grid, flow, sidebar and page header */ /* I691b: family + 1 of the last platform cover per song site, 0 = real art won; draws = all fallback draws */
-    char slide_key[512];     /* I1384b: slide show of the playing song's stills: song, shown still, previous still, ms played on this still, clock of the last step */
-    uint32_t slide_idx, slide_prev, slide_acc, slide_last, slide_switches, slide_hash, slide_of, slide_live_until, slide_tick;
+    sel_uim_slide slide;     /* I1384b: slide show clock of the playing song's stills (shared with MUI, uimodel) */
+    uint32_t slide_prev, slide_hash, slide_of, slide_live_until, slide_tick;
     uint32_t* slide_mix;     /* crossfade scratch, slide_mix_px pixels */
     int32_t slide_mix_px;
     sel_gui_rect np_watch;   /* the Watch demo button (Now Playing page), w = 0 when the song has no video link */
@@ -2067,32 +2067,16 @@ static void desk_open_url(const char* url) {
 /* I1384b: the slide show clock, advanced once per distinct UI clock value (several big covers may draw in a frame). Only the playing song's
  * covers cycle; the clock runs while playback plays, so a pause freezes the shown still. Returns the still to show (0 = cover). */
 static uint32_t slide_step(desk* d, const char* key, uint32_t n) {
-    const sel_state* st = sel_engine_state(d->engine);
-    const char* v = desk_pref(d, "art.slideshow_seconds", "6");
-    uint32_t every = (uint32_t)atoi(v != NULL ? v : "6") * 1000u;
+    uint32_t before = d->slide.idx;
 
-    if (strcmp(d->slide_key, key) != 0) {
-        snprintf(d->slide_key, sizeof d->slide_key, "%s", key);
-        d->slide_idx = d->slide_prev = d->slide_acc = 0u;
-        d->slide_last = d->now_ms;
+    if (strcmp(d->slide.key, key) != 0) d->slide_prev = 0u;
+    if (sel_uim_slide_step(&d->slide, key, n, sel_engine_state(d->engine)->play == SEL_PLAYING, d->now_ms, sel_uim_slide_period_ms(desk_pref(d, "art.slideshow_seconds", "6")))) {
+        d->slide_prev = before;
+        desk_tween(d, ANIM_KEY_SLIDE, SLIDE_FADE_MS, 0u);
     }
-    if (every < 1000u) every = 6000u;
-    if (d->now_ms != d->slide_last) {
-        uint32_t dt = d->now_ms - d->slide_last;
-        d->slide_last = d->now_ms;
-        if (st->play == SEL_PLAYING) d->slide_acc += dt > 5000u ? 5000u : dt;
-        if (n > 1u && d->slide_acc >= every) {
-            d->slide_acc = 0u;
-            d->slide_prev = d->slide_idx;
-            d->slide_idx = (d->slide_idx + 1u) % n;
-            d->slide_switches++;
-            desk_tween(d, ANIM_KEY_SLIDE, SLIDE_FADE_MS, 0u);
-        }
-    }
-    if (d->slide_idx >= n) d->slide_idx = 0u;
     d->slide_of = n;
     d->slide_live_until = n > 1u ? d->now_ms + 2500u : 0u;
-    return d->slide_idx;
+    return d->slide.idx;
 }
 
 /* The big view pixels of the still `idx` of `key`, crossfaded from the previous still while the tween runs. NULL until decoded. */
@@ -8428,8 +8412,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
     o = dump_put(d, o, "cover_tiles np=%u bar=%u side=%u\n", (unsigned)d->cover_np, (unsigned)d->cover_bar, (unsigned)d->cover_side);
-    o = dump_put(d, o, "cover_slide of=%u frame=%u switches=%u hash=%08x watch=%d,%d,%d clicks=%u last=%s\n", (unsigned)d->slide_of, (unsigned)d->slide_idx,
-                 (unsigned)d->slide_switches, (unsigned)d->slide_hash, (int)d->np_watch.x + (int)d->np_watch.w / 2, (int)d->np_watch.y + (int)d->np_watch.h / 2, (int)d->np_watch.w, (unsigned)d->watch_clicks, d->watch_last);
+    o = dump_put(d, o, "cover_slide of=%u frame=%u switches=%u hash=%08x watch=%d,%d,%d clicks=%u last=%s\n", (unsigned)d->slide_of, (unsigned)d->slide.idx,
+                 (unsigned)d->slide.switches, (unsigned)d->slide_hash, (int)d->np_watch.x + (int)d->np_watch.w / 2, (int)d->np_watch.y + (int)d->np_watch.h / 2, (int)d->np_watch.w, (unsigned)d->watch_clicks, d->watch_last);
     o = dump_put(d, o, "nowplaying fade %u\n", (unsigned)d->np_fade);
     o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u shelf=%s grid=%s flow=%s side=%s header=%s\n", pc_name(d->pc_np), pc_name(d->pc_bar),
                  pc_name(d->pc_page), pc_name(d->pc_tile0), (unsigned)d->pc_draws, pc_name(d->pc_shelf), pc_name(d->pc_grid), pc_name(d->pc_flow),
@@ -8635,7 +8619,7 @@ static const char* library_dump_build(desk* d) {
         sel_engine_stats_get(d->engine, &fes);
         o = dump_put(d, o, "search_fanout peak=%u wall_ms=%u sources=%u\n", (unsigned)fes.search_peak, (unsigned)fes.search_wall_ms, (unsigned)fes.search_src_n);
         o = dump_put(d, o, "search_catalogue_groups=%u\n", (unsigned)fes.search_catalogue_groups);
-        o = dump_put(d, o, "cover_spinner drawn=%u slide_switches=%u slide_of=%u fetching_seen=%u\n", (unsigned)d->cover_spins, (unsigned)d->slide_switches, (unsigned)d->slide_of, (unsigned)d->cover_fetch_seen);
+        o = dump_put(d, o, "cover_spinner drawn=%u slide_switches=%u slide_of=%u fetching_seen=%u\n", (unsigned)d->cover_spins, (unsigned)d->slide.switches, (unsigned)d->slide_of, (unsigned)d->cover_fetch_seen);
         o = dump_put(d, o, "search_spinner drawn=%u first_frame_after_fire=%d cleared=%u wait=%d\n", (unsigned)d->spinner_draws,
                      d->spinner_first_frame == ~0u ? -1 : (int)(d->spinner_first_frame - d->search_fire_frame), (unsigned)d->search_cleared,
                      d->search_wait);
@@ -10713,15 +10697,9 @@ static int32_t search_scroll_q16(desk* d) {
 /* I1231: the searching spinner: eight dots on a ring, the lead dot in the accent, the rest in the muted text colour, turning
  * with the UI clock. Every frame it draws asks for the next one. */
 static void draw_search_spinner(desk* d, int32_t cx, int32_t cy, int32_t r) {
-    static const int16_t ring[8][2] = {{0, -1000}, {707, -707}, {1000, 0}, {707, 707}, {0, 1000}, {-707, 707}, {-1000, 0}, {-707, -707}};
-    uint32_t lead = (d->now_ms / 100u) % 8u, i;
-    int32_t dot = r / 3 > 2 ? r / 3 : 2;
+    uint32_t lead = sel_gui_spinner_lead(d->now_ms);
 
-    for (i = 0; i < 8u; i++) {
-        int32_t x = cx + ring[i][0] * r / 1000, y = cy + ring[i][1] * r / 1000;
-        uint32_t tok = i == lead ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_TEXT_MUTED;
-        sel_gui_round_rect(d->canvas, rect_of(x - dot / 2, y - dot / 2, dot, dot), dot / 2, ARGB(d->theme.token[tok]));
-    }
+    sel_gui_spinner(d->canvas, cx, cy, r, lead, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     d->spinner_draws++;
     d->spinner_on = 1;
     d->spinner_phase = lead;
@@ -10733,7 +10711,7 @@ static void draw_search_spinner(desk* d, int32_t cx, int32_t cy, int32_t r) {
 /* I1231: while the spinner shows, a new lead dot (every 100 ms) repaints the frame, so the spinner turns, and the draw that
  * finds the query's library read landed replaces it, without waiting for an input event. */
 static int desk_search_spin_follow(desk* d) {
-    if (!d->spinner_on || (d->now_ms / 100u) % 8u == d->spinner_phase) {
+    if (!d->spinner_on || sel_gui_spinner_lead(d->now_ms) == d->spinner_phase) {
         return 0;
     }
     overlay_refresh(d);

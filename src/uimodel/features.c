@@ -60,6 +60,93 @@ int sel_uim_search_group_shown(uint32_t facets, int scope_filtered, uint32_t gro
     return facets == 0u || (group >= 1u && (facets >> ((group == 4u ? 1u : group) - 1u) & 1u) != 0u); /* union of the facets on; From sections are song results */
 }
 
+uint32_t sel_uim_search_from_n(const sel_view_row* rows, uint32_t row_n) {
+    uint32_t i, n = 0;
+    for (i = 0; rows != NULL && i < row_n; i++) {
+        n += rows[i].kind == SEL_ROW_HEADING && sel_uim_search_group(rows[i].text) == 4u;
+    }
+    return n;
+}
+
+void sel_uim_search_from_name(const sel_view_row* rows, uint32_t row_n, uint32_t k, char* out, size_t cap) {
+    uint32_t i;
+    const char* t = "";
+    const char* par;
+    size_t n;
+    for (i = 0; rows != NULL && i < row_n; i++) {
+        if (rows[i].kind == SEL_ROW_HEADING && sel_uim_search_group(rows[i].text) == 4u && k-- == 0u) {
+            t = rows[i].text + 5;
+            break;
+        }
+    }
+    par = strrchr(t, '(');
+    n = par != NULL && par > t ? (size_t)(par - t) : strlen(t);
+    while (n > 0 && t[n - 1] == ' ') {
+        n--;
+    }
+    snprintf(out, cap, "%.*s", (int)n, t);
+}
+
+int sel_uim_search_row_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t i, uint32_t facets, uint32_t src) {
+    uint32_t h = i, from = 0, k;
+    if (rows == NULL || i >= row_n) {
+        return 0;
+    }
+    while (h > 0u && rows[h].kind != SEL_ROW_HEADING) {
+        h--;
+    }
+    if (rows[h].kind != SEL_ROW_HEADING) {
+        return 0; /* rows before any heading */
+    }
+    for (k = 0; k < h; k++) {
+        from += rows[k].kind == SEL_ROW_HEADING && sel_uim_search_group(rows[k].text) == 4u;
+    }
+    return !sel_uim_search_group_shown(facets, src != 0u, sel_uim_search_group(rows[h].text), from < 32u && (src >> from & 1u) != 0u);
+}
+
+int sel_uim_slide_step(sel_uim_slide* s, const char* key, uint32_t n, int playing, uint32_t now_ms, uint32_t period_ms) {
+    int advanced = 0;
+    if (strcmp(s->key, key) != 0) {
+        snprintf(s->key, sizeof s->key, "%s", key);
+        s->idx = s->acc_ms = 0u;
+        s->last_ms = now_ms;
+    }
+    if (now_ms != s->last_ms) {
+        uint32_t dt = now_ms - s->last_ms;
+        s->last_ms = now_ms;
+        if (playing) s->acc_ms += dt > 5000u ? 5000u : dt;
+        if (n > 1u && s->acc_ms >= period_ms) {
+            s->acc_ms = 0u;
+            s->idx = (s->idx + 1u) % n;
+            s->switches++;
+            advanced = 1;
+        }
+    }
+    if (s->idx >= n) s->idx = 0u;
+    return advanced;
+}
+
+uint32_t sel_uim_slide_period_ms(const char* pref_value) {
+    uint32_t ms = (uint32_t)atoi(pref_value != NULL ? pref_value : "6") * 1000u;
+    return ms < 1000u ? 6000u : ms;
+}
+
+uint32_t sel_uim_art_frames(uint32_t kinds) {
+    uint32_t k, n = 0u;
+    for (k = 0; k < 8u; k++) {
+        n += (kinds >> k) & 1u;
+    }
+    return n > 0u ? n : 1u;
+}
+
+uint32_t sel_uim_art_frame_kind(uint32_t kinds, uint32_t n) {
+    uint32_t k;
+    for (k = 0; k < 8u; k++) {
+        if (((kinds >> k) & 1u) != 0u && n-- == 0u) return k;
+    }
+    return 0u;
+}
+
 int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t heading) {
     const char* t;
     const char* par;
