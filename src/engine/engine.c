@@ -5539,6 +5539,10 @@ int sel_engine_scan_busy(const sel_engine* e) {
     return e->scan_running || e->sync_running || e->search_running || search_queued(e); /* the scan and the sync share the one library task slot (I527) */
 }
 
+int sel_engine_cover_fetching(const sel_engine* e) {
+    return e != NULL && sel_library_cover_fetching(e->lib);
+}
+
 static int scan_cancelled_cb(void* ctx) {
     return sel_library_task_cancelled(((sel_engine*)ctx)->lib);
 }

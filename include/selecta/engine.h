@@ -418,6 +418,8 @@ typedef void (*sel_event_sink)(void* ctx, const sel_message* evt);
 /* I336: LIBRARY_SCAN runs on the library job thread and answers on a later pump. A caller with no loop of its own (the
  * CLI, --exec) pumps through this until the running scan has answered; 0 when no scan runs. */
 int sel_engine_scan_busy(const sel_engine* e);
+/* I1459: 1 while a cover image is being fetched over the network (library scraper); the desktop cover spinner shows from fetch start to decode end. */
+int sel_engine_cover_fetching(const sel_engine* e);
 /* I1400b: how long a network search source may stay silent before its section lands as failed (tests shorten it). */
 void sel_engine_set_search_timeout_ms(sel_engine* e, uint32_t ms);
 void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx);

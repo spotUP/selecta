@@ -8,6 +8,9 @@
  *
  * Threads: runs on the library job thread (job.c), one album per turn, never on the UI or engine thread.
  * Without threads: sel_library_scrape_poll does one album per call from the engine idle tick (the hash pass pattern). */
+#if !defined(__amigaos__) && !defined(AMIGA)
+#include <unistd.h>
+#endif
 #include "db_internal.h"
 
 #include "../net/http.h"
@@ -51,6 +54,14 @@ static int buf_sink(void* ctx, const void* data, size_t len) {
     return 1;
 }
 
+/* I1459: 1 while a scrape GET is on the wire (from request start to the body in hand); the UI cover spinner reads it via sel_library_cover_fetching.
+ * One job thread runs every scrape GET, so a plain store is enough. SELECTA_SCRAPE_HOLD_MS (test knob) keeps the flag up that long per GET. */
+static int g_fetching;
+
+int sel_library_cover_fetching(sel_library* lib) {
+    return lib != NULL && __atomic_load_n(&g_fetching, __ATOMIC_RELAXED);
+}
+
 /* One GET into `b`. 1 = 200 with a body, 0 = a definite no (404 and other 4xx but 429), -1 = try again later
  * (no connection, 429, 5xx). */
 static int scrape_get(const char* url, scrape_buf* b, sel_scrape_stats* st) {
@@ -64,7 +75,12 @@ static int scrape_get(const char* url, scrape_buf* b, sel_scrape_stats* st) {
     req.user_agent = SCRAPE_UA;
     b->len = 0;
     st->requests++;
+    __atomic_store_n(&g_fetching, 1, __ATOMIC_RELAXED);
+#if !defined(__amigaos__) && !defined(AMIGA)
+    if (getenv("SELECTA_SCRAPE_HOLD_MS") != NULL) usleep((useconds_t)atol(getenv("SELECTA_SCRAPE_HOLD_MS")) * 1000u);
+#endif
     e = sel_http_request(&req, buf_sink, b, &res);
+    __atomic_store_n(&g_fetching, 0, __ATOMIC_RELAXED);
     if (e != SEL_HTTP_OK) return -1;
     if (res.status == 200 && b->len > 0) return 1;
     if (res.status == 200 || res.status == 404 || (res.status >= 400 && res.status < 500 && res.status != 429)) return 0;
