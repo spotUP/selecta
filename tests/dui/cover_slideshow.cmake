@@ -41,7 +41,7 @@ endif()
 file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\nart.slideshow_seconds=2\n")
 
 function(run_at tag waits)
-  file(WRITE "${WORK}/${tag}.txt" "exec QUEUE_ADD \"${song}\"\nexec REPEAT one\nexec PLAY\nwait 600\n${waits}")
+  file(WRITE "${WORK}/${tag}.txt" "exec QUEUE_ADD \"${song}\"\nexec PLAY\nwait 600\n${waits}")
   dui_run(o ${common} --input "${WORK}/${tag}.txt")
   if(NOT "${o}" MATCHES "cover_slide of=([0-9]+) frame=([0-9]+) switches=([0-9]+) hash=([0-9a-f]+) watch=(-?[0-9]+),(-?[0-9]+),(-?[0-9]+) clicks=([0-9]+) last=([^\n]*)\n")
     message(FATAL_ERROR "${tag}: no cover_slide line in:\n${o}")
