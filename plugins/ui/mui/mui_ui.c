@@ -2204,6 +2204,15 @@ static int mui_facet_on(uint32_t mask, uint32_t k) {
     return k == 0u ? mask == 0u : (int)((mask >> (k - 1u)) & 1u);
 }
 
+/* I1456: a new search starts on All (the Mac and text UI rule); the From chips pick up search_src on the next refresh. */
+static void mui_search_chips_reset(mui_state* s) {
+    uint32_t k;
+    s->search_facet = s->search_src = 0u;
+    for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
+        mui_aabtn_set_on(s->facet_btn[k], mui_facet_on(0u, k));
+    }
+}
+
 /* I1456: the From chips follow the shown results: label and show one per source section, on-state from search_src. */
 static void mui_src_chips_sync(mui_state* s) {
     const sel_view_state* v = sel_engine_state(s->engine)->view;
@@ -4221,6 +4230,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_SEARCH:
         mui_str_utf8(s->str_search, text, sizeof text);
         n = mui_search_lines(text, lines);
+        if (n > 0) {
+            mui_search_chips_reset(s);
+        }
         for (i = 0; i < n; i++) {
             mui_engine_line(s, lines[i]);
         }
@@ -4234,6 +4246,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_SEARCHLIVE:
         mui_str_utf8(s->str_search, text, sizeof text);
         n = mui_search_lines(text, lines);
+        if (n > 0) {
+            mui_search_chips_reset(s);
+        }
         for (i = 0; i < n; i++) {
             mui_engine_line(s, lines[i]);
         }
