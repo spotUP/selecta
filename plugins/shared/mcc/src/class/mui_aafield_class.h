@@ -14,6 +14,7 @@ typedef struct mui_aafield_spec {
     int max_w; /* I615d: cap the field's MaxWidth in px (the top bar field); 0 = unbounded */
     const char* placeholder; /* I733: hint drawn in TEXT_MUTED while the field is empty and not active; NULL = none; must outlive the field */
     long id; /* MUIM_Application_ReturnID on MUIA_String_Acknowledge; 0 = no notification */
+    int secret; /* I1469m: 1 = the inner String shows dots (MUIA_String_Secret, MUI 3.8 has it), for the account password */
 } mui_aafield_spec;
 
 Object* mui_aafield_new(const mui_aafield_spec* spec);

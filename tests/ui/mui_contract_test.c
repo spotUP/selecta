@@ -3293,6 +3293,31 @@ static void test_songinfo_panel(void) {
 
 /* I1440q2: composer Link rows and CSDb release rows open their URL through openurl.library (absent: nothing), the release URL from the shared
  * sel_csdb_url. The photo and thumbnails are not drawn: MUI has no image decoder path (see thoughts/spot/agent-reports/I1440q2-mui-photo-url.md). */
+/* I1469m (design doc 9.2, D-M3-12): the account window is the twin of the desktop account dialog. It drives the same
+ * sel_engine_account_* calls, hides the password, says it does not send one without TLS, and a logged-out rating opens it. */
+static void test_account(void) {
+    char* src = ui_source();
+    static const char* const need[] = {"sel_engine_account_post(s->engine, s->acct_signup, name, pass)",
+                                       "sel_engine_account_take(s->engine, &ok, s->acct_err_buf, sizeof s->acct_err_buf)",
+                                       "sel_engine_account_user(s->engine, s->acct_user, sizeof s->acct_user)",
+                                       "sel_engine_account_logout(s->engine)",
+                                       "sel_engine_account_wanted(s->engine, sel_engine_state(s->engine)->song.path)",
+                                       "mui_acct_open(s, \"Log in to send this rating to the DEViLBOX server.\")",
+                                       "mui_make_string_s(CTL_ACCT_PASS, 0, \"Password\", 1)",
+                                       "no secure connection",
+                                       "\"Log In Instead\" : \"Create Account Instead\"",
+                                       "mui_acct_follow(s);",
+                                       "} else if (id == CTL_ACCT_OPEN) {"};
+    size_t i;
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    for (i = 0; i < sizeof need / sizeof need[0]; i++) {
+        CHECK(strstr(src, need[i]) != NULL, need[i]);
+    }
+}
+
 static void test_open_url(void) {
     char *src = ui_source(), *fn;
     CHECK(src != NULL, "cannot read mui_ui.c");
@@ -4469,6 +4494,8 @@ int main(int argc, char** argv) {
         test_col_tag();
     } else if (strcmp(argv[1], "open-url") == 0) {
         test_open_url();
+    } else if (strcmp(argv[1], "account") == 0) {
+        test_account();
     } else if (strcmp(argv[1], "songinfo-panel") == 0) {
         test_songinfo_panel();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {

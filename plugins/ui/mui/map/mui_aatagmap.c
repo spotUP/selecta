@@ -107,6 +107,9 @@ int mui_aafield_tags(const mui_aafield_spec* sp, struct TagItem* out, size_t cap
     tw_add(&w, MUIA_String_MaxLen, UP_D(sp->maxlen));
     tw_add(&w, UPA_Field_MaxWidth, UP_D(sp->max_w));
     tw_add(&w, UPA_Field_Placeholder, UP_D(sp->placeholder));
+    if (sp->secret) { /* I1469m: only the password field carries it, so the other fields keep their four tags */
+        tw_add(&w, MUIA_String_Secret, 1);
+    }
     return tw_done(&w);
 }
 
