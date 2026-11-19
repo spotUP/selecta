@@ -3458,7 +3458,7 @@ static void test_cover_image(void) {
     CHECK(strstr(src, "s->art = a != NULL ? a->art : NULL;") != NULL, "the library art source is not taken from the open args");
     CHECK(strstr(src, "mui_canvas_set_image(s->np_cover") != NULL && strstr(src, "mui_canvas_set_image(s->bar_cover") != NULL, "the covers get no real image");
     /* I1440q5: the composer page header photo: RTG-only canvas, fed from the page's first song through the same loader, hidden without a photo */
-    CHECK(strstr(src, "mui_canvas_set_image(s->col_photo") != NULL && strstr(src, "mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE)") != NULL,
+    CHECK(strstr(src, "mui_canvas_set_image(s->col_photo") != NULL && strstr(src, "mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE, 0u)") != NULL,
           "the composer header photo is not fed from the first song's cover");
     CHECK(strstr(src, "{ /* I1440q5/q4") != NULL && strstr(src, "if (g_screen_rtg) { /* I1440q5") == NULL && strstr(src, "s->col_photo = mui_canvas_cover_new(g_screen_rtg)") != NULL &&
               strstr(src, "DoMethod(head, OM_ADDMEMBER, s->col_photo_box)") != NULL,
