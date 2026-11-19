@@ -131,25 +131,3 @@ void mui_tile_caption(const mui_btile* t, char* out, size_t cap) {
     }
 }
 
-uint32_t mui_search_facet_line(const sel_view_state* v, uint32_t facet, char* out, size_t cap) {
-    uint32_t k;
-    if (facet >= SEL_UIM_SEARCH_FACETS) {
-        return 0u;
-    }
-    if (facet == 0u) {
-        snprintf(out, cap, "VIEW_CURSOR 0");
-        return 1u;
-    }
-    if (v == NULL || v->rows == NULL) {
-        return 0u;
-    }
-    for (k = 0; k < v->row_n; k++) { /* the group headings are "Songs (N)", "Albums (N)", "Artists (N)" */
-        const sel_view_row* r = &v->rows[k];
-        const char* name = sel_uim_search_facets[facet];
-        if (r->kind == (uint32_t)SEL_ROW_HEADING && r->text != NULL && strncmp(r->text, name, strlen(name)) == 0) {
-            snprintf(out, cap, "VIEW_CURSOR %u", (unsigned)(v->window_start + k));
-            return 1u;
-        }
-    }
-    return 0u;
-}

@@ -66,7 +66,7 @@ static void mui_fold_entry(mui_list_entry* e, const sel_view_state* v, uint32_t 
     }
 }
 
-uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active) {
+uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active, uint32_t facets, uint32_t src) {
     uint32_t i, o = 0, n = v->row_n, head = 0, have_head = 0;
     int fold = v->source == SEL_VIEW_SEARCH && mui_style_kind(v->style) == MUI_STYLE_LIST;
     int32_t act = -1;
@@ -88,6 +88,10 @@ uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_
         }
         if (r == NULL) {
             break;
+        }
+        if (v->source == SEL_VIEW_SEARCH && (facets | src) != 0u && sel_uim_search_row_hidden(v->rows, v->row_n, i, facets, src)) {
+            have_head = 0; /* I1456: a chip-hidden row is skipped; a hidden heading also ends the fold section */
+            continue;
         }
         if (fold && r->kind == (uint32_t)SEL_ROW_HEADING) {
             head = i;
