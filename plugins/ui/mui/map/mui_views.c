@@ -4,6 +4,7 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/title.h>
 #include <selecta/uimodel/viewcmds.h>
 
 #include <stdio.h>
@@ -224,14 +225,7 @@ uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, siz
 }
 
 uint32_t mui_subsong_label(uint32_t subsong, uint32_t count, char* out, size_t cap) {
-    if (count < 2u) {
-        if (cap > 0u) {
-            out[0] = '\0';
-        }
-        return 0;
-    }
-    snprintf(out, cap, "%u/%u", (unsigned)subsong, (unsigned)count);
-    return 1;
+    return sel_uim_subsong_label((unsigned)subsong, (unsigned)count, out, cap); /* I1464: the shared "Subsong n/m" */
 }
 
 uint32_t mui_subsong_step_line(uint32_t subsong, uint32_t count, int dir, char* out, size_t cap) {

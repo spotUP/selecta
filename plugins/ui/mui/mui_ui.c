@@ -266,7 +266,7 @@ typedef struct mui_state {
     Object* cyc_subsong;            /* MUI-P4-9 */
     Object* sub_grp;                /* I973c: the bar's subsong group (label + minus + plus), shown only when the song has subsongs */
     Object* sub_txt;                /* I973c: its "n/m" label */
-    char sub_buf[16];
+    char sub_buf[24];
     uint32_t sub_shown;
     Object* status;                 /* the last line a P4 gadget sent (MUI-P4-11: the one-line toast) */
     mui_toast toast;                /* MUI-P4-11 */
@@ -1495,7 +1495,7 @@ static Object* mui_player_group(mui_state* s) {
     sub_prev = mui_make_button_fixed("Previous Subsong", "minus", NULL, CTL_SUB_PREV, MUI_AA_ROLE_NORMAL, (int)band.btn_w, (int)band.btn_px);
     sub_next = mui_make_button_fixed("Next Subsong", "plus", NULL, CTL_SUB_NEXT, MUI_AA_ROLE_NORMAL, (int)band.btn_w, (int)band.btn_px);
     s->sub_buf[0] = '\0';
-    s->sub_txt = mui_aatext_sized(s->sub_buf, "00/00", mui_pens_label_tone(MUI_LBL_CLOCK), MUI_AA_ALIGN_CENTRE, 0);
+    s->sub_txt = mui_aatext_sized(s->sub_buf, "Subsong 00/00", /* I1464 */ mui_pens_label_tone(MUI_LBL_CLOCK), MUI_AA_ALIGN_CENTRE, 0);
     if (sub_prev == NULL || sub_next == NULL || s->sub_txt == NULL) {
         return NULL;
     }
@@ -1535,7 +1535,7 @@ static Object* mui_player_group(mui_state* s) {
     return g;
 }
 
-/* I973c: show or hide the bar's subsong group and keep its "n/m" label on the frame. The text is touched only when it changes. */
+/* I973c: show or hide the bar's subsong group and keep its "Subsong n/m" label on the frame. The text is touched only when it changes. */
 static void mui_subsong_sync(mui_state* s, const sel_uim_frame* f) {
     char label[sizeof s->sub_buf];
     uint32_t show = mui_subsong_label(f->subsong, f->subsong_count, label, sizeof label);
