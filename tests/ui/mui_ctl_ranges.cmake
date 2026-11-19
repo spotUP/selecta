@@ -25,6 +25,7 @@ set(SPAN_CTL_FACET_BASE 64)
 set(SPAN_CTL_SRC_BASE 6)
 set(SPAN_CTL_KEY_BASE 256)
 set(SPAN_CTL_OFFER_ROW 256)
+set(SPAN_CTL_ABOUT_OPEN 12) # I1463b: MUI_ABOUT_MAX ids; without it the span was 1 and CTL_SRC_BASE overlapped unseen
 
 file(STRINGS "${SRC}" LINES REGEX "^#define (CTL_|MENU_ID_BASE)[A-Z0-9_]* +0x[0-9A-Fa-f]+")
 set(NAMES "")
