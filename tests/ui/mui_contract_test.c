@@ -1014,6 +1014,81 @@ static void test_list_search_fold(void) {
     sel_uim_search_fold_toggle("Foldtest (5)");
 }
 
+static char* ui_source(void);
+static const char* fn_body(const char* src, const char* head, char* out, size_t cap);
+
+/* I1456: a search view with every group: Songs, Albums, Artists and two From sections, one result row each (Songs two). */
+static sel_view_row g_chip_rows[11];
+static void chip_view(sel_view_state* v) {
+    static const char* heads[5] = {"Songs (2)", "Albums (1)", "Artists (1)", "From Modland (1)", "From AMP (1)"};
+    uint32_t h, n = 0;
+    memset(g_chip_rows, 0, sizeof g_chip_rows);
+    for (h = 0; h < 5u; h++) {
+        uint32_t r, rn = h == 0u ? 2u : 1u;
+        g_chip_rows[n].kind = SEL_ROW_HEADING; g_chip_rows[n].text = heads[h]; n++;
+        for (r = 0; r < rn; r++) {
+            g_chip_rows[n].kind = SEL_ROW_QUEUE; g_chip_rows[n].text = "hit"; g_chip_rows[n].id = 100u + n; n++;
+        }
+    }
+    memset(v, 0, sizeof *v);
+    v->source = SEL_VIEW_SEARCH; v->style = SEL_VIEW_STYLE_REGULAR; v->row_count = n; v->window_rows = 16; v->row_n = n; v->rows = g_chip_rows;
+}
+
+/* The headings mui_list_build kept, joined with '|'. */
+static const char* chip_heads(uint32_t facets, uint32_t src, char* buf, size_t cap) {
+    static mui_list_entry out[16];
+    sel_view_state v;
+    int32_t active = -1;
+    uint32_t n, k;
+    chip_view(&v);
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 16, &v, &active, facets, src);
+    buf[0] = '\0';
+    for (k = 0; k < n; k++) {
+        if (g_chip_rows[out[k].index].kind == SEL_ROW_HEADING) {
+            snprintf(buf + strlen(buf), cap - strlen(buf), "%s%s", buf[0] != '\0' ? "|" : "", g_chip_rows[out[k].index].text);
+        }
+    }
+    return buf;
+}
+
+static void test_list_search_chips(void) {
+    char b[256];
+    uint32_t m = sel_uim_chip_toggle(sel_uim_chip_toggle(0u, 1u), 2u); /* Songs, then Albums */
+    CHECK(m == 3u, "Songs+Albums mask %u", (unsigned)m);
+    chip_heads(m, 0u, b, sizeof b);
+    CHECK(strcmp(b, "Songs (2)|Albums (1)|From Modland (1)|From AMP (1)") == 0, "Songs+Albums lists '%s'", b); /* From sections are song results (shared Mac rule) */
+    chip_heads(2u, 0u, b, sizeof b);
+    CHECK(strcmp(b, "Albums (1)") == 0, "Albums alone lists '%s'", b);
+    chip_heads(0u, 0u, b, sizeof b);
+    CHECK(strcmp(b, "Songs (2)|Albums (1)|Artists (1)|From Modland (1)|From AMP (1)") == 0, "All lists '%s'", b);
+    CHECK(sel_uim_chip_toggle(m, 0u) == 0u, "All does not clear the mask");
+}
+
+static void test_list_search_src(void) {
+    char b[256], name[64];
+    sel_view_state v;
+    chip_view(&v);
+    CHECK(sel_uim_search_from_n(v.rows, v.row_n) == 2u, "From sections %u", (unsigned)sel_uim_search_from_n(v.rows, v.row_n));
+    sel_uim_search_from_name(v.rows, v.row_n, 1u, name, sizeof name);
+    CHECK(strcmp(name, "AMP") == 0, "From chip 1 caption '%s'", name);
+    chip_heads(0u, sel_uim_chip_toggle(0u, 2u), b, sizeof b); /* the AMP chip (MUI chip k toggles bit k + 1) */
+    CHECK(strstr(b, "From AMP (1)") != NULL && strstr(b, "From Modland") == NULL, "AMP chip lists '%s'", b);
+}
+
+/* The engine rows behind mui_ui.c do not run on the host: the reset is checked in the source, its effect through the shared toggle. */
+static void test_chip_reset(void) {
+    const char* src = ui_source();
+    char body[6000];
+    const char *live, *ret;
+    CHECK(fn_body(src, "static void mui_search_chips_reset(", body, sizeof body) != NULL && strstr(body, "s->search_facet = s->search_src = 0u;") != NULL,
+          "mui_search_chips_reset does not clear both masks");
+    CHECK(fn_body(src, "static void mui_p4_fire(", body, sizeof body) != NULL && strstr(body, "case P4_SEARCH:") != NULL, "mui_p4_fire not found");
+    live = strstr(body, "case P4_SEARCHLIVE:");
+    ret = strstr(body, "mui_search_chips_reset(s);");
+    CHECK(live != NULL && ret != NULL && ret < live && strstr(live, "mui_search_chips_reset(s);") != NULL,
+          "Return and live search do not both reset the chips");
+}
+
 static void test_list_drill(void) {
     sel_view_state v;
     char buf[160];
@@ -4219,6 +4294,12 @@ int main(int argc, char** argv) {
         test_list_tree();
     } else if (strcmp(argv[1], "list-search-fold") == 0) {
         test_list_search_fold();
+    } else if (strcmp(argv[1], "list-search-chips") == 0) {
+        test_list_search_chips();
+    } else if (strcmp(argv[1], "list-search-src") == 0) {
+        test_list_search_src();
+    } else if (strcmp(argv[1], "chip-reset") == 0) {
+        test_chip_reset();
     } else if (strcmp(argv[1], "list-drill") == 0) {
         test_list_drill();
     } else if (strcmp(argv[1], "columns") == 0) {
