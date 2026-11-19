@@ -4169,6 +4169,13 @@ if(NOT SEL_AMIGA)
   target_include_directories(devilbox_base_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(devilbox_base_test PRIVATE selecta_library selecta_core)
   add_test(NAME devilbox-default-https COMMAND devilbox_base_test)
+  if(APPLE) # I1470: the token file moves into the Keychain and log out deletes it (temp config dir, never the real one)
+    add_executable(devilbox_keystore_test net/devilbox_keystore_test.c)
+    target_include_directories(devilbox_keystore_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+    target_link_libraries(devilbox_keystore_test PRIVATE selecta_library selecta_core)
+    add_test(NAME devilbox-keystore COMMAND devilbox_keystore_test)
+    set_tests_properties(devilbox-keystore PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "devilbox_keystore_ok" SKIP_RETURN_CODE 77)
+  endif()
   # I413: the asma list reader, artist rule and source descriptor, on the recorded asmadb.js excerpt.
   add_executable(asma_unit_test asma_unit_test.c)
   target_sources(asma_unit_test PRIVATE

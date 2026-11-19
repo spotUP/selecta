@@ -13772,14 +13772,11 @@ void sel_engine_account_logout(sel_engine* e) {
 }
 
 int sel_engine_account_wanted(sel_engine* e, const char* key) {
-    char token[SEL_DEVILBOX_TOKEN_MAX], source[64];
+    char source[64];
     const char* path = NULL;
-    int has;
     (void)e;
     if (key == NULL || key[0] == '\0') {
         return 0;
     }
-    has = sel_devilbox_token(token, sizeof token);
-    memset(token, 0, sizeof token);
-    return !has && sel_devilbox_item(key, source, sizeof source, &path);
+    return !sel_devilbox_has_token() && sel_devilbox_item(key, source, sizeof source, &path); /* no Touch ID here (I1470) */
 }

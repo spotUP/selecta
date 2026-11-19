@@ -28,7 +28,13 @@ int sel_devilbox_user(char* out, size_t cap);
 /* I1469: forget the token and the name. */
 int sel_devilbox_logout(void);
 
-/* The stored token, trimmed, into out. 1 when a token file exists and is not empty. */
+/* I1470: keep the token in the platform secret store (Mac: Keychain behind Touch ID, keystore.h) instead of the file.
+ * Only the interactive app on its own config dir turns it on; tests and selecta-cli keep the file. */
+void sel_devilbox_use_keystore(int on);
+/* I1470: 1 when a login is saved. Never asks for Touch ID (the UI thread calls it). */
+int sel_devilbox_has_token(void);
+/* The stored token, trimmed, into out. 1 when a token file exists and is not empty. With the store on, the first read in
+ * a run asks for Touch ID (a background caller blocks on it, which is why the UI thread asks has_token instead). */
 int sel_devilbox_token(char* out, size_t cap);
 
 /* Splits a song key "<source>:<path>" for a source DEViLBOX rates (modland, hvsc). 1 and *path point into key;

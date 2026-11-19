@@ -43,6 +43,7 @@
 #include "db.h"
 #include "local.h"
 #include "share.h"
+#include "net/devilbox.h"
 #include "net/tls.h"
 #include "../../src/engine/evtring.h"
 #include "../../src/engine/options.h"
@@ -926,6 +927,11 @@ int main(int argc, char** argv)
         }
     }
     cfg.config_dir = option(argc, argv, "--config-dir", NULL);
+#ifndef SEL_NO_CONTROL_SOCKET
+    /* I1470: the user's own session keeps the DEViLBOX login in the Keychain (Touch ID); test and --config-dir runs
+     * keep the token file, so they never touch the user's Keychain. Before engine create: it starts the rating push. */
+    sel_devilbox_use_keystore(cfg.config_dir == NULL && !scripted_run(argc, argv, has_keys, is_null));
+#endif
     if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
         cfg.config_dir = cfgdir;
     }

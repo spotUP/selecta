@@ -5,6 +5,7 @@
 #include "backoff.h"
 #include "../../core/count.h"
 #include "http.h"
+#include "keystore.h"
 #include "mirrors.h"
 #include "../source.h"
 
@@ -20,6 +21,7 @@
 #define BODY_CAP 32768u
 
 static char g_dir[256];
+static int g_keystore; /* I1470: the token lives in the platform secret store (keystore.h) */
 /* The push thread (rating_push.c, I173c) and the caller both count (SEL_COUNT_ADD, core/count.h). */
 static unsigned g_pushes;
 static unsigned g_batches;
@@ -57,7 +59,11 @@ static int token_path(char* out, size_t cap) {
     return n > 0 && (size_t)n < cap;
 }
 
-int sel_devilbox_token(char* out, size_t cap) {
+void sel_devilbox_use_keystore(int on) {
+    g_keystore = on && sel_keystore_available();
+}
+
+static int file_token(char* out, size_t cap) {
     char path[300];
     FILE* f;
     size_t n;
@@ -95,9 +101,38 @@ static int file_store(const char* path, const char* token) {
 #endif
 }
 
+/* I1470: with the secret store on, a token file left by an older build (or selecta-cli) moves into the store once and
+ * the file goes; the store's item is keyed by the config dir, so each profile keeps its own login. */
+int sel_devilbox_token(char* out, size_t cap) {
+    char path[300];
+
+    if (!g_keystore || g_dir[0] == '\0') return file_token(out, cap);
+    if (file_token(out, cap)) {
+        if (sel_keystore_put(g_dir, out) && token_path(path, sizeof path)) (void)remove(path);
+        return 1;
+    }
+    return sel_keystore_get(g_dir, out, cap);
+}
+
+int sel_devilbox_has_token(void) {
+    char token[SEL_DEVILBOX_TOKEN_MAX];
+    int has;
+
+    if (g_keystore && g_dir[0] != '\0' && sel_keystore_has(g_dir)) return 1;
+    has = file_token(token, sizeof token);
+    memset(token, 0, sizeof token);
+    return has;
+}
+
 static int token_store(const char* token) {
     char path[300];
-    return token_path(path, sizeof path) && file_store(path, token);
+
+    if (!token_path(path, sizeof path)) return 0;
+    if (g_keystore && sel_keystore_put(g_dir, token)) {
+        (void)remove(path);
+        return 1;
+    }
+    return file_store(path, token);
 }
 
 /* I1469: <config>/devilbox.user beside the token: the logged-in name the avatar shows. Never the password. */
@@ -129,6 +164,7 @@ int sel_devilbox_logout(void) {
     char path[300];
     if (token_path(path, sizeof path)) (void)remove(path);
     if (user_path(path, sizeof path)) (void)remove(path);
+    if (g_keystore && g_dir[0] != '\0') (void)sel_keystore_del(g_dir);
     return 1;
 }
 
