@@ -587,9 +587,8 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     op.ref = key;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) { /* real art, or screenshots already cached */
-        if (alb == id && dz_has(lib, id, "dz_more", NULL, 0) <= 0) { /* I1454: a SID cover cached before the rotation gets the CSDb shots once */
-            csdb_cover(lib, key, id, st);
-            dz_put(lib, id, "dz_more", "1", 1);
+        if (alb == id && dz_has(lib, id, "dz_more2", NULL, 0) <= 0 && csdb_cover(lib, key, id, st) >= 0) { /* I1454: a SID cover cached before the rotation gets the CSDb shots once the CSDb answer is in; dz_more2: old dz_more rows were written without one */
+            dz_put(lib, id, "dz_more2", "1", 1);
         }
         return 1;
     }
@@ -598,10 +597,10 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
         return 1;
     }
     sid = composer_art(lib, key, id, st); /* I1454: the composer photo, then the CSDb shots, then Demozoo: all of them rotate, not the first only */
-    sid |= csdb_cover(lib, key, id, st);
-    if (sid) {
+    r = csdb_cover(lib, key, id, st);
+    if (sid || r > 0) {
         st->scraped++;
-        dz_put(lib, id, "dz_more", "1", 1);
+        if (r >= 0) dz_put(lib, id, "dz_more2", "1", 1); /* no CSDb answer yet (fetch failed): the next play asks again */
     }
     memset(meta, 0, sizeof meta);
     if (strncmp(key, "modland:pub/modules/", 20) != 0) { /* I1401: any other source is asked by title + artist from the songs row */
@@ -705,24 +704,26 @@ static void csdb_thumbs(sel_library* lib, const char* base, const char* json, se
 }
 
 /* I1450 (design D5): after the composer photo, the first CSDb release screenshot of the song is its cover, before the Demozoo fallback. The ids come from
- * the ds_csdb row of I1440h (ds_step fetches it when missing); the image is the server's resized JPEG, as in csdb_thumbs. 1 = cover stored. */
+ * the ds_csdb row of I1440h (ds_step fetches it when missing); the image is the server's resized JPEG, as in csdb_thumbs. 1 = a still stored,
+ * 0 = the CSDb answer is cached but added nothing, -1 = no CSDb answer (not a DeepSID song, or the fetch failed). */
 static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stats* st) {
     char dk[1100], base[256], url[SCRAPE_URL_MAX];
     sel_art_op op;
     scrape_buf js, img;
-    int ids[3], ok = 0, n, i, ni;
+    int ids[3], ok = -1, n, i, ni;
 
     memset(&op, 0, sizeof op);
     op.op = SEL_ART_DS_KEY;
     op.ref = key;
     op.data = (uint8_t*)dk;
     op.cap = sizeof dk;
-    if (art_request(lib, &op) <= 0) return 0;
+    if (art_request(lib, &op) <= 0) return -1;
     ds_step(lib, key, st);
     js.data = malloc(DS_JSON_MAX);
     img.data = malloc(DZ_IMAGE_MAX);
     if (js.data != NULL && img.data != NULL && (n = dz_has(lib, sel_art_dz_id(dk), "ds_csdb", js.data, DS_JSON_MAX - 1u)) > 0) {
         js.data[n] = '\0';
+        ok = 0;
         ni = (int)sel_deepsid_csdb_ids((const char*)js.data, ids, 3u); /* I1454: up to 3 release screenshots, all join the rotation */
         base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
         for (i = 0; i < ni; i++) {
@@ -791,13 +792,29 @@ static int ds_list_step(sel_library* lib, const char* spec, sel_scrape_stats* st
     return r < 0 ? -1 : 1;
 }
 
+/* The ds_csdb row (and its 160 px thumbnails) of the song `key` whose ds_file answer is in js; js is reused for the answer. A file with a null or 0
+ * csdbId has no CSDb release. A failed fetch records nothing, so the next ds_step of the song asks again (I1454). */
+static void ds_csdb_step(sel_library* lib, const char* base, const char* key, scrape_buf* js, sel_scrape_stats* st) {
+    char url[SCRAPE_URL_MAX];
+    const char* p = strstr((const char*)js->data, "\"csdbId\"");
+
+    p = p != NULL ? json_value(p + 8) : NULL;
+    if (p == NULL || *p < '1' || *p > '9') return;
+    p = strstr((const char*)js->data, "\"id\"");
+    p = p != NULL ? json_value(p + 4) : NULL;
+    if (p == NULL || atoi(p) <= 0) return;
+    snprintf(url, sizeof url, "%s/api/deepsid/csdb/%d", base, atoi(p));
+    js->cap = DS_JSON_MAX - 1u;
+    if (ds_fetch(lib, key, "ds_csdb", url, js, st) == 1) csdb_thumbs(lib, base, (const char*)js->data, st);
+}
+
 /* One song. Returns 1 done (stored, cached or nothing to ask), -1 network trouble (nothing recorded). */
 static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
     char base[256], key[1100], fkey[1100], enc[1100], url[SCRAPE_URL_MAX], stamp[24];
     uint8_t seen[24];
     scrape_buf js;
     sel_art_op op;
-    const char *p, *slash;
+    const char* slash;
     int id, r;
 
     memset(&op, 0, sizeof op);
@@ -807,7 +824,18 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
     op.cap = sizeof key;
     if (art_request(lib, &op) <= 0) return 1; /* not a SID of HVSC/CGSC: no DeepSID data */
     id = sel_art_dz_id(key);
-    if (dz_has(lib, id, "ds_file", NULL, 0) > 0) return 1;
+    if (dz_has(lib, id, "ds_file", NULL, 0) > 0) {
+        if (dz_has(lib, id, "ds_csdb", NULL, 0) > 0 || (js.data = malloc(DS_JSON_MAX)) == NULL) return 1;
+        js.cap = DS_JSON_MAX - 1u;
+        r = dz_has(lib, id, "ds_file", js.data, js.cap);
+        if (r > 0) { /* I1454: a cached file whose CSDb fetch failed (route missing, network) asks again, else its SID never gets the release stills */
+            js.data[r < (int)js.cap ? r : (int)js.cap] = '\0';
+            base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+            ds_csdb_step(lib, base, key, &js, st);
+        }
+        free(js.data);
+        return 1;
+    }
     memset(seen, 0, sizeof seen);
     if (dz_has(lib, id, "ds_miss2", seen, sizeof seen - 1u) > 0 && (time_t)atol((const char*)seen) > time(NULL) - (time_t)SEL_ART_SCRAPE_RETRY_DAYS * 86400) return 1;
     js.data = malloc(DS_JSON_MAX);
@@ -820,16 +848,7 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
     r = ds_fetch(lib, key, "ds_file", url, &js, st);
     if (r == 1) {
         ds_tags(lib, key, (const char*)js.data);
-        p = strstr((const char*)js.data, "\"csdbId\"");
-        p = p != NULL ? json_value(p + 8) : NULL;
-        if (p != NULL && *p >= '1' && *p <= '9') { /* null or 0: the file has no CSDb release */
-            p = strstr((const char*)js.data, "\"id\"");
-            p = p != NULL ? json_value(p + 4) : NULL;
-            if (p != NULL && atoi(p) > 0) {
-                snprintf(url, sizeof url, "%s/api/deepsid/csdb/%d", base, atoi(p));
-                if (ds_fetch(lib, key, "ds_csdb", url, &js, st) == 1) csdb_thumbs(lib, base, (const char*)js.data, st); /* a failure here is retried never: the file row is the cache gate; shortcut, upgrade when CSDb flaps */
-            }
-        }
+        ds_csdb_step(lib, base, key, &js, st);
         slash = strrchr(key, '/');
         if (slash != NULL && (size_t)(slash - key) < sizeof fkey) {
             snprintf(fkey, sizeof fkey, "%.*s", (int)(slash - key), key);

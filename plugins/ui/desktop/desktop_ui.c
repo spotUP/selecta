@@ -16383,6 +16383,7 @@ static void desk_library_invalidate(desk* d) {
     d->side_pl_sig_set = 0u;
     d->home_sig = 0xffffffffu;
     art_forget_misses(d->art); /* I689: a title that found no album before the scan made it must be looked up again */
+    art_recheck(d->art, sel_engine_state(d->engine)->song.path); /* I1454: only the playing song cycles, so only its stills are read again */
     /* I1086: a library change refreshes data in place and never navigates: no desk_page_load here (that is page ENTRY: view source, Library
      * scroll, lib_set_mode, the Search query resend). The engine models re-read themselves (lib_models_follow); only the Library tree below is
      * a desktop-held listing. */

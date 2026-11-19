@@ -301,7 +301,16 @@ static void job_merge(desk_art* a) {
         if (j->album[i] == 0 && j->gen != a->gen) {
             continue; /* a miss from before art_forget_misses: it is looked up again */
         }
-        if (find_entry(a, j->title[i]) != NULL || a->count >= ART_TITLES) {
+        if ((e = find_entry(a, j->title[i])) != NULL) {
+            if (e->album != 0 && e->album == j->album[i]) { /* I1454: an art_recheck: stills that landed after the first read join the rotation */
+                e->kmask = j->kmask[i];
+                free(e->video);
+                e->video = j->video[i];
+                j->video[i] = NULL;
+            }
+            continue;
+        }
+        if (a->count >= ART_TITLES) {
             continue;
         }
         e = &a->entry[a->count++];
@@ -404,6 +413,30 @@ void art_forget_misses(desk_art* a) {
     a->count = keep;
     a->bad_n = 0u;
     a->gen++;
+}
+
+void art_recheck(desk_art* a, const char* title) {
+    char* c;
+    if (a == NULL || title == NULL || find_entry(a, title) == NULL || in_pending(a, title)) {
+        return; /* not loaded yet (art_load reads it fresh) or already queued */
+    }
+    if (a->pend_n == a->pend_cap) {
+        uint32_t cap = a->pend_cap != 0u ? a->pend_cap * 2u : 64u;
+        char** p = (char**)realloc(a->pend, cap * sizeof *p);
+        if (p == NULL) {
+            return;
+        }
+        a->pend = p;
+        a->pend_cap = cap;
+    }
+    if ((c = (char*)malloc(strlen(title) + 1u)) == NULL) {
+        return;
+    }
+    strcpy(c, title);
+    a->pend[a->pend_n++] = c;
+    if (art_threaded()) {
+        job_start(a);
+    }
 }
 
 void art_load(desk_art* a, const char* const* titles, uint32_t n) {
