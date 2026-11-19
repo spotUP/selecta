@@ -31,6 +31,9 @@ int art_known(desk_art* a, const char* title);
 /* I689: drops the entries that resolved to no album and the failed-cover marks, so the next art_load looks them up again. Called when the
  * library changes: a lookup that missed before the scan created the albums row must not outlive it. Entries with a cover stay. */
 void art_forget_misses(desk_art* a);
+/* I1454: reads the stills and video link of a loaded `title` again on the worker, entry kept meanwhile, so stills a scrape stores
+ * during the play join the rotation without a restart. No-op for a title not loaded or already queued. */
+void art_recheck(desk_art* a, const char* title);
 /* The tile pixels (DESK_ART_TILE_EDGE squared) of the album of the song at queue path `title`, NULL when it has no artwork. */
 const uint32_t* art_tile(desk_art* a, const char* title);
 /* I1384d: the cover of the album of `title` decoded from the stored full image into edge x edge pixels (aspect kept, black bars), for views
