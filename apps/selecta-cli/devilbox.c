@@ -48,8 +48,26 @@ int sel_cli_devilbox(int argc, char** argv) {
     int ok;
     int i;
 
-    if (argc < 2 || strcmp(argv[0], "login") != 0) {
-        fprintf(stderr, "usage: selecta-cli devilbox login <user> [--password-stdin] [--config-dir <dir>]\n");
+    if (argc >= 1 && strcmp(argv[0], "logout") == 0) { /* I1469 */
+        for (i = 1; i + 1 < argc; i++) {
+            if (strcmp(argv[i], "--config-dir") == 0) {
+                config = argv[i + 1];
+            }
+        }
+        if (config == NULL) {
+            if (!sel_config_dir(dir, sizeof dir)) {
+                fprintf(stderr, "selecta-cli: no config directory\n");
+                return 1;
+            }
+            config = dir;
+        }
+        sel_devilbox_set_config_dir(config);
+        ok = sel_devilbox_logout();
+        printf("devilbox_logout=%s\n", ok ? "ok" : "failed");
+        return ok ? 0 : 1;
+    }
+    if (argc < 2 || (strcmp(argv[0], "login") != 0 && strcmp(argv[0], "signup") != 0)) {
+        fprintf(stderr, "usage: selecta-cli devilbox login|signup <user> [--password-stdin] [--config-dir <dir>] | logout [--config-dir <dir>]\n");
         return 2;
     }
     user = argv[1];
@@ -74,9 +92,15 @@ int sel_cli_devilbox(int argc, char** argv) {
     }
     (void)sel_config_mkdir(config);
     sel_devilbox_set_config_dir(config);
-    ok = sel_devilbox_login(user, password, &status);
-    memset(password, 0, sizeof password);
-    printf("devilbox_login=%s status=%d\n", ok ? "ok" : "failed", status);
+    {
+        char error[160];
+        ok = sel_devilbox_auth(strcmp(argv[0], "signup") == 0, user, password, &status, error, sizeof error);
+        memset(password, 0, sizeof password);
+        printf("devilbox_%s=%s status=%d\n", argv[0], ok ? "ok" : "failed", status);
+        if (!ok) {
+            printf("devilbox_error=%s\n", error);
+        }
+    }
     return ok ? 0 : 1;
 }
 

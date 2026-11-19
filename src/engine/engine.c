@@ -13701,3 +13701,85 @@ void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out) {
 void sel_engine_scan_info(const sel_engine* e, sel_scan_info* out) {
     *out = e->scan_info;
 }
+
+/* I1469: account log in and create account (design doc 9.2, D-M3-12). The worker writes only these statics, never the
+ * engine, so a quit during a request never touches freed memory. The password copy is wiped when the request ends. */
+static struct {
+    int state; /* 0 idle, 1 running, 2 result ready; __atomic */
+    int signup, ok;
+    char user[64], password[128], error[160];
+} g_acct;
+
+static void* acct_run(void* arg) {
+    int status = 0;
+    (void)arg;
+    g_acct.ok = sel_devilbox_auth(g_acct.signup, g_acct.user, g_acct.password, &status, g_acct.error, sizeof g_acct.error);
+    memset(g_acct.password, 0, sizeof g_acct.password);
+    __atomic_store_n(&g_acct.state, 2, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+int sel_engine_account_post(sel_engine* e, int signup, const char* user, const char* password) {
+    (void)e;
+    if (user == NULL || password == NULL || __atomic_load_n(&g_acct.state, __ATOMIC_ACQUIRE) != 0) {
+        return 0;
+    }
+    g_acct.signup = signup;
+    snprintf(g_acct.user, sizeof g_acct.user, "%s", user);
+    snprintf(g_acct.password, sizeof g_acct.password, "%s", password);
+    __atomic_store_n(&g_acct.state, 1, __ATOMIC_RELEASE);
+#ifdef SEL_LI_THREAD
+    {
+        pthread_t t;
+        pthread_attr_t a;
+        int rc;
+        pthread_attr_init(&a);
+        pthread_attr_setdetachstate(&a, PTHREAD_CREATE_DETACHED);
+        rc = pthread_create(&t, &a, acct_run, NULL);
+        pthread_attr_destroy(&a);
+        if (rc == 0) {
+            return 1;
+        }
+    }
+#endif
+    (void)acct_run(NULL); /* no threads (Amiga): the request runs on the caller */
+    return 1;
+}
+
+int sel_engine_account_take(sel_engine* e, int* ok, char* error, size_t cap) {
+    (void)e;
+    if (__atomic_load_n(&g_acct.state, __ATOMIC_ACQUIRE) != 2) {
+        return 0;
+    }
+    if (ok != NULL) {
+        *ok = g_acct.ok;
+    }
+    if (error != NULL && cap > 0u) {
+        snprintf(error, cap, "%s", g_acct.error);
+    }
+    __atomic_store_n(&g_acct.state, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
+int sel_engine_account_user(sel_engine* e, char* out, size_t cap) {
+    (void)e;
+    return sel_devilbox_user(out, cap);
+}
+
+void sel_engine_account_logout(sel_engine* e) {
+    (void)e;
+    (void)sel_devilbox_logout();
+}
+
+int sel_engine_account_wanted(sel_engine* e, const char* key) {
+    char token[SEL_DEVILBOX_TOKEN_MAX], source[64];
+    const char* path = NULL;
+    int has;
+    (void)e;
+    if (key == NULL || key[0] == '\0') {
+        return 0;
+    }
+    has = sel_devilbox_token(token, sizeof token);
+    memset(token, 0, sizeof token);
+    return !has && sel_devilbox_item(key, source, sizeof source, &path);
+}

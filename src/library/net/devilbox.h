@@ -20,6 +20,13 @@ void sel_devilbox_set_config_dir(const char* dir);
 /* POST /api/auth/login and store the token. 1 = stored. 0 = refused or unreachable; *status (may be NULL) is the
  * HTTP status, 0 when none arrived. */
 int sel_devilbox_login(const char* user, const char* password, int* status);
+/* I1469: log in (signup 0) or create an account (signup 1). 1 when the token is stored. On failure error gets the server's
+ * own text ("Username already taken") or a plain fallback. */
+int sel_devilbox_auth(int signup, const char* user, const char* password, int* status, char* error, size_t cap);
+/* I1469: the logged-in name (1), or 0 when logged out. */
+int sel_devilbox_user(char* out, size_t cap);
+/* I1469: forget the token and the name. */
+int sel_devilbox_logout(void);
 
 /* The stored token, trimmed, into out. 1 when a token file exists and is not empty. */
 int sel_devilbox_token(char* out, size_t cap);

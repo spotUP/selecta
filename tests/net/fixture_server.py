@@ -187,6 +187,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
         if path in ("/api/hip/vote", "/api/hip/votes") and self.command == "GET":
             return self.hip_vote(path, urllib.parse.parse_qs(parsed.query))
+        if path == "/api/auth/signup" and self.command == "POST":  # I1469: same rules and texts as DEViLBOX auth.ts
+            try:
+                req = json.loads(body or b"{}")
+            except ValueError:
+                req = {}
+            name, pw = req.get("username") or "", req.get("password") or ""
+            if not name or not pw:
+                self.json_reply(400, {"error": "Username and password required"})
+            elif len(pw) < 6:
+                self.json_reply(400, {"error": "Password must be at least 6 characters"})
+            elif name == "taken":
+                self.json_reply(409, {"error": "Username already taken"})
+            else:
+                self.json_reply(201, {"token": "fixture-jwt-signup-" + name,
+                                      "user": {"id": 2, "username": name, "createdAt": 0}})
+            return True
         if path == "/api/auth/login" and self.command == "POST":
             try:
                 req = json.loads(body or b"{}")

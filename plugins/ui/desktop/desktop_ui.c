@@ -523,6 +523,16 @@ typedef struct desk {
     int stats_open;          /* the Library Statistics panel (More) is expanded over the grid (I455) */
     uint32_t stats_panel_draws, stats_panel_rows; /* panels painted, and the statistics rows in the last one */
     int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library, 3 = Quit Selecta */
+    /* I1469: the account dialog (DLG_ACCOUNT) and the top bar avatar. The typed password lives only until submit or close. */
+    char acct_user[64];      /* the logged-in name; empty when logged out */
+    char acct_name[64];
+    char acct_pass[128];
+    size_t acct_name_len, acct_pass_len;
+    int acct_field;          /* 0 = Username, 1 = Password */
+    int acct_signup;         /* 0 = Log In form, 1 = Create Account form */
+    int acct_busy, acct_init;
+    char acct_error[160];
+    unsigned acct_clicks;
     char dlg_path[512];      /* the song a Remove from Library dialog names */
     char dlg_text[640];      /* the question the dialog shows */
     uint32_t dlg_playlists;  /* playlists the Clear Library dialog names */
@@ -3514,7 +3524,7 @@ static void song_menu_draw(desk* d) {
 enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32 };
 /* I921: the sync offer lists every due source the registry can hold (C99 compile-time check: a negative array size fails the build). */
 typedef char desk_nag_holds_every_source[(sizeof(((desk*)0)->nag.key) / sizeof(((desk*)0)->nag.key[0]) >= SEL_SOURCE_MAX) ? 1 : -1];
-enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5, DLG_SYSFILE = 6 };
+enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5, DLG_SYSFILE = 6, DLG_ACCOUNT = 7 };
 
 static const char* path_base(const char* p);
 
@@ -3526,7 +3536,7 @@ static uint32_t nagdlg_cols(uint32_t n) {
 
 static sel_gui_rect dlg_panel_rect(const desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t w = lpx(d, d->dlg_open == DLG_SYSFILE ? 580 : 440), h = lpx(d, 168);
+    int32_t w = lpx(d, d->dlg_open == DLG_SYSFILE || d->dlg_open == DLG_ACCOUNT ? 580 : 440), h = lpx(d, d->dlg_open == DLG_ACCOUNT ? 300 : 168);
     if (d->dlg_open == DLG_SYNC) { /* I602: a column of NAG_COL_ROWS source rows, another column beside it for each NAG_COL_ROWS more */
         uint32_t rows = d->nag.n < (uint32_t)NAG_COL_ROWS ? d->nag.n : (uint32_t)NAG_COL_ROWS;
         uint32_t cols = nagdlg_cols(d->nag.n);
@@ -3768,6 +3778,164 @@ static void dlg_close(desk* d, int confirm) {
     draw_home(d);
 }
 
+/* I1469: the account dialog (design doc 9.2, D-M3-12): Log In or Create Account with Username and Password, the server's
+ * error text, Log Out once logged in. The request goes through sel_engine_account_post; acct_follow takes the result. */
+static int field_edit(desk* d, char* buf, size_t* len, size_t cap, char reject, sel_gui_edit* es, const sel_gui_input* ev);
+static sel_gui_rect acct_avatar_rect(desk* d);
+
+static void acct_wipe(desk* d) {
+    memset(d->acct_pass, 0, sizeof d->acct_pass);
+    d->acct_pass_len = 0u;
+}
+
+static void acct_open(desk* d, const char* why) {
+    d->acct_field = d->acct_name_len > 0u ? 1 : 0;
+    d->acct_signup = 0;
+    snprintf(d->acct_error, sizeof d->acct_error, "%s", why != NULL ? why : "");
+    d->dlg_open = DLG_ACCOUNT;
+    d->dlg_opens++;
+    d->repaint = 1;
+}
+
+static void acct_close(desk* d) {
+    acct_wipe(d);
+    d->dlg_open = DLG_NONE;
+    d->dlg_cancels++;
+    draw_home(d);
+}
+
+static sel_gui_rect acct_field_rect(desk* d, int i) {
+    sel_gui_rect p = dlg_panel_rect(d);
+    int32_t m = lpx(d, 20);
+    return rect_of(p.x + m, p.y + lpx(d, 76) + i * lpx(d, 64), p.w - 2 * m, lpx(d, 36));
+}
+
+static sel_gui_rect acct_toggle_rect(desk* d) {
+    sel_gui_rect b = dlg_button_rect(d, 0u), p = dlg_panel_rect(d);
+    return rect_of(p.x + lpx(d, 20), b.y, lpx(d, 210), b.h);
+}
+
+static void acct_submit(desk* d) {
+    if (d->acct_busy) {
+        return;
+    }
+    if (d->acct_user[0] != '\0') {
+        sel_engine_account_logout(d->engine);
+        d->acct_user[0] = '\0';
+        acct_close(d);
+        desk_toast(d, "Logged out");
+        return;
+    }
+    if (d->acct_name_len == 0u || d->acct_pass_len == 0u) {
+        snprintf(d->acct_error, sizeof d->acct_error, "Type a username and a password.");
+    } else if (sel_engine_account_post(d->engine, d->acct_signup, d->acct_name, d->acct_pass)) {
+        d->acct_busy = 1;
+        d->acct_error[0] = '\0';
+        acct_wipe(d);
+    } else {
+        snprintf(d->acct_error, sizeof d->acct_error, "A request is already running.");
+    }
+    d->repaint = 1;
+}
+
+static void acct_follow(desk* d) {
+    int ok = 0;
+    if (!d->acct_init) {
+        d->acct_init = 1;
+        (void)sel_engine_account_user(d->engine, d->acct_user, sizeof d->acct_user);
+    }
+    if (!d->acct_busy || !sel_engine_account_take(d->engine, &ok, d->acct_error, sizeof d->acct_error)) {
+        return;
+    }
+    d->acct_busy = 0;
+    if (ok) {
+        (void)sel_engine_account_user(d->engine, d->acct_user, sizeof d->acct_user);
+        d->acct_error[0] = '\0';
+        if (d->dlg_open == DLG_ACCOUNT) {
+            acct_close(d);
+        }
+        desk_toast(d, d->acct_signup ? "Account created, logged in" : "Logged in");
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+static void acct_draw(desk* d, sel_gui_rect p, const sel_gui_atlas* head, const sel_gui_atlas* body) {
+    int32_t m = lpx(d, 20), i;
+    uint32_t ink = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    char line[200];
+    const char* submit;
+    sel_gui_text_wrap(d->canvas, head, rect_of(p.x + m, p.y + m, p.w - 2 * m, head->line_height),
+                      d->acct_user[0] != '\0' ? "Account" : d->acct_signup ? "Create Account" : "Log In", ink, 1, &d->text);
+    if (d->acct_user[0] != '\0') {
+        snprintf(line, sizeof line, "Logged in as %s. Your ratings and votes go to the DEViLBOX server.", d->acct_user);
+        sel_gui_text_wrap(d->canvas, body, rect_of(p.x + m, p.y + lpx(d, 60), p.w - 2 * m, body->line_height * 3), line, ink, 3, &d->text);
+        submit = "Log Out";
+    } else {
+        for (i = 0; i < 2; i++) {
+            sel_gui_rect f = acct_field_rect(d, i);
+            char stars[128];
+            size_t n = d->acct_pass_len < sizeof stars - 1u ? d->acct_pass_len : sizeof stars - 1u;
+            memset(stars, '*', n);
+            stars[n] = '\0';
+            sel_gui_text_wrap(d->canvas, body, rect_of(f.x, f.y - body->line_height - lpx(d, 4), f.w, body->line_height),
+                              i == 0 ? "Username" : "Password", muted, 1, &d->text);
+            sel_gui_round_rect(d->canvas, f, lpx(d, 6), ARGB(d->theme.token[d->acct_field == i ? SEL_GUI_TOKEN_SURFACE_HOVER : SEL_GUI_TOKEN_SURFACE]));
+            sel_gui_text_wrap(d->canvas, body, rect_of(f.x + lpx(d, 10), f.y + (f.h - body->line_height) / 2, f.w - lpx(d, 20), body->line_height),
+                              i == 0 ? d->acct_name : stars, ink, 1, &d->text);
+        }
+        draw_button(d, acct_toggle_rect(d), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), d->acct_signup ? "Log In Instead" : "Create Account Instead", 14, ink);
+        submit = d->acct_busy ? (d->acct_signup ? "Creating..." : "Logging In...") : d->acct_signup ? "Create Account" : "Log In";
+    }
+    if (d->acct_error[0] != '\0') {
+        sel_gui_text_wrap(d->canvas, body, rect_of(p.x + m, p.y + lpx(d, 196), p.w - 2 * m, body->line_height * 2), d->acct_error, ink, 2, &d->text);
+    }
+    draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), d->acct_user[0] != '\0' ? "Close" : sel_uim_dlg_cancel_label(), 14, ink);
+    draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), submit, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+}
+
+static int acct_pointer(desk* d, const sel_gui_input* ev) {
+    int i;
+    if (ev->kind != SEL_GUI_IN_CLICK) {
+        return ev->kind == SEL_GUI_IN_WHEEL;
+    }
+    if (in_rect(dlg_button_rect(d, 1u), ev->x, ev->y)) {
+        acct_submit(d);
+    } else if (in_rect(dlg_button_rect(d, 0u), ev->x, ev->y) || !in_rect(dlg_panel_rect(d), ev->x, ev->y)) {
+        acct_close(d);
+    } else if (d->acct_user[0] == '\0' && in_rect(acct_toggle_rect(d), ev->x, ev->y)) {
+        d->acct_signup = !d->acct_signup;
+        d->acct_error[0] = '\0';
+        d->repaint = 1;
+    } else {
+        for (i = 0; i < 2; i++) {
+            if (in_rect(acct_field_rect(d, i), ev->x, ev->y)) {
+                d->acct_field = i;
+                d->repaint = 1;
+            }
+        }
+    }
+    return 1;
+}
+
+static int acct_key(desk* d, const sel_gui_input* ev) {
+    if (ev->code == 27u) {
+        acct_close(d);
+    } else if (ev->code == 13u) {
+        acct_submit(d);
+    } else if (ev->code == 9u) {
+        d->acct_field = !d->acct_field;
+    } else if (d->acct_user[0] == '\0' && !d->acct_busy) {
+        if (d->acct_field == 0) {
+            (void)field_edit(d, d->acct_name, &d->acct_name_len, sizeof d->acct_name, 0, NULL, ev);
+        } else {
+            (void)field_edit(d, d->acct_pass, &d->acct_pass_len, sizeof d->acct_pass, 0, NULL, ev);
+        }
+    }
+    d->repaint = 1;
+    return 1;
+}
+
 static void dlg_draw(desk* d) {
     sel_gui_rect p, tr;
     const sel_gui_atlas* head = desk_font(d, 1, 16);
@@ -3783,6 +3951,11 @@ static void dlg_draw(desk* d) {
     sel_gui_round_rect(d->canvas, p, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
     if (d->dlg_open == DLG_SYNC) {
         nagdlg_draw(d, p);
+        sel_gui_dirty_add(d->canvas, p);
+        return;
+    }
+    if (d->dlg_open == DLG_ACCOUNT) {
+        acct_draw(d, p, head, body);
         sel_gui_dirty_add(d->canvas, p);
         return;
     }
@@ -3811,6 +3984,9 @@ static int dlg_pointer(desk* d, const sel_gui_input* ev) {
     if (d->dlg_open == DLG_SYNC) {
         return nagdlg_pointer(d, ev);
     }
+    if (d->dlg_open == DLG_ACCOUNT) {
+        return acct_pointer(d, ev);
+    }
     if (ev->kind == SEL_GUI_IN_CLICK && d->dlg_open == DLG_SYSFILE) { /* I710ga6: three buttons, Cancel keeps the note line */
         if (in_rect(dlg_button_rect(d, 2u), ev->x, ev->y)) {
             dlg_close(d, 1);
@@ -3835,6 +4011,9 @@ static int dlg_pointer(desk* d, const sel_gui_input* ev) {
 }
 
 static int dlg_key(desk* d, const sel_gui_input* ev) {
+    if (d->dlg_open == DLG_ACCOUNT) {
+        return acct_key(d, ev);
+    }
     if (d->dlg_open == DLG_SYNC) { /* Enter syncs the ticked sources, Escape is Not now */
         if (ev->code == 13u || ev->code == 27u) {
             nagdlg_close(d, ev->code == 13u ? 2 : 1);
@@ -9154,6 +9333,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "module_missing toasts=%u text=\"%s\"\n", (unsigned)d->module_missing_toasts, d->module_missing_text);
     if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
         uint32_t k;
+        o = dump_put(d, o, "account user=%s open=%d busy=%d clicks=%u avatar=%d,%d,%d,%d error=%s\n", d->acct_user, d->dlg_open == DLG_ACCOUNT, d->acct_busy,
+        o =          d->acct_clicks, acct_avatar_rect(d).x, acct_avatar_rect(d).y, acct_avatar_rect(d).w, acct_avatar_rect(d).h, d->acct_error);
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u open_fail_toasts=%u open_fail_text=\"%s\" toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
@@ -11466,6 +11647,16 @@ static sel_gui_rect settings_entry_rect(desk* d) {
     return rect_of(right - w, hm.y, w, hm.h);
 }
 
+/* I1469: the account avatar, a round button left of Settings; empty when Settings is or when it would hit Browse. */
+static sel_gui_rect acct_avatar_rect(desk* d) {
+    sel_gui_rect se = settings_entry_rect(d), br = topbar_part(d, TOPBAR_BROWSE);
+    int32_t x = se.x - lpx(d, 8) - se.h;
+    if (se.w <= 0 || x < br.x + br.w + lpx(d, 8)) {
+        return rect_of(0, 0, 0, 0);
+    }
+    return rect_of(x, se.y, se.h, se.h);
+}
+
 /* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
  * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
 /* I615: the window-wide top bar: the round Home button, then the pill search field (magnifier, the typed query or the hint)
@@ -11511,6 +11702,23 @@ static void draw_topbar(desk* d) {
                         ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
     }
+    {
+        sel_gui_rect av = acct_avatar_rect(d);
+        if (av.w > 0) { /* I1469: the account avatar: the name's first letter on the accent once logged in, else the user icon */
+            hover_reg(d, av);
+            if (d->acct_user[0] != '\0') {
+                char ch[2];
+                ch[0] = d->acct_user[0] >= 'a' && d->acct_user[0] <= 'z' ? (char)(d->acct_user[0] - 32) : d->acct_user[0];
+                ch[1] = '\0';
+                sel_gui_round_rect(d->canvas, av, av.h / 2, hover_fill_of(d, av, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT])));
+                draw_button(d, av, hover_fill_of(d, av, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT])), ch, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+            } else {
+                sel_gui_round_rect(d->canvas, av, av.h / 2, hover_fill_of(d, av, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED])));
+                sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_USER, rect_of(av.x + (av.w - ic) / 2, av.y + (av.h - ic) / 2, ic, ic), ic,
+                                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            }
+        }
+    }
     sel_gui_dirty_add(d->canvas, bar);
     d->topbar_draws++;
 }
@@ -11527,6 +11735,11 @@ static int topbar_click(desk* d, int32_t x, int32_t y) {
         desk_relayout(d);
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return 1;
+    }
+    if (acct_avatar_rect(d).w > 0 && in_rect(acct_avatar_rect(d), x, y)) { /* I1469 */
+        d->acct_clicks++;
+        acct_open(d, NULL);
         return 1;
     }
     if (settings_entry_rect(d).w > 0 && in_rect(settings_entry_rect(d), x, y)) { /* I799a */
@@ -12030,6 +12243,9 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     }
     for (i = 0; d->np_draws > 0u && i < 5u; i++) {
         if (in_rect(d->np_rate[i], x, y)) {
+            if (d->acct_user[0] == '\0' && sel_engine_account_wanted(d->engine, sel_engine_state(d->engine)->song.path)) {
+                acct_open(d, "Log in to send this rating to the DEViLBOX server."); /* I1469: the rating still lands locally */
+            }
             char line[16];
             /* The mark of the stored rating clicked again takes the rating back (I306). */
             sel_uim_rate_line(d->np_rating > 0 ? (uint32_t)d->np_rating : 0u, i + 1u, line, sizeof line);
@@ -12715,6 +12931,7 @@ static void sm_lib_want(desk* d) {
 
 /* Each turn of the loop: a finished read is applied and the window redrawn. Counts the frames that were drawn while a read was in flight. */
 static void desk_side_follow(desk* d) {
+    acct_follow(d);
     pls_briefs_follow(d);
     if (d->sm_inflight) {
         sm_lib_take(d);
