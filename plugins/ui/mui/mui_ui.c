@@ -380,6 +380,7 @@ typedef struct mui_state {
     uint32_t search_facet;
     uint32_t search_src;              /* I1456: From chips mask, bit k = source chip k */
     Object* src_btn[MUI_SRC_CHIPS];
+    Object* src_row;                  /* I1463: the From chips' own row above the facet chips (the Mac order); shown while a chip is labelled */
     char src_name[MUI_SRC_CHIPS][128]; /* I1456: caption each From chip shows (sync cache) */
     int src_on[MUI_SRC_CHIPS];
     int home_shown, browse_shown, facet_shown, modes_shown, scope_shown;
@@ -2218,6 +2219,7 @@ static void mui_src_chips_sync(mui_state* s) {
     const sel_view_state* v = sel_engine_state(s->engine)->view;
     uint32_t n = v != NULL && v->source == SEL_VIEW_SEARCH ? sel_uim_search_from_n(v->rows, v->row_n) : 0u;
     uint32_t k;
+    int change = 0;
     for (k = 0; k < MUI_SRC_CHIPS; k++) {
         char name[128] = "";
         int on = (int)((s->search_src >> k) & 1u);
@@ -2225,6 +2227,10 @@ static void mui_src_chips_sync(mui_state* s) {
             sel_uim_search_from_name(v->rows, v->row_n, k, name, sizeof name);
         }
         if (strcmp(name, s->src_name[k]) != 0 || on != s->src_on[k]) {
+            if (!change) {
+                DoMethod(s->facet_row, MUIM_Group_InitChange); /* I1463: one relayout for all chips, not one per ShowMe */
+                change = 1;
+            }
             snprintf(s->src_name[k], sizeof s->src_name[k], "%s", name);
             s->src_on[k] = on;
             if (name[0] != 0) {
@@ -2234,12 +2240,26 @@ static void mui_src_chips_sync(mui_state* s) {
             mui_aabtn_set_on(s->src_btn[k], on);
         }
     }
+    if (change) {
+        set(s->src_row, MUIA_ShowMe, s->src_name[0][0] != 0 ? TRUE : FALSE); /* chips fill from 0, so chip 0 says whether any shows */
+        DoMethod(s->facet_row, MUIM_Group_ExitChange);
+    }
 }
 
 /* I795 (P5): the Search facet chips (sel_uim_search_facets: All, Songs, Albums, Artists), shown while the list's source is Search. */
 static Object* mui_facet_row_group(mui_state* s) {
     uint32_t k;
-    s->facet_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+    Object *chip_row, *fchip_row;
+    /* I1463: the From chips get their own row (the Mac puts source chips on a row above the facets): 4 facets + 6 From + 3 R11c chips in
+     * one row asked for more than the 800 px RTG screen, and MUI closes a window whose minimum passes the screen (the first search keystroke
+     * showed the row and the window vanished). The R11c chips get a third row: at 13 px each chip is ~44 px plus its caption, so the 4 facets
+     * (~320) and Format/Channels/Publisher (~385, "Channels: More than 4" is the widest caption) together pass the ~450 px main pane too. */
+    s->src_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+    chip_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    fchip_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    s->facet_row = s->src_row != NULL && chip_row != NULL && fchip_row != NULL
+                       ? MUI_NewObject((char*)MUIC_Group, MUIA_Group_Child, (ULONG)s->src_row, MUIA_Group_Child, (ULONG)chip_row, MUIA_Group_Child, (ULONG)fchip_row, MUIA_ShowMe, FALSE, TAG_DONE)
+                       : NULL;
     if (s->facet_row == NULL) {
         return NULL;
     }
@@ -2248,7 +2268,7 @@ static Object* mui_facet_row_group(mui_state* s) {
         if (s->facet_btn[k] == NULL) {
             return NULL;
         }
-        DoMethod(s->facet_row, OM_ADDMEMBER, s->facet_btn[k]);
+        DoMethod(chip_row, OM_ADDMEMBER, s->facet_btn[k]);
     }
     for (k = 0; k < MUI_SRC_CHIPS; k++) { /* I1456: From source chips, labelled by mui_src_chips_sync */
         s->src_btn[k] = mui_make_button_ex("From", "From", "tile", NULL, CTL_SRC_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TAB, MUI_AA_ALIGN_CENTRE, 0, 0);
@@ -2256,17 +2276,19 @@ static Object* mui_facet_row_group(mui_state* s) {
             return NULL;
         }
         set(s->src_btn[k], MUIA_ShowMe, FALSE);
-        DoMethod(s->facet_row, OM_ADDMEMBER, s->src_btn[k]);
+        DoMethod(s->src_row, OM_ADDMEMBER, s->src_btn[k]);
     }
+    DoMethod(s->src_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(chip_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     for (k = 0; k < 3u; k++) { /* I774n R11c: the Mac R9 chips Format, Channels (cycles), Publisher; the same query terms (sel_uim_search_chan_apply) */
         const char* cap = k == 0u ? "Format" : k == 1u ? sel_uim_search_chan_label[0] : "Publisher";
         s->fchip_btn[k] = mui_make_button_ex(cap, k == 1u ? sel_uim_search_chan_label[2] : cap, "tile", NULL, CTL_FCHIP_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TAB, MUI_AA_ALIGN_CENTRE, 0, 0);
         if (s->fchip_btn[k] == NULL) {
             return NULL;
         }
-        DoMethod(s->facet_row, OM_ADDMEMBER, s->fchip_btn[k]);
+        DoMethod(fchip_row, OM_ADDMEMBER, s->fchip_btn[k]);
     }
-    DoMethod(s->facet_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(fchip_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     return s->facet_row;
 }
 
@@ -4245,10 +4267,7 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_SEARCHLIVE:
         mui_str_utf8(s->str_search, text, sizeof text);
-        n = mui_search_lines(text, lines);
-        if (n > 0) {
-            mui_search_chips_reset(s);
-        }
+        n = mui_search_lines(text, lines); /* I1463: a keystroke refines the search, so the chips stay (the Mac and text UI reset on a new search only) */
         for (i = 0; i < n; i++) {
             mui_engine_line(s, lines[i]);
         }
