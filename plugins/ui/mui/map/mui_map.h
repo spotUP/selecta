@@ -295,7 +295,7 @@ typedef struct mui_list_entry {
 } mui_list_entry;
 /* Fill out[] from the visible window only (at most window_rows and cap entries); *active is the List cursor
  * position inside the window, -1 when the cursor row is outside it. Returns the entries filled. */
-uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active);
+uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active, uint32_t facets, uint32_t src);
 /* I1174: library styles on the List. mui_style_kind maps a sel_view_style to how MUI shows it. mui_style_pack turns the window's
  * entries into the packed List rows (Grid: `cols` cells of `cell_chars` per row, cursor cell in [ ]; Cover Flow: one row, cursor cell
  * between its neighbours; Compact: one dense label per row) and returns the row count, 0 for a plain list style. The cell width is
@@ -405,7 +405,6 @@ void mui_tile_caption(const mui_btile* t, char* out, size_t cap);
 
 /* I795 (P5): the engine line a Search facet chip sends: VIEW_CURSOR on the heading of that group of results (facet 0, All: the top).
  * Returns 1 when `out` holds a line, 0 when the results have no such group. The names are sel_uim_search_facets. */
-uint32_t mui_search_facet_line(const sel_view_state* v, uint32_t facet, char* out, size_t cap);
 
 /* MUI-P4-0: the sidebar doors, built from the shared uimodel door table (include/selecta/uimodel/doors.h). The label is the
  * table's; the line is the engine line that switches the main view to the door's page, NULL for a page the MUI shows in

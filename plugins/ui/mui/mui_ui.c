@@ -84,6 +84,7 @@ static void mui_libs_close(void) {
 #include "mui_aatabs_class.h"
 #include "mui_aabalance_class.h"
 #include "mui_aaslider_class.h"
+#define MUI_SRC_CHIPS 6 /* I1456: From source chips (design D4) */
 #include "mui_aacycle_class.h"
 #include "mui_aalist_class.h"
 #include "mui_aafield_class.h"
@@ -165,7 +166,8 @@ typedef struct mui_state {
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
     int dbl_race;            /* I724: ENV:Selecta/MUIDblRace was set at open: every double click first gets a forced list refresh (rig knob) */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
-    sel_tag stats[8];
+    sel_tag stats[9];
+    char slide_stat[64];     /* I1454c: cover_slide stat value (of, frame, switches), filled by mui_cover_tick */
     char p4_stat[480];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
     uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
@@ -376,6 +378,10 @@ typedef struct mui_state {
     Object* facet_row;              /* I795 (P5): the Search facet chips above the results */
     Object* facet_btn[SEL_UIM_SEARCH_FACETS];
     uint32_t search_facet;
+    uint32_t search_src;              /* I1456: From chips mask, bit k = source chip k */
+    Object* src_btn[MUI_SRC_CHIPS];
+    char src_name[MUI_SRC_CHIPS][128]; /* I1456: caption each From chip shows (sync cache) */
+    int src_on[MUI_SRC_CHIPS];
     int home_shown, browse_shown, facet_shown, modes_shown, scope_shown;
     uint32_t scope_in_mode_row;     /* I1350: compact screens: the scope Cycle sits inside the mode row */
     Object* scope_row;              /* I1176: the Queue scope Cycle (Library, Album, Playlist) above the queue list */
@@ -689,6 +695,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
 #define CTL_SCOPE 0x2AC4L           /* I1176: the Queue scope Cycle */
 #define CTL_OPEN_CANCEL 0x2AC5L     /* I1415: the now-playing Cancel button, posts CANCEL_OPEN */
+#define CTL_SRC_BASE 0x2AD8L        /* I1456: the From source chips, CTL_SRC_BASE + k */
 #define CTL_SI_PICK_BASE 0x2AF0L    /* I774n R11c: CTL_SI_PICK_BASE + k, a row of Song Information section list k (1..5) was picked */
 #define CTL_FCHIP_BASE 0x2AF8L      /* I774n R11c: CTL_FCHIP_BASE + 0..2: the Format, Channels, Publisher chips */
 #define CTL_INFO_PICK 0x2AC6L       /* I1440q2: a Song Information row was picked (a CSDb release row opens csdb.dk) */
@@ -2192,6 +2199,34 @@ static Object* mui_scope_row_group(mui_state* s) {
     return s->scope_row;
 }
 
+/* I1456: a facet chip is on for All when no chip is, else when its bit (k-1) is set (the Mac rule). */
+static int mui_facet_on(uint32_t mask, uint32_t k) {
+    return k == 0u ? mask == 0u : (int)((mask >> (k - 1u)) & 1u);
+}
+
+/* I1456: the From chips follow the shown results: label and show one per source section, on-state from search_src. */
+static void mui_src_chips_sync(mui_state* s) {
+    const sel_view_state* v = sel_engine_state(s->engine)->view;
+    uint32_t n = v != NULL && v->source == SEL_VIEW_SEARCH ? sel_uim_search_from_n(v->rows, v->row_n) : 0u;
+    uint32_t k;
+    for (k = 0; k < MUI_SRC_CHIPS; k++) {
+        char name[128] = "";
+        int on = (int)((s->search_src >> k) & 1u);
+        if (k < n) {
+            sel_uim_search_from_name(v->rows, v->row_n, k, name, sizeof name);
+        }
+        if (strcmp(name, s->src_name[k]) != 0 || on != s->src_on[k]) {
+            snprintf(s->src_name[k], sizeof s->src_name[k], "%s", name);
+            s->src_on[k] = on;
+            if (name[0] != 0) {
+                mui_aabtn_set_caption(s->src_btn[k], name);
+            }
+            set(s->src_btn[k], MUIA_ShowMe, name[0] != 0 ? TRUE : FALSE);
+            mui_aabtn_set_on(s->src_btn[k], on);
+        }
+    }
+}
+
 /* I795 (P5): the Search facet chips (sel_uim_search_facets: All, Songs, Albums, Artists), shown while the list's source is Search. */
 static Object* mui_facet_row_group(mui_state* s) {
     uint32_t k;
@@ -2205,6 +2240,14 @@ static Object* mui_facet_row_group(mui_state* s) {
             return NULL;
         }
         DoMethod(s->facet_row, OM_ADDMEMBER, s->facet_btn[k]);
+    }
+    for (k = 0; k < MUI_SRC_CHIPS; k++) { /* I1456: From source chips, labelled by mui_src_chips_sync */
+        s->src_btn[k] = mui_make_button_ex("From", "From", "tile", NULL, CTL_SRC_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TAB, MUI_AA_ALIGN_CENTRE, 0, 0);
+        if (s->src_btn[k] == NULL) {
+            return NULL;
+        }
+        set(s->src_btn[k], MUIA_ShowMe, FALSE);
+        DoMethod(s->facet_row, OM_ADDMEMBER, s->src_btn[k]);
     }
     for (k = 0; k < 3u; k++) { /* I774n R11c: the Mac R9 chips Format, Channels (cycles), Publisher; the same query terms (sel_uim_search_chan_apply) */
         const char* cap = k == 0u ? "Format" : k == 1u ? sel_uim_search_chan_label[0] : "Publisher";
@@ -3042,7 +3085,7 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
         set(s->scope_row, MUIA_ShowMe, scope ? TRUE : FALSE);
         set(s->listview, MUIA_ShowMe, col || home || browse || srcp ? FALSE : TRUE);
         for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
-            mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
+            mui_aabtn_set_on(s->facet_btn[k], mui_facet_on(s->search_facet, k));
         }
         if (parent != 0) {
             DoMethod((Object*)parent, MUIM_Group_ExitChange);
@@ -3348,6 +3391,7 @@ static void mui_cover_tick(mui_state* s, const sel_state* st) {
         s->slide_frames = sel_uim_art_frames(kinds);
         s->slide_lib = st->library_serial;
     }
+    snprintf(s->slide_stat, sizeof s->slide_stat, "of=%u frame=%u switches=%u", (unsigned)s->slide_frames, (unsigned)s->slide.idx, (unsigned)s->slide.switches);
     if (s->slide_frames > 1u) {
         const char* secs = host != NULL && host->config_get != NULL ? host->config_get(host, "art.slideshow_seconds", "6") : "6";
         if (sel_uim_slide_step(&s->slide, so->path, s->slide_frames, st->play == SEL_PLAYING, mui_now_ms(), sel_uim_slide_period_ms(secs))) {
@@ -3442,10 +3486,11 @@ static void mui_refresh(mui_state* s) {
     mui_open_sync(s);
     mui_detail_refresh(s, st);
     mui_cover_tick(s, st);
+    mui_src_chips_sync(s);
     v = st->view;
     if (v != NULL) {
         int32_t active = -1;
-        uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active);
+        uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active, s->search_facet, s->search_src);
         uint32_t packed = mui_style_kind(v->style) != MUI_STYLE_LIST;
         /* The pending click holds a window position (mui_control_fire maps a packed row back), so it resolves before packing. */
         active = mui_list_pending_resolve(&s->list_pending, active);
@@ -4630,15 +4675,13 @@ static void mui_control_fire(mui_state* s, LONG id) {
             set(s->win, MUIA_Window_ActiveObject, (ULONG)s->str_search);
         }
     } else if (id >= CTL_FACET_BASE && id < CTL_FACET_BASE + (LONG)SEL_UIM_SEARCH_FACETS) { /* I795 (P5): a Search facet chip */
-        const sel_view_state* view = sel_engine_state(s->engine)->view;
-        char fl[40];
         uint32_t k = (uint32_t)(id - CTL_FACET_BASE);
-        if (view != NULL && mui_search_facet_line(view, k, fl, sizeof fl) != 0u && mui_engine_line(s, fl)) {
-            s->search_facet = k;
-        }
+        s->search_facet = sel_uim_chip_toggle(s->search_facet, k); /* I1456: a chip toggles (All clears); the list filters on refresh */
         for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
-            mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
+            mui_aabtn_set_on(s->facet_btn[k], mui_facet_on(s->search_facet, k));
         }
+    } else if (id >= CTL_SRC_BASE && id < CTL_SRC_BASE + (LONG)MUI_SRC_CHIPS) { /* I1456: a From chip toggles its source bit */
+        s->search_src = sel_uim_chip_toggle(s->search_src, (uint32_t)(id - CTL_SRC_BASE) + 1u);
     } else if (id == CTL_STATS_MORE) {
         mui_stats_more(&s->stats_panel);
     } else if (id == CTL_OFFER_NOTNOW) {
@@ -5337,8 +5380,10 @@ static const sel_tag* mui_stats(void* state) {
     }
     s->stats[6].tag = SEL_UI_STAT_MUI_P4;
     s->stats[6].value = (uintptr_t)s->p4_stat;
-    s->stats[7].tag = SEL_TAG_END;
-    s->stats[7].value = 0;
+    s->stats[7].tag = SEL_UI_STAT_COVER_SLIDE; /* I1454c: the cover slide show, Mac spelling */
+    s->stats[7].value = (uintptr_t)s->slide_stat;
+    s->stats[8].tag = SEL_TAG_END;
+    s->stats[8].value = 0;
     return s->stats;
 }
 

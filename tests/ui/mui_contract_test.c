@@ -954,13 +954,13 @@ static void test_list_regular(void) {
     int32_t active = -9;
     uint32_t n;
     fake_state(&v, rows, txt, 5000, 1200, 30, SEL_VIEW_STYLE_REGULAR);
-    n = mui_list_build(mui_list_backend_pick(1, 1), out, 40, &v, &active);
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 40, &v, &active, 0u, 0u);
     CHECK(n == 30 && active == 2, "window %u entries, active %d", n, (int)active);
     CHECK(out[0].index == 1200 && strcmp(out[0].text, "Song 1200") == 0, "first entry %u '%s'", out[0].index, out[0].text);
-    n = mui_list_build(mui_list_backend_pick(1, 1), out, 10, &v, &active);
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 10, &v, &active, 0u, 0u);
     CHECK(n == 10, "cap limits entries to %u", n);
     v.cursor = 3;
-    mui_list_build(mui_list_backend_pick(1, 1), out, 40, &v, &active);
+    mui_list_build(mui_list_backend_pick(1, 1), out, 40, &v, &active, 0u, 0u);
     CHECK(active == -1, "cursor outside window gives %d", (int)active);
 }
 
@@ -975,7 +975,7 @@ static void test_list_tree(void) {
     rows[2].kind = SEL_ROW_NODE; rows[2].text = "other"; rows[2].id = 8; rows[2].count = 2;
     memset(&v, 0, sizeof v);
     v.style = SEL_VIEW_STYLE_TREE; v.row_count = 3; v.window_rows = 4; v.row_n = 3; v.rows = rows;
-    mui_list_build(mui_list_backend_pick(0, 0), out, 4, &v, NULL);
+    mui_list_build(mui_list_backend_pick(0, 0), out, 4, &v, NULL, 0u, 0u);
     CHECK(strcmp(out[0].text, "- folder (3)") == 0, "expanded node '%s'", out[0].text);
     CHECK(strcmp(out[1].text, "  one.mod") == 0, "indented song '%s'", out[1].text);
     CHECK(strcmp(out[2].text, "+ other (2)") == 0, "collapsed node '%s'", out[2].text);
@@ -985,7 +985,7 @@ static void test_list_tree(void) {
     CHECK(strcmp(line, "VIEW_EXPAND 8") == 0, "expand line '%s'", line);
     mui_list_toggle_line(&rows[1], line, sizeof line);
     CHECK(line[0] == '\0', "song row toggles nothing");
-    mui_list_build(mui_list_backend_pick(1, 1), out, 4, &v, NULL);
+    mui_list_build(mui_list_backend_pick(1, 1), out, 4, &v, NULL, 0u, 0u);
     CHECK(strcmp(out[1].text, "one.mod") == 0, "Listtree draws depth itself: '%s'", out[1].text);
 }
 
@@ -1005,11 +1005,11 @@ static void test_list_search_fold(void) {
     rows[7].kind = SEL_ROW_QUEUE; rows[7].text = "one"; rows[7].id = 9;
     memset(&v, 0, sizeof v);
     v.source = SEL_VIEW_SEARCH; v.style = SEL_VIEW_STYLE_REGULAR; v.row_count = 8; v.window_rows = 16; v.row_n = 8; v.rows = rows; v.cursor = 7;
-    n = mui_list_build(mui_list_backend_pick(1, 1), out, 16, &v, &active);
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 16, &v, &active, 0u, 0u);
     CHECK(n == 7 && out[4].kind == MUI_ROW_FOLD && strcmp(out[4].text, "    Show all (5)") == 0, "folded: %u entries, entry 4 '%s'", n, out[4].text);
     CHECK(out[3].index == 3 && out[5].index == 6 && active == 6, "rows 4 and 5 hidden, cursor row now %d", (int)active);
     sel_uim_search_fold_toggle("Foldtest (5)");
-    n = mui_list_build(mui_list_backend_pick(1, 1), out, 16, &v, &active);
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 16, &v, &active, 0u, 0u);
     CHECK(n == 9 && out[6].kind == MUI_ROW_FOLD && strcmp(out[6].text, "    Show less") == 0, "expanded: %u entries, entry 6 '%s'", n, out[6].text);
     sel_uim_search_fold_toggle("Foldtest (5)");
 }
@@ -1175,8 +1175,8 @@ static void test_list_backends(void) {
     uint32_t i, n, m, ca, cb;
     uint8_t col[MUI_COL_COUNT];
     fake_state(&v, rows, txt, 100, 10, 20, SEL_VIEW_STYLE_REGULAR);
-    n = mui_list_build(mui_list_backend_pick(1, 1), a, 40, &v, &ia);
-    m = mui_list_build(mui_list_backend_pick(0, 0), b, 40, &v, &ib);
+    n = mui_list_build(mui_list_backend_pick(1, 1), a, 40, &v, &ia, 0u, 0u);
+    m = mui_list_build(mui_list_backend_pick(0, 0), b, 40, &v, &ib, 0u, 0u);
     CHECK(n == m && ia == ib, "row count %u/%u cursor %d/%d", n, m, (int)ia, (int)ib);
     for (i = 0; i < n; i++) {
         CHECK(strcmp(a[i].text, b[i].text) == 0, "row %u differs", i);
@@ -4013,7 +4013,6 @@ static void test_tiles_reach(void) {
     mui_home_page hp;
     mui_shelf sh;
     mui_btile tiles[MUI_TILE_MAX];
-    char line[48];
     mui_route r;
     route_log l;
     uint32_t n;
@@ -4026,7 +4025,7 @@ static void test_tiles_reach(void) {
     CHECK(src != NULL, "mui_ui.c source readable");
     CHECK(strstr(src, "mui_home_split(") != NULL && strstr(src, "mui_shelf_find(") != NULL && strstr(src, "mui_home_fill(") != NULL, "Home quick row and shelves are built from the view");
     CHECK(strstr(src, "mui_browse_tiles(") != NULL && strstr(src, "mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE))") != NULL, "Browse tiles are built and fire");
-    CHECK(strstr(src, "mui_search_facet_line(") != NULL && strstr(src, "sel_uim_search_facets") != NULL && strstr(src, "CTL_FACET_BASE") != NULL, "Search facet chips are built and fire");
+    CHECK(strstr(src, "mui_facet_on(") != NULL && strstr(src, "sel_uim_search_facets") != NULL && strstr(src, "CTL_FACET_BASE") != NULL, "Search facet chips are built and fire");
     CHECK(strstr(src, "mui_search_all_line(text, line") != NULL, "I1019g: the Return handler sends SOURCE_SEARCH *");
     CHECK(strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k]") != NULL &&
               strstr(src, "mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE") != NULL && strstr(src, "mui_home_row_fire(s, view, idx)") != NULL,
@@ -4057,13 +4056,9 @@ static void test_tiles_reach(void) {
     memset(&l, 0, sizeof l);
     CHECK(mui_route_click(&r, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, tiles[2].arg, tiles[2].label, "", route_rec, &l) && mui_route_on_collection(&r) &&
               l.n == 1u && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0] && r.rh.calls == 2u, "a composer tile opens its collection page: %s", l.n > 0u ? l.line[0] : "(none)");
-    /* Search facets */
-    rows[0].kind = SEL_ROW_HEADING; rows[0].quick = 0; rows[0].text = "Songs (4)";
-    rows[5].kind = SEL_ROW_HEADING; rows[5].text = "Albums (2)";
-    rows[8].kind = SEL_ROW_HEADING; rows[8].text = "Artists (1)";
-    v.window_start = 100;
-    CHECK(mui_search_facet_line(&v, 0u, line, sizeof line) == 1u && strcmp(line, "VIEW_CURSOR 0") == 0 && mui_search_facet_line(&v, 2u, line, sizeof line) == 1u &&
-              strcmp(line, "VIEW_CURSOR 105") == 0 && mui_search_facet_line(&v, SEL_UIM_SEARCH_FACETS, line, sizeof line) == 0u, "facet chips jump to their group heading: %s", line);
+    /* I1456: search chips (shared uimodel): All clears, chip k flips bit k-1, and the chips no longer jump the cursor */
+    CHECK(sel_uim_chip_toggle(0u, 0u) == 0u && sel_uim_chip_toggle(0u, 2u) == 2u && sel_uim_chip_toggle(2u, 0u) == 0u && sel_uim_chip_toggle(2u, 2u) == 0u,
+          "search chips: All clears, a chip flips its bit");
 }
 
 /* I949a: one pixel-aspect source. 640x256 PAL non-laced reports tall pixels (22x44 ticks, 512), laced and square modes about 1:1. */
