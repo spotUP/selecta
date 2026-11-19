@@ -9334,7 +9334,7 @@ static const char* library_dump_build(desk* d) {
     if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
         uint32_t k;
         o = dump_put(d, o, "account user=%s open=%d busy=%d clicks=%u avatar=%d,%d,%d,%d error=%s\n", d->acct_user, d->dlg_open == DLG_ACCOUNT, d->acct_busy,
-        o =          d->acct_clicks, acct_avatar_rect(d).x, acct_avatar_rect(d).y, acct_avatar_rect(d).w, acct_avatar_rect(d).h, d->acct_error);
+                     d->acct_clicks, acct_avatar_rect(d).x, acct_avatar_rect(d).y, acct_avatar_rect(d).w, acct_avatar_rect(d).h, d->acct_error);
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u open_fail_toasts=%u open_fail_text=\"%s\" toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
