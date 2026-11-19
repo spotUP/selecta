@@ -587,8 +587,8 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     op.ref = key;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) { /* real art, or screenshots already cached */
-        if (alb == id && dz_has(lib, id, "dz_more", NULL, 0) <= 0 && csdb_cover(lib, key, id, st) >= 0) { /* I1454: a SID cover cached before the rotation gets the CSDb shots once the CSDb answer is in */
-            dz_put(lib, id, "dz_more", "1", 1);
+        if (alb == id && dz_has(lib, id, "dz_more2", NULL, 0) <= 0 && csdb_cover(lib, key, id, st) >= 0) { /* I1454: a SID cover cached before the rotation gets the CSDb shots once the CSDb answer is in; dz_more2: old dz_more rows were written without one */
+            dz_put(lib, id, "dz_more2", "1", 1);
         }
         return 1;
     }
@@ -600,7 +600,7 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     r = csdb_cover(lib, key, id, st);
     if (sid || r > 0) {
         st->scraped++;
-        if (r >= 0) dz_put(lib, id, "dz_more", "1", 1); /* no CSDb answer yet (fetch failed): the next play asks again */
+        if (r >= 0) dz_put(lib, id, "dz_more2", "1", 1); /* no CSDb answer yet (fetch failed): the next play asks again */
     }
     memset(meta, 0, sizeof meta);
     if (strncmp(key, "modland:pub/modules/", 20) != 0) { /* I1401: any other source is asked by title + artist from the songs row */
