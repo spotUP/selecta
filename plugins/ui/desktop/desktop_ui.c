@@ -3344,12 +3344,14 @@ static song_row* song_row_add(desk* d, sel_gui_rect r, const char* path, uint32_
     return e;
 }
 
-static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home) {
+/* song_row_reg with the trailing "..." moved `shift` px left (I1471: a Search row keeps its source badge at the right end). */
+static song_row* song_row_reg_shift(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home, int32_t shift) {
     song_row* e = song_row_add(d, r, path, qid, removable, home);
     int32_t eh = lpx(d, 20);
     if (e == NULL) {
         return NULL;
     }
+    e->more.x -= shift;
     hover_reg(d, r);
     if (add_mode(d) && e->more.w > 0) { /* I652b: the Library page adds to a playlist: every song row ends in Add, the same control as the empty playlist's results */
         sel_gui_rect ab = add_btn_rect(d, r);
@@ -3367,6 +3369,10 @@ static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_
                           row_ink(d, e->more, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED])));
     }
     return e;
+}
+
+static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home) {
+    return song_row_reg_shift(d, r, path, qid, removable, home, 0);
 }
 
 /* I632d: a registered row joins a list: its place in the whole list, and a selected row gets a tint of the accent token. */
@@ -11082,6 +11088,7 @@ static void draw_search(desk* d) {
             } else if (show && (y + rh <= top || y >= bottom)) {
                 y += rh;
             } else if (show) {
+                int32_t more_shift = 0; /* I1471: the hover "..." moves left of the source badge, so badges end flush right like the chips */
                 {
                     /* I498, I1011: the keyboard focus row and the row under the pointer take the one list-row fill every song list uses */
                     sel_gui_rect rr = rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H));
@@ -11110,9 +11117,11 @@ static void draw_search(desk* d) {
                         continue;
                     }
                     if (group >= 1u && group <= 3u ? 1 : (group == 4u && r->key != NULL)) { /* I1020: every result row names its source; a note row has none */
-                        int32_t res = (group == 1u || group == 4u) && !r->album && r->key != NULL ? lpx(d, 36) : 0; /* I1458: the hover "..." button (song_row_add: 20 wide, 8 in) keeps its slot, the badge sits left of it */
+                        int32_t res = (group == 1u || group == 4u) && !r->album && r->key != NULL ? lpx(d, 36) : 0; /* I1458: the hover "..." button (song_row_add: 20 wide) keeps its slot left of the badge */
                         bw = search_badge_w(d, src) + lpx(d, 16) + res;
-                        search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg - res, lpx(d, SEARCH_ROW_H)), src);
+                        more_shift = res > 0 ? search_badge_w(d, src) : 0;
+                        /* I1471: + 8 cancels search_badge_draw's inset, so the badge ends on the source chips' right edge */
+                        search_badge_draw(d, rect_of(mn.x + mg, y, mn.w - 2 * mg + lpx(d, 8), lpx(d, SEARCH_ROW_H)), src);
                     }
                     {   /* I1412: "Title - Author": the title in the row colour, the divider and the author in the muted text token */
                         sel_gui_rect tr = rect_of(mn.x + mg, y, mn.w - 2 * mg - bw, lpx(d, SEARCH_ROW_H));
@@ -11127,7 +11136,7 @@ static void draw_search(desk* d) {
                     }
                 }
                 if ((group == 1u || group == 4u) && !r->album && r->key != NULL) {
-                    song_row* row = song_row_reg(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0);
+                    song_row* row = song_row_reg_shift(d, sel_gui_rect_intersect(rect_of(mn.x + mg, y, mn.w - 2 * mg, rh), rect_of(mn.x, top, mn.w, bottom - top)), r->key, 0, 0, 0, more_shift);
                     if (row != NULL && d->badge_drawn > 0u && d->badge_drawn <= 16u) {
                         d->badge_more[d->badge_drawn - 1u] = row->more;
                     }
