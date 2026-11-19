@@ -13771,14 +13771,14 @@ static void draw_transport(desk* d) {
         }
         switch (i) {
         case SLOT_SUB_PREV:
-            icon = SEL_GUI_ICON_MINUS;
+            icon = SEL_GUI_ICON_CHEVRON_LEFT; /* I1464: "<<" drawn as two chevrons below, styled like Previous/Next (Johan) */
             ink = f->subsong > 1u ? ink : off;
-            fill = d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]; /* I1464: a bare minus on the bar colour read as no button */
+            isz = lpx(d, 16);
             break;
         case SLOT_SUB_NEXT:
-            icon = SEL_GUI_ICON_PLUS;
+            icon = SEL_GUI_ICON_CHEVRON_RIGHT;
             ink = f->subsong < f->subsong_count ? ink : off;
-            fill = d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED];
+            isz = lpx(d, 16);
             break;
         case SLOT_SHUFFLE:
             icon = SEL_GUI_ICON_SHUFFLE;
@@ -13816,6 +13816,12 @@ static void draw_transport(desk* d) {
         sel_gui_round_rect(d->canvas, b, i == SLOT_PLAY ? b.h / 2 : lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
                            hover_fill_of(d, b, ARGB(fill)));
         ic = rect_of(b.x + (b.w - isz) / 2, b.y + (b.h - isz) / 2, isz, isz);
+        if (i == SLOT_SUB_PREV || i == SLOT_SUB_NEXT) { /* the icon set has no double chevron */
+            sel_gui_rect ic2 = ic;
+            ic.x -= isz / 4;
+            ic2.x += isz / 4;
+            sel_gui_icon_draw(d->canvas, &d->icons, icon, ic2, isz, ARGB(ink));
+        }
         sel_gui_icon_draw(d->canvas, &d->icons, icon, ic, isz, ARGB(ink));
         if (i == SLOT_REPEAT && f->repeat_mode == 2u) {
             draw_text(d, rect_of(b.x + b.w - lpx(d, 12), b.y + lpx(d, 2), lpx(d, 10), lpx(d, 12)), "1", 1, 11, ARGB(ink));
