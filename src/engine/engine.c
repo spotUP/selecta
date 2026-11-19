@@ -635,10 +635,14 @@ struct sel_engine {
     uint32_t order_qver;
     /* PLAYLIST_LOAD / PLAYLIST_SAVE scratch, allocated once in create: the
      * codecs fill pl_entries and pl_text, a file is read whole into pl_file.
-     * pl_text and pl_file hold queue text bytes + 16. */
+     * Each buffer grows on demand (pl_scratch_reserve) to the file it must
+     * hold, never below the queue size; the *_cap fields are its sizes. */
     sel_pl_entry* pl_entries;
     char* pl_text;
     char* pl_file;
+    size_t pl_entries_cap; /* entries */
+    size_t pl_text_cap;    /* bytes */
+    size_t pl_file_cap;    /* bytes */
     uint32_t q_playing; /* id of the playing queue entry, 0: none */
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
@@ -4455,18 +4459,43 @@ static int grow_buf(const sel_host* host, void** p, size_t old, size_t want) {
     return 1;
 }
 
+/* Grow the playlist scratch to at least entries / bytes. Contents are per call, so a grown
+ * buffer is not copied; the old one is freed only after the new one exists. */
+static int pl_scratch_reserve(sel_engine* e, size_t entries, size_t bytes) {
+    if (entries > e->pl_entries_cap) {
+        sel_pl_entry* n = e->host->mem_alloc(e->host, entries * sizeof *n, SEL_MEM_FAST);
+        if (n == NULL) return 0;
+        e->host->mem_free(e->host, e->pl_entries);
+        e->pl_entries = n;
+        e->pl_entries_cap = entries;
+    }
+    if (bytes + 16u > e->pl_text_cap) {
+        char* n = e->host->mem_alloc(e->host, bytes + 16u, SEL_MEM_FAST);
+        if (n == NULL) return 0;
+        e->host->mem_free(e->host, e->pl_text);
+        e->pl_text = n;
+        e->pl_text_cap = bytes + 16u;
+    }
+    if (bytes + 16u > e->pl_file_cap) {
+        char* n = e->host->mem_alloc(e->host, bytes + 16u, SEL_MEM_FAST);
+        if (n == NULL) return 0;
+        e->host->mem_free(e->host, e->pl_file);
+        e->pl_file = n;
+        e->pl_file_cap = bytes + 16u;
+    }
+    return 1;
+}
+
 static int queue_reserve(sel_engine* e, uint32_t add, uint32_t add_text) {
     sel_queue* q = &e->queue;
-    uint32_t cap = q->capacity, tb = q->text_bytes, old_cap = q->capacity, old_tb = q->text_bytes;
+    uint32_t cap = q->capacity, tb = q->text_bytes, old_cap = q->capacity;
     uint32_t need_e = q->count + add, need_t = q->text_used + add_text;
     if (e->queue_fixed || (need_e <= cap && need_t <= tb)) return 1;
     while (cap < need_e) cap = cap > 0x7FFFFFFFu / 2u ? need_e : cap * 2u;
     while (tb < need_t) tb = tb > 0x7FFFFFFFu / 2u ? need_t : tb * 2u;
     if (!grow_buf(e->host, (void**)&e->order, (size_t)old_cap * sizeof *e->order, (size_t)cap * sizeof *e->order) ||
         !grow_buf(e->host, (void**)&e->order_seen, old_cap, cap) ||
-        !grow_buf(e->host, (void**)&e->pl_entries, (size_t)old_cap * sizeof *e->pl_entries, (size_t)cap * sizeof *e->pl_entries) ||
-        !grow_buf(e->host, (void**)&e->pl_text, (size_t)old_tb + 16u, (size_t)tb + 16u) ||
-        !grow_buf(e->host, (void**)&e->pl_file, (size_t)old_tb + 16u, (size_t)tb + 16u) ||
+        !pl_scratch_reserve(e, cap, tb) ||
         !sel_history_grow(&e->history, e->host, cap, tb) || !sel_queue_grow(q, e->host, cap, tb)) {
         return 0; /* whatever grew stays: every pool is still at least as big as the queue */
     }
@@ -4539,22 +4568,35 @@ static void playlist_warn(void* ctx, const char* msg) {
 /* Reads and parses the playlist file at `path` into `pl` (backed by the engine's playlist buffers); reports the error
  * against `cmd` and returns 0 when it cannot be opened, does not fit the buffer, or does not parse. */
 static int playlist_file_parse(sel_engine* e, const char* path, sel_playlist* pl, const char* cmd) {
-    uint32_t text_cap = e->queue.text_bytes + 16u;
     FILE* f = fopen(path, "rb");
-    size_t n;
+    long size;
+    size_t n, i, lines = 1;
     int rc;
     if (f == NULL) {
         sel_engine_report_error(e, "open_failed", cmd);
         return 0;
     }
-    n = fread(e->pl_file, 1, text_cap, f);
-    rc = fgetc(f); /* anything left means the file does not fit the buffer */
-    fclose(f);
-    if (rc != EOF) {
+    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        sel_engine_report_error(e, "open_failed", cmd);
+        return 0;
+    }
+    /* size the scratch from the file: the file itself, its text (never longer) and one entry per line */
+    if (!pl_scratch_reserve(e, 0, (size_t)size)) {
+        fclose(f);
         sel_engine_report_error(e, "queue_full", cmd);
         return 0;
     }
-    sel_playlist_init(pl, e->pl_entries, e->queue.capacity, e->pl_text, text_cap);
+    n = fread(e->pl_file, 1, (size_t)size, f);
+    fclose(f);
+    for (i = 0; i < n; i++) {
+        if (e->pl_file[i] == '\n') lines++;
+    }
+    if (!pl_scratch_reserve(e, lines, (size_t)size)) {
+        sel_engine_report_error(e, "queue_full", cmd);
+        return 0;
+    }
+    sel_playlist_init(pl, e->pl_entries, e->pl_entries_cap, e->pl_text, e->pl_text_cap);
     rc = sel_playlist_read(sel_playlist_format_from_name(path), e->pl_file, n, pl, playlist_warn, e);
     if (rc != SEL_PL_OK) {
         sel_engine_report_error(e, rc == SEL_PL_RANGE ? "queue_full" : "bad_format", cmd);
@@ -12093,8 +12135,11 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     CREATE_STEP("order table", (e->order = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->order, SEL_MEM_FAST)) != NULL);
     CREATE_STEP("order seen", (e->order_seen = host->mem_alloc(host, queue_cap, SEL_MEM_FAST)) != NULL);
     CREATE_STEP("playlist entries", (e->pl_entries = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->pl_entries, SEL_MEM_FAST)) != NULL);
+    e->pl_entries_cap = queue_cap;
     CREATE_STEP("playlist text", (e->pl_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    e->pl_text_cap = (size_t)queue_text + 16u;
     CREATE_STEP("playlist file", (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) != NULL);
+    e->pl_file_cap = (size_t)queue_text + 16u;
     CREATE_STEP("result text", (e->res_text = host->mem_alloc(host, (size_t)e->pool_text + 16u, SEL_MEM_FAST)) != NULL);
     CREATE_STEP("result meta", (e->res_meta = host->mem_alloc(host, (size_t)e->pool_text + 16u, SEL_MEM_FAST)) != NULL);
 #if defined(SEL_LI_THREAD)
