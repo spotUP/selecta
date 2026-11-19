@@ -192,6 +192,16 @@ static void pen_word(pen_ctx* k, int32_t x, int32_t y, int32_t max_w, const char
     }
 }
 
+/* Widest of n words taken every step entries from names, in the label font. */
+static int32_t pen_words_w(pen_ctx* k, const char* const* names, int32_t n, int32_t step) {
+    int32_t i, w, best = 0;
+    for (i = 0; i < n; i++) {
+        w = k->p->text_width(k->p->ctx, names[i * step], 0);
+        best = w > best ? w : best;
+    }
+    return best;
+}
+
 /* Text centred in a box of the row height. */
 static void pen_word_mid(pen_ctx* k, int32_t x, int32_t y, int32_t w, const char* s, uint32_t px) {
     int32_t tw = k->words ? k->p->text_width(k->p->ctx, s, 0) : 0;
@@ -231,8 +241,20 @@ static void pen_voice(pen_ctx* k, int32_t x, int32_t y, int32_t w, int32_t h, co
                       uint32_t number, int live) {
     const uint8_t* vr = sc->reg + 7u * v;
     int32_t g = k->gap, cx = x + g, cy = y + g, ew = k->rh / 3 < 4 ? 4 : k->rh / 3;
-    int32_t cw = w - 3 * g - ew, fw, i, eh, ey, el;
-    int32_t chip_w = (cw - 3 * (g / 2)) / 4;
+    int32_t cw = w - 3 * g - ew, fw, i, eh, ey, el, spare = cw - 3 * (g / 2), colx[4], colw[4];
+    int32_t chip_w = spare / 4;
+    /* I1462: each chip column is as wide as its longer word (Gate/Triangle, Sync/Sawtooth, Ring/Pulse, Test/Noise) plus
+     * the chip padding, and the room left is shared out; equal quarters cut "Triangle" and "Sawtooth" at 1280 wide. */
+    for (i = 0; i < 4; i++) {
+        colw[i] = k->words ? pen_words_w(k, k_flag_names + i, 2, 4) + g : chip_w;
+        if (k->words) {
+            spare -= colw[i];
+        }
+    }
+    for (i = 0; i < 4; i++) {
+        colw[i] += k->words ? spare / 4 + (i == 3 ? spare % 4 : 0) : 0;
+        colx[i] = i == 0 ? cx : colx[i - 1] + colw[i - 1] + g / 2;
+    }
     pen_box(k, x, y, w, h, k->p->radius, k->p->card);
     /* heading row: name left, Filter chip right */
     fw = k->words ? k->p->text_width(k->p->ctx, "Filter", 0) + 2 * g : chip_w;
@@ -246,7 +268,7 @@ static void pen_voice(pen_ctx* k, int32_t x, int32_t y, int32_t w, int32_t h, co
     cy += k->rh + g;
     for (i = 0; i < 8; i++) {
         int32_t col = i % 4, row = i / 4;
-        pen_chip(k, cx + col * (chip_w + g / 2), cy + row * (k->rh + g / 2), chip_w, k_flag_names[i],
+        pen_chip(k, colx[col], cy + row * (k->rh + g / 2), colw[col], k_flag_names[i],
                  live && ((vr[4] >> i) & 1), live ? sc->glow[v][i] : 0u);
     }
     /* envelope: a vertical track on the right edge, filled from the bottom */
@@ -264,7 +286,7 @@ static void pen_voice(pen_ctx* k, int32_t x, int32_t y, int32_t w, int32_t h, co
 
 static void pen_filter(pen_ctx* k, int32_t x, int32_t y, int32_t w, int32_t h, const sel_viz_sid_chip* sc, int live) {
     int32_t g = k->gap, cx = x + g, cy = y + g, cw = w - 2 * g, chip_w, bars_w, i;
-    chip_w = k->words ? k->p->text_width(k->p->ctx, "Band pass", 0) + 2 * g : cw / 9;
+    chip_w = k->words ? pen_words_w(k, k_mode_names, 3, 1) + 2 * g : cw / 9; /* I1462: the widest mode word */
     bars_w = cw - 3 * chip_w - 3 * g;
     pen_box(k, x, y, w, h, k->p->radius, k->p->card);
     pen_bar(k, cx, cy, bars_w * 3 / 5 - g, "Cutoff", live ? cutoff(sc->reg) : 0u, 0x7FFu);

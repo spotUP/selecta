@@ -260,6 +260,60 @@ static void glyph_aspect(void) {
     free(f);
 }
 
+/* I1462: with a host pen every chip word fits whole (draw_text ellipsizes past max_w). A fixed-advance font of 7 px at a
+ * 16 px line, close to the desktop label font; 840 px is about the viz width at the 1280 px default window. Equal chip
+ * quarters cut "Triangle" and "Sawtooth" here. */
+#define PEN_ADV 7
+static int pen_cut, pen_tri, pen_saw;
+static int32_t fake_width(void* ctx, const char* s, int strong) {
+    (void)ctx;
+    (void)strong;
+    return (int32_t)strlen(s) * PEN_ADV;
+}
+static uint32_t fake_text(void* ctx, int32_t x, int32_t y, int32_t max_w, const char* s, uint32_t px, int strong) {
+    (void)ctx;
+    (void)x;
+    (void)y;
+    (void)px;
+    (void)strong;
+    if ((int32_t)strlen(s) * PEN_ADV > max_w) {
+        printf("cut: \"%s\" needs %d px, chip gives %d\n", s, (int)strlen(s) * PEN_ADV, (int)max_w);
+        pen_cut++;
+    }
+    pen_tri += strcmp(s, "Triangle") == 0;
+    pen_saw += strcmp(s, "Sawtooth") == 0;
+    return (uint32_t)strlen(s);
+}
+static void fake_round(void* ctx, int32_t x, int32_t y, int32_t w, int32_t h, int32_t r, uint32_t px) {
+    (void)ctx;
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+    (void)r;
+    (void)px;
+}
+static uint32_t fake_mix(void* ctx, uint32_t a, uint32_t b, uint32_t q8) {
+    (void)ctx;
+    (void)b;
+    (void)q8;
+    return a;
+}
+
+static void pen_words_whole(void) {
+    static const sel_viz_pen pen = {NULL, 16, 8, BG, GRID, ACCENT, GRID, BG, fake_width, fake_text, fake_round, fake_mix};
+    sel_viz_frame* f = frame_make(1u);
+    shot t;
+    shot_make(&t, 840u, 400u);
+    t.s.pen = &pen;
+    pen_cut = pen_tri = pen_saw = 0;
+    (void)hook()(f, &t.s, &k_colors);
+    CHECK(pen_cut == 0, "%d chip words ellipsized at 840 px", pen_cut);
+    CHECK(pen_tri == 3 && pen_saw == 3, "Triangle drawn %d times, Sawtooth %d, want 3 each", pen_tri, pen_saw);
+    free(t.px);
+    free(f);
+}
+
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "all";
     if (strcmp(mode, "all") == 0 || strcmp(mode, "labels") == 0) {
@@ -272,6 +326,7 @@ int main(int argc, char** argv) {
         zero_chips();
         three_chips();
         strip();
+        pen_words_whole();
     }
     if (failures) {
         return 1;
