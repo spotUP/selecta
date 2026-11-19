@@ -59,7 +59,7 @@ enum { TUI_INFO_NONE = 0, TUI_INFO_NOWPLAYING = 1, TUI_INFO_SONGINFO = 2 };
 #define TUI_MENU_MAX 10u
 
 /* Menu items (I1190): the song menu in sel_uim_song_menu_label order, the playlist menu, and the playlist picker. */
-enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK, MN_SRCPICK, MN_QUIT };
+enum { MN_PLAY, MN_NEXT, MN_QUEUE, MN_ADDPL, MN_REMOVE, MN_RENAME, MN_DELETE, MN_NEWFOLDER, MN_NEWPL, MN_PLPICK, MN_SRCPICK, MN_QUIT, MN_LOGOUT };
 
 typedef struct tui {
     sel_engine* engine;
@@ -157,6 +157,11 @@ typedef struct tui {
     const sel_ui_art* art;                 /* I1384b: the library art source, NULL without a library */
     char stills_key[256], stills_video[256]; /* song the cached still count and Demozoo video link belong to */
     uint32_t stills_n;
+    /* I1469t: the account prompts (design doc 9.2, D-M3-12): cmd_mode 7 picks Log In or Create Account, 8 types the
+     * username, 9 the password (shown as stars, kept out of the command history, wiped once posted or cancelled). */
+    char ac_name[64], ac_pass[128], ac_user[64], ac_why[96];
+    uint32_t ac_name_len, ac_pass_len;
+    int ac_signup, ac_busy, ac_init;
 } tui;
 
 /* ---- commands ---- */
@@ -164,8 +169,12 @@ typedef struct tui {
 /* Sends one command line. The pool is decode scratch only: the engine copies string arguments on send (I1082b). */
 static int tui_loading(const tui* u, sel_open_progress* p);
 
+static void tui_acct_open(tui* u, const char* why);
 static void tui_send(tui* u, const char* line) {
     char pool[TUI_POOL_BYTES];
+    if (strncmp(line, "RATE ", 5) == 0 && u->cmd_mode == 0 && sel_engine_account_wanted(u->engine, sel_engine_state(u->engine)->song.path)) {
+        tui_acct_open(u, "Log in to send this rating to the DEViLBOX server."); /* I1469t: the rating still lands locally */
+    }
     sel_engine_send_line(u->engine, line, pool, sizeof pool);
 }
 
@@ -1296,6 +1305,93 @@ static void tui_menu_name(tui* u, const char* name) {
 }
 
 /* A confirm answered: y runs the delete / library removal, anything else cancels. */
+/* I1469t: the account prompts, the text twin of the desktop account dialog (acct_open / acct_submit / acct_follow). */
+static void tui_acct_wipe(tui* u) {
+    memset(u->ac_pass, 0, sizeof u->ac_pass);
+    u->ac_pass_len = 0u;
+}
+
+static void tui_acct_open(tui* u, const char* why) {
+    if (u->ac_busy) {
+        return;
+    }
+    if (!u->ac_init) {
+        u->ac_init = 1;
+        (void)sel_engine_account_user(u->engine, u->ac_user, sizeof u->ac_user);
+    }
+    snprintf(u->ac_why, sizeof u->ac_why, "%s", why != NULL ? why : "");
+    if (u->ac_user[0] != '\0') { /* logged in: the one action is Log Out */
+        u->mn_pending = (uint32_t)MN_LOGOUT;
+        snprintf(u->mn_lab[0], sizeof u->mn_lab[0], "Logged in as %s. Log Out?", u->ac_user);
+        u->cmd_mode = 4;
+    } else {
+        u->cmd_mode = 7;
+    }
+}
+
+static void tui_acct_submit(tui* u) {
+    if (u->ac_name_len == 0u || u->ac_pass_len == 0u) {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "Type a username and a password.");
+    } else if (sel_engine_account_post(u->engine, u->ac_signup, u->ac_name, u->ac_pass)) {
+        u->ac_busy = 1;
+        snprintf(u->cmd.status, sizeof u->cmd.status, "%s", u->ac_signup ? "Creating account..." : "Logging in...");
+    } else {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "A request is already running.");
+    }
+    tui_acct_wipe(u);
+}
+
+/* One key of the account prompts (cmd_mode 7, 8, 9). Escape cancels, Enter steps on, Backspace deletes. */
+static void tui_acct_key(tui* u, uint32_t code) {
+    char* buf = u->cmd_mode == 9 ? u->ac_pass : u->ac_name;
+    uint32_t* len = u->cmd_mode == 9 ? &u->ac_pass_len : &u->ac_name_len;
+    size_t cap = u->cmd_mode == 9 ? sizeof u->ac_pass : sizeof u->ac_name;
+    if (code == 27u) {
+        u->cmd_mode = 0;
+        tui_acct_wipe(u);
+        return;
+    }
+    if (u->cmd_mode == 7) {
+        if (code == (uint32_t)'l' || code == (uint32_t)'L' || code == (uint32_t)'c' || code == (uint32_t)'C') {
+            u->ac_signup = code == (uint32_t)'c' || code == (uint32_t)'C';
+            u->cmd_mode = 8;
+        } else {
+            u->cmd_mode = 0;
+        }
+        return;
+    }
+    if (code == 13u) {
+        if (u->cmd_mode == 8) {
+            u->cmd_mode = 9;
+        } else {
+            u->cmd_mode = 0;
+            tui_acct_submit(u);
+        }
+    } else if ((code == 127u || code == 8u) && *len > 0u) {
+        buf[--*len] = '\0';
+    } else if (code >= 32u && code < 127u && *len + 1u < cap) {
+        buf[(*len)++] = (char)code;
+        buf[*len] = '\0';
+    }
+}
+
+/* Takes the request's answer: logged in, or the server's error text on the status line. */
+static void tui_acct_follow(tui* u) {
+    int ok = 0;
+    char err[160];
+    if (!u->ac_busy || !sel_engine_account_take(u->engine, &ok, err, sizeof err)) {
+        return;
+    }
+    u->ac_busy = 0;
+    u->dirty = 1;
+    if (ok) {
+        (void)sel_engine_account_user(u->engine, u->ac_user, sizeof u->ac_user);
+        snprintf(u->cmd.status, sizeof u->cmd.status, "%s %s", u->ac_signup ? "Account created, logged in as" : "Logged in as", u->ac_user);
+    } else {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "%s failed: %s", u->ac_signup ? "Create Account" : "Log In", err[0] != '\0' ? err : "no answer from the server");
+    }
+}
+
 static void tui_menu_confirm(tui* u, uint32_t code) {
     char line[320];
     u->mn_answers++;
@@ -1308,7 +1404,11 @@ static void tui_menu_confirm(tui* u, uint32_t code) {
     if (code != (uint32_t)'y' && code != (uint32_t)'Y') {
         return;
     }
-    if (u->mn_pending == (uint32_t)MN_DELETE) {
+    if (u->mn_pending == (uint32_t)MN_LOGOUT) {
+        sel_engine_account_logout(u->engine);
+        u->ac_user[0] = '\0';
+        snprintf(u->cmd.status, sizeof u->cmd.status, "Logged out");
+    } else if (u->mn_pending == (uint32_t)MN_DELETE) {
         sel_uim_pldel_line(u->mn_folder, u->mn_id, line, sizeof line);
         tui_menu_send(u, line);
         tui_send(u, "VIEW_SOURCE folders");
@@ -1432,6 +1532,8 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         tui_next_lib_mode(u);
     } else if (strcmp(name, "settings") == 0) {
         tui_settings_open(u);
+    } else if (strcmp(name, "account") == 0) {
+        tui_acct_open(u, NULL);
     } else if (strcmp(name, "queue_scope") == 0) {
         tui_next_scope(u, s);
     } else if (strcmp(name, "library") == 0) {
@@ -1563,6 +1665,10 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
 
 static void tui_cmd_key(tui* u, const txt_key* k) {
     txt_cmd_result r;
+    if (u->cmd_mode >= 7) { /* I1469t: the account prompts keep their own fields (never the command history) */
+        tui_acct_key(u, k->code);
+        return;
+    }
     if (u->cmd_mode == 4) { /* the confirm prompt takes one key */
         u->cmd_mode = 0;
         tui_menu_confirm(u, k->code);
@@ -1869,6 +1975,9 @@ static int tui_file_step(tui* u, uint32_t timeout_ms) {
     txt_key k;
     const char* bytes = NULL;
     size_t i;
+    if (u->ac_busy) { /* I1469t: a keys file waits for the account request like a person would (wait lines are not real time) */
+        return 0;
+    }
     if (u->wait_left > 0) {
         uint32_t turn = tui_turn_ms(u, timeout_ms);
         u->wait_left = u->wait_left > turn ? u->wait_left - turn : 0;
@@ -3020,6 +3129,14 @@ static void tui_draw(tui* u) {
                 } else {
                     snprintf(line, sizeof line, "%s  y Yes  any other key No", u->mn_lab[0]);
                 }
+            } else if (u->cmd_mode == 7) {
+                snprintf(line, sizeof line, "%s%sl Log In  c Create Account  Escape Cancel", u->ac_why, u->ac_why[0] ? "  " : "");
+            } else if (u->cmd_mode >= 8) {
+                char stars[sizeof u->ac_pass];
+                memset(stars, '*', u->ac_pass_len);
+                stars[u->ac_pass_len] = '\0';
+                snprintf(line, sizeof line, "%s  Username: %s%s%s", u->ac_signup ? "Create Account" : "Log In", u->ac_name,
+                         u->cmd_mode == 9 ? "  Password: " : "", u->cmd_mode == 9 ? stars : "");
             } else if (u->cmd_mode == 5) {
                 snprintf(line, sizeof line, "Note: %s%s%s", txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
             } else if (u->cmd_mode == 3) {
@@ -3294,6 +3411,7 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
     }
     tui_briefs_follow(u);
     tui_menu_playlists_follow(u);
+    tui_acct_follow(u);
     {
         sel_open_progress op;
         if (tui_loading(u, &op)) {

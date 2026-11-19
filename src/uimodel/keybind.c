@@ -14,7 +14,7 @@ static const char* const k_actions[] = {
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",   "focus_region",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
     "library",    "search",       "show_list",    "folders",     "home",
-    "stats",      "c64_sid",    "sources",    "forward",    "lib_mode",   "queue_scope", "settings",
+    "stats",      "c64_sid",    "sources",    "forward",    "lib_mode",   "queue_scope", "settings", "account",
     "viz",        "pattern",    "solo",         "voice1",        "voice2",       "voice3",
     "voice4",     "voice5",     "voice6",       "voice7",        "voice8",       "voice9",
 };
@@ -165,7 +165,7 @@ static const struct {
     {"l", "@library"},          {"/", "@search"},
     {"f", "@folders"},         {"b", "@stats"},
     {"H", "@home"},          {"c", "@lib_mode"},
-    {"x", "@queue_scope"},    {"S", "@settings"},
+    {"x", "@queue_scope"},    {"S", "@settings"},   {"A", "@account"}, /* I1469t: Log In, Create Account, Log Out */
     {"e", "@artist_page"},   {"r", "@album_page"},
     {"w", "@menu"},         {"C", "@c64_sid"},   {"O", "@sources"},
     {"M-l", "FILTER_LED toggle"},

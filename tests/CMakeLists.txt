@@ -4947,6 +4947,11 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/devilbox_account.cmake")
   set_tests_properties(devilbox-account PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "devilbox_account_ok")
+  # I1469t: the text UI account prompts (Log In error text, Create Account, masked password, Log Out).
+  add_test(NAME text-ui-account
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/text_account.cmake")
+  set_tests_properties(text-ui-account PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "text_account_ok")
 
   # T80 (row I174): VOTE posts /api/hip/vote with the I139 parameters, reads /api/hip/votes. Own fixture server and log.
   add_test(NAME vote-devilbox
