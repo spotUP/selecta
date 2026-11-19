@@ -169,6 +169,7 @@ typedef struct pen_ctx {
     const sel_viz_pen* p;
     const sel_viz_colors* c;
     int32_t gap, rh, label_w, small_r, words; /* words: the rows are tall enough for labels */
+    int32_t cols;                              /* flag chip columns per voice card: 4, or 2 when 4 do not fit */
     uint32_t prims;
 } pen_ctx;
 
@@ -241,18 +242,18 @@ static void pen_voice(pen_ctx* k, int32_t x, int32_t y, int32_t w, int32_t h, co
                       uint32_t number, int live) {
     const uint8_t* vr = sc->reg + 7u * v;
     int32_t g = k->gap, cx = x + g, cy = y + g, ew = k->rh / 3 < 4 ? 4 : k->rh / 3;
-    int32_t cw = w - 3 * g - ew, fw, i, eh, ey, el, spare = cw - 3 * (g / 2), colx[4], colw[4];
-    int32_t chip_w = spare / 4;
-    /* I1462: each chip column is as wide as its longer word (Gate/Triangle, Sync/Sawtooth, Ring/Pulse, Test/Noise) plus
-     * the chip padding, and the room left is shared out; equal quarters cut "Triangle" and "Sawtooth" at 1280 wide. */
-    for (i = 0; i < 4; i++) {
-        colw[i] = k->words ? pen_words_w(k, k_flag_names + i, 2, 4) + g : chip_w;
+    int32_t cw = w - 3 * g - ew, fw, i, eh, ey, el, nc = k->cols, spare = cw - (nc - 1) * (g / 2), colx[4], colw[4];
+    int32_t chip_w = spare / nc;
+    /* I1462: each chip column is as wide as its longest word plus the chip padding, and the room left is shared out;
+     * equal quarters cut "Triangle" and "Sawtooth" at 1280 wide (pen_band picks 2 columns when 4 do not fit). */
+    for (i = 0; i < nc; i++) {
+        colw[i] = k->words ? pen_words_w(k, k_flag_names + i, 8 / nc, nc) + g : chip_w;
         if (k->words) {
             spare -= colw[i];
         }
     }
-    for (i = 0; i < 4; i++) {
-        colw[i] += k->words ? spare / 4 + (i == 3 ? spare % 4 : 0) : 0;
+    for (i = 0; i < nc; i++) {
+        colw[i] += k->words ? spare / nc + (i == nc - 1 ? spare % nc : 0) : 0;
         colx[i] = i == 0 ? cx : colx[i - 1] + colw[i - 1] + g / 2;
     }
     pen_box(k, x, y, w, h, k->p->radius, k->p->card);
@@ -267,7 +268,7 @@ static void pen_voice(pen_ctx* k, int32_t x, int32_t y, int32_t w, int32_t h, co
     pen_bar(k, cx, cy, cw, "Pulse width", live ? pulse_width(vr) : 0u, 0xFFFu);
     cy += k->rh + g;
     for (i = 0; i < 8; i++) {
-        int32_t col = i % 4, row = i / 4;
+        int32_t col = i % nc, row = i / nc;
         pen_chip(k, colx[col], cy + row * (k->rh + g / 2), colw[col], k_flag_names[i],
                  live && ((vr[4] >> i) & 1), live ? sc->glow[v][i] : 0u);
     }
@@ -319,9 +320,22 @@ static void pen_band(pen_ctx* k, const sel_surface* s, int32_t y0, int32_t bh, c
     k->words = k->rh >= p->line_h;
     k->small_r = p->radius / 2;
     k->label_w = p->text_width(p->ctx, "Pulse width", 0) + g;
-    vh = 5 * k->rh + 5 * g + g / 2; /* card padding, heading, two bars, two chip rows */
-    top = y0 + g + (h - (vh + g + k->rh + 2 * g)) / 2;
     vw = (w - 2 * g) / 3;
+    k->cols = 4;
+    if (k->words) {
+        /* I1462: 4 chip columns need their longest words side by side; when the voice card (about 218 px at the
+         * 1280 x 800 default) is narrower, 4 rows of 2, if the band is tall enough for them */
+        int32_t ew = k->rh / 3 < 4 ? 4 : k->rh / 3, need = 3 * (g / 2);
+        for (i = 0; i < 4; i++) {
+            need += pen_words_w(k, k_flag_names + i, 2, 4) + g;
+        }
+        if (need > vw - 3 * g - ew && 7 * k->rh + 5 * g + 3 * (g / 2) + g + k->rh + 2 * g <= h) {
+            k->cols = 2;
+        }
+    }
+    /* card padding, heading, two bars, 8 / cols chip rows */
+    vh = (3 + 8 / k->cols) * k->rh + 5 * g + (8 / k->cols - 1) * (g / 2);
+    top = y0 + g + (h - (vh + g + k->rh + 2 * g)) / 2;
     for (i = 0; i < 3; i++) {
         pen_voice(k, g + i * (vw + g), top, vw, vh, sc, (uint32_t)i, chip * 3u + (uint32_t)i, live);
     }

@@ -261,10 +261,11 @@ static void glyph_aspect(void) {
 }
 
 /* I1462: with a host pen every chip word fits whole (draw_text ellipsizes past max_w). A fixed-advance font of 7 px at a
- * 16 px line, close to the desktop label font; 840 px is about the viz width at the 1280 px default window. Equal chip
- * quarters cut "Triangle" and "Sawtooth" here. */
+ * 16 px line, close to the desktop label font. 684 x 548 is the viz area at the 1280 x 800 default window (measured on
+ * the dui-viz-sid-design frame): four chip columns do not fit a voice card there, so the chips go 2 wide x 4 high.
+ * The wide case keeps the 4 x 2 grid. */
 #define PEN_ADV 7
-static int pen_cut, pen_tri, pen_saw;
+static int pen_cut, pen_tri, pen_saw, pen_low;
 static int32_t fake_width(void* ctx, const char* s, int strong) {
     (void)ctx;
     (void)strong;
@@ -280,6 +281,7 @@ static uint32_t fake_text(void* ctx, int32_t x, int32_t y, int32_t max_w, const 
         printf("cut: \"%s\" needs %d px, chip gives %d\n", s, (int)strlen(s) * PEN_ADV, (int)max_w);
         pen_cut++;
     }
+    pen_low = y + 16 > pen_low ? y + 16 : pen_low;
     pen_tri += strcmp(s, "Triangle") == 0;
     pen_saw += strcmp(s, "Sawtooth") == 0;
     return (uint32_t)strlen(s);
@@ -300,18 +302,24 @@ static uint32_t fake_mix(void* ctx, uint32_t a, uint32_t b, uint32_t q8) {
     return a;
 }
 
-static void pen_words_whole(void) {
+static void pen_words_at(uint32_t w, uint32_t h) {
     static const sel_viz_pen pen = {NULL, 16, 8, BG, GRID, ACCENT, GRID, BG, fake_width, fake_text, fake_round, fake_mix};
     sel_viz_frame* f = frame_make(1u);
     shot t;
-    shot_make(&t, 840u, 400u);
+    shot_make(&t, w, h);
     t.s.pen = &pen;
-    pen_cut = pen_tri = pen_saw = 0;
+    pen_cut = pen_tri = pen_saw = pen_low = 0;
     (void)hook()(f, &t.s, &k_colors);
-    CHECK(pen_cut == 0, "%d chip words ellipsized at 840 px", pen_cut);
+    CHECK(pen_cut == 0, "%d chip words ellipsized at %u x %u", pen_cut, w, h);
     CHECK(pen_tri == 3 && pen_saw == 3, "Triangle drawn %d times, Sawtooth %d, want 3 each", pen_tri, pen_saw);
+    CHECK(pen_low <= (int)h, "words reach y %d below the %u px surface", pen_low, h);
     free(t.px);
     free(f);
+}
+
+static void pen_words_whole(void) {
+    pen_words_at(684u, 548u);
+    pen_words_at(1240u, 548u);
 }
 
 int main(int argc, char** argv) {
