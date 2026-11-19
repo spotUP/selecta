@@ -1079,14 +1079,31 @@ static void test_list_search_src(void) {
 static void test_chip_reset(void) {
     const char* src = ui_source();
     char body[6000];
-    const char *live, *ret;
+    const char *live, *ret, *end;
     CHECK(fn_body(src, "static void mui_search_chips_reset(", body, sizeof body) != NULL && strstr(body, "s->search_facet = s->search_src = 0u;") != NULL,
           "mui_search_chips_reset does not clear both masks");
     CHECK(fn_body(src, "static void mui_p4_fire(", body, sizeof body) != NULL && strstr(body, "case P4_SEARCH:") != NULL, "mui_p4_fire not found");
     live = strstr(body, "case P4_SEARCHLIVE:");
     ret = strstr(body, "mui_search_chips_reset(s);");
-    CHECK(live != NULL && ret != NULL && ret < live && strstr(live, "mui_search_chips_reset(s);") != NULL,
-          "Return and live search do not both reset the chips");
+    end = live != NULL ? strstr(live, "break;") : NULL;
+    /* I1463: Return starts a new search and resets; a live keystroke refines it and keeps the chips (Mac and text UI do the same). */
+    CHECK(live != NULL && ret != NULL && ret < live && end != NULL, "Return search does not reset the chips");
+    ret = live != NULL ? strstr(live, "mui_search_chips_reset(s);") : NULL;
+    CHECK(ret == NULL || ret > end, "a live search keystroke resets the chips");
+}
+
+/* I1463: the From chips sit on their own row above the facet chips, so one row never holds 4 facets + 6 From + 3 R11c chips past an 800 px screen. */
+static void test_src_row(void) {
+    const char* src = ui_source();
+    char body[8000];
+    CHECK(fn_body(src, "static Object* mui_facet_row_group(", body, sizeof body) != NULL, "mui_facet_row_group not found");
+    CHECK(strstr(body, "DoMethod(s->src_row, OM_ADDMEMBER, s->src_btn[k]);") != NULL && strstr(body, "DoMethod(s->facet_row, OM_ADDMEMBER, s->src_btn[k]);") == NULL,
+          "the From chips are not on their own row");
+    CHECK(strstr(body, "DoMethod(chip_row, OM_ADDMEMBER, s->facet_btn[k]);") != NULL, "the facet chips are not on the chip row");
+    CHECK(strstr(body, "DoMethod(fchip_row, OM_ADDMEMBER, s->fchip_btn[k]);") != NULL, "the Format/Channels/Publisher chips are not on their own row");
+    CHECK(fn_body(src, "static void mui_src_chips_sync(", body, sizeof body) != NULL && strstr(body, "MUIM_Group_InitChange") != NULL &&
+              strstr(body, "set(s->src_row, MUIA_ShowMe,") != NULL,
+          "mui_src_chips_sync does not relayout the From row inside InitChange");
 }
 
 static void test_list_drill(void) {
@@ -4300,6 +4317,7 @@ int main(int argc, char** argv) {
         test_list_search_src();
     } else if (strcmp(argv[1], "chip-reset") == 0) {
         test_chip_reset();
+        test_src_row();
     } else if (strcmp(argv[1], "list-drill") == 0) {
         test_list_drill();
     } else if (strcmp(argv[1], "columns") == 0) {
