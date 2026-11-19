@@ -21,6 +21,9 @@ void mui_canvas_set_cover(Object* obj, uint32_t kind, uint32_t tint, const char*
 /* I1440q3: the real cover words (edge x edge) the single canvas draws instead of the generated cover; the canvas copies it, NULL
  * returns to the generated cover. */
 void mui_canvas_set_image(Object* obj, const uint32_t* px, int32_t edge);
+/* I1455/I1459: the download spinner over the cover: eight dots on a ring, `lead` the dot in `accent` (0..7), the rest in `muted`
+ * (0x00RRGGBB). lead -1 takes it away. Redraws only when the lead or a colour changes. */
+void mui_canvas_set_spin(Object* obj, int lead, uint32_t accent, uint32_t muted);
 /* Grid frames drawn by this object (the rig sentinel). */
 uint32_t mui_canvas_draws(Object* obj);
 /* Writes w x h 0xAARRGGBB words to the rastport at (dx, dy) through Picasso96 (the viz area shares it). */
