@@ -13773,10 +13773,12 @@ static void draw_transport(desk* d) {
         case SLOT_SUB_PREV:
             icon = SEL_GUI_ICON_MINUS;
             ink = f->subsong > 1u ? ink : off;
+            fill = d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]; /* I1464: a bare minus on the bar colour read as no button */
             break;
         case SLOT_SUB_NEXT:
             icon = SEL_GUI_ICON_PLUS;
             ink = f->subsong < f->subsong_count ? ink : off;
+            fill = d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED];
             break;
         case SLOT_SHUFFLE:
             icon = SEL_GUI_ICON_SHUFFLE;
