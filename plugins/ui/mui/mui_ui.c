@@ -696,7 +696,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_SRC_SWITCH 0x2AC2L      /* I1175: the Sources page Switch button (the per-source toggle) */
 #define CTL_SCOPE 0x2AC4L           /* I1176: the Queue scope Cycle */
 #define CTL_OPEN_CANCEL 0x2AC5L     /* I1415: the now-playing Cancel button, posts CANCEL_OPEN */
-#define CTL_SRC_BASE 0x2AD8L        /* I1456: the From source chips, CTL_SRC_BASE + k */
+#define CTL_SRC_BASE 0x2AC8L        /* I1456: the From source chips, CTL_SRC_BASE + k; I1463b: off 0x2AD8, which CTL_ABOUT_OPEN + 0..11 swallowed */
 #define CTL_SI_PICK_BASE 0x2AF0L    /* I774n R11c: CTL_SI_PICK_BASE + k, a row of Song Information section list k (1..5) was picked */
 #define CTL_FCHIP_BASE 0x2AF8L      /* I774n R11c: CTL_FCHIP_BASE + 0..2: the Format, Channels, Publisher chips */
 #define CTL_INFO_PICK 0x2AC6L       /* I1440q2: a Song Information row was picked (a CSDb release row opens csdb.dk) */
