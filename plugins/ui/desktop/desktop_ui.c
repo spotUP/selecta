@@ -10325,13 +10325,20 @@ static int32_t online_chip_extra_h(desk* d, sel_gui_rect mn) {
     return (online_chip_rows(d, mn) - 1) * online_chip_pitch(d);
 }
 
-/* The k-th source chip's rectangle in the wrapped flow. */
+/* The k-th source chip's rectangle in the wrapped flow. I1467: each row is right-aligned, its last chip flush with the
+ * band's right edge (the results' right margin). */
 static sel_gui_rect online_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
-    int32_t w[ONLINE_CHIPS_MAX], x, row;
-    uint32_t n = online_chip_widths(d, w);
+    int32_t w[ONLINE_CHIPS_MAX], xs[ONLINE_CHIPS_MAX], rows[ONLINE_CHIPS_MAX], x, row, end = 0;
+    uint32_t j, n = online_chip_widths(d, w);
     sel_gui_rect b = online_chip_row(d, mn);
     sel_uim_chips_place(w, n, lpx(d, ONLINE_CHIP_GAP), b.w, k, &x, &row);
-    return rect_of(b.x + x, b.y + row * online_chip_pitch(d), k < n ? w[k] : 0, lpx(d, HOME_CHIP_H));
+    sel_uim_chips_flow(w, n, lpx(d, ONLINE_CHIP_GAP), b.w, xs, rows);
+    for (j = 0; j < n; j++) {
+        if (rows[j] == row && xs[j] + w[j] > end) {
+            end = xs[j] + w[j];
+        }
+    }
+    return rect_of(b.x + x + (end > 0 ? b.w - end : 0), b.y + row * online_chip_pitch(d), k < n ? w[k] : 0, lpx(d, HOME_CHIP_H));
 }
 
 /* The source chips; the selected one is filled like the active facet. */
@@ -13766,10 +13773,12 @@ static void draw_transport(desk* d) {
         case SLOT_SUB_PREV:
             icon = SEL_GUI_ICON_MINUS;
             ink = f->subsong > 1u ? ink : off;
+            fill = d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]; /* I1464: a bare minus on the bar colour read as no button */
             break;
         case SLOT_SUB_NEXT:
             icon = SEL_GUI_ICON_PLUS;
             ink = f->subsong < f->subsong_count ? ink : off;
+            fill = d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED];
             break;
         case SLOT_SHUFFLE:
             icon = SEL_GUI_ICON_SHUFFLE;
