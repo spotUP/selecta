@@ -18397,7 +18397,12 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             for (k = 0u; k < 6u; k++) {
                 d->turn_bits[k] += (pend >> k) & 1u;
             }
-            return 1;
+            if (d->live || pend != SEL_UIM_DIRTY_PROGRESS || (d->ticks != 0u && !d->ctl_input)) {
+                return 1;
+            }
+            /* I1460: a playing song marks PROGRESS on every pump. Returning here each turn starved the scripted input below (a
+             * `wait` after `exec PLAY` never ran), and after the script it kept a headless run alive forever. A progress-only
+             * frame is already flushed: go on to the replay, or to the quiet end of the run. */
         }
     }
     if (!d->live && (d->scan_pending || desk_scan_active(d))) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
