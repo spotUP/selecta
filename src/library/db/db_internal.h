@@ -210,7 +210,7 @@ int sel_dup_rebuild(sqlite3* db);
 /* I1276: the `hvsc:` key owning the STIL stickers of a modland-HVSC or hvsc.c64.org URL key; any other key maps to itself. */
 void sel_stil_owner_key(const char* key, char* out, size_t cap);
 /* I1440g: the DeepSID key `hvsc:<path>` of a SID song, by route (design 2.1). Returns SEL_DEEPSID_*; out is empty on NONE. */
-enum { SEL_DEEPSID_NONE, SEL_DEEPSID_HVSC, SEL_DEEPSID_MODLAND, SEL_DEEPSID_MD5, SEL_DEEPSID_SUFFIX };
+enum { SEL_DEEPSID_NONE, SEL_DEEPSID_HVSC, SEL_DEEPSID_MODLAND, SEL_DEEPSID_MD5, SEL_DEEPSID_SUFFIX, SEL_DEEPSID_TWIN };
 int sel_deepsid_key(sqlite3* db, const char* source, const char* path, const char* md5, char* out, size_t cap);
 /* I1094b: the single-row writers' two halves. sel_dup_md5_of reads the md5 of song `key` ("" when no row or none) BEFORE the write;
  * sel_dup_after regroups that old md5 and the md5 `key` has AFTER the write (a delete leaves no row: only the old group moves). */

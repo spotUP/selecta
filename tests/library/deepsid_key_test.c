@@ -27,12 +27,12 @@ static void expect(sqlite3* db, const char* src, const char* path, const char* m
 static int measure(const char* file) {
     sqlite3* db = NULL;
     sqlite3_stmt* st = NULL;
-    long n[3][5] = {{0}};
+    long n[3][6] = {{0}};
     const char* const srcs[3] = {"hvsc", "modland", "other"};
     int g;
 
     if (sqlite3_open_v2(file, &db, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) return 1;
-    sqlite3_prepare_v2(db, "SELECT source, path, md5 FROM songs WHERE lower(path) LIKE '%.sid' OR lower(path) LIKE '%.psid'", -1, &st, NULL);
+    sqlite3_prepare_v2(db, "SELECT source, path, md5 FROM songs WHERE lower(path) LIKE '%.sid' OR lower(path) LIKE '%.psid' OR lower(path) LIKE '%.rsid'", -1, &st, NULL);
     while (sqlite3_step(st) == SQLITE_ROW) {
         const char* s = (const char*)sqlite3_column_text(st, 0);
         char out[SEL_SONG_KEY_MAX];
@@ -42,7 +42,7 @@ static int measure(const char* file) {
     }
     sqlite3_finalize(st);
     for (g = 0; g < 3; g++) {
-        printf("%-8s none=%ld hvsc=%ld modland=%ld md5=%ld suffix=%ld\n", srcs[g], n[g][0], n[g][1], n[g][2], n[g][3], n[g][4]);
+        printf("%-8s none=%ld hvsc=%ld modland=%ld md5=%ld suffix=%ld twin=%ld\n", srcs[g], n[g][0], n[g][1], n[g][2], n[g][3], n[g][4], n[g][5]);
     }
     sqlite3_close(db);
     return 0;
@@ -56,9 +56,20 @@ int main(int argc, char** argv) {
     check(lib != NULL, "open");
     if (lib == NULL) return 1;
     check(sqlite3_exec(lib->db,
-                       "INSERT INTO songs(key, source, path, name, md5, format) VALUES"
-                       "('hvsc:MUSICIANS/H/Hubbard_Rob/Commando.sid','hvsc','MUSICIANS/H/Hubbard_Rob/Commando.sid','Commando','6d019ecb','sid'),"
-                       "('hvsc:GAMES/A/Ace.sid','hvsc','GAMES/A/Ace.sid','Ace','','sid')",
+                       "INSERT INTO songs(key, source, path, name, artist, md5, format) VALUES"
+                       "('hvsc:MUSICIANS/H/Hubbard_Rob/Commando.sid','hvsc','MUSICIANS/H/Hubbard_Rob/Commando.sid','Commando','Hubbard Rob','6d019ecb','sid'),"
+                       "('hvsc:GAMES/A/Ace.sid','hvsc','GAMES/A/Ace.sid','Ace','','','sid'),"
+                       "('hvsc:MUSICIANS/H/Huelsbeck_Chris/Great_Giana_Sisters.sid','hvsc','MUSICIANS/H/Huelsbeck_Chris/Great_Giana_Sisters.sid',"
+                       "'The Great Giana Sisters','Huelsbeck Chris','','sid'),"
+                       "('modland:pub/modules/RealSID/Chris Huelsbeck/the great giana sisters.rsid','modland',"
+                       "'pub/modules/RealSID/Chris Huelsbeck/the great giana sisters.rsid','the great giana sisters','Chris Huelsbeck',NULL,'RealSID'),"
+                       "('modland:pub/modules/SidMon 1/Chris Huelsbeck/the great giana sisters.sid','modland',"
+                       "'pub/modules/SidMon 1/Chris Huelsbeck/the great giana sisters.sid','the great giana sisters','Chris Huelsbeck',NULL,'SidMon 1'),"
+                       "('modland:pub/modules/RealSID/Mermaid/the great giana sisters.rsid','modland',"
+                       "'pub/modules/RealSID/Mermaid/the great giana sisters.rsid','the great giana sisters','Mermaid',NULL,'RealSID'),"
+                       "('hvsc:MUSICIANS/D/Doe_John/Twin.sid','hvsc','MUSICIANS/D/Doe_John/Twin.sid','Twin','Doe John','','sid'),"
+                       "('hvsc:DEMOS/T/Twin.sid','hvsc','DEMOS/T/Twin.sid','Twin','Doe John','','sid'),"
+                       "('local:/m/twin.sid','local','/m/twin.sid','Twin','John Doe','','sid')",
                        NULL, NULL, NULL) == SQLITE_OK, "fixture");
     expect(lib->db, "hvsc", "GAMES/A/Ace.sid", "", SEL_DEEPSID_HVSC, "hvsc:GAMES/A/Ace.sid", "hvsc row");
     expect(lib->db, "modland", "pub/modules/HVSC/GAMES/A/Ace.sid", "", SEL_DEEPSID_MODLAND, "hvsc:GAMES/A/Ace.sid", "modland HVSC path");
@@ -67,6 +78,13 @@ int main(int argc, char** argv) {
     expect(lib->db, "local", "/m/C64Music/GAMES/A/Ace.sid", "ffff", SEL_DEEPSID_SUFFIX, "hvsc:GAMES/A/Ace.sid", "suffix route after md5 miss");
     expect(lib->db, "local", "/m/xGAMES/A/Ace.sid", "", SEL_DEEPSID_NONE, "", "suffix needs a path-segment boundary");
     expect(lib->db, "local", "/m/C64Music/GAMES/Z/None.sid", "", SEL_DEEPSID_NONE, "", "suffix without an hvsc row misses");
+    /* I1465: a SID copy outside HVSC with no md5 finds its one hvsc twin by title + composer words in any order */
+    expect(lib->db, "modland", "pub/modules/RealSID/Chris Huelsbeck/the great giana sisters.rsid", NULL, SEL_DEEPSID_TWIN,
+           "hvsc:MUSICIANS/H/Huelsbeck_Chris/Great_Giana_Sisters.sid", "RealSID copy maps to its hvsc twin");
+    expect(lib->db, "modland", "pub/modules/SidMon 1/Chris Huelsbeck/the great giana sisters.sid", NULL, SEL_DEEPSID_NONE, "",
+           "SidMon module is not a SID twin");
+    expect(lib->db, "modland", "pub/modules/RealSID/Mermaid/the great giana sisters.rsid", NULL, SEL_DEEPSID_NONE, "", "other composer, no twin");
+    expect(lib->db, "local", "/m/twin.sid", "", SEL_DEEPSID_NONE, "", "two hvsc twins are ambiguous");
     expect(lib->db, "local", "/m/a.sid", NULL, SEL_DEEPSID_NONE, "", "NULL md5, no tail");
     sel_library_close(lib);
     if (fails == 0) printf("deepsid_key_ok\n");

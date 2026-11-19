@@ -5,6 +5,7 @@
 #include "folders.h"
 #include <selecta/gui/gui_genart.h>
 #include <selecta/library_item.h>
+#include "../composer.h"
 #include "../source.h"
 #include "../uadedb.h"
 #include <selecta/uimodel/siinfo.h>
@@ -157,7 +158,7 @@ void sel_stil_owner_key(const char* key, char* out, size_t cap) {
 /* I1440g: one SID song -> its DeepSID key `hvsc:<path>` (design 2.1), written to out. Returns the route that found it (SEL_DEEPSID_*) or
  * SEL_DEEPSID_NONE with out empty. DeepSID joins on the HVSC path, never on md5. Routes in order: the hvsc source row itself; a Modland
  * `pub/modules/HVSC/<p>` path (sel_stil_owner_key, the one mapper); the full-file md5 of an hvsc row (songs_md5); the
- * `MUSICIANS|DEMOS|GAMES/...` tail of a path, kept only when an hvsc row has exactly that path.
+ * `MUSICIANS|DEMOS|GAMES/...` tail of a path, kept only when an hvsc row has exactly that path; the title + composer twin (hvsc_twin, I1465).
  * shortcut: no `cgsc:` keys, the db holds no CGSC source rows yet; add the route when a cgsc source exists. */
 static int hvsc_path_exists(sqlite3* db, const char* path) {
     sqlite3_stmt* st = NULL;
@@ -168,6 +169,70 @@ static int hvsc_path_exists(sqlite3* db, const char* path) {
     found = sqlite3_step(st) == SQLITE_ROW;
     sqlite3_finalize(st);
     return found;
+}
+
+/* 1 when `w` (n bytes) is one whole word of the space-joined canon `s`. */
+static int has_word(const char* s, const char* w, size_t n) {
+    while (*s != '\0') {
+        size_t m = strcspn(s, " ");
+
+        if (m == n && memcmp(s, w, n) == 0) return 1;
+        s += m;
+        while (*s == ' ') s++;
+    }
+    return 0;
+}
+
+/* 1 when two composer spellings hold the same words in any order: HVSC's "Huelsbeck Chris" is Modland's "Chris Huelsbeck". */
+static int same_words(const char* x, const char* y) {
+    char a[SEL_COMPOSER_MAX], b[SEL_COMPOSER_MAX];
+    const char* w = a;
+
+    if (x == NULL || y == NULL || !sel_composer_canon(x, a, sizeof a) || !sel_composer_canon(y, b, sizeof b) || strlen(a) != strlen(b)) return 0;
+    while (*w != '\0') {
+        size_t m = strcspn(w, " ");
+
+        if (!has_word(b, w, m)) return 0;
+        w += m;
+        while (*w == ' ') w++;
+    }
+    return 1;
+}
+
+/* I1465: a SID song of another source (a Modland RealSID rip, a local copy) with no md5 and a path that is not HVSC's: its twin is the one hvsc
+ * row with the same title (underscores as spaces, any case) and the same composer words in any order. Two or more such rows: no key (ambiguous).
+ * SidMon modules (.sid files on Amiga) are not SID songs. shortcut: the title compare scans the hvsc rows (no name index), once per art pass of a
+ * song; add an index when it shows in a profile. */
+static int hvsc_twin(sqlite3* db, const char* source, const char* path, char* out, size_t cap) {
+    char name[256], artist[256];
+    sqlite3_stmt* st = NULL;
+    int hits = 0;
+
+    name[0] = artist[0] = '\0';
+    if (source == NULL ||
+        sqlite3_prepare_v2(db,
+                           "SELECT name, artist FROM songs WHERE source = ?1 AND path = ?2 AND name <> '' AND artist <> ''"
+                           " AND (path LIKE '%.rsid' OR path LIKE '%.psid' OR (path LIKE '%.sid' AND COALESCE(format, '') NOT LIKE 'sidmon%'))",
+                           -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, source, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 2, path, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        snprintf(name, sizeof name, "%s", (const char*)sqlite3_column_text(st, 0));
+        snprintf(artist, sizeof artist, "%s", (const char*)sqlite3_column_text(st, 1));
+    }
+    sqlite3_finalize(st);
+    if (name[0] == '\0' ||
+        sqlite3_prepare_v2(db, "SELECT path, artist FROM songs WHERE source = 'hvsc' AND lower(replace(name, '_', ' ')) = lower(replace(?1, '_', ' '))",
+                           -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, name, -1, SQLITE_STATIC);
+    while (hits < 2 && sqlite3_step(st) == SQLITE_ROW) {
+        const char* p = (const char*)sqlite3_column_text(st, 0);
+
+        if (p != NULL && same_words(artist, (const char*)sqlite3_column_text(st, 1)) && ++hits == 1) snprintf(out, cap, "hvsc:%s", p);
+    }
+    sqlite3_finalize(st);
+    if (hits != 1) out[0] = '\0';
+    return hits == 1;
 }
 
 int sel_deepsid_key(sqlite3* db, const char* source, const char* path, const char* md5, char* out, size_t cap) {
@@ -208,6 +273,7 @@ int sel_deepsid_key(sqlite3* db, const char* source, const char* path, const cha
             tail += rl;
         }
     }
+    if (hvsc_twin(db, source, path, out, cap)) return SEL_DEEPSID_TWIN;
     return SEL_DEEPSID_NONE;
 }
 
