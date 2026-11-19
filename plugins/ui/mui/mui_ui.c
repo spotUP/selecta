@@ -2224,8 +2224,14 @@ static void mui_search_chips_reset(mui_state* s) {
 static void mui_src_chips_sync(mui_state* s) {
     const sel_view_state* v = sel_engine_state(s->engine)->view;
     uint32_t n = v != NULL && v->source == SEL_VIEW_SEARCH ? sel_uim_search_from_n(v->rows, v->row_n) : 0u;
-    Object* pane = s->facet_row != NULL ? (Object*)_parent(s->facet_row) : NULL;
-    struct RastPort* rp = pane != NULL ? _rp(pane) : NULL;
+    ULONG pv = 0;
+    Object* pane;
+    struct RastPort* rp;
+    if (s->facet_row != NULL) {
+        GetAttr(MUIA_Parent, s->facet_row, &pv); /* the list pane: shown while searching, so its width is current (MUI 3.8 has no _parent) */
+    }
+    pane = (Object*)pv;
+    rp = pane != NULL ? _rp(pane) : NULL;
     char name[MUI_SRC_CHIPS][128];
     int32_t w[MUI_SRC_CHIPS], x[MUI_SRC_CHIPS], row[MUI_SRC_CHIPS];
     uint32_t k, l;
