@@ -13,5 +13,8 @@
 void sel_uim_tidy_title(const char* in, char* out, size_t cap);
 /* I1387b: tidies val in place when its Song Information row label names a song, artist or album ("Title", "Author", "Release", "STIL title"); values of 128+ bytes stay. */
 void sel_uim_tidy_info(const char* label, char* val, size_t cap);
+/* I1464: the transport's subsong label, "Subsong n/m" (n 1-based), shared by the desktop, text and MUI UIs. Returns 1 and
+ * writes the text when the song has 2+ subsongs; else 0 and out is empty (cap > 0). */
+unsigned sel_uim_subsong_label(unsigned subsong, unsigned count, char* out, size_t cap);
 
 #endif /* SELECTA_UIMODEL_TITLE_H */

@@ -3388,7 +3388,7 @@ static void test_subsong_bar(void) {
     char out[32];
     CHECK(mui_subsong_label(1u, 1u, out, sizeof out) == 0u && out[0] == 0, "one subsong: group hidden, label empty");
     CHECK(mui_subsong_label(0u, 0u, out, sizeof out) == 0u, "no subsongs: hidden");
-    CHECK(mui_subsong_label(2u, 5u, out, sizeof out) == 1u && strcmp(out, "2/5") == 0, "label '%s'", out);
+    CHECK(mui_subsong_label(2u, 5u, out, sizeof out) == 1u && strcmp(out, "Subsong 2/5") == 0, "label '%s'", out);
     CHECK(mui_subsong_step_line(1u, 1u, 1, out, sizeof out) == 0u, "no step without subsongs");
     CHECK(mui_subsong_step_line(1u, 5u, -1, out, sizeof out) == 0u, "no minus at the first subsong");
     CHECK(mui_subsong_step_line(5u, 5u, 1, out, sizeof out) == 0u, "no plus at the last subsong");

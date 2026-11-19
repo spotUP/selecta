@@ -12137,6 +12137,9 @@ static const char* desk_slot_action(const desk* d, uint32_t i) {
     }
 }
 
+/* I1464: the "Subsong n/m" label box left of the subsong-previous button, wide enough for "Subsong 999/999" at 11 px. */
+enum { SUBSONG_LABEL_W = 96 };
+
 /* Canvas rectangle of transport button i: the row is centred in the player region, the gap is the spacing token. */
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i) {
     sel_gui_rect pl = region_rect(d, "player");
@@ -12144,7 +12147,7 @@ static sel_gui_rect desk_button_rect(const desk* d, uint32_t i) {
     int32_t cx = pl.x + pl.w / 2;
     if (footer_one_row(d)) { /* DUI-P4-20: from the left edge; shuffle first, the subsong buttons and their label around it */
         int32_t step = lpx(d, TIP_BTN) + sp;
-        int32_t x = pl.x + sp + (desk_slot_action(d, SLOT_SUB_PREV) != NULL ? lpx(d, 56) + sp + step : 0);
+        int32_t x = pl.x + sp + (desk_slot_action(d, SLOT_SUB_PREV) != NULL ? lpx(d, SUBSONG_LABEL_W) + sp + step : 0);
         return rect_of(x + ((int32_t)i - SLOT_SHUFFLE) * step, pl.y + (pl.h - lpx(d, TIP_BTN)) / 2, lpx(d, TIP_BTN), lpx(d, TIP_BTN));
     }
     return rect_of(cx - lpx(d, TIP_BTN / 2) + ((int32_t)i - SLOT_PLAY) * (lpx(d, TIP_BTN) + sp), pl.y + sp + lpx(d, 24),
@@ -13727,17 +13730,20 @@ static void draw_nowplaypage(desk* d) {
 
 /* The transport row (DUI-P4-1): one round button per slot with its icon. Play is the accent button; shuffle and repeat
  * take the accent colour while on, previous and next fade when there is nothing to go to, the repeat button carries a
- * "1" in the repeat-one mode, and the subsong buttons come with an "n/m" label. */
+ * "1" in the repeat-one mode, and the subsong buttons come with a "Subsong n/m" label (I1464). */
 static void draw_transport(desk* d) {
     const sel_uim_frame* f = &d->uim.frame;
-    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    sel_gui_rect first = desk_button_rect(d, SLOT_SUB_PREV);
-    sel_gui_rect label = rect_of(first.x - sp - lpx(d, 56), first.y, lpx(d, 56), first.h);
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), lw = lpx(d, SUBSONG_LABEL_W);
+    sel_gui_rect first = desk_button_rect(d, SLOT_SUB_PREV), ar, box, all;
+    sel_gui_rect label = rect_of(first.x - sp - lw, first.y, lw, first.h);
     uint32_t i;
+    char buf[32];
+    if (player_left_rects(d, &ar, &box, &all) && label.x < all.x + all.w) { /* I1464: never over the cover and title block */
+        sel_gui_rect last = desk_button_rect(d, SLOT_SUB_NEXT);
+        label.x = last.x + last.w + sp;
+    }
     sel_gui_fill_rect(d->canvas, label, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
-    if (f->subsong_count > 1u) {
-        char buf[24];
-        snprintf(buf, sizeof buf, "%u/%u", (unsigned)f->subsong, (unsigned)f->subsong_count);
+    if (sel_uim_subsong_label((unsigned)f->subsong, (unsigned)f->subsong_count, buf, sizeof buf)) {
         draw_text(d, label, buf, 0, 11, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     }
     sel_gui_dirty_add(d->canvas, label);

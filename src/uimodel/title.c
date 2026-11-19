@@ -93,3 +93,14 @@ void sel_uim_tidy_info(const char* label, char* val, size_t cap) {
     sel_uim_tidy_title(val, tidy, sizeof tidy);
     snprintf(val, cap, "%s", tidy);
 }
+
+unsigned sel_uim_subsong_label(unsigned subsong, unsigned count, char* out, size_t cap) {
+    if (count < 2u) {
+        if (cap > 0u) {
+            out[0] = '\0';
+        }
+        return 0u;
+    }
+    snprintf(out, cap, "Subsong %u/%u", subsong, count);
+    return 1u;
+}

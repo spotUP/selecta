@@ -61,6 +61,9 @@ int main(void) {
     snprintf(buf, sizeof buf, "%s", "page_1_x");
     sel_uim_tidy_info("Format", buf, sizeof buf);
     fail += strcmp(buf, "page_1_x") != 0;
+    /* I1464: the shared transport subsong label names itself ("3/11" alone was not read as a subsong). */
+    fail += sel_uim_subsong_label(3u, 11u, buf, sizeof buf) != 1u || strcmp(buf, "Subsong 3/11") != 0;
+    fail += sel_uim_subsong_label(1u, 1u, buf, sizeof buf) != 0u || buf[0] != '\0';
     if (fail == 0) {
         printf("uim_title_ok\n");
     }

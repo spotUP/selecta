@@ -2026,8 +2026,9 @@ static void tui_player_bar(tui* u, uint32_t y, uint32_t rows) {
         snprintf(ind, sizeof ind, "%s%s", f->random_on ? "Shuffle  " : "",
                  f->repeat_mode != 0u ? (f->repeat_mode == 2u ? "Repeat one  " : "Repeat all  ") : "");
         if (f->subsong_count > 1u) {
-            char sub[24];
-            snprintf(sub, sizeof sub, "%u/%u  ", (unsigned)f->subsong, (unsigned)f->subsong_count);
+            char sub[32];
+            sel_uim_subsong_label((unsigned)f->subsong, (unsigned)f->subsong_count, sub, sizeof sub); /* I1464 */
+            strncat(sub, "  ", sizeof sub - strlen(sub) - 1u);
             strncat(ind, sub, sizeof ind - strlen(ind) - 1u);
         }
         il = (uint32_t)strlen(ind);
@@ -2046,8 +2047,8 @@ static void tui_player_bar(tui* u, uint32_t y, uint32_t rows) {
     snprintf(buf, sizeof buf, "%s%s%s", mid, f->random_on ? "  Shuffle" : "",
              f->repeat_mode != 0u ? (f->repeat_mode == 2u ? "  Repeat one" : "  Repeat all") : "");
     if (f->subsong_count > 1u) {
-        char sub[24];
-        snprintf(sub, sizeof sub, "  %u/%u", (unsigned)f->subsong, (unsigned)f->subsong_count);
+        char sub[32] = "  ";
+        sel_uim_subsong_label((unsigned)f->subsong, (unsigned)f->subsong_count, sub + 2, sizeof sub - 2u); /* I1464 */
         strncat(buf, sub, sizeof buf - strlen(buf) - 1u);
     }
     tui_bar_text(u, y, buf, cols / 3u + 1u, cols / 3u, hs);
