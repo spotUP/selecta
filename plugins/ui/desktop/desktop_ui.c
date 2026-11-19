@@ -13818,6 +13818,10 @@ static void draw_transport(desk* d) {
         ic = rect_of(b.x + (b.w - isz) / 2, b.y + (b.h - isz) / 2, isz, isz);
         if (i == SLOT_SUB_PREV || i == SLOT_SUB_NEXT) { /* the icon set has no double chevron */
             sel_gui_rect ic2 = ic;
+            int32_t bw = lpx(d, 2), cx = ic.x + isz / 2; /* Johan: "they need the bars" -> |<< and >>| */
+            sel_gui_fill_rect(d->canvas,
+                              rect_of(i == SLOT_SUB_PREV ? cx - isz / 2 : cx + isz / 2 - bw, ic.y + isz / 4, bw, isz / 2),
+                              ARGB(ink));
             ic.x -= isz / 4;
             ic2.x += isz / 4;
             sel_gui_icon_draw(d->canvas, &d->icons, icon, ic2, isz, ARGB(ink));
