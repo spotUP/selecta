@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-#define TXT_BIND_MAX 128u
+#define TXT_BIND_MAX 192u /* I1454b: defaults plus the shared action table filled 128 rows, so later rows (Ctrl-d) were dropped */
 #define TXT_BIND_ACTION 80u
 
 /* Where a binding applies. A key looks up its row for the current context

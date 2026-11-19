@@ -56,3 +56,4 @@ sel_engine_open_progress
 # I1442b: platform names the shared drill pages (src/uimodel/drill.c) show for the Platforms source.
 sel_platform_id
 sel_platform_label
+sel_engine_cover_fetching

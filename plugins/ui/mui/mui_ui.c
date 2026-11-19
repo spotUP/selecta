@@ -97,6 +97,7 @@ static void mui_libs_close(void) {
 #include "mui_canvas_class.h"
 #include "mui_cover_image.h"
 #include "mui_vizarea_class.h"
+#include <selecta/gui/gui_draw.h>
 #include "mui_listview_class.h"
 #include "mui_keys_class.h"
 #include "mui_scrollgroup_class.h"
@@ -290,6 +291,11 @@ typedef struct mui_state {
     int col_photo_have;             /* I1440q7: the photo panel holds a photo */
     uint32_t col_photo_lib;         /* I1440q7: library_serial the photo was last looked up for */
     char np_img_path[256];          /* I1440q3: the song whose real cover np_cover and bar_cover hold */
+    sel_uim_slide slide;            /* I1454: the playing song's cover slide show clock */
+    char slide_path[512];           /* I1454: the song slide_frames was counted for */
+    uint32_t slide_frames;          /* I1454: stills of that song (1 = cover only) */
+    uint32_t slide_lib;             /* I1454: library_serial slide_frames was counted at */
+    uint32_t wait_cap_ms;           /* I1454/I1455: the wait turn is at most this long while a spinner or slide show runs, 0 = no cap */
     Object* np_cover;               /* I1399d: Now Playing art canvas, detail slot (NULL: placeholder) */
     Object* bar_cover;              /* I1399d: the same cover in the player bar */
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
@@ -2690,7 +2696,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
         }
         /* I1440q3: the real cover (the DeepSID composer photo is a SID song's cover) over the generated one, once per song; RTG draws it */
         if (strcmp(s->np_img_path, so->path != NULL ? so->path : "") != 0) {
-            uint32_t* px = so->path != NULL ? mui_cover_image(s->art, so->path, MUI_COVER_EDGE) : NULL;
+            uint32_t* px = so->path != NULL ? mui_cover_image(s->art, so->path, MUI_COVER_EDGE, 0u) : NULL;
             snprintf(s->np_img_path, sizeof s->np_img_path, "%s", so->path != NULL ? so->path : "");
             if (s->np_cover != NULL) {
                 mui_canvas_set_image(s->np_cover, px, MUI_COVER_EDGE);
@@ -3100,7 +3106,7 @@ static void mui_col_photo_sync(mui_state* s, const sel_collection_page* pg, uint
     }
     s->col_photo_lib = lib_serial;
     px = pg->kind == (uint32_t)SEL_LIB_ITEM_COMPOSER && pg->about[0] != '\0' && pg->songs > 0u && pg->rows != NULL && !mui_col_groups(pg)
-             ? mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE) : NULL;
+             ? mui_cover_image(s->art, pg->rows, MUI_COVER_EDGE, 0u) : NULL;
     s->col_photo_have = px != NULL;
     mui_canvas_set_image(s->col_photo, px, MUI_COVER_EDGE);
     free(px);
@@ -3316,6 +3322,48 @@ static void mui_open_sync(mui_state* s) {
     }
 }
 
+/* I1455 / I1454: the Now Playing cover's download spinner and cover slide show, once per refresh. The spinner turns
+ * while a cover is fetched (the Mac draws the same ring); the slide show steps the playing song's stills (cover + dz<k>)
+ * every art.slideshow_seconds, and a hard cut to the next still (the crossfade and side scroll are not built). Both cap the
+ * wait turn so the clock is sampled. */
+static void mui_cover_tick(mui_state* s, const sel_state* st) {
+    const sel_song_state* so = &st->song;
+    const sel_host* host = sel_engine_plugin_host(s->engine);
+    int pend = so->path != NULL && sel_engine_cover_fetching(s->engine);
+    s->wait_cap_ms = 0u;
+    if (s->np_cover != NULL) {
+        mui_canvas_set_spin(s->np_cover, pend ? (int)sel_gui_spinner_lead(mui_now_ms()) : -1,
+                            g_tokens[SEL_GUI_TOKEN_ACCENT] & 0xFFFFFFu, g_tokens[SEL_GUI_TOKEN_TEXT_MUTED] & 0xFFFFFFu);
+    }
+    if (pend) {
+        s->wait_cap_ms = g_screen_rtg ? 100u : 250u;
+    }
+    if (so->path == NULL || s->art == NULL || s->art->find == NULL || s->art->get == NULL || s->np_cover == NULL) {
+        return;
+    }
+    if (strcmp(s->slide_path, so->path) != 0 || st->library_serial != s->slide_lib) {
+        int64_t album = s->art->find(s->art->ctx, so->path);
+        uint32_t kinds = album != 0 && s->art->kinds != NULL ? s->art->kinds(s->art->ctx, album) : 0u;
+        snprintf(s->slide_path, sizeof s->slide_path, "%s", so->path);
+        s->slide_frames = sel_uim_art_frames(kinds);
+        s->slide_lib = st->library_serial;
+    }
+    if (s->slide_frames > 1u) {
+        const char* secs = host != NULL && host->config_get != NULL ? host->config_get(host, "art.slideshow_seconds", "6") : "6";
+        if (sel_uim_slide_step(&s->slide, so->path, s->slide_frames, st->play == SEL_PLAYING, mui_now_ms(), sel_uim_slide_period_ms(secs))) {
+            uint32_t* px = mui_cover_image(s->art, so->path, MUI_COVER_EDGE, s->slide.idx);
+            mui_canvas_set_image(s->np_cover, px, MUI_COVER_EDGE);
+            if (s->bar_cover != NULL) {
+                mui_canvas_set_image(s->bar_cover, px, MUI_COVER_EDGE);
+            }
+            free(px);
+        }
+        if (st->play == SEL_PLAYING && (s->wait_cap_ms == 0u || s->wait_cap_ms > 1000u)) {
+            s->wait_cap_ms = 1000u;
+        }
+    }
+}
+
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
     const sel_uim_frame* f;
@@ -3393,6 +3441,7 @@ static void mui_refresh(mui_state* s) {
     mui_palette_sync(s);
     mui_open_sync(s);
     mui_detail_refresh(s, st);
+    mui_cover_tick(s, st);
     v = st->view;
     if (v != NULL) {
         int32_t active = -1;
@@ -5143,6 +5192,9 @@ static uint32_t mui_io_wait(void* ctx, uint32_t mask, uint32_t timeout_ms) {
 static int mui_wait(void* state, uint32_t timeout_ms) {
     mui_state* s = (mui_state*)state;
     mui_wait_io io;
+    if (s->wait_cap_ms != 0u && timeout_ms > s->wait_cap_ms) {
+        timeout_ms = s->wait_cap_ms; /* I1454/I1455: a spinner or slide show must get its refresh */
+    }
     io.new_input = mui_io_new_input;
     io.wait = mui_io_wait;
     io.break_mask = SIGBREAKF_CTRL_C;

@@ -5,6 +5,7 @@
  * until MUI-P5-7 draws 1-bit covers there. */
 #include "mui_canvas_class.h"
 
+#include <selecta/gui/gui_draw.h>
 #include <selecta/platform.h>
 
 #include <stdint.h>
@@ -47,6 +48,8 @@ typedef struct canvas_data {
     int single;      /* I1399d: one cover over the whole object (Now Playing art), not a grid */
     uint32_t kind, tint; /* tint: 0x00RRGGBB of the kind token, the planar fill */
     char title[64], ext[12];
+    int lead;                         /* I1455: download spinner, the lead dot 0..7; -1 = no spinner */
+    uint32_t spin_accent, spin_muted; /* 0x00RRGGBB */
 } canvas_data;
 
 /* Build-time guard: BOOPSI keeps the instance size in a UWORD (cl_InstSize). */
@@ -68,6 +71,7 @@ static ULONG canvas_new(struct IClass* cl, Object* obj, Msg msg) {
     if (obj != NULL) {
         canvas_data* d = INST_DATA(cl, obj);
         memset(d, 0, sizeof *d);
+        d->lead = -1;
         d->mc = calloc(1, sizeof *d->mc);
         if (d->mc == NULL) {
             CoerceMethod(cl, obj, OM_DISPOSE);
@@ -179,22 +183,50 @@ static int canvas_aga_image(Object* obj, canvas_data* d) {
     return 1;
 }
 
+/* 0x00RRGGBB as the nearest palette pen; the caller releases it (-1 when the screen has none left). */
+static LONG canvas_pen(struct ColorMap* cm, uint32_t rgb) {
+    return ObtainBestPenA(cm, ((rgb >> 16) & 0xFFu) * 0x01010101u, ((rgb >> 8) & 0xFFu) * 0x01010101u, (rgb & 0xFFu) * 0x01010101u, NULL);
+}
+
+/* I1455: the download spinner on a planar screen: eight pen-filled dots on the ring (sel_gui_spinner geometry), the lead dot in the
+ * accent pen. The two pens are held for this draw only, so no pen outlives a redraw. */
+static void canvas_spin_aga(Object* obj, const canvas_data* d) {
+    struct ColorMap* cm;
+    LONG side = _mwidth(obj) < _mheight(obj) ? _mwidth(obj) : _mheight(obj);
+    int32_t cx = (int32_t)(_mleft(obj) + _mwidth(obj) / 2), cy = (int32_t)(_mtop(obj) + _mheight(obj) / 2);
+    LONG pa, pm;
+    uint32_t i;
+    if (d->lead < 0 || side < 8) {
+        return;
+    }
+    cm = _screen(obj)->ViewPort.ColorMap;
+    pa = canvas_pen(cm, d->spin_accent);
+    pm = canvas_pen(cm, d->spin_muted);
+    for (i = 0; i < 8u && pa >= 0 && pm >= 0; i++) {
+        int32_t x, y, dot = sel_gui_spinner_dot(i, cx, cy, (int32_t)(side / 8), &x, &y);
+        SetAPen(_rp(obj), (ULONG)(i == (uint32_t)d->lead ? pa : pm));
+        RectFill(_rp(obj), x - dot / 2, y - dot / 2, x - dot / 2 + dot - 1, y - dot / 2 + dot - 1);
+    }
+    if (pa >= 0) ReleasePen(cm, (ULONG)pa);
+    if (pm >= 0) ReleasePen(cm, (ULONG)pm);
+}
+
 static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     canvas_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
     if ((msg->flags & MADF_DRAWOBJECT) == 0) {
         return 0;
     }
-    if (d->single && !d->rtg && canvas_aga_image(obj, d)) { /* I1440q4: the real cover through the cube pens */
-        return 0;
-    }
-    if (d->single && !d->rtg) { /* AGA path: the kind tint as the nearest palette pen, then the label and title */
-        struct ColorMap* cm = _screen(obj)->ViewPort.ColorMap;
-        LONG pen = ObtainBestPenA(cm, ((d->tint >> 16) & 0xFFu) * 0x01010101u, ((d->tint >> 8) & 0xFFu) * 0x01010101u, (d->tint & 0xFFu) * 0x01010101u, NULL);
-        SetAPen(_rp(obj), (ULONG)pen);
-        RectFill(_rp(obj), _mleft(obj), _mtop(obj), _mright(obj), _mbottom(obj));
-        ReleasePen(cm, (ULONG)pen);
-        canvas_label(obj, d);
+    if (d->single && !d->rtg) { /* I1440q4: the real cover through the cube pens; else the kind tint as the nearest palette pen, then the label and title */
+        if (!canvas_aga_image(obj, d)) {
+            struct ColorMap* cm = _screen(obj)->ViewPort.ColorMap;
+            LONG pen = canvas_pen(cm, d->tint);
+            SetAPen(_rp(obj), (ULONG)pen);
+            RectFill(_rp(obj), _mleft(obj), _mtop(obj), _mright(obj), _mbottom(obj));
+            ReleasePen(cm, (ULONG)pen);
+            canvas_label(obj, d);
+        }
+        canvas_spin_aga(obj, d);
         return 0;
     }
     if (d->p96 == NULL || !d->rtg) {
@@ -204,6 +236,10 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         if (d->single) {
             mui_canvas_draw_art(d->mc, (sel_gui_rect){0, 0, d->mc->c.w, d->mc->c.h}, d->img != NULL ? MUI_ART_DATATYPE : MUI_ART_COVER, d->img,
                                 d->img_edge, d->img_edge, d->kind, d->ext, d->title);
+            if (d->lead >= 0 && d->mc->c.w >= 8 && d->mc->c.h >= 8) { /* I1455: the download spinner, centred on the art */
+                int32_t side = d->mc->c.w < d->mc->c.h ? d->mc->c.w : d->mc->c.h;
+                sel_gui_spinner(&d->mc->c, d->mc->c.w / 2, d->mc->c.h / 2, side / 8, (uint32_t)d->lead, 0xFF000000u | d->spin_accent, 0xFF000000u | d->spin_muted);
+            }
             mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
             canvas_label(obj, d);
             return 0;
@@ -348,6 +384,17 @@ void mui_canvas_set_image(Object* obj, const uint32_t* px, int32_t edge) {
         memcpy(d->img, px, n);
     }
     d->img_edge = d->img != NULL ? edge : 0;
+    MUI_Redraw(obj, MADF_DRAWOBJECT);
+}
+
+void mui_canvas_set_spin(Object* obj, int lead, uint32_t accent, uint32_t muted) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    if (d->lead == lead && d->spin_accent == accent && d->spin_muted == muted) {
+        return;
+    }
+    d->lead = lead;
+    d->spin_accent = accent;
+    d->spin_muted = muted;
     MUI_Redraw(obj, MADF_DRAWOBJECT);
 }
 
