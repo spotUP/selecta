@@ -57,3 +57,8 @@ sel_engine_open_progress
 sel_platform_id
 sel_platform_label
 sel_engine_cover_fetching
+sel_engine_account_post
+sel_engine_account_take
+sel_engine_account_user
+sel_engine_account_logout
+sel_engine_account_wanted

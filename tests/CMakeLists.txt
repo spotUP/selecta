@@ -4942,6 +4942,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(rate-devilbox PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "rate_devilbox_ok")
 
+  # I1469: devilbox signup/login/logout through selecta-cli: server error text, token and user files, password never stored.
+  add_test(NAME devilbox-account
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/devilbox_account.cmake")
+  set_tests_properties(devilbox-account PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "devilbox_account_ok")
+
   # T80 (row I174): VOTE posts /api/hip/vote with the I139 parameters, reads /api/hip/votes. Own fixture server and log.
   add_test(NAME vote-devilbox
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/vote-net" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"

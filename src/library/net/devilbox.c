@@ -72,11 +72,9 @@ int sel_devilbox_token(char* out, size_t cap) {
 }
 
 /* Writes the token file with mode 0600 (the permission is set before any byte is written). */
-static int token_store(const char* token) {
-    char path[300];
+static int file_store(const char* path, const char* token) {
     size_t len = strlen(token);
 
-    if (!token_path(path, sizeof path)) return 0;
 #if defined(__amigaos__) || defined(AMIGA)
     {
         FILE* f = fopen(path, "wb");
@@ -97,6 +95,43 @@ static int token_store(const char* token) {
 #endif
 }
 
+static int token_store(const char* token) {
+    char path[300];
+    return token_path(path, sizeof path) && file_store(path, token);
+}
+
+/* I1469: <config>/devilbox.user beside the token: the logged-in name the avatar shows. Never the password. */
+static int user_path(char* out, size_t cap) {
+    size_t n;
+    if (!token_path(out, cap)) return 0;
+    n = strlen(out);
+    if (n < 5 || strcmp(out + n - 5, "token") != 0) return 0;
+    memcpy(out + n - 5, "user", 5);
+    return 1;
+}
+
+int sel_devilbox_user(char* out, size_t cap) {
+    char path[300];
+    FILE* f;
+    size_t n;
+
+    if (out == NULL || cap == 0u) return 0;
+    out[0] = '\0';
+    if (!user_path(path, sizeof path) || (f = fopen(path, "rb")) == NULL) return 0;
+    n = fread(out, 1, cap - 1u, f);
+    fclose(f);
+    out[n] = '\0';
+    while (n > 0u && (out[n - 1u] == '\n' || out[n - 1u] == '\r')) out[--n] = '\0';
+    return n > 0u;
+}
+
+int sel_devilbox_logout(void) {
+    char path[300];
+    if (token_path(path, sizeof path)) (void)remove(path);
+    if (user_path(path, sizeof path)) (void)remove(path);
+    return 1;
+}
+
 /* Appends `s` as the inside of a JSON string. */
 static size_t json_put(char* out, size_t cap, size_t n, const char* s) {
     for (; *s != '\0' && n + 7 < cap; s++) {
@@ -115,6 +150,13 @@ static size_t json_put(char* out, size_t cap, size_t n, const char* s) {
 }
 
 int sel_devilbox_login(const char* user, const char* password, int* status) {
+    return sel_devilbox_auth(0, user, password, status, NULL, 0u);
+}
+
+/* I1469: POST /api/auth/login (200) or /api/auth/signup (201) with {username, password}; the reply token goes to the token
+ * file, the name to devilbox.user. The password is never logged or stored. A clear-text base (no TLS build, I420) refuses
+ * unless SELECTA_DEVILBOX_URL names it on purpose (fixture tests). */
+int sel_devilbox_auth(int signup, const char* user, const char* password, int* status, char* error, size_t cap) {
     char body[1024];
     char url[SEL_MIRROR_URL_MAX + 32];
     char reply[2048];
@@ -125,7 +167,16 @@ int sel_devilbox_login(const char* user, const char* password, int* status) {
     sel_http_res res;
     size_t n = 0;
 
+    const char* base = sel_devilbox_base();
+    int ok;
+
     if (status != NULL) *status = 0;
+    if (error != NULL && cap > 0u) error[0] = '\0';
+    if (user == NULL || password == NULL) return 0;
+    if (strncmp(base, "http://", 7) == 0 && getenv("SELECTA_DEVILBOX_URL") == NULL) {
+        if (error != NULL && cap > 0u) snprintf(error, cap, "This build has no secure connection, so it does not send passwords.");
+        return 0;
+    }
     n = (size_t)snprintf(body, sizeof body, "{\"username\":\"");
     n = json_put(body, sizeof body, n, user);
     n += (size_t)snprintf(body + n, sizeof body - n, "\",\"password\":\"");
@@ -133,7 +184,7 @@ int sel_devilbox_login(const char* user, const char* password, int* status) {
     if (n + 3 >= sizeof body) return 0;
     memcpy(body + n, "\"}", 3);
     n += 2;
-    snprintf(url, sizeof url, "%s/api/auth/login", sel_devilbox_base());
+    snprintf(url, sizeof url, "%s/api/auth/%s", base, signup ? "signup" : "login");
     memset(&req, 0, sizeof req);
     memset(&res, 0, sizeof res);
     b.text = reply;
@@ -148,8 +199,22 @@ int sel_devilbox_login(const char* user, const char* password, int* status) {
     (void)sel_http_request(&req, text_sink, &b, &res);
     memset(body, 0, sizeof body); /* the password does not stay in memory longer than the request */
     if (status != NULL) *status = res.status;
-    return res.status == 200 && sel_json_string(reply, "token", token, sizeof token) && token[0] != '\0' &&
-           token_store(token);
+    ok = res.status == (signup ? 201 : 200) && sel_json_string(reply, "token", token, sizeof token) && token[0] != '\0' &&
+         token_store(token);
+    memset(token, 0, sizeof token);
+    if (ok) {
+        char path[300];
+        if (user_path(path, sizeof path)) (void)file_store(path, user);
+    } else if (error != NULL && cap > 0u && (!sel_json_string(reply, "error", error, cap) || error[0] == '\0')) {
+        if (res.status == 0) {
+            snprintf(error, cap, "Could not reach the DEViLBOX server.");
+        } else if (res.status == (signup ? 201 : 200)) {
+            snprintf(error, cap, "Could not save the login.");
+        } else {
+            snprintf(error, cap, "The server refused (HTTP %d).", res.status);
+        }
+    }
+    return ok;
 }
 
 int sel_devilbox_item(const char* key, char* source, size_t cap, const char** path) {

@@ -420,6 +420,14 @@ typedef void (*sel_event_sink)(void* ctx, const sel_message* evt);
 int sel_engine_scan_busy(const sel_engine* e);
 /* I1459: 1 while a cover image is being fetched over the network (library scraper); the desktop cover spinner shows from fetch start to decode end. */
 int sel_engine_cover_fetching(const sel_engine* e);
+/* I1469: account log in / create account on a worker (the UI never waits on the network). post: 0 while one runs.
+ * take: 1 once the result is in (ok, and the server's error text). user: the logged-in name, 0 when logged out.
+ * wanted: 1 when key is a DEViLBOX-shared song and no one is logged in (a rating there needs a login). */
+int sel_engine_account_post(sel_engine* e, int signup, const char* user, const char* password);
+int sel_engine_account_take(sel_engine* e, int* ok, char* error, size_t cap);
+int sel_engine_account_user(sel_engine* e, char* out, size_t cap);
+void sel_engine_account_logout(sel_engine* e);
+int sel_engine_account_wanted(sel_engine* e, const char* key);
 /* I1400b: how long a network search source may stay silent before its section lands as failed (tests shorten it). */
 void sel_engine_set_search_timeout_ms(sel_engine* e, uint32_t ms);
 void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx);
