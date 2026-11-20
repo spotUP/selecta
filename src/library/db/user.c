@@ -5,6 +5,7 @@
 #include "folders.h"
 #include <selecta/gui/gui_genart.h>
 #include <selecta/library_item.h>
+#include "../composer.h"
 #include "../source.h"
 #include "../uadedb.h"
 #include <selecta/uimodel/siinfo.h>
@@ -157,7 +158,7 @@ void sel_stil_owner_key(const char* key, char* out, size_t cap) {
 /* I1440g: one SID song -> its DeepSID key `hvsc:<path>` (design 2.1), written to out. Returns the route that found it (SEL_DEEPSID_*) or
  * SEL_DEEPSID_NONE with out empty. DeepSID joins on the HVSC path, never on md5. Routes in order: the hvsc source row itself; a Modland
  * `pub/modules/HVSC/<p>` path (sel_stil_owner_key, the one mapper); the full-file md5 of an hvsc row (songs_md5); the
- * `MUSICIANS|DEMOS|GAMES/...` tail of a path, kept only when an hvsc row has exactly that path.
+ * `MUSICIANS|DEMOS|GAMES/...` tail of a path, kept only when an hvsc row has exactly that path; the title + composer twin (hvsc_twin, I1465).
  * shortcut: no `cgsc:` keys, the db holds no CGSC source rows yet; add the route when a cgsc source exists. */
 static int hvsc_path_exists(sqlite3* db, const char* path) {
     sqlite3_stmt* st = NULL;
@@ -168,6 +169,70 @@ static int hvsc_path_exists(sqlite3* db, const char* path) {
     found = sqlite3_step(st) == SQLITE_ROW;
     sqlite3_finalize(st);
     return found;
+}
+
+/* 1 when `w` (n bytes) is one whole word of the space-joined canon `s`. */
+static int has_word(const char* s, const char* w, size_t n) {
+    while (*s != '\0') {
+        size_t m = strcspn(s, " ");
+
+        if (m == n && memcmp(s, w, n) == 0) return 1;
+        s += m;
+        while (*s == ' ') s++;
+    }
+    return 0;
+}
+
+/* 1 when two composer spellings hold the same words in any order: HVSC's "Huelsbeck Chris" is Modland's "Chris Huelsbeck". */
+static int same_words(const char* x, const char* y) {
+    char a[SEL_COMPOSER_MAX], b[SEL_COMPOSER_MAX];
+    const char* w = a;
+
+    if (x == NULL || y == NULL || !sel_composer_canon(x, a, sizeof a) || !sel_composer_canon(y, b, sizeof b) || strlen(a) != strlen(b)) return 0;
+    while (*w != '\0') {
+        size_t m = strcspn(w, " ");
+
+        if (!has_word(b, w, m)) return 0;
+        w += m;
+        while (*w == ' ') w++;
+    }
+    return 1;
+}
+
+/* I1465: a SID song of another source (a Modland RealSID rip, a local copy) with no md5 and a path that is not HVSC's: its twin is the one hvsc
+ * row with the same title (underscores as spaces, any case) and the same composer words in any order. Two or more such rows: no key (ambiguous).
+ * SidMon modules (.sid files on Amiga) are not SID songs. shortcut: the title compare scans the hvsc rows (no name index), once per art pass of a
+ * song; add an index when it shows in a profile. */
+static int hvsc_twin(sqlite3* db, const char* source, const char* path, char* out, size_t cap) {
+    char name[256], artist[256];
+    sqlite3_stmt* st = NULL;
+    int hits = 0;
+
+    name[0] = artist[0] = '\0';
+    if (source == NULL ||
+        sqlite3_prepare_v2(db,
+                           "SELECT name, artist FROM songs WHERE source = ?1 AND path = ?2 AND name <> '' AND artist <> ''"
+                           " AND (path LIKE '%.rsid' OR path LIKE '%.psid' OR (path LIKE '%.sid' AND COALESCE(format, '') NOT LIKE 'sidmon%'))",
+                           -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, source, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 2, path, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        snprintf(name, sizeof name, "%s", (const char*)sqlite3_column_text(st, 0));
+        snprintf(artist, sizeof artist, "%s", (const char*)sqlite3_column_text(st, 1));
+    }
+    sqlite3_finalize(st);
+    if (name[0] == '\0' ||
+        sqlite3_prepare_v2(db, "SELECT path, artist FROM songs WHERE source = 'hvsc' AND lower(replace(name, '_', ' ')) = lower(replace(?1, '_', ' '))",
+                           -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, name, -1, SQLITE_STATIC);
+    while (hits < 2 && sqlite3_step(st) == SQLITE_ROW) {
+        const char* p = (const char*)sqlite3_column_text(st, 0);
+
+        if (p != NULL && same_words(artist, (const char*)sqlite3_column_text(st, 1)) && ++hits == 1) snprintf(out, cap, "hvsc:%s", p);
+    }
+    sqlite3_finalize(st);
+    if (hits != 1) out[0] = '\0';
+    return hits == 1;
 }
 
 int sel_deepsid_key(sqlite3* db, const char* source, const char* path, const char* md5, char* out, size_t cap) {
@@ -208,7 +273,100 @@ int sel_deepsid_key(sqlite3* db, const char* source, const char* path, const cha
             tail += rl;
         }
     }
+    if (hvsc_twin(db, source, path, out, cap)) return SEL_DEEPSID_TWIN;
     return SEL_DEEPSID_NONE;
+}
+
+/* I1465a (design 3): the one meta key of a song, the key its artwork, Demozoo and DeepSID rows hang off. Routes, first hit wins: the SID family
+ * (sel_deepsid_key -> `hvsc:<path>`); the same non-empty md5 (the hvsc, then amp, then lowest-key row of the group); the unique title + composer twin
+ * on the same platform family (the lower of the two keys, so both copies agree); else the song's own key. The answer is cached in song_meta_key.
+ * shortcut: no uade_key route (no index on uade_key, a scan per art pass); a cached row is not refreshed when a twin is added later, `DELETE FROM
+ * song_meta_key` re-resolves; the title compare scans songs once per song (cached). */
+static void meta_norm(const char* in, char* out, size_t cap) {
+    size_t i = 0;
+
+    for (; *in != '\0' && i + 1u < cap; in++) out[i++] = *in == '_' ? ' ' : (*in >= 'A' && *in <= 'Z' ? (char)(*in + 32) : *in);
+    out[i] = '\0';
+}
+
+static int meta_twin(sqlite3* db, const char* key, const char* name, const char* artist, char* out, size_t cap) {
+    char n[256];
+    const char* t = n;
+    sqlite3_stmt* st = NULL;
+    uint32_t fam = sel_platform_of_name(key);
+    int hits = 0;
+
+    if (name[0] == '\0' || artist[0] == '\0') return 0;
+    meta_norm(name, n, sizeof n);
+    if (strncmp(t, "the ", 4) == 0) t += 4;
+    if (sqlite3_prepare_v2(db, "SELECT key, artist FROM songs WHERE lower(replace(name, '_', ' ')) IN (?1, 'the ' || ?1) AND key <> ?2",
+                           -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, t, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 2, key, -1, SQLITE_STATIC);
+    while (hits < 2 && sqlite3_step(st) == SQLITE_ROW) {
+        const char* k = (const char*)sqlite3_column_text(st, 0);
+
+        if (k != NULL && sel_platform_of_name(k) == fam && same_words(artist, (const char*)sqlite3_column_text(st, 1)) && ++hits == 1) {
+            snprintf(out, cap, "%s", strcmp(k, key) < 0 ? k : key);
+        }
+    }
+    sqlite3_finalize(st);
+    if (hits != 1) out[0] = '\0';
+    return hits == 1;
+}
+
+int sel_meta_key(sqlite3* db, const char* key, char* out, size_t cap) {
+    char src[64], path[1024], md5[64], name[256], artist[256];
+    const char* colon;
+    sqlite3_stmt* st = NULL;
+    int route = SEL_META_OWN;
+
+    if (cap == 0) return SEL_META_OWN;
+    out[0] = '\0';
+    if (sqlite3_prepare_v2(db, "SELECT meta_key, route FROM song_meta_key WHERE key = ?1", -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            snprintf(out, cap, "%s", (const char*)sqlite3_column_text(st, 0));
+            route = sqlite3_column_int(st, 1);
+        }
+        sqlite3_finalize(st);
+        if (out[0] != '\0') return route;
+    }
+    src[0] = path[0] = md5[0] = name[0] = artist[0] = '\0';
+    if (sqlite3_prepare_v2(db, "SELECT source, path, COALESCE(md5, ''), COALESCE(name, ''), COALESCE(artist, '') FROM songs WHERE key = ?1", -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            snprintf(src, sizeof src, "%s", (const char*)sqlite3_column_text(st, 0));
+            snprintf(path, sizeof path, "%s", (const char*)sqlite3_column_text(st, 1));
+            snprintf(md5, sizeof md5, "%s", (const char*)sqlite3_column_text(st, 2));
+            snprintf(name, sizeof name, "%s", (const char*)sqlite3_column_text(st, 3));
+            snprintf(artist, sizeof artist, "%s", (const char*)sqlite3_column_text(st, 4));
+        }
+        sqlite3_finalize(st);
+    }
+    if (path[0] == '\0' && (colon = strchr(key, ':')) != NULL && (size_t)(colon - key) < sizeof src) { /* a key with no row */
+        snprintf(src, sizeof src, "%.*s", (int)(colon - key), key);
+        snprintf(path, sizeof path, "%s", colon + 1);
+    }
+    if (sel_deepsid_key(db, src, path, md5, out, cap) != SEL_DEEPSID_NONE) {
+        route = SEL_META_SID;
+    } else if (md5[0] != '\0' && sqlite3_prepare_v2(db, "SELECT key FROM songs WHERE md5 = ?1 AND md5 <> '' ORDER BY (source = 'hvsc') DESC, (source = 'amp') DESC, key LIMIT 1",
+                                                    -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, md5, -1, SQLITE_STATIC);
+        if (sqlite3_step(st) == SQLITE_ROW) snprintf(out, cap, "%s", (const char*)sqlite3_column_text(st, 0));
+        sqlite3_finalize(st);
+        if (out[0] != '\0') route = SEL_META_HASH;
+    }
+    if (route == SEL_META_OWN && name[0] != '\0' && meta_twin(db, key, name, artist, out, cap)) route = SEL_META_TWIN;
+    if (route == SEL_META_OWN) snprintf(out, cap, "%s", key);
+    if (path[0] != '\0' && sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO song_meta_key(key, meta_key, route) VALUES(?1, ?2, ?3)", -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+        sqlite3_bind_text(st, 2, out, -1, SQLITE_STATIC);
+        sqlite3_bind_int(st, 3, route);
+        sqlite3_step(st);
+        sqlite3_finalize(st);
+    }
+    return route;
 }
 
 /* I185: appends one "label\0value\0" pair to a panel list unless the value is absent, empty or "0"; the list

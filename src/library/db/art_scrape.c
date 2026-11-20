@@ -422,7 +422,7 @@ static int folder_each(void* ctx, const char* name, int is_dir) {
 }
 
 /* 1 = cover stored under the song's key, 0 = none found. */
-static int folder_art(sel_library* lib, const char* key, int id) {
+static int folder_art(sel_library* lib, const char* key, const char* mk, int id) {
     char source[32], path[SCRAPE_URL_MAX], dir[SCRAPE_URL_MAX], full[SCRAPE_URL_MAX + 520];
     folder_pick f;
     FILE* fp;
@@ -456,7 +456,7 @@ static int folder_art(sel_library* lib, const char* key, int id) {
     b.len = n;
     if (n < DZ_IMAGE_MAX && is_image(&b)) {
         dz_put(lib, id, "cover", buf, n);
-        dz_put(lib, id, "dz_key", key, strlen(key));
+        dz_put(lib, id, "dz_key", mk, strlen(mk));
         n = 1;
     } else {
         n = 0;
@@ -477,12 +477,12 @@ void sel_library_cover_url_put(sel_library* lib, const char* source, const char*
 }
 
 /* 1 = the stored cover URL answered with an image, now the song's cover. */
-static int url_art(sel_library* lib, const char* key, int id, sel_scrape_stats* st) {
+static int url_art(sel_library* lib, const char* key, const char* mk, int id, sel_scrape_stats* st) {
     char url[SCRAPE_URL_MAX];
     uint8_t* buf;
     scrape_buf b;
     int ok = 0;
-    int n = dz_has(lib, id, "cover_url", (uint8_t*)url, sizeof url - 1u);
+    int n = dz_has(lib, sel_art_dz_id(key), "cover_url", (uint8_t*)url, sizeof url - 1u); /* the source writes it under its own key */
 
     if (n <= 0) return 0;
     url[n] = '\0';
@@ -493,7 +493,7 @@ static int url_art(sel_library* lib, const char* key, int id, sel_scrape_stats* 
     b.len = 0;
     if (scrape_get(url, &b, st) == 1 && b.len < DZ_IMAGE_MAX && is_image(&b)) {
         dz_put(lib, id, "cover", buf, b.len);
-        dz_put(lib, id, "dz_key", key, strlen(key));
+        dz_put(lib, id, "dz_key", mk, strlen(mk));
         ok = 1;
     }
     free(buf);
@@ -571,8 +571,9 @@ static int composer_art(sel_library* lib, const char* key, int id, sel_scrape_st
     return ok;
 }
 
-static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
-    char base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], stamp[24];
+/* I1465a: `own` is the song's key; everything stored or asked (stills, dz_key, misses, DeepSID, the Demozoo query) uses its meta key `key`. */
+static int dz_step(sel_library* lib, const char* own, sel_scrape_stats* st) {
+    char key[1100], base[256], url[SCRAPE_URL_MAX], ke[1500], meta[600], shot[SCRAPE_URL_MAX], stamp[24];
     uint8_t seen[24];
     scrape_buf js, img;
     sel_art_op op;
@@ -581,10 +582,16 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
     const char* cap_env = getenv("SELECTA_ART_DZ_SHOTS"); /* test knob: a live check fetches one image */
 
     if (cap_env != NULL && atoi(cap_env) > 0 && atoi(cap_env) < shots_max) shots_max = atoi(cap_env);
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_META_KEY;
+    op.ref = own;
+    op.data = (uint8_t*)key;
+    op.cap = sizeof key;
+    if (art_request(lib, &op) <= 0) snprintf(key, sizeof key, "%s", own);
     id = sel_art_dz_id(key);
     memset(&op, 0, sizeof op);
     op.op = SEL_ART_FIND;
-    op.ref = key;
+    op.ref = own;
     alb = art_request(lib, &op);
     if (alb != 0 && dz_has(lib, alb, "cover", NULL, 0) > 0) { /* real art, or screenshots already cached */
         if (alb == id && dz_has(lib, id, "dz_more2", NULL, 0) <= 0 && csdb_cover(lib, key, id, st) >= 0) { /* I1454: a SID cover cached before the rotation gets the CSDb shots once the CSDb answer is in; dz_more2: old dz_more rows were written without one */
@@ -592,7 +599,7 @@ static int dz_step(sel_library* lib, const char* key, sel_scrape_stats* st) {
         }
         return 1;
     }
-    if (folder_art(lib, key, id) || url_art(lib, key, id, st)) {
+    if (folder_art(lib, own, key, id) || url_art(lib, own, key, id, st)) {
         st->scraped++;
         return 1;
     }

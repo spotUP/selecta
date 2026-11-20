@@ -72,7 +72,8 @@ enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST
        SEL_ART_NEXT_MISSING /* I1003a: the first albums row after `album` with a name, an artist, no 'cover' artwork and no scrape_miss row newer than `len` (epoch seconds); data = "name\0artist\0"; reply = its id, 0 = none */,
        SEL_ART_KINDS /* I1384b: which stills the artwork of `album` holds: reply = mask, bit 0 = 'cover', bit n = 'dz<n>' (n 1..7), SEL_ART_KIND_VIDEO = a 'dz_video' link row */,
        SEL_ART_DS_KEY /* I1440h: the DeepSID key (`hvsc:<path>`, sel_deepsid_key) of the song `ref` into data/cap; reply 1 when it has one */,
-       SEL_ART_SONG_META /* I1401: songs.name and songs.artist of the song `ref` into data/cap as "name\0artist\0"; reply 1 when both are non-empty */ };
+       SEL_ART_SONG_META /* I1401: songs.name and songs.artist of the song `ref` into data/cap as "name\0artist\0"; reply 1 when both are non-empty */,
+       SEL_ART_META_KEY /* I1465a: the meta key (sel_meta_key) of the song `ref` into data/cap; reply 1 */ };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
     const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */
@@ -341,7 +342,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 25
+#define SEL_LIB_SCHEMA_VERSION 26
 /* I625a8e: file name of the prebuilt empty database (tools/library_template_bake.c). sel_library_open copies it, from the directory
  * of the database path, when that database does not exist, instead of running the 65 DDL statements of SCHEMA_FINAL. */
 #define SEL_LIBTEMPLATE_NAME "library-template.db"
