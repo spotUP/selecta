@@ -175,3 +175,28 @@ uint32_t sel_gui_art_cache_hits(const sel_gui_art_cache* c) {
 uint32_t sel_gui_art_cache_misses(const sel_gui_art_cache* c) {
     return c->misses;
 }
+
+/* I1384c: the whole picture fits the edge x edge square `px`, aspect kept, black bars on the short side: Demozoo screenshots are wide
+ * (360x284) and a centre crop cut off their sides. Square album covers fill it. 0 on out of memory. */
+int sel_gui_image_fit_square(const uint32_t* img, int32_t w, int32_t h, uint32_t* px, int32_t edge) {
+    int32_t fw = w >= h ? edge : (int32_t)((int64_t)edge * w / h);
+    int32_t fh = w >= h ? (int32_t)((int64_t)edge * h / w) : edge;
+    uint32_t* sq;
+    int32_t y, x;
+
+    if (fw < 1) fw = 1;
+    if (fh < 1) fh = 1;
+    sq = (uint32_t*)malloc((size_t)fw * (size_t)fh * sizeof *sq);
+    if (sq == NULL) {
+        return 0;
+    }
+    sel_gui_image_scale(img, w, h, sq, fw, fh);
+    for (y = 0; y < edge * edge; y++) px[y] = 0xFF000000u;
+    for (y = 0; y < fh; y++) {
+        for (x = 0; x < fw; x++) {
+            px[(size_t)(y + (edge - fh) / 2) * (size_t)edge + (size_t)(x + (edge - fw) / 2)] = sq[(size_t)y * (size_t)fw + (size_t)x];
+        }
+    }
+    free(sq);
+    return 1;
+}

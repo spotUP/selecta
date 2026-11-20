@@ -9,4 +9,7 @@
  * frame 0 is the cover; frame n > 0 is the n-th still of the album (I1454 slide show, sel_uim_art_frame_kind). */
 uint32_t* mui_cover_image(const sel_ui_art* art, const char* path, int32_t edge, uint32_t frame);
 
+/* The decoded full cover (frame as above) of `album`, malloc'd, NULL when none or too big: the mui_grid_decode_fn of the grid loader. */
+uint32_t* mui_cover_album_image(const sel_ui_art* art, int64_t album, uint32_t frame, int32_t* w, int32_t* h);
+
 #endif
