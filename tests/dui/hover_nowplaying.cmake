@@ -1,6 +1,6 @@
 # dui-hover-nowplaying (DUI-P3-16, I357): the Now Playing heart and the five rating marks light under the pointer. -DSELECTA -DSONGS -DWORK
 # A mem run on a playing song gives the heart rectangle (`hover_ctl ... detail`) and the first rating mark (`rating ... mark`).
-# Live runs quit at 400 ms: the rest run has no pointer, the moved runs put it on the heart / on the fifth mark at 300 ms. The
+# Live runs quit at 2400 ms: the rest run has no pointer, the moved runs put it on the heart / on the fifth mark at 2000 ms. The
 # frame dump must differ from the rest frame inside that rectangle, and --stats must count a hover.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -40,14 +40,14 @@ if(hw LESS 1 OR mw LESS 1)
   message(FATAL_ERROR "the Now Playing panel is empty (heart ${hw}, mark ${mw}): no song playing in:\n${o0}")
 endif()
 
-np_live(rest "q@400" "${WORK}/rest.ppm")
+np_live(rest "q@2400" "${WORK}/rest.ppm")
 ppm_load("${WORK}/rest.ppm" resthex w)
 dui_stat(hovers_rest "${rest}" desktop hovers)
 
 function(np_case name cx cy rx ry rw rh)
   math(EXPR px "${cx} + ${rw} / 2")
   math(EXPR py "${cy} + ${rh} / 2")
-  np_live(moved "m${px},${py}@300 q@400" "${WORK}/${name}.ppm")
+  np_live(moved "m${px},${py}@2000 q@2400" "${WORK}/${name}.ppm")
   ppm_load("${WORK}/${name}.ppm" movedhex mw2)
   rect_differs("${resthex}" "${movedhex}" ${w} ${rx} ${ry} ${rw} ${rh} lit)
   if(NOT lit)
