@@ -4127,6 +4127,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_deepsid_csdb_thumb_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-deepsid-csdb-thumb COMMAND library_deepsid_csdb_thumb_test)
   set_tests_properties(library-deepsid-csdb-thumb PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_deepsid_csdb_thumb_ok")
+  # I1465f: the GameBase64 list of a DeepSID file answer (parse, pick, game gate).
+  add_executable(library_deepsid_gb64_test library_deepsid_gb64_test.c)
+  target_include_directories(library_deepsid_gb64_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db ${PROJECT_SOURCE_DIR}/include)
+  target_link_libraries(library_deepsid_gb64_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-deepsid-gb64 COMMAND library_deepsid_gb64_test)
+  set_tests_properties(library-deepsid-gb64 PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_deepsid_gb64_ok")
   # I1440m: the DeepSID list answers as rows.
   add_executable(library_deepsid_list_test library_deepsid_list_test.c)
   target_include_directories(library_deepsid_list_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
@@ -4568,6 +4574,12 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/deepsid_cover.cmake")
   set_tests_properties(deepsid-cover PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 120 PASS_REGULAR_EXPRESSION "deepsid_cover_ok")
+
+  # I1465f: the GameBase64 screenshot of a game tune as a still (cache by gb64 id, 404 not retried within a day).
+  add_test(NAME deepsid-gb64
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/deepsid_gb64.cmake")
+  set_tests_properties(deepsid-gb64 PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 120 PASS_REGULAR_EXPRESSION "deepsid_gb64_ok")
 
   # I1440h: the DeepSID fetcher (file, composer, CSDb rows, tags to a sticker, miss cache) over a local hippoplayer.se fixture.
   add_test(NAME deepsid-fetch

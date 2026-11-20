@@ -653,6 +653,17 @@ uint32_t sel_deepsid_csdb_ids(const char* json, int* ids, uint32_t max);
 /* I1468 (design section 4): the release ids (max `max`) of a ds_csdb answer that are the tune's own production, judged with the ds_file answer: csdbType "release" -> the
  * file's csdbId; csdbType "sid" -> a release whose year equals the copyright year and whose group is in the copyright or whose name equals the title / STIL game name. Pure. */
 uint32_t sel_deepsid_csdb_own(const char* file_json, const char* csdb_json, int* ids, uint32_t max);
+/* I1465f (design D3a): the DeepSID `gb64` field is a PHP-serialized list of related games (a:N:{i:0;a:2:{s:4:"name";s:..:"Uridium v2";s:2:"id";s:5:"11606";}...}). _parse reads
+ * up to `max` entries (a malformed entry ends the list, the ones before it stay); _pick takes the entry whose name equals `title` (letters and digits, case-insensitive), else
+ * starts with / contains it, else the first, returns its id (0 for none); _id does both for a ds_file answer, and only for a game tune (tags hold "Game", application
+ * "RELEASE"); the title is the STIL "[from the C64 game X]" name, else the file title. Pure. */
+typedef struct {
+    char name[64];
+    int id;
+} sel_gb64_entry;
+uint32_t sel_deepsid_gb64_parse(const char* php, sel_gb64_entry* out, uint32_t max);
+int sel_deepsid_gb64_pick(const sel_gb64_entry* e, uint32_t n, const char* title);
+int sel_deepsid_gb64_id(const char* file_json);
 /* I1440k: the same rows for the song `ref` from its cached ds_file row; a song with no row yet is kicked (sel_library_deepsid_kick) and shows them on the next read. */
 uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out, uint32_t cap, uint32_t* rows);
 /* I1440j: the composer page header rows (label/value pairs, an empty label ends) from the ds_composer row of the folder of the hvsc: song `ref`; none cached kicks the fetcher. */
