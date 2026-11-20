@@ -2824,6 +2824,11 @@ static void test_newfolder(void) {
     }
     CHECK(strstr(src, "case P4_PFOLDER:") != NULL && strstr(src, "mui_viewbtn_fire(0,") != NULL, "P4_PFOLDER does not fire mui_viewbtn_fire(0)");
     CHECK(strstr(src, "\"pfolder\"") != NULL, "p4_name has no pfolder");
+    /* I1473h: Library > Add Folder... asks a drawer requester and sends the drop hook's LIBRARY_SCAN line through the one mui_drop_send */
+    CHECK(strstr(src, "ASLFR_DrawersOnly") != NULL && strstr(src, "\"Add Folder...\"") != NULL && strstr(src, "id == CTL_ADD_FOLDER") != NULL,
+          "Add Folder menu item, drawer requester or dispatch missing");
+    CHECK(strstr(src, "mui_drop_send(g_drop_state, path, is_dir)") != NULL && strstr(src, "mui_drop_send(s, (const char*)fr->fr_Drawer, 1)") != NULL,
+          "Add Folder does not share mui_drop_send with the drop hook");
     g_sent = 0;
     CHECK(mui_viewbtn_fire(0, "", 9u, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "FOLDER_ADD \"New Folder\" 9") == 0, "fire sent '%s'", g_sent_line);
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
