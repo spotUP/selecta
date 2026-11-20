@@ -21,7 +21,10 @@ int main(void) {
     expect("open_failed", "http_status=404 http://x/y", 1, "That song could not be downloaded (HTTP 404)");
     expect("open_failed", "http_status=403 Zxart blocks downloads of this song", 1,
            "That song could not be downloaded: Zxart blocks downloads of this song (HTTP 403)");
-    expect("open_failed", "x", 1, "That song cannot be played");
+    expect("open_failed", "x", 1, "That song cannot be played (x)");
+    expect("replayer_load_failed", "player.lib: bad hunk", 1, "That song cannot be played (player.lib: bad hunk)");
+    expect("open_failed", "", 1, "That song cannot be played");
+    expect("open_failed", NULL, 1, "That song cannot be played");
     expect("something_else", "x", 0, "untouched");
     if (g_fail == 0) {
         printf("uim_failtext_ok\n");

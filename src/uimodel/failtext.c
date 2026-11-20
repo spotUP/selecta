@@ -35,6 +35,8 @@ int sel_uim_open_fail_text(const char* code, const char* detail, char* out, size
             snprintf(out, cap, "That song could not be downloaded: %s (HTTP %d)", detail + used, status);
         } else if (sscanf(detail, "http_status=%d", &status) == 1) {
             snprintf(out, cap, "That song could not be downloaded (HTTP %d)", status);
+        } else if (detail[0] != '\0') {
+            snprintf(out, cap, "That song cannot be played (%s)", detail); /* I1475: the engine's reason, e.g. the loader reject text */
         } else {
             snprintf(out, cap, "That song cannot be played");
         }

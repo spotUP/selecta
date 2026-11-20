@@ -131,6 +131,12 @@ int main(int argc, char** argv) {
         CHECK(sel_ctl_exec(e, "FROBNICATE", reply, sizeof reply, &rc) == 0);
         CHECK(sel_ctl_exec(e, "STATUS", reply, sizeof reply, &rc) == 1);
         CHECK(strstr(reply, "last_error=unknown_command") != NULL);
+        /* I1475: a later non-play error does not hide the play error */
+        sel_engine_report_error(e, "replayer_load_failed", "player.lib bad hunk");
+        sel_engine_report_error(e, "sync_failed", "x");
+        CHECK(sel_ctl_exec(e, "STATUS", reply, sizeof reply, &rc) == 1);
+        CHECK(strstr(reply, "last_play_error=replayer_load_failed player.lib bad hunk") != NULL);
+        CHECK(strstr(reply, "last_error=sync_failed x") != NULL);
     } else if (strcmp(mode, "quit") == 0) {
         CHECK(sel_engine_take_quit(e) == 0);
         CHECK(sel_ctl_exec(e, "QUIT", reply, sizeof reply, &rc) == 1 && rc == 0 && reply[0] == '\0');

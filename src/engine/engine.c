@@ -466,6 +466,7 @@ struct sel_engine {
     uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
     uint32_t art_generation;               /* moves when a scan or sync may have added or renamed albums; the view re-reads its artwork ids */
     uint32_t ui_view_styles; /* sel_view_style bits the active UI offers (SEL_UI_VIEW_STYLES), set by the shell */
+    char last_play_error[SEL_RESULT_LINE_MAX]; /* the latest play-open ERROR, kept apart so a later sync_failed cannot overwrite it (I1475) */
     char last_error[SEL_RESULT_LINE_MAX];   /* the latest ERROR as `<code> <detail>`, reported by STATUS (plan 8a Q6) */
     uint32_t quit;           /* QUIT was asked: the shell takes it between turns (sel_engine_take_quit) */
     uint32_t quit_at_end;    /* QUIT inside BEGIN: becomes `quit` at END */
@@ -1156,6 +1157,10 @@ void sel_engine_report_error(sel_engine* e, const char* code, const char* detail
     sel_message m;
     char* slot = e->error_detail[e->error_slot++ & 7u];
     snprintf(e->last_error, sizeof e->last_error, "%s%s%s", code, detail != NULL ? " " : "", detail != NULL ? detail : "");
+    if (strcmp(code, "open_failed") == 0 || strcmp(code, "no_replayer") == 0 || strcmp(code, "unsupported_kind") == 0 ||
+        strcmp(code, "replayer_incomplete") == 0 || strcmp(code, "replayer_load_failed") == 0) {
+        memcpy(e->last_play_error, e->last_error, sizeof e->last_play_error);
+    }
     evt_init(&m, SEL_EVT_ERROR);
     evt_str(&m, code);
     if (detail) {
@@ -1772,6 +1777,8 @@ static void cmd_STATUS(sel_engine* e, const sel_message* m) {
     snprintf(line, sizeof line, "queue_pos=%u/%u", (unsigned)pos, (unsigned)st->queue_count);
     emit_result(e, line);
     /* the text of the latest failure: over ARexx RC=10 carries only a number, so a script reads the reason here */
+    snprintf(line, sizeof line, "last_play_error=%s", e->last_play_error);
+    emit_result(e, line);
     snprintf(line, sizeof line, "last_error=%s", e->last_error);
     emit_result(e, line);
 }
