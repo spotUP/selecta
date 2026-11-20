@@ -54,6 +54,8 @@
 #include <utility/hooks.h>
 #include <proto/exec.h>
 #include <proto/intuition.h>
+#include <libraries/asl.h>
+#include <proto/asl.h>
 #include "mui_gfxbase.h"
 #include <graphics/displayinfo.h>
 #include <graphics/view.h>
@@ -66,6 +68,7 @@
 #include <proto/diskfont.h>
 struct Library* DiskfontBase;
 struct Library* MUIMasterBase;
+struct Library* AslBase; /* I1473h: open only around the Add Folder requester */
 /* I719: graphics.library, opened by mui_open (see mui_gfxbase.h); the base symbol is renamed so libnix does not
  * auto-open it at program start. */
 struct GfxBase* GfxBase;
@@ -472,6 +475,7 @@ static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCL
 #define CTL_KEY_BASE 0x2B00L /* I1171: window action keys (Space, Enter, Home, End, M-*, C-*), CTL_KEY_BASE + mui_key_row index */
 #define CTL_SM_BASE 0x2500L /* MUI-P4-6: Song menu items, CTL_SM_BASE + item */
 #define CTL_PREF_BASE 0x2600L /* MUI-P4-10: Settings gadgets, CTL_PREF_BASE + pref row */
+#define CTL_ADD_FOLDER 0x2121L /* Library > Add Folder... (I1473h), outside the MENU_ID_BASE + row range */
 #define CTL_CLIP_COPY 0x2120L /* Edit > Copy Song Title (MUI-P5-6), outside the MENU_ID_BASE + row range */
 #define CTL_PANE_BASE 0x2130L /* I735: View > Visualizer Page, Pattern Page: CTL_PANE_BASE + mui_pane (MUI_PANE_VIZ, MUI_PANE_TRACKER) */
 static mui_menu_item g_menu[MENU_MAX];
@@ -628,6 +632,16 @@ static Object* mui_menu_strip(void) {
             DoMethod(edit, OM_ADDMEMBER, copy);
             DoMethod(copy, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
                      MUIM_Application_ReturnID, (ULONG)CTL_CLIP_COPY);
+        }
+    }
+    {
+        /* I1473h: Library > Add Folder... (the Mac desk_add_folder) opens a drawer requester; mui_add_folder_ask scans the pick. */
+        Object* lib = menu_child(strip, 1, "Library", NULL, t_name, t_obj, &nt, "Library");
+        Object* add = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG) "Add Folder...", TAG_DONE);
+        if (lib != NULL && add != NULL) {
+            DoMethod(lib, OM_ADDMEMBER, add);
+            DoMethod(add, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
+                     MUIM_Application_ReturnID, (ULONG)CTL_ADD_FOLDER);
         }
     }
     {
@@ -3971,6 +3985,37 @@ static void mui_clip_copy(mui_state* s) {
 static struct Hook g_drop_hook;
 static mui_state* g_drop_state;
 
+/* The one send of a dropped or picked path: QUEUE_ADD for a file, LIBRARY_SCAN for a drawer (the drop hook and Add Folder share it). */
+static int mui_drop_send(mui_state* s, const char* path, int is_dir) {
+    char line[320];
+    if (mui_drop_line(path, is_dir, line, sizeof line) != 0 && mui_engine_line(s, line)) {
+        s->drops++;
+        return 1;
+    }
+    return 0;
+}
+
+/* I1473h: Add Folder, the Mac desk_add_folder: an asl.library drawer requester, the pick is scanned like a drawer drop. */
+static void mui_add_folder_ask(mui_state* s) {
+    struct Library* asl = OpenLibrary((CONST_STRPTR) "asl.library", 37);
+    struct FileRequester* fr;
+    if (asl == NULL) {
+        fprintf(stderr, "selecta mui: Add Folder needs asl.library 37\n");
+        return;
+    }
+    AslBase = asl;
+    fr = (struct FileRequester*)AllocAslRequestTags(ASL_FileRequest, ASLFR_TitleText, (ULONG) "Add Folder", ASLFR_DrawersOnly, TRUE,
+                                                    ASLFR_RejectIcons, TRUE, TAG_DONE);
+    if (fr != NULL) {
+        if (AslRequest(fr, NULL) && fr->fr_Drawer != NULL && fr->fr_Drawer[0] != '\0') {
+            mui_drop_send(s, (const char*)fr->fr_Drawer, 1);
+        }
+        FreeAslRequest(fr);
+    }
+    AslBase = NULL;
+    CloseLibrary(asl);
+}
+
 static ULONG mui_drop_hook(struct Hook* hook, Object* obj, struct AppMessage** msgp) {
     struct AppMessage* am = msgp != NULL ? *msgp : NULL;
     struct FileInfoBlock* fib;
@@ -3983,7 +4028,7 @@ static ULONG mui_drop_hook(struct Hook* hook, Object* obj, struct AppMessage** m
     fib = (struct FileInfoBlock*)AllocDosObject(DOS_FIB, NULL);
     for (i = 0; fib != NULL && i < am->am_NumArgs; i++) {
         struct WBArg* a = &am->am_ArgList[i];
-        char path[256], line[320];
+        char path[256];
         int is_dir = 0;
         if (a->wa_Lock == 0 || !NameFromLock(a->wa_Lock, (STRPTR)path, sizeof path)) {
             continue;
@@ -4002,9 +4047,7 @@ static ULONG mui_drop_hook(struct Hook* hook, Object* obj, struct AppMessage** m
         } else {
             is_dir = 1; /* a drawer icon: the lock is the drawer itself */
         }
-        if (mui_drop_line(path, is_dir, line, sizeof line) != 0 && mui_engine_line(g_drop_state, line)) {
-            g_drop_state->drops++;
-        }
+        mui_drop_send(g_drop_state, path, is_dir);
     }
     if (fib != NULL) {
         FreeDosObject(DOS_FIB, fib);
@@ -5333,6 +5376,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_pref_fire(s, (uint32_t)(id - CTL_PREF_BASE));
     } else if (id >= CTL_P4_BASE && id < CTL_P4_BASE + (LONG)P4_COUNT) {
         mui_p4_fire(s, (uint32_t)(id - CTL_P4_BASE));
+    } else if (id == CTL_ADD_FOLDER) {
+        mui_add_folder_ask(s);
     } else if (id == CTL_CLIP_COPY) {
         mui_clip_copy(s);
     } else if (id == CTL_SEEK) {
