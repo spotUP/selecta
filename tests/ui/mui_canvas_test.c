@@ -67,7 +67,7 @@ static const uint32_t* art_cb(void* ctx, int64_t id) {
 }
 
 static int test_grid(void) {
-    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 64, 8, 8};
+    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 64, 8, 8, 24};
     mui_tile t[12];
     mui_canvas m;
     uint32_t i, drawn, f = 0;
@@ -79,22 +79,34 @@ static int test_grid(void) {
     }
     for (i = 0; i < 12; i++) {
         t[i].title = g_titles[i];
+        t[i].artist = "Artist";
         t[i].format = NULL;
         t[i].kind = 0u; /* FORMAT; left uninitialised, the hash followed stack garbage and moved per build */
-        t[i].art_id = i == 2 ? 7 : 0; /* one tile with a cover through the art cache */
+        t[i].art_id = i == 5 ? 7 : 0; /* one tile with a cover through the art cache */
     }
     CHECK(mui_grid_cols(&s, 360) == 4u, "cols %u", (unsigned)mui_grid_cols(&s, 360));
     CHECK(mui_canvas_fit(&m, (sel_gui_rect){0, 0, 360, 272}) == 1, "fit");
-    drawn = mui_canvas_draw_grid(&m, &s, t, 12, 5, art_cb, NULL);
-    CHECK(drawn == 12u, "drew %u tiles, want 12", (unsigned)drawn);
+    /* tile height 80 + 24 caption: two rows fit 272, cursor 9 is on row 2, so the first row drawn is 1 and tiles 4..11 show */
+    CHECK(mui_grid_visible_rows(&s, 272) == 2u && mui_grid_first_row(&s, 360, 272, 9) == 1u && mui_grid_first_row(&s, 360, 272, 5) == 0u,
+          "visible rows %u first row %u", (unsigned)mui_grid_visible_rows(&s, 272), (unsigned)mui_grid_first_row(&s, 360, 272, 9));
+    CHECK(mui_grid_tile_rect(&s, 360, 4).h == 104, "tile height includes the caption");
+    drawn = mui_canvas_draw_grid(&m, &s, t, 12, 9, 1u, art_cb, NULL);
+    CHECK(drawn == 8u, "drew %u tiles, want 8", (unsigned)drawn);
     CHECK(m.draws == 1u && g_art_calls == 1u, "sentinel draws=%u art calls=%u", (unsigned)m.draws, (unsigned)g_art_calls);
     h = sel_gui_hash(&m.c);
     sel_gui_hash_hex(h, hex);
     CHECK(strcmp(hex, MUI_GRID_GOLDEN) == 0, "grid hash %s, golden %s", hex, MUI_GRID_GOLDEN);
     /* a different cursor changes the picture: the knob moves the output */
-    mui_canvas_draw_grid(&m, &s, t, 12, 6, art_cb, NULL);
+    mui_canvas_draw_grid(&m, &s, t, 12, 10, 1u, art_cb, NULL);
     sel_gui_hash_hex(sel_gui_hash(&m.c), hex);
     CHECK(strcmp(hex, MUI_GRID_GOLDEN) != 0, "cursor does not move the output");
+    {
+        uint32_t a = mui_grid_signature(t, 12, 9), b;
+        CHECK(a == mui_grid_signature(t, 12, 9) && a != mui_grid_signature(t, 12, 10) && a != mui_grid_signature(t, 11, 9), "signature");
+        t[3].artist = "Other";
+        b = mui_grid_signature(t, 12, 9);
+        CHECK(a != b, "signature follows the artist text");
+    }
     mui_canvas_release(&m);
     (void)f;
     return failures;

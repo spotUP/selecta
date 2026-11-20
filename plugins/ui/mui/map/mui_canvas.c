@@ -133,7 +133,7 @@ uint32_t mui_grid_tiles(const sel_view_state* v, mui_tile* out, uint32_t cap) {
 }
 
 mui_grid_style mui_grid_style_for(int32_t screen_w, uint32_t background, uint32_t tile, uint32_t selected) {
-    mui_grid_style s = {background, tile, selected, screen_w >= 1024 ? 128 : 96, 8, 8};
+    mui_grid_style s = {background, tile, selected, screen_w >= 1024 ? 128 : 96, 8, 8, 0};
     return s;
 }
 
@@ -144,13 +144,41 @@ uint32_t mui_grid_cols(const mui_grid_style* s, int32_t width) {
 
 sel_gui_rect mui_grid_tile_rect(const mui_grid_style* s, int32_t width, uint32_t i) {
     uint32_t cols = mui_grid_cols(s, width);
-    int32_t tw = s->edge + 2 * s->pad, th = tw;
+    int32_t tw = s->edge + 2 * s->pad, th = tw + s->caption;
     sel_gui_rect r;
     r.x = s->gap + (int32_t)(i % cols) * (tw + s->gap);
     r.y = s->gap + (int32_t)(i / cols) * (th + s->gap);
     r.w = tw;
     r.h = th;
     return r;
+}
+
+uint32_t mui_grid_visible_rows(const mui_grid_style* s, int32_t height) {
+    int32_t th = s->edge + 2 * s->pad + s->caption, v = th + s->gap > 0 ? (height - s->gap) / (th + s->gap) : 1;
+    return v > 1 ? (uint32_t)v : 1u;
+}
+
+uint32_t mui_grid_first_row(const mui_grid_style* s, int32_t width, int32_t height, uint32_t cursor) {
+    return sel_uim_grid_first_row(cursor, mui_grid_cols(s, width), (int32_t)mui_grid_visible_rows(s, height));
+}
+
+uint32_t mui_grid_signature(const mui_tile* tiles, uint32_t n, uint32_t cursor) {
+    uint32_t h = 2166136261u ^ n, i;
+    const char* p;
+    h = (h ^ cursor) * 16777619u;
+    for (i = 0; i < n; i++) {
+        h = (h ^ (uint32_t)tiles[i].art_id) * 16777619u;
+        h = (h ^ tiles[i].kind) * 16777619u;
+        for (p = tiles[i].title; p != NULL && *p != '\0'; p++) {
+            h = (h ^ (uint8_t)*p) * 16777619u;
+        }
+        h = (h ^ 0xFFu) * 16777619u;
+        for (p = tiles[i].artist; p != NULL && *p != '\0'; p++) {
+            h = (h ^ (uint8_t)*p) * 16777619u;
+        }
+        h = (h ^ 0xFEu) * 16777619u;
+    }
+    return h;
 }
 
 /* I1473m: the Mac twin cover_radius() (plugins/ui/desktop/desktop_ui.c): the large card radius from 96 px up, else the small one, from the
@@ -178,12 +206,17 @@ static void mui_round_corners(sel_gui_canvas* c, sel_gui_rect r, int32_t rad, ui
 }
 
 uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, uint32_t cursor,
-                              mui_art_fn art, void* art_ctx) {
-    uint32_t i, drawn = 0u;
+                              uint32_t first_row, mui_art_fn art, void* art_ctx) {
+    uint32_t i, drawn = 0u, cols = mui_grid_cols(s, m->c.w);
+    int32_t shift = (int32_t)first_row * (s->edge + 2 * s->pad + s->caption + s->gap);
     sel_gui_fill_rect(&m->c, (sel_gui_rect){0, 0, m->c.w, m->c.h}, s->background);
     for (i = 0; i < n; i++) {
         sel_gui_rect t = mui_grid_tile_rect(s, m->c.w, i), ar;
         const uint32_t* px = NULL;
+        if (i / cols < first_row) {
+            continue;
+        }
+        t.y -= shift;
         if (t.y >= m->c.h) {
             break;
         }

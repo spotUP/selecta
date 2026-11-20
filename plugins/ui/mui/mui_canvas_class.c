@@ -36,6 +36,9 @@ typedef struct canvas_data {
     struct Library* p96;
     const mui_tile* tiles;
     uint32_t n, cursor;
+    uint32_t sig;      /* I1473g4: mui_grid_signature of the last set_grid; an equal one skips the redraw */
+    int sig_set;
+    uint32_t first_row; /* first tile row of the last grid draw, for the captions */
     mui_art_fn art;
     void* art_ctx;
     uint32_t* img;   /* I1440q3: real cover words (img_edge squared), owned; NULL = the generated cover */
@@ -120,6 +123,41 @@ static void canvas_label(Object* obj, const canvas_data* d) {
     SetDrMd(rp, JAM1);
     canvas_text(obj, d->title, bottom - h + base);
     canvas_text(obj, sel_cover_kind_label(d->kind), bottom - 2 * h + base);
+}
+
+/* I1473g4: title (text pen) and artist (shadow pen, the muted line) under each drawn cover, Text() in the window font like canvas_label,
+ * after the canvas push. Tiles cut by the object edge get no caption (the push already clipped their card). */
+static void canvas_captions(Object* obj, const canvas_data* d) {
+    struct RastPort* rp = _rp(obj);
+    LONG h = (LONG)rp->TxHeight, base = (LONG)rp->TxBaseline;
+    uint32_t i, cols = mui_grid_cols(&d->style, d->mc->c.w);
+    int32_t shift = (int32_t)d->first_row * (d->style.edge + 2 * d->style.pad + d->style.caption + d->style.gap);
+    if (d->style.caption <= 0 || _dri(obj) == NULL) {
+        return;
+    }
+    SetDrMd(rp, JAM1);
+    for (i = (uint32_t)d->first_row * cols; i < d->n; i++) {
+        sel_gui_rect t = mui_grid_tile_rect(&d->style, d->mc->c.w, i);
+        LONG x = _mleft(obj) + t.x + d->style.pad, y = _mtop(obj) + (t.y - shift) + d->style.pad + d->style.edge + 1;
+        struct TextExtent te;
+        const char* line[2];
+        uint32_t k;
+        if (t.y - shift + t.h > d->mc->c.h) {
+            break;
+        }
+        line[0] = d->tiles[i].title;
+        line[1] = d->tiles[i].artist;
+        for (k = 0; k < 2u; k++) {
+            LONG len = line[k] != NULL ? (LONG)strlen(line[k]) : 0, fit;
+            if (len == 0) {
+                continue;
+            }
+            fit = (LONG)TextFit(rp, (CONST_STRPTR)line[k], (ULONG)len, &te, NULL, 1, (LONG)d->style.edge, h + 2);
+            SetAPen(rp, _dri(obj)->dri_Pens[k == 0u ? TEXTPEN : SHADOWPEN]);
+            Move(rp, x, y + (LONG)k * h + base);
+            Text(rp, (CONST_STRPTR)line[k], (ULONG)fit);
+        }
+    }
 }
 
 /* I1440q4: drop the pen-bound caches; held pens go back to the screen (cm NULL: the screen is gone, nothing to release). */
@@ -244,8 +282,11 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
             canvas_label(obj, d);
             return 0;
         }
-        mui_canvas_draw_grid(d->mc, &d->style, d->tiles, d->n, d->cursor, d->art, d->art_ctx);
+        d->style.caption = d->tiles != NULL ? 2 * (int32_t)_rp(obj)->TxHeight + 2 : 0; /* two caption lines of the window font */
+        d->first_row = mui_grid_first_row(&d->style, d->mc->c.w, d->mc->c.h, d->cursor);
+        mui_canvas_draw_grid(d->mc, &d->style, d->tiles, d->n, d->cursor, d->first_row, d->art, d->art_ctx);
         mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
+        canvas_captions(obj, d);
     }
     return 0;
 }
@@ -342,12 +383,22 @@ Object* mui_canvas_new(const mui_grid_style* style, int screen_is_rtg) {
 
 void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_t cursor, mui_art_fn art, void* art_ctx) {
     canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    uint32_t sig = mui_grid_signature(tiles, n, cursor);
+    int same = d->sig_set && sig == d->sig && tiles == d->tiles;
+    d->sig = sig;
+    d->sig_set = 1;
     d->tiles = tiles;
     d->n = n;
     d->cursor = cursor;
     d->art = art;
     d->art_ctx = art_ctx;
-    MUI_Redraw(obj, MADF_DRAWOBJECT);
+    if (!same) { /* I1473g4: redraw only on a signature change; art arrival is the caller's mui_canvas_invalidate */
+        MUI_Redraw(obj, MADF_DRAWOBJECT);
+    }
+}
+
+void mui_canvas_invalidate(Object* obj) {
+    ((canvas_data*)INST_DATA(g_class->mcc_Class, obj))->sig_set = 0;
 }
 
 uint32_t mui_canvas_draws(Object* obj) {
@@ -362,7 +413,7 @@ void mui_canvas_class_free(void) {
 }
 
 Object* mui_canvas_cover_new(int screen_is_rtg) {
-    static const mui_grid_style none = {0u, 0u, 0u, 0, 0, 0};
+    static const mui_grid_style none = {0u, 0u, 0u, 0, 0, 0, 0};
     Object* o = mui_canvas_new(&none, screen_is_rtg);
     if (o != NULL) {
         ((canvas_data*)INST_DATA(g_class->mcc_Class, o))->single = 1;

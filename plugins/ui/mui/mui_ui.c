@@ -2377,7 +2377,7 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
-        static const mui_grid_style grid = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 96, 8, 8};
+        static const mui_grid_style grid = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 96, 8, 8, 0};
         s->canvas = mui_canvas_new(&grid, g_screen_rtg);
         if (s->canvas != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->canvas);
