@@ -356,8 +356,23 @@ static void aga_cover(void* ctx, sel_gui_rect r, const uint8_t* idx, uint32_t ti
     }
 }
 
+/* I1473g8b3: one flow strip (indices already scaled and dimmed) through the cube pens, clipped to the object. */
+static void aga_chunky(void* ctx, sel_gui_rect r, const uint8_t* idx) {
+    aga_sink_ctx* c = ctx;
+    canvas_data* d = c->d;
+    LONG x0, y0, x1, y1;
+    if (d->chunky != NULL && aga_clip(c, r, &x0, &y0, &x1, &y1)) {
+        LONG i, n = (LONG)r.w * (LONG)r.h;
+        for (i = 0; i < n; i++) {
+            LONG p = d->pens[idx[i]];
+            d->chunky[i] = (uint8_t)(p < 0 ? 0 : p);
+        }
+        WriteChunkyPixels(_rp(c->obj), x0, y0, x1, y1, d->chunky + (y0 - (_mtop(c->obj) + r.y)) * r.w + (x0 - (_mleft(c->obj) + r.x)), r.w);
+    }
+}
+
 static void canvas_draw_grid_aga(Object* obj, canvas_data* d) {
-    static const mui_aga_sink sink = {aga_rect, aga_cover};
+    static const mui_aga_sink sink = {aga_rect, aga_cover, NULL};
     aga_sink_ctx c;
     uint32_t k;
     struct ColorMap* cm = _screen(obj)->ViewPort.ColorMap;
@@ -419,6 +434,48 @@ static void canvas_flow_captions(Object* obj, const canvas_data* d) {
     }
 }
 
+/* I1473g8b3: Cover Flow on a palette screen. Index cache of 12 covers at the loader edge; OS below v40 shows dimmed tints. */
+static void canvas_draw_flow_aga(Object* obj, canvas_data* d) {
+    static const mui_aga_sink sink = {aga_rect, aga_cover, aga_chunky};
+    aga_sink_ctx c;
+    uint32_t k;
+    int gliding;
+    int64_t centre = canvas_flow_centre(d, &gliding);
+    struct ColorMap* cm = _screen(obj)->ViewPort.ColorMap;
+    c.obj = obj;
+    c.d = d;
+    c.cm = cm;
+    for (k = 0; k < 3u; k++) {
+        c.pen[k] = -1;
+        c.rgb[k] = 0;
+    }
+    d->style.caption = 2 * (LONG)_rp(obj)->TxHeight + 2;
+    if (GfxBase->LibNode.lib_Version >= 40) {
+        mui_flow_view v;
+        mui_flow_layout(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), centre, d->n, &v);
+        canvas_aga_pens(cm, d);
+        if (d->aga == NULL) {
+            d->aga = mui_aga_cache_open(d->style.edge, 12);
+        }
+        if (d->chunky == NULL || d->cw != v.big) {
+            free(d->chunky);
+            d->chunky = (uint8_t*)malloc((size_t)v.big * (size_t)v.big);
+            d->cw = d->chunky != NULL ? v.big : 0;
+        }
+    }
+    mui_canvas_draw_flow_aga(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), d->tiles, d->n, centre, d->art, d->art_ctx,
+                             d->chunky != NULL ? d->aga : NULL, &sink, &c, &d->fv);
+    for (k = 0; k < 3u; k++) {
+        if (c.pen[k] >= 0) {
+            ReleasePen(cm, (ULONG)c.pen[k]);
+        }
+    }
+    canvas_flow_captions(obj, d);
+    if (!gliding) {
+        d->glide_ms0 = 0u;
+    }
+}
+
 static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     canvas_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
@@ -438,7 +495,9 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         return 0;
     }
     if (!d->rtg) { /* I1473g5: the planar grid; no tiles set = blank as before */
-        if (d->tiles != NULL) {
+        if (d->tiles != NULL && d->flow) {
+            canvas_draw_flow_aga(obj, d);
+        } else if (d->tiles != NULL) {
             canvas_draw_grid_aga(obj, d);
         }
         return 0;

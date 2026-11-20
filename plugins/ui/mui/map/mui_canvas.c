@@ -513,3 +513,99 @@ void mui_cover_scale8(const uint8_t* src, int32_t sedge, uint8_t* dst, int32_t d
         }
     }
 }
+
+void mui_cover_dim_lut(int32_t alpha, uint32_t scrim_rgb, uint8_t lut[27]) {
+    uint32_t i, k;
+    for (i = 0; i < MUI_COVER_CUBE; i++) {
+        uint32_t rgb = mui_cover_cube_rgb(i), out = 0u;
+        for (k = 0; k < 3u; k++) { /* channel k: 0 = R, 1 = G, 2 = B */
+            uint32_t sh = 16u - 8u * k, cv = (rgb >> sh) & 0xFFu, sc = (scrim_rgb >> sh) & 0xFFu;
+            uint32_t v = (cv * (uint32_t)(255 - alpha) + sc * (uint32_t)alpha) / 255u;
+            out = out * 3u + (v < 64u ? 0u : v < 192u ? 1u : 2u); /* nearest of the levels 0 / 128 / 255 */
+        }
+        lut[i] = (uint8_t)out;
+    }
+}
+
+static int32_t mui_flow_dim_level(int32_t alpha) {
+    return alpha < 45 ? 0 : alpha < 120 ? 1 : 2; /* the three tables: 0 / 90 / 150 */
+}
+
+static uint32_t mui_tint_dim(uint32_t rgb, uint32_t scrim, int32_t alpha) {
+    uint32_t out = 0u, k;
+    for (k = 0; k < 3u; k++) {
+        uint32_t sh = 16u - 8u * k;
+        out |= ((((rgb >> sh) & 0xFFu) * (uint32_t)(255 - alpha) + ((scrim >> sh) & 0xFFu) * (uint32_t)alpha) / 255u) << sh;
+    }
+    return out;
+}
+
+uint32_t mui_canvas_draw_flow_aga(const mui_grid_style* s, int32_t w, int32_t h, const mui_tile* tiles, uint32_t n, int64_t centre_q16,
+                                  mui_art_fn art, void* art_ctx, mui_aga_cache* cache, const mui_aga_sink* sink, void* sink_ctx,
+                                  mui_flow_view* view) {
+    static const int32_t level_alpha[3] = {0, 90, 150};
+    mui_flow_view local;
+    uint8_t lut[3][MUI_COVER_CUBE];
+    uint8_t* buf;
+    uint32_t j, k, scrim = s->scrim & 0xFFFFFFu;
+    if (view == NULL) {
+        view = &local;
+    }
+    mui_flow_layout(s, w, h, centre_q16, n, view);
+    sink->rect(sink_ctx, (sel_gui_rect){0, 0, w, h}, s->background & 0xFFFFFFu);
+    for (k = 0; k < 3u; k++) {
+        mui_cover_dim_lut(level_alpha[k], scrim, lut[k]);
+    }
+    buf = sink->chunky != NULL && cache != NULL && cache->edge == s->edge ? malloc((size_t)view->big * (size_t)view->big + 1u) : NULL;
+    for (j = 0u; j < view->n; j++) {
+        const sel_uim_flow_cover* c = &view->cv[j];
+        const mui_tile* t = &tiles[c->g];
+        const uint8_t* idx = buf != NULL && t->art_id != 0 ? mui_aga_cache_get(cache, t->art_id, art, art_ctx) : NULL;
+        int32_t from[8], to[8], np = 1, p, q;
+        from[0] = c->x;
+        to[0] = c->x + c->sz;
+        for (k = j + 1u; k < view->n; k++) { /* subtract the x range of every nearer, at least as big cover: what is left is visible */
+            const sel_uim_flow_cover* o = &view->cv[k];
+            if (o->sz < c->sz) {
+                continue;
+            }
+            for (p = 0; p < np; p++) {
+                int32_t a = o->x > from[p] ? o->x : from[p], b = o->x + o->sz < to[p] ? o->x + o->sz : to[p];
+                if (a >= b) {
+                    continue;
+                }
+                if (a > from[p] && b < to[p] && np < 8) { /* split in two */
+                    from[np] = b;
+                    to[np] = to[p];
+                    to[p] = a;
+                    np++;
+                } else if (a > from[p]) {
+                    to[p] = a;
+                } else {
+                    from[p] = b;
+                }
+            }
+        }
+        for (p = 0; p < np; p++) {
+            sel_gui_rect r = {from[p], c->y, to[p] - from[p], c->sz};
+            int32_t lv = mui_flow_dim_level(c->alpha);
+            if (r.w <= 0) {
+                continue;
+            }
+            if (idx == NULL) {
+                sink->cover(sink_ctx, r, NULL, mui_tint_dim(mui_tile_tint(t), scrim, level_alpha[lv]));
+                continue;
+            }
+            for (q = 0; q < r.h; q++) {
+                const uint8_t* row = idx + (size_t)(((int64_t)q * s->edge) / c->sz) * (size_t)s->edge;
+                int32_t x;
+                for (x = 0; x < r.w; x++) {
+                    buf[(size_t)q * (size_t)r.w + (size_t)x] = lut[lv][row[((int64_t)(r.x - c->x + x) * s->edge) / c->sz]];
+                }
+            }
+            sink->chunky(sink_ctx, r, buf);
+        }
+    }
+    free(buf);
+    return view->n;
+}
