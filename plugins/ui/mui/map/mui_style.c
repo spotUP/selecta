@@ -163,3 +163,24 @@ uint32_t mui_style_chooser(uint32_t source, uint32_t style, uint32_t mask, mui_s
     }
     return n;
 }
+
+/* I1473g8: a style line as the desktop lib_style_click sends it. Grid and Cover Flow show the library's songs (I453): LIBRARY_SEARCH "",
+ * VIEW_SOURCE query, VIEW_WINDOW, then the style line; any other line goes alone. Returns 1 when the sequence ran to its last line,
+ * 0 when a line was refused or `line` is NULL. *libmode is set to the Library mode the sequence enters (0, Composers), else left. */
+uint32_t mui_style_fire(const char* line, uint32_t window_rows, mui_send_fn send, void* ctx, uint32_t* libmode) {
+    char w[32];
+    int songs = line != NULL && (strcmp(line, "VIEW_STYLE grid") == 0 || strcmp(line, "VIEW_STYLE coverflow") == 0);
+    if (line == NULL || send == NULL) {
+        return 0;
+    }
+    if (songs) {
+        snprintf(w, sizeof w, "VIEW_WINDOW %u", (unsigned)window_rows);
+        if (libmode != NULL) {
+            *libmode = 0u;
+        }
+        if (!send(ctx, "LIBRARY_SEARCH \"\"") || !send(ctx, "VIEW_SOURCE query") || !send(ctx, w)) {
+            return 0;
+        }
+    }
+    return send(ctx, line) != 0;
+}

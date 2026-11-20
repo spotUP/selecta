@@ -665,6 +665,18 @@ static int mui_engine_line(mui_state* s, const char* line) {
     return ok;
 }
 
+static int mui_p8_send(void* ctx, const char* line);
+
+/* I1473g8: a style line (View > Style, the chooser) through the shared sequence; Grid and Cover Flow also put the Library mode Cycle on Composers. */
+static int mui_style_line(mui_state* s, const char* line) {
+    uint32_t mode = 0xFFFFFFFFu;
+    int ok = (int)mui_style_fire(line, MUI_LIB_WINDOW_ROWS, mui_p8_send, s, &mode);
+    if (mode != 0xFFFFFFFFu && s->cyc_libmode != NULL) {
+        SetAttrs(s->cyc_libmode, MUIA_NoNotify, TRUE, UPA_Cycle_Active, (ULONG)mode, TAG_DONE);
+    }
+    return ok;
+}
+
 static void mui_stats_window(mui_state* s);
 static void mui_stats_sync(mui_state* s);
 static void mui_offer_window(mui_state* s);
@@ -673,7 +685,7 @@ static int mui_route_send(void* ctx, const char* line);
 /* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
 static void mui_menu_fire(mui_state* s, uint32_t row) {
     const char* line = row < g_menu_n ? mui_menu_line(g_menu[row].id) : NULL;
-    if (mui_engine_line(s, line)) {
+    if (line != NULL && strncmp(line, "VIEW_STYLE ", 11) == 0 ? mui_style_line(s, line) : mui_engine_line(s, line)) {
         s->menu_sends++;
         if (mui_stats_menu(&s->stats_panel, g_menu[row].id)) {
             mui_stats_window(s);
@@ -4843,7 +4855,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
         ULONG act = 0;
         char joined[512];
         GetAttr(UPA_Cycle_Active, s->cyc_libmode, &act);
-        if (mui_libmode_joined((uint32_t)act, 12u, joined, sizeof joined) > 0u) {
+        if (mui_libmode_joined((uint32_t)act, MUI_LIB_WINDOW_ROWS, joined, sizeof joined) > 0u) {
             mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 4u, joined, mui_route_send, s);
         }
     } else if (id == CTL_SCOPE) { /* I1176: SCOPE <name> then re-read the queue window (mui_scope_fire, the shared scope line) */
@@ -4912,7 +4924,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
             set(s->win, MUIA_Window_ActiveObject, (ULONG)s->str_search);
         }
     } else if (id >= CTL_STYLE_BASE && id < CTL_STYLE_BASE + 3L && s->style_cmd[id - CTL_STYLE_BASE] != NULL) { /* I1473g8: the same line as View > Style */
-        mui_engine_line(s, s->style_cmd[id - CTL_STYLE_BASE]);
+        mui_style_line(s, s->style_cmd[id - CTL_STYLE_BASE]);
     } else if (id >= CTL_FACET_BASE && id < CTL_FACET_BASE + (LONG)SEL_UIM_SEARCH_FACETS) { /* I795 (P5): a Search facet chip */
         uint32_t k = (uint32_t)(id - CTL_FACET_BASE);
         s->search_facet = sel_uim_chip_toggle(s->search_facet, k); /* I1456: a chip toggles (All clears); the list filters on refresh */

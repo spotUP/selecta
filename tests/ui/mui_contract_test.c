@@ -3496,6 +3496,13 @@ static void test_grid_switch(void) {
 
 /* I1473g8: the Grid / Cover Flow / List chooser above the Library and Search list (design I1473g section 10 row 8, D4). The decision is pure
  * (mui_style_chooser); mui_ui.c is Amiga-only, so the glue is checked in its source. Labels and lines equal the desktop chooser's. */
+static char sent_buf[8][64];
+static uint32_t sent_n;
+static int style_rec(void* ctx, const char* line) {
+    (void)ctx;
+    snprintf(sent_buf[sent_n++ % 8u], 64, "%s", line);
+    return 1;
+}
 static void test_style_chooser(void) {
     static char src[400000], desk[900000];
     char body[8000];
@@ -3529,7 +3536,24 @@ static void test_style_chooser(void) {
               strstr(body, "MUIM_Group_InitChange") != NULL && strstr(body, "MUIA_ShowMe") != NULL && strstr(body, "mui_aabtn_set_on") != NULL && strstr(body, "sig == s->style_sig") != NULL,
           "chooser sync misses the mask, the change guard or the relayout");
     CHECK(strstr(src, "mui_style_chooser_sync(s, v, s->list_base)") != NULL, "mui_refresh does not sync the chooser");
-    CHECK(strstr(src, "id >= CTL_STYLE_BASE && id < CTL_STYLE_BASE + 3L") != NULL && strstr(src, "mui_engine_line(s, s->style_cmd[id - CTL_STYLE_BASE])") != NULL, "a chooser press does not send the style line");
+    CHECK(strstr(src, "id >= CTL_STYLE_BASE && id < CTL_STYLE_BASE + 3L") != NULL && strstr(src, "mui_style_line(s, s->style_cmd[id - CTL_STYLE_BASE])") != NULL, "a chooser press does not send the style line");
+    CHECK(strstr(src, "mui_style_line(s, line) : mui_engine_line(s, line)") != NULL, "View > Style does not use the shared style sequence");
+    {
+        static const char* want[3][4] = {{"LIBRARY_SEARCH \"\"", "VIEW_SOURCE query", "VIEW_WINDOW 12", "VIEW_STYLE grid"},
+                                         {"LIBRARY_SEARCH \"\"", "VIEW_SOURCE query", "VIEW_WINDOW 12", "VIEW_STYLE coverflow"},
+                                         {"VIEW_STYLE regular", NULL, NULL, NULL}};
+        static const char* in[3] = {"VIEW_STYLE grid", "VIEW_STYLE coverflow", "VIEW_STYLE regular"};
+        uint32_t k, j, mode;
+        for (k = 0; k < 3u; k++) {
+            sent_n = 0;
+            mode = 9u;
+            CHECK(mui_style_fire(in[k], MUI_LIB_WINDOW_ROWS, style_rec, NULL, &mode) == 1u, "style fire failed");
+            CHECK(sent_n == (k < 2u ? 4u : 1u) && mode == (k < 2u ? 0u : 9u), "style fire count or Library mode");
+            for (j = 0; j < sent_n; j++) {
+                CHECK(strcmp(sent_buf[j], want[k][j]) == 0, "style fire line or order");
+            }
+        }
+    }
     CHECK(strstr(src, "VIEW_STYLE grid") == NULL, "mui_ui.c carries its own style line (second path)");
 }
 
