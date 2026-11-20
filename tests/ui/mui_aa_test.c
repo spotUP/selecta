@@ -256,8 +256,8 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
     CHECK(count_of(ui, "mui_aatext(") == 24, "text constructor sites: %d (I774n 9bb399c1: + the song info section heading in the section loop, the 24th; I1440q a49ca0d3: + the composer header value cell, 23; I1369 dcc9b5ec: - the dialog header title, now mui_aatext_whole, 22; I1357 a5c72d0b: - the sync offer row label, now mui_aatext_whole, back to 23; I1313d 4ed3039e: + the Players Turned Off heading, the 24th; I1308 ef77642a: + the sync offer check row label, the 23rd; I1180 006760bb: + 5 in the About window, heading, credits heading and the credit title, copyright and licence lines, the 22nd; I1166b f1cf602d: + the expanded-sidebar table cell in mui_side_cells, the 17th; I960c: + the compact Now Playing page heading; definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    /* 4 at I667f3 (definition, the mui_aatext wrapper, the attribute label, the subsong label); I1181 2e217b3a + 2 (Statistics label and value cells), I1182 ea812382 + 1 (sync offer row): 7. */
     /* I1357 a5c72d0b: the sync offer title moved to mui_aatext_whole: 6 sized sites; whole = definition + offer title + offer row (3); cut = definition + sized + whole (3). */
-    /* I1369 dcc9b5ec: + the dialog header title: whole = 4. */
-    CHECK(count_of(ui, "mui_aatext_whole(") == 4 && count_of(ui, "mui_aatext_cut(") == 3, "whole text sites: %d, cut sites %d", count_of(ui, "mui_aatext_whole("), count_of(ui, "mui_aatext_cut("));
+    /* I1369 dcc9b5ec: + the dialog header title: whole = 4. I1469m 321b5766: + 6 in the account window (heading, body, no-TLS note, error, two field labels): 10. */
+    CHECK(count_of(ui, "mui_aatext_whole(") == 10 && count_of(ui, "mui_aatext_cut(") == 3, "whole text sites: %d, cut sites %d", count_of(ui, "mui_aatext_whole("), count_of(ui, "mui_aatext_cut("));
     /* I1440q a49ca0d3: + the composer header label cell: 7 sized sites. */
     CHECK(count_of(ui, "mui_aatext_sized(") == 7 && count_of(ui, "mui_attr_fixwidth(") == 1, "sized text sites: %d, fixwidth sites %d (labels sized through mui_attr_fixwidth)", count_of(ui, "mui_aatext_sized("), count_of(ui, "mui_attr_fixwidth("));
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
@@ -295,7 +295,7 @@ static void test_panel_source(void) {
     }
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_PANEL") == 0, "TH PANEL group left in mui_ui.c: %d", count_of(ui, "TH_TAGS(MUI_TH_PANEL"));
     CHECK(count_of(ui, "MUIA_Frame, MUIV_Frame_Group") == 0, "plain art frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aapanel(") == 6, "panel constructor sites: %d (definition + 5: sidebar, player, main, detail, the I1308 ef77642a sync offer card; both art frames go through mui_aapanel_wh, I949d, I949e2)", count_of(ui, "mui_aapanel("));
+    CHECK(count_of(ui, "mui_aapanel(") == 7, "panel constructor sites: %d (definition + 6: sidebar, player, main, detail, the I1308 ef77642a sync offer card, the I1469m 321b5766 account card; both art frames go through mui_aapanel_wh, I949d, I949e2)", count_of(ui, "mui_aapanel("));
     CHECK(count_of(ui, "mui_aapanel_new(") == 1, "one AAPanel constructor call: %d", count_of(ui, "mui_aapanel_new("));
     CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_corners(") != NULL,
           "class does not draw through the shared panel helpers");
@@ -833,7 +833,7 @@ static void test_field_source(void) {
     }
     CHECK(count_of(ui, "MUIC_String") == 0, "stock string left in mui_ui.c: %d", count_of(ui, "MUIC_String"));
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_FIELD") == 0, "stock string frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_string(") == 8, "string constructor sites: %d (definition + 7: top bar, command line, palette, name prompt, tool rows, settings, drill filter)", count_of(ui, "mui_make_string("));
+    CHECK(count_of(ui, "mui_make_string(") == 9, "string constructor sites: %d (definition + 8: top bar, command line, palette, name prompt, tool rows, settings, drill filter, I1469m account username; the password goes through mui_make_string_s)", count_of(ui, "mui_make_string("));
     CHECK(count_of(ui, "mui_aafield_new(") == 1, "one AAField constructor call: %d", count_of(ui, "mui_aafield_new("));
     CHECK(count_of(ui, "mui_aafield_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill_hole(") != NULL,
@@ -922,7 +922,7 @@ static void test_field_placeholder(void) {
         CHECK(ph != NULL && strstr(ph, "aa_text(") != NULL, "placeholder drawn through aa_text");
         CHECK(strstr(cls, "MUIA_String_Contents, MUIV_EveryTime") != NULL, "repaint on contents change");
         CHECK(count_of(ui, "sel_uim_search_hint(") == 1 && count_of(ui, "SEL_UIM_CMD_HINT") == 1 && count_of(ui, "r->label);") >= 1, "string sites pass hints");
-        CHECK(count_of(ui, "mui_make_string(") == 8, "string constructor sites: %d", count_of(ui, "mui_make_string("));
+        CHECK(count_of(ui, "mui_make_string(") == 9, "string constructor sites: %d", count_of(ui, "mui_make_string("));
     }
     free(cls);
     free(ui);

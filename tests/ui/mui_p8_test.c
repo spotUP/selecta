@@ -713,7 +713,8 @@ static void test_queue_scope_ui(void) {
  * mui_make_check) plus label per source, as the desktop nagdlg_draw; no ghost buttons captioned "[x] text". mui_ui.c is Amiga only, so
  * the build is read from its source like queue-scope-ui. */
 static void test_offer_card(void) {
-    CHECK(src_count("Object *root = mui_aapanel(MUI_AA_PANEL_RAISED, 0), *bar") == 1, "the sync offer content is not in a raised card");
+    /* 2: the sync offer and the I1469m account window build the same raised card. */
+    CHECK(src_count("Object *root = mui_aapanel(MUI_AA_PANEL_RAISED, 0), *bar") == 2, "the sync offer content is not in a raised card");
     CHECK(src_count("s->offer_row[k] = mui_make_check(row, sel_uim_offer_ticked(&s->offer.o, k), CTL_OFFER_ROW + (LONG)k);") == 1,
           "the sync offer rows are not real checks");
     CHECK(src_count("\"[x] %s\"") == 0 && src_count("\"[%c] %s\"") == 0, "a fake [x] caption is left in mui_ui.c");
