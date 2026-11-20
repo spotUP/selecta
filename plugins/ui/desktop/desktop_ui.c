@@ -3886,9 +3886,23 @@ static void acct_draw(desk* d, sel_gui_rect p, const sel_gui_atlas* head, const 
             stars[n] = '\0';
             sel_gui_text_wrap(d->canvas, body, rect_of(f.x, f.y - body->line_height - lpx(d, 4), f.w, body->line_height),
                               i == 0 ? "Username" : "Password", muted, 1, &d->text);
-            sel_gui_round_rect(d->canvas, f, lpx(d, 6), ARGB(d->theme.token[d->acct_field == i ? SEL_GUI_TOKEN_SURFACE_HOVER : SEL_GUI_TOKEN_SURFACE]));
+            if (d->acct_field == i) { /* I1472: focus shows as an accent outline plus a caret, not only a fill change */
+                int32_t bw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
+                sel_gui_round_rect(d->canvas, f, lpx(d, 6), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+                sel_gui_round_rect(d->canvas, rect_of(f.x + bw, f.y + bw, f.w - 2 * bw, f.h - 2 * bw), lpx(d, 6) - bw, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]));
+            } else {
+                sel_gui_round_rect(d->canvas, f, lpx(d, 6), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+            }
             sel_gui_text_wrap(d->canvas, body, rect_of(f.x + lpx(d, 10), f.y + (f.h - body->line_height) / 2, f.w - lpx(d, 20), body->line_height),
                               i == 0 ? d->acct_name : stars, ink, 1, &d->text);
+            if (d->acct_field == i) { /* caret at the text end, same bar as the search field */
+                const char* s = i == 0 ? d->acct_name : stars;
+                int32_t tw = sel_gui_text_width(body, s, strlen(s)), ch = lpx(d, 18), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
+                if (tw > f.w - lpx(d, 20)) tw = f.w - lpx(d, 20);
+                d->caret = rect_of(f.x + lpx(d, 10) + tw, f.y + (f.h - ch) / 2, cw, ch);
+                sel_gui_fill_rect(d->canvas, d->caret, ink);
+                d->caret_draws++;
+            }
         }
         draw_button(d, acct_toggle_rect(d), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), d->acct_signup ? "Log In Instead" : "Create Account Instead", 14, ink);
         submit = d->acct_busy ? (d->acct_signup ? "Creating..." : "Logging In...") : d->acct_signup ? "Create Account" : "Log In";
