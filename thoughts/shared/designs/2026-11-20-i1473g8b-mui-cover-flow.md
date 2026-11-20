@@ -219,3 +219,11 @@ Order after g6 (wiring), g7 (input), g8 (chooser); g8b1 can start now because it
 - **D-F5 Cover Flow on AGA at all.** D6 already says AGA, but the cost table shows ~0.5 s a frame at 640 x 512 on a 14 MHz 68020.
   (a) Offer it on every AGA screen, step-only on 020 (Recommended: D6 as answered; one redraw per key is usable); (b) offer it on AGA only
   with a 68040+ (style masked on 020 AGA); (c) RTG only (the old mask).
+
+## Johan's answers (2026-11-20)
+
+- D-F1: (a) upscale the shared 144 px thumbnail for the front cover.
+- D-F2: (a) glide on 68040/68060, one step per key on 68020/68030.
+- D-F3: (a) clicking a side cover moves the flow to it, Mac too.
+- D-F4: (a) one wheel notch moves one cover, Mac too. Johan also ticked "keys": left/right keys step the flow on both Mac and MUI (check the Mac does this; add if not, in row g8b5).
+- D-F5: (a) Cover Flow on every screen, AGA included; step-only on 68020.
