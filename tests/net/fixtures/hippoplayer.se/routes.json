@@ -57,6 +57,24 @@
       "Content-Type": "application/json"
     }
   },
+  "/api/deepsid/file-by-path?path=MUSICIANS%2FG%2FGame_Co%2FUridium.sid&full=1": {
+    "body": "{\"id\": 91, \"name\": \"Uridium.sid\", \"title\": \"Uridium\", \"application\": \"RELEASE\", \"tags\": [{\"name\": \"Game\", \"type\": 0}], \"gb64\": \"a:2:{i:0;a:2:{s:4:\\\"name\\\";s:10:\\\"Uridium v2\\\";s:2:\\\"id\\\";s:5:\\\"11606\\\";}i:1;a:2:{s:4:\\\"name\\\";s:7:\\\"Uridium\\\";s:2:\\\"id\\\";s:4:\\\"2001\\\";}}\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "/api/deepsid/file-by-path?path=MUSICIANS%2FG%2FGame_Co%2FLost.sid&full=1": {
+    "body": "{\"id\": 92, \"name\": \"Lost.sid\", \"title\": \"Lost Game\", \"application\": \"RELEASE\", \"tags\": [{\"name\": \"Game\", \"type\": 0}], \"gb64\": \"a:1:{i:0;a:2:{s:4:\\\"name\\\";s:9:\\\"Lost Game\\\";s:2:\\\"id\\\";s:4:\\\"9999\\\";}}\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "/api/deepsid/file-by-path?path=MUSICIANS%2FG%2FGame_Co%2FDemo.sid&full=1": {
+    "body": "{\"id\": 93, \"name\": \"Demo.sid\", \"title\": \"Uridium\", \"application\": \"RELEASE\", \"tags\": [{\"name\": \"Demo\", \"type\": 0}], \"gb64\": \"a:1:{i:0;a:2:{s:4:\\\"name\\\";s:7:\\\"Uridium\\\";s:2:\\\"id\\\";s:4:\\\"2001\\\";}}\"}",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
   "/api/deepsid/csdb/77": {
     "body": "{\"csdbId\": 9, \"releases\": [{\"id\": 9, \"name\": \"Giana\"}]}",
     "headers": {

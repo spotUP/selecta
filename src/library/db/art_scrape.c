@@ -716,6 +716,50 @@ static void csdb_thumbs(sel_library* lib, const char* base, const char* json, se
     free(img.data);
 }
 
+/* I1465f (design D3a): a game tune's still is the GameBase64 screenshot of its game. The id comes from the ds_file answer of the DeepSID key `dk`
+ * (sel_deepsid_gb64_id: game tunes only); the image is fetched once per gb64 id into the 'cover' row of the key "gb64:<id>" and added to the song's stills.
+ * A 404 writes 'gb64_miss' (epoch seconds) on that key and is not asked again for a day; a 429 or network failure records nothing. 1 = a still stored. */
+static int gb64_cover(sel_library* lib, const char* dk, const char* key, int id, sel_scrape_stats* st) {
+    char gkey[40], base[256], url[SCRAPE_URL_MAX], stamp[24];
+    uint8_t seen[24];
+    scrape_buf img;
+    uint8_t* file = malloc(DS_JSON_MAX);
+    int n = 0, gid, len = 0, r, ok = 0;
+
+    img.data = malloc(DZ_IMAGE_MAX);
+    if (file != NULL && img.data != NULL && (len = dz_has(lib, sel_art_dz_id(dk), "ds_file", file, DS_JSON_MAX - 1u)) > 0) {
+        file[len] = '\0';
+        n = sel_deepsid_gb64_id((const char*)file);
+    }
+    if (n > 0) {
+        snprintf(gkey, sizeof gkey, "gb64:%d", n);
+        gid = sel_art_dz_id(gkey);
+        len = dz_has(lib, gid, "cover", img.data, DZ_IMAGE_MAX);
+        memset(seen, 0, sizeof seen);
+        if (len <= 0 && !(dz_has(lib, gid, "gb64_miss", seen, sizeof seen - 1u) > 0 && (time_t)atol((const char*)seen) > time(NULL) - 86400)) {
+            len = 0;
+            base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+            snprintf(url, sizeof url, "%s/api/deepsid/image/gb64/%d.png?w=320", base, n);
+            img.cap = DZ_IMAGE_MAX;
+            img.len = 0;
+            r = scrape_get(url, &img, st);
+            if (r == 1 && img.len < DZ_IMAGE_MAX && is_image(&img)) {
+                dz_put(lib, gid, "cover", img.data, img.len);
+                dz_put(lib, gid, "dz_key", gkey, strlen(gkey));
+                len = (int)img.len;
+            } else if (r >= 0) { /* 404, or an answer that is no image: a definite no for a day */
+                snprintf(stamp, sizeof stamp, "%lu", (unsigned long)time(NULL));
+                dz_put(lib, gid, "gb64_miss", stamp, strlen(stamp));
+                st->misses++;
+            }
+        }
+        if (len > 0) ok = still_add(lib, id, key, img.data, (size_t)len);
+    }
+    free(file);
+    free(img.data);
+    return ok;
+}
+
 /* I1450 (design D5): after the composer photo, the first CSDb release screenshot of the song is its cover, before the Demozoo fallback. The ids come from
  * the ds_csdb row of I1440h (ds_step fetches it when missing); the image is the server's resized JPEG, as in csdb_thumbs. 1 = a still stored,
  * 0 = the CSDb answer is cached but added nothing, -1 = no CSDb answer (not a DeepSID song, or the fetch failed). */
@@ -751,6 +795,7 @@ static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stat
             if (scrape_get(url, &img, st) == 1 && img.len < DZ_IMAGE_MAX && is_image(&img) && still_add(lib, id, key, img.data, img.len)) ok = 1;
         }
     }
+    if (gb64_cover(lib, dk, key, id, st) > 0 && ok < 1) ok = 1; /* a game tune may have no CSDb answer; its GB64 shot still counts as a still stored */
     free(js.data);
     free(img.data);
     return ok;

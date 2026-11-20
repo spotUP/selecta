@@ -274,9 +274,22 @@ static void norm(const char* in, char* out, size_t cap) {
     out[n] = '\0';
 }
 
+/* The game named by a STIL "[from the C64 game X]" line, normalised into out ("" when there is none). */
+static void stil_game(const char* stil, char* out, size_t cap) {
+    char game[160];
+    const char* g = strstr(stil, "from the C64 game ");
+    size_t m = 0;
+
+    out[0] = '\0';
+    if (g == NULL) return;
+    for (g += 18; *g != '\0' && *g != ']' && *g != '\n' && m + 1 < sizeof game; g++) game[m++] = *g;
+    game[m] = '\0';
+    norm(game, out, cap);
+}
+
 uint32_t sel_deepsid_csdb_own(const char* file_json, const char* csdb_json, int* ids, uint32_t max) {
     char type[16], copy[160], title[160], stil[1024], want[2][160], grp[64], name[160], nn[160];
-    const char *p, *end, *rel, *next, *g;
+    const char *p, *end, *rel, *next;
     char seg[512];
     uint32_t n = 0;
     size_t len;
@@ -298,14 +311,7 @@ uint32_t sel_deepsid_csdb_own(const char* file_json, const char* csdb_json, int*
     cy = atoi(copy);
     norm(title, want[0], sizeof want[0]);
     want[1][0] = '\0';
-    if ((g = strstr(stil, "from the C64 game ")) != NULL) {
-        char game[160];
-        size_t m = 0;
-
-        for (g += 18; *g != '\0' && *g != ']' && *g != '\n' && m + 1 < sizeof game; g++) game[m++] = *g;
-        game[m] = '\0';
-        norm(game, want[1], sizeof want[1]);
-    }
+    stil_game(stil, want[1], sizeof want[1]);
     p = strstr(csdb_json, "\"releases\"");
     p = p != NULL ? sel_json_value(p + 10) : NULL;
     end = p != NULL && *p == '[' ? strrchr(p, ']') : NULL;
@@ -503,4 +509,128 @@ uint32_t sel_library_deepsid_composer(sel_library* lib, const char* ref, char* o
     }
     free(js);
     return added;
+}
+
+/* I1465f (design D3a): the `gb64` field of a DeepSID file answer is a PHP-serialized list of related games,
+ * a:N:{i:0;a:2:{s:4:"name";s:10:"Uridium v2";s:2:"id";s:5:"11606";}...}. A bounded count `lead:<digits><end>` at p; NULL when malformed. */
+static const char* php_num(const char* p, char lead, char end, long* out) {
+    long v = 0;
+    int d = 0;
+
+    if (p[0] != lead || p[1] != ':') return NULL;
+    for (p += 2; *p >= '0' && *p <= '9' && d < 9; p++, d++) v = v * 10 + (*p - '0');
+    if (d == 0 || *p != end) return NULL;
+    *out = v;
+    return p + 1;
+}
+
+/* s:<len>:"<bytes>"; or i:<n>; at p as text into out (cut to cap); returns the position after it, NULL when neither or the length runs past the NUL. */
+static const char* php_val(const char* p, char* out, size_t cap) {
+    long n;
+    size_t i;
+    const char* q;
+
+    if (p[0] == 'i') {
+        q = php_num(p, 'i', ';', &n);
+        if (q == NULL) return NULL;
+        snprintf(out, cap, "%ld", n);
+        return q;
+    }
+    q = php_num(p, 's', ':', &n);
+    if (q == NULL || q[0] != '"') return NULL;
+    q++;
+    for (i = 0; i < (size_t)n; i++) {
+        if (q[i] == '\0') return NULL;
+    }
+    if (q[n] != '"' || q[n + 1] != ';') return NULL;
+    i = (size_t)n < cap - 1u ? (size_t)n : cap - 1u;
+    memcpy(out, q, i);
+    out[i] = '\0';
+    return q + n + 2;
+}
+
+uint32_t sel_deepsid_gb64_parse(const char* php, sel_gb64_entry* out, uint32_t max) {
+    const char* p;
+    long cnt, k, idx, fields, f;
+    uint32_t n = 0;
+
+    if (php == NULL || out == NULL || max == 0) return 0;
+    p = php_num(php, 'a', ':', &cnt);
+    if (p == NULL || *p++ != '{') return 0;
+    for (k = 0; k < cnt && n < max; k++) {
+        sel_gb64_entry e;
+
+        memset(&e, 0, sizeof e);
+        p = php_num(p, 'i', ';', &idx);
+        p = p != NULL ? php_num(p, 'a', ':', &fields) : NULL;
+        if (p == NULL || *p++ != '{') break;
+        for (f = 0; f < fields; f++) {
+            char key[16], val[sizeof e.name];
+
+            p = php_val(p, key, sizeof key);
+            p = p != NULL ? php_val(p, val, sizeof val) : NULL;
+            if (p == NULL) break;
+            if (strcmp(key, "name") == 0) memcpy(e.name, val, sizeof e.name);
+            else if (strcmp(key, "id") == 0) e.id = atoi(val);
+        }
+        if (f < fields || *p++ != '}') break; /* a malformed entry ends the list; the ones before it stay */
+        if (e.id > 0) out[n++] = e;
+    }
+    return n;
+}
+
+/* 1 when the normalised `have` matches `want` at the tier: 0 equal, 1 one starts with the other, 2 one contains the other. */
+static int gb64_tier(const char* have, const char* want, int tier) {
+    size_t h = strlen(have), w = strlen(want);
+
+    if (h == 0 || w == 0) return 0;
+    if (tier == 0) return strcmp(have, want) == 0;
+    if (tier == 1) return strncmp(have, want, h < w ? h : w) == 0;
+    return strstr(have, want) != NULL || strstr(want, have) != NULL;
+}
+
+int sel_deepsid_gb64_pick(const sel_gb64_entry* e, uint32_t n, const char* title) {
+    char want[160], have[160];
+    uint32_t i;
+    int tier;
+
+    if (e == NULL || n == 0) return 0;
+    norm(title != NULL ? title : "", want, sizeof want);
+    for (tier = 0; tier < 3; tier++) {
+        for (i = 0; i < n; i++) {
+            norm(e[i].name, have, sizeof have);
+            if (gb64_tier(have, want, tier)) return e[i].id;
+        }
+    }
+    return e[0].id;
+}
+
+int sel_deepsid_gb64_id(const char* json) {
+    char raw[2048], title[160], stil[1024], app[24];
+    sel_gb64_entry e[8];
+    const char *p, *end;
+    size_t n = 0;
+    int game = 0;
+
+    if (json == NULL) return 0;
+    app[0] = '\0';
+    sel_json_str(json, "application", app, sizeof app);
+    p = strstr(json, "\"tags\"");
+    p = p != NULL ? sel_json_value(p + 6) : NULL;
+    end = p != NULL && *p == '[' ? strchr(p, ']') : NULL;
+    for (p = end != NULL ? strstr(p, "\"Game\"") : NULL; p != NULL && p < end; p = strstr(p + 6, "\"Game\"")) game = 1;
+    if (!game || strcmp(app, "RELEASE") != 0) return 0;
+    p = strstr(json, "\"gb64\"");
+    p = p != NULL ? sel_json_value(p + 6) : NULL;
+    if (p == NULL || *p != '"') return 0; /* null or absent */
+    for (p++; *p != '\0' && *p != '"' && n + 1 < sizeof raw; p++) {
+        if (*p == '\\' && p[1] != '\0') p++; /* the serialized text sits in a JSON string: \" \\ \/ unescape to the character */
+        raw[n++] = *p;
+    }
+    raw[n] = '\0';
+    title[0] = stil[0] = '\0';
+    sel_json_str(json, "title", title, sizeof title);
+    sel_json_str(json, "stil", stil, sizeof stil);
+    stil_game(stil, stil, sizeof stil); /* in place: the normalised text is never longer */
+    return sel_deepsid_gb64_pick(e, sel_deepsid_gb64_parse(raw, e, 8), stil[0] != '\0' ? stil : title);
 }
