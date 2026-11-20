@@ -377,6 +377,8 @@ typedef struct mui_state {
     int flow_on;     /* I1473g8b4: the canvas is in Cover Flow mode (last mui_canvas_set_flow) */
     int flow_gliding; /* the last mui_canvas_flow_tick left a glide running: the wait turn is capped */
     mui_flag list_show, canvas_show;
+    Object* addfolder_row;          /* I1473h2: the Add Folder button of the Folders page header (Mac desk_add_folder title button), shown on SEL_VIEW_FOLDERS */
+    mui_flag addfolder_show;
     mui_flag crumb_show, nav_back_dis, nav_fwd_dis; /* I966: last ShowMe / Disabled written, so mui_refresh sets only on a change */
     char crumb_buf[128];
     Object* crumb_row;              /* MUI-P4-2: the Library breadcrumb buttons (browse path pieces), shown in the browse source */
@@ -2464,6 +2466,17 @@ static Object* mui_main_group(mui_state* s) {
         DoMethod(g, OM_ADDMEMBER, tools);
     }
     DoMethod(g, OM_ADDMEMBER, s->crumb);
+    {
+        /* I1473h2: the Folders page header button, not a toolbar slot (MUI_TOOL_BTNS stays 13); the same CTL_ADD_FOLDER path as Library > Add Folder... */
+        Object* af = mui_make_button_w("Add Folder", "Add Folder", CTL_ADD_FOLDER, 0);
+        s->addfolder_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+        if (af == NULL || s->addfolder_row == NULL) {
+            return NULL;
+        }
+        DoMethod(s->addfolder_row, OM_ADDMEMBER, af);
+        DoMethod(s->addfolder_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+        DoMethod(g, OM_ADDMEMBER, s->addfolder_row);
+    }
     s->crumb_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
     s->state_txt = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
     if (s->crumb_row == NULL || s->state_txt == NULL) {
@@ -3825,6 +3838,9 @@ static void mui_refresh(mui_state* s) {
             if (mui_flag_commit(&s->crumb_show, drill)) { /* I966: only on a change */
                 set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
             }
+        }
+        if (mui_flag_commit(&s->addfolder_show, v->source == (uint32_t)SEL_VIEW_FOLDERS)) { /* I1473h2: only on a change */
+            set(s->addfolder_row, MUIA_ShowMe, v->source == (uint32_t)SEL_VIEW_FOLDERS ? TRUE : FALSE);
         }
         {
             /* MUI-P4-2: the browse path as clickable pieces; MUI-P4-15: the empty-state line of a view without rows. */
