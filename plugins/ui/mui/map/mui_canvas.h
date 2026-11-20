@@ -69,6 +69,24 @@ uint32_t mui_grid_signature(const mui_tile* tiles, uint32_t n, uint32_t cursor);
 uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, uint32_t cursor,
                               uint32_t first_row, mui_art_fn art, void* art_ctx);
 
+/* I1473g5: AGA (planar) grid. The geometry and the cover indices are pure; the class supplies a sink that does RectFill and
+ * WriteChunkyPixels. `rect` gets 0x00RRGGBB (background, card, selection outline: three pens); `cover` gets the cover square and its
+ * edge x edge cube indices 0..MUI_COVER_CUBE-1 (idx NULL: no art yet, paint `tint` 0x00RRGGBB instead). Rects are in canvas
+ * coordinates and may run past the canvas (the sink clips). The index cache holds each cover once (remapped on first use). */
+typedef struct mui_aga_sink {
+    void (*rect)(void* ctx, sel_gui_rect r, uint32_t rgb);
+    void (*cover)(void* ctx, sel_gui_rect r, const uint8_t* idx, uint32_t tint);
+} mui_aga_sink;
+typedef struct mui_aga_cache mui_aga_cache;
+mui_aga_cache* mui_aga_cache_open(int32_t edge, uint32_t slots);
+void mui_aga_cache_close(mui_aga_cache* c);
+/* 0x00RRGGBB platform tint of a tile (the planar stand-in for the generated cover). */
+uint32_t mui_tile_tint(const mui_tile* t);
+/* Draws like mui_canvas_draw_grid into a w x h canvas through `sink`; returns the tiles drawn. */
+uint32_t mui_canvas_draw_grid_aga(const mui_grid_style* s, int32_t w, int32_t h, const mui_tile* tiles, uint32_t n, uint32_t cursor,
+                                  uint32_t first_row, mui_art_fn art, void* art_ctx, mui_aga_cache* cache, const mui_aga_sink* sink,
+                                  void* sink_ctx);
+
 /* Artwork path (MUI-P5-4): RTG screens decode the cover through picture.datatype and scale it with
  * sel_gui_image_scale; planar screens show the platform cover. */
 typedef enum mui_art_path { MUI_ART_COVER = 0, MUI_ART_DATATYPE = 1 } mui_art_path;

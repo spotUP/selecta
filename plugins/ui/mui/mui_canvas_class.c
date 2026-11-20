@@ -45,6 +45,7 @@ typedef struct canvas_data {
     int32_t img_edge;
     LONG pens[MUI_COVER_CUBE]; /* I1440q4: AGA, the cube's shared pens, held from the first image draw to MUIM_Cleanup */
     int pens_held;
+    mui_aga_cache* aga; /* I1473g5: grid cover indices (cube, pen-independent), one per art id */
     uint8_t* idx;     /* the remapped image (img_edge squared); NULL = redo from img */
     uint8_t* chunky;  /* the scaled, pen-mapped pixels of the last draw (cw squared) */
     int32_t cw;
@@ -130,19 +131,19 @@ static void canvas_label(Object* obj, const canvas_data* d) {
 static void canvas_captions(Object* obj, const canvas_data* d) {
     struct RastPort* rp = _rp(obj);
     LONG h = (LONG)rp->TxHeight, base = (LONG)rp->TxBaseline;
-    uint32_t i, cols = mui_grid_cols(&d->style, d->mc->c.w);
+    uint32_t i, cols = mui_grid_cols(&d->style, (int32_t)_mwidth(obj));
     int32_t shift = (int32_t)d->first_row * (d->style.edge + 2 * d->style.pad + d->style.caption + d->style.gap);
     if (d->style.caption <= 0 || _dri(obj) == NULL) {
         return;
     }
     SetDrMd(rp, JAM1);
     for (i = (uint32_t)d->first_row * cols; i < d->n; i++) {
-        sel_gui_rect t = mui_grid_tile_rect(&d->style, d->mc->c.w, i);
+        sel_gui_rect t = mui_grid_tile_rect(&d->style, (int32_t)_mwidth(obj), i);
         LONG x = _mleft(obj) + t.x + d->style.pad, y = _mtop(obj) + (t.y - shift) + d->style.pad + d->style.edge + 1;
         struct TextExtent te;
         const char* line[2];
         uint32_t k;
-        if (t.y - shift + t.h > d->mc->c.h) {
+        if (t.y - shift + t.h > (int32_t)_mheight(obj)) {
             break;
         }
         line[0] = d->tiles[i].title;
@@ -171,10 +172,25 @@ static void canvas_aga_free(canvas_data* d, struct ColorMap* cm) {
         }
     }
     d->pens_held = 0;
+    mui_aga_cache_close(d->aga);
+    d->aga = NULL;
     free(d->idx);
     free(d->chunky);
     d->idx = d->chunky = NULL;
     d->cw = 0;
+}
+
+/* The cube's pens, obtained once per object and held to MUIM_Cleanup. */
+static void canvas_aga_pens(struct ColorMap* cm, canvas_data* d) {
+    uint32_t i;
+    if (d->pens_held) {
+        return;
+    }
+    for (i = 0; i < MUI_COVER_CUBE; i++) {
+        uint32_t c = mui_cover_cube_rgb(i);
+        d->pens[i] = ObtainBestPenA(cm, ((c >> 16) & 0xFFu) * 0x01010101u, ((c >> 8) & 0xFFu) * 0x01010101u, (c & 0xFFu) * 0x01010101u, NULL);
+    }
+    d->pens_held = 1;
 }
 
 /* I1440q4: the real cover on a palette screen: cube pens, ordered-dither index image (once per image), nearest scale to the largest
@@ -187,13 +203,7 @@ static int canvas_aga_image(Object* obj, canvas_data* d) {
     if (d->img == NULL || GfxBase->LibNode.lib_Version < 40 || side < 8) {
         return 0;
     }
-    if (!d->pens_held) {
-        for (i = 0; i < MUI_COVER_CUBE; i++) {
-            uint32_t c = mui_cover_cube_rgb(i);
-            d->pens[i] = ObtainBestPenA(cm, ((c >> 16) & 0xFFu) * 0x01010101u, ((c >> 8) & 0xFFu) * 0x01010101u, (c & 0xFFu) * 0x01010101u, NULL);
-        }
-        d->pens_held = 1;
-    }
+    canvas_aga_pens(cm, d);
     if (d->idx == NULL) {
         d->idx = (uint8_t*)malloc((size_t)d->img_edge * (size_t)d->img_edge);
         if (d->idx == NULL || !mui_cover_remap(d->img, d->img_edge, d->idx)) {
@@ -249,6 +259,105 @@ static void canvas_spin_aga(Object* obj, const canvas_data* d) {
     if (pm >= 0) ReleasePen(cm, (ULONG)pm);
 }
 
+/* I1473g5: the AGA grid sink. Everything is clipped to the object (the card rows run past the bottom edge), RectFill in three pens
+ * held for the draw, covers through the cube pens one WriteChunkyPixels per tile. */
+typedef struct aga_sink_ctx {
+    Object* obj;
+    canvas_data* d;
+    struct ColorMap* cm;
+    uint32_t rgb[3];
+    LONG pen[3];
+} aga_sink_ctx;
+
+static int aga_clip(const aga_sink_ctx* c, sel_gui_rect r, LONG* x0, LONG* y0, LONG* x1, LONG* y1) {
+    LONG l = _mleft(c->obj), t = _mtop(c->obj);
+    *x0 = l + (r.x > 0 ? r.x : 0);
+    *y0 = t + (r.y > 0 ? r.y : 0);
+    *x1 = l + r.x + r.w - 1 < _mright(c->obj) ? l + r.x + r.w - 1 : _mright(c->obj);
+    *y1 = t + r.y + r.h - 1 < _mbottom(c->obj) ? t + r.y + r.h - 1 : _mbottom(c->obj);
+    return *x0 <= *x1 && *y0 <= *y1;
+}
+
+static void aga_fill(const aga_sink_ctx* c, sel_gui_rect r, LONG pen) {
+    LONG x0, y0, x1, y1;
+    if (pen >= 0 && aga_clip(c, r, &x0, &y0, &x1, &y1)) {
+        SetAPen(_rp(c->obj), (ULONG)pen);
+        RectFill(_rp(c->obj), x0, y0, x1, y1);
+    }
+}
+
+/* Background, card and outline colours take one of three pens each, obtained on first use and released after the draw. */
+static void aga_rect(void* ctx, sel_gui_rect r, uint32_t rgb) {
+    aga_sink_ctx* c = ctx;
+    uint32_t k;
+    for (k = 0; k < 3u && c->pen[k] >= 0 && c->rgb[k] != rgb; k++) {}
+    if (k == 3u) {
+        return;
+    }
+    if (c->pen[k] < 0) {
+        c->pen[k] = canvas_pen(c->cm, rgb);
+        c->rgb[k] = rgb;
+    }
+    aga_fill(c, r, c->pen[k]);
+}
+
+static void aga_cover(void* ctx, sel_gui_rect r, const uint8_t* idx, uint32_t tint) {
+    aga_sink_ctx* c = ctx;
+    canvas_data* d = c->d;
+    LONG x0, y0, x1, y1;
+    if (idx == NULL || d->chunky == NULL) {
+        LONG pen = canvas_pen(c->cm, tint); /* no art yet: the kind tint, a pen held for this one fill */
+        aga_fill(c, r, pen);
+        if (pen >= 0) {
+            ReleasePen(c->cm, (ULONG)pen);
+        }
+        return;
+    }
+    if (aga_clip(c, r, &x0, &y0, &x1, &y1)) {
+        LONG e = (LONG)d->style.edge, i, n = e * e;
+        for (i = 0; i < n; i++) {
+            LONG p = d->pens[idx[i]];
+            d->chunky[i] = (uint8_t)(p < 0 ? 0 : p);
+        }
+        WriteChunkyPixels(_rp(c->obj), x0, y0, x1, y1, d->chunky + (y0 - (_mtop(c->obj) + r.y)) * e + (x0 - (_mleft(c->obj) + r.x)), e);
+    }
+}
+
+static void canvas_draw_grid_aga(Object* obj, canvas_data* d) {
+    static const mui_aga_sink sink = {aga_rect, aga_cover};
+    aga_sink_ctx c;
+    uint32_t k;
+    struct ColorMap* cm = _screen(obj)->ViewPort.ColorMap;
+    c.obj = obj;
+    c.d = d;
+    c.cm = cm;
+    for (k = 0; k < 3u; k++) {
+        c.pen[k] = -1;
+        c.rgb[k] = 0;
+    }
+    d->style.caption = 2 * (LONG)_rp(obj)->TxHeight + 2;
+    d->first_row = mui_grid_first_row(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), d->cursor);
+    if (GfxBase->LibNode.lib_Version >= 40) {
+        canvas_aga_pens(cm, d);
+        if (d->aga == NULL) {
+            d->aga = mui_aga_cache_open(d->style.edge, 24);
+        }
+        if (d->chunky == NULL || d->cw != d->style.edge) {
+            free(d->chunky);
+            d->chunky = (uint8_t*)malloc((size_t)d->style.edge * (size_t)d->style.edge);
+            d->cw = d->chunky != NULL ? d->style.edge : 0;
+        }
+    } /* OS below v40: no cache, so every cover paints its tint */
+    mui_canvas_draw_grid_aga(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), d->tiles, d->n, d->cursor, d->first_row, d->art,
+                             d->art_ctx, d->chunky != NULL ? d->aga : NULL, &sink, &c);
+    for (k = 0; k < 3u; k++) {
+        if (c.pen[k] >= 0) {
+            ReleasePen(cm, (ULONG)c.pen[k]);
+        }
+    }
+    canvas_captions(obj, d);
+}
+
 static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     canvas_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
@@ -267,7 +376,13 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         canvas_spin_aga(obj, d);
         return 0;
     }
-    if (d->p96 == NULL || !d->rtg) {
+    if (!d->rtg) { /* I1473g5: the planar grid; no tiles set = blank as before */
+        if (d->tiles != NULL) {
+            canvas_draw_grid_aga(obj, d);
+        }
+        return 0;
+    }
+    if (d->p96 == NULL) {
         return 0;
     }
     if (mui_canvas_fit(d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)})) {

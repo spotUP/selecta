@@ -1,5 +1,5 @@
 /* mui-canvas-geom (MUI-P5-1), mui-grid (MUI-P5-2), mui-art-path (MUI-P5-4), plan 2026-10-25-amiga-mui.md.
- * Usage: mui_canvas_test geom|grid|tiles|art-path|art
+ * Usage: mui_canvas_test geom|grid|grid-aga|tiles|art-path|art
  *
  * Reachability exemption (I691e, design thoughts/shared/research/2026-10-29-i691-platform-covers.md section 5): no live MUI
  * site calls mui_canvas_draw_grid or mui_canvas_draw_art today (mui_canvas_set_grid has no caller), so these cases drive the
@@ -109,6 +109,82 @@ static int test_grid(void) {
     }
     mui_canvas_release(&m);
     (void)f;
+    return failures;
+}
+
+/* I1473g5 mui-grid-aga: the planar compose into a byte canvas. Cover bytes are cube indices 0..26, background 27, card 28, outline 29. */
+typedef struct aga_t {
+    uint8_t* buf;
+    int32_t w, h;
+    uint32_t tints, covers;
+} aga_t;
+
+static void aga_t_rect(void* ctx, sel_gui_rect r, uint32_t rgb) {
+    aga_t* a = ctx;
+    uint8_t v = rgb == 0x101010u ? 27u : rgb == 0x303030u ? 28u : 29u;
+    int32_t x, y;
+    for (y = r.y < 0 ? 0 : r.y; y < r.y + r.h && y < a->h; y++) {
+        for (x = r.x < 0 ? 0 : r.x; x < r.x + r.w && x < a->w; x++) {
+            a->buf[y * a->w + x] = v;
+        }
+    }
+}
+
+static void aga_t_cover(void* ctx, sel_gui_rect r, const uint8_t* idx, uint32_t tint) {
+    aga_t* a = ctx;
+    int32_t x, y;
+    if (idx == NULL) {
+        a->tints++;
+        (void)tint;
+        return;
+    }
+    a->covers++;
+    for (y = 0; y < r.h && r.y + y < a->h; y++) {
+        for (x = 0; x < r.w && r.x + x < a->w; x++) {
+            a->buf[(r.y + y) * a->w + r.x + x] = idx[y * r.w + x];
+        }
+    }
+}
+
+static uint32_t g_aga_words[32 * 32];
+
+static const uint32_t* aga_art(void* ctx, int64_t id) {
+    int32_t i;
+    (void)ctx;
+    for (i = 0; i < 32 * 32; i++) {
+        g_aga_words[i] = 0xFF000000u | ((uint32_t)i * 2654435761u >> 8) * (uint32_t)id;
+    }
+    return g_aga_words;
+}
+
+static int test_grid_aga(void) {
+    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 32, 4, 4, 12};
+    static mui_tile t[12];
+    static uint8_t buf[200 * 160];
+    aga_t a = {buf, 200, 160, 0, 0};
+    mui_aga_sink sink = {aga_t_rect, aga_t_cover};
+    mui_aga_cache* c = mui_aga_cache_open(32, 4);
+    uint32_t i, drawn, max = 0, h = 2166136261u;
+    char hex[17];
+    for (i = 0; i < 12; i++) {
+        t[i].title = "T";
+        t[i].artist = "A";
+        t[i].format = NULL;
+        t[i].kind = 0u;
+        t[i].art_id = i == 3 ? 0 : (int64_t)i + 1; /* tile 3 has no cover: the tint path */
+    }
+    CHECK(c != NULL && mui_aga_cache_open(0, 4) == NULL, "cache open");
+    CHECK(mui_tile_tint(&t[0]) <= 0xFFFFFFu, "tint is rgb");
+    drawn = mui_canvas_draw_grid_aga(&s, 200, 160, t, 12, 5, 0u, aga_art, NULL, c, &sink, &a);
+    CHECK(drawn == 12u && a.tints == 1u && a.covers == 11u, "drew %u tiles, tints %u covers %u", (unsigned)drawn, (unsigned)a.tints, (unsigned)a.covers);
+    for (i = 0; i < sizeof buf; i++) {
+        max = buf[i] > max ? buf[i] : max;
+        h = (h ^ buf[i]) * 16777619u;
+    }
+    CHECK(max <= 29u, "pens above 27 + 3: %u", (unsigned)max);
+    snprintf(hex, sizeof hex, "%08x", (unsigned)h);
+    CHECK(strcmp(hex, MUI_GRID_AGA_GOLDEN) == 0, "aga hash %s, golden %s", hex, MUI_GRID_AGA_GOLDEN);
+    mui_aga_cache_close(c);
     return failures;
 }
 
@@ -288,6 +364,8 @@ int main(int argc, char** argv) {
         r = test_geom();
     } else if (argc > 1 && strcmp(argv[1], "grid") == 0) {
         r = test_grid();
+    } else if (argc > 1 && strcmp(argv[1], "grid-aga") == 0) {
+        r = test_grid_aga();
     } else if (argc > 1 && strcmp(argv[1], "tiles") == 0) {
         r = test_tiles();
     } else if (argc > 1 && strcmp(argv[1], "art-path") == 0) {
