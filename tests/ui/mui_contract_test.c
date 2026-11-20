@@ -1553,14 +1553,14 @@ static void test_sidebar_bullet_latin1(void) {
     CHECK(mui_l1(a, sizeof a, "plain") != a, "ASCII is passed through untouched");
     { /* I1483: the button help (MUIA_ShortHelp, kept by pointer) never aims at the caller's or a stack buffer */
         char stack[16] = "Create Playlist";
-        mui_aabtn_spec in, out;
-        char b0[MUI_L1_TEXT], b1[MUI_L1_TEXT], b2[MUI_L1_TEXT];
-        memset(&in, 0, sizeof in);
-        in.caption = stack;
-        in.widest = stack;
-        mui_aabtn_spec_l1(&in, &out, b0, b1, b2);
+        mui_aabtn_spec hin, hout;
+        char h0[MUI_L1_TEXT], h1[MUI_L1_TEXT], h2[MUI_L1_TEXT];
+        memset(&hin, 0, sizeof hin);
+        hin.caption = stack;
+        hin.widest = stack;
+        mui_aabtn_spec_l1(&hin, &hout, h0, h1, h2);
         stack[0] = 'X';
-        CHECK(out.help != NULL && out.help != stack && out.help != b2 && strcmp(out.help, "Create Playlist") == 0, "help is a persistent copy: '%s'", out.help);
+        CHECK(hout.help != NULL && hout.help != stack && hout.help != h2 && strcmp(hout.help, "Create Playlist") == 0, "help is a persistent copy: '%s'", hout.help);
     }
 }
 
