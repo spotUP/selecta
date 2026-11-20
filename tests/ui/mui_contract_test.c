@@ -3510,14 +3510,14 @@ static void test_grid_switch(void) {
               strstr(body, "mui_grid_art_tick") != NULL && strstr(body, "mui_canvas_invalidate(s->canvas)") != NULL &&
               strstr(body, "cols * (rows + 1u)") != NULL && strstr(body, "VIEW_WINDOW %u") != NULL && strstr(body, "SEL_ROW_HEADING") != NULL,
           "mui_grid_refresh misses tiles, art, invalidate, window size or the heading skip");
-    CHECK(strstr(src, "mui_grid_art_open(s->art, mui_cover_album_image, s->grid_edge, MUI_GRID_ART_SLOTS)") != NULL &&
+    CHECK(strstr(src, "mui_grid_art_open(s->art, mui_cover_album_image, mui_flow_art_edge(s->grid_edge, flow), mui_flow_art_slots(MUI_GRID_ART_SLOTS, flow))") != NULL &&
               strstr(src, "mui_grid_art_close(s->grid_art)") != NULL && strstr(src, "#define MUI_GRID_ART_SLOTS 24") != NULL,
           "the art loader is not opened with 24 slots or not closed");
     CHECK(fn_body(src, "static void mui_list_pane_set(mui_state* s) {", body, sizeof body) != NULL && strstr(body, "set(s->listview, MUIA_ShowMe") != NULL &&
               strstr(body, "set(s->canvas, MUIA_ShowMe") != NULL && strstr(body, "mui_flag_commit") != NULL,
           "the list/canvas swap is missing");
     CHECK(strstr(src, "set(s->listview, MUIA_ShowMe, col || home") == NULL && strstr(src, "mui_list_pane_set(s);") != NULL, "the page switch writes the list's ShowMe directly");
-    CHECK(strstr(src, "grid_on=%u flow_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u") != NULL, "grid sentinels missing from the list stat");
+    CHECK(strstr(src, "grid_on=%u flow_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u mui_flow_draws=%u mui_flow_frames=%u mui_flow_ms_max=%u mui_flow_glide=%u art_decodes=%u canvas_shown=%u") != NULL, "grid sentinels missing from the list stat");
 }
 
 /* I1473g8: the Grid / Cover Flow / List chooser above the Library and Search list (design I1473g section 10 row 8, D4). The decision is pure

@@ -4,6 +4,7 @@
  * the object rectangle, Hide and Cleanup release. Planar screens have no Picasso96: Draw then leaves the object blank
  * until MUI-P5-7 draws 1-bit covers there. */
 #include "mui_canvas_class.h"
+#include "map/mui_grid_art.h"
 
 #include <selecta/gui/gui_draw.h>
 #include <selecta/platform.h>
@@ -70,6 +71,8 @@ typedef struct canvas_data {
     int flow, glides;
     int64_t glide_from;
     uint32_t glide_ms0;
+    int32_t grid_edge; /* the grid style edge, kept while Cover Flow runs at the loader edge */
+    mui_flow_stats fs;
     mui_flow_view fv; /* the layout of the last flow draw (hit tests and captions) */
 } canvas_data;
 
@@ -455,7 +458,7 @@ static void canvas_draw_flow_aga(Object* obj, canvas_data* d) {
         mui_flow_layout(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), centre, d->n, &v);
         canvas_aga_pens(cm, d);
         if (d->aga == NULL) {
-            d->aga = mui_aga_cache_open(d->style.edge, 12);
+            d->aga = mui_aga_cache_open(d->style.edge, mui_flow_art_slots(24u, 1));
         }
         if (d->chunky == NULL || d->cw != v.big) {
             free(d->chunky);
@@ -496,7 +499,9 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     }
     if (!d->rtg) { /* I1473g5: the planar grid; no tiles set = blank as before */
         if (d->tiles != NULL && d->flow) {
+            uint32_t t0 = canvas_now_ms();
             canvas_draw_flow_aga(obj, d);
+            mui_flow_stats_draw(&d->fs, d->glide_ms0 != 0u, canvas_now_ms() - t0);
         } else if (d->tiles != NULL) {
             canvas_draw_grid_aga(obj, d);
         }
@@ -520,10 +525,12 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         if (d->flow && d->tiles != NULL) { /* I1473g8b2: Cover Flow; a mid-glide frame keeps the redraw tick alive (mui_canvas_flow_tick) */
             int gliding;
             int64_t c = canvas_flow_centre(d, &gliding);
+            uint32_t t0 = canvas_now_ms();
             d->style.caption = 2 * (int32_t)_rp(obj)->TxHeight + 2;
             mui_canvas_draw_flow(d->mc, &d->style, d->tiles, d->n, c, d->art, d->art_ctx, &d->fv);
             mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
             canvas_flow_captions(obj, d);
+            mui_flow_stats_draw(&d->fs, gliding, canvas_now_ms() - t0);
             if (!gliding) {
                 d->glide_ms0 = 0u;
             }
@@ -724,6 +731,9 @@ void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_
         int gliding;
         d->glide_from = canvas_flow_centre(d, &gliding);
         d->glide_ms0 = d->glides ? canvas_now_ms() : 0u;
+        if (d->glides) {
+            mui_flow_stats_glide(&d->fs);
+        }
     } else if (d->flow && d->glide_ms0 == 0u) {
         d->glide_from = (int64_t)cursor << 16;
     }
@@ -739,6 +749,17 @@ void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_
 
 void mui_canvas_set_flow(Object* obj, int on) {
     canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    if (on != 0 && !d->flow) {
+        d->grid_edge = d->style.edge;
+    }
+    if ((on != 0) != d->flow) { /* the index cache is edge-sized: reopen at the new edge on the next draw */
+        mui_aga_cache_close(d->aga);
+        d->aga = NULL;
+        free(d->chunky);
+        d->chunky = NULL;
+        d->cw = 0;
+        d->style.edge = mui_flow_art_edge(d->grid_edge != 0 ? d->grid_edge : d->style.edge, on != 0);
+    }
     d->flow = on != 0;
     d->glides = on != 0 && mui_flow_glides((SysBase->AttnFlags & AFF_68040) != 0); /* D-F2: 68040/68060 glide, 68020/68030 step */
     d->glide_ms0 = 0u;
@@ -845,4 +866,8 @@ void mui_canvas_set_cover(Object* obj, uint32_t kind, uint32_t tint, const char*
     memcpy(d->ext, e, sizeof e);
     memcpy(d->title, t, sizeof t);
     MUI_Redraw(obj, MADF_DRAWOBJECT);
+}
+
+void mui_canvas_flow_stats(Object* obj, mui_flow_stats* out) {
+    *out = ((canvas_data*)INST_DATA(g_class->mcc_Class, obj))->fs;
 }

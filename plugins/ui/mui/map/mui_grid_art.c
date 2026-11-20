@@ -126,3 +126,11 @@ int64_t mui_grid_art_tick(mui_grid_art* g, const mui_tile* tiles, uint32_t n) {
     }
     return 0;
 }
+
+int32_t mui_flow_art_edge(int32_t grid_edge, int flow) {
+    return flow ? MUI_GRID_THUMB_EDGE : grid_edge;
+}
+
+uint8_t mui_flow_art_slots(uint8_t grid_slots, int flow) {
+    return flow ? 12u : grid_slots;
+}

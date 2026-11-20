@@ -12,6 +12,10 @@
 
 #define MUI_GRID_THUMB_EDGE 144 /* DESK_ART_TILE_EDGE: the stored thumbnail size, kind "thumbf144" */
 
+/* I1473g8b6 (D-F1): the one loader serves both styles. Cover Flow loads at the shared thumbnail edge (side covers sharp, the front cover
+ * is upscaled by the draw) in 12 slots (9 visible + 3 ahead); the grid keeps its own edge and 24 slots. */
+int32_t mui_flow_art_edge(int32_t grid_edge, int flow);
+uint8_t mui_flow_art_slots(uint8_t grid_slots, int flow);
 /* Decodes the stored cover (still `frame`, 0 = cover) of `album` to malloc'd 0xAARRGGBB words (w x h), NULL when it has none.
  * The plugin passes mui_cover_album_image; the decoder (stb_image) lives in the plugin, so the host test passes a fake. */
 typedef uint32_t* (*mui_grid_decode_fn)(const sel_ui_art* art, int64_t album, uint32_t frame, int32_t* w, int32_t* h);

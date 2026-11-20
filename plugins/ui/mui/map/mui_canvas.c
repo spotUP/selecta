@@ -333,6 +333,16 @@ uint32_t mui_canvas_draw_flow(mui_canvas* m, const mui_grid_style* s, const mui_
     return view->n;
 }
 
+void mui_flow_stats_draw(mui_flow_stats* st, int gliding, uint32_t ms) {
+    st->draws++;
+    st->frames += gliding != 0;
+    st->ms_max = ms > st->ms_max ? ms : st->ms_max;
+}
+
+void mui_flow_stats_glide(mui_flow_stats* st) {
+    st->glide++;
+}
+
 int mui_flow_glides(int cpu_is_040_or_better) {
     return cpu_is_040_or_better != 0;
 }
