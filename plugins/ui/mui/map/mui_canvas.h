@@ -42,6 +42,8 @@ typedef const uint32_t* (*mui_art_fn)(void* ctx, int64_t art_id);
 typedef struct mui_grid_style {
     uint32_t background, tile, selected; /* 0xAARRGGBB, filled from MUI pens by the class */
     int32_t edge, gap, pad;              /* cover edge, gap between tiles, padding inside a tile */
+    int32_t caption; /* I1473g4: height of the title + artist block under the cover (2 font lines + spacing, set by the class from the
+                      * window font); 0 = no captions, tile height = tile width as before */
 } mui_grid_style;
 
 /* I1473g2: the tile model, shared by Grid and Cover Flow. Fills `out` (at most `cap`) from the engine view window: one tile per
@@ -55,10 +57,17 @@ mui_grid_style mui_grid_style_for(int32_t screen_w, uint32_t background, uint32_
 uint32_t mui_grid_cols(const mui_grid_style* s, int32_t width);
 /* Rectangle of tile i (canvas coordinates) and of its cover. */
 sel_gui_rect mui_grid_tile_rect(const mui_grid_style* s, int32_t width, uint32_t i);
-/* Draws the tiles into the canvas: background, then per tile a card, the cover from `art` or the platform cover, and the
- * selection outline on `cursor`. Returns the tiles drawn (those that fit the canvas height). */
+/* I1473g4: tile rows that fit a canvas `height` tall (at least 1), and the first row drawn so the cursor row stays on screen
+ * (sel_uim_grid_first_row over the rows that fit). */
+uint32_t mui_grid_visible_rows(const mui_grid_style* s, int32_t height);
+uint32_t mui_grid_first_row(const mui_grid_style* s, int32_t width, int32_t height, uint32_t cursor);
+/* I1473g4: redraw signature of what the grid shows (titles, artists, art ids, kinds, count, cursor); equal = nothing to redraw. */
+uint32_t mui_grid_signature(const mui_tile* tiles, uint32_t n, uint32_t cursor);
+/* Draws the tiles into the canvas: background, then per tile from row `first_row` on a card (cover edge + `s->caption` of room under
+ * it for the caption the class draws with Text()), the cover from `art` or the platform cover, and the selection outline on `cursor`
+ * (an index into `tiles`). Returns the tiles drawn (those on screen). */
 uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, uint32_t cursor,
-                              mui_art_fn art, void* art_ctx);
+                              uint32_t first_row, mui_art_fn art, void* art_ctx);
 
 /* Artwork path (MUI-P5-4): RTG screens decode the cover through picture.datatype and scale it with
  * sel_gui_image_scale; planar screens show the platform cover. */
