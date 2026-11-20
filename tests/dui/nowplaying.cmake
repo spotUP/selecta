@@ -101,7 +101,7 @@ function(np_run tag seek_ms)
   set(${tag}_hash "${h}" PARENT_SCOPE)
 endfunction()
 
-set(expected_pairs 2) # RATE 4 gives Rating, and Liked (I1432: 4 stars and up count as liked)
+set(expected_pairs 1) # RATE 4 gives Rating only (I1474: the Liked row is gone, Rating says it)
 set(prev -2)
 foreach(seek 1000 5000 12500)
   np_run(s${seek} ${seek})

@@ -1016,7 +1016,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
     } else if (op->op == SEL_USER_PANEL && op->out != NULL && op->out_cap > 0) {
         /* I185: the catalogue rows of the module info panel, in display order; absent data adds no row. */
         sel_library_test_slow("SELECTA_LIB_PANEL_SLOW_MS"); /* I906d test knob: the song panel read on a busy worker */
-        static const char* const labels[] = {"STIL note", "STIL title", "STIL author", "Composer", "Release", "Year", "Genre", "Rating", "Play count", "Liked"};
+        static const char* const labels[] = {"STIL note", "STIL title", "STIL author", "Composer", "Release", "Year", "Genre", "Rating", "Play count"};
         sqlite3_stmt* st = NULL;
         uint32_t used = 0;
         op->out[0] = '\0';
@@ -1029,8 +1029,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             " (SELECT group_concat(display, ', ') FROM (SELECT display FROM song_composers WHERE song_key = ?1"
             "  ORDER BY display)),"
             " s.album, s.year, s.genre, (SELECT rating FROM ratings WHERE key = ?1),"
-            " (SELECT COUNT(*) FROM history WHERE key = ?1 AND skipped = 0),"
-            " (SELECT 'Yes' FROM ratings WHERE key = ?1 AND rating >= 4)" /* I306, I1432: the heart of Now Playing; absent below 4 stars */
+            " (SELECT COUNT(*) FROM history WHERE key = ?1 AND skipped = 0)" /* I1474: no Liked row, the Rating row already says it */
             " FROM (SELECT ?1 AS k) q LEFT JOIN songs s ON s.key = q.k",
             -1, &st, NULL);
         if (rc == SQLITE_OK) {
@@ -1040,7 +1039,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             sqlite3_bind_text(st, 2, stil_key, -1, SQLITE_STATIC);
             if (sqlite3_step(st) == SQLITE_ROW) {
                 int c;
-                for (c = 0; c < 10; c++) {
+                for (c = 0; c < 9; c++) {
                     rows += (int64_t)panel_put(op->out, op->out_cap, &used, labels[c],
                                                (const char*)sqlite3_column_text(st, c));
                 }
