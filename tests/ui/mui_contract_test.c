@@ -3494,6 +3494,45 @@ static void test_grid_switch(void) {
     CHECK(strstr(src, "grid_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u") != NULL, "grid sentinels missing from the list stat");
 }
 
+/* I1473g8: the Grid / Cover Flow / List chooser above the Library and Search list (design I1473g section 10 row 8, D4). The decision is pure
+ * (mui_style_chooser); mui_ui.c is Amiga-only, so the glue is checked in its source. Labels and lines equal the desktop chooser's. */
+static void test_style_chooser(void) {
+    static char src[400000], desk[900000];
+    char body[8000];
+    mui_style_choice c[3];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    f = fopen(MUI_DIR "/../desktop/desktop_ui.c", "rb");
+    n = f != NULL ? fread(desk, 1, sizeof desk - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    desk[n] = 0;
+    CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_GRID, SEL_VIEW_STYLES_ALL, c) == 3 && strcmp(c[0].label, "Grid") == 0 && strcmp(c[1].label, "Cover Flow") == 0 && strcmp(c[2].label, "List") == 0, "full mask is not Grid, Cover Flow, List");
+    CHECK(c[0].selected && !c[1].selected && !c[2].selected, "Grid style does not select Grid");
+    CHECK(strcmp(c[0].cmd, "VIEW_STYLE grid") == 0 && strcmp(c[1].cmd, "VIEW_STYLE coverflow") == 0 && strcmp(c[2].cmd, "VIEW_STYLE regular") == 0, "chooser lines differ from the View > Style lines");
+    CHECK(mui_style_chooser(SEL_VIEW_SEARCH, SEL_VIEW_STYLE_COVERFLOW, SEL_VIEW_STYLES_ALL, c) == 3 && c[1].selected && !c[0].selected, "Search / Cover Flow selection");
+    CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_TREE, SEL_VIEW_STYLES_ALL, c) == 3 && c[2].selected && !c[0].selected && !c[1].selected, "Tree/Compact style selects List");
+    CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_REGULAR, mui_style_mask(0), c) == 2 && strcmp(c[0].label, "Grid") == 0 && strcmp(c[1].label, "List") == 0 && c[1].slot == 2u && c[1].selected, "planar mask keeps Cover Flow");
+    CHECK(mui_style_chooser(SEL_VIEW_QUEUE, SEL_VIEW_STYLE_REGULAR, SEL_VIEW_STYLES_ALL, c) == 0 && mui_style_chooser(SEL_VIEW_HOME, SEL_VIEW_STYLE_GRID, SEL_VIEW_STYLES_ALL, c) == 0 &&
+              mui_style_chooser(SEL_VIEW_BROWSE, SEL_VIEW_STYLE_GRID, SEL_VIEW_STYLES_ALL, c) == 0, "chooser shows outside Library and Search");
+    CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_GRID, 0u, c) == 0, "an empty mask still lists choices");
+    CHECK(mui_icon_id("style_grid") == SEL_GUI_ICON_LAYOUT_GRID && mui_icon_id("style_coverflow") == SEL_GUI_ICON_GALLERY_HORIZONTAL && mui_icon_id("style_list") == SEL_GUI_ICON_LIST, "chooser icons differ from the desktop's");
+    CHECK(strstr(desk, "{\"Grid\", \"Cover Flow\", \"List\"}") != NULL && strstr(desk, "{\"VIEW_STYLE grid\", \"VIEW_STYLE coverflow\", \"VIEW_STYLE regular\"}") != NULL, "desktop chooser words changed; update mui_style_chooser");
+    CHECK(strstr(src, "mui_style_mask(0)") != NULL && strstr(src, "static uint32_t mui_view_style_mask(void)") != NULL && strstr(src, "SEL_UI_VIEW_STYLES, mui_view_style_mask())") != NULL &&
+              strstr(src, "mui_menu_build_for(g_menu, MENU_MAX, mui_view_style_mask())") != NULL, "mask is not one value for menu, tag and chooser");
+    CHECK(fn_body(src, "static void mui_style_chooser_sync(", body, sizeof body) != NULL && strstr(body, "mui_style_chooser(v->source, v->style, mui_view_style_mask()") != NULL &&
+              strstr(body, "MUIM_Group_InitChange") != NULL && strstr(body, "MUIA_ShowMe") != NULL && strstr(body, "mui_aabtn_set_on") != NULL && strstr(body, "sig == s->style_sig") != NULL,
+          "chooser sync misses the mask, the change guard or the relayout");
+    CHECK(strstr(src, "mui_style_chooser_sync(s, v, s->list_base)") != NULL, "mui_refresh does not sync the chooser");
+    CHECK(strstr(src, "id >= CTL_STYLE_BASE && id < CTL_STYLE_BASE + 3L") != NULL && strstr(src, "mui_engine_line(s, s->style_cmd[id - CTL_STYLE_BASE])") != NULL, "a chooser press does not send the style line");
+    CHECK(strstr(src, "VIEW_STYLE grid") == NULL, "mui_ui.c carries its own style line (second path)");
+}
+
 /* I684b: the VizArea and canvas objects must get the real RTG flag of the screen (the foreign-mode test in mui_screen_open),
  * not a literal 1; with 1 a planar AGA screen still ran the pixel step although nothing can draw there. */
 static void test_screen_rtg_flag(void) {
@@ -4540,6 +4579,8 @@ int main(int argc, char** argv) {
         test_cycle_initial();
     } else if (strcmp(argv[1], "aa-aspect") == 0) {
         test_aa_aspect();
+    } else if (strcmp(argv[1], "style-chooser") == 0) {
+        test_style_chooser();
     } else if (strcmp(argv[1], "grid-switch") == 0) {
         test_grid_switch();
     } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {

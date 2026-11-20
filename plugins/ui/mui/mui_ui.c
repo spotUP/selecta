@@ -116,6 +116,10 @@ static void mui_libs_close(void) {
 
 /* MUI-P1-4: a distinct error on stderr (the shell keeps the text UI) and, on the Amiga, an EasyRequest. */
 static void mui_report(mui_fail why, const char* detail);
+/* The view styles this UI offers: the View > Style menu, the SEL_UI_VIEW_STYLES tag and the style chooser read this one value (I1473g8b4
+ * widens it for Cover Flow). */
+static uint32_t mui_view_style_mask(void) { return mui_style_mask(0); }
+
 #ifdef SEL_MUI_NATIVE
 static void mui_requester(const char* text); /* I1352b */
 #endif
@@ -408,6 +412,9 @@ typedef struct mui_state {
     Object* src_sync;
     Object* src_open;               /* I1442b: opens the picked source's drill root */
     Object* mode_row;               /* I1175: the Library mode Cycle above the list */
+    Object* style_btn[3];           /* I1473g8: the style chooser buttons in the mode row, hidden until a Library or Search list shows */
+    const char* style_cmd[3];       /* the engine line each button sends */
+    uint32_t style_sig;             /* shown bits | selected << 4 last written to the buttons */
     Object* cyc_libmode;
     const char* libmode_ent[MUI_LIBMODE_COUNT + 1u];
     int src_shown;
@@ -456,6 +463,7 @@ static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCL
 #define CTL_CLIP_COPY 0x2120L /* Edit > Copy Song Title (MUI-P5-6), outside the MENU_ID_BASE + row range */
 #define CTL_PANE_BASE 0x2130L /* I735: View > Visualizer Page, Pattern Page: CTL_PANE_BASE + mui_pane (MUI_PANE_VIZ, MUI_PANE_TRACKER) */
 static mui_menu_item g_menu[MENU_MAX];
+
 static char g_menu_sc[MENU_MAX][2];
 static uint32_t g_menu_n;
 
@@ -567,7 +575,7 @@ static Object* mui_menu_strip(void) {
     if (strip == NULL) {
         return NULL;
     }
-    g_menu_n = mui_menu_build_for(g_menu, MENU_MAX, mui_style_mask(0)); /* MUI-P3-8; RTG widening: MUI-P6 */
+    g_menu_n = mui_menu_build_for(g_menu, MENU_MAX, mui_view_style_mask()); /* MUI-P3-8 */
     if (g_menu_n > MENU_MAX) {
         g_menu_n = MENU_MAX;
     }
@@ -686,6 +694,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
 #define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
 #define CTL_COL_CRUMB_BASE 0x2AE0L /* I1442b: the drill page crumb buttons, CTL_COL_CRUMB_BASE + i (up to 4) */
+#define CTL_STYLE_BASE 0x2AECL     /* I1473g8: the Grid / Cover Flow / List chooser, CTL_STYLE_BASE + slot (0..2) */
 #define CTL_COL_FIND 0x2AE8L       /* I1442b: the drill page find field changed (debounced in mui_drill_find_tick) */
 #define CTL_SRC_OPEN 0x2AC7L       /* I1442b: the Sources page Open button (opens the picked source's drill root) */
 #define CTL_COL_TAG 0x2814L   /* I1440n3: the Tag button of a collection page cycles the DeepSID tag filter (All Tags first) */
@@ -2190,6 +2199,19 @@ static Object* mui_mode_row_group(mui_state* s) {
         DoMethod(s->mode_row, OM_ADDMEMBER, s->scope_row);
         s->scope_in_mode_row = 1;
     }
+    {
+        mui_style_choice all[3];
+        uint32_t n = mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_REGULAR, SEL_VIEW_STYLES_ALL, all); /* the fixed three, every slot */
+        for (k = 0; k < n; k++) { /* I1473g8: Grid / Cover Flow / List, hidden until mui_style_chooser_sync shows them */
+            s->style_cmd[all[k].slot] = all[k].cmd;
+            s->style_btn[all[k].slot] = mui_make_button_ex(all[k].label, all[k].label, all[k].icon_key, NULL, CTL_STYLE_BASE + (LONG)all[k].slot, 0, 0, MUI_AA_ROLE_TAB, MUI_AA_ALIGN_CENTRE, 0, 0);
+            if (s->style_btn[all[k].slot] == NULL) {
+                return NULL;
+            }
+            set(s->style_btn[all[k].slot], MUIA_ShowMe, FALSE);
+            DoMethod(s->mode_row, OM_ADDMEMBER, s->style_btn[all[k].slot]);
+        }
+    }
     DoMethod(s->mode_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     return s->mode_row;
 }
@@ -3508,6 +3530,27 @@ static void mui_list_pane_sync(mui_state* s) {
     }
 }
 
+/* I1473g8: show the style chooser buttons the mask offers on a Library or Search list, mark the current style. Writes only on a change (I966). */
+static void mui_style_chooser_sync(mui_state* s, const sel_view_state* v, int list_page) {
+    mui_style_choice c[3];
+    uint32_t k, n = list_page ? mui_style_chooser(v->source, v->style, mui_view_style_mask(), c) : 0u, sig = 0;
+    for (k = 0; k < n; k++) {
+        sig |= (1u << c[k].slot) | (c[k].selected ? 16u << c[k].slot : 0u);
+    }
+    if (sig == s->style_sig || s->mode_row == NULL) {
+        return;
+    }
+    s->style_sig = sig;
+    DoMethod(s->mode_row, MUIM_Group_InitChange);
+    for (k = 0; k < 3u; k++) {
+        if (s->style_btn[k] != NULL) {
+            set(s->style_btn[k], MUIA_ShowMe, (sig & (1u << k)) != 0u ? TRUE : FALSE);
+            mui_aabtn_set_on(s->style_btn[k], (sig & (16u << k)) != 0u);
+        }
+    }
+    DoMethod(s->mode_row, MUIM_Group_ExitChange);
+}
+
 /* I1473g6: one Grid frame. The engine window is columns x (visible rows + 1) so the row below the fold is on hand; the tiles come from
  * the window (headings skipped, so the cursor counts the non-heading rows before it); a cover that arrived redraws through
  * mui_canvas_invalidate (the tiles, hence the signature, did not change). */
@@ -3647,6 +3690,7 @@ static void mui_refresh(mui_state* s) {
         }
         s->grid_on = mui_style_canvas(v->style) && s->canvas != NULL;
         mui_list_pane_sync(s);
+        mui_style_chooser_sync(s, v, s->list_base);
         if (s->grid_on) {
             mui_grid_refresh(s, v);
         } else if (s->grid_win != 0u) { /* left Grid: back to the default window */
@@ -4867,6 +4911,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         } else if (s->win != NULL) {
             set(s->win, MUIA_Window_ActiveObject, (ULONG)s->str_search);
         }
+    } else if (id >= CTL_STYLE_BASE && id < CTL_STYLE_BASE + 3L && s->style_cmd[id - CTL_STYLE_BASE] != NULL) { /* I1473g8: the same line as View > Style */
+        mui_engine_line(s, s->style_cmd[id - CTL_STYLE_BASE]);
     } else if (id >= CTL_FACET_BASE && id < CTL_FACET_BASE + (LONG)SEL_UIM_SEARCH_FACETS) { /* I795 (P5): a Search facet chip */
         uint32_t k = (uint32_t)(id - CTL_FACET_BASE);
         s->search_facet = sel_uim_chip_toggle(s->search_facet, k); /* I1456: a chip toggles (All clears); the list filters on refresh */
@@ -5601,7 +5647,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     put_tag(&g_hooks[3], SEL_UI_CLOSE, SEL_TAG_FN(mui_close));
     put_tag(&g_hooks[4], SEL_UI_STATS, SEL_TAG_FN(mui_stats));
     /* Planar-safe mask: the descriptor is static, an RTG screen widens it when the window opens (MUI-P6). */
-    put_tag(&g_hooks[5], SEL_UI_VIEW_STYLES, mui_style_mask(0));
+    put_tag(&g_hooks[5], SEL_UI_VIEW_STYLES, mui_view_style_mask());
     /* MUI 3.8 absent: still registered so an explicit --ui mui reaches mui_open and its requester, but not listed
      * or auto-picked (MUI-P1-6, Johan 2026-10-27). */
     put_tag(&g_hooks[6], SEL_UI_PRESENT, (uintptr_t)(mui_present() != 0));

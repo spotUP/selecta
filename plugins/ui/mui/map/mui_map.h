@@ -306,6 +306,18 @@ enum { MUI_STYLE_LIST = 0, MUI_STYLE_GRID, MUI_STYLE_COVERFLOW, MUI_STYLE_COMPAC
 uint32_t mui_style_kind(uint32_t style);
 /* I1473g6: Grid is drawn on the canvas (mui_style_canvas); only Cover Flow and Compact still pack into List rows (mui_style_packed). */
 uint32_t mui_style_canvas(uint32_t style);
+/* I1473g8: the Grid / Cover Flow / List chooser above the Library and Search list (design I1473g section 4, D4; the twin of the desktop
+ * lib_style_name / lib_style_cmd chooser, same words). Fills out[0..2] with the choices the view-style mask offers (a style outside the mask,
+ * Cover Flow on planar, is left out) and returns how many; 0 when the source is not Library (query) or Search. The click sends .cmd through
+ * the engine line path of the View > Style menu. selected: the choice that shows the current style (Grid, Cover Flow, else List). */
+typedef struct {
+    const char* label;
+    const char* icon_key; /* mui_icon_id key */
+    const char* cmd;
+    uint32_t slot; /* 0 Grid, 1 Cover Flow, 2 List: the button index */
+    uint32_t selected;
+} mui_style_choice;
+uint32_t mui_style_chooser(uint32_t source, uint32_t style, uint32_t mask, mui_style_choice out[3]);
 uint32_t mui_style_packed(uint32_t style);
 uint32_t mui_style_cell_chars(uint32_t step);
 uint32_t mui_style_grid_cols(uint32_t list_chars, uint32_t step);

@@ -136,3 +136,30 @@ int32_t mui_style_packed_cursor(uint32_t style, uint32_t cols, int32_t cursor) {
     }
     return kind == MUI_STYLE_GRID ? (int32_t)((uint32_t)cursor / (cols == 0u ? 1u : cols)) : cursor;
 }
+
+/* I1473g8: the chooser table; labels and lines are the desktop's (desktop_ui.c lib_style_name, lib_style_cmd). */
+uint32_t mui_style_chooser(uint32_t source, uint32_t style, uint32_t mask, mui_style_choice out[3]) {
+    static const struct {
+        const char* label;
+        const char* icon_key;
+        const char* cmd;
+        uint32_t style;
+    } k_choice[3] = {{"Grid", "style_grid", "VIEW_STYLE grid", SEL_VIEW_STYLE_GRID},
+                     {"Cover Flow", "style_coverflow", "VIEW_STYLE coverflow", SEL_VIEW_STYLE_COVERFLOW},
+                     {"List", "style_list", "VIEW_STYLE regular", SEL_VIEW_STYLE_REGULAR}};
+    uint32_t i, n = 0, sel = style == SEL_VIEW_STYLE_GRID ? 0u : style == SEL_VIEW_STYLE_COVERFLOW ? 1u : 2u;
+    if (source != SEL_VIEW_QUERY && source != SEL_VIEW_SEARCH) {
+        return 0;
+    }
+    for (i = 0; i < 3u; i++) {
+        if ((mask & SEL_VIEW_STYLE_BIT(k_choice[i].style)) != 0u) {
+            out[n].label = k_choice[i].label;
+            out[n].icon_key = k_choice[i].icon_key;
+            out[n].cmd = k_choice[i].cmd;
+            out[n].slot = i;
+            out[n].selected = i == sel;
+            n++;
+        }
+    }
+    return n;
+}
