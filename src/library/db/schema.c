@@ -339,11 +339,18 @@ static const char SCHEMA_V25[] =
 static const char SCHEMA_V26[] =
     "CREATE TABLE IF NOT EXISTS song_meta_key(key TEXT PRIMARY KEY, meta_key TEXT NOT NULL, route INTEGER NOT NULL) WITHOUT ROWID;";
 
+/* I1465c (design D7a): SID stills scraped before I1468a may show other productions. Drop the stills and their bookkeeping of every album that holds a
+ * DeepSID answer (ds_file, ds_csdb) or the SID rotation marker (dz_more, dz_more2); dz_step finds no cover next play and fetches the own-release stills.
+ * The ds_* answers stay (no refetch), and so do CSDb thumbnail covers and dz_video. Data only: SCHEMA_FINAL is unchanged. */
+static const char SCHEMA_V27[] =
+    "DELETE FROM artwork WHERE (kind IN ('cover', 'dz1', 'dz2', 'dz3', 'dz4', 'dz5', 'dz6', 'dz7', 'dz_key', 'dz_more', 'dz_more2', 'dz_miss'))"
+    " AND album_id IN (SELECT album_id FROM artwork WHERE kind IN ('ds_file', 'ds_csdb', 'dz_more', 'dz_more2'));";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23, SCHEMA_V24, SCHEMA_V25, SCHEMA_V26};
+                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23, SCHEMA_V24, SCHEMA_V25, SCHEMA_V26, SCHEMA_V27};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

@@ -92,6 +92,19 @@ int main(int argc, char** argv) {
     check(n_begin == SEL_LIB_SCHEMA_VERSION - 16 && n_commit == n_begin && n_hook == n_begin, "v16: one transaction per missing version");
     check(n_rollback == 0, "v16: no ROLLBACK");
 
+    /* I1465c: v27 purges the stills of albums holding a DeepSID answer (3 = SID with ds_csdb, 4 = old dz_more only) and nothing else (5 = other still, 6 = thumbnail). */
+    check(sqlite3_exec(db,
+                       "INSERT INTO artwork(album_id, kind, data) VALUES(3,'cover','x'),(3,'dz1','x'),(3,'dz_key','k'),(3,'dz_more2','1'),(3,'ds_csdb','{}'),"
+                       "(4,'cover','x'),(4,'dz_more','1'),(5,'cover','x'),(5,'dz_key','k'),(6,'cover','x'),(6,'dz_key','csdb:1');"
+                       "PRAGMA user_version=26;",
+                       NULL, NULL, NULL) == SQLITE_OK,
+          "seed v26 stills");
+    check(sel_schema_migrate(db, host) == 1, "v26 migrate succeeds");
+    check(sel_schema_version(db) == SEL_LIB_SCHEMA_VERSION, "v26: user_version is current");
+    check(scalar(db, "SELECT count(*) FROM artwork WHERE album_id IN (3,4) AND kind <> 'ds_csdb'") == 0, "v27: SID stills and markers purged");
+    check(scalar(db, "SELECT count(*) FROM artwork WHERE album_id = 3 AND kind = 'ds_csdb'") == 1, "v27: the DeepSID answer stays");
+    check(scalar(db, "SELECT count(*) FROM artwork WHERE album_id IN (5,6)") == 4, "v27: other stills stay");
+
     sqlite3_close(db);
     remove(path);
     if (fails == 0) {
