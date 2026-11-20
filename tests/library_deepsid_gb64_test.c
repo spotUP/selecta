@@ -57,6 +57,15 @@ int main(void) {
     CHECK(sel_deepsid_gb64_id(buf) == 0); /* not a release */
     CHECK(sel_deepsid_gb64_id("{\"application\":\"RELEASE\",\"tags\":[{\"name\":\"Game\"}],\"gb64\":null}") == 0);
 
+    /* the metadata row shows the picked game's name (same pick as the scraper), not the serialized text */
+    {
+        char rows_out[1024];
+        uint32_t rows = 0;
+
+        CHECK(sel_deepsid_rows(game, rows_out, sizeof rows_out, &rows) >= 1);
+        CHECK(strstr(rows_out, "Uridium") != NULL && strstr(rows_out, "a:2:") == NULL && strstr(rows_out, "11606") == NULL && strstr(rows_out, "v2") == NULL);
+    }
+
     if (failures == 0) printf("library_deepsid_gb64_ok\n");
     return failures == 0 ? 0 : 1;
 }

@@ -175,6 +175,8 @@ static void youtube_rows(const char* json, char* out, uint32_t cap, uint32_t* ad
     }
 }
 
+static int gb64_picked(const char* json, sel_gb64_entry* out);
+
 uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* rows) {
     char a[96], b[96], c[96], row[DS_ROW_MAX];
     uint32_t added = 0;
@@ -206,6 +208,11 @@ uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* r
     youtube_rows(json, out, cap, &added);
     a[0] = '\0';
     sel_json_str(json, "gb64", a, sizeof a); /* a JSON null never matches: the scanner wants a quote */
+    {
+        sel_gb64_entry g;
+        /* the picked game's name (same pick as the art scraper); a plain string that is no serialized list stays as sent */
+        if (a[0] != '\0' && gb64_picked(json, &g) > 0) snprintf(a, sizeof a, "%s", g.name);
+    }
     added += (uint32_t)put(out, cap, "GB64 game", a);
     if (rows != NULL) *rows += added;
     return added;
@@ -605,21 +612,16 @@ int sel_deepsid_gb64_pick(const sel_gb64_entry* e, uint32_t n, const char* title
     return e[0].id;
 }
 
-int sel_deepsid_gb64_id(const char* json) {
-    char raw[2048], title[160], stil[1024], app[24];
+/* The gb64 entry that the art scraper (sel_deepsid_gb64_id) and the metadata row both use: the serialized list of the answer, picked on the STIL game title else the file title.
+ * Returns the picked id (0 when absent, null or empty) and fills *out. */
+static int gb64_picked(const char* json, sel_gb64_entry* out) {
+    char raw[2048], title[160], stil[1024];
     sel_gb64_entry e[8];
-    const char *p, *end;
+    const char* p;
     size_t n = 0;
-    int game = 0;
+    uint32_t cnt, i;
+    int id;
 
-    if (json == NULL) return 0;
-    app[0] = '\0';
-    sel_json_str(json, "application", app, sizeof app);
-    p = strstr(json, "\"tags\"");
-    p = p != NULL ? sel_json_value(p + 6) : NULL;
-    end = p != NULL && *p == '[' ? strchr(p, ']') : NULL;
-    for (p = end != NULL ? strstr(p, "\"Game\"") : NULL; p != NULL && p < end; p = strstr(p + 6, "\"Game\"")) game = 1;
-    if (!game || strcmp(app, "RELEASE") != 0) return 0;
     p = strstr(json, "\"gb64\"");
     p = p != NULL ? sel_json_value(p + 6) : NULL;
     if (p == NULL || *p != '"') return 0; /* null or absent */
@@ -632,5 +634,26 @@ int sel_deepsid_gb64_id(const char* json) {
     sel_json_str(json, "title", title, sizeof title);
     sel_json_str(json, "stil", stil, sizeof stil);
     stil_game(stil, stil, sizeof stil); /* in place: the normalised text is never longer */
-    return sel_deepsid_gb64_pick(e, sel_deepsid_gb64_parse(raw, e, 8), stil[0] != '\0' ? stil : title);
+    cnt = sel_deepsid_gb64_parse(raw, e, 8);
+    id = sel_deepsid_gb64_pick(e, cnt, stil[0] != '\0' ? stil : title);
+    for (i = 0; i < cnt; i++)
+        if (e[i].id == id) *out = e[i];
+    return id;
+}
+
+int sel_deepsid_gb64_id(const char* json) {
+    char app[24];
+    sel_gb64_entry e;
+    const char *p, *end;
+    int game = 0;
+
+    if (json == NULL) return 0;
+    app[0] = '\0';
+    sel_json_str(json, "application", app, sizeof app);
+    p = strstr(json, "\"tags\"");
+    p = p != NULL ? sel_json_value(p + 6) : NULL;
+    end = p != NULL && *p == '[' ? strchr(p, ']') : NULL;
+    for (p = end != NULL ? strstr(p, "\"Game\"") : NULL; p != NULL && p < end; p = strstr(p + 6, "\"Game\"")) game = 1;
+    if (!game || strcmp(app, "RELEASE") != 0) return 0;
+    return gb64_picked(json, &e);
 }
