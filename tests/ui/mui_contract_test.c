@@ -3317,6 +3317,7 @@ static void test_metadata_panel(void) {
     CHECK(sel_uim_si_url("see http://a.b/c d", url, sizeof url) == 12u && strcmp(url, "http://a.b/c") == 0, "the URL does not end at the space");
     memset(&m, 0, sizeof m);
     memset(&st, 0, sizeof st);
+    st.ctx_name = ""; /* engine contract: "" when no context, never NULL */
     st.panel = k_panel;
     st.song.path = "modland:pub/modules/RealSID/Chris Huelsbeck/the great giana sisters.rsid";
     n = sel_uim_np_lines(&m, &st, l, SEL_UIM_NP_LINES_MAX);
