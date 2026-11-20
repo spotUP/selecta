@@ -2426,6 +2426,7 @@ static Object* mui_main_group(mui_state* s) {
         int lc = 0;
         mui_screen_size(&sw, &sh, &lc);
         mui_grid_style grid = mui_grid_style_for((int32_t)sw, g_tokens[SEL_GUI_TOKEN_BACKGROUND] | 0xFF000000u, g_tokens[SEL_GUI_TOKEN_SURFACE] | 0xFF000000u, g_tokens[SEL_GUI_TOKEN_ACCENT] | 0xFF000000u);
+        grid.scrim = g_tokens[SEL_GUI_TOKEN_SCRIM] | 0xFF000000u;
         s->grid_edge = grid.edge;
         s->list_base = 1u;
         s->canvas = mui_canvas_new(&grid, g_screen_rtg);

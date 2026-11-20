@@ -67,7 +67,7 @@ static const uint32_t* art_cb(void* ctx, int64_t id) {
 }
 
 static int test_grid(void) {
-    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 64, 8, 8, 24};
+    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 64, 8, 8, 24, 0u};
     mui_tile t[12];
     mui_canvas m;
     uint32_t i, drawn, f = 0;
@@ -158,7 +158,7 @@ static const uint32_t* aga_art(void* ctx, int64_t id) {
 }
 
 static int test_grid_aga(void) {
-    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 32, 4, 4, 12};
+    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 32, 4, 4, 12, 0u};
     static mui_tile t[12];
     static uint8_t buf[200 * 160];
     aga_t a = {buf, 200, 160, 0, 0};
@@ -403,6 +403,47 @@ static int test_grid_art(void) {
     return failures;
 }
 
+static int test_flow(void) {
+    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 64, 8, 8, 24, 0xFF000000u};
+    mui_tile t[7];
+    mui_canvas m;
+    mui_flow_view rest, glide, ref;
+    uint32_t i, drawn;
+    char hex[17], hex2[17];
+    memset(&m, 0, sizeof m);
+    memset(t, 0, sizeof t);
+    for (i = 0; i < 64u * 64u; i++) {
+        g_cover[i] = 0xFF000000u | (i * 2654435761u >> 8);
+    }
+    for (i = 0; i < 7; i++) {
+        t[i].title = g_titles[i];
+        t[i].artist = "Artist";
+        t[i].art_id = i == 3 ? 7 : 0; /* the front cover has art (upscaled), the rest the platform cover */
+    }
+    CHECK(mui_canvas_fit(&m, (sel_gui_rect){0, 0, 480, 320}) == 1, "fit");
+    drawn = mui_canvas_draw_flow(&m, &s, t, 7, 3 << 16, art_cb, NULL, &rest);
+    mui_flow_layout(&s, 480, 320, 3 << 16, 7, &ref);
+    CHECK(drawn == 7u && rest.n == 7u && m.draws == 1u, "drew %u of 7, draws %u", (unsigned)drawn, (unsigned)m.draws);
+    CHECK(memcmp(rest.cv, ref.cv, sizeof rest.cv) == 0 && rest.big == ref.big, "draw layout equals mui_flow_layout");
+    CHECK(rest.cv[6].g == 3u && rest.cv[6].sz == rest.big && rest.cv[6].alpha == 0, "front cover last, full size, no scrim");
+    CHECK(rest.cv[0].alpha == 150 && rest.cv[0].sz >= rest.big * 4 / 10 && rest.cv[0].sz <= rest.big * 4 / 10 + 1, "far cover scrim %d size %d (big %d)", (int)rest.cv[0].alpha, (int)rest.cv[0].sz, (int)rest.big);
+    CHECK(rest.caption.x == rest.cv[6].x && rest.caption.w == rest.big && rest.caption.y == rest.cv[6].y + rest.big + 2 && rest.caption.h == 24,
+          "caption sits under the front cover: %d,%d %dx%d", (int)rest.caption.x, (int)rest.caption.y, (int)rest.caption.w, (int)rest.caption.h);
+    CHECK(rest.cv[6].x + rest.big / 2 == 240, "front cover centred");
+    sel_gui_hash_hex(sel_gui_hash(&m.c), hex);
+    mui_canvas_draw_flow(&m, &s, t, 7, 3 << 16, art_cb, NULL, NULL);
+    sel_gui_hash_hex(sel_gui_hash(&m.c), hex2);
+    CHECK(strcmp(hex, hex2) == 0 && strcmp(hex, MUI_FLOW_GOLDEN) == 0, "rest hash %s, again %s, golden %s", hex, hex2, MUI_FLOW_GOLDEN);
+    mui_canvas_draw_flow(&m, &s, t, 7, (3 << 16) + 32768, art_cb, NULL, &glide);
+    sel_gui_hash_hex(sel_gui_hash(&m.c), hex2);
+    CHECK(strcmp(hex2, hex) != 0 && glide.n == 7u && strcmp(hex2, MUI_FLOW_GLIDE_GOLDEN) == 0, "glide hash %s, golden %s", hex2, MUI_FLOW_GLIDE_GOLDEN);
+    CHECK(glide.cv[glide.n - 1u].x != rest.cv[6].x || glide.cv[glide.n - 1u].g != rest.cv[6].g, "mid-glide front cover moved");
+    CHECK(mui_flow_glide_q16(0) == 0 && mui_flow_glide_q16(220) == 65536 && mui_flow_glide_q16(110) > 32768 && mui_flow_glide_q16(110) < 65536, "ease out: 110 ms is %d", (int)mui_flow_glide_q16(110));
+    CHECK(mui_flow_glides(1) == 1 && mui_flow_glides(0) == 0, "glide on 040/060 only (D-F2)");
+    mui_canvas_release(&m);
+    return failures;
+}
+
 int main(int argc, char** argv) {
     int r = 1;
     if (argc > 1 && strcmp(argv[1], "geom") == 0) {
@@ -417,6 +458,8 @@ int main(int argc, char** argv) {
         r = test_tiles();
     } else if (argc > 1 && strcmp(argv[1], "art-path") == 0) {
         r = test_art_path();
+    } else if (argc > 1 && strcmp(argv[1], "flow") == 0) {
+        r = test_flow();
     } else if (argc > 1 && strcmp(argv[1], "art") == 0) {
         r = test_grid_art();
     }

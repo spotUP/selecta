@@ -18,6 +18,7 @@
 #include <clib/muimaster_protos.h>
 #include <inline/macros.h>
 #include "amiga/p96_write.h"
+#include <exec/execbase.h>
 #include <proto/exec.h>
 #include "mui_gfxbase.h"
 #include <proto/intuition.h>
@@ -65,12 +66,33 @@ typedef struct canvas_data {
     uint32_t q_head, q_n;
     ULONG click_s, click_m; /* time of the last left click and its tile, for the double click */
     int32_t click_tile;
+    /* I1473g8b2: Cover Flow on RTG. glide_from is the 16.16 centre the glide starts at; glide_ms0 the start in ms (0 = at rest). */
+    int flow, glides;
+    int64_t glide_from;
+    uint32_t glide_ms0;
+    mui_flow_view fv; /* the layout of the last flow draw (hit tests and captions) */
 } canvas_data;
 
 /* Build-time guard: BOOPSI keeps the instance size in a UWORD (cl_InstSize). */
 typedef char canvas_data_fits_uword[(sizeof(canvas_data) < 65536u) ? 1 : -1];
 
 static struct MUI_CustomClass* g_class;
+
+static uint32_t canvas_now_ms(void) {
+    ULONG sec, mic;
+    CurrentTime(&sec, &mic);
+    return (uint32_t)(sec * 1000UL + mic / 1000UL);
+}
+
+/* The fractional centre now: the cursor at rest, else gliding from glide_from (the Mac I400 rule, shared sel_uim_flow_centre_q16). */
+static int64_t canvas_flow_centre(const canvas_data* d, int* gliding) {
+    int32_t g = 65536;
+    if (d->glides && d->glide_ms0 != 0u) {
+        g = mui_flow_glide_q16(canvas_now_ms() - d->glide_ms0);
+    }
+    *gliding = g < 65536;
+    return sel_uim_flow_centre_q16(d->glide_from, d->cursor, g);
+}
 
 void mui_canvas_push(struct Library* p96, const uint32_t* px, int32_t w, int32_t h, struct RastPort* rp, int32_t dx, int32_t dy) {
     struct p96_render_info ri;
@@ -369,6 +391,34 @@ static void canvas_draw_grid_aga(Object* obj, canvas_data* d) {
     canvas_captions(obj, d);
 }
 
+/* I1473g8b2: the front cover's title (text pen) and artist (shadow pen), each centred in the caption block with TextFit. */
+static void canvas_flow_captions(Object* obj, const canvas_data* d) {
+    struct RastPort* rp = _rp(obj);
+    LONG h = (LONG)rp->TxHeight, base = (LONG)rp->TxBaseline;
+    const mui_tile* t;
+    const char* line[2];
+    uint32_t k;
+    if (d->tiles == NULL || d->cursor >= d->n || d->fv.caption.h <= 0 || _dri(obj) == NULL) {
+        return;
+    }
+    t = &d->tiles[d->cursor];
+    line[0] = t->title;
+    line[1] = t->artist;
+    SetDrMd(rp, JAM1);
+    for (k = 0; k < 2u; k++) {
+        struct TextExtent te;
+        LONG len = line[k] != NULL ? (LONG)strlen(line[k]) : 0, fit, w;
+        if (len == 0) {
+            continue;
+        }
+        fit = (LONG)TextFit(rp, (CONST_STRPTR)line[k], (ULONG)len, &te, NULL, 1, (LONG)d->fv.caption.w, h + 2);
+        w = (LONG)te.te_Extent.MaxX - (LONG)te.te_Extent.MinX + 1;
+        SetAPen(rp, _dri(obj)->dri_Pens[k == 0u ? TEXTPEN : SHADOWPEN]);
+        Move(rp, _mleft(obj) + d->fv.caption.x + (d->fv.caption.w - w) / 2, _mtop(obj) + d->fv.caption.y + (LONG)k * h + base);
+        Text(rp, (CONST_STRPTR)line[k], (ULONG)fit);
+    }
+}
+
 static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     canvas_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
@@ -406,6 +456,18 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
             }
             mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
             canvas_label(obj, d);
+            return 0;
+        }
+        if (d->flow && d->tiles != NULL) { /* I1473g8b2: Cover Flow; a mid-glide frame keeps the redraw tick alive (mui_canvas_flow_tick) */
+            int gliding;
+            int64_t c = canvas_flow_centre(d, &gliding);
+            d->style.caption = 2 * (int32_t)_rp(obj)->TxHeight + 2;
+            mui_canvas_draw_flow(d->mc, &d->style, d->tiles, d->n, c, d->art, d->art_ctx, &d->fv);
+            mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
+            canvas_flow_captions(obj, d);
+            if (!gliding) {
+                d->glide_ms0 = 0u;
+            }
             return 0;
         }
         d->style.caption = d->tiles != NULL ? 2 * (int32_t)_rp(obj)->TxHeight + 2 : 0; /* two caption lines of the window font */
@@ -593,6 +655,13 @@ void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_
     int same = d->sig_set && sig == d->sig && tiles == d->tiles;
     d->sig = sig;
     d->sig_set = 1;
+    if (d->flow && cursor != d->cursor && tiles != NULL) { /* a key mid-glide starts where the covers are (I400); steps on 020/030 */
+        int gliding;
+        d->glide_from = canvas_flow_centre(d, &gliding);
+        d->glide_ms0 = d->glides ? canvas_now_ms() : 0u;
+    } else if (d->flow && d->glide_ms0 == 0u) {
+        d->glide_from = (int64_t)cursor << 16;
+    }
     d->tiles = tiles;
     d->n = n;
     d->cursor = cursor;
@@ -601,6 +670,24 @@ void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_
     if (!same) { /* I1473g4: redraw only on a signature change; art arrival is the caller's mui_canvas_invalidate */
         MUI_Redraw(obj, MADF_DRAWOBJECT);
     }
+}
+
+void mui_canvas_set_flow(Object* obj, int on) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    d->flow = on != 0;
+    d->glides = on != 0 && mui_flow_glides((SysBase->AttnFlags & AFF_68040) != 0); /* D-F2: 68040/68060 glide, 68020/68030 step */
+    d->glide_ms0 = 0u;
+    d->glide_from = (int64_t)d->cursor << 16;
+    d->sig_set = 0;
+}
+
+int mui_canvas_flow_tick(Object* obj) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    if (!d->flow || d->glide_ms0 == 0u) {
+        return 0;
+    }
+    MUI_Redraw(obj, MADF_DRAWOBJECT);
+    return 1;
 }
 
 void mui_canvas_invalidate(Object* obj) {
@@ -643,7 +730,7 @@ void mui_canvas_class_free(void) {
 }
 
 Object* mui_canvas_cover_new(int screen_is_rtg) {
-    static const mui_grid_style none = {0u, 0u, 0u, 0, 0, 0, 0};
+    static const mui_grid_style none = {0u, 0u, 0u, 0, 0, 0, 0, 0u};
     Object* o = mui_canvas_new(&none, screen_is_rtg);
     if (o != NULL) {
         ((canvas_data*)INST_DATA(g_class->mcc_Class, o))->single = 1;
