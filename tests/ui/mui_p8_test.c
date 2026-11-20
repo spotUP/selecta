@@ -821,6 +821,33 @@ static sel_message src_event(const sel_tag* t) {
     return m;
 }
 
+/* I1481b: Sync Sources of the empty-library search (MUI): one LIBRARY_SYNC per switched-on syncable source, none for local or switched-off rows. */
+static void test_search_actions(void) {
+    static const sel_tag loc[] = {{SEL_SRC_KEY, (uintptr_t) "local"}, {SEL_SRC_KIND, (uintptr_t) "local"}, {SEL_SRC_NAME, (uintptr_t) "Library"}, {SEL_SRC_PATH, (uintptr_t) "/music"}, {SEL_SRC_ENABLED, 1}, {SEL_TAG_END, 0}};
+    static const sel_tag rem[] = {{SEL_SRC_KEY, (uintptr_t) "modland"}, {SEL_SRC_KIND, (uintptr_t) "remote"}, {SEL_SRC_NAME, (uintptr_t) "Modland"}, {SEL_SRC_PATH, (uintptr_t) "https://m"},
+                                  {SEL_SRC_ENABLED, 1}, {SEL_SRC_SYNCABLE, 1}, {SEL_TAG_END, 0}};
+    static const sel_tag off[] = {{SEL_SRC_KEY, (uintptr_t) "hvsc"}, {SEL_SRC_KIND, (uintptr_t) "remote"}, {SEL_SRC_NAME, (uintptr_t) "HVSC"}, {SEL_SRC_PATH, (uintptr_t) "https://h"},
+                                  {SEL_SRC_ENABLED, 0}, {SEL_SRC_SYNCABLE, 1}, {SEL_TAG_END, 0}};
+    static mui_srcs m;
+    const sel_tag* rows[3];
+    sel_message ev;
+    fake_engine e;
+    uint32_t i;
+    rows[0] = loc;
+    rows[1] = rem;
+    rows[2] = off;
+    memset(&m, 0, sizeof m);
+    memset(&e, 0, sizeof e);
+    mui_srcs_asked(&m);
+    for (i = 0; i < 3u; i++) {
+        ev = src_event(rows[i]);
+        mui_srcs_event(&m, &ev);
+    }
+    CHECK(mui_srcs_sync_all(&m, fake_send, &e) == 1u, "Sync Sources started the wrong number of sources");
+    CHECK(e.n == 2u && strcmp(e.lines[0], "LIBRARY_SYNC modland \"https://m\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "Sync Sources lines '%s'", e.lines[0]);
+    CHECK(sel_uim_search_action(SEL_UIM_SEARCH_ACT_SYNC_SOURCES) == 2u, "Sync Sources key");
+}
+
 static void test_library_pages(void) {
     static const sel_tag loc[] = {{SEL_SRC_KEY, (uintptr_t) "local"}, {SEL_SRC_KIND, (uintptr_t) "local"}, {SEL_SRC_NAME, (uintptr_t) "Library"}, {SEL_SRC_PATH, (uintptr_t) "/music"}, {SEL_SRC_ENABLED, 1}, {SEL_TAG_END, 0}};
     static const sel_tag rem[] = {{SEL_SRC_KEY, (uintptr_t) "modland"}, {SEL_SRC_KIND, (uintptr_t) "remote"}, {SEL_SRC_NAME, (uintptr_t) "Modland"}, {SEL_SRC_PATH, (uintptr_t) "https://m"},
@@ -948,6 +975,8 @@ int main(int argc, char** argv) {
         test_library_pages();
     } else if (strcmp(argv[1], "panels") == 0) {
         test_panels();
+    } else if (strcmp(argv[1], "search-actions") == 0) {
+        test_search_actions();
     } else if (strcmp(argv[1], "sources") == 0) {
         test_sources();
     } else if (strcmp(argv[1], "infoline") == 0) {
