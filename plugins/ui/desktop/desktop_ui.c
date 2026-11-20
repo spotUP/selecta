@@ -3800,7 +3800,7 @@ static void acct_open(desk* d, const char* why) {
     snprintf(d->acct_error, sizeof d->acct_error, "%s", why != NULL ? why : "");
     d->dlg_open = DLG_ACCOUNT;
     d->dlg_opens++;
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* I1472: a live turn presents only a dirty model; repaint alone drew the dialog on the next mouse move */
 }
 
 static void acct_close(desk* d) {
@@ -3841,7 +3841,7 @@ static void acct_submit(desk* d) {
     } else {
         snprintf(d->acct_error, sizeof d->acct_error, "A request is already running.");
     }
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
 static void acct_follow(desk* d) {
@@ -3862,7 +3862,7 @@ static void acct_follow(desk* d) {
         }
         desk_toast(d, d->acct_signup ? "Account created, logged in" : "Logged in");
     }
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
@@ -3912,12 +3912,12 @@ static int acct_pointer(desk* d, const sel_gui_input* ev) {
     } else if (d->acct_user[0] == '\0' && in_rect(acct_toggle_rect(d), ev->x, ev->y)) {
         d->acct_signup = !d->acct_signup;
         d->acct_error[0] = '\0';
-        d->repaint = 1;
+        d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     } else {
         for (i = 0; i < 2; i++) {
             if (in_rect(acct_field_rect(d, i), ev->x, ev->y)) {
                 d->acct_field = i;
-                d->repaint = 1;
+                d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             }
         }
     }
@@ -3938,7 +3938,7 @@ static int acct_key(desk* d, const sel_gui_input* ev) {
             (void)field_edit(d, d->acct_pass, &d->acct_pass_len, sizeof d->acct_pass, 0, NULL, ev);
         }
     }
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     return 1;
 }
 
@@ -9341,6 +9341,10 @@ static const char* library_dump_build(desk* d) {
         uint32_t k;
         o = dump_put(d, o, "account user=%s open=%d busy=%d clicks=%u avatar=%d,%d,%d,%d error=%s\n", d->acct_user, d->dlg_open == DLG_ACCOUNT, d->acct_busy,
                      d->acct_clicks, acct_avatar_rect(d).x, acct_avatar_rect(d).y, acct_avatar_rect(d).w, acct_avatar_rect(d).h, d->acct_error);
+        o = dump_put(d, o, "acctform signup=%d field=%d namelen=%u passlen=%u toggle=%d,%d,%d,%d f0=%d,%d,%d,%d f1=%d,%d,%d,%d\n", d->acct_signup, d->acct_field,
+                     (unsigned)d->acct_name_len, (unsigned)d->acct_pass_len, acct_toggle_rect(d).x, acct_toggle_rect(d).y, acct_toggle_rect(d).w, acct_toggle_rect(d).h,
+                     acct_field_rect(d, 0).x, acct_field_rect(d, 0).y, acct_field_rect(d, 0).w, acct_field_rect(d, 0).h,
+                     acct_field_rect(d, 1).x, acct_field_rect(d, 1).y, acct_field_rect(d, 1).w, acct_field_rect(d, 1).h); /* I1472: the form's state and hit rects */
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u open_fail_toasts=%u open_fail_text=\"%s\" toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
