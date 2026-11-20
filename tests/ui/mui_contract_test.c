@@ -3314,7 +3314,7 @@ static void test_account(void) {
         return;
     }
     for (i = 0; i < sizeof need / sizeof need[0]; i++) {
-        CHECK(strstr(src, need[i]) != NULL, need[i]);
+        CHECK(strstr(src, need[i]) != NULL, "%s", need[i]);
     }
 }
 
