@@ -88,6 +88,22 @@ uint32_t mui_srcs_row(const mui_srcs* m, uint32_t i, char* out, size_t cap) {
     return (uint32_t)snprintf(out, cap, "%-24.24s  %s", m->it[i].name, state);
 }
 
+/* I1482: the source page status row, the desktop col_src_status + draw_col_src: the page key is the source id up to US/RS (a drill key). */
+uint32_t mui_srcs_page(const mui_srcs* m, const char* key, char* out, size_t cap, int* sync_on) {
+    size_t len = strcspn(key, "\x1f\x1e");
+    uint32_t i;
+    *sync_on = 0;
+    for (i = 0; i < m->n; i++) {
+        if (strlen(m->it[i].key) == len && strncmp(m->it[i].key, key, len) == 0) {
+            sel_uim_src_status(&m->it[i], (m->pending & (1u << i)) != 0u, (m->failed & (1u << i)) != 0u, (int64_t)time(NULL), out, cap);
+            *sync_on = sel_uim_src_syncable(&m->it[i]) && m->it[i].enabled;
+            return i;
+        }
+    }
+    snprintf(out, cap, "Not a registered source");
+    return m->n;
+}
+
 static void fill(const mui_srcs* m, sel_uim_source* s) {
     uint32_t k;
     for (k = 0; k < m->n; k++) {

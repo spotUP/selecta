@@ -871,6 +871,12 @@ static void test_library_pages(void) {
     CHECK(strstr(row, "Modland") != NULL && strstr(row, "Remote, never synced") != NULL, "remote row text '%s'", row);
     mui_srcs_row(&m, 0, row, sizeof row);
     CHECK(strstr(row, "Library") != NULL && strstr(row, "Local, switched on") != NULL, "local row text '%s'", row);
+    { /* I1482: the source page status row; a drill key (source US path) finds its source, an unsynced remote offers Sync */
+        int sync_on = -1;
+        CHECK(mui_srcs_page(&m, "modland\x1f" "Formats", row, sizeof row, &sync_on) == 1u && sync_on == 1 && strcmp(row, "Remote, never synced") == 0, "source page row '%s'", row);
+        CHECK(mui_srcs_page(&m, "local", row, sizeof row, &sync_on) == 0u && sync_on == 0, "local page offers Sync");
+        CHECK(mui_srcs_page(&m, "mod", row, sizeof row, &sync_on) == m.n && sync_on == 0 && strcmp(row, "Not a registered source") == 0, "prefix matched '%s'", row);
+    }
     memset(&e, 0, sizeof e);
     CHECK(mui_srcs_sync(&m, 0, fake_send, &e) == 0u && e.n == 0u, "local row synced");
     CHECK(mui_srcs_sync(&m, 1, fake_send, &e) == 2u && strcmp(e.lines[0], "LIBRARY_SYNC modland \"https://m\"") == 0 && strcmp(e.lines[1], "SOURCES") == 0, "Sync lines '%s'", e.lines[0]);
