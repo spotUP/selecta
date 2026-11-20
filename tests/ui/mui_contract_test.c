@@ -1098,13 +1098,35 @@ static void test_src_row(void) {
     const char* src = ui_source();
     char body[8000];
     CHECK(fn_body(src, "static Object* mui_facet_row_group(", body, sizeof body) != NULL, "mui_facet_row_group not found");
-    CHECK(strstr(body, "DoMethod(s->src_row, OM_ADDMEMBER, s->src_btn[k]);") != NULL && strstr(body, "DoMethod(s->facet_row, OM_ADDMEMBER, s->src_btn[k]);") == NULL,
-          "the From chips are not on their own row");
+    CHECK(strstr(body, "DoMethod(s->src_line[l], OM_ADDMEMBER, s->src_btn[l][k]);") != NULL && strstr(body, "DoMethod(s->src_row, OM_ADDMEMBER, s->src_line[l]);") != NULL &&
+              strstr(body, "DoMethod(s->facet_row, OM_ADDMEMBER, s->src_btn") == NULL,
+          "the From chips are not on their own wrap lines");
+    /* I1463c: full names (fit chips, no fixed "From" widest) that wrap like the Mac instead of truncating in one row */
+    CHECK(strstr(body, "mui_make_button_ex(\"From\", NULL,") != NULL && strstr(body, "mui_make_button_ex(\"From\", \"From\",") == NULL,
+          "the From chips are not sized to their full names");
     CHECK(strstr(body, "DoMethod(chip_row, OM_ADDMEMBER, s->facet_btn[k]);") != NULL, "the facet chips are not on the chip row");
     CHECK(strstr(body, "DoMethod(fchip_row, OM_ADDMEMBER, s->fchip_btn[k]);") != NULL, "the Format/Channels/Publisher chips are not on their own row");
     CHECK(fn_body(src, "static void mui_src_chips_sync(", body, sizeof body) != NULL && strstr(body, "MUIM_Group_InitChange") != NULL &&
               strstr(body, "set(s->src_row, MUIA_ShowMe,") != NULL,
           "mui_src_chips_sync does not relayout the From row inside InitChange");
+    CHECK(strstr(body, "sel_uim_chips_flow(") != NULL && strstr(body, "_mwidth(pane)") != NULL && strstr(body, "set(s->src_line[l], MUIA_ShowMe,") != NULL &&
+              strstr(body, "(int)l == at") != NULL,
+          "mui_src_chips_sync does not wrap the From chips by the shared flow rule in the pane width");
+    {
+        /* six From chips at RTG widths in the 454 px pane: two lines, every line inside the pane, order kept */
+        static const int32_t cw[6] = {120, 148, 140, 110, 90, 130};
+        int32_t x[6], row[6], end[3] = {0, 0, 0};
+        int32_t rows = sel_uim_chips_flow(cw, 6u, 8, 454, x, row);
+        uint32_t k;
+        CHECK(rows == 2 && strstr(src, "#define MUI_SRC_LINES 3 ") != NULL, "six From chips do not wrap onto two of the three lines in a 454 px pane");
+        for (k = 0; k < 6u; k++) {
+            if (row[k] >= 0 && row[k] < 3) {
+                end[row[k]] = x[k] + cw[k];
+            }
+            CHECK(k == 0u || row[k] >= row[k - 1u], "the From wrap breaks chip order");
+        }
+        CHECK(end[0] <= 454 && end[1] <= 454, "a From line passes the pane width");
+    }
 }
 
 static void test_list_drill(void) {
