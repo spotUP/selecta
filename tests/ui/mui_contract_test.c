@@ -2851,6 +2851,9 @@ static void test_newfolder(void) {
           "Add Folder menu item, drawer requester or dispatch missing");
     CHECK(strstr(src, "mui_drop_send(g_drop_state, path, is_dir)") != NULL && strstr(src, "mui_drop_send(s, (const char*)fr->fr_Drawer, 1)") != NULL,
           "Add Folder does not share mui_drop_send with the drop hook");
+    /* I1473h2: the Folders page header Add Folder button (not a toolbar slot) sends CTL_ADD_FOLDER and shows only on SEL_VIEW_FOLDERS */
+    CHECK(strstr(src, "mui_make_button_w(\"Add Folder\", \"Add Folder\", CTL_ADD_FOLDER, 0)") != NULL && strstr(src, "s->addfolder_row, MUIA_ShowMe, v->source == (uint32_t)SEL_VIEW_FOLDERS") != NULL,
+          "Folders page Add Folder header button or its SEL_VIEW_FOLDERS ShowMe missing");
     g_sent = 0;
     CHECK(mui_viewbtn_fire(0, "", 9u, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "FOLDER_ADD \"New Folder\" 9") == 0, "fire sent '%s'", g_sent_line);
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
