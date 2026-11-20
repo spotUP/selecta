@@ -127,6 +127,30 @@ sel_gui_rect mui_grid_tile_rect(const mui_grid_style* s, int32_t width, uint32_t
     return r;
 }
 
+/* I1473m: the Mac twin cover_radius() (plugins/ui/desktop/desktop_ui.c): the large card radius from 96 px up, else the small one, from the
+ * same default tokens. shortcut: the default tokens, not the user theme, because the MUI class has no theme; upgrade with a theme token feed. */
+static int32_t mui_cover_radius(int32_t edge) {
+    int32_t r = (int32_t)sel_gui_token_default(edge >= 96 ? SEL_GUI_TOKEN_RADIUS_LARGE : SEL_GUI_TOKEN_RADIUS);
+    return r > edge / 2 ? edge / 2 : r;
+}
+
+/* I1473m: rounds the four corners of `r` after a generated cover drew, by repainting the pixels outside the quarter circle with the
+ * card colour `bg`: integer only, no alpha, a few dozen stores per cover (the 68020 cost of the blit stays). */
+static void mui_round_corners(sel_gui_canvas* c, sel_gui_rect r, int32_t rad, uint32_t bg) {
+    int32_t y, x;
+    for (y = 0; y < rad; y++) {
+        for (x = 0; x < rad; x++) {
+            int32_t dx = rad - x, dy = rad - y; /* pixel centre to the arc centre, doubled below */
+            if ((2 * dx - 1) * (2 * dx - 1) + (2 * dy - 1) * (2 * dy - 1) > 4 * rad * rad) {
+                sel_gui_fill_rect(c, (sel_gui_rect){r.x + x, r.y + y, 1, 1}, bg);
+                sel_gui_fill_rect(c, (sel_gui_rect){r.x + r.w - 1 - x, r.y + y, 1, 1}, bg);
+                sel_gui_fill_rect(c, (sel_gui_rect){r.x + x, r.y + r.h - 1 - y, 1, 1}, bg);
+                sel_gui_fill_rect(c, (sel_gui_rect){r.x + r.w - 1 - x, r.y + r.h - 1 - y, 1, 1}, bg);
+            }
+        }
+    }
+}
+
 uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, uint32_t cursor,
                               mui_art_fn art, void* art_ctx) {
     uint32_t i, drawn = 0u;
@@ -148,9 +172,10 @@ uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_
             px = art(art_ctx, tiles[i].art_id);
         }
         if (px != NULL) {
-            sel_gui_blit_image(&m->c, ar, px, s->edge, s->edge, s->edge, 0);
+            sel_gui_blit_image_round(&m->c, ar, px, s->edge, s->edge, s->edge, mui_cover_radius(s->edge));
         } else {
             mui_platform_cover(&m->c, ar, tiles[i].kind, tiles[i].format, tiles[i].title);
+            mui_round_corners(&m->c, ar, mui_cover_radius(s->edge), s->tile);
         }
         sel_gui_dirty_add(&m->c, t);
         drawn++;
