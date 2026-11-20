@@ -744,6 +744,7 @@ uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx); 
 uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_srcs_sync_all(mui_srcs* m, mui_send_fn send, void* ctx); /* I1481b: Sync Sources of the empty-library search: mui_srcs_sync of every row; the count started */   /* 0 unless the row is a switched-on syncable remote */
 uint32_t mui_srcs_open(const mui_srcs* m, uint32_t i, char* key, size_t kcap, char* name, size_t ncap); /* I1442b: the source id and name Open routes with; 0 for no row */
+uint32_t mui_srcs_page(const mui_srcs* m, const char* key, char* out, size_t cap, int* sync_on); /* I1482: a source page's row index (m->n: none), status text, Sync shown */
 
 /* I1182: the first-start sync offer window, the desktop's nag dialog (nagdlg_*) on the shared sel_uim_offer model. It opens once per
  * launch when the SOURCES rows hold a due source; one check per due source, all ticked; Sync sends what the desktop's Sync now sends

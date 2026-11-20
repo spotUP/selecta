@@ -219,6 +219,11 @@ typedef struct mui_state {
     Object* col_artist;             /* the Artist link of an album page (META_ARTIST) */
     Object* col_tag;                /* I1440n3: the Tag button, "Tag" or "Tag: <name>", shown when the page has DeepSID tags */
     char col_tag_buf[96];           /* the caption col_tag shows now */
+    Object* col_src_row;            /* I1482: a source page status row, the desktop draw_col_src: status text plus Sync */
+    Object* col_src_text;
+    Object* col_src_sync;
+    char col_src_buf[96];
+    uint32_t col_src_gen;           /* srcs.gen the row shows */
     Object* col_title;
     Object* col_meta;
     Object* col_about_grp;          /* I1440q: the composer page's DeepSID header: one label / value row per about line, shown while it has a line */
@@ -740,6 +745,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
 #define CTL_COL_CRUMB_BASE 0x2AE0L /* I1442b: the drill page crumb buttons, CTL_COL_CRUMB_BASE + i (up to 4) */
 #define CTL_STYLE_BASE 0x2AECL     /* I1473g8: the Grid / Cover Flow / List chooser, CTL_STYLE_BASE + slot (0..2) */
+#define CTL_COL_SRC_SYNC 0x2AE4L   /* I1482: the source page Sync button */
 #define CTL_COL_FIND 0x2AE8L       /* I1442b: the drill page find field changed (debounced in mui_drill_find_tick) */
 #define CTL_SRC_OPEN 0x2AC7L       /* I1442b: the Sources page Open button (opens the picked source's drill root) */
 #define CTL_ACCT_OPEN 0x2815L   /* I1469m: the top bar Log In / account button (the Mac avatar) */
@@ -2077,6 +2083,16 @@ static Object* mui_col_page_group(mui_state* s) {
     mui_find_live_notify(s->col_find);
     DoMethod(g, OM_ADDMEMBER, s->col_crumb_grp);
     DoMethod(g, OM_ADDMEMBER, s->col_meta);
+    s->col_src_buf[0] = '\0';
+    s->col_src_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE); /* I1482 */
+    s->col_src_text = mui_aatext(s->col_src_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
+    s->col_src_sync = mui_make_button_w("Sync", "tile", CTL_COL_SRC_SYNC, 0);
+    if (s->col_src_row == NULL || s->col_src_text == NULL || s->col_src_sync == NULL) {
+        return NULL;
+    }
+    DoMethod(s->col_src_row, OM_ADDMEMBER, s->col_src_text);
+    DoMethod(s->col_src_row, OM_ADDMEMBER, s->col_src_sync);
+    DoMethod(g, OM_ADDMEMBER, s->col_src_row);
     s->col_about_grp = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (s->col_about_grp == NULL) {
         return NULL;
@@ -3388,6 +3404,22 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
             set(s->nav_fwd, MUIA_Disabled, fwd_off);
         }
     }
+    ULONG chg = 0;
+    if (col && (pg->serial != s->col_serial || (pg->kind == (uint32_t)SEL_LIB_ITEM_SOURCE && s->srcs.gen != s->col_src_gen))) {
+        /* I1482: one relayout for every ShowMe below; unbatched, each one relaid the scroll page and left areas blank until hover */
+        GetAttr(MUIA_Parent, s->col_page, &chg);
+        if (chg != 0) {
+            DoMethod((Object*)chg, MUIM_Group_InitChange);
+        }
+        s->col_src_gen = s->srcs.gen;
+        if (pg->kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* the desktop col_src_status + Sync; no dialog on the row click */
+            int on;
+            mui_srcs_page(&s->srcs, pg->key, s->col_src_buf, sizeof s->col_src_buf, &on);
+            mui_text_set(s->col_src_text, s->col_src_buf);
+            set(s->col_src_sync, MUIA_ShowMe, on ? TRUE : FALSE);
+        }
+        set(s->col_src_row, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? TRUE : FALSE);
+    }
     if (col && pg->serial != s->col_serial) {
         s->col_serial = pg->serial;
         snprintf(s->col_title_buf, sizeof s->col_title_buf, "%s", pg->title);
@@ -3454,6 +3486,9 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
             mui_caption_set(s->col_tag, s->col_tag_buf);
         }
         set(s->col_tag, MUIA_ShowMe, show ? TRUE : FALSE);
+    }
+    if (chg != 0) {
+        DoMethod((Object*)chg, MUIM_Group_ExitChange);
     }
     if (col && s->drl_find_due != 0u && (int32_t)(mui_now_ms() - s->drl_find_due) >= 0 && mui_col_groups(pg)) { /* I1442b: the debounced filter */
         char text[160];
@@ -5263,6 +5298,13 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id == CTL_OPEN_CANCEL) { /* I1415 */
         (void)mui_engine_line(s, "CANCEL_OPEN");
+    } else if (id == CTL_COL_SRC_SYNC) { /* I1482: the source page Sync, the desktop col_src_click */
+        const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
+        char tx[96];
+        int on;
+        if (pg != NULL) {
+            mui_srcs_sync(&s->srcs, mui_srcs_page(&s->srcs, pg->key, tx, sizeof tx, &on), mui_p8_send, s);
+        }
     } else if (id == CTL_SRC_SYNC) {
         if (s->src_pick >= 0) {
             mui_srcs_sync(&s->srcs, (uint32_t)s->src_pick, mui_p8_send, s);
