@@ -680,6 +680,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_VOLUME 0x2101L
 #define CTL_LIST_DBL 0x2110L
 #define CTL_LIST_SEL 0x2111L
+#define CTL_GRID_IN 0x2112L /* I1473g7: a key, wheel notch or click on the cover canvas, queued by the canvas class */
 #define CTL_NAV_BACK 0x2801L   /* I794: top bar Back */
 #define CTL_NAV_FWD 0x2802L    /* I794: top bar Forward */
 #define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
@@ -2396,6 +2397,8 @@ static Object* mui_main_group(mui_state* s) {
         s->canvas = mui_canvas_new(&grid, g_screen_rtg);
         if (s->canvas != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->canvas);
+            mui_canvas_input_set(s->canvas, (ULONG)CTL_GRID_IN);
+            set(s->canvas, MUIA_ContextMenu, (ULONG)mui_song_context_menu()); /* right click on a tile: the Song menu on the cursor tile */
         }
     }
     return g;
@@ -4171,6 +4174,45 @@ static void mui_palette_choose(mui_state* s, long row) {
     }
 }
 
+/* I1473g7: one queued canvas input (arrows, wheel, Enter, click, double click) as the engine lines the desktop sends: VIEW_CURSOR
+ * relative or absolute, VIEW_ACTIVATE, and an album, artist or composer tile routes to its page (sel_uim_tile_route, as the text UI). */
+static void mui_grid_input_fire(mui_state* s, const mui_grid_input* in) {
+    const sel_view_state* v = sel_engine_state(s->engine)->view;
+    char line[32];
+    int32_t row;
+    if (v == NULL) {
+        return;
+    }
+    if (in->kind == MUI_GIN_MOVE) {
+        snprintf(line, sizeof line, "VIEW_CURSOR %c%u", in->arg < 0 ? '-' : '+', (unsigned)(in->arg < 0 ? -in->arg : in->arg));
+        mui_engine_line(s, line);
+        return;
+    }
+    if (in->kind == MUI_GIN_PICK || in->kind == MUI_GIN_OPEN) {
+        row = mui_grid_tile_row(v, (uint32_t)in->arg);
+        if (row < 0) {
+            return;
+        }
+        snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(v->window_start + (uint32_t)row));
+        mui_engine_line(s, line);
+        if (in->kind == MUI_GIN_PICK) {
+            return;
+        }
+    } else if (v->cursor < v->window_start || v->cursor - v->window_start >= v->row_n) {
+        return;
+    } else {
+        row = (int32_t)(v->cursor - v->window_start);
+    }
+    {
+        sel_uim_tile t;
+        if (sel_uim_tile_route(&v->rows[row], &t) && mui_route_click(&s->route, SEL_ROUTE_HOME_TILE, t.kind, t.id, t.key, t.name, t.sub, mui_route_send, s)) {
+            mui_list_pending_clear(&s->list_pending);
+            return;
+        }
+    }
+    mui_engine_line(s, "VIEW_ACTIVATE");
+}
+
 /* MUI-P4-6: one Song menu item fired, on the song under the list cursor. The lines come from the shared mapping. */
 static void mui_song_menu_fire(mui_state* s, uint32_t item) {
     const sel_view_state* view;
@@ -4968,6 +5010,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
             }
         }
         s->vol_set = v;
+    } else if (id == CTL_GRID_IN) {
+        mui_grid_input gin;
+        while (s->canvas != NULL && mui_canvas_input_take(s->canvas, &gin)) {
+            mui_grid_input_fire(s, &gin);
+        }
     } else if (id == CTL_LIST_SEL || id == CTL_LIST_DBL) {
         const sel_view_state* view = sel_engine_state(s->engine)->view;
         GetAttr(UPA_List_Active, s->list, (ULONG*)&v);

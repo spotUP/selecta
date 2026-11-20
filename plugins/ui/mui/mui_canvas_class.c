@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <devices/inputevent.h>
 #include <clib/alib_protos.h>
 #include <clib/muimaster_protos.h>
 #include <inline/macros.h>
@@ -29,6 +30,8 @@ extern struct GfxBase* GfxBase; /* opened by mui_open, renamed by mui_gfxbase.h 
  * sel_gui_canvas alone is about 165 KB (the INDEX8 cubes). Embedding it truncated the size MUI allocated, and the
  * OM_NEW memset then zeroed about 131 KB of other tasks' memory (the guest lost exec and the network seconds after
  * the MUI window opened). The canvas lives on the heap, owned from OM_NEW to OM_DISPOSE. */
+#define CANVAS_QN 8u
+
 typedef struct canvas_data {
     mui_canvas* mc;
     mui_grid_style style;
@@ -54,6 +57,14 @@ typedef struct canvas_data {
     char title[64], ext[12];
     int lead;                         /* I1455: download spinner, the lead dot 0..7; -1 = no spinner */
     uint32_t spin_accent, spin_muted; /* 0x00RRGGBB */
+    /* I1473g7: input. The handler runs while the canvas is shown; events wait in a ring until the app takes them (ReturnID input_id). */
+    struct MUI_EventHandlerNode ehn;
+    int ehn_on;
+    ULONG input_id;
+    mui_grid_input q[CANVAS_QN];
+    uint32_t q_head, q_n;
+    ULONG click_s, click_m; /* time of the last left click and its tile, for the double click */
+    int32_t click_tile;
 } canvas_data;
 
 /* Build-time guard: BOOPSI keeps the instance size in a UWORD (cl_InstSize). */
@@ -429,6 +440,64 @@ static ULONG canvas_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMin
     return 0;
 }
 
+/* I1473g7: arrows, Enter and the wheel while the canvas is shown (not while a text gadget has the keys); left click picks a tile,
+ * a double click opens it, right click picks it and leaves the event for the context menu. */
+static void canvas_post(Object* obj, canvas_data* d, uint32_t kind, int32_t arg) {
+    if (d->q_n < CANVAS_QN) {
+        d->q[(d->q_head + d->q_n++) % CANVAS_QN] = (mui_grid_input){kind, arg};
+    }
+    DoMethod(_app(obj), MUIM_Application_ReturnID, d->input_id);
+}
+
+static ULONG canvas_event(Object* obj, canvas_data* d, const struct IntuiMessage* im) {
+    int inside = im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj);
+    mui_grid_input in;
+    if (d->single || d->tiles == NULL) {
+        return 0;
+    }
+    if (im->Class == IDCMP_RAWKEY) {
+        Object* act = NULL;
+        ULONG text = 0;
+        uint32_t code = im->Code;
+        if ((code & IECODE_UP_PREFIX) != 0 || (im->Qualifier & (IEQUALIFIER_CONTROL | IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND | IEQUALIFIER_LALT | IEQUALIFIER_RALT)) != 0) {
+            return 0;
+        }
+        GetAttr(MUIA_Window_ActiveObject, _win(obj), (ULONG*)&act);
+        if (act != NULL && GetAttr(MUIA_String_Contents, act, &text) != 0) {
+            return 0; /* a text gadget owns the arrows */
+        }
+        if ((code == MUI_RAWKEY_WHEEL_UP || code == MUI_RAWKEY_WHEEL_DOWN) && !inside) {
+            return 0;
+        }
+        if (!mui_grid_key(code, mui_grid_cols(&d->style, (int32_t)_mwidth(obj)), &in)) {
+            return 0;
+        }
+        canvas_post(obj, d, in.kind, in.arg);
+        return MUI_EventHandlerRC_Eat;
+    }
+    if (im->Class == IDCMP_MOUSEBUTTONS && inside && (im->Code == IECODE_LBUTTON || im->Code == IECODE_RBUTTON)) {
+        int32_t t = mui_grid_hit(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), d->n, d->cursor, im->MouseX - _mleft(obj), im->MouseY - _mtop(obj));
+        if (t < 0) {
+            return 0;
+        }
+        if (im->Code == IECODE_RBUTTON) {
+            canvas_post(obj, d, MUI_GIN_PICK, t);
+            return 0;
+        }
+        if (d->click_tile == t && DoubleClick(d->click_s, d->click_m, im->Seconds, im->Micros)) {
+            d->click_tile = -1;
+            canvas_post(obj, d, MUI_GIN_OPEN, t);
+        } else {
+            d->click_tile = t;
+            d->click_s = im->Seconds;
+            d->click_m = im->Micros;
+            canvas_post(obj, d, MUI_GIN_PICK, t);
+        }
+        return MUI_EventHandlerRC_Eat;
+    }
+    return 0;
+}
+
 static ULONG __attribute__((used)) canvas_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 /* MUI calls dispatchers with cl=a0, obj=a2, msg=a1; this trampoline moves them to the stack for the C function. */
@@ -462,9 +531,31 @@ static ULONG __attribute__((used)) canvas_dispatch_c(struct IClass* cl, Object* 
     case MUIM_Show:
         d = INST_DATA(cl, obj);
         mui_canvas_fit(d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)});
+        if (d->input_id != 0 && !d->ehn_on) {
+            d->ehn.ehn_Priority = 1; /* above the list and the global key handler (-1): the canvas is the shown view */
+            d->ehn.ehn_Flags = 0;
+            d->ehn.ehn_Object = obj;
+            d->ehn.ehn_Class = cl;
+            d->ehn.ehn_Events = IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS;
+            DoMethod(_win(obj), MUIM_Window_AddEventHandler, (ULONG)&d->ehn);
+            d->ehn_on = 1;
+        }
+        return DoSuperMethodA(cl, obj, msg);
+    case MUIM_HandleEvent:
+        d = INST_DATA(cl, obj);
+        if (((struct MUIP_HandleEvent*)msg)->imsg != NULL) {
+            ULONG rc = canvas_event(obj, d, ((struct MUIP_HandleEvent*)msg)->imsg);
+            if (rc != 0) {
+                return rc;
+            }
+        }
         return DoSuperMethodA(cl, obj, msg);
     case MUIM_Hide:
         d = INST_DATA(cl, obj);
+        if (d->ehn_on) {
+            DoMethod(_win(obj), MUIM_Window_RemEventHandler, (ULONG)&d->ehn);
+            d->ehn_on = 0;
+        }
         mui_canvas_release(d->mc);
         return DoSuperMethodA(cl, obj, msg);
     case MUIM_AskMinMax:
@@ -525,6 +616,23 @@ void mui_canvas_grid_fit(Object* obj, uint32_t* cols, uint32_t* rows) {
     LONG w = _mwidth(obj), h = _mheight(obj);
     *cols = w > 0 ? mui_grid_cols(&d->style, (int32_t)w) : 0u;
     *rows = h > 0 ? mui_grid_visible_rows(&d->style, (int32_t)h) : 0u;
+}
+
+void mui_canvas_input_set(Object* obj, ULONG return_id) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    d->input_id = return_id;
+    d->click_tile = -1;
+}
+
+int mui_canvas_input_take(Object* obj, mui_grid_input* out) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    if (d->q_n == 0u) {
+        return 0;
+    }
+    *out = d->q[d->q_head];
+    d->q_head = (d->q_head + 1u) % CANVAS_QN;
+    d->q_n--;
+    return 1;
 }
 
 void mui_canvas_class_free(void) {

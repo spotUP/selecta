@@ -30,6 +30,11 @@ void mui_canvas_invalidate(Object* obj);
 uint32_t mui_canvas_draws(Object* obj);
 /* I1473g6: tile columns and whole visible tile rows of the canvas as laid out; 0 when it has no size yet (hidden). */
 void mui_canvas_grid_fit(Object* obj, uint32_t* cols, uint32_t* rows);
+/* I1473g7: input for the shown canvas. mui_canvas_input_set turns it on (before the object is shown): arrows, Enter, the wheel and tile
+ * clicks are queued and the application gets MUIM_Application_ReturnID `return_id`; mui_canvas_input_take pops one (1 = filled). The
+ * tile index is into the tiles last given to mui_canvas_set_grid. */
+void mui_canvas_input_set(Object* obj, ULONG return_id);
+int mui_canvas_input_take(Object* obj, mui_grid_input* out);
 /* Writes w x h 0xAARRGGBB words to the rastport at (dx, dy) through Picasso96 (the viz area shares it). */
 void mui_canvas_push(struct Library* p96, const uint32_t* px, int32_t w, int32_t h, struct RastPort* rp, int32_t dx, int32_t dy);
 /* Deletes the class; call after the application object is disposed. */

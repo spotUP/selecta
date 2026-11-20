@@ -207,6 +207,51 @@ static int test_tiles(void) {
     return failures;
 }
 
+/* I1473g7: keys, wheel, hit test and tile-to-row mapping of the tile canvases (Grid, later Cover Flow). */
+static int test_input(void) {
+    mui_grid_input in;
+    mui_grid_style st = mui_grid_style_for(640, 1, 2, 3);
+    static sel_view_row rows[4];
+    sel_view_state v;
+    int32_t tw, th, x, y;
+    uint32_t cols;
+    st.caption = 30;
+    tw = st.edge + 2 * st.pad;
+    th = tw + st.caption;
+    cols = mui_grid_cols(&st, 600);
+    CHECK(cols >= 3u, "cols %u", (unsigned)cols);
+    CHECK(mui_grid_key(MUI_RAWKEY_LEFT, cols, &in) && in.kind == MUI_GIN_MOVE && in.arg == -1, "left");
+    CHECK(mui_grid_key(MUI_RAWKEY_RIGHT, cols, &in) && in.arg == 1, "right");
+    CHECK(mui_grid_key(MUI_RAWKEY_UP, cols, &in) && in.arg == -(int32_t)cols, "up is a row");
+    CHECK(mui_grid_key(MUI_RAWKEY_DOWN, cols, &in) && in.arg == (int32_t)cols, "down is a row");
+    CHECK(mui_grid_key(MUI_RAWKEY_WHEEL_DOWN, cols, &in) && in.arg == (int32_t)cols, "wheel down one row");
+    CHECK(mui_grid_key(MUI_RAWKEY_WHEEL_UP, cols, &in) && in.arg == -(int32_t)cols, "wheel up one row");
+    CHECK(mui_grid_key(MUI_RAWKEY_RETURN, cols, &in) && in.kind == MUI_GIN_ACTIVATE, "return");
+    CHECK(mui_grid_key(MUI_RAWKEY_ENTER, cols, &in) && in.kind == MUI_GIN_ACTIVATE, "enter");
+    CHECK(!mui_grid_key(0x20u, cols, &in) && in.kind == MUI_GIN_NONE, "other key left alone");
+    /* Cover Flow: row_step 0 = left/right and the wheel step one cover, up/down are not ours */
+    CHECK(mui_grid_key(MUI_RAWKEY_LEFT, 0u, &in) && in.arg == -1 && mui_grid_key(MUI_RAWKEY_WHEEL_DOWN, 0u, &in) && in.arg == 1, "flow steps one");
+    CHECK(!mui_grid_key(MUI_RAWKEY_UP, 0u, &in) && !mui_grid_key(MUI_RAWKEY_DOWN, 0u, &in), "flow ignores up/down");
+    /* hit: tile (col 1, row 0) and (col 0, row 1), the gap, the margin, past the last tile, a scrolled grid */
+    x = st.gap + (tw + st.gap) + 2;
+    y = st.gap + 2;
+    CHECK(mui_grid_hit(&st, 600, 400, 20u, 0u, x, y) == 1, "hit col 1");
+    CHECK(mui_grid_hit(&st, 600, 400, 20u, 0u, st.gap + 2, st.gap + th + st.gap + 2) == (int32_t)cols, "hit row 1");
+    CHECK(mui_grid_hit(&st, 600, 400, 20u, 0u, st.gap + tw + 1, y) == -1, "gap");
+    CHECK(mui_grid_hit(&st, 600, 400, 20u, 0u, 1, 1) == -1, "margin");
+    CHECK(mui_grid_hit(&st, 600, 400, 2u, 0u, x + (tw + st.gap), y) == -1, "past the last tile");
+    CHECK(mui_grid_hit(&st, 600, 400, 40u, 39u, st.gap + 2, y) == (int32_t)(mui_grid_first_row(&st, 600, 400, 39u) * cols), "scrolled: first drawn tile");
+    /* tile index to window row skips headings */
+    memset(rows, 0, sizeof rows);
+    memset(&v, 0, sizeof v);
+    rows[0].kind = SEL_ROW_HEADING;
+    rows[2].kind = SEL_ROW_HEADING;
+    v.rows = rows;
+    v.row_n = 4;
+    CHECK(mui_grid_tile_row(&v, 0) == 1 && mui_grid_tile_row(&v, 1) == 3 && mui_grid_tile_row(&v, 2) == -1 && mui_grid_tile_row(NULL, 0) == -1, "tile row");
+    return failures;
+}
+
 static int test_art_path(void) {
     mui_canvas m;
     uint32_t src[16 * 16];
@@ -366,6 +411,8 @@ int main(int argc, char** argv) {
         r = test_grid();
     } else if (argc > 1 && strcmp(argv[1], "grid-aga") == 0) {
         r = test_grid_aga();
+    } else if (argc > 1 && strcmp(argv[1], "input") == 0) {
+        r = test_input();
     } else if (argc > 1 && strcmp(argv[1], "tiles") == 0) {
         r = test_tiles();
     } else if (argc > 1 && strcmp(argv[1], "art-path") == 0) {
