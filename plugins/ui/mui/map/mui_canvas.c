@@ -243,6 +243,90 @@ uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_
     return drawn;
 }
 
+struct mui_aga_cache {
+    int32_t edge;
+    uint32_t slots, next;
+    int64_t* ids;
+    uint8_t* idx; /* slots * edge * edge */
+};
+
+mui_aga_cache* mui_aga_cache_open(int32_t edge, uint32_t slots) {
+    mui_aga_cache* c;
+    if (edge <= 0 || slots == 0u) {
+        return NULL;
+    }
+    c = calloc(1, sizeof *c);
+    if (c != NULL) {
+        c->edge = edge;
+        c->slots = slots;
+        c->ids = calloc(slots, sizeof *c->ids); /* id 0 = free slot (art_id 0 means no cover) */
+        c->idx = malloc((size_t)slots * (size_t)edge * (size_t)edge);
+    }
+    if (c == NULL || c->ids == NULL || c->idx == NULL) {
+        mui_aga_cache_close(c);
+        return NULL;
+    }
+    return c;
+}
+
+void mui_aga_cache_close(mui_aga_cache* c) {
+    if (c != NULL) {
+        free(c->ids);
+        free(c->idx);
+        free(c);
+    }
+}
+
+static const uint8_t* mui_aga_cache_get(mui_aga_cache* c, int64_t id, mui_art_fn art, void* ctx) {
+    uint32_t i;
+    size_t sz = (size_t)c->edge * (size_t)c->edge;
+    const uint32_t* px;
+    for (i = 0; i < c->slots; i++) {
+        if (c->ids[i] == id) {
+            return c->idx + i * sz;
+        }
+    }
+    px = art != NULL ? art(ctx, id) : NULL;
+    if (px == NULL) {
+        return NULL;
+    }
+    i = c->next++ % c->slots;
+    mui_cover_remap(px, c->edge, c->idx + i * sz);
+    c->ids[i] = id;
+    return c->idx + i * sz;
+}
+
+uint32_t mui_tile_tint(const mui_tile* t) {
+    return sel_gui_token_default((sel_gui_token)sel_cover_kind_token(t->kind != 0u ? t->kind : SEL_COVER_KIND_FORMAT)) & 0xFFFFFFu;
+}
+
+uint32_t mui_canvas_draw_grid_aga(const mui_grid_style* s, int32_t w, int32_t h, const mui_tile* tiles, uint32_t n, uint32_t cursor,
+                                  uint32_t first_row, mui_art_fn art, void* art_ctx, mui_aga_cache* cache, const mui_aga_sink* sink,
+                                  void* sink_ctx) {
+    uint32_t i, drawn = 0u, cols = mui_grid_cols(s, w);
+    int32_t shift = (int32_t)first_row * (s->edge + 2 * s->pad + s->caption + s->gap);
+    sink->rect(sink_ctx, (sel_gui_rect){0, 0, w, h}, s->background & 0xFFFFFFu);
+    for (i = first_row * cols; i < n; i++) {
+        sel_gui_rect t = mui_grid_tile_rect(s, w, i), ar;
+        const uint8_t* idx = NULL;
+        t.y -= shift;
+        if (t.y >= h) {
+            break;
+        }
+        ar = (sel_gui_rect){t.x + s->pad, t.y + s->pad, s->edge, s->edge};
+        if (i == cursor) { /* the outline is the larger rect under the card, as the RTG round rect */
+            sink->rect(sink_ctx, (sel_gui_rect){t.x - 2, t.y - 2, t.w + 4, t.h + 4}, s->selected & 0xFFFFFFu);
+        }
+        sink->rect(sink_ctx, t, s->tile & 0xFFFFFFu);
+        if (cache != NULL && cache->edge == s->edge && tiles[i].art_id != 0) {
+            idx = mui_aga_cache_get(cache, tiles[i].art_id, art, art_ctx);
+        }
+        sink->cover(sink_ctx, ar, idx, mui_tile_tint(&tiles[i]));
+        drawn++;
+    }
+    return drawn;
+}
+
 mui_art_path mui_art_path_for(int screen_is_rtg) {
     return screen_is_rtg ? MUI_ART_DATATYPE : MUI_ART_COVER;
 }
