@@ -134,6 +134,11 @@ int main(int argc, char** argv) {
         /* I1475: a later non-play error does not hide the play error */
         sel_engine_report_error(e, "replayer_load_failed", "player.lib bad hunk");
         sel_engine_report_error(e, "sync_failed", "x");
+        {
+            /* drain the queued ERROR events, else the next exec reports them and returns 0 */
+            raw_count drain = {0, 0, 0};
+            sel_engine_pump(e, raw_sink, &drain);
+        }
         CHECK(sel_ctl_exec(e, "STATUS", reply, sizeof reply, &rc) == 1);
         CHECK(strstr(reply, "last_play_error=replayer_load_failed player.lib bad hunk") != NULL);
         CHECK(strstr(reply, "last_error=sync_failed x") != NULL);
