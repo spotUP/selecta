@@ -288,6 +288,12 @@ typedef struct mui_state {
     Object* offer_row[SEL_SOURCE_MAX];
     mui_offer_panel offer;
     int offer_asked;                /* SOURCES was requested once for the offer */
+    /* I1469m: the account window (design doc 9.2, D-M3-12), the twin of the desktop DLG_ACCOUNT; built on first open. */
+    Object *acct_win, *acct_btn, *acct_head, *acct_body, *acct_note, *acct_err, *acct_form, *acct_name, *acct_pass, *acct_toggle,
+        *acct_cancel, *acct_submit;
+    char acct_user[64]; /* the logged-in name; empty when logged out */
+    char acct_head_buf[32], acct_body_buf[160], acct_err_buf[160];
+    int acct_signup, acct_busy, acct_init;
     char help_buf[MUI_HELP_MAX][96];
     const char* help_ptr[MUI_HELP_MAX + 1];
     char status_buf[160];
@@ -680,6 +686,8 @@ static int mui_style_line(mui_state* s, const char* line) {
 static void mui_stats_window(mui_state* s);
 static void mui_stats_sync(mui_state* s);
 static void mui_offer_window(mui_state* s);
+static void mui_acct_follow(mui_state* s);
+static void mui_acct_open(mui_state* s, const char* why);
 static int mui_route_send(void* ctx, const char* line);
 
 /* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
@@ -709,6 +717,12 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_STYLE_BASE 0x2AECL     /* I1473g8: the Grid / Cover Flow / List chooser, CTL_STYLE_BASE + slot (0..2) */
 #define CTL_COL_FIND 0x2AE8L       /* I1442b: the drill page find field changed (debounced in mui_drill_find_tick) */
 #define CTL_SRC_OPEN 0x2AC7L       /* I1442b: the Sources page Open button (opens the picked source's drill root) */
+#define CTL_ACCT_OPEN 0x2815L   /* I1469m: the top bar Log In / account button (the Mac avatar) */
+#define CTL_ACCT_NAME 0x2816L   /* the account window's Username String (Return moves to Password) */
+#define CTL_ACCT_PASS 0x2817L   /* its Password String (Return submits) */
+#define CTL_ACCT_TOGGLE 0x2818L /* Create Account Instead / Log In Instead */
+#define CTL_ACCT_SUBMIT 0x2819L /* Log In / Create Account / Log Out */
+#define CTL_ACCT_CANCEL 0x281AL /* Cancel / Close */
 #define CTL_COL_TAG 0x2814L   /* I1440n3: the Tag button of a collection page cycles the DeepSID tag filter (All Tags first) */
 #define CTL_NP_TOGGLE 0x2805L  /* I798 (T2, R3): Hide / Show Now Playing at the right end of the top bar */
 #define CTL_PAL_BTN 0x2806L    /* I798 (O1): the Commands button opening the palette window */
@@ -1640,7 +1654,7 @@ static void mui_field_activate(Object* win, Object* field) {
     set(win, MUIA_Window_ActiveObject, str != 0 ? str : (ULONG)field);
 }
 
-static Object* mui_make_string(LONG id, int max_w, const char* placeholder) {
+static Object* mui_make_string_s(LONG id, int max_w, const char* placeholder, int secret) {
     /* I667h (design 3.4): every string gadget is a Selecta_AAField (mui_aafield_class.c). */
     mui_aafield_spec sp;
     sp.tokens = g_tokens;
@@ -1648,7 +1662,12 @@ static Object* mui_make_string(LONG id, int max_w, const char* placeholder) {
     sp.id = id;
     sp.max_w = max_w;
     sp.placeholder = placeholder;
+    sp.secret = secret; /* I1469m: the account password shows dots */
     return mui_aafield_new(&sp);
+}
+
+static Object* mui_make_string(LONG id, int max_w, const char* placeholder) {
+    return mui_make_string_s(id, max_w, placeholder, 0);
 }
 
 /* I684a: the initial entry goes in at OM_NEW. Setting the active entry before the object is in the application tree fires the
@@ -1719,6 +1738,10 @@ static Object* mui_topbar_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, MUIA_FixWidth, 1, MUIA_Background, (ULONG)div_spec, TAG_DONE));
     DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Browse", "Browse", "library", NULL, CTL_TOPBAR_BROWSE, 0, 1, MUI_AA_ROLE_NORMAL));
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    s->acct_btn = mui_make_button_i("Log In", NULL, NULL, NULL, CTL_ACCT_OPEN, 0, 0, MUI_AA_ROLE_NORMAL); /* I1469m: the Mac avatar; the name once logged in */
+    if (s->acct_btn != NULL) {
+        DoMethod(g, OM_ADDMEMBER, s->acct_btn);
+    }
     s->pal_btn = mui_make_button_i("Commands", "Commands", "Help", NULL, CTL_PAL_BTN, 0, 1, MUI_AA_ROLE_NORMAL); /* I798 (O1) */
     s->np_btn = mui_make_button_i(sel_uim_tip_np_panel(0), sel_uim_tip_np_panel(0), "nav_forward", "nav_back", CTL_NP_TOGGLE, 0, 1, MUI_AA_ROLE_NORMAL); /* I798 (T2, R3): the right end */
     if (s->pal_btn != NULL) {
@@ -3620,6 +3643,7 @@ static void mui_refresh(mui_state* s) {
     }
     mui_stats_sync(s); /* I1181 */
     mui_offer_window(s); /* I1182 */
+    mui_acct_follow(s);  /* I1469m */
     if (mui_toast_tick(&s->toast, mui_now_ms())) { /* MUI-P4-11: the toast went away after 3 s (6 s for an error) */
         snprintf(s->status_buf, sizeof s->status_buf, "Ready");
         mui_text_set(s->status, s->status_buf);
@@ -4140,6 +4164,186 @@ static void mui_cmd_popup_show(mui_state* s) {
     mui_field_activate(s->cmd_win, s->str_cmd);
 }
 
+/* I1469m: the account window, the MUI twin of the desktop account dialog (desktop_ui.c acct_*; design doc 9.2, D-M3-12):
+ * Log In or Create Account with Username and Password, the server's error text, Log Out once logged in, driven by the same
+ * sel_engine_account_* calls. On Amiga there is no worker thread, so sel_engine_account_post answers before it returns and
+ * the next mui_acct_follow takes the result. The typed password lives in the String only until submit or close. */
+static Object* mui_acct_inner(Object* field) {
+    ULONG str = 0;
+    GetAttr(UPA_Field_String, field, &str);
+    return str != 0 ? (Object*)str : field;
+}
+
+static void mui_acct_toast(mui_state* s, const char* line) {
+    snprintf(s->status_buf, sizeof s->status_buf, "%s", line);
+    mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
+    mui_text_set(s->status, s->status_buf);
+}
+
+static void mui_acct_wipe(mui_state* s) {
+    if (s->acct_pass != NULL) {
+        set(s->acct_pass, MUIA_String_Contents, (ULONG) "");
+    }
+}
+
+/* The window follows the state: the title, the body line, the form (logged out only), the captions and the error. */
+static void mui_acct_sync(mui_state* s) {
+    int in = s->acct_user[0] != '\0';
+    if (s->acct_btn != NULL) {
+        mui_caption_set(s->acct_btn, in ? s->acct_user : "Log In");
+    }
+    if (s->acct_win == NULL) {
+        return;
+    }
+    snprintf(s->acct_head_buf, sizeof s->acct_head_buf, "%s", in ? "Account" : s->acct_signup ? "Create Account" : "Log In");
+    if (in) {
+        snprintf(s->acct_body_buf, sizeof s->acct_body_buf, "Logged in as %s. Your ratings and votes go to the DEViLBOX server.", s->acct_user);
+    } else {
+        snprintf(s->acct_body_buf, sizeof s->acct_body_buf, "%s", "Log in to send your ratings and votes to the DEViLBOX server.");
+    }
+    mui_text_set(s->acct_head, s->acct_head_buf);
+    mui_text_set(s->acct_body, s->acct_body_buf);
+    mui_text_set(s->acct_err, s->acct_err_buf);
+    set(s->acct_form, MUIA_ShowMe, (ULONG)!in);
+    set(s->acct_note, MUIA_ShowMe, (ULONG)!in);
+    set(s->acct_toggle, MUIA_ShowMe, (ULONG)!in);
+    mui_caption_set(s->acct_toggle, s->acct_signup ? "Log In Instead" : "Create Account Instead");
+    mui_caption_set(s->acct_cancel, in ? "Close" : sel_uim_dlg_cancel_label());
+    mui_caption_set(s->acct_submit, in ? "Log Out"
+                                       : s->acct_busy ? (s->acct_signup ? "Creating..." : "Logging In...")
+                                                      : s->acct_signup ? "Create Account" : "Log In");
+}
+
+static int mui_acct_build(mui_state* s) {
+    Object *root = mui_aapanel(MUI_AA_PANEL_RAISED, 0), *bar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    if (root == NULL || bar == NULL) {
+        return 0;
+    }
+    s->acct_head = mui_aatext_whole(s->acct_head_buf, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT);
+    s->acct_body = mui_aatext_whole(s->acct_body_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT);
+    s->acct_form = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    s->acct_name = mui_make_string(CTL_ACCT_NAME, 0, "Username");
+    s->acct_pass = mui_make_string_s(CTL_ACCT_PASS, 0, "Password", 1);
+    s->acct_toggle = mui_make_button_i("Create Account Instead", "Create Account Instead", NULL, NULL, CTL_ACCT_TOGGLE, 0, 0, MUI_AA_ROLE_NORMAL);
+    /* The library refuses to send a password over clear http (devilbox.c sel_devilbox_auth); say so before one is typed.
+     * shortcut: the plugin cannot see the library's SEL_TLS_AMISSL, so the AmiSSL build must define it for this plugin too. */
+#ifdef SEL_TLS_AMISSL
+    s->acct_note = MUI_NewObject((char*)MUIC_Rectangle, MUIA_FixHeight, 1, TAG_DONE);
+#else
+    s->acct_note = mui_aatext_whole("This Amiga build has no secure connection yet, so it does not send your password. Logging in works once a build with AmiSSL ships.",
+                                    MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT);
+#endif
+    s->acct_err = mui_aatext_whole(s->acct_err_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT);
+    s->acct_cancel = mui_make_button_i(sel_uim_dlg_cancel_label(), NULL, NULL, NULL, CTL_ACCT_CANCEL, 0, 0, MUI_AA_ROLE_NORMAL);
+    s->acct_submit = mui_make_button_i("Log In", NULL, NULL, NULL, CTL_ACCT_SUBMIT, 0, 0, MUI_AA_ROLE_NORMAL);
+    if (s->acct_head == NULL || s->acct_body == NULL || s->acct_form == NULL || s->acct_name == NULL || s->acct_pass == NULL || s->acct_toggle == NULL ||
+        s->acct_note == NULL || s->acct_err == NULL || s->acct_cancel == NULL || s->acct_submit == NULL) {
+        return 0;
+    }
+    DoMethod(root, OM_ADDMEMBER, s->acct_head);
+    DoMethod(root, OM_ADDMEMBER, s->acct_body);
+    DoMethod(s->acct_form, OM_ADDMEMBER, mui_aatext_whole("Username", MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT));
+    DoMethod(s->acct_form, OM_ADDMEMBER, s->acct_name);
+    DoMethod(s->acct_form, OM_ADDMEMBER, mui_aatext_whole("Password", MUI_AA_TONE_MUTED, MUI_AA_ALIGN_LEFT));
+    DoMethod(s->acct_form, OM_ADDMEMBER, s->acct_pass);
+    DoMethod(root, OM_ADDMEMBER, s->acct_form);
+    DoMethod(root, OM_ADDMEMBER, s->acct_note);
+    DoMethod(root, OM_ADDMEMBER, s->acct_err);
+    /* the Mac bottom row: the form toggle at the left, Cancel and the submit button at the right */
+    DoMethod(bar, OM_ADDMEMBER, s->acct_toggle);
+    DoMethod(bar, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(bar, OM_ADDMEMBER, s->acct_cancel);
+    DoMethod(bar, OM_ADDMEMBER, s->acct_submit);
+    DoMethod(root, OM_ADDMEMBER, bar);
+    s->acct_win = mui_dialog_window("Selecta Account", 0x41434354UL, root); /* 'ACCT' */
+    if (s->acct_win == NULL) {
+        return 0;
+    }
+    DoMethod(s->app, OM_ADDMEMBER, s->acct_win);
+    mui_close_on_request(s->acct_win);
+    return 1;
+}
+
+static void mui_acct_open(mui_state* s, const char* why) {
+    ULONG name = 0;
+    if (s->acct_win == NULL && !mui_acct_build(s)) {
+        s->acct_win = NULL;
+        return;
+    }
+    s->acct_signup = 0;
+    snprintf(s->acct_err_buf, sizeof s->acct_err_buf, "%s", why != NULL ? why : "");
+    mui_acct_sync(s);
+    set(s->acct_win, MUIA_Window_Open, TRUE);
+    GetAttr(MUIA_String_Contents, s->acct_name, &name);
+    if (s->acct_user[0] == '\0') { /* the Mac focus: Password once a name is typed, else Username */
+        mui_field_activate(s->acct_win, name != 0 && ((const char*)name)[0] != '\0' ? s->acct_pass : s->acct_name);
+    }
+}
+
+static void mui_acct_close(mui_state* s) {
+    mui_acct_wipe(s);
+    if (s->acct_win != NULL) {
+        set(s->acct_win, MUIA_Window_Open, FALSE);
+    }
+}
+
+static void mui_acct_submit(mui_state* s) {
+    char name[64], pass[128];
+    if (s->acct_busy || s->acct_win == NULL) {
+        return;
+    }
+    if (s->acct_user[0] != '\0') {
+        sel_engine_account_logout(s->engine);
+        s->acct_user[0] = '\0';
+        mui_acct_close(s);
+        mui_acct_sync(s);
+        mui_acct_toast(s, "Logged out");
+        return;
+    }
+    (void)mui_str_utf8(mui_acct_inner(s->acct_name), name, sizeof name);
+    (void)mui_str_utf8(mui_acct_inner(s->acct_pass), pass, sizeof pass);
+    if (name[0] == '\0' || pass[0] == '\0') {
+        snprintf(s->acct_err_buf, sizeof s->acct_err_buf, "%s", "Type a username and a password.");
+    } else if (sel_engine_account_post(s->engine, s->acct_signup, name, pass)) {
+        s->acct_busy = 1;
+        s->acct_err_buf[0] = '\0';
+        mui_acct_wipe(s);
+    } else {
+        snprintf(s->acct_err_buf, sizeof s->acct_err_buf, "%s", "A request is already running.");
+    }
+    memset(pass, 0, sizeof pass);
+    mui_acct_sync(s);
+}
+
+/* Once per turn: the stored login on the first turn, then the result of a running request (the desktop acct_follow). */
+static void mui_acct_follow(mui_state* s) {
+    int ok = 0;
+    if (!s->acct_init) {
+        s->acct_init = 1;
+        (void)sel_engine_account_user(s->engine, s->acct_user, sizeof s->acct_user);
+        mui_acct_sync(s);
+    }
+    if (s->acct_win != NULL) {
+        ULONG open = 0, pass = 0;
+        GetAttr(MUIA_Window_Open, s->acct_win, &open);
+        GetAttr(MUIA_String_Contents, s->acct_pass, &pass);
+        if (!open && pass != 0 && ((const char*)pass)[0] != '\0') { /* closed with its close gadget or Esc: the password goes */
+            mui_acct_wipe(s);
+        }
+    }
+    if (!s->acct_busy || !sel_engine_account_take(s->engine, &ok, s->acct_err_buf, sizeof s->acct_err_buf)) {
+        return;
+    }
+    s->acct_busy = 0;
+    if (ok) {
+        (void)sel_engine_account_user(s->engine, s->acct_user, sizeof s->acct_user);
+        s->acct_err_buf[0] = '\0';
+        mui_acct_close(s);
+        mui_acct_toast(s, s->acct_signup ? "Account created, logged in" : "Logged in");
+    }
+    mui_acct_sync(s);
+}
+
 /* I1337b: the name prompt for Rename, New Playlist, New Folder and the Song Information notes (not read from the command line).
  * Return replays the waiting P4 action with the typed name (name_go). */
 static void mui_name_prompt(mui_state* s, uint32_t which) {
@@ -4499,6 +4703,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_RATING:
         GetAttr(UPA_Cycle_Active, s->cyc_rating, &act);
+        if (s->acct_user[0] == '\0' && sel_engine_account_wanted(s->engine, sel_engine_state(s->engine)->song.path)) {
+            mui_acct_open(s, "Log in to send this rating to the DEViLBOX server."); /* I1469: the rating still lands locally, as on Mac */
+        }
         mui_rating_line((uint32_t)act, line, sizeof line);
         if (mui_engine_line(s, line)) {
             mui_p4_note(s, which, line);
@@ -4936,6 +5143,20 @@ static void mui_control_fire(mui_state* s, LONG id) {
         s->search_src = sel_uim_chip_toggle(s->search_src, (uint32_t)(id - CTL_SRC_BASE) + 1u);
     } else if (id == CTL_STATS_MORE) {
         mui_stats_more(&s->stats_panel);
+    } else if (id == CTL_ACCT_OPEN) {
+        mui_acct_open(s, NULL);
+    } else if (id == CTL_ACCT_NAME) {
+        if (s->acct_win != NULL) {
+            set(s->acct_win, MUIA_Window_ActiveObject, (ULONG)mui_acct_inner(s->acct_pass));
+        }
+    } else if (id == CTL_ACCT_PASS || id == CTL_ACCT_SUBMIT) {
+        mui_acct_submit(s);
+    } else if (id == CTL_ACCT_TOGGLE) {
+        s->acct_signup = !s->acct_signup;
+        s->acct_err_buf[0] = '\0';
+        mui_acct_sync(s);
+    } else if (id == CTL_ACCT_CANCEL) {
+        mui_acct_close(s);
     } else if (id == CTL_OFFER_NOTNOW) {
         (void)mui_offer_panel_not_now(&s->offer, &s->srcs, (int64_t)time(NULL), mui_route_send, s);
     } else if (id == CTL_OFFER_NEVER) {

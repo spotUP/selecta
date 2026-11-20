@@ -47,6 +47,7 @@ struct Hook { /* the three fields the package reads; the Amiga struct has a MinN
 #define MUIA_ShortHelp 0x80423bbcUL
 #define MUIA_ShowMe 0x80429ba8UL
 #define MUIA_String_MaxLen 0x80424984UL
+#define MUIA_String_Secret 0x80428769UL
 #define MUIA_Weight 0x80421d1fUL
 #define MUIV_Frame_None 0UL
 #endif

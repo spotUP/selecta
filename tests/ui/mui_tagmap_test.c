@@ -177,7 +177,7 @@ static void test_cycle_tabs_field_panel(void) {
     int n;
     mui_aacycle_spec cy = {ent, 1, 0x7703};
     mui_aatabs_spec tb = {ent, 1};
-    mui_aafield_spec fl = {tok, 60, 300, "Search", 0x7704};
+    mui_aafield_spec fl = {tok, 60, 300, "Search", 0x7704, 0};
     mui_aapanel_spec pn = {tok, UPV_Panel_Role_Raised, 64, 80};
     n = mui_aacycle_tags(&cy, t, MUI_AATAGMAP_MAX);
     shape(t, n, 2, "cycle");
