@@ -63,6 +63,9 @@ int sel_uim_si_found_index(const char* text);
 #define SEL_UIM_SI_SECTION_N 5
 extern const char* const sel_uim_si_sections[SEL_UIM_SI_SECTION_N];
 int sel_uim_si_section_index(const char* heading); /* -1 when unknown */
+/* I1465m: the http(s) URL a Song Information row value carries (a "YouTube capture" row, the Demozoo video link), copied to out up to the first
+ * space; returns its length, 0 when the value has none. A UI opens it on a click of the row. */
+uint32_t sel_uim_si_url(const char* value, char* out, uint32_t cap);
 
 #ifdef __cplusplus
 }
