@@ -5496,6 +5496,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
  * breakpoint drops. No object is created or disposed here. */
 static void mui_apply_layout(mui_state* s) {
     uint32_t i;
+    DoMethod(s->root, MUIM_Group_InitChange); /* I1478: a weight change alone does not relayout the body group; one relayout for all slots */
     for (i = 0; i < MUI_SLOT_COUNT; i++) {
         set(s->slot[i], MUIA_ShowMe, s->lay.show[i] ? TRUE : FALSE);
         set(s->slot[i], MUIA_HorizWeight, s->lay.weight_w[i] > 0 ? s->lay.weight_w[i] : 1);
@@ -5508,6 +5509,7 @@ static void mui_apply_layout(mui_state* s) {
     }
     set(s->balance[0], MUIA_ShowMe, s->lay.balance_sidebar_main ? TRUE : FALSE);
     set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
+    DoMethod(s->root, MUIM_Group_ExitChange);
 }
 
 /* I671/I949b: the layout for the full screen the window asks for (D-M4-3), from the screen it opens on (the own SELECTA
