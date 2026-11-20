@@ -9341,6 +9341,10 @@ static const char* library_dump_build(desk* d) {
         uint32_t k;
         o = dump_put(d, o, "account user=%s open=%d busy=%d clicks=%u avatar=%d,%d,%d,%d error=%s\n", d->acct_user, d->dlg_open == DLG_ACCOUNT, d->acct_busy,
                      d->acct_clicks, acct_avatar_rect(d).x, acct_avatar_rect(d).y, acct_avatar_rect(d).w, acct_avatar_rect(d).h, d->acct_error);
+        o = dump_put(d, o, "acctform signup=%d field=%d namelen=%u passlen=%u toggle=%d,%d,%d,%d f0=%d,%d,%d,%d f1=%d,%d,%d,%d\n", d->acct_signup, d->acct_field,
+                     (unsigned)d->acct_name_len, (unsigned)d->acct_pass_len, acct_toggle_rect(d).x, acct_toggle_rect(d).y, acct_toggle_rect(d).w, acct_toggle_rect(d).h,
+                     acct_field_rect(d, 0).x, acct_field_rect(d, 0).y, acct_field_rect(d, 0).w, acct_field_rect(d, 0).h,
+                     acct_field_rect(d, 1).x, acct_field_rect(d, 1).y, acct_field_rect(d, 1).w, acct_field_rect(d, 1).h); /* I1472: the form's state and hit rects */
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u open_fail_toasts=%u open_fail_text=\"%s\" toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
