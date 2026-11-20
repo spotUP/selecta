@@ -32,6 +32,7 @@
 #include <selecta/gui/gui_edit.h>
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/drill.h>
+#include <selecta/uimodel/grid.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/open_progress.h>
 #include <selecta/uimodel/cols.h>
@@ -9487,8 +9488,7 @@ static int lib_grid_on(const sel_state* st) {
 static uint32_t lib_grid_cols(const desk* d, sel_gui_rect mn) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     int32_t tw = lpx(d, GRID_ART) + 2 * pad, gap = lpx(d, GRID_GAP);
-    int32_t avail = mn.w - 2 * lpx(d, LIB_MARGIN) + gap;
-    return avail >= tw + gap ? (uint32_t)(avail / (tw + gap)) : 1u;
+    return sel_uim_grid_cols(mn.w - 2 * lpx(d, LIB_MARGIN), tw, gap);
 }
 
 /* Registers view row k of the Library page with the song menu when it is a song (I371, DUI-P4-16): a tree leaf or a column
@@ -9557,8 +9557,7 @@ static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
     int32_t tw = art + 2 * pad, th = pad + art + lpx(d, HOME_TILE_TEXT_GAP) + lpx(d, HOME_TITLE_H) + lpx(d, HOME_META_H) + pad;
     int32_t vis = (mn.y + mn.h - y0 + gap) / (th + gap);
     uint32_t cols = lib_grid_cols(d, mn), i, first, panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
-    uint32_t cur_row = v->cursor / cols;
-    first = vis > 0 && cur_row >= (uint32_t)vis ? cur_row - (uint32_t)vis + 1u : 0u;
+    first = sel_uim_grid_first_row(v->cursor, cols, vis);
     d->grid_draws++;
     d->grid_cols = cols;
     d->grid_tiles = 0u;
