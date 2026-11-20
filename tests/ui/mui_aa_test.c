@@ -518,7 +518,7 @@ static void test_btn_align(void) {
     CHECK(ui != NULL && cls != NULL, "sources readable");
     if (ui != NULL && cls != NULL) {
         CHECK(strstr(cls, "mui_aa_btn_content_x(") != NULL && strstr(cls, "(w - cw) / 2") == NULL, "class centres by hand instead of the shared helper");
-        CHECK(count_of(ui, "mui_make_button_left(") == 3, "left aligned buttons: %d sites (definition + door row + the sidebar helper mui_side_button)", count_of(ui, "mui_make_button_left("));
+        CHECK(count_of(ui, "mui_make_button_left(") == 4, "left aligned buttons: %d sites (definition + door row + the sidebar helper mui_side_button + the sidebar row title cell, I1480)", count_of(ui, "mui_make_button_left("));
         CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 2, "every button spec (checkbox + dialog close, I730) sets align");
         /* Johan rig 2 2026-10-29: the "> PROGDIR:" breadcrumb text ran past its button. The width was measured once at setup from the
          * blank first caption; a fit button (NULL widest) now re-measures at every layout from the caption it was last given. */
