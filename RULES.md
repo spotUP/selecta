@@ -21,6 +21,8 @@ The global rules (`~/.claude/CLAUDE.md`) apply; this file adds the project's. De
 
 Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/amiga` (`/opt/amiga` holds only binutils; the toolchain file `cmake/amiga-68020.cmake` searches `$AMIGA_GCC_ROOT`, `~/opt/amiga`, `/opt/amiga`), vasm for `.s`. Test rig: UP-Term's FS-UAE rig (`~/Code/UP-Term/vtcon/tools/rig/`).
 
+**Every build in this table runs as `~/.claude/bin/buildq --purpose "<session>: <task>" -- nice -n 19 cmake --build <dir> -- -j3` (Johan 2026-11-19); never a bare `cmake --build` or `ninja`. Ask Johan first.**
+
 | Task | Command |
 |------|---------|
 | Configure + build (desktop, debug) | `cmake -S . -B build/host -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build/host` |
