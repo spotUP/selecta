@@ -3639,6 +3639,18 @@ if(NOT SEL_AMIGA)
   set_tests_properties(text-ui-search-chips PROPERTIES LABELS m3 TIMEOUT 30)
 endif()
 
+# I1465t: the text UI Now Playing panel shows the stills count and the video link stored under the song's meta key (a title + composer twin).
+if(NOT SEL_AMIGA)
+  add_executable(text_meta_seed m3/text_meta_seed.c)
+  target_include_directories(text_meta_seed PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(text_meta_seed PRIVATE selecta_library selecta_core)
+  add_test(NAME text-ui-meta-panel
+    COMMAND "${CMAKE_COMMAND}" "-DSEED=$<TARGET_FILE:text_meta_seed>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DMOD=${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-test.mod" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/text_meta_panel"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/text_meta_panel.cmake")
+  set_tests_properties(text-ui-meta-panel PROPERTIES LABELS m3 TIMEOUT 30)
+endif()
+
 # M3 Phase 4 (I160): T71 rescan and watcher part. A file added to one subdirectory of a fixture copy after
 # the first scan rescans that directory alone (folder watcher, mtime poll, manual rescan).
 if(NOT SEL_AMIGA)
