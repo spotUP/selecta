@@ -84,6 +84,23 @@ int main(void) {
         CHECK(sel_deepsid_composer_rows("{\"found\":false}", c, sizeof c) == 0);
         CHECK(sel_deepsid_composer_rows(COMP, e, sizeof e) <= 3);
     }
+    {
+        static const char* const YT =
+            "{\"id\":1,\"youtube\":[{\"channel\":\"chanA\",\"videoId\":\"vidA1\",\"subtune\":1,\"isDefault\":false},"
+            "{\"channel\":\"chanB\",\"videoId\":\"vidB2\",\"subtune\":2,\"isDefault\":true},"
+            "{\"channel\":\"chanC\",\"videoId\":\"vidC1\",\"subtune\":1,\"isDefault\":false}],\"gb64\":null}";
+        char u[128], y[1024];
+        uint32_t yr = 0;
+
+        memset(y, 0, sizeof y);
+
+        CHECK(sel_deepsid_youtube(YT, 0, u, sizeof u) > 0 && strcmp(u, "https://www.youtube.com/watch?v=vidB2") == 0); /* default wins */
+        CHECK(sel_deepsid_youtube(YT, 1, u, sizeof u) > 0 && strcmp(u, "https://www.youtube.com/watch?v=vidA1") == 0); /* no default on subtune 1: first */
+        CHECK(sel_deepsid_youtube(YT, 3, u, sizeof u) == 0 && u[0] == '\0');
+        CHECK(sel_deepsid_youtube("{\"id\":1,\"youtube\":[]}", 0, u, sizeof u) == 0 && sel_deepsid_youtube("{\"id\":1}", 0, u, sizeof u) == 0);
+        CHECK(sel_deepsid_rows(YT, y, sizeof y, &yr) == 3 && yr == 3);
+        CHECK(strcmp(y, "YouTube capture") == 0 && strcmp(y + strlen(y) + 1, "Subtune 1, chanA: https://www.youtube.com/watch?v=vidA1") == 0);
+    }
     if (failures == 0) printf("library_deepsid_rows_ok\n");
     return failures != 0;
 }

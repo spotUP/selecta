@@ -756,6 +756,15 @@ static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stat
     return ok;
 }
 
+/* I1465b (design D5a): the default DeepSID capture becomes the song's 'dz_video' link unless Demozoo already stored one. Subtune 0: the playing subtune is not known here. */
+static void ds_video(sel_library* lib, const char* key, const char* json) {
+    char url[128];
+    int id = sel_art_dz_id(key);
+
+    if (dz_has(lib, id, "dz_video", NULL, 0) > 0 || sel_deepsid_youtube(json, 0, url, sizeof url) == 0) return;
+    dz_put(lib, id, "dz_video", url, strlen(url));
+}
+
 /* The names of the "tags" array of a file answer, joined by ", ", into the sticker "deepsid.tags" of the key (an emptied list clears it). */
 static void ds_tags(sel_library* lib, const char* key, const char* json) {
     char all[512], name[96];
@@ -849,6 +858,7 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
         if (r > 0) { /* I1454: a cached file whose CSDb fetch failed (route missing, network) asks again, else its SID never gets the release stills */
             js.data[r < (int)js.cap ? r : (int)js.cap] = '\0';
             base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
+            ds_video(lib, key, (const char*)js.data);
             ds_csdb_step(lib, base, key, &js, st);
         }
         free(js.data);
@@ -866,6 +876,7 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
     r = ds_fetch(lib, key, "ds_file", url, &js, st);
     if (r == 1) {
         ds_tags(lib, key, (const char*)js.data);
+        ds_video(lib, key, (const char*)js.data);
         ds_csdb_step(lib, base, key, &js, st);
         slash = strrchr(key, '/');
         if (slash != NULL && (size_t)(slash - key) < sizeof fkey) {
