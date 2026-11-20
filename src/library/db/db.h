@@ -647,6 +647,9 @@ uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* r
 uint32_t sel_deepsid_csdb_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
 /* I1440l2: the release ids (max 6) of a ds_csdb answer (row URL, id and artwork key helpers: selecta/uimodel/csdb.h). */
 uint32_t sel_deepsid_csdb_ids(const char* json, int* ids, uint32_t max);
+/* I1468 (design section 4): the release ids (max `max`) of a ds_csdb answer that are the tune's own production, judged with the ds_file answer: csdbType "release" -> the
+ * file's csdbId; csdbType "sid" -> a release whose year equals the copyright year and whose group is in the copyright or whose name equals the title / STIL game name. Pure. */
+uint32_t sel_deepsid_csdb_own(const char* file_json, const char* csdb_json, int* ids, uint32_t max);
 /* I1440k: the same rows for the song `ref` from its cached ds_file row; a song with no row yet is kicked (sel_library_deepsid_kick) and shows them on the next read. */
 uint32_t sel_library_deepsid_panel(sel_library* lib, const char* ref, char* out, uint32_t cap, uint32_t* rows);
 /* I1440j: the composer page header rows (label/value pairs, an empty label ends) from the ds_composer row of the folder of the hvsc: song `ref`; none cached kicks the fetcher. */
