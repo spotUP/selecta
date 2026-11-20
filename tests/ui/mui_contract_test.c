@@ -2079,6 +2079,19 @@ static void test_toolrows(void) {
             failures++;
         }
     }
+    { /* I1481c: top search Return and per-keystroke search show the list pane before the search lines (the Mac goes to the Search page) */
+        const char* src = ui_source();
+        const char* e = src != NULL ? strstr(src, "case P4_SEARCH:") : NULL;
+        const char* end = e != NULL ? strstr(e, "case P4_CMD:") : NULL;
+        const char* live = e != NULL ? strstr(e, "case P4_SEARCHLIVE:") : NULL;
+        const char* ps = e != NULL ? strstr(e, "mui_pane_show(s, SEL_UIM_PG_HOME)") : NULL;
+        const char* ps2 = live != NULL ? strstr(live, "mui_pane_show(s, SEL_UIM_PG_HOME)") : NULL;
+        const char* ln2 = live != NULL ? strstr(live, "mui_engine_line(s, lines[i])") : NULL;
+        if (end == NULL || live == NULL || ps == NULL || ps >= live || ps2 == NULL || ps2 >= end || ps2 > ln2) {
+            fprintf(stderr, "FAIL P4_SEARCH or P4_SEARCHLIVE does not show the list pane before sending the search\n");
+            failures++;
+        }
+    }
 }
 
 /* Regression (I671): on a 640x256 AGA screen MUI refused the window (MUIA_Window_Open read back 0, requester "the MUI

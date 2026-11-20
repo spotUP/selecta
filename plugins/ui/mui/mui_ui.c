@@ -4820,6 +4820,7 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         mui_str_utf8(s->str_search, text, sizeof text);
         n = mui_search_lines(text, lines);
         if (n > 0) {
+            mui_pane_show(s, SEL_UIM_PG_HOME); /* I1481c: the results show in the list pane; from Queue or Now Playing it must be on screen (the Mac goes to the Search page) */
             mui_search_chips_reset(s);
         }
         for (i = 0; i < n; i++) {
@@ -4835,6 +4836,9 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_SEARCHLIVE:
         mui_str_utf8(s->str_search, text, sizeof text);
         n = mui_search_lines(text, lines); /* I1463: a keystroke refines the search, so the chips stay (the Mac and text UI reset on a new search only) */
+        if (n > 0) {
+            mui_pane_show(s, SEL_UIM_PG_HOME); /* I1481c: as P4_SEARCH */
+        }
         for (i = 0; i < n; i++) {
             mui_engine_line(s, lines[i]);
         }
