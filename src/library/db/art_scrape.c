@@ -609,6 +609,12 @@ static int dz_step(sel_library* lib, const char* own, sel_scrape_stats* st) {
         st->scraped++;
         if (r >= 0) dz_put(lib, id, "dz_more2", "1", 1); /* no CSDb answer yet (fetch failed): the next play asks again */
     }
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_DS_KEY;
+    op.ref = key;
+    op.data = (uint8_t*)meta;
+    op.cap = sizeof meta;
+    if (art_request(lib, &op) > 0) return 1; /* I1468 R4: a SID with a DeepSID key gets no Demozoo stills; the title+author match is the fuzzy class that showed other productions */
     memset(meta, 0, sizeof meta);
     if (strncmp(key, "modland:pub/modules/", 20) != 0) { /* I1401: any other source is asked by title + artist from the songs row */
         memset(&op, 0, sizeof op);
@@ -717,6 +723,7 @@ static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stat
     char dk[1100], base[256], url[SCRAPE_URL_MAX];
     sel_art_op op;
     scrape_buf js, img;
+    uint8_t* file;
     int ids[3], ok = -1, n, i, ni;
 
     memset(&op, 0, sizeof op);
@@ -731,7 +738,11 @@ static int csdb_cover(sel_library* lib, const char* key, int id, sel_scrape_stat
     if (js.data != NULL && img.data != NULL && (n = dz_has(lib, sel_art_dz_id(dk), "ds_csdb", js.data, DS_JSON_MAX - 1u)) > 0) {
         js.data[n] = '\0';
         ok = 0;
-        ni = (int)sel_deepsid_csdb_ids((const char*)js.data, ids, 3u); /* I1454: up to 3 release screenshots, all join the rotation */
+        file = malloc(DS_JSON_MAX);
+        n = file != NULL ? dz_has(lib, sel_art_dz_id(dk), "ds_file", file, DS_JSON_MAX - 1u) : 0;
+        if (n > 0) file[n] = '\0';
+        ni = n > 0 ? (int)sel_deepsid_csdb_own((const char*)file, (const char*)js.data, ids, 3u) : 0; /* I1468 R3: only the tune's own production; no file answer = no still */
+        free(file);
         base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
         for (i = 0; i < ni; i++) {
             snprintf(url, sizeof url, "%s/api/deepsid/image/csdb/%d.jpg?w=320", base, ids[i]);

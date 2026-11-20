@@ -32,6 +32,24 @@ int main(void) {
     CHECK(strcmp(url, "https://csdb.dk/release/?id=202") == 0);
     sel_csdb_art_key(202, key, sizeof key);
     CHECK(strcmp(key, "csdb-release:202") == 0);
+    {   /* I1468: a SID's CSDb "used in" list holds other productions; only the tune's own release passes */
+        const char* used =
+            "{\"csdbId\":10336,\"releases\":[{\"id\":5551,\"name\":\"Aural Mystery 2\",\"group\":\"Softkiller-Crew\",\"year\":1987,\"type\":\"One-File Demo\",\"screenshot\":\"a\"},"
+            "{\"id\":3274,\"name\":\"Last Ninja\",\"group\":\"Blues Muz'\",\"year\":2001,\"type\":\"Music Collection\",\"screenshot\":\"b\"},"
+            "{\"id\":9483,\"name\":\"Speed\",\"group\":\"Blues Muz'\",\"year\":2003,\"type\":\"Music\",\"screenshot\":\"c\"},"
+            "{\"id\":7001,\"name\":\"Other Demo\",\"group\":\"Nobody\",\"year\":2001,\"type\":\"Demo\",\"screenshot\":\"d\"},"
+            "{\"id\":7002,\"name\":\"The Last Ninja!\",\"group\":\"Zed\",\"year\":1987,\"type\":\"Demo\",\"screenshot\":\"e\"}]}";
+        const char* remix = "{\"title\":\"Last Ninja 1 Remix\",\"copyright\":\"2001 Onslaught/Blues Muz'\",\"csdbType\":\"sid\",\"csdbId\":10336,\"stil\":\"\"}";
+        const char* game = "{\"title\":\"The Last Ninja\",\"copyright\":\"1987 System 3\",\"csdbType\":\"sid\",\"csdbId\":10336,\"stil\":\"[from the C64 game The Last Ninja]\"}";
+        const char* uri = "{\"title\":\"Uridium\",\"copyright\":\"1986 Hewson\",\"csdbType\":\"sid\",\"csdbId\":10336}";
+        const char* rel = "{\"title\":\"X\",\"copyright\":\"1990 Y\",\"csdbType\":\"release\",\"csdbId\":124}";
+
+        CHECK(sel_deepsid_csdb_own(remix, used, ids, 6) == 1 && ids[0] == 3274); /* same year and group; 2003 "Speed" is another year */
+        CHECK(sel_deepsid_csdb_own(game, used, ids, 6) == 1 && ids[0] == 7002); /* year 1987 and name equals the STIL game; Aural Mystery 2 has neither */
+        CHECK(sel_deepsid_csdb_own(uri, used, ids, 6) == 0);
+        CHECK(sel_deepsid_csdb_own(rel, used, ids, 6) == 1 && ids[0] == 124);
+        CHECK(sel_deepsid_csdb_own(NULL, used, ids, 6) == 0 && sel_deepsid_csdb_own("{}", used, ids, 6) == 0);
+    }
     if (failures == 0) printf("library_deepsid_csdb_thumb_ok\n");
     return failures != 0;
 }

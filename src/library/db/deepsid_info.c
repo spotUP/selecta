@@ -201,6 +201,73 @@ uint32_t sel_deepsid_csdb_ids(const char* json, int* ids, uint32_t max) {
     return n;
 }
 
+/* Lowercase letters and digits only, so "Last Ninja!" equals "last ninja". */
+static void norm(const char* in, char* out, size_t cap) {
+    size_t n = 0;
+
+    for (; *in != '\0' && n + 1 < cap; in++) {
+        char c = *in >= 'A' && *in <= 'Z' ? (char)(*in + 32) : *in;
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) out[n++] = c;
+    }
+    out[n] = '\0';
+}
+
+uint32_t sel_deepsid_csdb_own(const char* file_json, const char* csdb_json, int* ids, uint32_t max) {
+    char type[16], copy[160], title[160], stil[1024], want[2][160], grp[64], name[160], nn[160];
+    const char *p, *end, *rel, *next, *g;
+    char seg[512];
+    uint32_t n = 0;
+    size_t len;
+    int cy, id, year, k;
+
+    if (file_json == NULL || ids == NULL || max == 0) return 0;
+    type[0] = '\0';
+    sel_json_str(file_json, "csdbType", type, sizeof type);
+    if (strcmp(type, "release") == 0) {
+        id = num_of(file_json, "csdbId");
+        if (id > 0) ids[n++] = id;
+        return n;
+    }
+    if (strcmp(type, "sid") != 0 || csdb_json == NULL) return 0;
+    copy[0] = title[0] = stil[0] = '\0';
+    sel_json_str(file_json, "copyright", copy, sizeof copy);
+    sel_json_str(file_json, "title", title, sizeof title); /* shortcut: the answer's song-name key is "title"; unverified against the live server */
+    sel_json_str(file_json, "stil", stil, sizeof stil);
+    cy = atoi(copy);
+    norm(title, want[0], sizeof want[0]);
+    want[1][0] = '\0';
+    if ((g = strstr(stil, "from the C64 game ")) != NULL) {
+        char game[160];
+        size_t m = 0;
+
+        for (g += 18; *g != '\0' && *g != ']' && *g != '\n' && m + 1 < sizeof game; g++) game[m++] = *g;
+        game[m] = '\0';
+        norm(game, want[1], sizeof want[1]);
+    }
+    p = strstr(csdb_json, "\"releases\"");
+    p = p != NULL ? sel_json_value(p + 10) : NULL;
+    end = p != NULL && *p == '[' ? strrchr(p, ']') : NULL;
+    while (end != NULL && n < max && (rel = strstr(p, "\"id\"")) != NULL && rel < end) {
+        next = strstr(rel + 4, "\"id\"");
+        len = next != NULL && next < end ? (size_t)(next - rel) : (size_t)(end - rel);
+        if (len >= sizeof seg) len = sizeof seg - 1u;
+        memcpy(seg, rel, len);
+        seg[len] = '\0';
+        p = rel + 4;
+        id = num_of(seg, "id");
+        year = num_of(seg, "year");
+        grp[0] = name[0] = '\0';
+        sel_json_str(seg, "group", grp, sizeof grp);
+        sel_json_str(seg, "name", name, sizeof name);
+        norm(name, nn, sizeof nn);
+        if (id <= 0 || cy <= 0 || year != cy) continue;
+        for (k = 0; grp[k] != '\0'; k++) grp[k] = grp[k] >= 'A' && grp[k] <= 'Z' ? (char)(grp[k] + 32) : grp[k]; /* ci_has wants a lowercase needle */
+        k = (grp[0] != '\0' && ci_has(copy, grp)) || (nn[0] != '\0' && (strcmp(nn, want[0]) == 0 || strcmp(nn, want[1]) == 0));
+        if (k) ids[n++] = id;
+    }
+    return n;
+}
+
 int sel_deepsid_art_ask(sel_library* lib, const sel_art_op* op) {
     sel_message reply;
 
