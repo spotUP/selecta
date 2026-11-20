@@ -54,6 +54,9 @@
 #include <utility/hooks.h>
 #include <proto/exec.h>
 #include <proto/intuition.h>
+/* I1473h: asl.library base renamed like DiskfontBase below, else libnix opens it at program start and the vamos
+ * text UI runs exit 20 "asl.library failed to load". Opened only around the Add Folder requester. */
+#define AslBase sel_mui_AslBase
 #include <libraries/asl.h>
 #include <proto/asl.h>
 #include "mui_gfxbase.h"
