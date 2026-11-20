@@ -30,6 +30,8 @@ static const struct {
     {"New Playlist", SEL_GUI_ICON_PLUS}, {"New Folder", SEL_GUI_ICON_FOLDER}, {"check", SEL_GUI_ICON_CHECK}, {"close", SEL_GUI_ICON_X},
     /* I973j: player bar speaker and subsong buttons pass the gui_icons.h file names directly */
     {"volume-2", SEL_GUI_ICON_VOLUME_2}, {"minus", SEL_GUI_ICON_MINUS}, {"plus", SEL_GUI_ICON_PLUS},
+    /* I1473g8: the library style chooser, the same icons as the desktop segments */
+    {"style_grid", SEL_GUI_ICON_LAYOUT_GRID}, {"style_coverflow", SEL_GUI_ICON_GALLERY_HORIZONTAL}, {"style_list", SEL_GUI_ICON_LIST},
     /* breadcrumb */
     {"crumb", SEL_GUI_ICON_CHEVRON_RIGHT},
 };

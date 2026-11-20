@@ -136,3 +136,51 @@ int32_t mui_style_packed_cursor(uint32_t style, uint32_t cols, int32_t cursor) {
     }
     return kind == MUI_STYLE_GRID ? (int32_t)((uint32_t)cursor / (cols == 0u ? 1u : cols)) : cursor;
 }
+
+/* I1473g8: the chooser table; labels and lines are the desktop's (desktop_ui.c lib_style_name, lib_style_cmd). */
+uint32_t mui_style_chooser(uint32_t source, uint32_t style, uint32_t mask, mui_style_choice out[3]) {
+    static const struct {
+        const char* label;
+        const char* icon_key;
+        const char* cmd;
+        uint32_t style;
+    } k_choice[3] = {{"Grid", "style_grid", "VIEW_STYLE grid", SEL_VIEW_STYLE_GRID},
+                     {"Cover Flow", "style_coverflow", "VIEW_STYLE coverflow", SEL_VIEW_STYLE_COVERFLOW},
+                     {"List", "style_list", "VIEW_STYLE regular", SEL_VIEW_STYLE_REGULAR}};
+    uint32_t i, n = 0, sel = style == SEL_VIEW_STYLE_GRID ? 0u : style == SEL_VIEW_STYLE_COVERFLOW ? 1u : 2u;
+    if (source != SEL_VIEW_QUERY && source != SEL_VIEW_SEARCH) {
+        return 0;
+    }
+    for (i = 0; i < 3u; i++) {
+        if ((mask & SEL_VIEW_STYLE_BIT(k_choice[i].style)) != 0u) {
+            out[n].label = k_choice[i].label;
+            out[n].icon_key = k_choice[i].icon_key;
+            out[n].cmd = k_choice[i].cmd;
+            out[n].slot = i;
+            out[n].selected = i == sel;
+            n++;
+        }
+    }
+    return n;
+}
+
+/* I1473g8: a style line as the desktop lib_style_click sends it. Grid and Cover Flow show the library's songs (I453): LIBRARY_SEARCH "",
+ * VIEW_SOURCE query, VIEW_WINDOW, then the style line; any other line goes alone. Returns 1 when the sequence ran to its last line,
+ * 0 when a line was refused or `line` is NULL. *libmode is set to the Library mode the sequence enters (0, Composers), else left. */
+uint32_t mui_style_fire(const char* line, uint32_t window_rows, mui_send_fn send, void* ctx, uint32_t* libmode) {
+    char w[32];
+    int songs = line != NULL && (strcmp(line, "VIEW_STYLE grid") == 0 || strcmp(line, "VIEW_STYLE coverflow") == 0);
+    if (line == NULL || send == NULL) {
+        return 0;
+    }
+    if (songs) {
+        snprintf(w, sizeof w, "VIEW_WINDOW %u", (unsigned)window_rows);
+        if (libmode != NULL) {
+            *libmode = 0u;
+        }
+        if (!send(ctx, "LIBRARY_SEARCH \"\"") || !send(ctx, "VIEW_SOURCE query") || !send(ctx, w)) {
+            return 0;
+        }
+    }
+    return send(ctx, line) != 0;
+}
