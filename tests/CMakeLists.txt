@@ -1340,6 +1340,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_grid_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-grid-geom COMMAND uim_grid_test)
   set_tests_properties(uim-grid-geom PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_grid_ok")
+  # I1473g8b1: the shared Cover Flow geometry.
+  add_executable(uim_flow_test uimodel/flow_test.c)
+  target_link_libraries(uim_flow_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-flow-geom COMMAND uim_flow_test)
+  set_tests_properties(uim-flow-geom PROPERTIES TIMEOUT 60 LABELS "uimodel;mui" PASS_REGULAR_EXPRESSION "uim_flow_ok")
   # I1442b: the shared source drill rules (key parse, crumbs, engine find, filterable, count).
   add_executable(uim_drill_test uimodel/drill_test.c)
   target_link_libraries(uim_drill_test PRIVATE selecta_uimodel selecta_core)
