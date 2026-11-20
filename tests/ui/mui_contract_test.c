@@ -4121,6 +4121,30 @@ static void test_overlays(void) {
 
 /* I794 behaviour (drift doc T1, P2, P3): each route target enters its page with the lines the desktop UI sends, Back and Forward restore
  * without touching Recents (" 1"), the door keeps its lines as the history entry, and Back and Forward are enabled from the history. */
+/* I1480: a sidebar row is a button that routes through SIDEBAR_ROW; the model keeps the item index; a source item opens its collection page. */
+static void test_sidebar_row(void) {
+    sel_engine_library_item it[3];
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    mui_route r;
+    route_log l;
+    const char* src = ui_source();
+    memset(it, 0, sizeof it);
+    memset(&in, 0, sizeof in);
+    memset(&l, 0, sizeof l);
+    it[0].kind = SEL_LIB_ITEM_LIKED; snprintf(it[0].name, sizeof it[0].name, "Liked Songs");
+    it[1].kind = SEL_LIB_ITEM_PLAYLIST; it[1].id = 7; snprintf(it[1].name, sizeof it[1].name, "Road");
+    it[2].kind = SEL_LIB_ITEM_ALBUM; snprintf(it[2].name, sizeof it[2].name, "Chip Tunes");
+    in.items = it; in.item_n = 3; in.filter = ""; in.chip = 2;
+    mui_sidebar_build(&in, &m);
+    CHECK(m.row_n == 1u && m.row[0].item == 2u, "the album row keeps its item index 2, got %u", (unsigned)m.row[0].item);
+    CHECK(src != NULL && strstr(src, "CTL_SIDE_BASE + MUI_SIDE_ROW + (LONG)i") != NULL && strstr(src, "SEL_ROUTE_SIDEBAR_ROW, it->kind") != NULL &&
+              strstr(src, "mui_side_text(d, line,") == NULL, "sidebar rows are buttons routed through SIDEBAR_ROW, never plain text");
+    mui_route_init(&r);
+    CHECK(mui_route_click(&r, SEL_ROUTE_SIDEBAR_ROW, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, "HVSC", "HVSC", "", route_rec, &l) && mui_route_on_collection(&r) && l.n == 1u,
+          "a source row opens the collection page with one line: %s", l.n > 0u ? l.line[0] : "(none)");
+}
+
 static void test_route(void) {
     mui_route r;
     route_log l;
@@ -4545,6 +4569,8 @@ int main(int argc, char** argv) {
         test_doors();
     } else if (strcmp(argv[1], "sidebar") == 0) {
         test_sidebar();
+    } else if (strcmp(argv[1], "sidebar-row") == 0) {
+        test_sidebar_row();
     } else if (strcmp(argv[1], "sidebar-bullet-latin1") == 0) {
         test_sidebar_bullet_latin1();
     } else if (strcmp(argv[1], "home") == 0) {

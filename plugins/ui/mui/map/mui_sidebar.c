@@ -94,6 +94,7 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
             }
             r->kind = it->kind;
             r->id = it->id;
+            r->item = i;
         }
     }
     m->wide = in->wide != 0u; /* S7: Title, Type, Date Added, Played */

@@ -775,7 +775,8 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
 #define CTL_SIDE_BASE 0x2900L /* I793: the Your Library sidebar presses, CTL_SIDE_BASE + MUI_SIDE_* */
-enum { MUI_SIDE_TITLE = 0, MUI_SIDE_CREATE, MUI_SIDE_EXPAND, MUI_SIDE_CARD, MUI_SIDE_CHIP, MUI_SIDE_COUNT = MUI_SIDE_CHIP + 6 };
+enum { MUI_SIDE_TITLE = 0, MUI_SIDE_CREATE, MUI_SIDE_EXPAND, MUI_SIDE_CARD, MUI_SIDE_CHIP, MUI_SIDE_ROW = MUI_SIDE_CHIP + 6,
+       MUI_SIDE_COUNT = MUI_SIDE_ROW + MUI_SIDEBAR_ROWS }; /* I1480: the S6 rows, 26 ids, inside SPAN_CTL_SIDE_BASE 256 */
 #define CTL_CRUMB_BASE 0x2400L /* MUI-P4-2: one button per breadcrumb piece */
 #define CTL_P4_BASE 0x2300L /* MUI-P4: CTL_P4_BASE + P4_* */
 static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 stars", "4 stars", "5 stars", NULL};
@@ -1364,7 +1365,7 @@ static void mui_side_text(Object* g, const char* text, int tone) {
 }
 
 /* I1166b: one table line of the expanded sidebar, four cells; the title cell is twice as wide as the others. */
-static void mui_side_cells(Object* g, const char* a, const char* b, const char* c, const char* d, int tone) {
+static void mui_side_cells(Object* g, const char* a, const char* b, const char* c, const char* d, int tone, LONG id) {
     Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     const char* txt[4];
     uint32_t k;
@@ -1373,7 +1374,7 @@ static void mui_side_cells(Object* g, const char* a, const char* b, const char* 
         return;
     }
     for (k = 0; k < 4u; k++) {
-        Object* t = mui_aatext(txt[k], tone, MUI_AA_ALIGN_LEFT, 0);
+        Object* t = k == 0u && id != 0 ? mui_make_button_left(txt[k], NULL, id) : mui_aatext(txt[k], tone, MUI_AA_ALIGN_LEFT, 0); /* I1480: the title cell is the row's click */
         if (t != NULL) {
             SetAttrs(t, MUIA_HorizWeight, k == 0u ? 200 : 100, TAG_DONE);
             DoMethod(row, OM_ADDMEMBER, t);
@@ -1415,15 +1416,15 @@ static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
         mui_side_add(d, row);
     }
     if (m->wide) {
-        mui_side_cells(d, m->head[0], m->head[1], m->head[2], m->head[3], MUI_AA_TONE_MUTED);
+        mui_side_cells(d, m->head[0], m->head[1], m->head[2], m->head[3], MUI_AA_TONE_MUTED, 0);
     }
     for (i = 0; i < m->row_n; i++) { /* S6: mark, title, subtitle; the model rows are the filtered rows, the only row list */
         char line[200];
         snprintf(line, sizeof line, "%s  %s  %s", m->row[i].mark, m->row[i].title, m->row[i].subtitle);
         if (m->wide) { /* I1166b: Expand Library, the table: Title | Type | Date Added | Played (the Mac side_table rows) */
-            mui_side_cells(d, line, m->row[i].type, m->row[i].added, m->row[i].played, MUI_AA_TONE_NORMAL);
+            mui_side_cells(d, line, m->row[i].type, m->row[i].added, m->row[i].played, MUI_AA_TONE_NORMAL, CTL_SIDE_BASE + MUI_SIDE_ROW + (LONG)i);
         } else {
-            mui_side_text(d, line, MUI_AA_TONE_NORMAL);
+            mui_side_button(d, line, CTL_SIDE_BASE + MUI_SIDE_ROW + (LONG)i); /* I1480: a row opens its item page, desktop side_row_open */
         }
     }
     if (m->empty[0] != '\0') { /* S8 */
@@ -5334,7 +5335,16 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 1u, joined, mui_route_send, s);
     } else if (id >= CTL_SIDE_BASE && id < CTL_SIDE_BASE + (LONG)MUI_SIDE_COUNT) {
         LONG k = id - CTL_SIDE_BASE;
-        if (k == MUI_SIDE_CREATE || k == MUI_SIDE_CARD) {
+        if (k >= MUI_SIDE_ROW) { /* I1480: SIDEBAR_ROW like the desktop side_row_open; the model maps the row to its s->side_items entry */
+            mui_sidebar_model m;
+            uint32_t r = (uint32_t)(k - MUI_SIDE_ROW);
+            mui_sidebar_model_for(s, s->side_top_bar, &m);
+            if (r < m.row_n && m.row[r].item < s->side_item_n) {
+                const sel_engine_library_item* it = &s->side_items[m.row[r].item];
+                mui_pane_show(s, SEL_UIM_PG_HOME); /* from Queue or Now Playing the page must be on screen, as CTL_TOPBAR_BROWSE */
+                mui_route_click(&s->route, SEL_ROUTE_SIDEBAR_ROW, it->kind, it->id, it->key, it->name, it->sub, mui_route_send, s);
+            }
+        } else if (k == MUI_SIDE_CREATE || k == MUI_SIDE_CARD) {
             /* I1335: show the playlists page first (as the desktop side_create_playlist goes to the collection page) so the click has a visible
              * effect, then PLAYLIST_CREATE as the Playlists page New button, then refresh the sidebar list so the new row appears. */
             mui_engine_line(s, mui_door_line(3));
