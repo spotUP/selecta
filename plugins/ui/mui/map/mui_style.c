@@ -19,6 +19,13 @@ uint32_t mui_style_mask(int screen_is_rtg) {
 static uint32_t g_style_packs;
 uint32_t mui_style_packs(void) { return g_style_packs; }
 
+/* I1473g6: Grid draws on the canvas; Cover Flow and Compact still pack into List rows. */
+uint32_t mui_style_canvas(uint32_t style) { return mui_style_kind(style) == MUI_STYLE_GRID; }
+uint32_t mui_style_packed(uint32_t style) {
+    uint32_t k = mui_style_kind(style);
+    return k != MUI_STYLE_LIST && k != MUI_STYLE_GRID;
+}
+
 uint32_t mui_style_kind(uint32_t style) {
     switch (style) {
     case SEL_VIEW_STYLE_GRID: return MUI_STYLE_GRID;
