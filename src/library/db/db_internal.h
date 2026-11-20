@@ -212,6 +212,10 @@ void sel_stil_owner_key(const char* key, char* out, size_t cap);
 /* I1440g: the DeepSID key `hvsc:<path>` of a SID song, by route (design 2.1). Returns SEL_DEEPSID_*; out is empty on NONE. */
 enum { SEL_DEEPSID_NONE, SEL_DEEPSID_HVSC, SEL_DEEPSID_MODLAND, SEL_DEEPSID_MD5, SEL_DEEPSID_SUFFIX, SEL_DEEPSID_TWIN };
 int sel_deepsid_key(sqlite3* db, const char* source, const char* path, const char* md5, char* out, size_t cap);
+/* I1465a: the meta key of song key `key` (design 3), the key all artwork and metadata of the song hangs off; written to out, cached in song_meta_key.
+ * Returns the route (SEL_META_*); SEL_META_OWN: out is the song's own key. */
+enum { SEL_META_OWN, SEL_META_SID, SEL_META_HASH, SEL_META_TWIN };
+int sel_meta_key(sqlite3* db, const char* key, char* out, size_t cap);
 /* I1094b: the single-row writers' two halves. sel_dup_md5_of reads the md5 of song `key` ("" when no row or none) BEFORE the write;
  * sel_dup_after regroups that old md5 and the md5 `key` has AFTER the write (a delete leaves no row: only the old group moves). */
 void sel_dup_md5_of(sqlite3* db, const char* key, char out[33]);

@@ -335,11 +335,15 @@ static const char SCHEMA_V24[] =
 static const char SCHEMA_V25[] =
     "CREATE VIRTUAL TABLE song_strings USING fts5(key UNINDEXED, text);";
 
+/* I1465a: the meta key of a song (user.c sel_meta_key), cached so the title twin query runs once per song. */
+static const char SCHEMA_V26[] =
+    "CREATE TABLE IF NOT EXISTS song_meta_key(key TEXT PRIMARY KEY, meta_key TEXT NOT NULL, route INTEGER NOT NULL) WITHOUT ROWID;";
+
 /* DRIFT GUARD: every entry added here must be mirrored in SCHEMA_FINAL (below); ctest library-schema-final fails otherwise. */
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
                                            SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18,
-                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23, SCHEMA_V24, SCHEMA_V25};
+                                           SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23, SCHEMA_V24, SCHEMA_V25, SCHEMA_V26};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -510,6 +514,7 @@ static const char* const SCHEMA_FINAL[] = {
     "CREATE TABLE search_cache(source TEXT NOT NULL, query TEXT NOT NULL, at INTEGER NOT NULL, used INTEGER NOT NULL, hits BLOB NOT NULL, PRIMARY KEY(source, query)) WITHOUT ROWID;",
     "CREATE INDEX search_cache_used ON search_cache(used);",
     "CREATE TRIGGER source_songs_search_cache_ad AFTER DELETE ON source_songs BEGIN DELETE FROM search_cache WHERE source = old.source;END;",
+    "CREATE TABLE song_meta_key(key TEXT PRIMARY KEY, meta_key TEXT NOT NULL, route INTEGER NOT NULL) WITHOUT ROWID;",
     /* seed: the v7 step counts songs without a composer, which is 0 on a fresh database */
     "INSERT INTO composer_unknown(n) VALUES(0)",
 };
