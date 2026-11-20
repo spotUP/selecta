@@ -590,20 +590,26 @@ static ULONG canvas_event(Object* obj, canvas_data* d, const struct IntuiMessage
         if ((code == MUI_RAWKEY_WHEEL_UP || code == MUI_RAWKEY_WHEEL_DOWN) && !inside) {
             return 0;
         }
-        if (!mui_grid_key(code, mui_grid_cols(&d->style, (int32_t)_mwidth(obj)), &in)) {
+        if (!mui_grid_key(code, d->flow ? 0u : mui_grid_cols(&d->style, (int32_t)_mwidth(obj)), &in)) { /* Cover Flow has no rows: Up/Down pass, Left/Right/wheel step one */
             return 0;
         }
         canvas_post(obj, d, in.kind, in.arg);
         return MUI_EventHandlerRC_Eat;
     }
     if (im->Class == IDCMP_MOUSEBUTTONS && inside && (im->Code == IECODE_LBUTTON || im->Code == IECODE_RBUTTON)) {
-        int32_t t = mui_grid_hit(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), d->n, d->cursor, im->MouseX - _mleft(obj), im->MouseY - _mtop(obj));
+        int32_t t = d->flow ? sel_uim_flow_hit(d->fv.cv, d->fv.n, im->MouseX - _mleft(obj), im->MouseY - _mtop(obj), 0)
+                            : mui_grid_hit(&d->style, (int32_t)_mwidth(obj), (int32_t)_mheight(obj), d->n, d->cursor, im->MouseX - _mleft(obj), im->MouseY - _mtop(obj));
         if (t < 0) {
             return 0;
         }
         if (im->Code == IECODE_RBUTTON) {
             canvas_post(obj, d, MUI_GIN_PICK, t);
             return 0;
+        }
+        if (d->flow && im->Code == IECODE_LBUTTON && (uint32_t)t != d->cursor) { /* D-F3: a side cover moves the flow to it; the front cover keeps the Grid click */
+            d->click_tile = -1;
+            canvas_post(obj, d, MUI_GIN_PICK, t);
+            return MUI_EventHandlerRC_Eat;
         }
         if (d->click_tile == t && DoubleClick(d->click_s, d->click_m, im->Seconds, im->Micros)) {
             d->click_tile = -1;

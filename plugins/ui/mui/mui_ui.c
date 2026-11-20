@@ -118,7 +118,8 @@ static void mui_libs_close(void) {
 static void mui_report(mui_fail why, const char* detail);
 /* The view styles this UI offers: the View > Style menu, the SEL_UI_VIEW_STYLES tag and the style chooser read this one value (I1473g8b4
  * widens it for Cover Flow). */
-static uint32_t mui_view_style_mask(void) { return mui_style_mask(0); }
+static int g_screen_rtg; /* defined here so the style mask can read it; see I684b below */
+static uint32_t mui_view_style_mask(void) { return mui_style_mask(g_screen_rtg); }
 
 #ifdef SEL_MUI_NATIVE
 static void mui_requester(const char* text); /* I1352b */
@@ -363,6 +364,8 @@ typedef struct mui_state {
     mui_grid_art* grid_art;
     int32_t grid_edge;
     uint32_t grid_on, grid_win, grid_n, grid_cols, list_base;
+    int flow_on;     /* I1473g8b4: the canvas is in Cover Flow mode (last mui_canvas_set_flow) */
+    int flow_gliding; /* the last mui_canvas_flow_tick left a glide running: the wait turn is capped */
     mui_flag list_show, canvas_show;
     mui_flag crumb_show, nav_back_dis, nav_fwd_dis; /* I966: last ShowMe / Disabled written, so mui_refresh sets only on a change */
     char crumb_buf[128];
@@ -778,7 +781,7 @@ static struct Screen* g_scr;
 static mui_pens_plan g_plan;
 static LONG g_pen_held[MUI_PEN_TOTAL];
 static int g_pixel_aspect_q8 = 256; /* I949a: pixel height over width x 256 of the opened screen mode, read once in mui_screen_open */
-static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; the own screen keeps that kind, planar stays planar */
+/* I684b: the Workbench mode is a foreign (RTG) one; the own screen keeps that kind, planar stays planar */
 
 /* I972: the own screen's font follows the tier (mui_aa_screen_font). MUI's stock objects and the PLAIN AA backend (no
  * ttengine or no Inter) draw in the screen font; without SA_Font they kept the 8 px Workbench font at 800x600. */
@@ -3569,16 +3572,22 @@ static void mui_style_chooser_sync(mui_state* s, const sel_view_state* v, int li
  * mui_canvas_invalidate (the tiles, hence the signature, did not change). */
 static void mui_grid_refresh(mui_state* s, const sel_view_state* v) {
     uint32_t cols = 0, rows = 0, want, n, cur = 0, k, in_win;
+    int flow;
     if (s->grid_art == NULL && s->art != NULL) {
         s->grid_art = mui_grid_art_open(s->art, mui_cover_album_image, s->grid_edge, MUI_GRID_ART_SLOTS);
     }
     mui_canvas_grid_fit(s->canvas, &cols, &rows);
     s->grid_cols = cols;
-    want = cols * (rows + 1u);
+    flow = v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
+    if (flow != s->flow_on) { /* I1473g8b4: set_flow resets the glide, so only on a change */
+        mui_canvas_set_flow(s->canvas, flow);
+        s->flow_on = flow;
+    }
+    want = flow ? MUI_ROWS_MAX : cols * (rows + 1u); /* the flow shows a strip around the cursor: the Mac's 64-row window */
     if (want > MUI_ROWS_MAX) {
         want = MUI_ROWS_MAX;
     }
-    if (cols != 0u && want != s->grid_win) {
+    if ((cols != 0u || flow) && want != s->grid_win) {
         char line[32];
         snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)want);
         mui_engine_line(s, line);
@@ -3834,9 +3843,9 @@ static void mui_refresh(mui_state* s) {
             } else {
                 row0[0] = '\0';
             }
-            snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u grid_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u indent=%u hook_calls=%u song_qid=%u song_ms=%u row0_id=%u header={%s} row0={%s}",
+            snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u grid_on=%u flow_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u indent=%u hook_calls=%u song_qid=%u song_ms=%u row0_id=%u header={%s} row0={%s}",
                      mui_list_backend_pick(0, 0)->name, (unsigned)v->style, (unsigned)mui_columns_for(s->col_bp, (uint8_t[MUI_COL_COUNT]){0}),
-                     s->col_fmt, (unsigned)n, (unsigned)s->grid_on, (unsigned)s->grid_n, (unsigned)s->grid_cols, (unsigned)s->grid_win,
+                     s->col_fmt, (unsigned)n, (unsigned)s->grid_on, (unsigned)s->flow_on, (unsigned)s->grid_n, (unsigned)s->grid_cols, (unsigned)s->grid_win,
                      s->canvas != NULL ? (unsigned)mui_canvas_draws(s->canvas) : 0u, s->grid_art != NULL ? (unsigned)mui_grid_art_decodes(s->grid_art) : 0u, (unsigned)s->canvas_show.value, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls, (unsigned)st->song.queue_id, (unsigned)st->song.duration_ms, n > 0 ? (unsigned)v->rows[0].id : 0u, head, row0);
         }
     }
@@ -5492,6 +5501,12 @@ static uint32_t mui_io_wait(void* ctx, uint32_t mask, uint32_t timeout_ms) {
 static int mui_wait(void* state, uint32_t timeout_ms) {
     mui_state* s = (mui_state*)state;
     mui_wait_io io;
+    if (s->canvas != NULL && s->flow_on && s->grid_on) { /* I1473g8b4: a glide redraws every turn, so the turn is at most 40 ms while it runs; at rest the wait is untouched */
+        s->flow_gliding = mui_canvas_flow_tick(s->canvas);
+        if (s->flow_gliding && timeout_ms > 40u) {
+            timeout_ms = 40u;
+        }
+    }
     if (s->wait_cap_ms != 0u && timeout_ms > s->wait_cap_ms) {
         timeout_ms = s->wait_cap_ms; /* I1454/I1455: a spinner or slide show must get its refresh */
     }

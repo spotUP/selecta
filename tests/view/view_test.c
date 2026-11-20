@@ -258,12 +258,14 @@ static void test_style(void) {
 }
 
 #ifdef SEL_VIEW_TEST_MUI
-/* MUI-P3-5: a planar MUI screen offers five styles; the engine refuses cover flow there and takes it on RTG. */
+/* MUI-P3-5 / I1473g8b4 (D-F5, deliberate change): every MUI screen, planar included, offers all six styles and takes cover flow.
+ * The refusal path is still proven with the classic mask, which has no cover flow. */
 static void test_mui_refusal(void) {
     uint32_t s;
-    sel_engine_set_ui_view_styles(eng, mui_style_mask(0));
+    sel_engine_set_ui_view_styles(eng, SEL_VIEW_STYLES_CLASSIC);
     run("VIEW_STYLE coverflow");
-    CHECK(strstr(evlog, "ERROR unsupported_style") != NULL, "planar coverflow not refused: %s", evlog);
+    CHECK(strstr(evlog, "ERROR unsupported_style") != NULL, "classic coverflow not refused: %s", evlog);
+    sel_engine_set_ui_view_styles(eng, mui_style_mask(0));
     for (s = 0; s < SEL_VIEW_STYLE_COUNT; s++) {
         char cmd[64];
         if ((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(s)) == 0u) continue;
@@ -271,6 +273,7 @@ static void test_mui_refusal(void) {
         run(cmd);
         CHECK(strstr(evlog, "ERROR unsupported_style") == NULL, "planar offered style %s refused: %s", sel_view_style_label(s), evlog);
     }
+    CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) != 0u, "planar mask lacks coverflow");
     sel_engine_set_ui_view_styles(eng, mui_style_mask(1));
     run("VIEW_STYLE coverflow");
     CHECK(strstr(evlog, "ERROR unsupported_style") == NULL, "RTG coverflow refused: %s", evlog);

@@ -2,8 +2,10 @@
 
 #include <selecta/engine.h>
 
+/* I1473g8b4 (D-F5): every style on every screen; Cover Flow draws on the canvas, RTG and planar. The parameter stays for the callers. */
 uint32_t mui_style_mask(int screen_is_rtg) {
-    return screen_is_rtg ? SEL_VIEW_STYLES_ALL : SEL_VIEW_STYLES_ALL & ~SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW);
+    (void)screen_is_rtg;
+    return SEL_VIEW_STYLES_ALL;
 }
 
 #include <stdio.h>
@@ -19,11 +21,14 @@ uint32_t mui_style_mask(int screen_is_rtg) {
 static uint32_t g_style_packs;
 uint32_t mui_style_packs(void) { return g_style_packs; }
 
-/* I1473g6: Grid draws on the canvas; Cover Flow and Compact still pack into List rows. */
-uint32_t mui_style_canvas(uint32_t style) { return mui_style_kind(style) == MUI_STYLE_GRID; }
+/* I1473g6/g8b4: Grid and Cover Flow draw on the canvas; Compact still packs into List rows. */
+uint32_t mui_style_canvas(uint32_t style) {
+    uint32_t k = mui_style_kind(style);
+    return k == MUI_STYLE_GRID || k == MUI_STYLE_COVERFLOW;
+}
 uint32_t mui_style_packed(uint32_t style) {
     uint32_t k = mui_style_kind(style);
-    return k != MUI_STYLE_LIST && k != MUI_STYLE_GRID;
+    return k != MUI_STYLE_LIST && !mui_style_canvas(style);
 }
 
 uint32_t mui_style_kind(uint32_t style) {
