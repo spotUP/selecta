@@ -3836,11 +3836,27 @@ static void mui_refresh(mui_state* s) {
                 mui_text_set(s->crumb, s->crumb_buf);
             }
             if (mui_flag_commit(&s->crumb_show, drill)) { /* I966: only on a change */
+                ULONG cpar = 0;
+                GetAttr(MUIA_Parent, s->crumb, &cpar); /* I1477: the ShowMe needs a relayout of the page group, as mui_pages_sync */
+                if (cpar != 0) {
+                    DoMethod((Object*)cpar, MUIM_Group_InitChange);
+                }
                 set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
+                if (cpar != 0) {
+                    DoMethod((Object*)cpar, MUIM_Group_ExitChange);
+                }
             }
         }
         if (mui_flag_commit(&s->addfolder_show, v->source == (uint32_t)SEL_VIEW_BROWSE)) { /* I1473h2: only on a change; I1473h3: browse is the Folders page (Mac SEL_UIM_PG_FOLDERS), folders is Playlists */
+            ULONG apar = 0;
+            GetAttr(MUIA_Parent, s->addfolder_row, &apar); /* I1477: relayout the page group on the ShowMe */
+            if (apar != 0) {
+                DoMethod((Object*)apar, MUIM_Group_InitChange);
+            }
             set(s->addfolder_row, MUIA_ShowMe, v->source == (uint32_t)SEL_VIEW_BROWSE ? TRUE : FALSE);
+            if (apar != 0) {
+                DoMethod((Object*)apar, MUIM_Group_ExitChange);
+            }
         }
         {
             /* MUI-P4-2: the browse path as clickable pieces; MUI-P4-15: the empty-state line of a view without rows. */
