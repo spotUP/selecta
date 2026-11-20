@@ -121,6 +121,11 @@ int sel_uim_search_group_shown(uint32_t facets, int scope_filtered, uint32_t gro
 /* I1206: whether the search view heading row at `heading` is a zero-hit category the UIs leave out (its rows too): "Songs/Albums/Artists (0)" and a
  * "From <source> (0)" whose only row is the keyless Searching or No results state. 0 for anything else, a failed or unsynced source included. */
 int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t heading);
+/* I1481: the "Nothing synced yet" section of an empty library offers two keyed action rows (the engine emits them, every UI draws them as
+ * buttons). sel_uim_search_action: 1 Add Folder, 2 Sync Sources, 0 for any other key. */
+#define SEL_UIM_SEARCH_ACT_ADD_FOLDER "action:add_folder"
+#define SEL_UIM_SEARCH_ACT_SYNC_SOURCES "action:sync_sources"
+uint32_t sel_uim_search_action(const char* key);
 /* I1406: search categories fold to their first SEL_UIM_SEARCH_FOLD_ROWS rows with a Show all control. The fold state is per session (process
  * memory, never stored): a category the user expanded stays expanded on the next search. `heading` text is "Songs (12)" or "From X (3)"; the count is
  * ignored when keying, so the state outlives a changing count. */

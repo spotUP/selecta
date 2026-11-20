@@ -14,6 +14,7 @@
 #include <selecta/catalogue.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/siinfo.h>
+#include <selecta/uimodel.h> /* I1481: the SEL_UIM_SEARCH_ACT_* row keys */
 #include <selecta/engine.h>
 #include <selecta/format_label.h>
 #include <selecta/output.h>
@@ -7064,6 +7065,21 @@ static size_t search_reload_sources(const sel_engine* e, char* text, size_t o, s
     return o;
 }
 
+/* I1481: 1 when a search can only come back empty because nothing is synced: the library holds no songs, the query found none and no
+ * source answered with hits. The search page then says why and offers Add Folder and Sync Sources (keys SEL_UIM_SEARCH_ACT_*). */
+static int search_nothing_synced(const sel_engine* e) {
+    uint32_t b;
+    if (e->rdt_rc != SEL_FOLDER_OK || e->rdt_total != 0u || e->res_count != 0u) {
+        return 0;
+    }
+    for (b = 0; b < e->search_buckets; b++) {
+        if (search_bucket_shown(&e->search_bucket[b]) != 0u || (!e->search_bucket[b].held && (e->search_bucket[b].state == SEARCH_QUEUED || e->search_bucket[b].state == SEARCH_RUNNING))) {
+            return 0; /* hits, or a source still searching: not yet */
+        }
+    }
+    return 1;
+}
+
 static void search_reload(sel_engine* e) {
     char* text = e->view.htext;
     uint32_t albums[2u * SEARCH_DISTINCT_MAX], artists[2u * SEARCH_DISTINCT_MAX];
@@ -7124,6 +7140,10 @@ static void search_reload(sel_engine* e) {
     if (o + lr < cap) {
         memcpy(text + o, art, lr);
         o += lr;
+    }
+    if (search_nothing_synced(e)) {
+        o += (size_t)snprintf(text + o, cap - o, "H Nothing synced yet\nS Add a folder or sync a source to search it.\nS %s\tAdd Folder\nS %s\tSync Sources\n",
+                              SEL_UIM_SEARCH_ACT_ADD_FOLDER, SEL_UIM_SEARCH_ACT_SYNC_SOURCES);
     }
     o = search_reload_sources(e, text, o, cap);
     text[o < cap ? o : cap - 1u] = '\0';
@@ -11858,7 +11878,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         /* I191a: a song row joins the queue and starts (like a query row); an album row runs the album search
          * and shows it through VIEW_SOURCE query. Headings and the count line carry no key. */
         const sel_view_row* r = &e->view.frows[at];
-        if (r->kind != SEL_ROW_HOME || r->key == NULL) {
+        if (r->kind != SEL_ROW_HOME || r->key == NULL || strncmp(r->key, "action:", 7) == 0) { /* I1481: an action row is the UI's button, not a song */
             return;
         }
         if (r->composer) { /* I479: the Composers page's own request opens the composer's songs */

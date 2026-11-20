@@ -9920,6 +9920,21 @@ static void src_sync_send(desk* d, uint32_t i) {
  * both come here. 0 when no such source is known. */
 static int search_sync_start(desk* d, const char* id) {
     uint32_t k;
+    uint32_t act = sel_uim_search_action(id);
+    if (act == 1u) { /* I1481: Add Folder of the empty-library section */
+        d->search_sync_clicks++;
+        return desk_add_folder(d);
+    }
+    if (act == 2u) { /* I1481: Sync Sources = every remote source the engine can sync */
+        for (k = 0; k < d->src_n; k++) {
+            if (sel_uim_src_syncable(&d->src[k])) {
+                src_sync_send(d, k);
+            }
+        }
+        d->search_sync_clicks++;
+        d->repaint = 1;
+        return 1;
+    }
     for (k = 0; k < d->src_n; k++) {
         if (strcmp(d->src[k].key, id) == 0) {
             d->search_sync_clicks++;
@@ -11121,13 +11136,14 @@ static void draw_search(desk* d) {
                 {
                     int pl = (group == 1u || group == 4u) && !r->album && r->key != NULL && song_playing(d, r->key); /* I690 */
                     int32_t bw = 0;
-                    if (group == 4u && r->key != NULL && strncmp(r->key, "sync:", 5) == 0) { /* I1053b: the Sync button of a Not synced section, no song row */
-                        sel_gui_rect br = rect_of(mn.x + mg, y + lpx(d, 4), lpx(d, 120), rh - lpx(d, 8));
+                    if (sel_uim_search_action(r->key) != 0u || (group == 4u && r->key != NULL && strncmp(r->key, "sync:", 5) == 0)) { /* I1053b: the Sync button of a Not synced section, no song row; I1481: Add Folder / Sync Sources of the empty-library section */
+                        int act = sel_uim_search_action(r->key) != 0u;
+                        sel_gui_rect br = rect_of(mn.x + mg, y + lpx(d, 4), lpx(d, act ? 160 : 120), rh - lpx(d, 8));
                         if (d->search_sync_n < 16u) {
-                            snprintf(d->search_sync[d->search_sync_n].id, sizeof d->search_sync[0].id, "%s", r->key + 5);
+                            snprintf(d->search_sync[d->search_sync_n].id, sizeof d->search_sync[0].id, "%s", act ? r->key : r->key + 5);
                             d->search_sync[d->search_sync_n++].rect = br;
                         }
-                        draw_button(d, br, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Sync", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+                        draw_button(d, br, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), act ? t : "Sync", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
                         y += lpx(d, SEARCH_ROW_H);
                         drawn_all++;
                         continue;
@@ -15726,7 +15742,10 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
             return 0;
         }
         d->kb_list = 1; /* the engine cursor is the focus row (I498) */
-        if (ev->code == 13u && sr != NULL && sr->key != NULL && strncmp(sr->key, "sync:", 5) == 0 && search_sync_start(d, sr->key + 5)) { /* I1053b: Enter on the Sync row = the click */
+        if (ev->code == 13u && sr != NULL && sr->key != NULL && sel_uim_search_action(sr->key) != 0u && search_sync_start(d, sr->key)) { /* I1481: Enter on an action row = the click */
+            d->kb_activates++;
+            return 1;
+        } else if (ev->code == 13u && sr != NULL && sr->key != NULL && strncmp(sr->key, "sync:", 5) == 0 && search_sync_start(d, sr->key + 5)) { /* I1053b: Enter on the Sync row = the click */
             d->kb_activates++;
             return 1;
         }

@@ -20,7 +20,7 @@
 #include <time.h>
 #include <unistd.h>
 
-static atomic_int g_in_slow, g_release;
+static atomic_int g_in_slow, g_release, g_none; /* g_none: Fake Alpha answers with no hits (I1481) */
 
 static void nap(long ms) {
     struct timespec ts;
@@ -35,6 +35,9 @@ static int hook_a(const sel_host* host, const char* q, sel_search_sink* out) {
     int i;
 
     (void)host;
+    if (atomic_load(&g_none)) {
+        return 0;
+    }
     if (strcmp(q, "slow") == 0) { /* stands in for a network wait */
         int waited = 0;
 
@@ -208,6 +211,28 @@ int main(void) {
         CHECK(strcmp(st->queue_text + st->queue[before].path_offset, "i1019va:1/abc") == 0);
         CHECK(st->queue_playing == st->queue[before].id); /* the key was started, not only queued */
     }
+
+    /* I1481: empty library and no source with hits: one "Nothing synced yet" section with the Add Folder and Sync Sources action rows; Enter on them plays nothing. */
+    atomic_store(&g_none, 1);
+    CHECK(send_line(e, "SOURCE_SEARCH * \"xyz\""));
+    drain(e);
+    v = sel_engine_state(e)->view;
+    {
+        uint32_t h_n = row_of(e, "Nothing synced yet");
+        char line[64];
+
+        before = sel_engine_state(e)->queue_count;
+        CHECK(h_n != UINT32_MAX && h_n + 3u < v->row_n);
+        CHECK(v->rows[h_n + 1u].key == NULL && strcmp(v->rows[h_n + 2u].text, "Add Folder") == 0 && strcmp(v->rows[h_n + 2u].key, "action:add_folder") == 0);
+        CHECK(strcmp(v->rows[h_n + 3u].text, "Sync Sources") == 0 && strcmp(v->rows[h_n + 3u].key, "action:sync_sources") == 0);
+        snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(h_n + 2u));
+        CHECK(send_line(e, line));
+        sel_engine_pump(e, sink, NULL);
+        CHECK(send_line(e, "VIEW_ACTIVATE"));
+        sel_engine_pump(e, sink, NULL);
+        CHECK(sel_engine_state(e)->queue_count == before);
+    }
+    atomic_store(&g_none, 0);
 
     sel_engine_destroy(e);
     sel_library_close(lib);

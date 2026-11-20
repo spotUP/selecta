@@ -147,6 +147,16 @@ uint32_t sel_uim_art_frame_kind(uint32_t kinds, uint32_t n) {
     return 0u;
 }
 
+uint32_t sel_uim_search_action(const char* key) {
+    if (key == NULL) {
+        return 0u;
+    }
+    if (strcmp(key, SEL_UIM_SEARCH_ACT_ADD_FOLDER) == 0) {
+        return 1u;
+    }
+    return strcmp(key, SEL_UIM_SEARCH_ACT_SYNC_SOURCES) == 0 ? 2u : 0u;
+}
+
 int sel_uim_search_section_hidden(const sel_view_row* rows, uint32_t row_n, uint32_t heading) {
     const char* t;
     const char* par;

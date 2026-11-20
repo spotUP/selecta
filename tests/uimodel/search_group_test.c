@@ -91,6 +91,17 @@ int main(void) {
     char buf[64];
     hidden_cases();
     shared_lift_cases();
+    /* I1481: the empty-library section's action rows. The heading is no search group, so it never hides. */
+    CHECK(sel_uim_search_action(SEL_UIM_SEARCH_ACT_ADD_FOLDER) == 1u);
+    CHECK(sel_uim_search_action(SEL_UIM_SEARCH_ACT_SYNC_SOURCES) == 2u);
+    CHECK(sel_uim_search_action("sync:aminet") == 0u && sel_uim_search_action("hits:1") == 0u && sel_uim_search_action(NULL) == 0u);
+    {
+        sel_view_row n[3];
+        memset(n, 0, sizeof n);
+        n[0].kind = SEL_ROW_HEADING; n[0].text = "Nothing synced yet";
+        n[1].kind = SEL_ROW_HOME;    n[1].text = "Add Folder"; n[1].key = SEL_UIM_SEARCH_ACT_ADD_FOLDER;
+        CHECK(sel_uim_search_section_hidden(n, 2, 0) == 0);
+    }
     char tiny[8];
     CHECK(sel_uim_search_group("Songs (12)") == 1u);
     CHECK(sel_uim_search_group("Albums (3)") == 2u);
