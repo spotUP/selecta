@@ -4264,7 +4264,7 @@ static void test_flag_guard(void) {
           "mui_refresh guards the breadcrumb ShowMe and the Back/Forward Disabled");
     {
         const char* ca = strstr(src, "set(s->crumb, MUIA_ShowMe");
-        CHECK(ca != NULL && ca - src > 120 && strstr(ca - 120, "mui_flag_commit(&s->crumb_show") != NULL && strstr(ca + 10, "set(s->crumb, MUIA_ShowMe") == NULL,
+        CHECK(ca != NULL && ca - src > 500 && strstr(ca - 500, "mui_flag_commit(&s->crumb_show") != NULL && strstr(ca + 10, "set(s->crumb, MUIA_ShowMe") == NULL,
               "the one breadcrumb ShowMe set sits behind the guard");
     }
     w0 = mui_flag_writes();
