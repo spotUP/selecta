@@ -73,7 +73,6 @@ sel_uim_song_menu_n desktop item count for pointer hit-test; MUI builds the menu
 sel_uim_pref_choice desktop draws the choice text; MUI uses sel_uim_pref_choice_index and sel_uim_pref_line
 sel_uim_dlg_title MUI reads the same I1368 table through sel_uim_dlg_text and sel_uim_dlg_mui_gadgets
 sel_uim_dlg_confirm_label MUI reads the same I1368 table through sel_uim_dlg_mui_gadgets
-sel_uim_dlg_cancel_label MUI reads the same I1368 table through sel_uim_dlg_mui_gadgets
 sel_uim_stats_rows desktop stats panel rows; MUI Statistics window uses sel_uim_stats_row (I1181)
 sel_route_kind_name desktop dump only
 sel_engine_stats_get engine counters for the desktop dump and perf lines; MUI Statistics reads the STATS reply (I1181)
@@ -85,10 +84,4 @@ sel_engine_library_items_post desktop sidebar lazy library fetch
 sel_engine_library_items_take desktop sidebar lazy library fetch
 sel_engine_song_briefs_busy desktop direct briefs read; MUI posts through sel_uim_briefs_post and takes with sel_engine_song_briefs_take
 sel_engine_song_briefs_post desktop direct briefs read; MUI posts through sel_uim_briefs_post
-sel_engine_account_logout MUI account dialog twin pending on branch, row I1469m
-sel_engine_account_post MUI account dialog twin pending on branch, row I1469m
-sel_engine_account_take MUI account dialog twin pending on branch, row I1469m
-sel_engine_account_user MUI account dialog twin pending on branch, row I1469m
-sel_engine_account_wanted MUI account dialog twin pending on branch, row I1469m
-sel_uim_chips_flow MUI search chip wrap twin open, row I1456
 sel_uim_search_group_shown MUI search chip groups twin open, row I1456

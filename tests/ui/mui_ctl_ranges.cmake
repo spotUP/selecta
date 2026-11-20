@@ -23,6 +23,7 @@ set(SPAN_CTL_SHELF_LIST_BASE 32)
 set(SPAN_CTL_TILE_BASE 64)
 set(SPAN_CTL_FACET_BASE 64)
 set(SPAN_CTL_SRC_BASE 6)
+set(SPAN_CTL_STYLE_BASE 3) # I1473g8: Grid / Cover Flow / List chooser
 set(SPAN_CTL_KEY_BASE 256)
 set(SPAN_CTL_OFFER_ROW 256)
 set(SPAN_CTL_ABOUT_OPEN 12) # I1463b: MUI_ABOUT_MAX ids; without it the span was 1 and CTL_SRC_BASE overlapped unseen
