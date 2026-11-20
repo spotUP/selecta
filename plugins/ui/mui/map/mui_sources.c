@@ -129,6 +129,14 @@ uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx) {
     return mui_source_sync(&s[i], send, ctx);
 }
 
+uint32_t mui_srcs_sync_all(mui_srcs* m, mui_send_fn send, void* ctx) {
+    uint32_t i, started = 0;
+    for (i = 0; i < m->n; i++) {
+        started += mui_srcs_sync(m, i, send, ctx) != 0u;
+    }
+    return started;
+}
+
 /* I1182: the first-start sync offer. Mirrors desktop nagdlg_open / nagdlg_close; the decisions are the shared sel_uim_offer_*. */
 
 int mui_offer_panel_follow(mui_offer_panel* p, int blocked, const mui_srcs* m) {

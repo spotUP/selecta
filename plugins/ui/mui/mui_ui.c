@@ -4048,6 +4048,18 @@ static void mui_add_folder_ask(mui_state* s) {
     CloseLibrary(asl);
 }
 
+/* I1481b: an action row of the empty-library search (sel_uim_search_action): Add Folder asks for a drawer, Sync Sources syncs every switched-on
+ * syncable source the Sources rows hold (the Mac search_sync_start). 1 when the key was one of those. */
+static int mui_search_action(mui_state* s, const char* key) {
+    uint32_t act = sel_uim_search_action(key);
+    if (act == 1u) {
+        mui_add_folder_ask(s);
+    } else if (act == 2u) {
+        (void)mui_srcs_sync_all(&s->srcs, mui_p8_send, s);
+    }
+    return act != 0u;
+}
+
 static ULONG mui_drop_hook(struct Hook* hook, Object* obj, struct AppMessage** msgp) {
     struct AppMessage* am = msgp != NULL ? *msgp : NULL;
     struct FileInfoBlock* fib;
@@ -5455,6 +5467,9 @@ static void mui_control_fire(mui_state* s, LONG id) {
                                                                      sel_uim_search_section_rows(view->rows, view->row_n, ri) > SEL_UIM_SEARCH_FOLD_ROWS))) {
                 sel_uim_search_fold_toggle(view->rows[ri].text);
                 s->list_sig = 0u; /* the fold changed what the list shows */
+                return;
+            }
+            if (id == CTL_LIST_DBL && ri < view->row_n && mui_search_action(s, view->rows[ri].key)) { /* I1481b: Add Folder / Sync Sources of the empty-library search */
                 return;
             }
             v = (long)ri;

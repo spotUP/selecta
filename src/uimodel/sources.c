@@ -30,6 +30,10 @@ uint32_t sel_uim_sync_line(const char* key, const char* path, char* out, uint32_
     return done(snprintf(out, cap, "LIBRARY_SYNC %s \"%s\"", key, path), cap);
 }
 
+uint32_t sel_uim_src_sync_line(const sel_uim_src_row* r, char* out, uint32_t cap) {
+    return r->enabled && sel_uim_src_syncable(r) ? sel_uim_sync_line(r->key, r->path, out, cap) : 0u;
+}
+
 uint32_t sel_uim_sync_notnow_line(int64_t now, char* out, uint32_t cap) {
     return done(snprintf(out, cap, "PREF_SET library.sync_notice_at %lld", (long long)now), cap);
 }

@@ -30,6 +30,7 @@ static const sel_uim_side_kind TUI_SIDE_KIND_CHIPS = SEL_UIM_SIDE_CHIPS;
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/sources.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/briefs.h>
@@ -162,6 +163,11 @@ typedef struct tui {
     char ac_name[64], ac_pass[128], ac_user[64], ac_why[96];
     uint32_t ac_name_len, ac_pass_len;
     int ac_signup, ac_busy, ac_init;
+    /* I1481b: Sync Sources of the empty-library search. The SOURCES answer fills sync_q with one LIBRARY_SYNC line per switched-on syncable
+     * source (tui_on_event); tui_wait sends them and ends the ask once the engine has no SOURCES answer pending. */
+    int sync_all;
+    uint32_t sync_n;
+    char sync_q[SEL_SOURCE_MAX][320];
 } tui;
 
 /* ---- commands ---- */
@@ -962,6 +968,28 @@ static int tui_shelf_header_enter(tui* u) {
         }
     }
     return 0;
+}
+
+/* I1481b: Enter on an action row of the empty-library search (sel_uim_search_action). Sync Sources asks for the SOURCES rows and syncs each
+ * switched-on remote one. The text UI has no folder dialog, so Add Folder opens the command line, which takes LIBRARY_SCAN <folder>. 0 for any other row. */
+static int tui_search_action_enter(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    uint32_t act;
+    if (v == NULL || v->source != SEL_VIEW_SEARCH || v->cursor < v->window_start || v->cursor - v->window_start >= v->row_n) {
+        return 0;
+    }
+    act = sel_uim_search_action(v->rows[v->cursor - v->window_start].key);
+    if (act == 1u) {
+        txt_cmdline_open(&u->cmd);
+        u->cmd_mode = 1;
+        snprintf(u->cmd.status, sizeof u->cmd.status, "Type LIBRARY_SCAN <folder> to add a folder");
+    } else if (act == 2u) {
+        u->sync_all = 1;
+        u->sync_n = 0u;
+        tui_send(u, "SOURCES");
+        snprintf(u->cmd.status, sizeof u->cmd.status, "Syncing sources");
+    }
+    return act != 0u;
 }
 
 /* I1406: the categorized search results fold like the desktop's (sel_uim_search_row_folded): each category lists its first rows, then a Show all (n) line.
@@ -1870,7 +1898,7 @@ static void tui_key(tui* u, const txt_key* k) {
         u->dirty = 1;
         return;
     }
-    if (u->pg == TUI_PAGE_NONE && k->code == 13u && k->mods == 0 && (tui_shelf_header_enter(u) || tui_home_tile_enter(u) || tui_search_fold_enter(u))) {
+    if (u->pg == TUI_PAGE_NONE && k->code == 13u && k->mods == 0 && (tui_shelf_header_enter(u) || tui_home_tile_enter(u) || tui_search_fold_enter(u) || tui_search_action_enter(u))) {
         u->key_count++;
         u->dirty = 1;
         return;
@@ -3383,6 +3411,12 @@ static void* tui_open(const sel_ui_open_args* a) {
 
 static void tui_on_event(void* state, const sel_message* evt) {
     tui* u = (tui*)state;
+    if (u->sync_all && evt->id == SEL_EVT_LIBRARY_RESULT && evt->argc > 0 && evt->args[0].type == SEL_ARG_TAGS &&
+        sel_tag_find(evt->args[0].v.t, SEL_SRC_KEY, 0) != 0 && u->sync_n < SEL_SOURCE_MAX) { /* I1481b: a SOURCES row of the Sync Sources ask */
+        sel_uim_src_row r;
+        sel_uim_src_parse(evt->args[0].v.t, &r);
+        u->sync_n += sel_uim_src_sync_line(&r, u->sync_q[u->sync_n], sizeof u->sync_q[0]) != 0u;
+    }
     if (evt->id == SEL_EVT_ERROR && evt->argc > 0) {
         /* I195g: an engine error (for example "open_failed http_status=404 <url>") shows on the status line. */
         char text[96];
@@ -3408,6 +3442,15 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
         if (u->pattern) {
             tui_pattern_ask(u);
         }
+    }
+    if (u->sync_all && u->sync_n > 0u && !sel_engine_sources_pending(u->engine)) { /* I1481b: the SOURCES answer is complete; sync what it listed */
+        uint32_t q;
+        for (q = 0; q < u->sync_n; q++) {
+            tui_send(u, u->sync_q[q]);
+        }
+        u->sync_all = 0;
+        u->sync_n = 0u;
+        u->dirty = 1;
     }
     tui_briefs_follow(u);
     tui_menu_playlists_follow(u);

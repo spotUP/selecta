@@ -46,6 +46,8 @@ typedef struct sel_uim_src_row {
 void sel_uim_src_parse(const sel_tag* t, sel_uim_src_row* r);
 int sel_uim_src_remote(const sel_uim_src_row* r);   /* kind "remote" */
 int sel_uim_src_syncable(const sel_uim_src_row* r); /* a remote source the engine can sync: a search-only source has no Sync and no sync status */
+/* I1481b: the LIBRARY_SYNC line of one SOURCES row for the empty-library Sync Sources action; 0 (nothing written) unless the row is a switched-on syncable remote. */
+uint32_t sel_uim_src_sync_line(const sel_uim_src_row* r, char* out, uint32_t cap);
 /* "last synced N days ago" or "never synced" (synced = unix time, 0 never). */
 uint32_t sel_uim_sync_age(int64_t synced, int64_t now, char* out, size_t cap);
 /* Status text of a row: "Local, switched on", "Remote, switched off", "Remote, search only", "Remote, Syncing", "Remote, sync failed",

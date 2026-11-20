@@ -1,5 +1,6 @@
 /* I1019d: sel_uim_search_group (heading kinds 1..4) and sel_uim_search_all_line (SOURCE_SEARCH * "<q>"). */
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/sources.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -91,6 +92,22 @@ int main(void) {
     char buf[64];
     hidden_cases();
     shared_lift_cases();
+    { /* I1481b: the text UI's Sync Sources line per SOURCES row (shared with the sources page rules) */
+        sel_uim_src_row r;
+        char line[320];
+        memset(&r, 0, sizeof r);
+        snprintf(r.key, sizeof r.key, "modland");
+        snprintf(r.kind, sizeof r.kind, "remote");
+        snprintf(r.path, sizeof r.path, "https://m");
+        r.enabled = 1;
+        r.syncable = 1;
+        CHECK(sel_uim_src_sync_line(&r, line, sizeof line) != 0u && strcmp(line, "LIBRARY_SYNC modland \"https://m\"") == 0);
+        r.enabled = 0;
+        CHECK(sel_uim_src_sync_line(&r, line, sizeof line) == 0u);
+        r.enabled = 1;
+        snprintf(r.kind, sizeof r.kind, "local");
+        CHECK(sel_uim_src_sync_line(&r, line, sizeof line) == 0u);
+    }
     char tiny[8];
     CHECK(sel_uim_search_group("Songs (12)") == 1u);
     CHECK(sel_uim_search_group("Albums (3)") == 2u);

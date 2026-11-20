@@ -741,7 +741,8 @@ void mui_srcs_asked(mui_srcs* m);
 int mui_srcs_event(mui_srcs* m, const sel_message* evt); /* 1 when the event was a SOURCES row */
 uint32_t mui_srcs_row(const mui_srcs* m, uint32_t i, char* out, size_t cap);
 uint32_t mui_srcs_toggle(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx); /* lines sent, 0 for a row that is not there */
-uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);   /* 0 unless the row is a switched-on syncable remote */
+uint32_t mui_srcs_sync(mui_srcs* m, uint32_t i, mui_send_fn send, void* ctx);
+uint32_t mui_srcs_sync_all(mui_srcs* m, mui_send_fn send, void* ctx); /* I1481b: Sync Sources of the empty-library search: mui_srcs_sync of every row; the count started */   /* 0 unless the row is a switched-on syncable remote */
 uint32_t mui_srcs_open(const mui_srcs* m, uint32_t i, char* key, size_t kcap, char* name, size_t ncap); /* I1442b: the source id and name Open routes with; 0 for no row */
 
 /* I1182: the first-start sync offer window, the desktop's nag dialog (nagdlg_*) on the shared sel_uim_offer model. It opens once per
