@@ -1161,8 +1161,8 @@ static void test_row_cells(void) {
 }
 
 static void test_style_mask(void) {
-    CHECK(__builtin_popcount(mui_style_mask(1)) == 6 && __builtin_popcount(mui_style_mask(0)) == 5, "mask sizes %d %d", __builtin_popcount(mui_style_mask(1)), __builtin_popcount(mui_style_mask(0)));
-    CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) == 0 && (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_GRID)) != 0, "planar drops only cover flow");
+    CHECK(__builtin_popcount(mui_style_mask(1)) == 6 && __builtin_popcount(mui_style_mask(0)) == 6, "mask sizes %d %d", __builtin_popcount(mui_style_mask(1)), __builtin_popcount(mui_style_mask(0)));
+    CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) != 0 && mui_style_mask(0) == mui_style_mask(1), "planar offers every style (D-F5)");
 }
 
 /* MUI-P3-1: a rebuild from a snapshot that has not seen the user's VIEW_CURSOR yet keeps the clicked row selected. */
@@ -3501,7 +3501,7 @@ static void test_grid_switch(void) {
     src[n] = 0;
     CHECK(mui_style_canvas(SEL_VIEW_STYLE_GRID) && !mui_style_packed(SEL_VIEW_STYLE_GRID), "Grid is not canvas-only");
     CHECK(!mui_style_canvas(SEL_VIEW_STYLE_REGULAR) && !mui_style_packed(SEL_VIEW_STYLE_REGULAR), "List changed");
-    CHECK(!mui_style_canvas(SEL_VIEW_STYLE_COVERFLOW) && mui_style_packed(SEL_VIEW_STYLE_COVERFLOW), "Cover Flow no longer packs");
+    CHECK(mui_style_canvas(SEL_VIEW_STYLE_COVERFLOW) && !mui_style_packed(SEL_VIEW_STYLE_COVERFLOW), "Cover Flow is canvas-only (I1473g8b4)");
     CHECK(!mui_style_canvas(SEL_VIEW_STYLE_COMPACT) && mui_style_packed(SEL_VIEW_STYLE_COMPACT), "Compact no longer packs");
     CHECK(strstr(src, "uint32_t packed = mui_style_packed(v->style)") != NULL, "mui_refresh still packs Grid");
     CHECK(strstr(src, "mui_grid_style grid = mui_grid_style_for(") != NULL && strstr(src, "0xFF101010u, 0xFF303030u") == NULL, "canvas style not from the theme");
@@ -3517,7 +3517,7 @@ static void test_grid_switch(void) {
               strstr(body, "set(s->canvas, MUIA_ShowMe") != NULL && strstr(body, "mui_flag_commit") != NULL,
           "the list/canvas swap is missing");
     CHECK(strstr(src, "set(s->listview, MUIA_ShowMe, col || home") == NULL && strstr(src, "mui_list_pane_set(s);") != NULL, "the page switch writes the list's ShowMe directly");
-    CHECK(strstr(src, "grid_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u") != NULL, "grid sentinels missing from the list stat");
+    CHECK(strstr(src, "grid_on=%u flow_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u") != NULL, "grid sentinels missing from the list stat");
 }
 
 /* I1473g8: the Grid / Cover Flow / List chooser above the Library and Search list (design I1473g section 10 row 8, D4). The decision is pure
@@ -3550,13 +3550,13 @@ static void test_style_chooser(void) {
     CHECK(strcmp(c[0].cmd, "VIEW_STYLE grid") == 0 && strcmp(c[1].cmd, "VIEW_STYLE coverflow") == 0 && strcmp(c[2].cmd, "VIEW_STYLE regular") == 0, "chooser lines differ from the View > Style lines");
     CHECK(mui_style_chooser(SEL_VIEW_SEARCH, SEL_VIEW_STYLE_COVERFLOW, SEL_VIEW_STYLES_ALL, c) == 3 && c[1].selected && !c[0].selected, "Search / Cover Flow selection");
     CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_TREE, SEL_VIEW_STYLES_ALL, c) == 3 && c[2].selected && !c[0].selected && !c[1].selected, "Tree/Compact style selects List");
-    CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_REGULAR, mui_style_mask(0), c) == 2 && strcmp(c[0].label, "Grid") == 0 && strcmp(c[1].label, "List") == 0 && c[1].slot == 2u && c[1].selected, "planar mask keeps Cover Flow");
+    CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_REGULAR, mui_style_mask(0), c) == 3 && strcmp(c[1].label, "Cover Flow") == 0 && c[2].slot == 2u && c[2].selected, "planar mask offers Cover Flow (D-F5)");
     CHECK(mui_style_chooser(SEL_VIEW_QUEUE, SEL_VIEW_STYLE_REGULAR, SEL_VIEW_STYLES_ALL, c) == 0 && mui_style_chooser(SEL_VIEW_HOME, SEL_VIEW_STYLE_GRID, SEL_VIEW_STYLES_ALL, c) == 0 &&
               mui_style_chooser(SEL_VIEW_BROWSE, SEL_VIEW_STYLE_GRID, SEL_VIEW_STYLES_ALL, c) == 0, "chooser shows outside Library and Search");
     CHECK(mui_style_chooser(SEL_VIEW_QUERY, SEL_VIEW_STYLE_GRID, 0u, c) == 0, "an empty mask still lists choices");
     CHECK(mui_icon_id("style_grid") == SEL_GUI_ICON_LAYOUT_GRID && mui_icon_id("style_coverflow") == SEL_GUI_ICON_GALLERY_HORIZONTAL && mui_icon_id("style_list") == SEL_GUI_ICON_LIST, "chooser icons differ from the desktop's");
     CHECK(strstr(desk, "{\"Grid\", \"Cover Flow\", \"List\"}") != NULL && strstr(desk, "{\"VIEW_STYLE grid\", \"VIEW_STYLE coverflow\", \"VIEW_STYLE regular\"}") != NULL, "desktop chooser words changed; update mui_style_chooser");
-    CHECK(strstr(src, "mui_style_mask(0)") != NULL && strstr(src, "static uint32_t mui_view_style_mask(void)") != NULL && strstr(src, "SEL_UI_VIEW_STYLES, mui_view_style_mask())") != NULL &&
+    CHECK(strstr(src, "mui_style_mask(g_screen_rtg)") != NULL && strstr(src, "static uint32_t mui_view_style_mask(void)") != NULL && strstr(src, "SEL_UI_VIEW_STYLES, mui_view_style_mask())") != NULL &&
               strstr(src, "mui_menu_build_for(g_menu, MENU_MAX, mui_view_style_mask())") != NULL, "mask is not one value for menu, tag and chooser");
     CHECK(fn_body(src, "static void mui_style_chooser_sync(", body, sizeof body) != NULL && strstr(body, "mui_style_chooser(v->source, v->style, mui_view_style_mask()") != NULL &&
               strstr(body, "MUIM_Group_InitChange") != NULL && strstr(body, "MUIA_ShowMe") != NULL && strstr(body, "mui_aabtn_set_on") != NULL && strstr(body, "sig == s->style_sig") != NULL,

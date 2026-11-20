@@ -621,9 +621,9 @@ static void test_library_styles(void) {
         snprintf(want, sizeof want, "VIEW_STYLE %s", names[i]);
         CHECK(strcmp(e.lines[0], want) == 0, "%s sent '%s'", ids[i], e.lines[0]);
     }
-    /* the planar tier has no Cover Flow (written exemption: the art strip needs the RTG chunky canvas); Grid and Compact are offered on both */
+    /* I1473g8b4 (D-F5): every style on both tiers; Cover Flow draws on the canvas, planar included */
     CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_GRID)) && (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COMPACT)) &&
-              !(mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) && (mui_style_mask(1) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)),
+              (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) && (mui_style_mask(1) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)),
           "tier style masks");
     CHECK(mui_style_kind(SEL_VIEW_STYLE_REGULAR) == MUI_STYLE_LIST && mui_style_kind(SEL_VIEW_STYLE_TREE) == MUI_STYLE_LIST &&
               mui_style_kind(SEL_VIEW_STYLE_DRILLDOWN) == MUI_STYLE_LIST && mui_style_kind(SEL_VIEW_STYLE_GRID) == MUI_STYLE_GRID &&

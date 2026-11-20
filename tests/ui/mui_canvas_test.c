@@ -403,6 +403,32 @@ static int test_grid_art(void) {
     return failures;
 }
 
+/* I1473g8b4: Cover Flow input on pure map logic: keys and wheel step one cover, a click hits the covers the draw laid out (side moves the flow, front keeps the Grid click). */
+static int test_flow_input(void) {
+    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 64, 8, 8, 24, 0xFF000000u};
+    mui_flow_view v;
+    mui_grid_input in;
+    int32_t g, front;
+    uint32_t k;
+    mui_flow_layout(&s, 480, 320, 3 << 16, 7, &v);
+    front = v.cv[v.n - 1].g;
+    CHECK(front == 3, "front cover is the cursor, got %d", (int)front);
+    CHECK(sel_uim_flow_hit(v.cv, v.n, v.cv[v.n - 1].x + v.big / 2, v.cv[v.n - 1].y + v.big / 2, 0) == 3, "centre click hits the front cover");
+    for (k = 0; k + 1u < v.n; k++) { /* covers overlap; the outward edge of a side cover is visible and never hits the front one */
+        int32_t ex = v.cv[k].x < v.cv[v.n - 1].x ? v.cv[k].x + 1 : v.cv[k].x + v.cv[k].sz - 2;
+        g = sel_uim_flow_hit(v.cv, v.n, ex, v.cv[k].y + v.cv[k].sz / 2, 0);
+        CHECK(g >= 0 && g != front, "side cover %u: hit %d is a side cover", (unsigned)k, (int)g);
+    }
+    g = sel_uim_flow_hit(v.cv, v.n, v.cv[0].x + 1, v.cv[0].y + v.cv[0].sz / 2, 0);
+    CHECK(g == (int32_t)v.cv[0].g, "the outermost cover edge hits it: %d want %d", (int)g, (int)v.cv[0].g);
+    CHECK(sel_uim_flow_hit(v.cv, v.n, 2, 2, 0) == -1, "background is no cover");
+    CHECK(mui_grid_key(MUI_RAWKEY_WHEEL_DOWN, 0u, &in) && in.kind == MUI_GIN_MOVE && in.arg == 1 && mui_grid_key(MUI_RAWKEY_WHEEL_UP, 0u, &in) && in.arg == -1,
+          "one wheel notch is one cover, down is next");
+    CHECK(mui_grid_key(MUI_RAWKEY_RIGHT, 0u, &in) && in.arg == 1 && mui_grid_key(MUI_RAWKEY_LEFT, 0u, &in) && in.arg == -1, "left/right step one");
+    CHECK(mui_grid_key(MUI_RAWKEY_RETURN, 0u, &in) && in.kind == MUI_GIN_ACTIVATE, "enter activates the front cover");
+    return failures;
+}
+
 static int test_flow(void) {
     mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 64, 8, 8, 24, 0xFF000000u};
     mui_tile t[7];
@@ -534,6 +560,8 @@ int main(int argc, char** argv) {
         r = test_art_path();
     } else if (argc > 1 && strcmp(argv[1], "flow") == 0) {
         r = test_flow();
+    } else if (argc > 1 && strcmp(argv[1], "flow-input") == 0) {
+        r = test_flow_input();
     } else if (argc > 1 && strcmp(argv[1], "flow-aga") == 0) {
         r = test_flow_aga();
     } else if (argc > 1 && strcmp(argv[1], "art") == 0) {
