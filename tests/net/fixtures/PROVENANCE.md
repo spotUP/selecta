@@ -38,3 +38,5 @@ Synthetic (I177): ws.audioscrobbler.com/2.0/ answers every request with the last
 | zxart.ee/file/Bomb.pt3 (I1057) | Byte-for-byte copy of tests/m3/fixtures/zxtune_test.pt3 (8,045 bytes), served at /file/id:20334/filename:Bomb.pt3 (routes.json) so the zxart-play-net test can fetch it through the source url hook. The TLS test certificate carries DNS:zxart.ee for this. | Whole file, untrimmed. |
 
 Synthetic (I710ga3): mirror.sysfile.test/sysfiles/good.bin and bad.bin are made-up text files standing in for a system file and for wrong bytes; csdb.test hosts nothing (every path is a 404). The sysfile fetch test computes the sha256 of good.bin itself.
+
+Synthetic (I1465d): md5.modland.test/allmods_md5.zip holds allmods_md5.txt, a copy of tests/m3/modland_listing (md5 and path per line).
