@@ -11,6 +11,7 @@
 #define DS_PLACINGS_MAX 6u
 #define DS_TAG_GROUPS 5u
 #define DS_CSDB_MAX 6u
+#define DS_YT_MAX 12u
 #define DS_JSON_CAP 65536u
 
 /* Appends one pair before the closing empty label; 0 when value is empty or it does not fit. */
@@ -114,6 +115,66 @@ static void placings(const char* json, char* out, uint32_t cap, uint32_t* added)
     }
 }
 
+/* I1465b (design D5): the objects {channel, videoId, subtune, isDefault} of the file answer's "youtube" array, one per call: *p walks the array, seg gets the object text.
+ * Returns 0 when the array is missing or spent. */
+static int yt_next(const char** p, const char* end, char* seg, size_t cap) {
+    const char *obj, *close;
+    size_t len;
+
+    if (end == NULL || (obj = strchr(*p, '{')) == NULL || obj >= end || (close = strchr(obj, '}')) == NULL) return 0;
+    len = (size_t)(close - obj) < cap - 1u ? (size_t)(close - obj) : cap - 1u;
+    memcpy(seg, obj, len);
+    seg[len] = '\0';
+    *p = close + 1;
+    return 1;
+}
+
+static const char* yt_array(const char* json) {
+    const char* p = json != NULL ? strstr(json, "\"youtube\"") : NULL;
+
+    p = p != NULL ? sel_json_value(p + 9) : NULL;
+    return p != NULL && *p == '[' ? p : NULL;
+}
+
+uint32_t sel_deepsid_youtube(const char* json, int subtune, char* url, uint32_t cap) {
+    char seg[256], id[48], first[48];
+    const char *p = yt_array(json), *end = p != NULL ? strchr(p, ']') : NULL;
+
+    first[0] = '\0';
+    if (url == NULL || cap < 48u) return 0;
+    url[0] = '\0';
+    while (yt_next(&p, end, seg, sizeof seg)) {
+        id[0] = '\0';
+        sel_json_str(seg, "videoId", id, sizeof id);
+        if (id[0] == '\0' || (subtune > 0 && num_of(seg, "subtune") != subtune)) continue;
+        if (strstr(seg, "\"isDefault\":true") != NULL) {
+            snprintf(url, cap, "https://www.youtube.com/watch?v=%s", id);
+            return (uint32_t)strlen(url);
+        }
+        if (first[0] == '\0') memcpy(first, id, sizeof first);
+    }
+    if (first[0] == '\0') return 0;
+    snprintf(url, cap, "https://www.youtube.com/watch?v=%s", first);
+    return (uint32_t)strlen(url);
+}
+
+/* D5b: every capture as a "YouTube capture" row, "Subtune N, <channel>: <url>" (max DS_YT_MAX). */
+static void youtube_rows(const char* json, char* out, uint32_t cap, uint32_t* added) {
+    char seg[256], id[48], ch[64], row[DS_ROW_MAX];
+    const char *p = yt_array(json), *end = p != NULL ? strchr(p, ']') : NULL;
+    uint32_t n = 0;
+
+    while (n < DS_YT_MAX && yt_next(&p, end, seg, sizeof seg)) {
+        id[0] = ch[0] = '\0';
+        sel_json_str(seg, "videoId", id, sizeof id);
+        sel_json_str(seg, "channel", ch, sizeof ch);
+        if (id[0] == '\0') continue;
+        snprintf(row, sizeof row, "Subtune %d, %s: https://www.youtube.com/watch?v=%s", num_of(seg, "subtune"), ch[0] != '\0' ? ch : "unknown channel", id);
+        *added += (uint32_t)put(out, cap, "YouTube capture", row);
+        n++;
+    }
+}
+
 uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* rows) {
     char a[96], b[96], c[96], row[DS_ROW_MAX];
     uint32_t added = 0;
@@ -142,6 +203,7 @@ uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* r
         added += (uint32_t)put(out, cap, "Technical", row);
     }
     placings(json, out, cap, &added);
+    youtube_rows(json, out, cap, &added);
     a[0] = '\0';
     sel_json_str(json, "gb64", a, sizeof a); /* a JSON null never matches: the scanner wants a quote */
     added += (uint32_t)put(out, cap, "GB64 game", a);

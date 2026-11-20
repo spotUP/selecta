@@ -643,6 +643,9 @@ void sel_library_deepsid_kick(sel_library* lib, const char* ref);
  * empty label (the list keeps ending in one): tag groups (Genre tags, Production tags, Origin tags, Digi tags, Other tags), Player, Editor, Chip, Clock, Technical
  * (load, init and play address), Compo placings ("2nd at Assembly 1994, C64 music"), GB64 game. *rows grows by the rows added. Pure: no DB. Returns rows added. */
 uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
+/* I1465b (design D5a): the YouTube link of a ds_file answer's youtube[]: the isDefault capture, else the first, restricted to `subtune` when > 0 (0 = any). Writes
+ * https://www.youtube.com/watch?v=<id> to url; returns its length, 0 when none. Pure. The scraper stores it as 'dz_video' when Demozoo gave none; D5b lists every capture as "YouTube capture" rows of sel_deepsid_rows. */
+uint32_t sel_deepsid_youtube(const char* json, int subtune, char* url, uint32_t cap);
 /* I1440l: "CSDb release" rows (max 6) from a ds_csdb answer: name, group, year, type when present, and the csdb.dk release URL. Pure. Returns rows added. */
 uint32_t sel_deepsid_csdb_rows(const char* json, char* out, uint32_t cap, uint32_t* rows);
 /* I1440l2: the release ids (max 6) of a ds_csdb answer (row URL, id and artwork key helpers: selecta/uimodel/csdb.h). */
