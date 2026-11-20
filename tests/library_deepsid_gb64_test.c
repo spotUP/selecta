@@ -6,6 +6,15 @@
 
 static int failures;
 
+static const char* get(const char* list, const char* label) {
+    while (*list != '\0') {
+        const char* v = list + strlen(list) + 1;
+        if (strcmp(list, label) == 0) return v;
+        list = v + strlen(v) + 1;
+    }
+    return NULL;
+}
+
 #define CHECK(cond)                                        \
     do {                                                   \
         if (!(cond)) {                                     \
@@ -59,11 +68,13 @@ int main(void) {
 
     /* the metadata row shows the picked game's name (same pick as the scraper), not the serialized text */
     {
-        char rows_out[1024];
+        char rows_out[1024] = ""; /* label\0value\0 pairs, ended by an empty label */
         uint32_t rows = 0;
+        const char* v;
 
         CHECK(sel_deepsid_rows(game, rows_out, sizeof rows_out, &rows) >= 1);
-        CHECK(strstr(rows_out, "Uridium") != NULL && strstr(rows_out, "a:2:") == NULL && strstr(rows_out, "11606") == NULL && strstr(rows_out, "v2") == NULL);
+        v = get(rows_out, "GB64 game");
+        CHECK(v != NULL && strcmp(v, "Uridium") == 0);
     }
 
     if (failures == 0) printf("library_deepsid_gb64_ok\n");

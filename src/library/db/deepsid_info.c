@@ -207,11 +207,12 @@ uint32_t sel_deepsid_rows(const char* json, char* out, uint32_t cap, uint32_t* r
     placings(json, out, cap, &added);
     youtube_rows(json, out, cap, &added);
     a[0] = '\0';
-    sel_json_str(json, "gb64", a, sizeof a); /* a JSON null never matches: the scanner wants a quote */
     {
         sel_gb64_entry g;
-        /* the picked game's name (same pick as the art scraper); a plain string that is no serialized list stays as sent */
-        if (a[0] != '\0' && gb64_picked(json, &g) > 0) snprintf(a, sizeof a, "%s", g.name);
+        /* the picked game's name (same pick as the art scraper); the serialized list is longer than a[], so pick before reading the raw text.
+         * A plain string that is no serialized list stays as sent; a JSON null never matches: the scanner wants a quote */
+        if (gb64_picked(json, &g) > 0) snprintf(a, sizeof a, "%s", g.name);
+        else sel_json_str(json, "gb64", a, sizeof a);
     }
     added += (uint32_t)put(out, cap, "GB64 game", a);
     if (rows != NULL) *rows += added;
