@@ -15,6 +15,9 @@
 #define URL_BYTES 1100u
 #define ZIP_NAME "allmods.zip"
 #define MEMBER_NAME "allmods.txt"
+/* The same listing with an md5 per line (I1465d): preferred, because allmods.txt carries no md5. */
+#define MD5_ZIP_NAME "allmods_md5.zip"
+#define MD5_MEMBER_NAME "allmods_md5.txt"
 #define CHANGELOG_DIR "/pub/changelogs/"
 #define MAX_LISTING_BYTES ((size_t)512u * 1024u * 1024u)
 
@@ -23,8 +26,9 @@ int sel_modland_is_url(const char* s) {
 }
 
 /* Streams the zip's allmods.txt member to `out_path` (I161c): no whole-archive or whole-member buffer. */
-static int unpack_listing(const sel_host* host, const char* zip_path, const char* out_path, sel_modland_net_stats* net) {
-    return sel_archive_extract_file(host, zip_path, MEMBER_NAME, MAX_LISTING_BYTES, out_path, &net->listing_bytes,
+static int unpack_listing(const sel_host* host, const char* zip_path, const char* member, const char* out_path,
+                          sel_modland_net_stats* net) {
+    return sel_archive_extract_file(host, zip_path, member, MAX_LISTING_BYTES, out_path, &net->listing_bytes,
                                     &net->unpack_peak_heap);
 }
 
@@ -76,6 +80,7 @@ int sel_modland_net_sync(const sel_local_scan_config* cfg, const char* base, int
     char url[URL_BYTES];
     char root[URL_BYTES];
     unsigned long got = 0;
+    const char* member = MEMBER_NAME;
     sel_mirror_set mirrors;
     size_t n;
     int day;
@@ -104,12 +109,18 @@ int sel_modland_net_sync(const sel_local_scan_config* cfg, const char* base, int
         return 0;
     }
     remove_stale_changelogs(cfg->host, dir);
-    snprintf(url, sizeof url, "%s/" ZIP_NAME, root);
-    if (sel_sync_net_get_file(url, zip, &net->http_requests, &got) != 200) {
-        return 0;
+    snprintf(url, sizeof url, "%s/" MD5_ZIP_NAME, root);
+    if (sel_sync_net_get_file(url, zip, &net->http_requests, &got) == 200) {
+        member = MD5_MEMBER_NAME;
+    } else {
+        /* shortcut: any failure of the md5 zip falls back to the size-only listing (rows get no md5), fine until a mirror always has it. */
+        snprintf(url, sizeof url, "%s/" ZIP_NAME, root);
+        if (sel_sync_net_get_file(url, zip, &net->http_requests, &got) != 200) {
+            return 0;
+        }
     }
     net->zip_bytes = (uint32_t)got;
-    if (!unpack_listing(cfg->host, zip, listing, net)) {
+    if (!unpack_listing(cfg->host, zip, member, listing, net)) {
         return 0;
     }
     for (day = 0; day < SEL_MODLAND_NET_DAYS; day++) {

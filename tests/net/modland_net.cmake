@@ -131,4 +131,21 @@ endif()
 execute_process(COMMAND "${CLI}" library meta --db "${db}" modland.new_this_week OUTPUT_VARIABLE o)
 expect("count kept after failed sync" "${o}" "meta.modland.new_this_week=${want_added}\n")
 
+# I1465d: a server with allmods_md5.zip gives every row its md5 (the plain allmods.txt has none).
+set(ENV{SELECTA_NET_MAP} "sync.modland.test=${fx},fixture.test=${fx},md5.modland.test=${fx}")
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+set(db5 "${WORK}/t72n-md5.db")
+file(REMOVE "${db5}")
+execute_process(COMMAND "${CLI}" library sync --db "${db5}" --now ${now} --dump modland http://md5.modland.test
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+set(raw "${o}${e}")
+expect("md5 sync exit code" "${rc}" 0)
+foreach(line IN LISTS listing_lines)
+  string(REGEX REPLACE "[ \t].*$" "" md5 "${line}")
+  string(FIND "${raw}" "|${md5}\n" at)
+  if(at EQUAL -1)
+    message(FATAL_ERROR "T72 net: no md5 stored for '${line}'\n${raw}")
+  endif()
+endforeach()
+
 message(STATUS "modland_net_ok listing_rows=${want_rows} new_this_week=${want_added}")
