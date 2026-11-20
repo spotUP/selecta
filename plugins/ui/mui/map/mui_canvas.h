@@ -126,6 +126,8 @@ int32_t mui_flow_glide_q16(uint32_t elapsed_ms);
 typedef struct mui_aga_sink {
     void (*rect)(void* ctx, sel_gui_rect r, uint32_t rgb);
     void (*cover)(void* ctx, sel_gui_rect r, const uint8_t* idx, uint32_t tint);
+    /* I1473g8b3: Cover Flow strip, r.w x r.h cube indices already scaled, clipped to the visible part and dimmed (NULL: flow not drawn). */
+    void (*chunky)(void* ctx, sel_gui_rect r, const uint8_t* idx);
 } mui_aga_sink;
 typedef struct mui_aga_cache mui_aga_cache;
 mui_aga_cache* mui_aga_cache_open(int32_t edge, uint32_t slots);
@@ -136,6 +138,15 @@ uint32_t mui_tile_tint(const mui_tile* t);
 uint32_t mui_canvas_draw_grid_aga(const mui_grid_style* s, int32_t w, int32_t h, const mui_tile* tiles, uint32_t n, uint32_t cursor,
                                   uint32_t first_row, mui_art_fn art, void* art_ctx, mui_aga_cache* cache, const mui_aga_sink* sink,
                                   void* sink_ctx);
+
+/* I1473g8b3: Cover Flow on a palette screen (design 4). Layout from mui_flow_layout (view, may be NULL); each cover is clipped to the strip
+ * not hidden by nearer covers, so every pixel is written once; scrim = cube index dimmed through mui_cover_dim_lut (alpha snaps to 0/90/150).
+ * No art: `sink->cover` with a dimmed tint. Returns the covers drawn. `cache` edge must equal s->edge. No rounded corners, no shadow. */
+uint32_t mui_canvas_draw_flow_aga(const mui_grid_style* s, int32_t w, int32_t h, const mui_tile* tiles, uint32_t n, int64_t centre_q16,
+                                  mui_art_fn art, void* art_ctx, mui_aga_cache* cache, const mui_aga_sink* sink, void* sink_ctx,
+                                  mui_flow_view* view);
+/* Cube index -> cube index of its colour darkened by `alpha` (0..255) towards `scrim_rgb` (0x00RRGGBB). */
+void mui_cover_dim_lut(int32_t alpha, uint32_t scrim_rgb, uint8_t lut[27]);
 
 /* Artwork path (MUI-P5-4): RTG screens decode the cover through picture.datatype and scale it with
  * sel_gui_image_scale; planar screens show the platform cover. */

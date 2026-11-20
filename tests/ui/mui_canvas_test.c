@@ -162,7 +162,7 @@ static int test_grid_aga(void) {
     static mui_tile t[12];
     static uint8_t buf[200 * 160];
     aga_t a = {buf, 200, 160, 0, 0};
-    mui_aga_sink sink = {aga_t_rect, aga_t_cover};
+    mui_aga_sink sink = {aga_t_rect, aga_t_cover, NULL};
     mui_aga_cache* c = mui_aga_cache_open(32, 4);
     uint32_t i, drawn, max = 0, h = 2166136261u;
     char hex[17];
@@ -444,6 +444,80 @@ static int test_flow(void) {
     return failures;
 }
 
+/* I1473g8b3 mui-flow-aga: strips into a byte canvas (background 27); records every strip. */
+typedef struct fa_t {
+    uint8_t* buf;
+    int32_t w, h;
+    uint32_t strips, tints;
+    int64_t pixels;
+    int bad;
+} fa_t;
+
+static void fa_rect(void* ctx, sel_gui_rect r, uint32_t rgb) {
+    fa_t* a = ctx;
+    (void)r;
+    (void)rgb;
+    memset(a->buf, 27, (size_t)a->w * (size_t)a->h);
+}
+
+static void fa_cover(void* ctx, sel_gui_rect r, const uint8_t* idx, uint32_t tint) {
+    fa_t* a = ctx;
+    (void)r;
+    (void)tint;
+    a->tints += idx == NULL;
+}
+
+static void fa_chunky(void* ctx, sel_gui_rect r, const uint8_t* idx) {
+    fa_t* a = ctx;
+    int32_t x, y;
+    a->strips++;
+    a->pixels += (int64_t)r.w * r.h;
+    for (y = 0; y < r.h; y++) {
+        for (x = 0; x < r.w; x++) {
+            uint8_t v = idx[y * r.w + x];
+            a->bad |= v >= 27u || r.x + x < 0 || r.x + x >= a->w || r.y + y < 0 || r.y + y >= a->h;
+            if (!a->bad) {
+                a->buf[(r.y + y) * a->w + r.x + x] = v;
+            }
+        }
+    }
+}
+
+static int test_flow_aga(void) {
+    mui_grid_style s = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 32, 8, 8, 24, 0xFF000000u};
+    static mui_tile t[7];
+    static uint8_t buf[480 * 320];
+    fa_t a = {buf, 480, 320, 0, 0, 0, 0};
+    mui_aga_sink sink = {fa_rect, fa_cover, fa_chunky};
+    mui_aga_cache* c = mui_aga_cache_open(32, 12);
+    mui_flow_view v, ref;
+    uint8_t l0[27], l90[27], l150[27];
+    uint32_t i, drawn, h = 2166136261u;
+    char hex[17];
+    for (i = 0; i < 7; i++) {
+        t[i].title = "T";
+        t[i].artist = "A";
+        t[i].art_id = i == 1 ? 0 : (int64_t)i + 1; /* cover 1 has no art: the dimmed tint */
+    }
+    drawn = mui_canvas_draw_flow_aga(&s, 480, 320, t, 7, 3 << 16, aga_art, NULL, c, &sink, &a, &v);
+    mui_flow_layout(&s, 480, 320, 3 << 16, 7, &ref);
+    CHECK(drawn == 7u && memcmp(v.cv, ref.cv, sizeof v.cv) == 0, "layout equals mui_flow_layout, drew %u", (unsigned)drawn);
+    CHECK(a.strips == 6u && a.tints == 1u && !a.bad, "strips %u (want 6), tints %u, bad %d", (unsigned)a.strips, (unsigned)a.tints, a.bad);
+    CHECK(a.pixels * 10 <= (int64_t)v.big * v.big * 16, "pixels %lld exceed 1.6 big^2 (big %d)", (long long)a.pixels, (int)v.big);
+    mui_cover_dim_lut(0, 0u, l0);
+    mui_cover_dim_lut(90, 0u, l90);
+    mui_cover_dim_lut(150, 0u, l150);
+    CHECK(l0[26] == 26 && l90[26] == 13 && l150[26] == 13 && l0[0] == 0 && l150[13] == 0, "dim: white at 0 -> %d, 90 -> %d, 150 -> %d, mid grey 150 -> %d", l0[26], l90[26], l150[26], l150[13]);
+    mui_canvas_draw_flow_aga(&s, 480, 320, t, 7, (3 << 16) + 32768, aga_art, NULL, c, &sink, &a, NULL);
+    for (i = 0; i < sizeof buf; i++) {
+        h = (h ^ buf[i]) * 16777619u;
+    }
+    snprintf(hex, sizeof hex, "%08x", (unsigned)h);
+    CHECK(strcmp(hex, MUI_FLOW_AGA_GOLDEN) == 0, "flow-aga hash %s, golden %s", hex, MUI_FLOW_AGA_GOLDEN);
+    mui_aga_cache_close(c);
+    return failures;
+}
+
 int main(int argc, char** argv) {
     int r = 1;
     if (argc > 1 && strcmp(argv[1], "geom") == 0) {
@@ -460,6 +534,8 @@ int main(int argc, char** argv) {
         r = test_art_path();
     } else if (argc > 1 && strcmp(argv[1], "flow") == 0) {
         r = test_flow();
+    } else if (argc > 1 && strcmp(argv[1], "flow-aga") == 0) {
+        r = test_flow_aga();
     } else if (argc > 1 && strcmp(argv[1], "art") == 0) {
         r = test_grid_art();
     }
