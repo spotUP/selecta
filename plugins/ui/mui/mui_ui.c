@@ -215,6 +215,7 @@ typedef struct mui_state {
     int8_t info_fk[MUI_INFO_MAX];   /* I774n R11b: the Found In kind index of a kind row, -1 for any other */
     uint32_t si_found_open;         /* I774n R11b: bit k set = Found In kind k shows its names (as the Mac) */
     int info_csdb[MUI_INFO_MAX];    /* I1440q2: the CSDb release id of an info row, 0 for any other */
+    uint8_t info_url[MUI_INFO_MAX]; /* I1465m: 1 when the row carries a video URL a click opens (sel_uim_si_url) */
     /* I774n R11c (design I774 A3): list 0 = the tag / catalogue rows, 1..5 = Credits, Other Sources, Found In, Same Tune, Demozoo (sel_uim_si_sections).
      * si_ptr[L] holds the rows of list L, si_idx[L] their index in info_buf (so info_fk / info_csdb stay by buffer row); a section without rows hides. */
     Object* si_list[SEL_UIM_SI_SECTION_N + 1];
@@ -295,6 +296,7 @@ typedef struct mui_state {
     char np_img_path[256];          /* I1440q3: the song whose real cover np_cover and bar_cover hold */
     sel_uim_slide slide;            /* I1454: the playing song's cover slide show clock */
     char slide_path[512];           /* I1454: the song slide_frames was counted for */
+    char slide_video[256];          /* I1465m: its Demozoo/DeepSID video link (artwork kind dz_video, stored under the song's meta key), empty when none */
     uint32_t slide_frames;          /* I1454: stills of that song (1 = cover only) */
     uint32_t slide_lib;             /* I1454: library_serial slide_frames was counted at */
     uint32_t wait_cap_ms;           /* I1454/I1455: the wait turn is at most this long while a spinner or slide show runs, 0 = no cap */
@@ -338,7 +340,7 @@ typedef struct mui_state {
     int side_top_bar, side_single;  /* the top bar flag of the build; the chips-or-label decision the dyn group was built with */
     sel_engine_library_item side_items[MUI_SIDEBAR_ROWS]; /* the rows the shared filter pass (sel_uim_lfilter_pass) returned for lib_filter */
     uint32_t side_item_n;
-    char info_buf[MUI_INFO_MAX][128];
+    char info_buf[MUI_INFO_MAX][192]; /* I1465m: a YouTube capture row is label + channel + URL, up to ~170 bytes */
     Object* trk_list;               /* MUI-P4-16 pattern rows, shown only when the engine answered with pattern data */
     Object* trk_group;
     char trk_buf[MUI_TRK_ROWS][160];
@@ -2846,6 +2848,17 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", lab, val);
             s->info_sec[rows] = 0u;
             s->info_csdb[rows] = 0;
+            s->info_url[rows] = 0u;
+            s->info_fk[rows] = -1;
+            rows++;
+        }
+        if (s->slide_video[0] != '\0' && so->path != NULL && rows < MUI_INFO_MAX - 1u) { /* I1465m: the song's video link, as the text UI's "Demo" line */
+            char vid[160];
+            mui_flat(vid, sizeof vid, s->slide_video);
+            snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "Demo video: %s", vid);
+            s->info_sec[rows] = 0u;
+            s->info_csdb[rows] = 0;
+            s->info_url[rows] = 1u;
             s->info_fk[rows] = -1;
             rows++;
         }
@@ -2863,7 +2876,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                 const char* value = p + strlen(p) + 1;
                 const char* text;
                 int kind = (int)sel_uim_si_panel_kind(p, &text);
-                char val[96];
+                char val[176];
                 int8_t row_fk = -1;
                 mui_flat(val, sizeof val, value);
                 p = value + strlen(value) + 1;
@@ -2901,6 +2914,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                 }
                 s->info_sec[rows] = (uint8_t)sec;
                 s->info_csdb[rows] = sel_csdb_row_id(value); /* I1440q2: a click on the row opens the release page */
+                s->info_url[rows] = kind == (int)SEL_UIM_SI_CREDIT && strstr(val, "https://") != NULL ? 1u : 0u; /* I1465m: a YouTube capture row opens its video */
                 s->info_fk[rows] = row_fk;
                 rows++;
             }
@@ -2910,6 +2924,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                      (unsigned long)so->subsong_count);
             s->info_sec[rows] = 0u;
             s->info_csdb[rows] = 0;
+            s->info_url[rows] = 0u;
             s->info_fk[rows] = -1;
             rows++;
         }
@@ -3418,9 +3433,16 @@ static void mui_cover_tick(mui_state* s, const sel_state* st) {
     if (strcmp(s->slide_path, so->path) != 0 || st->library_serial != s->slide_lib) {
         int64_t album = s->art->find(s->art->ctx, so->path);
         uint32_t kinds = album != 0 && s->art->kinds != NULL ? s->art->kinds(s->art->ctx, album) : 0u;
+        char vid[sizeof s->slide_video];
+        uint32_t vn = album != 0 && (kinds & SEL_ART_KIND_VIDEO) != 0u ? s->art->get(s->art->ctx, album, "dz_video", (uint8_t*)vid, sizeof vid - 1u) : 0u;
         snprintf(s->slide_path, sizeof s->slide_path, "%s", so->path);
         s->slide_frames = sel_uim_art_frames(kinds);
         s->slide_lib = st->library_serial;
+        vid[vn < sizeof vid ? vn : sizeof vid - 1u] = '\0';
+        if (strcmp(vid, s->slide_video) != 0) {
+            snprintf(s->slide_video, sizeof s->slide_video, "%s", vid);
+            s->detail_sig = ~s->detail_sig; /* the Song Information rows pick the link up */
+        }
     }
     snprintf(s->slide_stat, sizeof s->slide_stat, "of=%u frame=%u switches=%u", (unsigned)s->slide_frames, (unsigned)s->slide.idx, (unsigned)s->slide.switches);
     if (s->slide_frames > 1u) {
@@ -4680,6 +4702,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
                 char url[64];
                 sel_csdb_url(s->info_csdb[r], url, sizeof url);
                 mui_open_url(url);
+            } else if (s->info_url[r] != 0u) { /* I1465m: a video row (Demo video, YouTube capture) */
+                char url[192];
+                if (sel_uim_si_url(s->info_buf[r], url, sizeof url) > 0u) {
+                    mui_open_url(url);
+                }
             }
         }
     } else if (id == CTL_OPEN_CANCEL) { /* I1415 */

@@ -32,3 +32,20 @@ int sel_uim_si_found_index(const char* text) {
     }
     return -1;
 }
+
+uint32_t sel_uim_si_url(const char* value, char* out, uint32_t cap) {
+    const char* p = value != NULL ? strstr(value, "https://") : NULL;
+    uint32_t n = 0;
+    if (cap == 0u) {
+        return 0u;
+    }
+    if (p == NULL && value != NULL) {
+        p = strstr(value, "http://");
+    }
+    while (p != NULL && p[n] != '\0' && p[n] != ' ' && n + 1u < cap) {
+        out[n] = p[n];
+        n++;
+    }
+    out[n] = '\0';
+    return n;
+}

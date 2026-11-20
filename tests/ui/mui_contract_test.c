@@ -30,6 +30,7 @@
 
 #include <selecta/library_item.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/nppanel.h>
 #include <selecta/uimodel/siinfo.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/pages.h>
@@ -3293,6 +3294,37 @@ static void test_songinfo_panel(void) {
 
 /* I1440q2: composer Link rows and CSDb release rows open their URL through openurl.library (absent: nothing), the release URL from the shared
  * sel_csdb_url. The photo and thumbnails are not drawn: MUI has no image decoder path (see thoughts/spot/agent-reports/I1440q2-mui-photo-url.md). */
+/* I1465m: the Amiga twin of I1465/I1468. The panel rows (DeepSID, YouTube captures, CSDb "Used in") arrive through the engine panel list under the
+ * song's meta key, so a Modland copy shows the HVSC rows; the shared uimodel reads the URL out of a video row, and the cover tick caches the dz_video link. */
+static void test_metadata_panel(void) {
+    char *src = ui_source(), url[192];
+    static const char k_panel[] = "Composer\0Chris Huelsbeck\0YouTube capture\0Subtune 1, Some Channel: https://www.youtube.com/watch?v=abcdefghijk\0";
+    static sel_uim m;
+    static sel_state st;
+    sel_uim_np_line l[SEL_UIM_NP_LINES_MAX];
+    uint32_t n, i, pairs = 0;
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src != NULL) {
+        CHECK(strstr(src, "\"dz_video\"") != NULL && strstr(src, "s->slide_video") != NULL, "the cover tick does not read the song's dz_video link");
+        CHECK(strstr(src, "\"Demo video: %s\"") != NULL, "no Demo video row in Song Information");
+        CHECK(strstr(src, "sel_uim_si_url(s->info_buf[r], url, sizeof url)") != NULL && strstr(src, "s->info_url[r] != 0u") != NULL, "a video row does not open its URL");
+        CHECK(strstr(src, "char info_buf[MUI_INFO_MAX][192]") != NULL && strstr(src, "char val[176];") != NULL, "a YouTube capture row is cut before its video id");
+        CHECK(strstr(src, "mui_cover_image(s->art, so->path, MUI_COVER_EDGE, s->slide.idx)") != NULL, "cover rotation no longer reads frames through art->find by path");
+    }
+    CHECK(sel_uim_si_url("Subtune 1, Some Channel: https://www.youtube.com/watch?v=abcdefghijk", url, sizeof url) == 43u &&
+              strcmp(url, "https://www.youtube.com/watch?v=abcdefghijk") == 0, "the URL is not read out of a capture row");
+    CHECK(sel_uim_si_url("Chris Huelsbeck", url, sizeof url) == 0u && url[0] == '\0', "a row without a URL gives one");
+    CHECK(sel_uim_si_url("see http://a.b/c d", url, sizeof url) == 12u && strcmp(url, "http://a.b/c") == 0, "the URL does not end at the space");
+    memset(&m, 0, sizeof m);
+    memset(&st, 0, sizeof st);
+    st.panel = k_panel;
+    st.song.path = "modland:pub/modules/RealSID/Chris Huelsbeck/the great giana sisters.rsid";
+    n = sel_uim_np_lines(&m, &st, l, SEL_UIM_NP_LINES_MAX);
+    for (i = 0; i < n; i++) {
+        pairs += l[i].kind == SEL_UIM_NP_PAIR && strcmp(l[i].key, "YouTube capture") == 0 && strstr(l[i].val, "abcdefghijk") != NULL;
+    }
+    CHECK(pairs == 1u, "the shared panel lines drop the YouTube capture row of a Modland copy");
+}
 static void test_open_url(void) {
     char *src = ui_source(), *fn;
     CHECK(src != NULL, "cannot read mui_ui.c");
@@ -4479,6 +4511,8 @@ int main(int argc, char** argv) {
         test_screen_rtg_flag();
     } else if (strcmp(argv[1], "cover-image") == 0) {
         test_cover_image();
+    } else if (strcmp(argv[1], "metadata-panel") == 0) {
+        test_metadata_panel();
     } else {
         return 2;
     }
