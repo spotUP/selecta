@@ -21,7 +21,8 @@
 /* I774m: v24 (uade key, channels, publisher): BEGIN, 3 ALTERs, the user_version write, COMMIT = 6 more. */
 /* I774p: v25 (song_strings): BEGIN, the table, the user_version write, COMMIT = 4, plus 9 statements SQLite runs inside CREATE VIRTUAL TABLE fts5 (shadow tables _data _idx _content _docsize _config and their initial rows; measured 57 total). */
 /* I1465a: v26 (song_meta_key): BEGIN, the table, the user_version write, COMMIT = 4 more. */
-#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5 + 5 + 6 + 4 + 9 + 4)
+/* I1465c: v27 (SID stills purge): BEGIN, the DELETE, the user_version write, COMMIT = 4 more. */
+#define MAX_STMTS_EMPTY (14 + 6 + 4 + 4 + 5 + 5 + 6 + 4 + 9 + 4 + 4)
 
 static int g_fail;
 static int g_stmts;

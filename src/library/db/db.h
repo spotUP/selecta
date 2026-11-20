@@ -342,7 +342,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 26
+#define SEL_LIB_SCHEMA_VERSION 27
 /* I625a8e: file name of the prebuilt empty database (tools/library_template_bake.c). sel_library_open copies it, from the directory
  * of the database path, when that database does not exist, instead of running the 65 DDL statements of SCHEMA_FINAL. */
 #define SEL_LIBTEMPLATE_NAME "library-template.db"
