@@ -273,6 +273,8 @@ typedef struct desk {
     char col_sub[96];        /* the album's artist (the side item's sub) */
     uint32_t col_year;       /* the album's year (0 unknown) */
     char col_about[2048];    /* I1440j: the composer page's DeepSID header (label NUL value NUL pairs) */
+    uint32_t pc_corner_before, pc_corner_after, pc_centre; /* I1473: the last live generated cover's top-left pixel before and after it drew, and its centre */
+    int cover_square; /* I1473: set while the full-bleed Now Playing cover draws, so its fallback stays square */
     struct cover_ent { /* I845: LRU of generated platform covers, drawn by blit instead of regenerating the gradient every frame */
         uint32_t* px;
         int32_t w, h;
@@ -1923,7 +1925,7 @@ static uint32_t pc_word(uint32_t slot) {
  * cover on every dirty frame. Only the live RGBA32 canvas is cached (INDEX8 is a flat fill already; offscreen tiles cache
  * themselves). cv_generated counts the misses, cv_hits the blits. */
 static void cover_cached_draw(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint32_t kind, uint32_t family, uint32_t title,
-                              const char* name, const sel_gui_atlas* word, const sel_gui_atlas* kword, uint32_t label_px) {
+                              const char* name, const sel_gui_atlas* word, const sel_gui_atlas* kword, uint32_t label_px, int32_t radius) {
     struct cover_ent* e = NULL;
     uint32_t tk = 2166136261u;
     uint32_t i, lru = 0u;
@@ -1970,12 +1972,18 @@ static void cover_cached_draw(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint
         d->cv_hits++;
     }
     e->stamp = ++d->cv_stamp;
-    sel_gui_blit_image(cv, ar, e->px, ar.w, ar.h, ar.w, 0);
+    sel_gui_blit_image_round(cv, ar, e->px, ar.w, ar.h, ar.w, radius);
 }
 
 /* The platform cover of `family` (I691b, I691d) on `cv`: the one drawing path of every fallback cover. `slot` receives family + 1
  * (plus the word px above the family byte) for the dump line `platform_covers`; draws counts every call, the sentinel of the
  * fallback branch. Covers under 64 logical px draw the field and mark only. */
+/* I1473: the corner radius of a cover at `ar`: the large card radius from 96 logical px up, else the small one; 0 for the full-bleed cover. */
+static int32_t cover_radius(const desk* d, sel_gui_rect ar) {
+    int32_t r = lpx(d, (int32_t)d->theme.token[px_to_logical(d, ar.w) >= 96 ? SEL_GUI_TOKEN_RADIUS_LARGE : SEL_GUI_TOKEN_RADIUS]);
+    return d->cover_square ? 0 : r > ar.w / 2 ? ar.w / 2 : r;
+}
+
 static void kind_platform_cover(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint32_t kind, uint32_t family, const char* title, uint32_t* slot) {
     int32_t edge = px_to_logical(d, ar.w < ar.h ? ar.w : ar.h); /* logical: a 2x canvas shows a 56 px bar thumb at 112 px */
     int32_t want = edge / 7, px = 0, kpx = 0, i;
@@ -1996,7 +2004,14 @@ static void kind_platform_cover(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, ui
         }
         kword = kpx != 0 ? desk_font(d, 1, kpx) : word;
     }
-    cover_cached_draw(d, cv, ar, kind, family, sel_gui_str_hash(title != NULL ? title : ""), title, word, kword, (uint32_t)px);
+    if (cv == d->canvas && ar.w > 0 && ar.h > 0) {
+        d->pc_corner_before = sel_gui_pixel(cv, ar.x, ar.y) & 0xFFFFFFu;
+    }
+    cover_cached_draw(d, cv, ar, kind, family, sel_gui_str_hash(title != NULL ? title : ""), title, word, kword, (uint32_t)px, cover_radius(d, ar));
+    if (cv == d->canvas && ar.w > 0 && ar.h > 0) {
+        d->pc_corner_after = sel_gui_pixel(cv, ar.x, ar.y) & 0xFFFFFFu;
+        d->pc_centre = sel_gui_pixel(cv, ar.x + ar.w / 2, ar.y + ar.h / 2) & 0xFFFFFFu;
+    }
     if (slot != NULL) {
         *slot = (family + 1u) | (word != NULL ? (uint32_t)px << 8 : 0u);
     }
@@ -2185,7 +2200,7 @@ static uint32_t row_kind(const sel_view_row* r) {
 }
 static void row_cover(desk* d, sel_gui_rect ar, const sel_view_row* r, const char* path, uint32_t* slot) {
     const char* art = r->art_ref != NULL ? r->art_ref : path != NULL ? path : r->key;
-    if (r->art_id != 0u && cover_draw(d, ar, art, 0)) {
+    if (r->art_id != 0u && cover_draw(d, ar, art, cover_radius(d, ar))) {
         *slot = 0u;
         return;
     }
@@ -8617,6 +8632,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u shelf=%s grid=%s flow=%s side=%s header=%s\n", pc_name(d->pc_np), pc_name(d->pc_bar),
                  pc_name(d->pc_page), pc_name(d->pc_tile0), (unsigned)d->pc_draws, pc_name(d->pc_shelf), pc_name(d->pc_grid), pc_name(d->pc_flow),
                  pc_name(d->pc_side), pc_name(d->pc_header));
+    o = dump_put(d, o, "platform_cover_corner before=%06x after=%06x centre=%06x\n", (unsigned)d->pc_corner_before, (unsigned)d->pc_corner_after, (unsigned)d->pc_centre);
     o = dump_put(d, o, "cover_cache generated=%u hits=%u\n", (unsigned)d->cv_generated, (unsigned)d->cv_hits);
     o = dump_put(d, o, "platform_cover_words np=%u bar=%u page=%u tile0=%u\n", (unsigned)pc_word(d->pc_np), (unsigned)pc_word(d->pc_bar),
                  (unsigned)pc_word(d->pc_page), (unsigned)pc_word(d->pc_tile0));
@@ -13654,6 +13670,7 @@ static void draw_nowplaying(desk* d) {
     ar = rect_of(pn.x + sp, pn.y + sp, asz, asz);
     d->np_art = ar;
     d->np_panel = pn;
+    d->cover_square = 1;
     if (cover_draw(d, ar, st->song.path, 0)) { /* I692: the full-bleed cover; np_art_average below reads the pixels it drew */
         d->cover_np++;
         d->pc_np = 0;
@@ -13661,6 +13678,7 @@ static void draw_nowplaying(desk* d) {
         song_platform_cover(d, ar, st->song.path, f->title, &d->pc_np);
         d->np_genart++;
     }
+    d->cover_square = 0;
     /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. The
      * artwork is drawn once, so the gradient is clipped to the band around it: above the artwork and on both sides. */
     band = rect_of(dt.x, dt.y, dt.w, 2 * sp + asz / 2);
