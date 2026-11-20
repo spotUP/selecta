@@ -15,14 +15,18 @@ typedef struct label {
     const char* text;
 } label;
 
-/* Per voice, relative to the voice column (the heading "Voice<n>" is per chip). */
+/* Per voice, relative to the voice column (the heading "Voice<n>" is per chip). Full words (I1466): at the glyph pixel scale
+ * sx = cw / 8 a glyph advances 5 * sx = 5/8 of a cell, so "Triangle" (8 glyphs, 39 sx) fills the 5 cells 6..10 and "Pulse Width"
+ * (11 glyphs, 54 sx) the 7 cells 0..6 before its bar. labels() drops the words when cw < 8 or the glyph pixel is wider than sx. */
 static const label k_voice_labels[] = {
-    {7, 0, "Flt"},  {0, 1, "Fr"},   {0, 2, "Pw"},   {0, 3, "Gate"}, {6, 3, "Tri"},  {0, 4, "Sync"},
-    {6, 4, "Saw"},  {0, 5, "Ring"}, {6, 5, "Pul"},  {0, 6, "Test"}, {6, 6, "Noi"},
+    {7, 0, "Filter"},    {0, 1, "Frequency"}, {0, 2, "Pulse Width"}, {0, 3, "Gate"},     {6, 3, "Triangle"},
+    {0, 4, "Sync"},      {6, 4, "Sawtooth"},  {0, 5, "Ring"},        {6, 5, "Pulse"},    {0, 6, "Test"},
+    {6, 6, "Noise"},
 };
-/* Per chip. */
+/* Per chip: Filter, cutoff bar (cols 5..9), Resonance (cols 11..16), its bar (17..18), then three mode blocks at 19, 26, 33 each
+ * followed by a 6 cell word ("High Pass" is 44 sx wide). */
 static const label k_chip_labels[] = {
-    {0, 7, "Filter"}, {16, 7, "Reso"}, {26, 7, "LP"}, {31, 7, "BP"}, {36, 7, "HP"},
+    {0, 7, "Filter"}, {11, 7, "Resonance"}, {20, 7, "Low Pass"}, {27, 7, "Band Pass"}, {34, 7, "High Pass"},
 };
 static const char* const k_headings[9] = {"Voice1", "Voice2", "Voice3", "Voice4", "Voice5",
                                           "Voice6", "Voice7", "Voice8", "Voice9"};
@@ -96,13 +100,15 @@ static uint32_t label_at(const grid* g, int32_t col, int32_t row, int32_t sx, in
     return vs_text_xy(g->s, cell_x(g, col), y, sx, sy, text, px);
 }
 
-/* Labels of one chip band; none on a small surface (rh < 6 or cw < 3). */
+/* Labels of one chip band; none on a small surface (rh < 7 or cw < 8). */
 static uint32_t labels(const grid* g, uint32_t chip, uint32_t px) {
     int32_t sx, sy;
     /* I950: the widest label ("Voice1", 6 glyphs) must stay inside its 7 columns, and the glyph pixel is square on screen. */
-    vs_glyph_scale(g->s, g->rh, (g->cw * 7) / (6 * VS_GLYPH_ADVANCE), &sx, &sy);
+    vs_glyph_scale(g->s, g->rh, g->cw / 8, &sx, &sy);
     uint32_t v, i, n = 0;
-    if (g->rh < VS_GLYPH_H + 1 || g->cw < 3) { /* I918: a glyph needs its rows plus a blank row; at rh 6 the text touched the cells and was unreadable */
+    /* I1466: the longest word ("Triangle") needs a glyph pixel of at most cw / 8 columns; a tall-pixel surface at a narrow cw
+     * rounds sx up past that, so the words are left out rather than abbreviated. */
+    if (g->rh < VS_GLYPH_H + 1 || g->cw < 8 || sx > g->cw / 8) { /* I918: a glyph needs its rows plus a blank row; at rh 6 the text touched the cells and was unreadable */
         return 0;
     }
     for (v = 0; v < 3; v++) {
@@ -130,7 +136,7 @@ static uint32_t chip_draw(grid* g, uint32_t chip, int32_t bh, const sel_viz_sid_
         const uint8_t* vr = &sc->reg[v * 7u];
         int32_t base = (int32_t)v * VOICE_COLS;
         int32_t eh = (int32_t)sc->env[v] * env_h / 64;
-        n += bar(g, base + 3, tiny ? 0 : 1, 8, freq_scaled(vr), 0xFFFFu);
+        n += bar(g, base + 7, tiny ? 0 : 1, 5, freq_scaled(vr), 0xFFFFu);
         if (eh > 0) {
             vs_rect(g->s, cell_x(g, base + 12), g->y0 + env_h - eh, g->cw, eh, g->c->primary);
             n++;
@@ -138,7 +144,7 @@ static uint32_t chip_draw(grid* g, uint32_t chip, int32_t bh, const sel_viz_sid_
         if (tiny) {
             continue;
         }
-        n += bar(g, base + 3, 2, 8, pulse_width(vr), 0xFFFu);
+        n += bar(g, base + 7, 2, 5, pulse_width(vr), 0xFFFu);
         n += block(g, base + 11, 0, (sc->reg[0x17] >> v) & 1, sc->glow[v][8]);
         for (i = 0; i < 8; i++) {
             n += block(g, base + k_flags[i].col, k_flags[i].row, (vr[4] >> k_flags[i].bit) & 1,
@@ -146,10 +152,10 @@ static uint32_t chip_draw(grid* g, uint32_t chip, int32_t bh, const sel_viz_sid_
         }
     }
     if (!tiny) {
-        n += bar(g, 7, 7, 8, cutoff(sc->reg), 0x7FFu);
-        n += bar(g, 21, 7, 2, (uint32_t)(sc->reg[0x17] >> 4), 15u);
+        n += bar(g, 5, 7, 5, cutoff(sc->reg), 0x7FFu);
+        n += bar(g, 17, 7, 2, (uint32_t)(sc->reg[0x17] >> 4), 15u);
         for (i = 0; i < 3; i++) {
-            n += block(g, 28 + 5 * (int32_t)i, 7, (sc->reg[0x18] >> (4 + i)) & 1, sc->mode_glow[i]);
+            n += block(g, 19 + 7 * (int32_t)i, 7, (sc->reg[0x18] >> (4 + i)) & 1, sc->mode_glow[i]);
         }
     }
     return n;
