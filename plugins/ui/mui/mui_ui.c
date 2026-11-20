@@ -179,7 +179,7 @@ typedef struct mui_state {
     char p4_stat[480];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
     uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
-    char list_stat[640];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
+    char list_stat[768];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
 #ifdef SEL_MUI_NATIVE
     Object* app;
     struct MsgPort* tport;          /* timer.device reply port: bounds the native wait by timeout_ms */
@@ -3596,12 +3596,16 @@ static void mui_style_chooser_sync(mui_state* s, const sel_view_state* v, int li
 static void mui_grid_refresh(mui_state* s, const sel_view_state* v) {
     uint32_t cols = 0, rows = 0, want, n, cur = 0, k, in_win;
     int flow;
+    flow = v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
+    if (s->grid_art != NULL && flow != s->flow_on) { /* I1473g8b6 D-F1: the one loader reopens at the style's edge (flow 144 / 12 slots) */
+        mui_grid_art_close(s->grid_art);
+        s->grid_art = NULL;
+    }
     if (s->grid_art == NULL && s->art != NULL) {
-        s->grid_art = mui_grid_art_open(s->art, mui_cover_album_image, s->grid_edge, MUI_GRID_ART_SLOTS);
+        s->grid_art = mui_grid_art_open(s->art, mui_cover_album_image, mui_flow_art_edge(s->grid_edge, flow), mui_flow_art_slots(MUI_GRID_ART_SLOTS, flow));
     }
     mui_canvas_grid_fit(s->canvas, &cols, &rows);
     s->grid_cols = cols;
-    flow = v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
     if (flow != s->flow_on) { /* I1473g8b4: set_flow resets the glide, so only on a change */
         mui_canvas_set_flow(s->canvas, flow);
         s->flow_on = flow;
@@ -3867,10 +3871,14 @@ static void mui_refresh(mui_state* s) {
             } else {
                 row0[0] = '\0';
             }
-            snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u grid_on=%u flow_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u indent=%u hook_calls=%u song_qid=%u song_ms=%u row0_id=%u header={%s} row0={%s}",
+            mui_flow_stats fs = {0u, 0u, 0u, 0u};
+            if (s->canvas != NULL) {
+                mui_canvas_flow_stats(s->canvas, &fs);
+            }
+            snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u grid_on=%u flow_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u mui_flow_draws=%u mui_flow_frames=%u mui_flow_ms_max=%u mui_flow_glide=%u art_decodes=%u canvas_shown=%u indent=%u hook_calls=%u song_qid=%u song_ms=%u row0_id=%u header={%s} row0={%s}",
                      mui_list_backend_pick(0, 0)->name, (unsigned)v->style, (unsigned)mui_columns_for(s->col_bp, (uint8_t[MUI_COL_COUNT]){0}),
                      s->col_fmt, (unsigned)n, (unsigned)s->grid_on, (unsigned)s->flow_on, (unsigned)s->grid_n, (unsigned)s->grid_cols, (unsigned)s->grid_win,
-                     s->canvas != NULL ? (unsigned)mui_canvas_draws(s->canvas) : 0u, s->grid_art != NULL ? (unsigned)mui_grid_art_decodes(s->grid_art) : 0u, (unsigned)s->canvas_show.value, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls, (unsigned)st->song.queue_id, (unsigned)st->song.duration_ms, n > 0 ? (unsigned)v->rows[0].id : 0u, head, row0);
+                     s->canvas != NULL ? (unsigned)mui_canvas_draws(s->canvas) : 0u, (unsigned)fs.draws, (unsigned)fs.frames, (unsigned)fs.ms_max, (unsigned)fs.glide, s->grid_art != NULL ? (unsigned)mui_grid_art_decodes(s->grid_art) : 0u, (unsigned)s->canvas_show.value, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls, (unsigned)st->song.queue_id, (unsigned)st->song.duration_ms, n > 0 ? (unsigned)v->rows[0].id : 0u, head, row0);
         }
     }
 }

@@ -33,6 +33,8 @@ int mui_canvas_flow_tick(Object* obj);
 /* I1473g4: forget the redraw signature so the next mui_canvas_set_grid redraws (a cover loaded, same tiles). */
 void mui_canvas_invalidate(Object* obj);
 uint32_t mui_canvas_draws(Object* obj);
+/* I1473g8b6: the Cover Flow exit-stat counters. */
+void mui_canvas_flow_stats(Object* obj, mui_flow_stats* out);
 /* I1473g6: tile columns and whole visible tile rows of the canvas as laid out; 0 when it has no size yet (hidden). */
 void mui_canvas_grid_fit(Object* obj, uint32_t* cols, uint32_t* rows);
 /* I1473g7: input for the shown canvas. mui_canvas_input_set turns it on (before the object is shown): arrows, Enter, the wheel and tile

@@ -116,6 +116,13 @@ uint32_t mui_canvas_draw_flow(mui_canvas* m, const mui_grid_style* s, const mui_
                               void* art_ctx, mui_flow_view* view);
 /* D-F2: glide (220 ms ease-out, the Mac's) only on a 68040 or better; 68020/68030 step one frame per key. */
 int mui_flow_glides(int cpu_is_040_or_better);
+/* I1473g8b6: exit-stat counters of Cover Flow. draws = flow frames drawn, frames = those drawn mid-glide, ms_max = slowest draw,
+ * glide = glides started. */
+typedef struct mui_flow_stats {
+    uint32_t draws, frames, ms_max, glide;
+} mui_flow_stats;
+void mui_flow_stats_draw(mui_flow_stats* st, int gliding, uint32_t ms);
+void mui_flow_stats_glide(mui_flow_stats* st);
 /* Glide progress 16.16 (0..65536) after `elapsed_ms`; 65536 = at rest. Same easing table as the Mac (SEL_GUI_EASE_OUT, SEL_GUI_ANIM_NORMAL_MS). */
 int32_t mui_flow_glide_q16(uint32_t elapsed_ms);
 

@@ -426,6 +426,17 @@ static int test_flow_input(void) {
           "one wheel notch is one cover, down is next");
     CHECK(mui_grid_key(MUI_RAWKEY_RIGHT, 0u, &in) && in.arg == 1 && mui_grid_key(MUI_RAWKEY_LEFT, 0u, &in) && in.arg == -1, "left/right step one");
     CHECK(mui_grid_key(MUI_RAWKEY_RETURN, 0u, &in) && in.kind == MUI_GIN_ACTIVATE, "enter activates the front cover");
+    CHECK(mui_flow_art_edge(96, 1) == MUI_GRID_THUMB_EDGE && mui_flow_art_edge(96, 0) == 96 && mui_flow_art_edge(128, 0) == 128, "D-F1: flow loads at 144, grid keeps its edge");
+    CHECK(mui_flow_art_slots(24u, 1) == 12u && mui_flow_art_slots(24u, 0) == 24u, "D-F1: 12 flow slots (9 + 3 ahead), grid 24");
+    {
+        mui_flow_stats st = {0u, 0u, 0u, 0u};
+        mui_flow_stats_draw(&st, 0, 5u);
+        mui_flow_stats_glide(&st);
+        mui_flow_stats_draw(&st, 1, 40u);
+        mui_flow_stats_draw(&st, 1, 12u);
+        CHECK(st.draws == 3u && st.frames == 2u && st.ms_max == 40u && st.glide == 1u, "sentinels: draws %u frames %u ms_max %u glide %u", (unsigned)st.draws, (unsigned)st.frames,
+              (unsigned)st.ms_max, (unsigned)st.glide);
+    }
     return failures;
 }
 
