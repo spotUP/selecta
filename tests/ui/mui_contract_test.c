@@ -3461,6 +3461,38 @@ static void test_cycle_initial(void) {
     CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");
 }
 
+/* I1473g6: Grid is drawn on the canvas and leaves the packed List path; Cover Flow and Compact still pack. mui_ui.c is Amiga-only, so the
+ * wiring is checked in its source: the canvas style from the theme, the art loader, the refresh branch, the pane swap and the sentinels. */
+static void test_grid_switch(void) {
+    static char src[400000];
+    char body[8000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(mui_style_canvas(SEL_VIEW_STYLE_GRID) && !mui_style_packed(SEL_VIEW_STYLE_GRID), "Grid is not canvas-only");
+    CHECK(!mui_style_canvas(SEL_VIEW_STYLE_REGULAR) && !mui_style_packed(SEL_VIEW_STYLE_REGULAR), "List changed");
+    CHECK(!mui_style_canvas(SEL_VIEW_STYLE_COVERFLOW) && mui_style_packed(SEL_VIEW_STYLE_COVERFLOW), "Cover Flow no longer packs");
+    CHECK(!mui_style_canvas(SEL_VIEW_STYLE_COMPACT) && mui_style_packed(SEL_VIEW_STYLE_COMPACT), "Compact no longer packs");
+    CHECK(strstr(src, "uint32_t packed = mui_style_packed(v->style)") != NULL, "mui_refresh still packs Grid");
+    CHECK(strstr(src, "mui_grid_style grid = mui_grid_style_for(") != NULL && strstr(src, "0xFF101010u, 0xFF303030u") == NULL, "canvas style not from the theme");
+    CHECK(fn_body(src, "static void mui_grid_refresh(", body, sizeof body) != NULL && strstr(body, "mui_grid_tiles(v, s->grid_tiles") != NULL &&
+              strstr(body, "mui_canvas_set_grid(s->canvas, s->grid_tiles") != NULL && strstr(body, "mui_grid_art_get") != NULL &&
+              strstr(body, "mui_grid_art_tick") != NULL && strstr(body, "mui_canvas_invalidate(s->canvas)") != NULL &&
+              strstr(body, "cols * (rows + 1u)") != NULL && strstr(body, "VIEW_WINDOW %u") != NULL && strstr(body, "SEL_ROW_HEADING") != NULL,
+          "mui_grid_refresh misses tiles, art, invalidate, window size or the heading skip");
+    CHECK(strstr(src, "mui_grid_art_open(s->art, mui_cover_album_image, s->grid_edge, MUI_GRID_ART_SLOTS)") != NULL &&
+              strstr(src, "mui_grid_art_close(s->grid_art)") != NULL && strstr(src, "#define MUI_GRID_ART_SLOTS 24") != NULL,
+          "the art loader is not opened with 24 slots or not closed");
+    CHECK(fn_body(src, "static void mui_list_pane_set(mui_state* s) {", body, sizeof body) != NULL && strstr(body, "set(s->listview, MUIA_ShowMe") != NULL &&
+              strstr(body, "set(s->canvas, MUIA_ShowMe") != NULL && strstr(body, "mui_flag_commit") != NULL,
+          "the list/canvas swap is missing");
+    CHECK(strstr(src, "set(s->listview, MUIA_ShowMe, col || home") == NULL && strstr(src, "mui_list_pane_set(s);") != NULL, "the page switch writes the list's ShowMe directly");
+    CHECK(strstr(src, "grid_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u") != NULL, "grid sentinels missing from the list stat");
+}
+
 /* I684b: the VizArea and canvas objects must get the real RTG flag of the screen (the foreign-mode test in mui_screen_open),
  * not a literal 1; with 1 a planar AGA screen still ran the pixel step although nothing can draw there. */
 static void test_screen_rtg_flag(void) {
@@ -4507,6 +4539,8 @@ int main(int argc, char** argv) {
         test_cycle_initial();
     } else if (strcmp(argv[1], "aa-aspect") == 0) {
         test_aa_aspect();
+    } else if (strcmp(argv[1], "grid-switch") == 0) {
+        test_grid_switch();
     } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {
         test_screen_rtg_flag();
     } else if (strcmp(argv[1], "cover-image") == 0) {

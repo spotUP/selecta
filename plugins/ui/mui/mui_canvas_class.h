@@ -28,6 +28,8 @@ void mui_canvas_set_spin(Object* obj, int lead, uint32_t accent, uint32_t muted)
 /* I1473g4: forget the redraw signature so the next mui_canvas_set_grid redraws (a cover loaded, same tiles). */
 void mui_canvas_invalidate(Object* obj);
 uint32_t mui_canvas_draws(Object* obj);
+/* I1473g6: tile columns and whole visible tile rows of the canvas as laid out; 0 when it has no size yet (hidden). */
+void mui_canvas_grid_fit(Object* obj, uint32_t* cols, uint32_t* rows);
 /* Writes w x h 0xAARRGGBB words to the rastport at (dx, dy) through Picasso96 (the viz area shares it). */
 void mui_canvas_push(struct Library* p96, const uint32_t* px, int32_t w, int32_t h, struct RastPort* rp, int32_t dx, int32_t dy);
 /* Deletes the class; call after the application object is disposed. */

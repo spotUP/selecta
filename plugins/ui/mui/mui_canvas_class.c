@@ -520,6 +520,13 @@ uint32_t mui_canvas_draws(Object* obj) {
     return ((canvas_data*)INST_DATA(g_class->mcc_Class, obj))->mc->draws;
 }
 
+void mui_canvas_grid_fit(Object* obj, uint32_t* cols, uint32_t* rows) {
+    canvas_data* d = INST_DATA(g_class->mcc_Class, obj);
+    LONG w = _mwidth(obj), h = _mheight(obj);
+    *cols = w > 0 ? mui_grid_cols(&d->style, (int32_t)w) : 0u;
+    *rows = h > 0 ? mui_grid_visible_rows(&d->style, (int32_t)h) : 0u;
+}
+
 void mui_canvas_class_free(void) {
     if (g_class != NULL) {
         MUI_DeleteCustomClass(g_class);

@@ -15,6 +15,7 @@
 #include <selecta/platform.h>
 
 #include "map/mui_map.h"
+#include "map/mui_grid_art.h"
 #include "map/mui_theme.h"
 #include "map/mui_fontprobe.h"
 #include "map/mui_pens.h"
@@ -126,6 +127,8 @@ static void mui_requester(const char* text); /* I1352b */
 #define CTL_OFFER_SYNC 0x280CL   /* its Sync now button */
 #define CTL_OFFER_NEVER 0x280DL  /* I1308c: its Never button */
 #define CTL_OFFER_ROW 0x2C00L    /* its per-source checks, CTL_OFFER_ROW + k (I1362: was 0x2900 = CTL_SIDE_BASE, so the offer branch swallowed the Your Library + and > presses; keep every base 0x100 apart) */
+#define MUI_GRID_ART_SLOTS 24 /* I1473g6: grid covers kept decoded */
+#define SEL_VIEW_WINDOW_DEFAULT_ROWS 20u /* the engine's default VIEW_WINDOW, restored on leaving Grid */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
 /* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
@@ -171,7 +174,7 @@ typedef struct mui_state {
     char p4_stat[480];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
     uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
-    char list_stat[480];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
+    char list_stat[640];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
 #ifdef SEL_MUI_NATIVE
     Object* app;
     struct MsgPort* tport;          /* timer.device reply port: bounds the native wait by timeout_ms */
@@ -350,6 +353,13 @@ typedef struct mui_state {
     uint32_t sm_playlist;           /* MUI-P4-6: the playlist last opened or seen, the target of Add to Playlist */
     uint32_t sm_on_queue;           /* the Song menu item 4 title follows the cursor row (Remove from Queue) */
     Object* crumb;                  /* MUI-P3-3: the drilldown breadcrumb line above the list */
+    /* I1473g6: the Grid style on the canvas. The tile array stays put (the class keeps the pointer); list_base is "a list page is up",
+     * grid_on "the view's style is Grid", list_show / canvas_show the last ShowMe written to each. */
+    mui_tile grid_tiles[MUI_ROWS_MAX];
+    mui_grid_art* grid_art;
+    int32_t grid_edge;
+    uint32_t grid_on, grid_win, grid_n, grid_cols, list_base;
+    mui_flag list_show, canvas_show;
     mui_flag crumb_show, nav_back_dis, nav_fwd_dis; /* I966: last ShowMe / Disabled written, so mui_refresh sets only on a change */
     char crumb_buf[128];
     Object* crumb_row;              /* MUI-P4-2: the Library breadcrumb buttons (browse path pieces), shown in the browse source */
@@ -2377,7 +2387,12 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
-        static const mui_grid_style grid = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 96, 8, 8, 0};
+        uint32_t sw = 0, sh = 0;
+        int lc = 0;
+        mui_screen_size(&sw, &sh, &lc);
+        mui_grid_style grid = mui_grid_style_for((int32_t)sw, g_tokens[SEL_GUI_TOKEN_BACKGROUND] | 0xFF000000u, g_tokens[SEL_GUI_TOKEN_SURFACE] | 0xFF000000u, g_tokens[SEL_GUI_TOKEN_ACCENT] | 0xFF000000u);
+        s->grid_edge = grid.edge;
+        s->list_base = 1u;
         s->canvas = mui_canvas_new(&grid, g_screen_rtg);
         if (s->canvas != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->canvas);
@@ -3074,6 +3089,7 @@ static void mui_browse_fill(mui_state* s, const sel_state* st) {
 
 /* The page that shows in the main panel: the collection page (P3), the Home page and Show all page (P1), the Browse tile page (P4), else
  * the main list; and the Search facet chips (P5) above the list while its source is Search. */
+static void mui_list_pane_set(mui_state* s);
 static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_entry* cur, int col) {
     const sel_view_state* v = st->view;
     char key[128];
@@ -3129,7 +3145,8 @@ static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_en
         set(s->src_page, MUIA_ShowMe, srcp ? TRUE : FALSE);
         set(s->mode_row, MUIA_ShowMe, modes ? TRUE : FALSE);
         set(s->scope_row, MUIA_ShowMe, scope ? TRUE : FALSE);
-        set(s->listview, MUIA_ShowMe, col || home || browse || srcp ? FALSE : TRUE);
+        s->list_base = col || home || browse || srcp ? 0u : 1u; /* I1473g6: the list or the canvas, mui_list_pane_set */
+        mui_list_pane_set(s);
         for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
             mui_aabtn_set_on(s->facet_btn[k], mui_facet_on(s->search_facet, k));
         }
@@ -3461,6 +3478,68 @@ static void mui_cover_tick(mui_state* s, const sel_state* st) {
     }
 }
 
+/* I1473g6: the list and the canvas share one slot; the list shows on a list page unless the style is Grid, the canvas on the opposite.
+ * Sets only on a change (I966). The caller holds the parent's InitChange. */
+static void mui_list_pane_set(mui_state* s) {
+    if (mui_flag_commit(&s->list_show, s->list_base && !s->grid_on)) {
+        set(s->listview, MUIA_ShowMe, s->list_base && !s->grid_on ? TRUE : FALSE);
+    }
+    if (s->canvas != NULL && mui_flag_commit(&s->canvas_show, s->list_base && s->grid_on)) {
+        set(s->canvas, MUIA_ShowMe, s->list_base && s->grid_on ? TRUE : FALSE);
+    }
+}
+
+static void mui_list_pane_sync(mui_state* s) {
+    ULONG parent = 0;
+    uint32_t list_on = s->list_base && !s->grid_on, canvas_on = s->list_base && s->grid_on;
+    if (s->canvas == NULL || (s->list_show.known && s->list_show.value == list_on && s->canvas_show.known && s->canvas_show.value == canvas_on)) {
+        return;
+    }
+    GetAttr(MUIA_Parent, s->canvas, &parent);
+    if (parent != 0) {
+        DoMethod((Object*)parent, MUIM_Group_InitChange);
+    }
+    mui_list_pane_set(s);
+    if (parent != 0) {
+        DoMethod((Object*)parent, MUIM_Group_ExitChange);
+    }
+}
+
+/* I1473g6: one Grid frame. The engine window is columns x (visible rows + 1) so the row below the fold is on hand; the tiles come from
+ * the window (headings skipped, so the cursor counts the non-heading rows before it); a cover that arrived redraws through
+ * mui_canvas_invalidate (the tiles, hence the signature, did not change). */
+static void mui_grid_refresh(mui_state* s, const sel_view_state* v) {
+    uint32_t cols = 0, rows = 0, want, n, cur = 0, k, in_win;
+    if (s->grid_art == NULL && s->art != NULL) {
+        s->grid_art = mui_grid_art_open(s->art, mui_cover_album_image, s->grid_edge, MUI_GRID_ART_SLOTS);
+    }
+    mui_canvas_grid_fit(s->canvas, &cols, &rows);
+    s->grid_cols = cols;
+    want = cols * (rows + 1u);
+    if (want > MUI_ROWS_MAX) {
+        want = MUI_ROWS_MAX;
+    }
+    if (cols != 0u && want != s->grid_win) {
+        char line[32];
+        snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)want);
+        mui_engine_line(s, line);
+        s->grid_win = want;
+    }
+    n = mui_grid_tiles(v, s->grid_tiles, MUI_ROWS_MAX);
+    in_win = v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n;
+    for (k = 0; in_win && k < v->cursor - v->window_start; k++) {
+        cur += v->rows[k].kind != (uint32_t)SEL_ROW_HEADING;
+    }
+    if (!in_win || cur >= n) {
+        cur = n; /* no tile selected */
+    }
+    if (s->grid_art != NULL && mui_grid_art_tick(s->grid_art, s->grid_tiles, n) != 0) {
+        mui_canvas_invalidate(s->canvas);
+    }
+    mui_canvas_set_grid(s->canvas, s->grid_tiles, n, cur, s->grid_art != NULL ? mui_grid_art_get : NULL, s->grid_art);
+    s->grid_n = n;
+}
+
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
     const sel_uim_frame* f;
@@ -3544,7 +3623,7 @@ static void mui_refresh(mui_state* s) {
     if (v != NULL) {
         int32_t active = -1;
         uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active, s->search_facet, s->search_src);
-        uint32_t packed = mui_style_kind(v->style) != MUI_STYLE_LIST;
+        uint32_t packed = mui_style_packed(v->style); /* I1473g6: Grid is on the canvas, not packed */
         /* The pending click holds a window position (mui_control_fire maps a packed row back), so it resolves before packing. */
         active = mui_list_pending_resolve(&s->list_pending, active);
         if (packed) { /* I1174: Grid, Cover Flow, Compact: pack the window into List rows; a click maps back through mui_style_row_index */
@@ -3562,6 +3641,16 @@ static void mui_refresh(mui_state* s) {
             active = mui_style_packed_cursor(v->style, s->style_cols, active);
         } else {
             s->style_kind = MUI_STYLE_LIST;
+        }
+        s->grid_on = mui_style_canvas(v->style) && s->canvas != NULL;
+        mui_list_pane_sync(s);
+        if (s->grid_on) {
+            mui_grid_refresh(s, v);
+        } else if (s->grid_win != 0u) { /* left Grid: back to the default window */
+            char line[32];
+            snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)SEL_VIEW_WINDOW_DEFAULT_ROWS);
+            mui_engine_line(s, line);
+            s->grid_win = 0u;
         }
         uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id ^ (sel_engine_song_text_generation(s->engine) * 40503u) ^ (s->prog_pct * 2654435761u);
         const char* c;
@@ -3685,9 +3774,10 @@ static void mui_refresh(mui_state* s) {
             } else {
                 row0[0] = '\0';
             }
-            snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u indent=%u hook_calls=%u song_qid=%u song_ms=%u row0_id=%u header={%s} row0={%s}",
+            snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u grid_on=%u grid_tiles=%u grid_cols=%u grid_win=%u grid_draws=%u art_decodes=%u canvas_shown=%u indent=%u hook_calls=%u song_qid=%u song_ms=%u row0_id=%u header={%s} row0={%s}",
                      mui_list_backend_pick(0, 0)->name, (unsigned)v->style, (unsigned)mui_columns_for(s->col_bp, (uint8_t[MUI_COL_COUNT]){0}),
-                     s->col_fmt, (unsigned)n, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls, (unsigned)st->song.queue_id, (unsigned)st->song.duration_ms, n > 0 ? (unsigned)v->rows[0].id : 0u, head, row0);
+                     s->col_fmt, (unsigned)n, (unsigned)s->grid_on, (unsigned)s->grid_n, (unsigned)s->grid_cols, (unsigned)s->grid_win,
+                     s->canvas != NULL ? (unsigned)mui_canvas_draws(s->canvas) : 0u, s->grid_art != NULL ? (unsigned)mui_grid_art_decodes(s->grid_art) : 0u, (unsigned)s->canvas_show.value, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls, (unsigned)st->song.queue_id, (unsigned)st->song.duration_ms, n > 0 ? (unsigned)v->rows[0].id : 0u, head, row0);
         }
     }
 }
@@ -5321,6 +5411,8 @@ static void mui_close(void* state) {
         MUI_DisposeObject(s->app); /* closes the window and frees the children */
         s->app = NULL;
         s->win = NULL;
+        mui_grid_art_close(s->grid_art); /* I1473g6: before the class goes */
+        s->grid_art = NULL;
         s->canvas = NULL;
         s->np_cover = s->bar_cover = NULL;
         mui_canvas_class_free();

@@ -304,6 +304,9 @@ uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_
  * clamps a step change (desktop pinch). mui_style_packs() counts packs (call-count sentinel). */
 enum { MUI_STYLE_LIST = 0, MUI_STYLE_GRID, MUI_STYLE_COVERFLOW, MUI_STYLE_COMPACT };
 uint32_t mui_style_kind(uint32_t style);
+/* I1473g6: Grid is drawn on the canvas (mui_style_canvas); only Cover Flow and Compact still pack into List rows (mui_style_packed). */
+uint32_t mui_style_canvas(uint32_t style);
+uint32_t mui_style_packed(uint32_t style);
 uint32_t mui_style_cell_chars(uint32_t step);
 uint32_t mui_style_grid_cols(uint32_t list_chars, uint32_t step);
 uint32_t mui_tile_step_move(uint32_t step, int dir);
