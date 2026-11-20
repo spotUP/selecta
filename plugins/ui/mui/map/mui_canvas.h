@@ -44,6 +44,7 @@ typedef struct mui_grid_style {
     int32_t edge, gap, pad;              /* cover edge, gap between tiles, padding inside a tile */
     int32_t caption; /* I1473g4: height of the title + artist block under the cover (2 font lines + spacing, set by the class from the
                       * window font); 0 = no captions, tile height = tile width as before */
+    uint32_t scrim; /* I1473g8b2: Cover Flow dim colour 0xAARRGGBB (theme token SCRIM, set by the UI); 0 = black */
 } mui_grid_style;
 
 /* I1473g2: the tile model, shared by Grid and Cover Flow. Fills `out` (at most `cap`) from the engine view window: one tile per
@@ -98,6 +99,25 @@ uint32_t mui_grid_signature(const mui_tile* tiles, uint32_t n, uint32_t cursor);
  * (an index into `tiles`). Returns the tiles drawn (those on screen). */
 uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, uint32_t cursor,
                               uint32_t first_row, mui_art_fn art, void* art_ctx);
+
+/* I1473g8b2: Cover Flow on the RTG canvas, all geometry from the shared sel_uim_flow_* (include/selecta/uimodel/flow.h). The tiles are the
+ * view window (window_start 0); `s->edge` is the edge of the square art words `art` returns (the shared 144 px thumbnail, D-F1: the front
+ * cover is upscaled); `s->caption` is the caption block height under the front cover. `centre_q16` is the fractional centre (16.16). */
+#include <selecta/uimodel/flow.h>
+typedef struct mui_flow_view {
+    uint32_t n;                                 /* covers laid out */
+    sel_uim_flow_cover cv[SEL_UIM_FLOW_MAX];    /* draw order, far to near */
+    int32_t big;                                /* centre cover edge */
+    sel_gui_rect caption;                       /* the caption block under the front cover (canvas coordinates) */
+} mui_flow_view;
+void mui_flow_layout(const mui_grid_style* s, int32_t w, int32_t h, int64_t centre_q16, uint32_t n, mui_flow_view* out);
+/* Draws background, covers (art or platform cover, rounded), scrim and the front cover's shadow. Returns the covers drawn. */
+uint32_t mui_canvas_draw_flow(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, int64_t centre_q16, mui_art_fn art,
+                              void* art_ctx, mui_flow_view* view);
+/* D-F2: glide (220 ms ease-out, the Mac's) only on a 68040 or better; 68020/68030 step one frame per key. */
+int mui_flow_glides(int cpu_is_040_or_better);
+/* Glide progress 16.16 (0..65536) after `elapsed_ms`; 65536 = at rest. Same easing table as the Mac (SEL_GUI_EASE_OUT, SEL_GUI_ANIM_NORMAL_MS). */
+int32_t mui_flow_glide_q16(uint32_t elapsed_ms);
 
 /* I1473g5: AGA (planar) grid. The geometry and the cover indices are pure; the class supplies a sink that does RectFill and
  * WriteChunkyPixels. `rect` gets 0x00RRGGBB (background, card, selection outline: three pens); `cover` gets the cover square and its

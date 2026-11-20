@@ -1,6 +1,7 @@
 /* See mui_canvas.h. Pure C: no MUI, no Amiga calls (MUI-P5-1, MUI-P5-2, MUI-P5-4). */
 #include "mui_canvas.h"
 
+#include <selecta/gui/gui_anim.h>
 #include <selecta/gui/gui_genart.h>
 #include <selecta/gui/gui_icons.h>
 #include <selecta/gui/gui_image.h>
@@ -133,7 +134,7 @@ uint32_t mui_grid_tiles(const sel_view_state* v, mui_tile* out, uint32_t cap) {
 }
 
 mui_grid_style mui_grid_style_for(int32_t screen_w, uint32_t background, uint32_t tile, uint32_t selected) {
-    mui_grid_style s = {background, tile, selected, screen_w >= 1024 ? 128 : 96, 8, 8, 0};
+    mui_grid_style s = {background, tile, selected, screen_w >= 1024 ? 128 : 96, 8, 8, 0, 0xFF000000u};
     return s;
 }
 
@@ -275,6 +276,80 @@ uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_
     }
     m->draws++;
     return drawn;
+}
+
+enum { MUI_FLOW_REF = 240, MUI_FLOW_FLOOR = 48, MUI_FLOW_SHADOW_R = 8 };
+
+void mui_flow_layout(const mui_grid_style* s, int32_t w, int32_t h, int64_t centre_q16, uint32_t n, mui_flow_view* out) {
+    int32_t mg = s->gap, avail = w - 2 * mg, area_h = h - 2 * mg, gap = 2, y0, cx = w / 2;
+    out->big = sel_uim_flow_big(avail, area_h, s->caption + gap, MUI_FLOW_REF, MUI_FLOW_FLOOR);
+    y0 = mg + (area_h - (out->big + s->caption + gap)) / 2;
+    out->n = sel_uim_flow_layout(centre_q16, 0u, n, out->big, cx, y0, out->cv, SEL_UIM_FLOW_MAX);
+    out->caption = (sel_gui_rect){cx - out->big / 2, y0 + out->big + gap, out->big, s->caption};
+}
+
+uint32_t mui_canvas_draw_flow(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, int64_t centre_q16, mui_art_fn art,
+                              void* art_ctx, mui_flow_view* view) {
+    static sel_gui_shadow shadow;
+    static int shadow_ready;
+    mui_flow_view local;
+    uint32_t j;
+    uint32_t* scaled;
+    if (view == NULL) {
+        view = &local;
+    }
+    mui_flow_layout(s, m->c.w, m->c.h, centre_q16, n, view);
+    sel_gui_fill_rect(&m->c, (sel_gui_rect){0, 0, m->c.w, m->c.h}, s->background);
+    if (!shadow_ready) {
+        sel_gui_shadow_bake(&shadow, MUI_FLOW_SHADOW_R, 0x000000u, 96u);
+        shadow_ready = 1;
+    }
+    scaled = malloc((size_t)view->big * (size_t)view->big * sizeof *scaled); /* one buffer for every cover; NULL = nearest straight from the art */
+    for (j = 0u; j < view->n; j++) {
+        const sel_uim_flow_cover* c = &view->cv[j];
+        sel_gui_rect r = {c->x, c->y, c->sz, c->sz};
+        const mui_tile* t = &tiles[c->g];
+        const uint32_t* px = art != NULL && t->art_id != 0 ? art(art_ctx, t->art_id) : NULL;
+        int32_t rad = mui_cover_radius(c->sz);
+        if (j + 1u == view->n) {
+            sel_gui_shadow_draw(&m->c, &shadow, r, rad);
+        }
+        if (px != NULL && scaled != NULL && c->sz != s->edge) { /* shrinking averages (box), growing is the D-F1 upscale */
+            sel_gui_image_scale(px, s->edge, s->edge, scaled, c->sz, c->sz);
+            sel_gui_blit_image_round(&m->c, r, scaled, c->sz, c->sz, c->sz, rad);
+        } else if (px != NULL) {
+            sel_gui_blit_image_round(&m->c, r, px, s->edge, s->edge, s->edge, rad);
+        } else {
+            mui_platform_cover(&m->c, r, t->kind, t->format, t->title);
+            mui_round_corners(&m->c, r, rad, s->background); /* shortcut: repaints the corner pixels with the background, so a corner over a farther cover shows background */
+        }
+        if (c->alpha > 0) {
+            sel_gui_scrim(&m->c, r, s->scrim & 0xFFFFFFu, (uint32_t)c->alpha);
+        }
+        sel_gui_dirty_add(&m->c, r);
+    }
+    free(scaled);
+    m->draws++;
+    return view->n;
+}
+
+int mui_flow_glides(int cpu_is_040_or_better) {
+    return cpu_is_040_or_better != 0;
+}
+
+int32_t mui_flow_glide_q16(uint32_t elapsed_ms) {
+    static sel_gui_timeline tl;
+    static int ready;
+    uint32_t pos;
+    if (!ready) {
+        sel_gui_timeline_init(&tl);
+        ready = 1;
+    }
+    if (elapsed_ms >= (uint32_t)SEL_GUI_ANIM_NORMAL_MS) {
+        return 65536;
+    }
+    pos = elapsed_ms * 65536u / (uint32_t)SEL_GUI_ANIM_NORMAL_MS;
+    return (int32_t)sel_gui_ease_at(&tl, SEL_GUI_EASE_OUT, pos);
 }
 
 struct mui_aga_cache {

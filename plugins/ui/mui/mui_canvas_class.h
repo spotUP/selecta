@@ -25,6 +25,11 @@ void mui_canvas_set_image(Object* obj, const uint32_t* px, int32_t edge);
  * (0x00RRGGBB). lead -1 takes it away. Redraws only when the lead or a colour changes. */
 void mui_canvas_set_spin(Object* obj, int lead, uint32_t accent, uint32_t muted);
 /* Grid frames drawn by this object (the rig sentinel). */
+/* I1473g8b2: Cover Flow mode on the RTG canvas (tiles and cursor still come from mui_canvas_set_grid; the tiles are the view window).
+ * mui_canvas_flow_tick: the app calls it while the last call returned 1 (about every 40 ms): redraws the next glide frame, 0 = at rest. */
+void mui_canvas_set_flow(Object* obj, int on);
+int mui_canvas_flow_tick(Object* obj);
+
 /* I1473g4: forget the redraw signature so the next mui_canvas_set_grid redraws (a cover loaded, same tiles). */
 void mui_canvas_invalidate(Object* obj);
 uint32_t mui_canvas_draws(Object* obj);
