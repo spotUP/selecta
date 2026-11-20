@@ -4,6 +4,7 @@
 #ifndef MUI_CANVAS_H
 #define MUI_CANVAS_H
 
+#include <selecta/engine.h>
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_icons.h>
 
@@ -28,6 +29,7 @@ sel_gui_rect mui_canvas_window_clip(const mui_canvas* m);
 /* One grid tile: the title seeds the cover tone, art_id keys the art cache (0 = no cover). */
 typedef struct mui_tile {
     const char* title;
+    const char* artist; /* caption line under the title, NULL when unknown (D3: title and artist, as the Mac) */
     const char* format; /* file extension; its platform family colours the cover (NULL = Music) */
     int64_t art_id;
     uint32_t kind; /* SEL_COVER_KIND_* (include/selecta/platform.h, I1399a); 0 = FORMAT: the family of `format` */
@@ -41,6 +43,13 @@ typedef struct mui_grid_style {
     uint32_t background, tile, selected; /* 0xAARRGGBB, filled from MUI pens by the class */
     int32_t edge, gap, pad;              /* cover edge, gap between tiles, padding inside a tile */
 } mui_grid_style;
+
+/* I1473g2: the tile model, shared by Grid and Cover Flow. Fills `out` (at most `cap`) from the engine view window: one tile per
+ * non-heading row, in window order, title/artist/format pointing into the view (valid until the next pump), art_id and kind as the
+ * desktop row_kind. Returns the tiles written; NULL view or rows give 0. */
+uint32_t mui_grid_tiles(const sel_view_state* v, mui_tile* out, uint32_t cap);
+/* I1473g2: grid style for a screen `screen_w` pixels wide with the theme pens: cover edge 96 below 1024, 128 from 1024 (D5). */
+mui_grid_style mui_grid_style_for(int32_t screen_w, uint32_t background, uint32_t tile, uint32_t selected);
 
 /* Columns of a grid `width` pixels wide (at least 1). */
 uint32_t mui_grid_cols(const mui_grid_style* s, int32_t width);
