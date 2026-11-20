@@ -46,6 +46,31 @@ const char* mui_l1_keep(const char* s) {
     return n->text;
 }
 
+/* A persistent Latin-1 copy even for pure ASCII: MUI keeps ShortHelp by pointer and the caller's string is often a stack model (I1483).
+ * Equal texts share one node, so rebuilding a sidebar does not grow the list. */
+const char* mui_l1_keep_copy(const char* s) {
+    keep_node* n;
+    size_t len;
+    if (s == NULL) {
+        return NULL;
+    }
+    len = strlen(s);
+    n = (keep_node*)malloc(sizeof *n + len);
+    if (n == NULL) {
+        return NULL;
+    }
+    sel_utf8_to_latin1_draw(n->text, len + 1u, s);
+    for (keep_node* o = g_keep; o != NULL; o = o->next) {
+        if (strcmp(o->text, n->text) == 0) {
+            free(n);
+            return o->text;
+        }
+    }
+    n->next = g_keep;
+    g_keep = n;
+    return n->text;
+}
+
 void mui_text_free(void) {
     while (g_keep != NULL) {
         keep_node* n = g_keep;
@@ -64,7 +89,8 @@ void mui_aabtn_spec_l1(const mui_aabtn_spec* in, mui_aabtn_spec* out, char* a, c
     *out = *in;
     out->caption = mui_l1(a, MUI_L1_TEXT, in->caption);
     out->widest = mui_l1(b, MUI_L1_TEXT, in->widest);
-    out->help = mui_l1(c, MUI_L1_TEXT, in->help);
+    (void)c;
+    out->help = mui_l1_keep_copy(in->help != NULL ? in->help : in->caption); /* I1483: MUI keeps ShortHelp by pointer, so never a stack buffer */
 }
 
 void mui_aafield_spec_l1(const mui_aafield_spec* in, mui_aafield_spec* out) {

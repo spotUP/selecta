@@ -1551,6 +1551,17 @@ static void test_sidebar_bullet_latin1(void) {
     /* a Latin-1 string that is not valid UTF-8 never reaches mui_l1: Selecta hands UTF-8 only; the converter keeps the letter anyway */
     CHECK(mui_l1(a, sizeof a, "Bj\xc3\xb6rk") == a && strcmp(a, "Bj\xf6rk") == 0, "UTF-8 o-umlaut becomes 0xF6: '%s'", a);
     CHECK(mui_l1(a, sizeof a, "plain") != a, "ASCII is passed through untouched");
+    { /* I1483: the button help (MUIA_ShortHelp, kept by pointer) never aims at the caller's or a stack buffer */
+        char stack[16] = "Create Playlist";
+        mui_aabtn_spec in, out;
+        char b0[MUI_L1_TEXT], b1[MUI_L1_TEXT], b2[MUI_L1_TEXT];
+        memset(&in, 0, sizeof in);
+        in.caption = stack;
+        in.widest = stack;
+        mui_aabtn_spec_l1(&in, &out, b0, b1, b2);
+        stack[0] = 'X';
+        CHECK(out.help != NULL && out.help != stack && out.help != b2 && strcmp(out.help, "Create Playlist") == 0, "help is a persistent copy: '%s'", out.help);
+    }
 }
 
 /* I793 (drift doc S3 to S9): the MUI Your Library sidebar has the Mac sidebar's parts: header, chips, item rows, empty state and

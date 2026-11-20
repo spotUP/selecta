@@ -22,6 +22,7 @@ const char* mui_l1(char* buf, size_t cap, const char* s);
 
 /* Same, into storage that lives until mui_text_free (MUI keeps menu and window titles by pointer). */
 const char* mui_l1_keep(const char* s);
+const char* mui_l1_keep_copy(const char* s); /* always a persistent copy (ShortHelp) */
 void mui_text_free(void);
 
 /* Spec copies whose strings are Latin-1; a, b, c are the caller's buffers of MUI_L1_TEXT bytes. */
