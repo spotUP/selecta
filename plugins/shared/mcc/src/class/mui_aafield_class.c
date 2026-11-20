@@ -136,6 +136,23 @@ static void aafield_string_pens(aafield_data* d) {
     }
 }
 
+/* I1479: width callback of mui_aa_text_fit (as aabtn_width): ink width of the first len bytes in the field's font. */
+typedef struct aafield_fit {
+    aafield_data* d;
+    Object* self;
+} aafield_fit;
+
+static int aafield_width(void* ctx, const char* s, int len) {
+    aafield_fit* f = (aafield_fit*)ctx;
+    char buf[160];
+    if (len >= (int)sizeof buf) {
+        len = (int)sizeof buf - 1;
+    }
+    memcpy(buf, s, (size_t)len);
+    buf[len] = '\0';
+    return aa_text_width(&f->d->aa, f->self, buf);
+}
+
 static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aafield_data* d = INST_DATA(cl, obj);
     /* The Group super fills the padding around the inner String with the parent background, so the face and outline go on after
@@ -163,11 +180,16 @@ static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         GetAttr(MUIA_String_Contents, d->str, &cont);
         if (mui_aa_field_placeholder(d->aa.tok, (const char*)cont, aafield_focus(obj, d), &rgb)) {
             int th = aa_text_height(&d->aa, obj);
+            char fit[160];
+            aafield_fit af;
+            af.d = d;
+            af.self = obj;
+            mui_aa_text_fit(d->placeholder, (int)_width(d->str) - 4, aafield_width, &af, fit, (int)sizeof fit); /* I1479: cut with "..." at the String box, never drawn past it */
             if (d->aa.tc) {
                 /* I685x: the empty String box carries the snapped face pen; on truecolour the face under the placeholder is the exact FACE RGB. */
                 aa_rect(&d->aa, _rp(obj), _left(d->str), _top(d->str), _left(d->str) + _width(d->str) - 1, _top(d->str) + _height(d->str) - 1, d->aa.tok[MUI_AA_FIELD_FACE]);
             }
-            aa_text(&d->aa, obj, _rp(obj), _left(d->str), _top(d->str) + (_height(d->str) - th) / 2, d->placeholder, rgb, d->aa.tok[MUI_AA_FIELD_FACE]);
+            aa_text(&d->aa, obj, _rp(obj), _left(d->str), _top(d->str) + (_height(d->str) - th) / 2, fit, rgb, d->aa.tok[MUI_AA_FIELD_FACE]);
         }
     }
     return r;
