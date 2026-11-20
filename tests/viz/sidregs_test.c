@@ -85,19 +85,19 @@ static void name_and_labels(void) {
     for (h = k_headings; h < k_headings + 9; h++) {
         const char* p;
         for (p = *h; *p; p++) {
-            bad += vs_glyph_rows(*p) == NULL;
+            bad += *p != ' ' && vs_glyph_rows(*p) == NULL;
         }
     }
     for (i = 0; i < sizeof k_voice_labels / sizeof k_voice_labels[0]; i++) {
         const char* p;
         for (p = k_voice_labels[i].text; *p; p++) {
-            bad += vs_glyph_rows(*p) == NULL;
+            bad += *p != ' ' && vs_glyph_rows(*p) == NULL;
         }
     }
     for (i = 0; i < sizeof k_chip_labels / sizeof k_chip_labels[0]; i++) {
         const char* p;
         for (p = k_chip_labels[i].text; *p; p++) {
-            bad += vs_glyph_rows(*p) == NULL;
+            bad += *p != ' ' && vs_glyph_rows(*p) == NULL;
         }
     }
     CHECK(bad == 0u, "%u label characters without a glyph", (unsigned)bad);
@@ -115,15 +115,15 @@ static void surface(void) {
     n = draw(f, &t);
     CHECK(at(&t, 5 * 8 + 4, 3 * 8 + 4) == PRIMARY, "gate on: cell is %u", (unsigned)at(&t, 5 * 8 + 4, 3 * 8 + 4));
     CHECK(at(&t, 11 * 8 + 4, 3 * 8 + 4) != PRIMARY, "triangle cell lit by the gate");
-    /* Fr bar: 8 columns = 64 px at $FFFF, $0800 scaled x4 is $2000 = 8 px of 64 (Hippo: scaled >> 10). */
+    /* Frequency bar (I1466: 5 columns from column 7 after the full word) = 40 px at $FFFF, $0800 scaled x4 is $2000 = 5 px of 40. */
     f->sid[0].reg[0] = 0xFF;
     f->sid[0].reg[1] = 0xFF;
     draw(f, &t);
-    CHECK(at(&t, 3 * 8 + 63, 12) == PRIMARY && at(&t, 3 * 8 + 64, 12) != PRIMARY, "$FFFF bar not 8 columns");
+    CHECK(at(&t, 7 * 8 + 39, 12) == PRIMARY && at(&t, 7 * 8 + 40, 12) != PRIMARY, "$FFFF bar not 5 columns");
     f->sid[0].reg[0] = 0x00;
     f->sid[0].reg[1] = 0x08;
     draw(f, &t);
-    CHECK(at(&t, 3 * 8 + 7, 12) == PRIMARY && at(&t, 3 * 8 + 8, 12) == GRID, "$0800 bar is not 8 px");
+    CHECK(at(&t, 7 * 8 + 4, 12) == PRIMARY && at(&t, 7 * 8 + 5, 12) == GRID, "$0800 bar is not 5 px");
     /* Glow 2 on a gate that is off: secondary, 2/5 of the 8 px cell (3 px), anchored at the bottom of the inset cell (y 28..30). */
     f->sid[0].reg[4] = 0x00;
     f->sid[0].glow[0][0] = 2;
@@ -176,8 +176,8 @@ static void three_chips(void) {
     n = draw(f, &t);
     /* chip 3 band starts at y 128: Voice7 heading in accent there, its Fr bar full on row 1 of the band */
     CHECK(count_in(&t, 0, 128, 30, 136, ACCENT) > 10u, "no Voice7 heading at y 128");
-    CHECK(at(&t, 3 * 8 + 63, 128 + 12) == PRIMARY, "chip 3 Fr bar not at y 128 + row 1");
-    CHECK(at(&t, 3 * 8 + 63, 64 + 12) != PRIMARY && at(&t, 3 * 8 + 63, 12) != PRIMARY, "Fr bar leaked to chip 1 or 2");
+    CHECK(at(&t, 7 * 8 + 39, 128 + 12) == PRIMARY, "chip 3 Fr bar not at y 128 + row 1");
+    CHECK(at(&t, 7 * 8 + 39, 64 + 12) != PRIMARY && at(&t, 7 * 8 + 39, 12) != PRIMARY, "Fr bar leaked to chip 1 or 2");
     /* worst case primitives per chip: every flag on or glowing, every bar full, envelopes full */
     {
         uint32_t v, one;
@@ -190,10 +190,10 @@ static void three_chips(void) {
         shot_make(&t1, 320, 64);
         one = draw(g, &t1);
         printf("primitives per chip (all on): %u\n", (unsigned)one);
-        CHECK(one <= 600u, "chip uses %u primitives", (unsigned)one);
+        CHECK(one <= 1100u, "chip uses %u primitives", (unsigned)one);
         memset(g->sid[0].reg, 0, sizeof g->sid[0].reg);
         one = draw(g, &t1);
-        CHECK(one <= 600u, "chip (all off) uses %u primitives", (unsigned)one);
+        CHECK(one <= 1100u, "chip (all off) uses %u primitives", (unsigned)one);
         printf("primitives per chip (all off): %u\n", (unsigned)one);
         free(t1.px);
         free(g);
@@ -228,16 +228,63 @@ static int run_len(const shot* t, int x, int y, int dx, int dy, int lim) {
     return n;
 }
 
+/* I1466: every label is a full word and its drawn width stays left of the next thing in its row (flag block, bar, next word). */
+static int limit_col(int in_chip_row, int row, int col) {
+    if (in_chip_row) {
+        return col == 0 ? 5 : col == 11 ? 17 : col == 20 ? 26 : col == 27 ? 33 : 40;
+    }
+    return row == 0 ? 11 : row <= 2 ? 7 : col == 0 ? 5 : 11;
+}
+
+static void label_fit_one(uint32_t w, uint32_t h, uint32_t aspect) {
+    shot t;
+    sel_viz_frame* f = frame_make(1u);
+    uint32_t i;
+    int32_t sx, sy, cw = (int32_t)w / COLS, rh = (int32_t)h / ROWS, v;
+    shot_make(&t, w, h);
+    t.s.pix_aspect_q8 = aspect;
+    draw(f, &t);
+    vs_glyph_scale(&t.s, rh, cw / 8, &sx, &sy);
+    CHECK(sx <= cw / 8, "%ux%u aspect %u: glyph pixel %d wider than cw/8", (unsigned)w, (unsigned)h, (unsigned)aspect, (int)sx);
+    for (v = 0; v < 3; v++) {
+        for (i = 0; i < sizeof k_voice_labels / sizeof k_voice_labels[0]; i++) {
+            const label* l = &k_voice_labels[i];
+            int32_t x0 = (v * VOICE_COLS + l->col) * cw, x1 = (v * VOICE_COLS + limit_col(0, l->row, l->col)) * cw;
+            int32_t used = ((int32_t)strlen(l->text) * VS_GLYPH_ADVANCE - 1) * sx;
+            CHECK(x0 + used <= x1, "%ux%u \"%s\" is %d px, its cell %d", (unsigned)w, (unsigned)h, l->text, (int)used, (int)(x1 - x0));
+            CHECK(count_in(&t, (int)x0, (int)(l->row * rh), (int)(x0 + used), (int)((l->row + 1) * rh), ACCENT) > 0u,
+                  "\"%s\" not drawn at %ux%u", l->text, (unsigned)w, (unsigned)h);
+        }
+    }
+    for (i = 0; i < sizeof k_chip_labels / sizeof k_chip_labels[0]; i++) {
+        const label* l = &k_chip_labels[i];
+        int32_t x0 = l->col * cw, x1 = limit_col(1, l->row, l->col) * cw;
+        int32_t used = ((int32_t)strlen(l->text) * VS_GLYPH_ADVANCE - 1) * sx;
+        CHECK(x0 + used <= x1, "%ux%u \"%s\" is %d px, its cell %d", (unsigned)w, (unsigned)h, l->text, (int)used, (int)(x1 - x0));
+        CHECK(count_in(&t, (int)x0, (int)(l->row * rh), (int)(x0 + used), (int)((l->row + 1) * rh), ACCENT) > 0u,
+              "\"%s\" not drawn at %ux%u", l->text, (unsigned)w, (unsigned)h);
+    }
+    free(t.px);
+    free(f);
+}
+
+static void label_fit(void) {
+    label_fit_one(320, 64, 0u);   /* smallest labelled size: cw 8, rh 8 */
+    label_fit_one(640, 128, 512u); /* tall pixels: sx 2, sy 1 */
+    label_fit_one(640, 256, 256u);
+    label_fit_one(1280, 192, 0u);
+}
+
 static void glyph_aspect(void) {
     shot t;
     sel_viz_frame* f = frame_make(1u);
     int x, y, ytop = -1, w, l;
     uint32_t n;
-    /* Square pixels, tall cells (rh 28, cw 8): the heading "Voice1" owns columns 0..6 and "Flt" starts at column 7; the old scale 4 ran Voice1 to x 120. */
+    /* Square pixels, tall cells (rh 28, cw 8): the heading "Voice1" owns columns 0..6 and "Filter" starts at column 7 and ends by x 85; the old scale 4 ran Voice1 to x 120. */
     shot_make(&t, 320, 224);
     n = draw(f, &t);
     CHECK(n > 0u, "nothing drawn");
-    CHECK(count_in(&t, 72, 0, 104, 28, ACCENT) == 0u, "heading overruns into the next voice: %u accent pixels at x 72..104", (unsigned)count_in(&t, 72, 0, 104, 28, ACCENT));
+    CHECK(count_in(&t, 88, 0, 104, 28, ACCENT) == 0u, "heading overruns into the next voice: %u accent pixels at x 88..104", (unsigned)count_in(&t, 88, 0, 104, 28, ACCENT));
     free(t.px);
     /* Tall pixels (aspect 512), rh 16, cw 16: a glyph pixel is 2 wide for 1 high; the row-1 label "Fr" starts with a full-height stem. */
     shot_make(&t, 640, 128);
@@ -326,6 +373,7 @@ int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "all";
     if (strcmp(mode, "all") == 0 || strcmp(mode, "labels") == 0) {
         name_and_labels();
+        label_fit();
     }
     if (strcmp(mode, "all") == 0 || strcmp(mode, "surface") == 0) {
         surface();
