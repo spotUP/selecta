@@ -162,6 +162,40 @@ uint32_t mui_grid_first_row(const mui_grid_style* s, int32_t width, int32_t heig
     return sel_uim_grid_first_row(cursor, mui_grid_cols(s, width), (int32_t)mui_grid_visible_rows(s, height));
 }
 
+int mui_grid_key(uint32_t rawkey, uint32_t row_step, mui_grid_input* out) {
+    int32_t step = row_step != 0u ? (int32_t)row_step : 1;
+    out->kind = MUI_GIN_MOVE;
+    out->arg = 0;
+    switch (rawkey) {
+    case MUI_RAWKEY_LEFT: out->arg = -1; return 1;
+    case MUI_RAWKEY_RIGHT: out->arg = 1; return 1;
+    case MUI_RAWKEY_UP: out->arg = -(int32_t)row_step; return row_step != 0u;
+    case MUI_RAWKEY_DOWN: out->arg = (int32_t)row_step; return row_step != 0u;
+    case MUI_RAWKEY_WHEEL_UP: out->arg = -step; return 1;
+    case MUI_RAWKEY_WHEEL_DOWN: out->arg = step; return 1;
+    case MUI_RAWKEY_RETURN:
+    case MUI_RAWKEY_ENTER: out->kind = MUI_GIN_ACTIVATE; return 1;
+    default: out->kind = MUI_GIN_NONE; return 0;
+    }
+}
+
+int32_t mui_grid_hit(const mui_grid_style* s, int32_t width, int32_t height, uint32_t n, uint32_t cursor, int32_t x, int32_t y) {
+    int32_t tw = s->edge + 2 * s->pad;
+    /* tiles start one gap in (mui_grid_tile_rect); window_start 0 and row_n n make the result the tile index */
+    return sel_uim_grid_hit(x, y, s->gap, s->gap, tw, tw + s->caption, s->gap, mui_grid_cols(s, width), mui_grid_first_row(s, width, height, cursor),
+                            (int32_t)mui_grid_visible_rows(s, height), 0u, n);
+}
+
+int32_t mui_grid_tile_row(const sel_view_state* v, uint32_t tile) {
+    uint32_t k, t = 0;
+    for (k = 0; v != NULL && k < v->row_n; k++) {
+        if (v->rows[k].kind != (uint32_t)SEL_ROW_HEADING && t++ == tile) {
+            return (int32_t)k;
+        }
+    }
+    return -1;
+}
+
 uint32_t mui_grid_signature(const mui_tile* tiles, uint32_t n, uint32_t cursor) {
     uint32_t h = 2166136261u ^ n, i;
     const char* p;

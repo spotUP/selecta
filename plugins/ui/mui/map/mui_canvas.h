@@ -61,6 +61,36 @@ sel_gui_rect mui_grid_tile_rect(const mui_grid_style* s, int32_t width, uint32_t
  * (sel_uim_grid_first_row over the rows that fit). */
 uint32_t mui_grid_visible_rows(const mui_grid_style* s, int32_t height);
 uint32_t mui_grid_first_row(const mui_grid_style* s, int32_t width, int32_t height, uint32_t cursor);
+/* I1473g7: input for the tile canvases (Grid now, Cover Flow in rows g8b4/g8b5), pure so the host test drives it. `row_step` is the
+ * tiles a vertical move or one wheel notch jumps: the column count for Grid; 0 for Cover Flow (left/right and the wheel step one cover,
+ * up/down do nothing). Amiga RAWKEY codes (devices/rawkeycodes.h) and NewMouse wheel codes. */
+typedef enum mui_grid_input_kind {
+    MUI_GIN_NONE = 0,
+    MUI_GIN_MOVE,     /* arg = signed tile delta (engine VIEW_CURSOR -n / +n) */
+    MUI_GIN_PICK,     /* arg = tile index: the cursor goes there (click, right-click) */
+    MUI_GIN_ACTIVATE, /* the cursor tile opens or plays (Enter) */
+    MUI_GIN_OPEN      /* arg = tile index: pick, then activate (double click) */
+} mui_grid_input_kind;
+typedef struct mui_grid_input {
+    uint32_t kind; /* mui_grid_input_kind */
+    int32_t arg;
+} mui_grid_input;
+#define MUI_RAWKEY_RETURN 0x44u
+#define MUI_RAWKEY_ENTER 0x43u
+#define MUI_RAWKEY_UP 0x4Cu
+#define MUI_RAWKEY_DOWN 0x4Du
+#define MUI_RAWKEY_RIGHT 0x4Eu
+#define MUI_RAWKEY_LEFT 0x4Fu
+#define MUI_RAWKEY_WHEEL_UP 0x7Au
+#define MUI_RAWKEY_WHEEL_DOWN 0x7Bu
+/* A key-down (or wheel) rawkey code; 1 and *out filled when it is ours, else 0. */
+int mui_grid_key(uint32_t rawkey, uint32_t row_step, mui_grid_input* out);
+/* Tile under the pointer at canvas coordinates (x, y), -1 for a gap, the margin or no tile. `cursor` is the tile index the last
+ * draw used (it fixes the first row drawn). */
+int32_t mui_grid_hit(const mui_grid_style* s, int32_t width, int32_t height, uint32_t n, uint32_t cursor, int32_t x, int32_t y);
+/* Tile index (non-heading rows, as mui_grid_tiles) to the engine window row, -1 when out of range. */
+int32_t mui_grid_tile_row(const sel_view_state* v, uint32_t tile);
+
 /* I1473g4: redraw signature of what the grid shows (titles, artists, art ids, kinds, count, cursor); equal = nothing to redraw. */
 uint32_t mui_grid_signature(const mui_tile* tiles, uint32_t n, uint32_t cursor);
 /* Draws the tiles into the canvas: background, then per tile from row `first_row` on a card (cover edge + `s->caption` of room under
