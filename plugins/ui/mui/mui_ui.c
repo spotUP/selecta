@@ -3839,8 +3839,8 @@ static void mui_refresh(mui_state* s) {
                 set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
             }
         }
-        if (mui_flag_commit(&s->addfolder_show, v->source == (uint32_t)SEL_VIEW_FOLDERS)) { /* I1473h2: only on a change */
-            set(s->addfolder_row, MUIA_ShowMe, v->source == (uint32_t)SEL_VIEW_FOLDERS ? TRUE : FALSE);
+        if (mui_flag_commit(&s->addfolder_show, v->source == (uint32_t)SEL_VIEW_BROWSE)) { /* I1473h2: only on a change; I1473h3: browse is the Folders page (Mac SEL_UIM_PG_FOLDERS), folders is Playlists */
+            set(s->addfolder_row, MUIA_ShowMe, v->source == (uint32_t)SEL_VIEW_BROWSE ? TRUE : FALSE);
         }
         {
             /* MUI-P4-2: the browse path as clickable pieces; MUI-P4-15: the empty-state line of a view without rows. */
