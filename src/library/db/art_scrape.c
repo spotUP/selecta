@@ -852,14 +852,14 @@ static int ds_step(sel_library* lib, const char* ref, sel_scrape_stats* st) {
     if (art_request(lib, &op) <= 0) return 1; /* not a SID of HVSC/CGSC: no DeepSID data */
     id = sel_art_dz_id(key);
     if (dz_has(lib, id, "ds_file", NULL, 0) > 0) {
-        if (dz_has(lib, id, "ds_csdb", NULL, 0) > 0 || (js.data = malloc(DS_JSON_MAX)) == NULL) return 1;
+        if ((js.data = malloc(DS_JSON_MAX)) == NULL) return 1;
         js.cap = DS_JSON_MAX - 1u;
         r = dz_has(lib, id, "ds_file", js.data, js.cap);
         if (r > 0) { /* I1454: a cached file whose CSDb fetch failed (route missing, network) asks again, else its SID never gets the release stills */
             js.data[r < (int)js.cap ? r : (int)js.cap] = '\0';
             base_url("SELECTA_DEEPSID_URL", "https://hippoplayer.se", base, sizeof base);
-            ds_video(lib, key, (const char*)js.data);
-            ds_csdb_step(lib, base, key, &js, st);
+            ds_video(lib, key, (const char*)js.data); /* I1465b5: local parse of the cached answer, no fetch; fills songs cached before ds_video existed */
+            if (dz_has(lib, id, "ds_csdb", NULL, 0) <= 0) ds_csdb_step(lib, base, key, &js, st);
         }
         free(js.data);
         return 1;
