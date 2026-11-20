@@ -3434,7 +3434,7 @@ static void mui_cover_tick(mui_state* s, const sel_state* st) {
         int64_t album = s->art->find(s->art->ctx, so->path);
         uint32_t kinds = album != 0 && s->art->kinds != NULL ? s->art->kinds(s->art->ctx, album) : 0u;
         char vid[sizeof s->slide_video];
-        uint32_t vn = album != 0 && (kinds & SEL_ART_KIND_VIDEO) != 0u ? s->art->get(s->art->ctx, album, "dz_video", (uint8_t*)vid, sizeof vid - 1u) : 0u;
+        uint32_t vn = album != 0 && (kinds & SEL_ART_KIND_VIDEO) != 0u ? (s->art->get)(s->art->ctx, album, "dz_video", (uint8_t*)vid, sizeof vid - 1u) : 0u;
         snprintf(s->slide_path, sizeof s->slide_path, "%s", so->path);
         s->slide_frames = sel_uim_art_frames(kinds);
         s->slide_lib = st->library_serial;
