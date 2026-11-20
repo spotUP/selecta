@@ -699,6 +699,8 @@ typedef struct desk {
     int64_t flow_from;                            /* the fractional centre (16.16, listing index) the glide started from (I400) */
     struct { int32_t g, x, w, a; } flow_rec[2 * 3 + 4]; /* the covers of the last cover flow frame in draw order: index, x, size, scrim alpha */
     uint32_t flow_rec_n;
+    sel_uim_flow_cover flow_cv[SEL_UIM_FLOW_MAX]; /* I1473g8b5: the last cover flow layout, far to near, for side-cover clicks */
+    int32_t flow_wheel_q16;                        /* I1473g8b5: wheel notches not yet a whole cover step (trackpad deltas) */
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slices B, C; I678i retired files, history, sources) */
     sel_uim_src_row src[SEL_SOURCE_MAX]; /* the SOURCES rows of the Sources tab (I265) */
@@ -9648,6 +9650,7 @@ static void draw_flow_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
         d->flow_rec[j].a = cv[j].a;
     }
     d->flow_rec_n = n;
+    memcpy(d->flow_cv, cv, n * sizeof cv[0]);
     if (cr != NULL) {
         lib_tile_text(d, rect_of(cx - big / 2, y0 + big + lpx(d, HOME_TILE_TEXT_GAP), big, 0), y0 + big + lpx(d, HOME_TILE_TEXT_GAP), cr,
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), 1);
@@ -10060,6 +10063,32 @@ static int lib_scroll_set(desk* d, int64_t v) {
     return 1;
 }
 
+/* I1473g8b5: one Cover Flow cursor move (key, wheel or side click): the glide starts where the covers are now (I400). */
+static void flow_move(desk* d, const char* line) {
+    const sel_view_state* v = sel_engine_state(d->engine)->view;
+    d->flow_from = sel_uim_flow_centre_q16(d->flow_from, v->cursor, sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536));
+    desk_tween(d, ANIM_KEY_FLOW, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
+    desk_send(d, line);
+}
+
+static int lib_flow_on(const sel_state* st) {
+    return lib_grid_on(st) && st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
+}
+
+/* One wheel notch is one cover; down (negative dy) moves toward the end. Fractions accumulate into whole steps. */
+static int flow_wheel(desk* d, int32_t dy) {
+    char line[32];
+    int32_t steps;
+    d->flow_wheel_q16 -= dy;
+    steps = d->flow_wheel_q16 / 65536;
+    d->flow_wheel_q16 -= steps * 65536;
+    if (steps != 0) {
+        snprintf(line, sizeof line, "VIEW_CURSOR %c%u", steps < 0 ? '-' : '+', (unsigned)(steps < 0 ? -steps : steps));
+        flow_move(d, line);
+    }
+    return 1;
+}
+
 static int lib_wheel(desk* d, int32_t dy) {
     return lib_scroll_set(d, (int64_t)d->lib_q16 - (int64_t)dy * SCROLL_NOTCH);
 }
@@ -10256,6 +10285,14 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     }
     if (d->page != SEL_UIM_PG_FOLDERS || st->composers == NULL) { /* the rows and tabs below are drawn on the Library page only (dui-search) */
         return 0;
+    }
+    if (lib_flow_on(st)) { /* I1473g8b5: a side cover moves the flow to it; the front cover keeps its row click */
+        int32_t g = sel_uim_flow_hit(d->flow_cv, d->flow_rec_n, x, y, 0);
+        if (g >= 0 && st->view->window_start + (uint32_t)g != st->view->cursor) {
+            snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + (uint32_t)g));
+            flow_move(d, line);
+            return 1;
+        }
     }
     {
         uint32_t m;
@@ -15722,11 +15759,11 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
             by = lib_grid_cols(d, region_rect(d, "main")); /* a row of tiles */
         }
         snprintf(line, sizeof line, "VIEW_CURSOR %c%u", ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_UP ? '-' : '+', (unsigned)by);
-        d->flow_from = sel_uim_flow_centre_q16(d->flow_from, v->cursor, sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536)); /* a key mid-glide starts where the covers are (I400) */
         if (flow) {
-            desk_tween(d, ANIM_KEY_FLOW, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
+            flow_move(d, line);
+        } else {
+            desk_send(d, line);
         }
-        desk_send(d, line);
         d->arrows++;
         return 0;
     }
@@ -16429,6 +16466,9 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             return 1;
         }
         if (d->page == SEL_UIM_PG_FOLDERS && sel_engine_state(d->engine)->composers != NULL) {
+            if (lib_flow_on(sel_engine_state(d->engine))) {
+                return flow_wheel(d, ev->dy);
+            }
             return lib_wheel(d, ev->dy);
         }
         if (d->page == SEL_UIM_PG_SETTINGS) { /* I799a: the Settings column scrolls when the rows overflow the panel */

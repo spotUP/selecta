@@ -1,0 +1,86 @@
+# dui-coverflow-input (I1473g8b5): Cover Flow wheel and side-cover click. One wheel notch moves one cover (down = next), trackpad
+# deltas accumulate to whole steps, the wheel clamps at the ends; a click on a side cover moves the flow to it (VIEW_CURSOR index);
+# a click that lands where two covers overlap picks the front one. Arrow keys are covered by dui-coverflow-slide.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-coverflow-slide needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/library.db")
+dui_run(init --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+set(queue "")
+foreach(p 1.mod 2.mod 3.xm 4.it 5.sid)
+  list(APPEND queue --exec "QUEUE_ADD \"fixture/${p}\"")
+endforeach()
+
+
+# Runs the flow with the input script ${script}; sets ${tag} to the covers (g:x:size:|p|, far to near) and ${tag}_rect to the front cover.
+function(flow_run tag script)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/${tag}.txt" "exec VIEW_STYLE regular\nexec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE coverflow\nexec COMPOSERS_SHOW\nwait 100\n${script}wait 600\n")
+  dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 1280x800 --clock fixed --stats --exec "PREF_SET ui.desktop.reduce_motion 0" ${queue}
+    --input "${WORK}/${tag}.txt")
+  if(NOT "${o}" MATCHES "flow covers ([0-9]+)([^\n]*)\n")
+    message(FATAL_ERROR "${tag}: no 'flow covers' line in:\n${o}")
+  endif()
+  string(STRIP "${CMAKE_MATCH_2}" rest)
+  string(REPLACE " " ";" rest "${rest}")
+  set(${tag} "${rest}" PARENT_SCOPE)
+  if(NOT "${o}" MATCHES "flow cover (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) area")
+    message(FATAL_ERROR "${tag}: no 'flow cover' line")
+  endif()
+  set(${tag}_rect "${CMAKE_MATCH_1};${CMAKE_MATCH_2};${CMAKE_MATCH_3};${CMAKE_MATCH_4}" PARENT_SCOPE)
+endfunction()
+
+# Index of the front (last, nearest) cover of ${list}.
+function(front_g out list)
+  list(GET list -1 last)
+  string(REPLACE ":" ";" parts "${last}")
+  list(GET parts 0 g)
+  set(${out} "${g}" PARENT_SCOPE)
+endfunction()
+
+function(expect tag script want)
+  flow_run(${tag} "${script}")
+  front_g(got "${${tag}}")
+  if(NOT got EQUAL want)
+    message(FATAL_ERROR "${tag}: front cover ${got}, want ${want}; covers ${${tag}}")
+  endif()
+endfunction()
+
+expect(w_down "wheel 0 -1\n" 1)
+expect(w_two "wheel 0 -1\nwheel 0 -1\n" 2)
+expect(w_up_clamp "wheel 0 1\n" 0)
+expect(w_frac "wheel 0 -0.4\nwheel 0 -0.4\n" 0)
+expect(w_frac2 "wheel 0 -0.4\nwheel 0 -0.4\nwheel 0 -0.4\n" 1)
+expect(w_back "wheel 0 -1\nwheel 0 -1\nwheel 0 1\n" 1)
+
+# Side cover click: aim at the second-nearest cover (right of the front one) from the first layout.
+flow_run(base "")
+list(LENGTH base bn)
+math(EXPR si "${bn} - 2")
+list(GET base ${si} side)
+string(REPLACE ":" ";" sp "${side}")
+list(GET sp 0 sg)
+list(GET sp 1 sx)
+list(GET sp 2 sw)
+list(GET base_rect 1 fy)
+list(GET base_rect 3 fh)
+math(EXPR cx "${sx} + ${sw} - 3")
+math(EXPR cy "${fy} + ${fh} / 2")
+# 1. the click on the side cover moves the flow to it.
+expect(c_side "click ${cx} ${cy}\n" ${sg})
+# 2. a click on the front cover keeps the flow where it is (its own row click does not move the cursor).
+list(GET base_rect 0 fx)
+list(GET base_rect 2 fw)
+math(EXPR fcx "${fx} + ${fw} / 2")
+expect(c_front "click ${fcx} ${cy}\n" 0)
+message(STATUS "dui-coverflow-input ok")
