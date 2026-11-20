@@ -6,6 +6,7 @@
 #include <selecta/gui/gui_image.h>
 
 #include <selecta/platform.h>
+#include <selecta/uimodel/grid.h>
 #include <selecta/uimodel/tokens.h>
 
 #include <stdlib.h>
@@ -113,7 +114,7 @@ sel_gui_rect mui_canvas_window_clip(const mui_canvas* m) {
 
 uint32_t mui_grid_cols(const mui_grid_style* s, int32_t width) {
     int32_t tw = s->edge + 2 * s->pad;
-    return width >= tw + s->gap ? (uint32_t)((width + s->gap) / (tw + s->gap)) : 1u;
+    return sel_uim_grid_cols(width, tw, s->gap);
 }
 
 sel_gui_rect mui_grid_tile_rect(const mui_grid_style* s, int32_t width, uint32_t i) {
