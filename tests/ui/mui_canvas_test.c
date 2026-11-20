@@ -1,5 +1,5 @@
 /* mui-canvas-geom (MUI-P5-1), mui-grid (MUI-P5-2), mui-art-path (MUI-P5-4), plan 2026-10-25-amiga-mui.md.
- * Usage: mui_canvas_test geom|grid|tiles|art-path
+ * Usage: mui_canvas_test geom|grid|tiles|art-path|art
  *
  * Reachability exemption (I691e, design thoughts/shared/research/2026-10-29-i691-platform-covers.md section 5): no live MUI
  * site calls mui_canvas_draw_grid or mui_canvas_draw_art today (mui_canvas_set_grid has no caller), so these cases drive the
@@ -8,6 +8,7 @@
 #include <selecta/gui/gui_draw.h>
 #include <selecta/library_item.h>
 #include <selecta/gui/gui_genart.h>
+#include <selecta/gui/gui_image.h>
 #include <selecta/platform.h>
 #include <selecta/uimodel/tokens.h>
 
@@ -15,6 +16,9 @@
 #include <string.h>
 
 #include "mui_canvas.h"
+#include "mui_grid_art.h"
+
+#include <stdlib.h>
 
 static int failures;
 #define CHECK(cond, ...)                                \
@@ -180,6 +184,92 @@ static int test_art_path(void) {
     return failures;
 }
 
+/* I1473g3 mui-grid-art: an in-memory library with album 5 (thumbnail row), 6 (cover only, wide), 7 (nothing). */
+static uint8_t g_thumb5[SEL_GUI_THUMB_HEAD + 4u * 144u * 144u], g_thumb6[SEL_GUI_THUMB_HEAD + 4u * 144u * 144u];
+static uint32_t g_thumb5_len, g_thumb6_len, g_puts, g_decodes;
+
+static uint32_t ga_get(void* ctx, int64_t album, const char* kind, uint8_t* out, uint32_t cap) {
+    const uint8_t* b = NULL;
+    uint32_t n = 0;
+    (void)ctx;
+    if (strcmp(kind, "thumbf144") == 0) {
+        b = album == 5 ? g_thumb5 : g_thumb6;
+        n = album == 5 ? g_thumb5_len : album == 6 ? g_thumb6_len : 0u;
+    } else if (strcmp(kind, "cover") == 0 && album == 6) {
+        n = 4u; /* a stand-in blob: the fake decoder ignores it */
+    }
+    if (out != NULL && n > 0u && n <= cap && b != NULL) {
+        memcpy(out, b, n);
+    }
+    return n;
+}
+
+static int ga_put(void* ctx, int64_t album, const char* kind, const uint8_t* data, uint32_t len) {
+    (void)ctx;
+    g_puts++;
+    if (album == 6 && strcmp(kind, "thumbf144") == 0 && len <= sizeof g_thumb6) {
+        memcpy(g_thumb6, data, len);
+        g_thumb6_len = len;
+        return 1;
+    }
+    return 0;
+}
+
+static uint32_t* ga_decode(const sel_ui_art* art, int64_t album, uint32_t frame, int32_t* w, int32_t* h) {
+    uint32_t* p;
+    uint32_t i;
+    (void)art;
+    (void)frame;
+    g_decodes++;
+    if (album != 6) {
+        return NULL;
+    }
+    *w = 200;
+    *h = 100;
+    p = (uint32_t*)malloc(200u * 100u * sizeof *p);
+    for (i = 0; i < 200u * 100u; i++) {
+        p[i] = 0xFF2040C0u;
+    }
+    return p;
+}
+
+static int test_grid_art(void) {
+    sel_ui_art art = {NULL, NULL, ga_get, ga_put, NULL};
+    mui_tile t[4];
+    static uint32_t px[144 * 144];
+    uint32_t i;
+    const uint32_t* a;
+    mui_grid_art* g;
+    memset(t, 0, sizeof t);
+    t[0].art_id = 0;
+    t[1].art_id = 7;
+    t[2].art_id = 5;
+    t[3].art_id = 6;
+    for (i = 0; i < 144u * 144u; i++) {
+        px[i] = 0xFF00FF00u;
+    }
+    g_thumb5_len = sel_gui_thumb_pack(px, 144, 144, g_thumb5, sizeof g_thumb5);
+    CHECK(g_thumb5_len > 0u, "pack");
+    CHECK(mui_grid_art_open(NULL, ga_decode, 96, 4) == NULL && mui_grid_art_open(&art, ga_decode, 200, 4) == NULL, "bad open");
+    g = mui_grid_art_open(&art, ga_decode, 96, 4);
+    CHECK(g != NULL, "open");
+    CHECK(mui_grid_art_get(g, 5) == NULL, "empty cache misses");
+    CHECK(mui_grid_art_tick(g, t, 4) == 0 && g_decodes == 1u, "album 7 has no cover: one miss, nothing loaded (decodes %u)", (unsigned)g_decodes);
+    CHECK(mui_grid_art_tick(g, t, 4) == 5 && g_decodes == 1u && g_puts == 0u, "thumbnail row served without decode or write");
+    a = mui_grid_art_get(g, 5);
+    CHECK(a != NULL && a[0] == 0xFF00FF00u && a[96 * 96 - 1] == 0xFF00FF00u && mui_grid_art_get(g, 6) == NULL, "tile 96 squared from the thumbnail, one per tick");
+    CHECK(mui_grid_art_tick(g, t, 4) == 6 && g_decodes == 2u && g_puts == 1u && mui_grid_art_decodes(g) == 1u, "decode on miss writes the thumbnail back");
+    a = mui_grid_art_get(g, 6);
+    CHECK(a != NULL && a[0] == 0xFF000000u && a[96 * 48] == 0xFF2040C0u, "wide cover is fitted with black bars (bar %08x, middle %08x)",
+          a ? (unsigned)a[0] : 0u, a ? (unsigned)a[96 * 48] : 0u);
+    CHECK(mui_grid_art_tick(g, t, 4) == 0 && g_decodes == 2u, "bad album 7 is not retried, nothing left");
+    mui_grid_art_close(g);
+    g = mui_grid_art_open(&art, ga_decode, 96, 4);
+    CHECK(mui_grid_art_tick(g, t + 3, 1) == 6 && g_decodes == 2u && g_puts == 1u, "a second loader reads the written-back thumbnail");
+    mui_grid_art_close(g);
+    return failures;
+}
+
 int main(int argc, char** argv) {
     int r = 1;
     if (argc > 1 && strcmp(argv[1], "geom") == 0) {
@@ -190,6 +280,8 @@ int main(int argc, char** argv) {
         r = test_tiles();
     } else if (argc > 1 && strcmp(argv[1], "art-path") == 0) {
         r = test_art_path();
+    } else if (argc > 1 && strcmp(argv[1], "art") == 0) {
+        r = test_grid_art();
     }
     printf("%s\n", r == 0 ? "PASS" : "FAILED");
     return r == 0 ? 0 : 1;

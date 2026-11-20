@@ -173,31 +173,6 @@ static uint8_t* fetch(const sel_ui_art* src, int64_t album, const char* kind, ui
     return buf;
 }
 
-/* I1384c: the whole picture fits the edge x edge square `px`, aspect kept, black bars on the short side: Demozoo screenshots are wide
- * (360x284) and a centre crop cut off their sides. Square album covers fill it. 0 on out of memory. */
-static int fit_square(const uint32_t* img, int32_t w, int32_t h, uint32_t* px, int32_t edge) {
-    int32_t fw = w >= h ? edge : (int32_t)((int64_t)edge * w / h);
-    int32_t fh = w >= h ? (int32_t)((int64_t)edge * h / w) : edge;
-    uint32_t* sq;
-    int32_t y, x;
-
-    if (fw < 1) fw = 1;
-    if (fh < 1) fh = 1;
-    sq = (uint32_t*)malloc((size_t)fw * (size_t)fh * sizeof *sq);
-    if (sq == NULL) {
-        return 0;
-    }
-    sel_gui_image_scale(img, w, h, sq, fw, fh);
-    for (y = 0; y < edge * edge; y++) px[y] = 0xFF000000u;
-    for (y = 0; y < fh; y++) {
-        for (x = 0; x < fw; x++) {
-            px[(size_t)(y + (edge - fh) / 2) * (size_t)edge + (size_t)(x + (edge - fw) / 2)] = sq[(size_t)y * (size_t)fw + (size_t)x];
-        }
-    }
-    free(sq);
-    return 1;
-}
-
 /* Worker side. Thumb row first; else decode the cover, scale it to the tile size and write the thumb row back. Fills `px`
  * (DESK_ART_TILE_EDGE squared); 0 when the album has no usable cover. */
 static int load_album(art_job* j, int64_t album, const char* thumb_kind, uint32_t* px) {
@@ -221,7 +196,7 @@ static int load_album(art_job* j, int64_t album, const char* thumb_kind, uint32_
         if (img != NULL) {
             uint8_t* out = (uint8_t*)malloc(ART_THUMB_MAX);
             j->decodes++;
-            if (out != NULL && fit_square(img, w, h, px, DESK_ART_TILE_EDGE)) {
+            if (out != NULL && sel_gui_image_fit_square(img, w, h, px, DESK_ART_TILE_EDGE)) {
                 len = sel_gui_thumb_pack(px, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, out, ART_THUMB_MAX);
                 if (len > 0u) {
                     j->src->put(j->src->ctx, album, thumb_kind, out, len);
@@ -501,7 +476,7 @@ static void big_worker(void* ctx) {
         free(blob);
         if (img != NULL) {
             b->px = (uint32_t*)malloc((size_t)b->edge * (size_t)b->edge * sizeof *b->px);
-            if (b->px != NULL && !fit_square(img, w, h, b->px, b->edge)) {
+            if (b->px != NULL && !sel_gui_image_fit_square(img, w, h, b->px, b->edge)) {
                 free(b->px);
                 b->px = NULL;
             }

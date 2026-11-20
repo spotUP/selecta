@@ -13,6 +13,9 @@ extern "C" {
 /* Scales sw x sh words into dw x dh words with an integer box filter (nearest when enlarging). */
 void sel_gui_image_scale(const uint32_t* src, int32_t sw, int32_t sh, uint32_t* dst, int32_t dw, int32_t dh);
 
+/* I1384c: fits the whole w x h picture into the edge x edge square `px`, aspect kept, black bars on the short side. 0 on out of memory. */
+int sel_gui_image_fit_square(const uint32_t* img, int32_t w, int32_t h, uint32_t* px, int32_t edge);
+
 /* Thumbnail blob written back to the library: "THM1", width and height as little-endian u16, then the pixel
  * words little-endian. Pack returns the byte count, 0 when `cap` is too small. Unpack returns 1 and fills
  * px/w/h, 0 on a malformed blob or when the pixels do not fit `cap_px`. */
