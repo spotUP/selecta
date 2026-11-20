@@ -3800,7 +3800,7 @@ static void acct_open(desk* d, const char* why) {
     snprintf(d->acct_error, sizeof d->acct_error, "%s", why != NULL ? why : "");
     d->dlg_open = DLG_ACCOUNT;
     d->dlg_opens++;
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* I1472: a live turn presents only a dirty model; repaint alone drew the dialog on the next mouse move */
 }
 
 static void acct_close(desk* d) {
@@ -3841,7 +3841,7 @@ static void acct_submit(desk* d) {
     } else {
         snprintf(d->acct_error, sizeof d->acct_error, "A request is already running.");
     }
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
 static void acct_follow(desk* d) {
@@ -3862,7 +3862,7 @@ static void acct_follow(desk* d) {
         }
         desk_toast(d, d->acct_signup ? "Account created, logged in" : "Logged in");
     }
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
@@ -3912,12 +3912,12 @@ static int acct_pointer(desk* d, const sel_gui_input* ev) {
     } else if (d->acct_user[0] == '\0' && in_rect(acct_toggle_rect(d), ev->x, ev->y)) {
         d->acct_signup = !d->acct_signup;
         d->acct_error[0] = '\0';
-        d->repaint = 1;
+        d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     } else {
         for (i = 0; i < 2; i++) {
             if (in_rect(acct_field_rect(d, i), ev->x, ev->y)) {
                 d->acct_field = i;
-                d->repaint = 1;
+                d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             }
         }
     }
@@ -3938,7 +3938,7 @@ static int acct_key(desk* d, const sel_gui_input* ev) {
             (void)field_edit(d, d->acct_pass, &d->acct_pass_len, sizeof d->acct_pass, 0, NULL, ev);
         }
     }
-    d->repaint = 1;
+    d->repaint = 1; d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     return 1;
 }
 
