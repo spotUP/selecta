@@ -101,7 +101,7 @@ function(np_run tag seek_ms)
   set(${tag}_hash "${h}" PARENT_SCOPE)
 endfunction()
 
-set(expected_pairs 1) # the script sets exactly one field: RATE 4
+set(expected_pairs 2) # RATE 4 gives Rating, and Liked (I1432: 4 stars and up count as liked)
 set(prev -2)
 foreach(seek 1000 5000 12500)
   np_run(s${seek} ${seek})
@@ -181,7 +181,7 @@ if(NOT rc_rating EQUAL 0)
 endif()
 
 # I306: the heart shows the liked state of the playing song (`liked N` in the dump is what the last Now Playing draw showed).
-#    Not liked: 0. After a LIKE: 1 in the same run. A second LIKE toggles it back to 0.
+#    Not liked: 0. After a LIKE: 1 in the same run. I1432: LIKE rates 5 stars and no longer toggles, so a second LIKE keeps 1.
 if(NOT ra_liked EQUAL 0)
   message(FATAL_ERROR "an unliked song shows the heart as liked")
 endif()
@@ -200,8 +200,8 @@ if(NOT la_liked EQUAL 1)
   message(FATAL_ERROR "after LIKE the Now Playing heart shows liked=${la_liked}, want 1")
 endif()
 np_like_run(lb "--exec;LIKE;--exec;LIKE")
-if(NOT lb_liked EQUAL 0)
-  message(FATAL_ERROR "after LIKE twice the Now Playing heart shows liked=${lb_liked}, want 0")
+if(NOT lb_liked EQUAL 1)
+  message(FATAL_ERROR "after LIKE twice the Now Playing heart shows liked=${lb_liked}, want 1 (LIKE rates 5, I1432)")
 endif()
 
 # 5. I290: a tracker song message has several lines (message.it: three, libopenmpt joins them with a newline). The panel lays
