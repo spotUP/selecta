@@ -1,5 +1,6 @@
 /* I1137: the directory of the running executable, the one rule behind sel_app_plugin_dir (src/core/config_dir.c) and
  * sel_app_data_dir (db.c). Lives in selecta_library because the library cannot call the core that links it. */
+#define _POSIX_C_SOURCE 200809L /* readlink in unistd.h under -std=c99 on glibc and libnix */
 #include <selecta/engine.h>
 
 #include <string.h>
