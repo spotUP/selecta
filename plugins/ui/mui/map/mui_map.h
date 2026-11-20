@@ -840,6 +840,7 @@ typedef struct mui_sidebar_row {
     char mark[4], title[96], subtitle[96], type[16];
     char added[24], played[24]; /* I1166b: the wide table columns, sel_uim_relative_time (desktop draw_side_lib) */
     uint32_t kind, id;
+    uint32_t item; /* I1480: index into in->items, what a row click routes on */
 } mui_sidebar_row;
 typedef struct mui_sidebar_model {
     char brand[16], brand_icon[8];            /* I797 (S1): the "Selecta" title and the logo icon key; the icon is "" on the bitmap tier (text only) */
