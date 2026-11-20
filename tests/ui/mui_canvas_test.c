@@ -1,11 +1,12 @@
 /* mui-canvas-geom (MUI-P5-1), mui-grid (MUI-P5-2), mui-art-path (MUI-P5-4), plan 2026-10-25-amiga-mui.md.
- * Usage: mui_canvas_test geom|grid|art-path
+ * Usage: mui_canvas_test geom|grid|tiles|art-path
  *
  * Reachability exemption (I691e, design thoughts/shared/research/2026-10-29-i691-platform-covers.md section 5): no live MUI
  * site calls mui_canvas_draw_grid or mui_canvas_draw_art today (mui_canvas_set_grid has no caller), so these cases drive the
  * platform cover through the canvas functions directly, not through the MUI top-level entry point. The MUI rig check happens
  * with the MUI row that wires a grid. */
 #include <selecta/gui/gui_draw.h>
+#include <selecta/library_item.h>
 #include <selecta/gui/gui_genart.h>
 #include <selecta/platform.h>
 #include <selecta/uimodel/tokens.h>
@@ -95,6 +96,25 @@ static int test_grid(void) {
     return failures;
 }
 
+static int test_tiles(void) {
+    static sel_view_row rows[4];
+    sel_view_state v;
+    mui_tile t[4];
+    mui_grid_style a = mui_grid_style_for(640, 1, 2, 3), b = mui_grid_style_for(1024, 1, 2, 3);
+    memset(rows, 0, sizeof rows);
+    memset(&v, 0, sizeof v);
+    rows[0].kind = SEL_ROW_HEADING; rows[0].text = "Head";
+    rows[1].kind = SEL_ROW_FILE; rows[1].text = "Song"; rows[1].artist = "Zed"; rows[1].format = "mod"; rows[1].art_id = 9;
+    rows[2].kind = SEL_ROW_HOME; rows[2].text = "Album"; rows[2].album = 1; rows[2].key = "Album"; rows[2].item_kind = 1u + (uint32_t)SEL_LIB_ITEM_ALBUM;
+    v.rows = rows; v.row_n = 3;
+    CHECK(mui_grid_tiles(NULL, t, 4) == 0u && mui_grid_tiles(&v, t, 4) == 2u, "heading skipped");
+    CHECK(strcmp(t[0].title, "Song") == 0 && strcmp(t[0].artist, "Zed") == 0 && strcmp(t[0].format, "mod") == 0 && t[0].art_id == 9, "song tile fields");
+    CHECK(t[0].kind == sel_cover_kind_of_item(0, 0, 0, NULL) && t[1].artist == NULL && t[1].kind == sel_cover_kind_of_item(rows[2].item_kind, 1, 0, "Album"), "kinds");
+    CHECK(mui_grid_tiles(&v, t, 1) == 1u, "cap");
+    CHECK(a.edge == 96 && b.edge == 128 && a.tile == 2u && b.selected == 3u, "style edge by screen width");
+    return failures;
+}
+
 static int test_art_path(void) {
     mui_canvas m;
     uint32_t src[16 * 16];
@@ -166,6 +186,8 @@ int main(int argc, char** argv) {
         r = test_geom();
     } else if (argc > 1 && strcmp(argv[1], "grid") == 0) {
         r = test_grid();
+    } else if (argc > 1 && strcmp(argv[1], "tiles") == 0) {
+        r = test_tiles();
     } else if (argc > 1 && strcmp(argv[1], "art-path") == 0) {
         r = test_art_path();
     }

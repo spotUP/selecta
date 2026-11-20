@@ -112,6 +112,31 @@ sel_gui_rect mui_canvas_window_clip(const mui_canvas* m) {
     return m->obj;
 }
 
+uint32_t mui_grid_tiles(const sel_view_state* v, mui_tile* out, uint32_t cap) {
+    uint32_t k, n = 0;
+    if (v == NULL || v->rows == NULL) {
+        return 0u;
+    }
+    for (k = 0; k < v->row_n && n < cap; k++) {
+        const sel_view_row* r = &v->rows[k];
+        if (r->kind == (uint32_t)SEL_ROW_HEADING) {
+            continue;
+        }
+        out[n].title = r->text;
+        out[n].artist = r->artist;
+        out[n].format = r->format;
+        out[n].art_id = (int64_t)r->art_id;
+        out[n].kind = sel_cover_kind_of_item(r->item_kind, r->album != 0u, r->composer != 0u, r->key);
+        n++;
+    }
+    return n;
+}
+
+mui_grid_style mui_grid_style_for(int32_t screen_w, uint32_t background, uint32_t tile, uint32_t selected) {
+    mui_grid_style s = {background, tile, selected, screen_w >= 1024 ? 128 : 96, 8, 8};
+    return s;
+}
+
 uint32_t mui_grid_cols(const mui_grid_style* s, int32_t width) {
     int32_t tw = s->edge + 2 * s->pad;
     return sel_uim_grid_cols(width, tw, s->gap);
