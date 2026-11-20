@@ -80,6 +80,8 @@ int main(int argc, char** argv) {
     check(sqlite3_exec(db,
                        "DROP TRIGGER source_songs_state_ad; DROP TABLE source_state;"
                        "DROP INDEX songs_dup_of; DROP TABLE dup_pick; ALTER TABLE songs DROP COLUMN dup_of;"
+                       "DROP TABLE song_strings; ALTER TABLE songs DROP COLUMN uade_key; ALTER TABLE songs DROP COLUMN channels;"
+                       "ALTER TABLE songs DROP COLUMN publisher;" /* v24 + v25 objects: the final schema has them, an old file does not */
                        "ALTER TABLE songs DROP COLUMN dup_members; PRAGMA user_version=16;",
                        NULL, NULL, NULL) == SQLITE_OK,
           "step back to v16");
