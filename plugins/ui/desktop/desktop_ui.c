@@ -33,6 +33,7 @@
 #include <selecta/uimodel/about.h>
 #include <selecta/uimodel/drill.h>
 #include <selecta/uimodel/grid.h>
+#include <selecta/uimodel/flow.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/open_progress.h>
 #include <selecta/uimodel/cols.h>
@@ -9423,16 +9424,6 @@ static const char* library_dump_build(desk* d) {
  * Integer geometry only. Sizes are logical units on the 8-unit grid (the artwork size tokens of plan 2.2 are not in the
  * token table yet: tile and cover flow art are these constants). The art is the generated tile of the Home shelves. */
 
-/* Cover flow stack constants (I391): FLOW_SIDES neighbours per side; neighbour k sits k/FLOW_STEP_DIV of the centre size from the
- * centre line and is k/FLOW_SHRINK_DIV smaller. Each neighbour then shows (1/FLOW_STEP_DIV - 1/(2*FLOW_SHRINK_DIV)) of the centre
- * size of its own art beside the cover in front of it (0.15: 51 px at a 340 px centre). The stack width follows from the same
- * two functions, so the width fit is exact. */
-enum { FLOW_SIDES = 3, FLOW_STEP_DIV = 4, FLOW_SHRINK_DIV = 5 };
-static int32_t flow_off(int32_t big, int32_t k) { return k * big / FLOW_STEP_DIV; }
-static int32_t flow_size(int32_t big, int32_t k) { return big - k * big / FLOW_SHRINK_DIV; }
-/* Width of the whole stack at centre size big: the two outermost covers' outer edges. */
-static int32_t flow_stack_w(int32_t big) { return 2 * (flow_off(big, FLOW_SIDES) + flow_size(big, FLOW_SIDES) / 2); }
-
 /* Smallest rectangle holding a and b; a zero-width a is "nothing yet" (the tile boxes of the grid and the cover flow, I379, I382). */
 static sel_gui_rect rect_union(sel_gui_rect a, sel_gui_rect b) {
     sel_gui_rect u;
@@ -9601,31 +9592,6 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
     draw_grid_rows(d, mn, sel_engine_state(d->engine)->view, mn.y + lib_body_y(d, sel_engine_state(d->engine)), 1);
 }
 
-/* Fractional centre of the cover flow in 16.16 listing indices: the cursor at rest, gliding from flow_from to it as gl runs 0..65536. */
-static int64_t flow_centre_fx(const desk* d, uint32_t cursor, int32_t gl) {
-    int64_t to = (int64_t)cursor * 65536;
-    return gl < 65536 ? to + (((d->flow_from - to) * (65536 - gl)) >> 16) : to;
-}
-
-/* Scrim alpha of slot k (the centre has none); slots past FLOW_SIDES keep the last one. */
-static const uint8_t flow_scrim[FLOW_SIDES + 1] = {0u, 90u, 150u, 150u};
-
-/* One cover at the fractional slot distance a (16.16, >= 0): size, offset from the centre line and scrim alpha interpolated
- * between the integer slots floor(a) and floor(a)+1. Past the last slot the cover shrinks to nothing behind its neighbour, so a
- * cover entering or leaving the stack never pops. At whole slots this is exactly flow_size / flow_off / flow_scrim. */
-static void flow_slot(int32_t big, int32_t a, int32_t* sz, int32_t* off, int32_t* alpha) {
-    int32_t k = a >> 16, f = a & 0xFFFF;
-    if (k >= FLOW_SIDES) {
-        *sz = (int32_t)((int64_t)flow_size(big, FLOW_SIDES) * (65536 - f) >> 16);
-        *off = flow_off(big, FLOW_SIDES);
-        *alpha = flow_scrim[FLOW_SIDES];
-        return;
-    }
-    *sz = flow_size(big, k) + (int32_t)((int64_t)(flow_size(big, k + 1) - flow_size(big, k)) * f >> 16);
-    *off = flow_off(big, k) + (int32_t)((int64_t)(flow_off(big, k + 1) - flow_off(big, k)) * f >> 16);
-    *alpha = (int32_t)flow_scrim[k] + (int32_t)((int64_t)((int32_t)flow_scrim[k + 1] - (int32_t)flow_scrim[k]) * f >> 16);
-}
-
 /* Stacked tiles: the centre at full size, neighbours smaller (integer fifths of it) and offset towards the sides, a scrim
  * darkening the far ones. No perspective. Each cover sits at a fractional slot p = index - centre (16.16); its size, offset and
  * scrim are continuous in |p| and the covers are drawn far to near, so a glide moves every cover smoothly from its old slot to
@@ -9635,17 +9601,13 @@ static void draw_flow_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
     int32_t ref = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, cx = (mn.x + right) / 2, y0;
     int32_t capt = lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H); /* the caption block under the centre cover */
     int32_t top = body_y + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
-    int32_t full = flow_stack_w(ref); /* width of the whole stack at the reference size */
-    int32_t fit_w = ref * (avail > 0 ? avail : 0) / full, fit_h = area_h - capt; /* the centre cover that fills the width / the height */
-    int32_t big = fit_w < fit_h ? fit_w : fit_h;
-    big = big > lpx(d, 48) ? big : lpx(d, 48); /* the floor; the cover size follows the free area (I382, I391) */
+    int32_t big = sel_uim_flow_big(avail, area_h, capt, ref, lpx(d, 48)); /* the cover size follows the free area (I382, I391) */
     y0 = top + (area_h - (big + capt)) / 2;    /* the stack and its caption centred vertically in the free area */
     d->flow_area = rect_of(mn.x + mg, top, avail, area_h);
     int32_t gl = sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536);
-    int64_t c = flow_centre_fx(d, v->cursor, gl);
-    int64_t g0 = (c >> 16) - FLOW_SIDES, g;
-    struct { int64_t g; int32_t a, p; } cv[2 * FLOW_SIDES + 4];
-    uint32_t n = 0u, i, j;
+    int64_t c = sel_uim_flow_centre_q16(d->flow_from, v->cursor, gl);
+    sel_uim_flow_cover cv[SEL_UIM_FLOW_MAX];
+    uint32_t n, j;
     const sel_view_row* cr = v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n ? &v->rows[v->cursor - v->window_start] : NULL;
     d->flow_draws++;
     d->frame_flow = gl < 65536 ? 2 : 1;
@@ -9653,33 +9615,17 @@ static void draw_flow_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
     d->grid_box = rect_of(0, 0, 0, 0);
     d->flow_cover = rect_of(0, 0, 0, 0);
     d->flow_rec_n = 0u;
-    /* The covers that can be visible: |p| < FLOW_SIDES + 1. Insertion sort by |p| descending (stable: the left one of a tie first). */
-    for (g = g0 - 1; g <= g0 + 2 * FLOW_SIDES + 2 && n < 2u * FLOW_SIDES + 4u; g++) {
-        int64_t p = g * 65536 - c;
-        int32_t a = (int32_t)(p < 0 ? -p : p);
-        if (g < 0 || g < (int64_t)v->window_start || g >= (int64_t)v->window_start + (int64_t)v->row_n || a >= (FLOW_SIDES + 1) * 65536) {
-            continue;
-        }
-        for (i = n; i > 0u && cv[i - 1u].a < a; i--) {
-            cv[i] = cv[i - 1u];
-        }
-        cv[i].g = g;
-        cv[i].a = a;
-        cv[i].p = p < 0 ? -1 : 1;
-        n++;
-    }
+    n = sel_uim_flow_layout(c, v->window_start, v->row_n, big, cx, y0, cv, SEL_UIM_FLOW_MAX);
     for (j = 0u; j < n; j++) {
-        int32_t sz, off, alpha;
-        sel_gui_rect r;
-        const sel_view_row* row = &v->rows[cv[j].g - (int64_t)v->window_start];
-        flow_slot(big, cv[j].a, &sz, &off, &alpha);
-        r = rect_of(cx + cv[j].p * off - sz / 2, y0 + (big - sz) / 2, sz, sz);
+        sel_gui_rect r = rect_of(cv[j].x, cv[j].y, cv[j].sz, cv[j].sz);
+        int32_t alpha = cv[j].alpha;
+        const sel_view_row* row = &v->rows[cv[j].g];
         d->grid_box = rect_union(d->grid_box, r);
         if (j + 1u == n) { /* the cover nearest the centre carries the shadow and the click target */
             d->flow_cover = r;
             sel_gui_shadow_draw(d->canvas, &d->shadow, r, 0); /* the cover flow art is square */
         }
-        grid_row_cover(d, r, row, lib_reg ? (uint32_t)(cv[j].g - (int64_t)v->window_start) : UINT32_MAX, &d->pc_flow);
+        grid_row_cover(d, r, row, lib_reg ? cv[j].g : UINT32_MAX, &d->pc_flow);
         if (alpha > 0) {
             sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SCRIM]) & 0xFFFFFFu, (uint32_t)alpha);
         }
@@ -9691,12 +9637,12 @@ static void draw_flow_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
                 d->hover_paints++;
             }
             if (lib_reg) {
-                lib_view_row_reg(d, mn, sel_engine_state(d->engine), (uint32_t)(cv[j].g - (int64_t)v->window_start), r);
+                lib_view_row_reg(d, mn, sel_engine_state(d->engine), cv[j].g, r);
             } else if (row->key != NULL) {
                 song_row_reg(d, r, row->key, 0, 0, 0);
             }
         }
-        d->flow_rec[j].g = (int32_t)cv[j].g;
+        d->flow_rec[j].g = (int32_t)(cv[j].g + v->window_start);
         d->flow_rec[j].x = r.x;
         d->flow_rec[j].w = r.w;
         d->flow_rec[j].a = cv[j].a;
@@ -15776,7 +15722,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
             by = lib_grid_cols(d, region_rect(d, "main")); /* a row of tiles */
         }
         snprintf(line, sizeof line, "VIEW_CURSOR %c%u", ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_UP ? '-' : '+', (unsigned)by);
-        d->flow_from = flow_centre_fx(d, v->cursor, sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536)); /* a key mid-glide starts where the covers are (I400) */
+        d->flow_from = sel_uim_flow_centre_q16(d->flow_from, v->cursor, sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536)); /* a key mid-glide starts where the covers are (I400) */
         if (flow) {
             desk_tween(d, ANIM_KEY_FLOW, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
         }
